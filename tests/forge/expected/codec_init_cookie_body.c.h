@@ -44,8 +44,6 @@ SCE_OPTIONAL_DECLARE_BYTES(64)
 typedef struct {
     uint8_t version;
     /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint16_t cookie_size;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
     sce_optional_bytes_64_t cookie;
 } codec_init_cookie_body_t;
 
@@ -77,21 +75,20 @@ static inline sce_forge_codec_status_t codec_init_cookie_body_decode(sce_forge_c
         out->version = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    uint16_t _d_cookie_size = 0;
     if ((a & 0x01) != 0) {
         uint16_t _v;
     {
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u16(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->cookie_size = sce_optional_uint16_some(_v);
-    } else {
-        out->cookie_size = sce_optional_uint16_none();
+        _d_cookie_size = _v;
     }
     if ((a & 0x01) != 0) {
-        if (out->cookie_size.value > 64) {
+        if (_d_cookie_size > 64) {
             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
         }
-        size_t _n = (size_t)out->cookie_size.value;
+        size_t _n = (size_t)_d_cookie_size;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->cookie = sce_optional_bytes_64_none();
@@ -105,43 +102,128 @@ static inline sce_forge_codec_status_t codec_init_cookie_body_decode(sce_forge_c
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The `cookie` element of codec_init_cookie_body_t: a byte string of 0 to 64 bytes, viewed where it
+ * is held, which outlives the view. A view is made by codec_init_cookie_body_cookie_bytes_make, which
+ * refuses one outside the bound, so every view holds it (docs/adr/0081 §2)
+ * and the encode over a source writes it whole, refusing nothing of it. */
+typedef struct {
+    const uint8_t *data;
+    size_t len;
+} codec_init_cookie_body_cookie_bytes_t;
+
+/* Make `*out` a view of the `len` bytes at `data`: SCE_FORGE_CODEC_OK, or
+ * the refusal of a byte string outside its bound, `*out` then as it was. */
+static inline sce_forge_codec_status_t codec_init_cookie_body_cookie_bytes_make(codec_init_cookie_body_cookie_bytes_t *out, const uint8_t *data, size_t len) {
+    if (!sce_forge_length_within_bound(len, 64)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    out->data = data;
+    out->len = len;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* A view of codec_init_cookie_body_cookie_bytes_t that may be absent: absent where the gate leaves the
+ * element out. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_init_cookie_body_cookie_bytes_optional, codec_init_cookie_body_cookie_bytes_t)
+
+/* The elements a value of codec_init_cookie_body_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_init_cookie_body_t is a source by the table
+ * codec_init_cookie_body_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*version)(const void *ctx);
+    codec_init_cookie_body_cookie_bytes_optional_t (*cookie)(const void *ctx);
+} codec_init_cookie_body_source_t;
+
+/* A source of codec_init_cookie_body_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_init_cookie_body_source_t *table;
+    const void *ctx;
+} codec_init_cookie_body_source_ref_t;
+
+/* A source of codec_init_cookie_body_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_init_cookie_body_source_ref_optional, codec_init_cookie_body_source_ref_t)
+
+/* The `version` of the codec_init_cookie_body_t at `ctx`. */
+static inline uint8_t codec_init_cookie_body_value_version(const void *ctx) {
+    return ((const codec_init_cookie_body_t *)ctx)->version;
+}
+
+/* The `cookie` of the codec_init_cookie_body_t at `ctx`. */
+static inline codec_init_cookie_body_cookie_bytes_optional_t codec_init_cookie_body_value_cookie(const void *ctx) {
+    const codec_init_cookie_body_t *self = (const codec_init_cookie_body_t *)ctx;
+    if (!self->cookie.present) {
+        return codec_init_cookie_body_cookie_bytes_optional_none();
+    }
+    codec_init_cookie_body_cookie_bytes_t view;
+    view.data = self->cookie.value.data;
+    view.len = self->cookie.value.len;
+    return codec_init_cookie_body_cookie_bytes_optional_some(view);
+}
+
+/* The table that presents a value of codec_init_cookie_body_t as a source of it, its
+ * context a `const codec_init_cookie_body_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_init_cookie_body_source_t *codec_init_cookie_body_value_source(void) {
+    static const codec_init_cookie_body_source_t table = {
+        codec_init_cookie_body_value_version,
+        codec_init_cookie_body_value_cookie,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_init_cookie_body_encode_source(const codec_init_cookie_body_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint8_t _e_version = src->version(ctx);
+    const codec_init_cookie_body_cookie_bytes_optional_t _e_cookie = src->cookie(ctx);
+    const uint8_t a = (uint8_t)(_e_cookie.present ? 1u : 0u);
+    (void)a;
+    const uint16_t _d_cookie_size = _e_cookie.present ? (uint16_t)(_e_cookie.value.len) : (uint16_t)0;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _e_version));
+    if ((((uint64_t)a & 0x1ull) != 0)) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u16(w, (uint16_t)(_d_cookie_size)));
+    }
+    if (_e_cookie.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, _e_cookie.value.data, _e_cookie.value.len));
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The flag input `A` a source of codec_init_cookie_body_t says, which its encode is
+ * not handed (docs/adr/0065 §6 R4a). */
+static inline uint8_t codec_init_cookie_body_input_a(const codec_init_cookie_body_source_t *src, const void *ctx) {
+    return (uint8_t)(src->cookie(ctx).present ? 1u : 0u);
+}
+
+/* Whether `self` is a value of codec_init_cookie_body_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_init_cookie_body_check_value(const codec_init_cookie_body_t *self) {
+    if (self->cookie.present && (!sce_forge_length_within_bound(self->cookie.value.len, 64))) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_INIT_COOKIE_BODY_MAX_BYTES bytes and use
  * `codec_init_cookie_body_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
-static inline sce_forge_codec_status_t codec_init_cookie_body_encode(const codec_init_cookie_body_t *self, sce_forge_writer_t *w, uint8_t a) {
-    /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
-    (void)a;
-    if ((a & 0x01) != 0) {
-        if (!self->cookie.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->cookie.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    /* A byte string, text, list or chain above the bound of the array that
-     * holds it is refused before the first byte is written: the array cannot
-     * hold that many, and a frame of fewer is not the value given. */
-    if (self->cookie.present && !sce_forge_length_within_bound(self->cookie.value.len, 64)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
-    }
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->version));
-    if (self->cookie_size.present) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u16(w, (uint16_t)(self->cookie_size.value)));
-    }
-    if (self->cookie.present) {
-        size_t _n = self->cookie.value.len;
-        if (_n > self->cookie_size.value) _n = self->cookie_size.value;
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->cookie.value.data, _n));
-    }
-    return SCE_FORGE_CODEC_OK;
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
+static inline sce_forge_codec_status_t codec_init_cookie_body_encode(const codec_init_cookie_body_t *self, sce_forge_writer_t *w) {
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_init_cookie_body_check_value(self));
+    return codec_init_cookie_body_encode_source(codec_init_cookie_body_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
@@ -151,9 +233,9 @@ static inline sce_forge_codec_status_t codec_init_cookie_body_encode(const codec
  * was insufficient for this codec's wire bytes. Worst-case bound is
  * `CODEC_INIT_COOKIE_BODY_MAX_BYTES` — callers sizing `buf` accordingly never
  * see overflow. */
-static inline sce_forge_codec_status_t codec_init_cookie_body_encode_to_buf(const codec_init_cookie_body_t *self, uint8_t *buf, size_t cap, size_t *out_len, uint8_t a) {
+static inline sce_forge_codec_status_t codec_init_cookie_body_encode_to_buf(const codec_init_cookie_body_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
     sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
-    sce_forge_codec_status_t _st = codec_init_cookie_body_encode(self, &_w, a);
+    sce_forge_codec_status_t _st = codec_init_cookie_body_encode(self, &_w);
     *out_len = _w.pos;
     return _st;
 }

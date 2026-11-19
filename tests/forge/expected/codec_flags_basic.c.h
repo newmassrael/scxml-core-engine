@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 
 #define CODEC_FLAGS_BASIC_MIN_BYTES 1
 #define CODEC_FLAGS_BASIC_MAX_BYTES 1
@@ -33,15 +34,117 @@ static inline sce_forge_codec_status_t codec_flags_basic_decode(sce_forge_cursor
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The elements a value of codec_flags_basic_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_flags_basic_t is a source by the table
+ * codec_flags_basic_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*header)(const void *ctx);
+} codec_flags_basic_source_t;
+
+/* A source of codec_flags_basic_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_flags_basic_source_t *table;
+    const void *ctx;
+} codec_flags_basic_source_ref_t;
+
+/* A source of codec_flags_basic_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_flags_basic_source_ref_optional, codec_flags_basic_source_ref_t)
+
+/* The `header` of the codec_flags_basic_t at `ctx`. */
+static inline uint8_t codec_flags_basic_value_header(const void *ctx) {
+    return ((const codec_flags_basic_t *)ctx)->header;
+}
+
+/* The table that presents a value of codec_flags_basic_t as a source of it, its
+ * context a `const codec_flags_basic_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_flags_basic_source_t *codec_flags_basic_value_source(void) {
+    static const codec_flags_basic_source_t table = {
+        codec_flags_basic_value_header,
+    };
+    return &table;
+}
+
+/* One-bit flags of codec_flags_basic_t a parent may set in place of the ones a value
+ * presents, such as the flag a chain whose entries are codec_flags_basic_t ends them
+ * on, which the chain derives from where each entry stands. A flag absent
+ * here is the value's own. */
+typedef struct {
+    /* The `reliable` flag of `header`, where a parent sets it. */
+    sce_optional_bool_t header_reliable;
+    /* The `more` flag of `header`, where a parent sets it. */
+    sce_optional_bool_t header_more;
+    /* The `drop` flag of `header`, where a parent sets it. */
+    sce_optional_bool_t header_drop;
+    /* The `first` flag of `header`, where a parent sets it. */
+    sce_optional_bool_t header_first;
+} codec_flags_basic_overrides_t;
+
+/* The overrides that set no flag. */
+static inline codec_flags_basic_overrides_t codec_flags_basic_overrides_none(void) {
+    codec_flags_basic_overrides_t none;
+    none.header_reliable = sce_optional_bool_none();
+    none.header_more = sce_optional_bool_none();
+    none.header_drop = sce_optional_bool_none();
+    none.header_first = sce_optional_bool_none();
+    return none;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_flags_basic_encode_source_overriding(const codec_flags_basic_source_t *src, const void *ctx, sce_forge_writer_t *w, codec_flags_basic_overrides_t overrides) {
+    const uint8_t _e_header = src->header(ctx);
+    uint64_t _f_header = (uint64_t)_e_header;
+    if (overrides.header_reliable.present) {
+        _f_header = (_f_header & ~0x80ull) | ((uint64_t)overrides.header_reliable.value << 7);
+    }
+    if (overrides.header_more.present) {
+        _f_header = (_f_header & ~0x40ull) | ((uint64_t)overrides.header_more.value << 6);
+    }
+    if (overrides.header_drop.present) {
+        _f_header = (_f_header & ~0x20ull) | ((uint64_t)overrides.header_drop.value << 5);
+    }
+    if (overrides.header_first.present) {
+        _f_header = (_f_header & ~0x10ull) | ((uint64_t)overrides.header_first.value << 4);
+    }
+    const uint8_t _c_header = (uint8_t)_f_header;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_header));
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* codec_flags_basic_encode_source_overriding with no flag set in place of the
+ * value's: the encode every caller but a parent that sets one calls. */
+static inline sce_forge_codec_status_t codec_flags_basic_encode_source(const codec_flags_basic_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    return codec_flags_basic_encode_source_overriding(src, ctx, w, codec_flags_basic_overrides_none());
+}
+
+/* Whether `self` is a value of codec_flags_basic_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_flags_basic_check_value(const codec_flags_basic_t *self) {
+    (void)self;
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_FLAGS_BASIC_MAX_BYTES bytes and use
  * `codec_flags_basic_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_flags_basic_encode(const codec_flags_basic_t *self, sce_forge_writer_t *w) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_flags_basic_check_value(self));
+    return codec_flags_basic_encode_source(codec_flags_basic_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`

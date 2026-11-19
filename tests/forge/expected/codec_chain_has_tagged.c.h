@@ -96,7 +96,9 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_decode(sce_forge_c
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_CHAIN_HAS_TAGGED_MAX_BYTES bytes and use
  * `codec_chain_has_tagged_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_chain_has_tagged_encode(const codec_chain_has_tagged_t *self, sce_forge_writer_t *w) {
     bool _has_entries_7 = false;
     for (size_t _i = 0; _i < self->entries_len; ++_i) {

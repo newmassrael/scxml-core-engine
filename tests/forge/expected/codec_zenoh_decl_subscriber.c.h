@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 #include "codec_zenoh_wireexpr.h"
 
 #define CODEC_ZENOH_DECL_SUBSCRIBER_MIN_BYTES 0
@@ -64,27 +65,91 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_decode(sce_fo
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The elements a value of codec_zenoh_decl_subscriber_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_zenoh_decl_subscriber_t is a source by the table
+ * codec_zenoh_decl_subscriber_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint32_t (*id)(const void *ctx);
+    codec_zenoh_wireexpr_source_ref_t (*wireexpr)(const void *ctx);
+} codec_zenoh_decl_subscriber_source_t;
+
+/* A source of codec_zenoh_decl_subscriber_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_zenoh_decl_subscriber_source_t *table;
+    const void *ctx;
+} codec_zenoh_decl_subscriber_source_ref_t;
+
+/* A source of codec_zenoh_decl_subscriber_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_decl_subscriber_source_ref_optional, codec_zenoh_decl_subscriber_source_ref_t)
+
+/* The `id` of the codec_zenoh_decl_subscriber_t at `ctx`. */
+static inline uint32_t codec_zenoh_decl_subscriber_value_id(const void *ctx) {
+    return ((const codec_zenoh_decl_subscriber_t *)ctx)->id;
+}
+
+/* The `wireexpr` of the codec_zenoh_decl_subscriber_t at `ctx`. */
+static inline codec_zenoh_wireexpr_source_ref_t codec_zenoh_decl_subscriber_value_wireexpr(const void *ctx) {
+    const codec_zenoh_decl_subscriber_t *self = (const codec_zenoh_decl_subscriber_t *)ctx;
+    codec_zenoh_wireexpr_source_ref_t body;
+    body.table = codec_zenoh_wireexpr_value_source();
+    body.ctx = &self->wireexpr;
+    return body;
+}
+
+/* The table that presents a value of codec_zenoh_decl_subscriber_t as a source of it, its
+ * context a `const codec_zenoh_decl_subscriber_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_zenoh_decl_subscriber_source_t *codec_zenoh_decl_subscriber_value_source(void) {
+    static const codec_zenoh_decl_subscriber_source_t table = {
+        codec_zenoh_decl_subscriber_value_id,
+        codec_zenoh_decl_subscriber_value_wireexpr,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_encode_source(const codec_zenoh_decl_subscriber_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint32_t _e_id = src->id(ctx);
+    const codec_zenoh_wireexpr_source_ref_t _e_wireexpr = src->wireexpr(ctx);
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(_e_id)));
+    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode_source(_e_wireexpr.table, _e_wireexpr.ctx, w));
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The flag input `N` a source of codec_zenoh_decl_subscriber_t says, which its encode is
+ * not handed (docs/adr/0065 §6 R4a). */
+static inline uint8_t codec_zenoh_decl_subscriber_input_n(const codec_zenoh_decl_subscriber_source_t *src, const void *ctx) {
+    return codec_zenoh_wireexpr_input_n(src->wireexpr(ctx).table, src->wireexpr(ctx).ctx);
+}
+
+/* Whether `self` is a value of codec_zenoh_decl_subscriber_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_check_value(const codec_zenoh_decl_subscriber_t *self) {
+    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_check_value(&self->wireexpr));
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_DECL_SUBSCRIBER_MAX_BYTES bytes and use
  * `codec_zenoh_decl_subscriber_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
-static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_encode(const codec_zenoh_decl_subscriber_t *self, sce_forge_writer_t *w, uint8_t n) {
-    /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
-    (void)n;
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->id)));
-    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode(&self->wireexpr, w, n));
-    return SCE_FORGE_CODEC_OK;
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
+static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_encode(const codec_zenoh_decl_subscriber_t *self, sce_forge_writer_t *w) {
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_zenoh_decl_subscriber_check_value(self));
+    return codec_zenoh_decl_subscriber_encode_source(codec_zenoh_decl_subscriber_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
@@ -94,9 +159,9 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_encode(const 
  * was insufficient for this codec's wire bytes. Worst-case bound is
  * `CODEC_ZENOH_DECL_SUBSCRIBER_MAX_BYTES` — callers sizing `buf` accordingly never
  * see overflow. */
-static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_encode_to_buf(const codec_zenoh_decl_subscriber_t *self, uint8_t *buf, size_t cap, size_t *out_len, uint8_t n) {
+static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_encode_to_buf(const codec_zenoh_decl_subscriber_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
     sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
-    sce_forge_codec_status_t _st = codec_zenoh_decl_subscriber_encode(self, &_w, n);
+    sce_forge_codec_status_t _st = codec_zenoh_decl_subscriber_encode(self, &_w);
     *out_len = _w.pos;
     return _st;
 }

@@ -156,49 +156,296 @@ static inline sce_forge_codec_status_t codec_zenoh_request_decode(sce_forge_curs
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The `extensions` element of codec_zenoh_request_t: a list of 1 or more entries, the protocol stating no most of codec_zenoh_ext_entry_t,
+ * walked where it is held, which outlives the list. A list is made by
+ * codec_zenoh_request_extensions_list_make, which walks it once, counts its entries and refuses one
+ * outside the bound, so every list holds it (docs/adr/0081 §2) and the
+ * encode over a source writes its `count` entries, refusing nothing of
+ * the count. */
+typedef struct {
+    const sce_forge_walk_t *walk;
+    const void *ctx;
+    const codec_zenoh_ext_entry_source_t *entry;
+    size_t count;
+} codec_zenoh_request_extensions_list_t;
+
+/* Make `*out` the list `walk` presents over `ctx`, each entry a source of
+ * codec_zenoh_ext_entry_t by `entry`: SCE_FORGE_CODEC_OK, or the refusal of a list
+ * outside its bound, `*out` then as it was. */
+static inline sce_forge_codec_status_t codec_zenoh_request_extensions_list_make(codec_zenoh_request_extensions_list_t *out, const sce_forge_walk_t *walk, const void *ctx, const codec_zenoh_ext_entry_source_t *entry) {
+    size_t count = 0;
+    for (const void *at = walk->begin(ctx); at != NULL; at = walk->next(ctx, at)) {
+        ++count;
+    }
+    if (count < 1u) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    out->walk = walk;
+    out->ctx = ctx;
+    out->entry = entry;
+    out->count = count;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* A list of codec_zenoh_request_extensions_list_t that may be absent: absent where the gate leaves the
+ * element out. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_request_extensions_list_optional, codec_zenoh_request_extensions_list_t)
+
+/* The arm of the variant a source of codec_zenoh_request_t presents (docs/adr/0081
+ * §2): which arm it is, the tag the catch-all holds, and the arm's body,
+ * a source of the arm's codec in the member `kind` names. */
+typedef struct {
+    codec_zenoh_request_body_kind_t kind;
+    uint8_t default_tag;  /* the catch-all's */
+    union {
+        codec_zenoh_msg_put_source_ref_t codec_zenoh_msg_put;
+        codec_zenoh_msg_del_source_ref_t codec_zenoh_msg_del;
+        codec_zenoh_query_source_ref_t codec_zenoh_query;
+        codec_zenoh_query_source_ref_t default_body;
+    } arm;
+} codec_zenoh_request_body_ref_t;
+
+/* The elements a value of codec_zenoh_request_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_zenoh_request_t is a source by the table
+ * codec_zenoh_request_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*header)(const void *ctx);
+    uint64_t (*rid)(const void *ctx);
+    codec_zenoh_wireexpr_source_ref_t (*keyexpr)(const void *ctx);
+    codec_zenoh_request_extensions_list_optional_t (*extensions)(const void *ctx);
+    codec_zenoh_request_body_ref_t (*body)(const void *ctx);
+} codec_zenoh_request_source_t;
+
+/* A source of codec_zenoh_request_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_zenoh_request_source_t *table;
+    const void *ctx;
+} codec_zenoh_request_source_ref_t;
+
+/* A source of codec_zenoh_request_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_request_source_ref_optional, codec_zenoh_request_source_ref_t)
+
+/* The `header` of the codec_zenoh_request_t at `ctx`. */
+static inline uint8_t codec_zenoh_request_value_header(const void *ctx) {
+    return ((const codec_zenoh_request_t *)ctx)->header;
+}
+
+/* The `rid` of the codec_zenoh_request_t at `ctx`. */
+static inline uint64_t codec_zenoh_request_value_rid(const void *ctx) {
+    return ((const codec_zenoh_request_t *)ctx)->rid;
+}
+
+/* The `keyexpr` of the codec_zenoh_request_t at `ctx`. */
+static inline codec_zenoh_wireexpr_source_ref_t codec_zenoh_request_value_keyexpr(const void *ctx) {
+    const codec_zenoh_request_t *self = (const codec_zenoh_request_t *)ctx;
+    codec_zenoh_wireexpr_source_ref_t body;
+    body.table = codec_zenoh_wireexpr_value_source();
+    body.ctx = &self->keyexpr;
+    return body;
+}
+
+/* The first entry of the `extensions` of the codec_zenoh_request_t at `ctx`, or NULL where
+ * it holds none. */
+static inline const void *codec_zenoh_request_value_extensions_begin(const void *ctx) {
+    const codec_zenoh_request_t *self = (const codec_zenoh_request_t *)ctx;
+    return self->extensions.value.len > 0u ? (const void *)&self->extensions.value.data[0] : NULL;
+}
+
+/* The entry after `entry` of the `extensions` of the codec_zenoh_request_t at `ctx`, or
+ * NULL where `entry` is its last. */
+static inline const void *codec_zenoh_request_value_extensions_next(const void *ctx, const void *entry) {
+    const codec_zenoh_request_t *self = (const codec_zenoh_request_t *)ctx;
+    const codec_zenoh_ext_entry_t *at = (const codec_zenoh_ext_entry_t *)entry + 1;
+    return at < self->extensions.value.data + self->extensions.value.len ? (const void *)at : NULL;
+}
+
+/* The `extensions` of the codec_zenoh_request_t at `ctx`. */
+static inline codec_zenoh_request_extensions_list_optional_t codec_zenoh_request_value_extensions(const void *ctx) {
+    static const sce_forge_walk_t walk = {
+        codec_zenoh_request_value_extensions_begin,
+        codec_zenoh_request_value_extensions_next,
+    };
+    const codec_zenoh_request_t *self = (const codec_zenoh_request_t *)ctx;
+    if (!self->extensions.present) {
+        return codec_zenoh_request_extensions_list_optional_none();
+    }
+    codec_zenoh_request_extensions_list_t list;
+    list.walk = &walk;
+    list.ctx = ctx;
+    list.entry = codec_zenoh_ext_entry_value_source();
+    list.count = self->extensions.value.len;
+    return codec_zenoh_request_extensions_list_optional_some(list);
+}
+
+/* The arm of the variant of the codec_zenoh_request_t at `ctx`: its kind, the tag the
+ * catch-all holds, and its body as a source of the arm's codec. */
+static inline codec_zenoh_request_body_ref_t codec_zenoh_request_value_body(const void *ctx) {
+    const codec_zenoh_request_t *self = (const codec_zenoh_request_t *)ctx;
+    codec_zenoh_request_body_ref_t ref;
+    memset(&ref, 0, sizeof ref);
+    ref.kind = self->body.kind;
+    ref.default_tag = self->body.default_tag;
+    switch (self->body.kind) {
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_PUT:
+            ref.arm.codec_zenoh_msg_put.table = codec_zenoh_msg_put_value_source();
+            ref.arm.codec_zenoh_msg_put.ctx = &self->body.arm.codec_zenoh_msg_put;
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_DEL:
+            ref.arm.codec_zenoh_msg_del.table = codec_zenoh_msg_del_value_source();
+            ref.arm.codec_zenoh_msg_del.ctx = &self->body.arm.codec_zenoh_msg_del;
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_QUERY:
+            ref.arm.codec_zenoh_query.table = codec_zenoh_query_value_source();
+            ref.arm.codec_zenoh_query.ctx = &self->body.arm.codec_zenoh_query;
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_DEFAULT:
+            ref.arm.default_body.table = codec_zenoh_query_value_source();
+            ref.arm.default_body.ctx = &self->body.arm.default_body;
+            break;
+        default:
+            break;
+    }
+    return ref;
+}
+
+/* The table that presents a value of codec_zenoh_request_t as a source of it, its
+ * context a `const codec_zenoh_request_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_zenoh_request_source_t *codec_zenoh_request_value_source(void) {
+    static const codec_zenoh_request_source_t table = {
+        codec_zenoh_request_value_header,
+        codec_zenoh_request_value_rid,
+        codec_zenoh_request_value_keyexpr,
+        codec_zenoh_request_value_extensions,
+        codec_zenoh_request_value_body,
+    };
+    return &table;
+}
+
+/* One-bit flags of codec_zenoh_request_t a parent may set in place of the ones a value
+ * presents, such as the flag a chain whose entries are codec_zenoh_request_t ends them
+ * on, which the chain derives from where each entry stands. A flag absent
+ * here is the value's own. */
+typedef struct {
+    /* The `M` flag of `header`, where a parent sets it. */
+    sce_optional_bool_t header_m;
+} codec_zenoh_request_overrides_t;
+
+/* The overrides that set no flag. */
+static inline codec_zenoh_request_overrides_t codec_zenoh_request_overrides_none(void) {
+    codec_zenoh_request_overrides_t none;
+    none.header_m = sce_optional_bool_none();
+    return none;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_zenoh_request_encode_source_overriding(const codec_zenoh_request_source_t *src, const void *ctx, sce_forge_writer_t *w, codec_zenoh_request_overrides_t overrides) {
+    const uint8_t _e_header = src->header(ctx);
+    const uint64_t _e_rid = src->rid(ctx);
+    const codec_zenoh_wireexpr_source_ref_t _e_keyexpr = src->keyexpr(ctx);
+    const codec_zenoh_request_extensions_list_optional_t _e_extensions = src->extensions(ctx);
+    const codec_zenoh_request_body_ref_t _e_body = src->body(ctx);
+    uint64_t _f_header = (uint64_t)_e_header;
+    _f_header = (_f_header & ~0x20ull) | ((uint64_t)((size_t)codec_zenoh_wireexpr_input_n(_e_keyexpr.table, _e_keyexpr.ctx)) << 5);
+    _f_header = (_f_header & ~0x80ull) | ((uint64_t)(_e_extensions.present) << 7);
+    if (overrides.header_m.present) {
+        _f_header = (_f_header & ~0x40ull) | ((uint64_t)overrides.header_m.value << 6);
+    }
+    const uint8_t _c_header = (uint8_t)_f_header;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_header));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(_e_rid)));
+    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode_source(_e_keyexpr.table, _e_keyexpr.ctx, w));
+    if (_e_extensions.present) {
+        {
+            const void *_at = _e_extensions.value.walk->begin(_e_extensions.value.ctx);
+            for (size_t _i = 0; _i < _e_extensions.value.count && _at != NULL; ++_i) {
+                codec_zenoh_ext_entry_overrides_t _o = codec_zenoh_ext_entry_overrides_none();
+                _o.header_z = sce_optional_bool_some(_i + 1u < _e_extensions.value.count);
+                SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode_source_overriding(_e_extensions.value.entry, _at, w, _o));
+                _at = _e_extensions.value.walk->next(_e_extensions.value.ctx, _at);
+            }
+        }
+    }
+    switch (_e_body.kind) {
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_PUT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_msg_put_encode_source(_e_body.arm.codec_zenoh_msg_put.table, _e_body.arm.codec_zenoh_msg_put.ctx, w));
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_DEL:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_msg_del_encode_source(_e_body.arm.codec_zenoh_msg_del.table, _e_body.arm.codec_zenoh_msg_del.ctx, w));
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_QUERY:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_query_encode_source(_e_body.arm.codec_zenoh_query.table, _e_body.arm.codec_zenoh_query.ctx, w));
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_query_encode_source(_e_body.arm.default_body.table, _e_body.arm.default_body.ctx, w));
+            break;
+        default:
+            break;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* codec_zenoh_request_encode_source_overriding with no flag set in place of the
+ * value's: the encode every caller but a parent that sets one calls. */
+static inline sce_forge_codec_status_t codec_zenoh_request_encode_source(const codec_zenoh_request_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    return codec_zenoh_request_encode_source_overriding(src, ctx, w, codec_zenoh_request_overrides_none());
+}
+
+/* Whether `self` is a value of codec_zenoh_request_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_zenoh_request_check_value(const codec_zenoh_request_t *self) {
+    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_check_value(&self->keyexpr));
+    if (self->extensions.present) {
+        if (!sce_forge_length_within_bound(self->extensions.value.len, 4)) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
+        if (self->extensions.value.len < 1u) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
+        for (size_t _i = 0; _i < self->extensions.value.len; ++_i) {
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_check_value(&self->extensions.value.data[_i]));
+        }
+    }
+    switch (self->body.kind) {
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_PUT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_msg_put_check_value(&self->body.arm.codec_zenoh_msg_put));
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_DEL:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_msg_del_check_value(&self->body.arm.codec_zenoh_msg_del));
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_QUERY:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_query_check_value(&self->body.arm.codec_zenoh_query));
+            break;
+        case CODEC_ZENOH_REQUEST_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_query_check_value(&self->body.arm.default_body));
+            break;
+        default:
+            break;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_REQUEST_MAX_BYTES bytes and use
  * `codec_zenoh_request_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_zenoh_request_encode(const codec_zenoh_request_t *self, sce_forge_writer_t *w) {
-    /* A byte string, text, list or chain above the bound of the array that
-     * holds it is refused before the first byte is written: the array cannot
-     * hold that many, and a frame of fewer is not the value given. */
-    if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
-        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
-    }
-    /* RFC §synth-5-B peek-byte / streaming-prefix:
-     * streaming prefix encode. Peek-byte mode: arm body's encode
-     * prepends its own header byte (which the decoder peeked); no
-     * separate tag byte here. Streaming-prefix mode (own-field):
-     * carrier is part of the prefix fields and emits via the same
-     * per-field path. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->rid)));
-    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode(&self->keyexpr, w, (uint8_t)((self->header >> 5) & 0x1)));
-    if (self->extensions.present) {
-        for (size_t _ti = 0; _ti < self->extensions.value.len; ++_ti) {
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions.value.data[_ti], w));
-        }
-    }
-    /* Append the active arm body's encoded bytes via the same writer. */
-    switch (self->body.kind) {
-        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_PUT:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_msg_put_encode(&self->body.arm.codec_zenoh_msg_put, w));
-            break;
-        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_DEL:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_msg_del_encode(&self->body.arm.codec_zenoh_msg_del, w));
-            break;
-        case CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_QUERY:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_query_encode(&self->body.arm.codec_zenoh_query, w));
-            break;
-        case CODEC_ZENOH_REQUEST_BODY_KIND_DEFAULT:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_query_encode(&self->body.arm.default_body, w));
-            break;
-    }
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_zenoh_request_check_value(self));
+    return codec_zenoh_request_encode_source(codec_zenoh_request_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`

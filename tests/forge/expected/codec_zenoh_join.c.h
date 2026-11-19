@@ -18,19 +18,27 @@
 #define CODEC_ZENOH_JOIN_MIN_BYTES 6
 #define CODEC_ZENOH_JOIN_MAX_BYTES 49
 
+/* The `s` group of codec_zenoh_join_t where `S` holds: the members present then
+ * (docs/adr/0065 §6 R4). */
+typedef struct {
+    uint8_t sn_res;
+    uint16_t batch_size;
+} codec_zenoh_join_s_t;
+
+/* The `s` group of codec_zenoh_join_t, absent where the gates allow no arm. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_join_s_optional, codec_zenoh_join_s_t)
+
+
 typedef struct {
     uint8_t version;
     uint8_t cbyte;
     /* variable-length payload (sce:bit-size="length-ref", sce:max-size="16") */
     uint8_t zid[16];
     size_t  zid_len;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint8_t sn_res;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint16_t batch_size;
     uint64_t lease;
     uint64_t next_sn_reliable;
     uint64_t next_sn_best_effort;
+    codec_zenoh_join_s_optional_t s;
 } codec_zenoh_join_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -75,21 +83,19 @@ static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_
         out->zid_len = _n;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    uint8_t _d_sn_res = 0;
     if ((s & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->sn_res = sce_optional_uint8_some((uint8_t)(raw[0]));
+        _d_sn_res = (uint8_t)(raw[0]);
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->sn_res = sce_optional_uint8_none();
     }
+    uint16_t _d_batch_size = 0;
     if ((s & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->batch_size = sce_optional_uint16_some((uint16_t)(raw[0] | ((uint16_t)raw[1] << 8)));
+        _d_batch_size = (uint16_t)(raw[0] | ((uint16_t)raw[1] << 8));
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->batch_size = sce_optional_uint16_none();
     }
     uint64_t lease;
     {
@@ -109,6 +115,165 @@ static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
     out->next_sn_best_effort = next_sn_best_effort;
+    /* The `s` group the gates the decode read select (docs/adr/0065
+     * §6 R4). */
+    memset(&out->s, 0, sizeof out->s);
+    if ((s != 0)) {
+        out->s.present = true;
+        out->s.value.sn_res = _d_sn_res;
+        out->s.value.batch_size = _d_batch_size;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The `zid` element of codec_zenoh_join_t: a byte string of 1 to 16 bytes, viewed where it
+ * is held, which outlives the view. A view is made by codec_zenoh_join_zid_bytes_make, which
+ * refuses one outside the bound, so every view holds it (docs/adr/0081 §2)
+ * and the encode over a source writes it whole, refusing nothing of it. */
+typedef struct {
+    const uint8_t *data;
+    size_t len;
+} codec_zenoh_join_zid_bytes_t;
+
+/* Make `*out` a view of the `len` bytes at `data`: SCE_FORGE_CODEC_OK, or
+ * the refusal of a byte string outside its bound, `*out` then as it was. */
+static inline sce_forge_codec_status_t codec_zenoh_join_zid_bytes_make(codec_zenoh_join_zid_bytes_t *out, const uint8_t *data, size_t len) {
+    if (len < 1u || !sce_forge_length_within_bound(len, 16)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    out->data = data;
+    out->len = len;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The elements a value of codec_zenoh_join_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_zenoh_join_t is a source by the table
+ * codec_zenoh_join_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*version)(const void *ctx);
+    uint8_t (*cbyte)(const void *ctx);
+    codec_zenoh_join_zid_bytes_t (*zid)(const void *ctx);
+    uint64_t (*lease)(const void *ctx);
+    uint64_t (*next_sn_reliable)(const void *ctx);
+    uint64_t (*next_sn_best_effort)(const void *ctx);
+    codec_zenoh_join_s_optional_t (*s)(const void *ctx);
+} codec_zenoh_join_source_t;
+
+/* A source of codec_zenoh_join_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_zenoh_join_source_t *table;
+    const void *ctx;
+} codec_zenoh_join_source_ref_t;
+
+/* A source of codec_zenoh_join_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_join_source_ref_optional, codec_zenoh_join_source_ref_t)
+
+/* The `version` of the codec_zenoh_join_t at `ctx`. */
+static inline uint8_t codec_zenoh_join_value_version(const void *ctx) {
+    return ((const codec_zenoh_join_t *)ctx)->version;
+}
+
+/* The `cbyte` of the codec_zenoh_join_t at `ctx`. */
+static inline uint8_t codec_zenoh_join_value_cbyte(const void *ctx) {
+    return ((const codec_zenoh_join_t *)ctx)->cbyte;
+}
+
+/* The `zid` of the codec_zenoh_join_t at `ctx`. */
+static inline codec_zenoh_join_zid_bytes_t codec_zenoh_join_value_zid(const void *ctx) {
+    const codec_zenoh_join_t *self = (const codec_zenoh_join_t *)ctx;
+    codec_zenoh_join_zid_bytes_t view;
+    view.data = self->zid;
+    view.len = self->zid_len;
+    return view;
+}
+
+/* The `lease` of the codec_zenoh_join_t at `ctx`. */
+static inline uint64_t codec_zenoh_join_value_lease(const void *ctx) {
+    return ((const codec_zenoh_join_t *)ctx)->lease;
+}
+
+/* The `next_sn_reliable` of the codec_zenoh_join_t at `ctx`. */
+static inline uint64_t codec_zenoh_join_value_next_sn_reliable(const void *ctx) {
+    return ((const codec_zenoh_join_t *)ctx)->next_sn_reliable;
+}
+
+/* The `next_sn_best_effort` of the codec_zenoh_join_t at `ctx`. */
+static inline uint64_t codec_zenoh_join_value_next_sn_best_effort(const void *ctx) {
+    return ((const codec_zenoh_join_t *)ctx)->next_sn_best_effort;
+}
+
+/* The `s` group of the codec_zenoh_join_t at `ctx`. */
+static inline codec_zenoh_join_s_optional_t codec_zenoh_join_value_s(const void *ctx) {
+    return ((const codec_zenoh_join_t *)ctx)->s;
+}
+
+/* The table that presents a value of codec_zenoh_join_t as a source of it, its
+ * context a `const codec_zenoh_join_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_zenoh_join_source_t *codec_zenoh_join_value_source(void) {
+    static const codec_zenoh_join_source_t table = {
+        codec_zenoh_join_value_version,
+        codec_zenoh_join_value_cbyte,
+        codec_zenoh_join_value_zid,
+        codec_zenoh_join_value_lease,
+        codec_zenoh_join_value_next_sn_reliable,
+        codec_zenoh_join_value_next_sn_best_effort,
+        codec_zenoh_join_value_s,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_zenoh_join_encode_source(const codec_zenoh_join_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint8_t _e_version = src->version(ctx);
+    const uint8_t _e_cbyte = src->cbyte(ctx);
+    const codec_zenoh_join_zid_bytes_t _e_zid = src->zid(ctx);
+    const uint64_t _e_lease = src->lease(ctx);
+    const uint64_t _e_next_sn_reliable = src->next_sn_reliable(ctx);
+    const uint64_t _e_next_sn_best_effort = src->next_sn_best_effort(ctx);
+    const codec_zenoh_join_s_optional_t _e_s = src->s(ctx);
+    const sce_optional_uint8_t _e_sn_res = (_e_s.present ? sce_optional_uint8_some(_e_s.value.sn_res) : sce_optional_uint8_none());
+    const sce_optional_uint16_t _e_batch_size = (_e_s.present ? sce_optional_uint16_some(_e_s.value.batch_size) : sce_optional_uint16_none());
+    uint64_t _f_cbyte = (uint64_t)_e_cbyte;
+    _f_cbyte = (_f_cbyte & ~0xF0ull) | ((uint64_t)(_e_zid.len - 1u) << 4);
+    const uint8_t _c_cbyte = (uint8_t)_f_cbyte;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _e_version));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_cbyte));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, _e_zid.data, _e_zid.len));
+    if (_e_sn_res.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _e_sn_res.value));
+    }
+    if (_e_batch_size.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(_e_batch_size.value & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_e_batch_size.value >> 8) & 0xFF)));
+    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(_e_lease)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(_e_next_sn_reliable)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(_e_next_sn_best_effort)));
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The flag input `S` a source of codec_zenoh_join_t says, which its encode is
+ * not handed (docs/adr/0065 §6 R4a). */
+static inline uint8_t codec_zenoh_join_input_s(const codec_zenoh_join_source_t *src, const void *ctx) {
+    return (uint8_t)((src->s(ctx).present) ? 1u : 0u);
+}
+
+/* Whether `self` is a value of codec_zenoh_join_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_zenoh_join_check_value(const codec_zenoh_join_t *self) {
+    if (self->zid_len < 1u || !sce_forge_length_within_bound(self->zid_len, 16)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     return SCE_FORGE_CODEC_OK;
 }
 
@@ -117,49 +282,13 @@ static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_JOIN_MAX_BYTES bytes and use
  * `codec_zenoh_join_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
-static inline sce_forge_codec_status_t codec_zenoh_join_encode(const codec_zenoh_join_t *self, sce_forge_writer_t *w, uint8_t s) {
-    /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
-    (void)s;
-    if ((s & 0x01) != 0) {
-        if (!self->sn_res.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->sn_res.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    if ((s & 0x01) != 0) {
-        if (!self->batch_size.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->batch_size.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    /* A byte string, text, list or chain above the bound of the array that
-     * holds it is refused before the first byte is written: the array cannot
-     * hold that many, and a frame of fewer is not the value given. */
-    if (!sce_forge_length_within_bound(self->zid_len, 16)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
-    }
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->version));
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->cbyte));
-    {
-        size_t _n = self->zid_len;
-        if (_n > (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1)) _n = (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1);
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, _n));
-    }
-    if (self->sn_res.present) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sn_res.value));
-    }
-    if (self->batch_size.present) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->batch_size.value & 0xFF)));
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->batch_size.value >> 8) & 0xFF)));
-    }
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->lease)));
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->next_sn_reliable)));
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->next_sn_best_effort)));
-    return SCE_FORGE_CODEC_OK;
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
+static inline sce_forge_codec_status_t codec_zenoh_join_encode(const codec_zenoh_join_t *self, sce_forge_writer_t *w) {
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_zenoh_join_check_value(self));
+    return codec_zenoh_join_encode_source(codec_zenoh_join_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
@@ -169,9 +298,9 @@ static inline sce_forge_codec_status_t codec_zenoh_join_encode(const codec_zenoh
  * was insufficient for this codec's wire bytes. Worst-case bound is
  * `CODEC_ZENOH_JOIN_MAX_BYTES` — callers sizing `buf` accordingly never
  * see overflow. */
-static inline sce_forge_codec_status_t codec_zenoh_join_encode_to_buf(const codec_zenoh_join_t *self, uint8_t *buf, size_t cap, size_t *out_len, uint8_t s) {
+static inline sce_forge_codec_status_t codec_zenoh_join_encode_to_buf(const codec_zenoh_join_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
     sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
-    sce_forge_codec_status_t _st = codec_zenoh_join_encode(self, &_w, s);
+    sce_forge_codec_status_t _st = codec_zenoh_join_encode(self, &_w);
     *out_len = _w.pos;
     return _st;
 }

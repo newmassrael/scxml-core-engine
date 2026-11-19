@@ -22,8 +22,6 @@
 typedef struct {
     uint8_t carrier;
     /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint8_t num_elems;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
     struct { bool present; struct { codec_repeat_elem_t data[32]; size_t len; } value; } elems;
 } codec_repeat_present_if_basic_t;
 
@@ -51,19 +49,18 @@ static inline sce_forge_codec_status_t codec_repeat_present_if_basic_decode(sce_
         out->carrier = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    uint8_t _d_num_elems = 0;
     if ((out->carrier & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->num_elems = sce_optional_uint8_some((uint8_t)(raw[0]));
+        _d_num_elems = (uint8_t)(raw[0]);
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->num_elems = sce_optional_uint8_none();
     }
     if ((out->carrier & 0x01) != 0) {
-        if (out->num_elems.value > 32) {
+        if (_d_num_elems > 32) {
             return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
         }
-        size_t _n = (size_t)out->num_elems.value;
+        size_t _n = (size_t)_d_num_elems;
         memset(&out->elems, 0, sizeof out->elems);
         for (size_t _i = 0; _i < _n; ++_i) {
             sce_forge_codec_status_t _st = codec_repeat_elem_decode(cursor, &out->elems.value.data[_i]);
@@ -77,38 +74,166 @@ static inline sce_forge_codec_status_t codec_repeat_present_if_basic_decode(sce_
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The `elems` element of codec_repeat_present_if_basic_t: a list of 0 to 32 entries of codec_repeat_elem_t,
+ * walked where it is held, which outlives the list. A list is made by
+ * codec_repeat_present_if_basic_elems_list_make, which walks it once, counts its entries and refuses one
+ * outside the bound, so every list holds it (docs/adr/0081 §2) and the
+ * encode over a source writes its `count` entries, refusing nothing of
+ * the count. */
+typedef struct {
+    const sce_forge_walk_t *walk;
+    const void *ctx;
+    const codec_repeat_elem_source_t *entry;
+    size_t count;
+} codec_repeat_present_if_basic_elems_list_t;
+
+/* Make `*out` the list `walk` presents over `ctx`, each entry a source of
+ * codec_repeat_elem_t by `entry`: SCE_FORGE_CODEC_OK, or the refusal of a list
+ * outside its bound, `*out` then as it was. */
+static inline sce_forge_codec_status_t codec_repeat_present_if_basic_elems_list_make(codec_repeat_present_if_basic_elems_list_t *out, const sce_forge_walk_t *walk, const void *ctx, const codec_repeat_elem_source_t *entry) {
+    size_t count = 0;
+    for (const void *at = walk->begin(ctx); at != NULL; at = walk->next(ctx, at)) {
+        ++count;
+        if (!sce_forge_length_within_bound(count, 32)) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
+    }
+    out->walk = walk;
+    out->ctx = ctx;
+    out->entry = entry;
+    out->count = count;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* A list of codec_repeat_present_if_basic_elems_list_t that may be absent: absent where the gate leaves the
+ * element out. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_repeat_present_if_basic_elems_list_optional, codec_repeat_present_if_basic_elems_list_t)
+
+/* The elements a value of codec_repeat_present_if_basic_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_repeat_present_if_basic_t is a source by the table
+ * codec_repeat_present_if_basic_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*carrier)(const void *ctx);
+    codec_repeat_present_if_basic_elems_list_optional_t (*elems)(const void *ctx);
+} codec_repeat_present_if_basic_source_t;
+
+/* A source of codec_repeat_present_if_basic_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_repeat_present_if_basic_source_t *table;
+    const void *ctx;
+} codec_repeat_present_if_basic_source_ref_t;
+
+/* A source of codec_repeat_present_if_basic_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_repeat_present_if_basic_source_ref_optional, codec_repeat_present_if_basic_source_ref_t)
+
+/* The `carrier` of the codec_repeat_present_if_basic_t at `ctx`. */
+static inline uint8_t codec_repeat_present_if_basic_value_carrier(const void *ctx) {
+    return ((const codec_repeat_present_if_basic_t *)ctx)->carrier;
+}
+
+/* The first entry of the `elems` of the codec_repeat_present_if_basic_t at `ctx`, or NULL where
+ * it holds none. */
+static inline const void *codec_repeat_present_if_basic_value_elems_begin(const void *ctx) {
+    const codec_repeat_present_if_basic_t *self = (const codec_repeat_present_if_basic_t *)ctx;
+    return self->elems.value.len > 0u ? (const void *)&self->elems.value.data[0] : NULL;
+}
+
+/* The entry after `entry` of the `elems` of the codec_repeat_present_if_basic_t at `ctx`, or
+ * NULL where `entry` is its last. */
+static inline const void *codec_repeat_present_if_basic_value_elems_next(const void *ctx, const void *entry) {
+    const codec_repeat_present_if_basic_t *self = (const codec_repeat_present_if_basic_t *)ctx;
+    const codec_repeat_elem_t *at = (const codec_repeat_elem_t *)entry + 1;
+    return at < self->elems.value.data + self->elems.value.len ? (const void *)at : NULL;
+}
+
+/* The `elems` of the codec_repeat_present_if_basic_t at `ctx`. */
+static inline codec_repeat_present_if_basic_elems_list_optional_t codec_repeat_present_if_basic_value_elems(const void *ctx) {
+    static const sce_forge_walk_t walk = {
+        codec_repeat_present_if_basic_value_elems_begin,
+        codec_repeat_present_if_basic_value_elems_next,
+    };
+    const codec_repeat_present_if_basic_t *self = (const codec_repeat_present_if_basic_t *)ctx;
+    if (!self->elems.present) {
+        return codec_repeat_present_if_basic_elems_list_optional_none();
+    }
+    codec_repeat_present_if_basic_elems_list_t list;
+    list.walk = &walk;
+    list.ctx = ctx;
+    list.entry = codec_repeat_elem_value_source();
+    list.count = self->elems.value.len;
+    return codec_repeat_present_if_basic_elems_list_optional_some(list);
+}
+
+/* The table that presents a value of codec_repeat_present_if_basic_t as a source of it, its
+ * context a `const codec_repeat_present_if_basic_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_repeat_present_if_basic_source_t *codec_repeat_present_if_basic_value_source(void) {
+    static const codec_repeat_present_if_basic_source_t table = {
+        codec_repeat_present_if_basic_value_carrier,
+        codec_repeat_present_if_basic_value_elems,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_repeat_present_if_basic_encode_source(const codec_repeat_present_if_basic_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint8_t _e_carrier = src->carrier(ctx);
+    const codec_repeat_present_if_basic_elems_list_optional_t _e_elems = src->elems(ctx);
+    const uint8_t _d_num_elems = _e_elems.present ? (uint8_t)(_e_elems.value.count) : (uint8_t)0;
+    uint64_t _f_carrier = (uint64_t)_e_carrier;
+    _f_carrier = (_f_carrier & ~0x1ull) | (uint64_t)(_e_elems.present);
+    const uint8_t _c_carrier = (uint8_t)_f_carrier;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_carrier));
+    if ((((uint64_t)_c_carrier & 0x1ull) != 0)) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _d_num_elems));
+    }
+    if (_e_elems.present) {
+        {
+            const void *_at = _e_elems.value.walk->begin(_e_elems.value.ctx);
+            for (size_t _i = 0; _i < _e_elems.value.count && _at != NULL; ++_i) {
+                SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode_source(_e_elems.value.entry, _at, w));
+                _at = _e_elems.value.walk->next(_e_elems.value.ctx, _at);
+            }
+        }
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Whether `self` is a value of codec_repeat_present_if_basic_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_repeat_present_if_basic_check_value(const codec_repeat_present_if_basic_t *self) {
+    if (self->elems.present) {
+        if (!sce_forge_length_within_bound(self->elems.value.len, 32)) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
+        for (size_t _i = 0; _i < self->elems.value.len; ++_i) {
+            SCE_FORGE_TRY_WRITE(codec_repeat_elem_check_value(&self->elems.value.data[_i]));
+        }
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_REPEAT_PRESENT_IF_BASIC_MAX_BYTES bytes and use
  * `codec_repeat_present_if_basic_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_repeat_present_if_basic_encode(const codec_repeat_present_if_basic_t *self, sce_forge_writer_t *w) {
-    /* A byte string, text, list or chain above the bound of the array that
-     * holds it is refused before the first byte is written: the array cannot
-     * hold that many, and a frame of fewer is not the value given. */
-    if (self->elems.present && !sce_forge_length_within_bound(self->elems.value.len, 32)) {
-        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
-    }
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->carrier));
-    if (self->num_elems.present) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->num_elems.value));
-    }
-    if (self->elems.present) {
-        for (size_t _ri = 0; _ri < self->elems.value.len; ++_ri) {
-            SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode(&self->elems.value.data[_ri], w));
-        }
-    }
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_repeat_present_if_basic_check_value(self));
+    return codec_repeat_present_if_basic_encode_source(codec_repeat_present_if_basic_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`

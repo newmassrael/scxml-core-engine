@@ -14,7 +14,6 @@ static inline int test_vector_codec_fixed_after_lengthref(void) {
     {
         codec_fixed_after_lengthref_t actual = {0};
         actual.header = (uint8_t)0xaau;
-        actual.payload_len = (uint16_t)0x3u;
         {
             static const uint8_t _bytes[] = { 0xde, 0xad, 0xbe };
             memcpy(actual.payload, _bytes, sizeof _bytes);
@@ -55,12 +54,6 @@ static inline int test_vector_codec_fixed_after_lengthref(void) {
                     "field `header` mismatch\n");
                 ++failures;
             }
-            if (decoded.payload_len != (uint16_t)0x3u) {
-                fprintf(stderr,
-                    "FAIL: codec_fixed_after_lengthref test_vector @SCXML L30: "
-                    "field `payload_len` mismatch\n");
-                ++failures;
-            }
             {
                 static const uint8_t _expected_field[] = { 0xde, 0xad, 0xbe };
                 if (decoded.payload_len != sizeof _expected_field
@@ -84,7 +77,6 @@ static inline int test_vector_codec_fixed_after_lengthref(void) {
     {
         codec_fixed_after_lengthref_t actual = {0};
         actual.header = (uint8_t)0x1u;
-        actual.payload_len = (uint16_t)0x0u;
         {
             actual.payload_len = 0;
         }
@@ -123,12 +115,6 @@ static inline int test_vector_codec_fixed_after_lengthref(void) {
                     "field `header` mismatch\n");
                 ++failures;
             }
-            if (decoded.payload_len != (uint16_t)0x0u) {
-                fprintf(stderr,
-                    "FAIL: codec_fixed_after_lengthref test_vector @SCXML L37: "
-                    "field `payload_len` mismatch\n");
-                ++failures;
-            }
             {
                 if (decoded.payload_len != 0) {
                     fprintf(stderr,
@@ -152,7 +138,6 @@ static inline int test_vector_codec_fixed_after_lengthref(void) {
     {
         codec_fixed_after_lengthref_t actual = {0};
         actual.header = (uint8_t)0xffu;
-        actual.payload_len = (uint16_t)0x5u;
         {
             static const uint8_t _bytes[] = { 0x01, 0x02, 0x03, 0x04, 0x05 };
             memcpy(actual.payload, _bytes, sizeof _bytes);
@@ -191,12 +176,6 @@ static inline int test_vector_codec_fixed_after_lengthref(void) {
                 fprintf(stderr,
                     "FAIL: codec_fixed_after_lengthref test_vector @SCXML L44: "
                     "field `header` mismatch\n");
-                ++failures;
-            }
-            if (decoded.payload_len != (uint16_t)0x5u) {
-                fprintf(stderr,
-                    "FAIL: codec_fixed_after_lengthref test_vector @SCXML L44: "
-                    "field `payload_len` mismatch\n");
                 ++failures;
             }
             {
