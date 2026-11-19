@@ -298,7 +298,8 @@ private:
         } else if constexpr (std::is_same_v<U, bool>) {
             return JS_NewBool(ctx, value);
         } else if constexpr (std::is_same_v<U, std::string>) {
-            return JS_NewString(ctx, value.c_str());
+            // By its length: a U+0000 the text holds is a character, not its end.
+            return JS_NewStringLen(ctx, value.data(), value.size());
         } else if constexpr (std::is_same_v<U, const char *>) {
             return JS_NewString(ctx, value);
         } else {
@@ -326,11 +327,13 @@ private:
         } else if constexpr (std::is_same_v<CleanType, bool>) {
             return JS_ToBool(ctx, val);
         } else if constexpr (std::is_same_v<CleanType, std::string>) {
-            const char *str = JS_ToCString(ctx, val);
+            // Taken with its length, so a U+0000 the text holds does not end it.
+            size_t length = 0;
+            const char *str = JS_ToCStringLen(ctx, &length, val);
             if (!str) {
                 return std::string("");
             }
-            std::string result(str);
+            std::string result(str, length);
             JS_FreeCString(ctx, str);
             return result;
         } else {
