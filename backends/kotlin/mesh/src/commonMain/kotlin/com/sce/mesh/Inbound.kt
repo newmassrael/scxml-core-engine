@@ -113,13 +113,22 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
     private val senders: MutableMap<String, Sender> = mutableMapOf()
 
     /**
-     * Admit the envelope [bytes] from a binding asking [delivery], at [nowMs]
-     * on the host's monotonic clock. §mesh-10.6.4: an ordered envelope below
-     * its sender's expected sequence is dropped, one above it is held, and the
-     * one it expects is released together with every held envelope that now
-     * follows on.
+     * How many senders this half keeps state for: one per link it admitted an
+     * envelope from (SCE_MESH.md section 10.5).
      */
-    fun admit(bytes: ByteArray, delivery: Delivery, nowMs: Long): Admission {
+    fun senderCount(): Int = senders.size
+
+    /**
+     * Admit the envelope [bytes] that arrived on the link of [link], from a
+     * binding asking [delivery], at [nowMs] on the host's monotonic clock. The
+     * window and ordering state it is judged by are [link]'s, whatever
+     * `source` it writes (SCE_MESH.md section 10.5): a caller passes only a
+     * link it admitted, so the senders kept are as many as those links.
+     * §mesh-10.6.4: an ordered envelope below its sender's expected sequence
+     * is dropped, one above it is held, and the one it expects is released
+     * together with every held envelope that now follows on.
+     */
+    fun admit(link: String, bytes: ByteArray, delivery: Delivery, nowMs: Long): Admission {
         // Every kind of rejection is one malformed envelope to the receive half.
         val envelope = Envelope.decode(SceCursor(bytes)).valueOr { return Admission.Refused(AdmitError.Malformed) }
         val sequence = envelope.sequence_no
@@ -127,15 +136,21 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
             return Admission.Refused(AdmitError.Unstamped)
         }
         return try {
-            Admission.Admitted(admitDecoded(envelope, sequence, delivery, nowMs))
+            Admission.Admitted(admitDecoded(link, envelope, sequence, delivery, nowMs))
         } catch (refusal: RuleRefusal) {
             Admission.Refused(AdmitError.Rule(refusal.error))
         }
     }
 
-    private fun admitDecoded(envelope: Envelope, sequence: ULong?, delivery: Delivery, nowMs: Long): Outcome {
+    private fun admitDecoded(
+        link: String,
+        envelope: Envelope,
+        sequence: ULong?,
+        delivery: Delivery,
+        nowMs: Long,
+    ): Outcome {
         val out = Outcome()
-        val sender = senders.getOrPut(envelope.source.text) { Sender() }
+        val sender = senders.getOrPut(link) { Sender() }
         if (delivery.dedup) {
             val id = envelopeId(envelope.id.bytes)
             if (dedupHolds(sender.window, id)) {
@@ -144,7 +159,7 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
             val full = sender.window.size >= dedupWindow.toInt()
             sender.window = dedupAdmit(sender.window, id, dedupWindow).value()
             if (full) {
-                out.signals += Signal.DedupWindowOverflow(envelope.source.text, dedupWindow)
+                out.signals += Signal.DedupWindowOverflow(link, dedupWindow)
             }
         }
         if (!delivery.ordered || sequence == null) {

@@ -99,9 +99,11 @@ import Testing
     @Test func aFullWindowSignalsOnceWhenAnotherIdIsAdmitted() throws {
         let inbound = Inbound(dedupWindow: 1, gapTimeoutMs: 50)
         let delivery = Delivery(dedup: true, ordered: false)
-        let first = try admitted(inbound.admit(envelopeBytes(id: 1, sequence: nil), delivery: delivery, nowMs: 0))
+        let first = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 1, sequence: nil), delivery: delivery, nowMs: 0))
         #expect(first.signals.isEmpty)
-        let second = try admitted(inbound.admit(envelopeBytes(id: 2, sequence: nil), delivery: delivery, nowMs: 0))
+        let second = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 2, sequence: nil), delivery: delivery, nowMs: 0))
         #expect(second.signals == [.dedupWindowOverflow(source: "ecu", windowSize: 1)])
         #expect(second.released.count == 1)
     }
@@ -109,8 +111,9 @@ import Testing
     @Test func aGapEndsWhenItsTimeoutHasPassedAndReleasesWhatWasHeld() throws {
         let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
         let delivery = Delivery(dedup: true, ordered: true)
-        _ = try admitted(inbound.admit(envelopeBytes(id: 1, sequence: 1), delivery: delivery, nowMs: 0))
-        let held = try admitted(inbound.admit(envelopeBytes(id: 4, sequence: 4), delivery: delivery, nowMs: 10))
+        _ = try admitted(inbound.admit(link: "ecu", envelopeBytes(id: 1, sequence: 1), delivery: delivery, nowMs: 0))
+        let held = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 4, sequence: 4), delivery: delivery, nowMs: 10))
         #expect(held.released.isEmpty)
 
         #expect(try admitted(inbound.tick(nowMs: 59)).signals.isEmpty, "the gap has not waited its timeout")
@@ -122,9 +125,10 @@ import Testing
     @Test func aSequenceBelowTheExpectedOneIsDropped() throws {
         let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
         let delivery = Delivery(dedup: false, ordered: true)
-        _ = try admitted(inbound.admit(envelopeBytes(id: 1, sequence: 5), delivery: delivery, nowMs: 0))
-        _ = try admitted(inbound.admit(envelopeBytes(id: 2, sequence: 6), delivery: delivery, nowMs: 0))
-        let late = try admitted(inbound.admit(envelopeBytes(id: 3, sequence: 5), delivery: delivery, nowMs: 0))
+        _ = try admitted(inbound.admit(link: "ecu", envelopeBytes(id: 1, sequence: 5), delivery: delivery, nowMs: 0))
+        _ = try admitted(inbound.admit(link: "ecu", envelopeBytes(id: 2, sequence: 6), delivery: delivery, nowMs: 0))
+        let late = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 3, sequence: 5), delivery: delivery, nowMs: 0))
         #expect(late.released.isEmpty)
         #expect(late.signals.isEmpty)
     }
@@ -133,9 +137,33 @@ import Testing
         let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
         let delivery = Delivery(dedup: false, ordered: true)
         let refusal = inbound.admit(
-            try envelopeBytes(id: 1, sequence: UInt64.max), delivery: delivery, nowMs: 0)
+            link: "ecu", try envelopeBytes(id: 1, sequence: UInt64.max), delivery: delivery, nowMs: 0)
         guard case .refused(.rule) = refusal else {
             throw Unexpected(description: "expected a rule refusal, got \(refusal)")
         }
+    }
+
+    /// SCE_MESH.md section 10.5: the windows are as many as the links. Ten thousand envelopes on one
+    /// link, each claiming a source of its own, make one sender; a second link is a second. Red if the
+    /// window is keyed by the envelope's `source`: every claimed name then makes a window of its own.
+    @Test func envelopesClaimingManySourcesOnOneLinkMakeOneWindow() throws {
+        let inbound = Inbound(dedupWindow: 4, gapTimeoutMs: 50)
+        let delivery = Delivery(dedup: true, ordered: false)
+        for n in 0..<10_000 {
+            var envelope = Envelope()
+            envelope.id = [UInt8](repeating: 0x5A, count: 12) + [
+                UInt8(truncatingIfNeeded: n >> 24), UInt8(truncatingIfNeeded: n >> 16),
+                UInt8(truncatingIfNeeded: n >> 8), UInt8(truncatingIfNeeded: n),
+            ]
+            envelope.source = "s\(n)"
+            envelope.event_type = "a"
+            envelope.pattern = .fireForget
+            let bytes = try encodeEnvelope(envelope)
+            _ = try admitted(inbound.admit(link: "phone", bytes, delivery: delivery, nowMs: 0))
+        }
+        #expect(inbound.senderCount == 1)
+        let other = try envelopeBytes(source: "x", id: 1, sequence: nil)
+        _ = try admitted(inbound.admit(link: "tablet", other, delivery: delivery, nowMs: 0))
+        #expect(inbound.senderCount == 2)
     }
 }

@@ -436,6 +436,39 @@ class RouterTest {
         assertTrue(!unordered.copy(causal = CausalGroup("people", 0uL, listOf("phone/list"))).linkNamesSender)
     }
 
+    /**
+     * SCE_MESH.md section 10.5: the windows are as many as the links. Ten thousand envelopes on
+     * one link, each claiming a source of its own, make one sender in the receive half; a second
+     * link is a second. Red if the window is keyed by the envelope's `source`: every claimed name
+     * then makes a window of its own.
+     */
+    @Test
+    fun envelopesClaimingManySourcesOnOneLinkMakeOneWindow() {
+        val inbound = Inbound(4u, 50)
+        val dedup = Delivery(dedup = true, ordered = false)
+        for (n in 0 until 10_000) {
+            val raw = ByteArray(16) { i -> (if (i < 12) 0x5A else n shr (8 * (15 - i))).toByte() }
+            val bytes = Envelope(
+                id = EnvelopeIdBytes.of(raw)!!,
+                source = EnvelopeSourceText.of("s$n")!!,
+                event_type = EnvelopeEventTypeText.of("note")!!,
+                pattern = PatternKind.FIRE_FORGET,
+                datacontenttype = PayloadCodec.NONE,
+            ).encodeToByteArray() ?: fail("the envelope did not encode")
+            assertTrue(inbound.admit("phone", bytes, dedup, 0) is Admission.Admitted)
+        }
+        assertEquals(1, inbound.senderCount())
+        val other = Envelope(
+            id = EnvelopeIdBytes.of(id(1))!!,
+            source = EnvelopeSourceText.of("tablet")!!,
+            event_type = EnvelopeEventTypeText.of("note")!!,
+            pattern = PatternKind.FIRE_FORGET,
+            datacontenttype = PayloadCodec.NONE,
+        ).encodeToByteArray() ?: fail("the envelope did not encode")
+        assertTrue(inbound.admit("tablet", other, dedup, 0) is Admission.Admitted)
+        assertEquals(2, inbound.senderCount())
+    }
+
     /** §mesh-9.5 `<cancel>`: nothing on the wire, and a later answer is dropped. */
     @Test
     fun aCancelledRequestDropsItsAnswer() {

@@ -502,7 +502,9 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         // the set is refused before the dedup window or the ordering hold sees
         // it, so it takes no slot in either.
         undeclaredReply(bytes, peer)?.let { return Routed.Done(listOf(Effect.Raise(peer, it))) }
-        return when (val admission = inbound.admit(bytes, delivery, nowMs)) {
+        // SCE_MESH.md section 10.5: the window is the link's, so a router keeps one per peer it
+        // binds and no envelope makes one of its own.
+        return when (val admission = inbound.admit(peer, bytes, delivery, nowMs)) {
             is Admission.Admitted -> Routed.Done(effectsOf(admission.outcome, peer))
             is Admission.Refused -> when (val error = admission.error) {
                 // The bytes are the envelope's CBOR (§mesh-7.5); nothing in
