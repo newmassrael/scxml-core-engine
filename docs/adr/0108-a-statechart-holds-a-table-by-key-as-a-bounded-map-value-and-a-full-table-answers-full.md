@@ -222,6 +222,21 @@ not copy to reach it.
    `<assign>` naming it, and no `<sce:call>` with it as an `inout` argument), the walk and the map are the same, and
    the lane walks the map without a copy. Only a body that writes the map pays for the copy. The same holds for an
    algorithm's `<sce:foreach>` over an `inout` slot.
+4. **A map's keys and values are of the types their own documents declare, so a map is lent whole.** (Amended
+   2026-11-20.) A machine holds a record variable in a type of its own, built for the data its events carry
+   (docs/adr/0086, section 7.1), and an algorithm holds the type the record's own unit declares. A call copies a
+   record, a list of records or a union from one to the other field by field (§2.15). A map cannot cross that way
+   without the copy item 1 rules out. So a map's key and value, when it is a record, an enum or a union, is held in
+   the type its own document's unit declares (Rust `<schema>::<Schema>Payload`, C11 `<Schema>Payload_t`, an enum
+   or a union by its unit's type), in a statechart's variable as in an algorithm's slot, and a map slot lends that
+   storage itself. A number, a truth value, a text and a byte string are one type on both sides already. What
+   crosses in a statechart is one entry: `<sce:put>` builds the unit's record from the machine's record it is
+   given, and `m[k]` read into a machine's record variable builds the machine's record from the entry, as a call's
+   record argument and its answer cross. The order, the saved form and D8's index are unchanged, and the snapshot
+   gives the host entries in the types the document's codecs already use. A machine whose map holds a record
+   therefore names that record's unit, whether or not it calls an algorithm. The alternative, an algorithm generic
+   over the record it is lent, was rejected: C11 has no generics, and it would hand every algorithm a field
+   accessor per machine where one type per document serves both.
 
 ### D7. Where a map may stand
 
@@ -374,7 +389,9 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
    whose body does not write the map copy nothing in the generated Rust and C11. A scenario runs an algorithm that
    keeps each peer's latest generation in an `inout` map keyed by a two-`uint64` record and returns a union of
    `Taken`, `Duplicate` (the last generation) and `NoRoom`, taken by `<sce:call location>`, through a full table,
-   on the Interpreter, Rust and C11. §2.15's bounded-collection paragraph is rewritten (D9).
+   on the Interpreter, Rust and C11. §2.15's bounded-collection paragraph is rewritten (D9). The Rust and C11
+   machines of steps 5 and 6 hold a map's record, enum and union entries in their units' types (D6, item 4), and
+   the six scenarios of step 4 still pass unchanged on both.
 8. C++, Kotlin, Go, Python, Swift, one landing each, each removing its `generate/unsupported-feature`.
 
 ## Open questions
