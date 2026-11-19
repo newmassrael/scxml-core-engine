@@ -119,6 +119,10 @@ fn an_issued_token_proves_its_name_until_its_expiry() {
     let token = issue(&mut host, &first(), "phone", "3600");
     let tag = hmac_sha256(&ISSUING_KEY, &issue_message("session", "issue", 1, "phone"));
     assert_eq!(token, token_text(&tag));
+    assert_eq!(
+        token, "sce1.KJG0XTyXotgk5bba3j0fmD5ZMWB6R6-oxTnxxKT8I8g",
+        "the token AStandardHostCredentials holds the C++ host to for the same key and identity"
+    );
     assert!(token.starts_with(TOKEN_PREFIX) && token.len() == TOKEN_TEXT_BYTES);
     assert_eq!(
         store.tokens().expect("the tokens"),

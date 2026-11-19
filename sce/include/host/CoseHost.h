@@ -136,6 +136,10 @@ public:
     /// Overwrite `bytes` with zeros in a way the compiler does not remove, before key material leaves
     /// memory (docs/adr/0109, D7).
     virtual void wipe(Cose::Bytes &bytes) = 0;
+    /// The base64url of `bytes` without padding (RFC 4648 section 5), written in time that does not
+    /// depend on the bytes: the text of a bearer token, which is a secret (docs/adr/0109, D3). Nothing
+    /// when it cannot be written.
+    virtual std::optional<std::string> base64Url(const Cose::Bytes &bytes) = 0;
 };
 
 /// HKDF with SHA-256 (RFC 5869): `length` bytes, at most 255 times 32, of the key `ikm` gives with `salt`
@@ -284,6 +288,30 @@ public:
             crypto_.wipe(entry.second.material);
         }
         crypto_.wipe(naming_);
+        crypto_.wipe(issuing_);
+    }
+
+    /// The HMAC-SHA-256 of `message` under the key ring's issuing key, the key a host issues its bearer
+    /// tokens under (docs/SCE_HOST_FEATURES.md section 14; docs/adr/0109, D3). The key is 32 bytes drawn from
+    /// the random source at the first issue and kept, for the life of the host, with the ring's other keys;
+    /// it never leaves the ring, and no statechart names it. Nothing when the library could not be started,
+    /// the source gave no key, or the library could not tag.
+    std::optional<Cose::Bytes> issuingTag(const Cose::Bytes &message) {
+        if (!crypto_.ready()) {
+            return std::nullopt;
+        }
+        if (issuing_.empty()) {
+            auto drawn = crypto_.random(COSE_KEY_BYTES);
+            if (!drawn || drawn->size() != COSE_KEY_BYTES) {
+                if (drawn) {
+                    crypto_.wipe(*drawn);
+                }
+                return std::nullopt;
+            }
+            issuing_ = *drawn;
+            crypto_.wipe(*drawn);
+        }
+        return crypto_.hmacSha256(issuing_, message);
     }
 
     /// The signing keys, each an Ed25519 seed of 32 bytes by its id, replacing those set before. False,
@@ -881,6 +909,8 @@ private:
     std::map<std::string, std::string> generations_;
     /// The naming key derived keys' ids are computed under; empty until the first derivation.
     Cose::Bytes naming_;
+    /// The key bearer tokens are issued under; empty until the first issue.
+    Cose::Bytes issuing_;
 };
 
 }  // namespace SCE::StandardHost

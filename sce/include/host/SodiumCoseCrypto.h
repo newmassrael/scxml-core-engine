@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <string>
 
 #include <sodium.h>
 
@@ -26,7 +27,8 @@ namespace SCE::StandardHost {
 /// The COSE primitives on libsodium: Ed25519 (`crypto_sign_ed25519`), ChaCha20/Poly1305 in its IETF form
 /// with a 96-bit nonce (`crypto_aead_chacha20poly1305_ietf`), HMAC-SHA-256 (`crypto_auth_hmacsha256`),
 /// SHA-256 (`crypto_hash_sha256`), the operating system's random source (`randombytes_buf`), the comparison
-/// of a secret in constant time (`sodium_memcmp`) and the wiping of key material (`sodium_memzero`).
+/// of a secret in constant time (`sodium_memcmp`), the wiping of key material (`sodium_memzero`) and the
+/// base64url of a bearer token in constant time (`sodium_bin2base64`).
 class SodiumCoseCrypto : public CoseCrypto {
 public:
     SodiumCoseCrypto() : ready_(sodium_init() >= 0) {}
@@ -150,6 +152,17 @@ public:
         if (!bytes.empty()) {
             sodium_memzero(bytes.data(), bytes.size());
         }
+    }
+
+    std::optional<std::string> base64Url(const Cose::Bytes &bytes) override {
+        constexpr int variant = sodium_base64_VARIANT_URLSAFE_NO_PADDING;
+        // The length libsodium writes includes the terminating NUL.
+        std::string text(sodium_base64_ENCODED_LEN(bytes.size(), variant), '\0');
+        if (sodium_bin2base64(text.data(), text.size(), in(bytes), bytes.size(), variant) == nullptr) {
+            return std::nullopt;
+        }
+        text.resize(text.size() - 1);
+        return text;
     }
 
 private:
