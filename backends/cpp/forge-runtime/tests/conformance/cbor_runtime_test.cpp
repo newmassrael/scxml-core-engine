@@ -380,6 +380,45 @@ void a_union_map_is_judged_for_one_entry_then_for_its_key() {
     }
 }
 
+void a_case_that_holds_no_record_is_read_from_any_map_of_text_keys() {
+    // The empty map an encode writes, and a map of keys the case does not
+    // declare, each stepped over with its value: both are the case. The second
+    // is followed by a 7 the read leaves.
+    const std::pair<Bytes, std::size_t> empty[] = {
+        {{0xa0}, 0},
+        {{0xa1, 0x61, 'x', 0x82, 0x01, 0x02, 0x07}, 1},
+    };
+    for (const auto &[bytes, left] : empty) {
+        auto c = cursor_over(bytes);
+        CHECK(cbor::read_empty_case(c).has_value(), "an empty case's map is read");
+        CHECK(c.remaining() == left, "an empty case's map is read whole and no further");
+    }
+    // A key that is no text, and `null` or an array where the map stands.
+    const Bytes refused[] = {{0xa1, 0x01, 0x01}, {0xf6}, {0x80}};
+    for (const auto &bytes : refused) {
+        auto c = cursor_over(bytes);
+        CHECK(refused_as(cbor::read_empty_case(c), CodecError::CborWrongType), "no map of text keys is no empty case");
+    }
+}
+
+void an_absent_element_is_null_and_a_present_one_is_left_for_its_read() {
+    CHECK(written([](auto &w) { return cbor::write_null(w); }) == Bytes{0xf6}, "null is f6");
+    // `null`, then the element 7: the first is taken, the second left.
+    const Bytes two{0xf6, 0x07};
+    auto c = cursor_over(two);
+    CHECK(holds(cbor::take_null(c), true), "null is taken");
+    CHECK(holds(cbor::take_null(c), false), "an element is no null");
+    CHECK(c.remaining() == 1, "an element is left for its read");
+    CHECK(holds(cbor::read_uint(c), std::uint64_t{7}), "the element is read after");
+    // `false` is no `null`, and nothing at all is an input that ended.
+    const Bytes no{0xf4};
+    auto f = cursor_over(no);
+    CHECK(holds(cbor::take_null(f), false) && f.remaining() == 1, "false is no null and is left");
+    const Bytes none;
+    auto e = cursor_over(none);
+    CHECK(refused_as(cbor::take_null(e), CodecError::NeedMoreBytes), "an input that ended has no item");
+}
+
 void an_unknown_value_is_skipped_whole_and_a_deep_one_refused() {
     // {1: [2, {3: h'00'}]} then 7: the skip lands on the 7.
     const Bytes nested{0xa1, 0x01, 0x82, 0x02, 0xa1, 0x03, 0x41, 0x00, 0x07};
@@ -410,6 +449,8 @@ int main() {
     an_indefinite_length_is_outside_the_profile_at_any_depth();
     a_union_is_a_map_of_one_entry_keyed_by_its_variant_name();
     a_union_map_is_judged_for_one_entry_then_for_its_key();
+    a_case_that_holds_no_record_is_read_from_any_map_of_text_keys();
+    an_absent_element_is_null_and_a_present_one_is_left_for_its_read();
     an_unknown_value_is_skipped_whole_and_a_deep_one_refused();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
