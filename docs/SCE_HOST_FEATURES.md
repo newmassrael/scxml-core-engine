@@ -405,9 +405,11 @@ once. Not provided here: any binding to a real provider.
   that serves the type serves it. `sce-codegen check` reports them under
   `host_invoker_types`.
 - **Each type is served on the lanes the table names.** Each entry of the table
-  lists the lanes, the backends `-l` names, whose reference host (section 8)
-  serves the type. A build for
-  another lane, `generate` or `check` alike, refuses a machine that runs an
+  lists the lanes whose reference host (section 8) serves the type: the
+  backends `-l` names, and the Interpreter, whose build is the document
+  `sce-codegen lower` writes and whose host is the C++ one its driver registers
+  on the `StateMachine`. A build for another lane, `generate`, `check` and
+  `lower` alike, refuses a machine that runs an
   `<invoke>` of it as `codegen/standard-host-type-not-served`, on that
   `<invoke>`, naming the type, the lane and the lanes that serve it; a child the
   document carries is held to the same lane. Every type of sections 2 to 6 is
@@ -537,7 +539,12 @@ on the `StateMachine` as it is on the generated engine (`SCE::StandardHost::serv
 docs/adr/0084, D7), and moves its scheduler's logical clock for `advance_ms`. The
 lowering refuses a model's generation by name (docs/adr/0087, section 7.1), so the
 Interpreter's driver holds `static_host_model` and the reference harness
-`static_model_harness` to that refusal instead of replaying them.
+`static_model_harness` to that refusal instead of replaying them. The Interpreter
+is not among the lanes of section 10's operations: its driver adds no COSE feature
+to its host, so the lowering refuses `static_host_cose` as
+`codegen/standard-host-type-not-served` (section 7, docs/adr/0107, D8), and the
+driver holds it to that refusal; its scenario is replayed on the Rust and C++
+lanes.
 
 Each driver runs the machine on a manual clock and the host on a scripted one, so a
 scenario is deterministic. The transports that exist are held by a test against a
