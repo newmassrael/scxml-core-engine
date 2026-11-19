@@ -14,8 +14,8 @@
 option(SCE_USE_SPDLOG "Use SCE-bundled spdlog for logging" OFF)
 
 # Version tracking — consumer can verify generated SM headers match this version
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
-    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" SCE_EMBED_VERSION)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION.txt")
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION.txt" SCE_EMBED_VERSION)
     string(STRIP "${SCE_EMBED_VERSION}" SCE_EMBED_VERSION)
     message(STATUS "SCE embed: version ${SCE_EMBED_VERSION}")
 endif()

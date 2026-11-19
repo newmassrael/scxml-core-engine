@@ -331,8 +331,8 @@ symbols = [json.loads(s) for s in unique_sorted]
 # removed the key, and the [] value is unambiguous.
 parse_errors = []
 
-# embed_version: reuse embed/VERSION if packaged, else fall back to "unknown".
-version_path = os.path.join(embed_dir, "VERSION")
+# embed_version: reuse embed/VERSION.txt if packaged, else fall back to "unknown".
+version_path = os.path.join(embed_dir, "VERSION.txt")
 embed_version = "unknown"
 if os.path.exists(version_path):
     with open(version_path, encoding="utf-8") as fh:

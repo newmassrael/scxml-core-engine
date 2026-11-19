@@ -384,11 +384,16 @@ if ${WITH_SPDLOG}; then
 fi
 
 # ============================================================================
-# 5. VERSION file
+# 5. VERSION.txt file
 # ============================================================================
+# Named VERSION.txt, not VERSION: the package root is on a consumer's include
+# path (Bazel puts a repository's root there, and MSVC reads it as /I), and on
+# a filesystem that compares names without case (Windows, macOS) a file named
+# VERSION is what `#include <version>`, the C++20 standard header, finds. The
+# MSVC build of the Bazel embed channel failed on it in <assert.h>.
 # `-e`, not `-d`: a linked worktree's `.git` (and a submodule checkout's) is a
 # FILE naming the real gitdir, and a directory test read every such checkout
-# as "not under git" and stamped "unknown" — into VERSION and, through it,
+# as "not under git" and stamped "unknown" — into VERSION.txt and, through it,
 # into MANIFEST.json's `embed_version`. The test still asks about SCE_ROOT
 # itself, so a source copy nested in someone else's repository is not
 # described by that repository's HEAD.
@@ -397,7 +402,7 @@ if command -v git &>/dev/null && [ -e "${SCE_ROOT}/.git" ]; then
 else
     VERSION="unknown"
 fi
-echo "${VERSION}" > "${OUTPUT_DIR}/VERSION"
+echo "${VERSION}" > "${OUTPUT_DIR}/VERSION.txt"
 
 # ============================================================================
 # 6. Public-header manifest — emit after all headers are in place so the
