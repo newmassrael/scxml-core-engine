@@ -611,9 +611,9 @@ struct is_source<
           std::is_convertible<decltype(source::child_session_id(std::declval<const S &>())),
                               std::optional<::SCE::Forge::Text<262144>>>,
           std::is_convertible<decltype(source::causal_epoch(std::declval<const S &>())), std::optional<uint64_t>>,
-          std::is_convertible<decltype(source::causal_vector(std::declval<const S &>())),
-                              std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>>>> {
-};
+          std::is_convertible<
+              decltype(source::causal_vector(std::declval<const S &>())),
+              const std::optional<::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> &>> {};
 
 /// Whether reading every entry of a source `S` throws nothing.
 template <class S, class = void> struct is_nothrow_source : std::false_type {};
@@ -660,16 +660,89 @@ struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
           noexcept(::SCE::Forge::Detail::converts_to<std::optional<uint64_t>>(
               source::causal_epoch(std::declval<const S &>()))) &&
           noexcept(::SCE::Forge::Detail::converts_to<
-                   std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>>>(
+                   const std::optional<::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> &>(
               source::causal_vector(std::declval<const S &>())))> {};
 
-/// The records the lists of `Envelope` hold, each in the payload type its
-/// event schema's own unit declares and written as one CBOR map of every
-/// field, each under its id as text (docs/adr/0086, section 9.2).
-struct Records {
-    /// Write one record of `causal_entry` (`record:CausalEntry`) as one map of every
-    /// field, the keys in the order RFC 8949 §4.2.1 sorts their encodings: a
-    /// shorter key first.
+/// The records and unions the entries of `Envelope` reach, at any depth: each
+/// read, written and, where a value of it can be refused, checked by one function
+/// named for its document and shared wherever it is met (docs/adr/0101, section 5.1).
+struct Composites {
+    /// Read one record of the event schema `causal_entry` from `c`, into the payload
+    /// type the schema's own unit declares: one CBOR map of its present fields,
+    /// each under its id as text (docs/adr/0101, section 2.1). Its keys in any
+    /// order, a key the schema does not declare skipped whole, a key given twice
+    /// and a field that is not optional missing refused, and a value of no
+    /// field's type refused.
+    static ::SCE::Forge::Decoded<SCE::Generated::CausalEntry::CausalEntryPayload>
+    decode_record_causal_entry(::SCE::Forge::SceCursor &c) {
+        namespace cbor = ::SCE::Forge::Cbor;
+        const auto count = cbor::read_map_len(c);
+        if (!count) {
+            return count.error();
+        }
+        std::optional<uint64_t> held_hi;
+        std::optional<uint64_t> held_lo;
+        std::optional<uint64_t> held_seq;
+        for (std::uint64_t i = 0; i < *count; ++i) {
+            const auto key = cbor::read_text(c, std::nullopt);
+            if (!key) {
+                return key.error();
+            }
+            if (*key == "hi") {
+                // A key given twice is not one map entry.
+                if (held_hi.has_value()) {
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
+                }
+                auto _r0 = cbor::read_uint(c);
+                if (!_r0) {
+                    return _r0.error();
+                }
+                held_hi = std::move(*_r0);
+            } else if (*key == "lo") {
+                // A key given twice is not one map entry.
+                if (held_lo.has_value()) {
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
+                }
+                auto _r0 = cbor::read_uint(c);
+                if (!_r0) {
+                    return _r0.error();
+                }
+                held_lo = std::move(*_r0);
+            } else if (*key == "seq") {
+                // A key given twice is not one map entry.
+                if (held_seq.has_value()) {
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
+                }
+                auto _r0 = cbor::read_uint(c);
+                if (!_r0) {
+                    return _r0.error();
+                }
+                held_seq = std::move(*_r0);
+            } else {
+                const auto skipped = cbor::skip(c);
+                if (!skipped) {
+                    return skipped.error();
+                }
+            }
+        }
+        if (!held_hi.has_value()) {
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
+        }
+        if (!held_lo.has_value()) {
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
+        }
+        if (!held_seq.has_value()) {
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
+        }
+        SCE::Generated::CausalEntry::CausalEntryPayload record;
+        record.hi = std::move(*held_hi);
+        record.lo = std::move(*held_lo);
+        record.seq = std::move(*held_seq);
+        return record;
+    }
+
+    /// Write one record of `causal_entry` as one map of its present fields, the keys
+    /// in the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
     [[nodiscard]] static std::optional<::SCE::Forge::CodecError>
     encode_record_causal_entry(::SCE::Forge::SceSink &w,
                                const SCE::Generated::CausalEntry::CausalEntryPayload &record) noexcept {
@@ -696,74 +769,6 @@ struct Records {
             return _e;
         }
         return std::nullopt;
-    }
-
-    /// Read one record of `causal_entry` from `c`: its keys in any order, a key the
-    /// schema does not declare skipped whole; a key given twice is
-    /// `CborDuplicateKey` and a field missing `CborRequiredKeyMissing`.
-    static ::SCE::Forge::Decoded<SCE::Generated::CausalEntry::CausalEntryPayload>
-    decode_record_causal_entry(::SCE::Forge::SceCursor &c) {
-        namespace cbor = ::SCE::Forge::Cbor;
-        const auto count = cbor::read_map_len(c);
-        if (!count) {
-            return count.error();
-        }
-        std::optional<uint64_t> held_hi;
-        std::optional<uint64_t> held_lo;
-        std::optional<uint64_t> held_seq;
-        for (std::uint64_t i = 0; i < *count; ++i) {
-            const auto key = cbor::read_text(c, std::nullopt);
-            if (!key) {
-                return key.error();
-            }
-            if (*key == "hi") {
-                // A key given twice is not one map entry.
-                if (held_hi.has_value()) {
-                    return ::SCE::Forge::CodecError::CborDuplicateKey;
-                }
-                auto read = cbor::read_uint(c);
-                if (!read) {
-                    return read.error();
-                }
-                held_hi = *read;
-            } else if (*key == "lo") {
-                // A key given twice is not one map entry.
-                if (held_lo.has_value()) {
-                    return ::SCE::Forge::CodecError::CborDuplicateKey;
-                }
-                auto read = cbor::read_uint(c);
-                if (!read) {
-                    return read.error();
-                }
-                held_lo = *read;
-            } else if (*key == "seq") {
-                // A key given twice is not one map entry.
-                if (held_seq.has_value()) {
-                    return ::SCE::Forge::CodecError::CborDuplicateKey;
-                }
-                auto read = cbor::read_uint(c);
-                if (!read) {
-                    return read.error();
-                }
-                held_seq = *read;
-            } else if (const auto skipped = cbor::skip(c); !skipped) {
-                return skipped.error();
-            }
-        }
-        if (!held_hi.has_value()) {
-            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
-        }
-        if (!held_lo.has_value()) {
-            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
-        }
-        if (!held_seq.has_value()) {
-            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
-        }
-        SCE::Generated::CausalEntry::CausalEntryPayload record;
-        record.hi = *held_hi;
-        record.lo = *held_lo;
-        record.seq = *held_seq;
-        return record;
     }
 };
 
@@ -819,8 +824,8 @@ struct Wire {
         const auto &_r_causal_epoch = source::causal_epoch(src);
         const std::optional<uint64_t> _e_causal_epoch = _r_causal_epoch;
         const auto &_r_causal_vector = source::causal_vector(src);
-        const std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> _e_causal_vector =
-            _r_causal_vector;
+        const std::optional<::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64>>
+            &_e_causal_vector = _r_causal_vector;
         std::uint64_t _count = 6;
         if (_e_subject) {
             ++_count;
@@ -1051,8 +1056,8 @@ struct Wire {
             if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) {
                 return _e;
             }
-            for (const auto &_record : v) {
-                if (auto _e = Records::encode_record_causal_entry(w, _record); _e) {
+            for (const auto &_item0 : v) {
+                if (auto _e = Composites::encode_record_causal_entry(w, _item0); _e) {
                     return _e;
                 }
             }
@@ -1081,7 +1086,8 @@ struct Envelope {
              std::optional<uint64_t> sequence_no, std::optional<::SCE::Forge::Bytes<16, 16>> routing_id,
              std::optional<::SCE::Forge::Text<262144>> parallel_id, std::optional<::SCE::Forge::Text<262144>> region_id,
              std::optional<::SCE::Forge::Text<262144>> child_session_id, std::optional<uint64_t> causal_epoch,
-             std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> causal_vector)
+             const std::optional<::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64>>
+                 &causal_vector)
         : id_(id), source_(source), event_type_(event_type), pattern_(pattern), datacontenttype_(datacontenttype),
           data_(data), subject_(subject), correlation_id_(correlation_id), reply_to_(reply_to), invoke_id_(invoke_id),
           rpc_status_(rpc_status), rpc_error_message_(rpc_error_message), deadline_unix_ms_(deadline_unix_ms),
@@ -1211,12 +1217,9 @@ struct Envelope {
     }
 
     /// The entry with key 20, where the map holds it.
-    [[nodiscard]] std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>>
+    [[nodiscard]] const std::optional<::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> &
     causal_vector() const noexcept {
-        if (!causal_vector_) {
-            return std::nullopt;
-        }
-        return ::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>(*causal_vector_);
+        return causal_vector_;
     }
 
     /// Decode one map from `cursor`. On success the cursor advances past it;
@@ -1271,7 +1274,7 @@ private:
         std::optional<std::string> region_id;
         std::optional<std::string> child_session_id;
         std::optional<uint64_t> causal_epoch;
-        std::optional<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>> causal_vector;
+        std::optional<::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> causal_vector;
         for (std::uint64_t i = 0; i < *count; ++i) {
             const auto key = cbor::read_uint(c);
             if (!key) {
@@ -1319,16 +1322,16 @@ private:
                 if (pattern.has_value()) {
                     return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
-                const auto raw =
+                const auto _r0 =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint16_t>::max()));
-                if (!raw) {
-                    return raw.error();
+                if (!_r0) {
+                    return _r0.error();
                 }
-                auto v = SCE::Generated::PatternKind::from_underlying(static_cast<uint16_t>(*raw));
-                if (!v) {
+                const auto _r0_variant = SCE::Generated::PatternKind::from_underlying(static_cast<uint16_t>(*_r0));
+                if (!_r0_variant) {
                     return ::SCE::Forge::CodecError::UndeclaredEnumValue;
                 }
-                pattern = std::move(*v);
+                pattern = *_r0_variant;
                 break;
             }
             case 4: {
@@ -1336,16 +1339,16 @@ private:
                 if (datacontenttype.has_value()) {
                     return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
-                const auto raw =
+                const auto _r0 =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint8_t>::max()));
-                if (!raw) {
-                    return raw.error();
+                if (!_r0) {
+                    return _r0.error();
                 }
-                auto v = SCE::Generated::PayloadCodec::from_underlying(static_cast<uint8_t>(*raw));
-                if (!v) {
+                const auto _r0_variant = SCE::Generated::PayloadCodec::from_underlying(static_cast<uint8_t>(*_r0));
+                if (!_r0_variant) {
                     return ::SCE::Forge::CodecError::UndeclaredEnumValue;
                 }
-                datacontenttype = std::move(*v);
+                datacontenttype = *_r0_variant;
                 break;
             }
             case 5: {
@@ -1413,16 +1416,16 @@ private:
                 if (rpc_status.has_value()) {
                     return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
-                const auto raw =
+                const auto _r0 =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint8_t>::max()));
-                if (!raw) {
-                    return raw.error();
+                if (!_r0) {
+                    return _r0.error();
                 }
-                auto v = SCE::Generated::RpcStatus::from_underlying(static_cast<uint8_t>(*raw));
-                if (!v) {
+                const auto _r0_variant = SCE::Generated::RpcStatus::from_underlying(static_cast<uint8_t>(*_r0));
+                if (!_r0_variant) {
                     return ::SCE::Forge::CodecError::UndeclaredEnumValue;
                 }
-                rpc_status = std::move(*v);
+                rpc_status = *_r0_variant;
                 break;
             }
             case 11: {
@@ -1442,11 +1445,11 @@ private:
                 if (deadline_unix_ms.has_value()) {
                     return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
-                auto v = cbor::read_uint(c);
-                if (!v) {
-                    return v.error();
+                auto _r0 = cbor::read_uint(c);
+                if (!_r0) {
+                    return _r0.error();
                 }
-                deadline_unix_ms = std::move(*v);
+                deadline_unix_ms = std::move(*_r0);
                 break;
             }
             case 14: {
@@ -1454,11 +1457,11 @@ private:
                 if (sequence_no.has_value()) {
                     return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
-                auto v = cbor::read_uint(c);
-                if (!v) {
-                    return v.error();
+                auto _r0 = cbor::read_uint(c);
+                if (!_r0) {
+                    return _r0.error();
                 }
-                sequence_no = std::move(*v);
+                sequence_no = std::move(*_r0);
                 break;
             }
             case 15: {
@@ -1514,11 +1517,11 @@ private:
                 if (causal_epoch.has_value()) {
                     return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
-                auto v = cbor::read_uint(c);
-                if (!v) {
-                    return v.error();
+                auto _r0 = cbor::read_uint(c);
+                if (!_r0) {
+                    return _r0.error();
                 }
-                causal_epoch = std::move(*v);
+                causal_epoch = std::move(*_r0);
                 break;
             }
             case 20: {
@@ -1526,22 +1529,26 @@ private:
                 if (causal_vector.has_value()) {
                     return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
-                const auto _len = cbor::read_array_len(c);
-                if (!_len) {
-                    return _len.error();
+                const auto _len0 = cbor::read_array_len(c);
+                if (!_len0) {
+                    return _len0.error();
                 }
-                if (*_len > 64) {
+                if (*_len0 > 64) {
                     return ::SCE::Forge::CodecError::CborOutOfRange;
                 }
-                std::optional<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>> v{std::in_place};
-                for (std::uint64_t _n = 0; _n < *_len; ++_n) {
-                    auto _record = Records::decode_record_causal_entry(c);
-                    if (!_record) {
-                        return _record.error();
+                ::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64> _list0;
+                for (std::uint64_t _n0 = 0; _n0 < *_len0; ++_n0) {
+                    SCE::Generated::CausalEntry::CausalEntryPayload _item0{};
+                    auto _r1 = Composites::decode_record_causal_entry(c);
+                    if (!_r1) {
+                        return _r1.error();
                     }
-                    v->push_back(std::move(*_record));
+                    _item0 = std::move(*_r1);
+                    if (!_list0.push(std::move(_item0))) {
+                        return ::SCE::Forge::CodecError::CborOutOfRange;
+                    }
                 }
-                causal_vector = std::move(*v);
+                causal_vector = std::move(_list0);
                 break;
             }
             default: {
@@ -1650,14 +1657,6 @@ private:
                 return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
-        std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> _b_causal_vector;
-        if (causal_vector) {
-            _b_causal_vector =
-                ::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>::make(*causal_vector);
-            if (!_b_causal_vector) {
-                return ::SCE::Forge::CodecError::CborOutOfRange;
-            }
-        }
         return Envelope{
             /*id=*/*_b_id,
             /*source=*/*_b_source,
@@ -1678,7 +1677,7 @@ private:
             /*region_id=*/_b_region_id,
             /*child_session_id=*/_b_child_session_id,
             /*causal_epoch=*/causal_epoch,
-            /*causal_vector=*/_b_causal_vector,
+            /*causal_vector=*/causal_vector,
         };
     }
 
@@ -1701,8 +1700,7 @@ private:
     std::optional<::SCE::Forge::Bounded<std::string, 262144>> region_id_{};
     std::optional<::SCE::Forge::Bounded<std::string, 262144>> child_session_id_{};
     std::optional<uint64_t> causal_epoch_{};
-    std::optional<::SCE::Forge::Bounded<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>, 64>>
-        causal_vector_{};
+    std::optional<::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> causal_vector_{};
 };
 
 }  // namespace SCE::Generated::Envelope
