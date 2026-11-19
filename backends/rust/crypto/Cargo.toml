@@ -34,6 +34,9 @@ zeroize = "1"
 # The operating system's random source, which a host draws its random bytes, its keys and its
 # nonces from unless it is given another.
 getrandom = "0.2"
+# The text of a bearer token (ADR 0109, D3): base64url without padding, as the `https` binding
+# writes an installation secret, with the version `sce-rust-mesh` takes.
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 # The CBOR heads a COSE object is written and read with: the ones the codecs write, so an object's
 # deterministic encoding is the codecs' own.
 sce-forge-runtime = { path = "../forge-runtime", features = ["alloc"] }

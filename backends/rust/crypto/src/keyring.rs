@@ -16,6 +16,10 @@
 //!   store, and a `derived:` id a restored session holds names the key it named before. The naming
 //!   key is 32 bytes the store keeps wrapped, drawn from the host's random source at the store's
 //!   first derivation.
+//! - **The issuing key** ([`ISSUING_KEY_ID`]) is the MAC key a host issues its bearer tokens
+//!   under (ADR 0109, D3; `crate::credential`): 32 bytes drawn from the host's random source at the
+//!   store's first issue and kept as a key of the ring, so that every process that shares the store
+//!   issues one token for one identity.
 //! - **Retired** keys still verify, open and export, and no longer sign, seal, tag or derive.
 //! - **Material** is wrapped under the key-encryption key, bound to the key's id and use, so the
 //!   store holds no key in the clear and a row's material moved to another row does not unwrap.
@@ -32,7 +36,7 @@ pub use sce_rust_session_store::{Failure, KeyRow, KeyState, KeyStore, KeyUse, Me
 
 use crate::cose::{derive_key, public_key_of, put, KEY_BYTES};
 use crate::hex;
-use crate::mac::hmac_sha256;
+use crate::mac::{hmac_sha256, TAG_BYTES};
 use crate::random::RandomSource;
 use crate::wrap::{KeyEncryptionKey, KeyWrap, NoKeyEncryptionKey, WrapError};
 
@@ -46,6 +50,12 @@ pub const KEY_ID_RANDOM_BYTES: usize = 16;
 const DERIVED_ID_BYTES: usize = 16;
 /// The context the naming key is wrapped for.
 const NAMING_CONTEXT: &[u8] = b"sce-key-naming";
+/// The id of the key a host issues its credentials under (ADR 0109, D3): a MAC key of the key
+/// ring, kept as any other is, which no statechart names, since a statechart reaches a key of the
+/// ring only by a `generated:` or `derived:` id.
+pub const ISSUING_KEY_ID: &str = "issuing:credentials";
+/// What the issuing key is labelled, for the operator who lists the store's keys.
+const ISSUING_LABEL: &str = "the key bearer tokens are issued under";
 
 /// Whether `id` names a key of a key ring rather than one an embedding configured: a configured
 /// key never has such an id.
@@ -323,6 +333,43 @@ impl Keyring {
         let mut key = Zeroizing::new([0u8; KEY_BYTES]);
         key.copy_from_slice(&material);
         Ok(key)
+    }
+
+    /// The HMAC-SHA-256 of `message` under the issuing key ([`ISSUING_KEY_ID`]), the key a host
+    /// issues its bearer tokens under (`crate::credential`). The key is drawn from `random` at the
+    /// store's first issue, made at `now_ms`, and kept as a MAC key of the ring: wrapped under the
+    /// key-encryption key, the same in every process that shares the store (of two processes that
+    /// each drew one, the first kept is the key), and rewrapped by [`Keyring::rewrap_all`]. It never
+    /// leaves the ring: an issue asks for a tag under it. Retired by the operator, it issues
+    /// nothing more ([`KeyError::Retired`]).
+    pub fn issuing_tag(
+        &self,
+        message: &[u8],
+        now_ms: u64,
+        random: &mut dyn RandomSource,
+    ) -> Result<[u8; TAG_BYTES], KeyError> {
+        if self.store.key(ISSUING_KEY_ID)?.is_none() {
+            let mut drawn = Zeroizing::new([0u8; KEY_BYTES]);
+            if !random.fill(&mut drawn[..]) {
+                return Err(KeyError::Unavailable(
+                    "the random source gave no issuing key".to_string(),
+                ));
+            }
+            let row = KeyRow {
+                id: ISSUING_KEY_ID.to_string(),
+                key_use: KeyUse::Mac,
+                algorithm: algorithm_of(KeyUse::Mac).to_string(),
+                wrapped: self
+                    .wrap
+                    .wrap(&context(ISSUING_KEY_ID, KeyUse::Mac), &drawn[..])?,
+                label: ISSUING_LABEL.to_string(),
+                created_ms: now_ms,
+                state: KeyState::Active,
+            };
+            self.store.insert(&row, None)?;
+        }
+        let key = self.material(ISSUING_KEY_ID, Purpose::Tag)?;
+        Ok(hmac_sha256(&key[..], message))
     }
 
     /// The Ed25519 public key of the signing key `id` names, retired or not.

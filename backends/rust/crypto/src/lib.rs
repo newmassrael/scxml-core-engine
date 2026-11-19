@@ -8,6 +8,8 @@
 //!
 //! - [`equal`]: the one comparison of a secret or a digest, in time that does not depend on where
 //!   two byte strings differ;
+//! - [`credential`]: the bearer tokens a host issues, kept as their digests, and the check of a
+//!   server that reads them (ADR 0109, D3);
 //! - [`mac`]: HMAC-SHA-256 (RFC 2104) and its verification through that comparison;
 //! - [`random`]: where random bytes come from, the operating system's source unless a test gives
 //!   another;
@@ -23,6 +25,7 @@
 #![forbid(unsafe_code)]
 
 pub mod cose;
+pub mod credential;
 pub mod equal;
 pub mod keyring;
 pub mod mac;

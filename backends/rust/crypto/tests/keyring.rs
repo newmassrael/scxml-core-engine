@@ -17,7 +17,9 @@ use sce_rust_crypto::bytes_of_hex;
 use sce_rust_crypto::cose::{cose_key_ed25519, public_key_of, KEY_BYTES};
 use sce_rust_crypto::keyring::{
     DerivationInput, KeyError, KeyState, KeyStore, KeyUse, Keyring, MemoryKeys, Purpose,
+    ISSUING_KEY_ID,
 };
+use sce_rust_crypto::mac::hmac_sha256;
 use sce_rust_crypto::random::ScriptedRandom;
 use sce_rust_crypto::wrap::KeyEncryptionKey;
 use sce_rust_session_store::SqliteStore;
@@ -399,4 +401,74 @@ fn a_key_ring_in_memory_generates_with_the_systems_bytes() {
         .expect("another");
     assert_ne!(one, two, "two generations draw two ids");
     assert!(one.starts_with("generated:") && one.len() == "generated:".len() + 32);
+}
+
+/// ADR 0109, D3: the issuing key is drawn once, at the store's first issue, kept as a MAC key of
+/// the ring under its key-encryption key, and tags under it in every process that shares the
+/// store; retired by the operator, it tags nothing more.
+#[test]
+fn the_issuing_key_is_drawn_once_and_kept_across_a_reopened_file() {
+    let scratch = Scratch::new("issuing");
+    let key = [0x3C; KEY_BYTES];
+    let tag = {
+        let keys = ring(
+            SqliteStore::open(scratch.database()).expect("making the store"),
+            1,
+        );
+        let mut random = scripted(&key);
+        let tag = keys
+            .issuing_tag(b"an identity", 7, &mut random)
+            .expect("the first issue");
+        assert_eq!(random.queued(), 0, "the issuing key's 32 bytes were drawn");
+        assert_eq!(
+            tag,
+            hmac_sha256(&key, b"an identity"),
+            "the tag is the HMAC-SHA-256 under the key drawn"
+        );
+        assert_eq!(
+            keys.issuing_tag(b"an identity", 8, &mut scripted(&[0xEE; KEY_BYTES]))
+                .expect("a second issue"),
+            tag,
+            "a second issue draws no second key"
+        );
+        assert_ne!(
+            keys.issuing_tag(b"another identity", 8, &mut scripted(&[]))
+                .expect("another message"),
+            tag
+        );
+        let row = keys
+            .store()
+            .key(ISSUING_KEY_ID)
+            .expect("reading the issuing key")
+            .expect("the issuing key is a key of the ring");
+        assert_eq!(
+            (row.key_use, row.created_ms, row.state),
+            (KeyUse::Mac, 7, KeyState::Active)
+        );
+        tag
+    };
+    assert!(
+        !scratch
+            .every_byte()
+            .windows(KEY_BYTES)
+            .any(|window| window == key.as_slice()),
+        "the file holds the issuing key in the clear"
+    );
+    let reopened = ring(SqliteStore::open(scratch.database()).expect("reopening"), 1);
+    assert_eq!(
+        reopened
+            .issuing_tag(b"an identity", 9, &mut scripted(&[0xEE; KEY_BYTES]))
+            .expect("an issue after the restart"),
+        tag,
+        "the issuing key kept before the restart is the one after it"
+    );
+    reopened
+        .store()
+        .retire(ISSUING_KEY_ID)
+        .expect("the operator retires the issuing key");
+    assert_eq!(
+        reopened.issuing_tag(b"an identity", 9, &mut scripted(&[])),
+        Err(KeyError::Retired),
+        "a retired issuing key issues nothing more"
+    );
 }
