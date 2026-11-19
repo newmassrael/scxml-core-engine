@@ -1026,7 +1026,8 @@ where
     /// Whether one was dropped; a session being run is not a candidate.
     fn make_room(&self) -> bool {
         let now = self.wall_now();
-        let mut quiet: Vec<(u64, SharedSlot<F::Machine, T, E>)> = Vec::new();
+        // Each quiet session's slot, with when it last had an event.
+        let mut quiet = Vec::new();
         for slot in self.slots() {
             let Some(live) = try_lock(&slot.live) else {
                 continue;
