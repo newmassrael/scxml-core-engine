@@ -6,3 +6,9 @@ commit = "f9f3892fe4f8f8d397802dc50f91bb291c8d0d74"
 base = "837a4fecf692326a85fcd2cbf2aa5eff806bcdbb"
 machine = "mf977c53d872e"
 at = 1795087949
+
+[return]
+reason = "conflict"
+detail = "backends/rust/tests/src/integration/static_datamodel/mod.rs"
+report = "mb2af4e1c456c:0000000280-73f0e96fdc4f/attempt-2.log"
+at = 1795090739
