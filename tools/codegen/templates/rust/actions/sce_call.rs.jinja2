@@ -1,0 +1,14 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# docs/adr/0108, D6 item 2: call an imported algorithm that writes a map in
+   place, lent to it whole, and store what it answers where `location` names a
+   variable. The statement is lowered ahead of the template by
+   `forge::static_lowering` (`StaticTarget::in_place_call`), which holds the
+   call's adapter and the place its answer goes, and stored on
+   `action.native_code`. The algorithm cannot fail; an argument that fails
+   ends its block before the call is made, as any element that raised does
+   (W3C SCXML 4.9). #}
+{% import 'actions/_native_statement.rs.jinja2' as native %}
+// docs/adr/0108: <sce:call expr="{{ action.expr }}">
+{{ native.emit(action, in_action_block is defined and in_action_block) }}

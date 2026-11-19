@@ -478,11 +478,13 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
 /// lowering lowers both, the first lane to (D10), and is no [`Language`]: its
 /// target answers for itself.
 ///
-/// C11 reaches every map through an address in its caller's storage: a map
-/// lent, a map returned, built in the caller's destination, and a map local or
-/// the copy a writing walk walks, held where the caller holds a call's storage
-/// (docs/adr/0108, D4 "Storage"), so no frame holds more than one entry.
-pub const ALGORITHM_MAP_BACKENDS: &[Language] = &[Language::C11];
+/// Rust lends a map by `&` or `&mut` the caller's, and holds a map local and
+/// a writing walk's copy in the frame, as it holds a buffer. C11 reaches every
+/// map through an address in its caller's storage: a map lent, a map returned,
+/// built in the caller's destination, and a map local or the copy a writing
+/// walk walks, held where the caller holds a call's storage (docs/adr/0108, D4
+/// "Storage"), so no frame holds more than one entry.
+pub const ALGORITHM_MAP_BACKENDS: &[Language] = &[Language::Rust, Language::C11];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
 /// §11.9, §12.6): a unit that declares the template's `match` and, for a

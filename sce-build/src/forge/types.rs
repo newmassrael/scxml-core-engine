@@ -1601,6 +1601,14 @@ pub struct TypeCtx<'a> {
     ///
     /// ⚠ Empty everywhere but the body of such a loop.
     pub unit_held_names: std::collections::HashSet<&'a str>,
+    /// The path whose functions a Rust read of a map or a set calls (`len`,
+    /// `has`, `m[k]`, docs/adr/0108, D3), where it is not the machine's own
+    /// (`expr::RUST_MAP_READS`, through the runtime a machine's crate depends
+    /// on alone): an algorithm's, which names the leaf crate its map type is
+    /// declared in, as its other bounded types are.
+    ///
+    /// ⚠ `None` everywhere but the body of a Rust algorithm that holds a map.
+    pub rust_map_reads: Option<&'static str>,
 }
 
 /// How a target holds one record or one enum as a map's key or value in the
@@ -1732,6 +1740,7 @@ impl<'a> TypeCtx<'a> {
             lent_map_values: HashMap::new(),
             map_units: MapUnits::default(),
             unit_held_names: std::collections::HashSet::new(),
+            rust_map_reads: None,
         }
     }
 
