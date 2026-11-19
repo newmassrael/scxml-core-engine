@@ -1871,10 +1871,12 @@ fn reject_static_datamodel_in_unsupported_lang(
         .copied()
         .collect();
     reject_static_datamodel_outside(model, language, &accepted)?;
-    // A call that lends an imported algorithm a map is refused for the call,
-    // the one refusal every lane asks first (docs/adr/0108, D6 item 2), before
-    // anything of the maps the document holds is asked of this backend.
-    if let Some(scope) = crate::forge::type_ctx::StaticScope::of(model) {
+    // A call that lends an imported algorithm a map is refused for the call on
+    // a backend that lowers no algorithm's map, the one refusal every such lane
+    // asks first (docs/adr/0108, D6 item 2), before anything of the maps the
+    // document holds is asked of this backend.
+    let lends_maps = crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS.contains(&language);
+    if let Some(scope) = crate::forge::type_ctx::StaticScope::of(model).filter(|_| !lends_maps) {
         crate::forge::static_lowering::lent_map_unlowered(&scope, language.canonical_name())?;
     }
     reject_static_invoke_idlocation_outside(model, language, STATIC_INVOKE_IDLOCATION_BACKENDS)?;
