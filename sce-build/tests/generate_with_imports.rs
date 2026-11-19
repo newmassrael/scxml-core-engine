@@ -700,11 +700,32 @@ fn one_sourcemap_names_every_machine_a_run_writes_into_one_directory() {
             "{name}'s symbols are not in the directory's sidecar: {files:?}"
         );
     }
-    let hash = sidecar["source_hash"].as_str().expect("a source hash");
-    let machine = fs::read_to_string(out.join("door_one_sm.rs")).expect("read a machine");
-    assert!(
-        machine.contains(hash),
-        "two machines of one source set: the sidecar carries the hash their headers do"
+    // Each machine's header hashes its own document's closure (ADR 0094), and
+    // neither document imports the other, so the two headers differ and the
+    // directory's one sidecar carries the digest of both: a value that moves
+    // when either machine's inputs move.
+    let headers: BTreeSet<String> = ["door_one", "door_two"]
+        .iter()
+        .map(|name| {
+            let machine = fs::read_to_string(out.join(format!("{name}_sm.rs")))
+                .unwrap_or_else(|e| panic!("read {name}'s machine: {e}"));
+            machine
+                .lines()
+                .find_map(|line| line.strip_prefix("// source-hash: "))
+                .unwrap_or_else(|| panic!("{name}'s machine carries a source-hash"))
+                .trim()
+                .to_string()
+        })
+        .collect();
+    assert_eq!(
+        headers.len(),
+        2,
+        "two documents apart: each header hashes its own closure, not the directory's"
+    );
+    assert_eq!(
+        sidecar["source_hash"].as_str().expect("a source hash"),
+        sce_build::forge::sourcemap::source_hash_of_machines(&headers),
+        "the sidecar of two machines of their own closures carries the digest of both hashes"
     );
 }
 
