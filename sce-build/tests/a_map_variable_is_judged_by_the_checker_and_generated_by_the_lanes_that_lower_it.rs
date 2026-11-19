@@ -366,7 +366,8 @@ fn c11_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
         "static inline void map_faces_peer_seen_payload_map_key(const void *key, sce_map_sink_t *sink)",
         "sce_map_seed_t map_seed",
         "sce_map_seed_derive(map_seed, 0u)",
-        "sce_map_holds(&(sm->policy.v_faces), &(sm->policy.v_peer), NULL)",
+        "sce_map_holds(&(sm->policy.v_faces), &(sm->policy.v_peer), \
+         map_faces_record_peer_key_map_key)",
         "map_faces_peer_seen_payload_map_key)",
         "sce_map_count(&(sm->policy.v_faces))",
         "sce_map_lookup_take(&sce_failure_, sce_map_lookup(&(sm->policy.v_counts), SCE_MAP_KEY_UINT(",
@@ -411,6 +412,74 @@ fn c11_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
         "sce_map_copy_for_walk(sce_walk_",
         "&sm->scratch.loop_0.of_sce_static_set_uint32_4",
         "sce_static_set_uint32_4_t of_sce_static_set_uint32_4;",
+    ] {
+        assert!(
+            code.contains(held),
+            "no `{held}` in the generated C11:\n{code}"
+        );
+    }
+}
+
+/// The arguments of each `SCE_MAP_DECLARE(prefix, K, V, B, FEED)` the generated
+/// C11 `code` makes, read apart: the declarations a machine's map types are, and
+/// not a comment that names the macro.
+fn c11_map_declarations(code: &str) -> Vec<Vec<String>> {
+    code.lines()
+        .filter_map(|line| line.trim().strip_prefix("SCE_MAP_DECLARE("))
+        .filter_map(|rest| rest.strip_suffix(')'))
+        .map(|args| args.split(',').map(|arg| arg.trim().to_string()).collect())
+        .collect()
+}
+
+/// docs/adr/0108, D6 item 4: a C11 map holds a record key and a record value in
+/// the type the record's unit declares (`<Schema>Payload_t`), never in the
+/// machine's own record type, and the machine's header includes each such unit's
+/// header though the machine calls no algorithm. A put builds the unit's record
+/// from the machine's; the value at a key and a walk's item read whole are the
+/// machine's record built from the unit's, and a key the machine holds in its own
+/// record is looked up by that record's feed, one a walk binds by the map's own.
+#[test]
+fn a_c11_map_holds_its_records_in_the_types_their_units_declare() {
+    let document = edited(
+        &faces(),
+        "<assign location=\"walked\" expr=\"i\"/>",
+        "<assign location=\"last\" expr=\"f\"/>\n        \
+         <if cond=\"has(faces, k)\"><assign location=\"walked\" expr=\"i\"/></if>",
+    );
+    let (ok, printed, code) = generate_c11(&document);
+    assert!(ok, "C11 generates a map of records:\n{printed}");
+    let declared = c11_map_declarations(&code);
+    let holds = |key: &str, value: &str| {
+        declared
+            .iter()
+            .any(|args| args.len() == 5 && args[1] == key && args[2] == value)
+    };
+    assert!(
+        holds("MapPeerKeyPayload_t", "MapFacePayload_t"),
+        "`faces` holds its units' records: {declared:?}"
+    );
+    assert!(
+        holds("uint32_t", "MapFacePayload_t"),
+        "`byId` holds its unit's record: {declared:?}"
+    );
+    assert!(
+        declared
+            .iter()
+            .all(|args| !args.iter().any(|arg| arg.starts_with("map_faces_record_"))),
+        "a map holds the machine's own record: {declared:?}"
+    );
+    for held in [
+        "#include \"map_peer_key.h\"",
+        "#include \"map_face.h\"",
+        "static inline void MapPeerKeyPayload_map_key(const void *key, sce_map_sink_t *sink)",
+        "static inline void MapFacePayload_t_saved_write(sce_jw_t *w, const MapFacePayload_t *value)",
+        "MapFacePayload_t_saved_write(w, &(slot->value));",
+        "static inline map_faces_record_face_t map_faces_record_face_of_unit(MapFacePayload_t from)",
+        "__typeof__(sm->policy.v_peer) sce_key_in = sm->policy.v_peer;",
+        "sce_key = (MapPeerKeyPayload_t){ .low = sce_key_in.low, .high = sce_key_in.high };",
+        "map_faces_record_face_of_unit(SCE_MAP_VALUE_OF(sm->policy.v_faces, ",
+        "map_faces_record_face_of_unit(f)",
+        "sce_map_holds(&(sm->policy.v_faces), &(k), NULL)",
     ] {
         assert!(
             code.contains(held),

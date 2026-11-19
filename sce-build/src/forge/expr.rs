@@ -7735,6 +7735,11 @@ const C_MAP_VALUE_OF: &str = "SCE_MAP_VALUE_OF";
 /// zero value. A text value is read as its buffer's text, and so is a text
 /// field of a record value (`m[k].f`).
 ///
+/// A record the map holds is of the type its unit declares (D6 item 4,
+/// [`TypeCtx::unit_records`]): a field of it, at a key or as the item or the
+/// key of a walk ([`TypeCtx::unit_held_names`]), is read where it stands, and
+/// the record read whole is the machine's own record built from it.
+///
 /// A key is handed as a probe and the function that writes the probe's
 /// canonical bytes ([`c_map_probe`]), so a value of another width, a text
 /// pointer and the payload taken whole each find the key whose bytes they
@@ -7743,8 +7748,8 @@ const C_MAP_VALUE_OF: &str = "SCE_MAP_VALUE_OF";
 /// read.
 fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
     let ty = expr.ty;
-    // `m[k].f`: the field of the value the lookup found.
     if let ExprKind::Member { object, property } = &mut expr.kind {
+        // `m[k].f`: the field of the value the lookup found.
         if c_keyed_value(object, ctx)? {
             if ty == InferredType::Str {
                 property.push('.');
@@ -7752,7 +7757,15 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
             }
             return Ok(());
         }
+        // `item.f`, where the walk binds the item to a record of its unit's
+        // type: the field of that record, read where it stands.
+        if c_unit_record(object, ctx).is_some() {
+            return Ok(());
+        }
     }
+    // A record a map holds, read whole: the machine's own record, built from
+    // the unit's.
+    let from_unit = c_unit_record(expr, ctx).map(|unit| unit.from_unit.clone());
     if c_keyed_value(expr, ctx)? {
         if ty == InferredType::Str {
             let value = std::mem::replace(expr, TypedExpr::new(ExprKind::NullLit));
@@ -7764,15 +7777,26 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
                     property: C_BUFFER_TEXT.to_string(),
                 },
             };
+        } else if let Some(from_unit) = &from_unit {
+            wrap_in_call(expr, from_unit, ty);
         }
+        return Ok(());
+    }
+    // ... and the item or the key of a walk bound to one.
+    if let Some(from_unit) = &from_unit {
+        wrap_in_call(expr, from_unit, ty);
         return Ok(());
     }
     let builtin = match &expr.kind {
         ExprKind::Call { callee, args, .. } => keyed_builtin(callee, args, ctx),
         _ => None,
     };
-    for child in expr.children_mut() {
-        lower_keyed_reads_for_c(child, ctx)?;
+    // The key of a `has` is lowered as the probe it is handed as
+    // ([`c_map_probe`]), and its map is a place no read lowers.
+    if !matches!(builtin, Some((KeyedBuiltin::Has, _))) {
+        for child in expr.children_mut() {
+            lower_keyed_reads_for_c(child, ctx)?;
+        }
     }
     let Some((builtin, held)) = builtin else {
         return Ok(());
@@ -7815,9 +7839,32 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
     Ok(())
 }
 
+/// How `node` is held where it reads a record a map holds in the type the
+/// record's own unit declares (docs/adr/0108, D6 item 4,
+/// [`TypeCtx::unit_records`]): the value at a key of a map of such records
+/// (`m[k]`), or the item or the key a walk of one binds
+/// ([`TypeCtx::unit_held_names`]). `None` for any other node, and in every
+/// scope whose maps hold no record in its unit's type.
+fn c_unit_record<'c>(
+    node: &TypedExpr,
+    ctx: &'c TypeCtx<'_>,
+) -> Option<&'c crate::forge::types::UnitHeldRecord> {
+    if ctx.unit_records.is_empty() {
+        return None;
+    }
+    match &node.kind {
+        ExprKind::Ident(name) => ctx.unit_held_name(name),
+        ExprKind::Index { object, .. } => match keyed_place(object, ctx)?.map_value()?.ty {
+            crate::forge::value_type::ValueType::Record { alias } => ctx.unit_records.get(&alias),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// `node`, when it reads the value at a key of a map (`m[k]`), as the read of
-/// the value [`C_MAP_LOOKUP`] finds there, its key's own reads lowered first
-/// ([`lower_keyed_reads_for_c`]); `false`, and `node` as it was, for any other
+/// the value [`C_MAP_LOOKUP`] finds there, its key lowered as the probe it is
+/// handed as ([`c_map_probe`]); `false`, and `node` as it was, for any other
 /// node.
 fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusal> {
     let held = match &node.kind {
@@ -7831,8 +7878,7 @@ fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusa
     else {
         return Ok(false);
     };
-    let (map, mut key) = (*object, *index);
-    lower_keyed_reads_for_c(&mut key, ctx)?;
+    let (map, key) = (*object, *index);
     let (probe, feed) = c_map_probe(key, &held, ctx)?;
     let mut address = map.clone();
     let address_ty = address.ty;
@@ -7857,16 +7903,20 @@ fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusa
 }
 
 /// The probe of the key `key` of the map or the set `held` a C11 read hands the
-/// lookup, and the function that writes the probe's canonical bytes
-/// (`sce/forge/map.h`, docs/adr/0108, D1): an integer as a 64-bit integer of
-/// its sign, the key's where the literal states none, a value of an enum as the
-/// number its constant carries, a `bool`, a text and a byte string each by the
-/// header's probe of it, and a record where it stands, of the map's own key
-/// type, which the map's own feed writes (`NULL`), or the payload taken whole,
-/// which the feed its key declaration names writes
-/// ([`TypeCtx::payload_key_feed`]).
+/// lookup, its own reads lowered first ([`lower_keyed_reads_for_c`]), and the
+/// function that writes the probe's canonical bytes (`sce/forge/map.h`,
+/// docs/adr/0108, D1): an integer as a 64-bit integer of its sign, the key's
+/// where the literal states none, a value of an enum as the number its constant
+/// carries, a `bool`, a text and a byte string each by the header's probe of
+/// it, and a record where it stands: one a map holds in the type its unit
+/// declares, the map's own key type, by the map's own feed (`NULL`), read where
+/// that map holds it rather than built into the machine's record; one the
+/// machine holds in its own record type by that record's feed
+/// ([`crate::forge::types::UnitHeldRecord::machine_feed`]), which writes the
+/// same bytes; and the payload taken whole by the feed its key declaration
+/// names ([`TypeCtx::payload_key_feed`]).
 fn c_map_probe(
-    key: TypedExpr,
+    mut key: TypedExpr,
     held: &crate::forge::value_path::Place,
     ctx: &TypeCtx<'_>,
 ) -> Result<(TypedExpr, TypedExpr), Refusal> {
@@ -7889,16 +7939,26 @@ fn c_map_probe(
     let Some(key_place) = held.map_key() else {
         return Err(unspelled(span, "a read of a value that is no map"));
     };
+    let unit_held = c_unit_record(&key, ctx).is_some();
+    if unit_held {
+        c_keyed_value(&mut key, ctx)?;
+    } else {
+        lower_keyed_reads_for_c(&mut key, ctx)?;
+    }
     Ok(match key_place.ty {
-        ValueType::Record { .. } => {
+        ValueType::Record { alias } => {
             let payload = place_path(&key).as_deref()
                 == Some(crate::forge::event_schema_check::EVENT_DATA_PATH);
             let feed = if payload {
                 ctx.payload_key_feed
                     .clone()
                     .ok_or_else(|| unspelled(span, "a payload taken whole as a record key"))?
-            } else {
+            } else if unit_held {
                 "NULL".to_string()
+            } else {
+                ctx.unit_records
+                    .get(&alias)
+                    .map_or_else(|| "NULL".to_string(), |unit| unit.machine_feed.clone())
             };
             (probe("&", key), raw(&feed))
         }

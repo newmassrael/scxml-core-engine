@@ -4325,12 +4325,11 @@ fn render_c11(
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
+        // The units whose types the header names: of the storage the machine holds
+        // for its calls of algorithms (docs/adr/0082), and of the records its maps
+        // hold (docs/adr/0108, D6 item 4).
+        static_header_imports => &static_lowering.header_imports,
         // docs/adr/0082: the storage the machine holds for its calls of algorithms.
-        static_scratch_imports => static_lowering
-            .scratch
-            .as_ref()
-            .map(|scratch| scratch.imports.clone())
-            .unwrap_or_default(),
         static_scratch_defs => static_lowering
             .scratch
             .as_ref()
