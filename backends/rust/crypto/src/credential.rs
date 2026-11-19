@@ -190,6 +190,7 @@ mod tests {
                 issued_ms: 1_000,
                 expires_ms: 2_000,
                 revoked: false,
+                sealed: Vec::new(),
             })
             .expect("issuing a token");
         assert!(tokens_at(&store, 1_000).check("phone", &token));

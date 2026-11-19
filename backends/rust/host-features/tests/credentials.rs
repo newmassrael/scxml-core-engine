@@ -21,7 +21,7 @@ use sce_rust_host_features::{
     Reading, ReferenceHost, ScriptedClock, ScriptedRandom, Transport, TransportFailure,
 };
 use sce_rust_session_store::{
-    CredentialStore, Digest, Failure, KeyStore, PinStore, Revoked, TokenRow, TokenStore,
+    CredentialStore, Digest, Failure, KeyStore, PinRow, PinStore, Revoked, TokenRow, TokenStore,
 };
 
 struct Unreachable;
@@ -136,6 +136,7 @@ fn an_issued_token_proves_its_name_until_its_expiry() {
             issued_ms: NOW_MS as u64,
             expires_ms: NOW_MS as u64 + 3_600_000,
             revoked: false,
+            sealed: Vec::new(),
         }],
         "the store keeps the token's digest, never the token"
     );
@@ -405,15 +406,23 @@ fn gone() -> Failure {
 }
 
 impl PinStore for Broken {
-    fn pinned(&self, _: &str) -> Result<Option<Digest>, Failure> {
+    fn pinned(&self, _: &str) -> Result<Option<Vec<u8>>, Failure> {
         Err(gone())
     }
 
-    fn pin(&self, _: &str, _: &Digest) -> Result<Digest, Failure> {
+    fn pin(&self, _: &str, _: &[u8]) -> Result<Vec<u8>, Failure> {
         Err(gone())
     }
 
     fn unpin(&self, _: &str) -> Result<bool, Failure> {
+        Err(gone())
+    }
+
+    fn pins(&self) -> Result<Vec<PinRow>, Failure> {
+        Err(gone())
+    }
+
+    fn repin(&self, _: &str, _: &[u8], _: &[u8]) -> Result<bool, Failure> {
         Err(gone())
     }
 }
@@ -428,6 +437,10 @@ impl TokenStore for Broken {
     }
 
     fn tokens(&self) -> Result<Vec<TokenRow>, Failure> {
+        Err(gone())
+    }
+
+    fn reseal(&self, _: &Digest, _: &[u8], _: &[u8]) -> Result<bool, Failure> {
         Err(gone())
     }
 }

@@ -134,6 +134,7 @@ pub(crate) fn perform<T: Transport>(
                 issued_ms: now_ms,
                 expires_ms: now_ms.saturating_add(u64::from(ttl_s).saturating_mul(1_000)),
                 revoked: false,
+                sealed: Vec::new(),
             };
             match TokenStore::issue(&**credentials, &row) {
                 Ok(_) => record(json!({ "token": token })),

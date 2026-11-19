@@ -44,9 +44,9 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
 
 /// ADR 0109, Open question 1: a file of layout 1 is brought to this build's layout when it is
 /// opened, its sessions and its counter kept, and the keys of layout 2 and the credentials of
-/// layout 3 are then kept in it.
+/// layouts 3 and 4 are then kept in it.
 #[test]
-fn a_file_of_layout_1_is_brought_to_layout_3_with_its_sessions() {
+fn a_file_of_layout_1_is_brought_to_layout_4_with_its_sessions() {
     let scratch = Scratch::new("layout-1");
     Connection::open(scratch.database())
         .expect("a database of a build of layout 1")
@@ -65,7 +65,7 @@ fn a_file_of_layout_1_is_brought_to_layout_3_with_its_sessions() {
         .expect("a second connection")
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("its layout");
-    assert_eq!(layout, 3, "the file was brought to layout 3");
+    assert_eq!(layout, 4, "the file was brought to layout 4");
     let lease = store.acquire("k", "a", 1_000, 0).expect("a lease");
     assert!(
         lease.fence > 1,
@@ -81,10 +81,10 @@ fn a_file_of_layout_1_is_brought_to_layout_3_with_its_sessions() {
         .is_empty());
 }
 
-/// ADR 0109, D3: a file of layout 2 is brought to layout 3 when it is opened, its keys kept, and
-/// the credentials of layout 3 are then kept in it.
+/// ADR 0109, D3: a file of layout 2 is brought to this build's layout when it is opened, its keys
+/// kept, and the credentials of layouts 3 and 4 are then kept in it.
 #[test]
-fn a_file_of_layout_2_is_brought_to_layout_3_with_its_keys() {
+fn a_file_of_layout_2_is_brought_to_layout_4_with_its_keys() {
     let scratch = Scratch::new("layout-2");
     let kept = KeyRow {
         id: "generated:02".to_string(),
@@ -112,13 +112,70 @@ fn a_file_of_layout_2_is_brought_to_layout_3_with_its_keys() {
         .expect("a second connection")
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("its layout");
-    assert_eq!(layout, 3, "the file was brought to layout 3");
+    assert_eq!(layout, 4, "the file was brought to layout 4");
     assert_eq!(store.key("generated:02").expect("its key"), Some(kept));
     assert_eq!(
         store
             .pin("phone", &[1; 32])
             .expect("a pin in the upgraded file"),
         [1; 32]
+    );
+}
+
+/// ADR 0109, D8: a file of layout 3 is brought to layout 4 when it is opened, its tokens kept
+/// with no sealed bytes beside them, and a token's sealed bytes are then kept in it.
+#[test]
+fn a_file_of_layout_3_is_brought_to_layout_4_with_its_tokens() {
+    let scratch = Scratch::new("layout-3");
+    // What a build of layout 3 left: its tables, a token in them, and its number.
+    {
+        drop(SqliteStore::open(scratch.database()).expect("making the store"));
+        Connection::open(scratch.database())
+            .expect("a connection of a build of layout 3")
+            .execute_batch(
+                "DROP INDEX credential_tokens_by_name; DROP TABLE credential_tokens; \
+                 CREATE TABLE credential_tokens ( \
+                     digest BLOB PRIMARY KEY NOT NULL, \
+                     name TEXT NOT NULL, \
+                     issued_ms INTEGER NOT NULL, \
+                     expires_ms INTEGER NOT NULL, \
+                     revoked INTEGER NOT NULL \
+                 ); \
+                 CREATE INDEX credential_tokens_by_name ON credential_tokens (name); \
+                 INSERT INTO credential_tokens (digest, name, issued_ms, expires_ms, revoked) \
+                 VALUES (zeroblob(32), 'phone', 1000, 2000, 0); \
+                 PRAGMA user_version = 3;",
+            )
+            .expect("the file as layout 3 left it");
+    }
+    let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 3");
+    let layout: i64 = Connection::open(scratch.database())
+        .expect("a second connection")
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .expect("its layout");
+    assert_eq!(layout, 4, "the file was brought to layout 4");
+    let kept = TokenRow {
+        digest: [0; 32],
+        name: "phone".to_string(),
+        issued_ms: 1_000,
+        expires_ms: 2_000,
+        revoked: false,
+        sealed: Vec::new(),
+    };
+    assert_eq!(
+        store.token(&[0; 32]).expect("its token"),
+        Some(kept),
+        "a token of layout 3 has no sealed bytes beside it"
+    );
+    assert!(store
+        .reseal(&[0; 32], b"", b"sealed")
+        .expect("sealed bytes kept beside it"));
+    assert_eq!(
+        store
+            .token(&[0; 32])
+            .expect("its token")
+            .map(|row| row.sealed),
+        Some(b"sealed".to_vec())
     );
 }
 
@@ -134,6 +191,7 @@ fn the_credentials_a_store_kept_are_there_when_its_file_is_opened_again() {
         issued_ms: 1_000,
         expires_ms: 61_000,
         revoked: false,
+        sealed: Vec::new(),
     };
     let revoked = TokenRow {
         digest: [0x22; 32],
@@ -155,7 +213,7 @@ fn the_credentials_a_store_kept_are_there_when_its_file_is_opened_again() {
     let store = SqliteStore::open(scratch.database()).expect("opening the store again");
     assert_eq!(
         store.pinned("phone").expect("phone's pin"),
-        Some([0xA1; 32])
+        Some([0xA1; 32].to_vec())
     );
     assert_eq!(
         store.pin("phone", &[0xFF; 32]).expect("a second secret"),
@@ -372,7 +430,7 @@ fn a_file_that_is_not_a_session_store_is_not_taken_for_one() {
     drop(SqliteStore::open(later.database()).expect("making the store"));
     Connection::open(later.database())
         .expect("a connection of a later build")
-        .pragma_update(None, "user_version", 4)
+        .pragma_update(None, "user_version", 5)
         .expect("a layout of a later build");
     assert!(
         SqliteStore::open(later.database()).is_err(),

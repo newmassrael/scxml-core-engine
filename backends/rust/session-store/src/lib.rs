@@ -80,7 +80,7 @@ mod rules;
 mod sqlite;
 
 pub use credentials::{
-    CredentialStore, Digest, MemoryCredentials, PinStore, Revoked, TokenRow, TokenStore,
+    CredentialStore, Digest, MemoryCredentials, PinRow, PinStore, Revoked, TokenRow, TokenStore,
 };
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use memory::MemoryStore;

@@ -21,10 +21,16 @@
 //! * [`a_revoked_name_keeps_no_live_token_and_no_pin`]: revocation revokes the name's tokens, removes
 //!   its pin, touches no other name, and is not undone by a repeated issue.
 //! * [`handles_share_the_credentials`]: what one handle kept, another reads.
+//! * [`a_pin_is_replaced_only_from_the_bytes_it_holds`]: every pin is listed by its name, and a
+//!   pin's bytes are replaced only by a call made from the bytes it holds.
+//! * [`a_tokens_sealed_bytes_are_replaced_only_from_what_it_holds`]: a token keeps the bytes it
+//!   was issued with beside it, replaced only by a call made from them, its other columns kept.
 //!
 //! Each function needs a harness whose store holds no credential when it starts.
 
-use crate::credentials::{CredentialStore, Digest, PinStore, Revoked, TokenRow, TokenStore};
+use crate::credentials::{
+    CredentialStore, Digest, PinRow, PinStore, Revoked, TokenRow, TokenStore,
+};
 use crate::LATEST_MOMENT;
 
 /// What gives the functions of this module their store.
@@ -51,6 +57,7 @@ fn token(digest: Digest, name: &str) -> TokenRow {
         issued_ms: 1_000,
         expires_ms: 2_000,
         revoked: false,
+        sealed: Vec::new(),
     }
 }
 
@@ -76,7 +83,7 @@ pub fn a_name_is_pinned_to_its_first_secret(harness: &impl CredentialHarness) {
     );
     assert_eq!(
         store.pinned("phone").expect("the pin"),
-        Some(digest(1)),
+        Some(digest(1).to_vec()),
         "a second secret replaced nothing"
     );
     assert_eq!(
@@ -108,7 +115,7 @@ pub fn an_unpinned_name_is_pinned_again(harness: &impl CredentialHarness) {
     );
     assert_eq!(
         store.pinned("tablet").expect("the other pin"),
-        Some(digest(3)),
+        Some(digest(3).to_vec()),
         "an unpin removed no other name's pin"
     );
 }
@@ -214,7 +221,7 @@ pub fn a_revoked_name_keeps_no_live_token_and_no_pin(harness: &impl CredentialHa
     );
     assert_eq!(
         store.pinned("tablet").expect("tablet's pin"),
-        Some(digest(8)),
+        Some(digest(8).to_vec()),
         "another name's pin is untouched"
     );
     assert!(
@@ -239,7 +246,7 @@ pub fn handles_share_the_credentials(harness: &impl CredentialHarness) {
     writer.issue(&token(digest(2), "phone")).expect("a token");
     assert_eq!(
         reader.pinned("phone").expect("the pin from another handle"),
-        Some(digest(1))
+        Some(digest(1).to_vec())
     );
     assert_eq!(
         reader
@@ -257,4 +264,109 @@ pub fn handles_share_the_credentials(harness: &impl CredentialHarness) {
         "a revocation through one handle is read through another"
     );
     assert_eq!(reader.pinned("phone").expect("no pin"), None);
+}
+
+/// Every pin is listed by its name, in their order; a pin's bytes are replaced only by a call made
+/// from the bytes it holds, which is how a store that seals what it keeps seals a pin again.
+pub fn a_pin_is_replaced_only_from_the_bytes_it_holds(harness: &impl CredentialHarness) {
+    let store = harness.handle();
+    assert!(store.pins().expect("no pins").is_empty());
+    store.pin("tablet", &digest(2)).expect("tablet's pin");
+    store.pin("phone", &digest(1)).expect("phone's pin");
+    assert_eq!(
+        store.pins().expect("every pin"),
+        vec![
+            PinRow {
+                name: "phone".to_string(),
+                pin: digest(1).to_vec(),
+            },
+            PinRow {
+                name: "tablet".to_string(),
+                pin: digest(2).to_vec(),
+            },
+        ],
+        "every pin, in the order of the names"
+    );
+    assert!(
+        !store
+            .repin("phone", &digest(9), &digest(3))
+            .expect("a replacement from bytes it does not hold"),
+        "replaced from bytes the pin does not hold"
+    );
+    assert_eq!(
+        store.pinned("phone").expect("phone's pin"),
+        Some(digest(1).to_vec()),
+        "a refused replacement wrote nothing"
+    );
+    assert!(store
+        .repin("phone", &digest(1), &digest(3))
+        .expect("a replacement from the bytes it holds"));
+    assert_eq!(
+        store.pinned("phone").expect("phone's pin"),
+        Some(digest(3).to_vec())
+    );
+    assert!(
+        !store
+            .repin("laptop", &digest(1), &digest(3))
+            .expect("a replacement of no pin"),
+        "a name pinned to nothing is not pinned by a replacement"
+    );
+    assert_eq!(store.pinned("laptop").expect("no pin"), None);
+    assert_eq!(
+        store.pinned("tablet").expect("tablet's pin"),
+        Some(digest(2).to_vec()),
+        "a replacement touched no other name"
+    );
+}
+
+/// A token keeps the bytes it was issued with beside it; they are replaced only by a call made from
+/// them, every other column kept, its revocation included.
+pub fn a_tokens_sealed_bytes_are_replaced_only_from_what_it_holds(
+    harness: &impl CredentialHarness,
+) {
+    let store = harness.handle();
+    let first = TokenRow {
+        sealed: b"under key one".to_vec(),
+        ..token(digest(5), "phone")
+    };
+    assert_eq!(store.issue(&first).expect("issuing it"), first);
+    assert!(
+        !store
+            .reseal(&digest(5), b"under key nine", b"under key two")
+            .expect("a replacement from bytes it does not hold"),
+        "replaced from bytes the token does not hold"
+    );
+    assert_eq!(
+        store.token(&digest(5)).expect("the token"),
+        Some(first.clone())
+    );
+    assert!(store
+        .reseal(&digest(5), b"under key one", b"under key two")
+        .expect("a replacement from the bytes it holds"));
+    assert_eq!(
+        store.token(&digest(5)).expect("the token"),
+        Some(TokenRow {
+            sealed: b"under key two".to_vec(),
+            ..first.clone()
+        }),
+        "the other columns are kept"
+    );
+    assert!(
+        !store
+            .reseal(&digest(6), b"", b"under key two")
+            .expect("a replacement of no token"),
+        "a digest the store holds no token of"
+    );
+    assert_eq!(store.token(&digest(6)).expect("no token"), None);
+
+    store.revoke("phone").expect("revoking phone");
+    assert!(store
+        .reseal(&digest(5), b"under key two", b"under key three")
+        .expect("a revoked token's replacement"));
+    let held = store
+        .token(&digest(5))
+        .expect("the token")
+        .expect("a revoked token is kept");
+    assert!(held.revoked, "a replacement keeps the revocation");
+    assert_eq!(held.sealed, b"under key three");
 }

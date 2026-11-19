@@ -54,6 +54,16 @@ fn in_memory_handles_share_the_credentials() {
     credential_conformance::handles_share_the_credentials(&in_memory());
 }
 
+#[test]
+fn in_memory_a_pin_is_replaced_only_from_the_bytes_it_holds() {
+    credential_conformance::a_pin_is_replaced_only_from_the_bytes_it_holds(&in_memory());
+}
+
+#[test]
+fn in_memory_a_tokens_sealed_bytes_are_replaced_only_from_what_it_holds() {
+    credential_conformance::a_tokens_sealed_bytes_are_replaced_only_from_what_it_holds(&in_memory());
+}
+
 #[cfg(feature = "sqlite")]
 mod common;
 
@@ -109,5 +119,19 @@ mod on_sqlite {
     #[test]
     fn handles_share_the_credentials() {
         credential_conformance::handles_share_the_credentials(&on_sqlite("credentials-handles"));
+    }
+
+    #[test]
+    fn a_pin_is_replaced_only_from_the_bytes_it_holds() {
+        credential_conformance::a_pin_is_replaced_only_from_the_bytes_it_holds(&on_sqlite(
+            "pins-replaced",
+        ));
+    }
+
+    #[test]
+    fn a_tokens_sealed_bytes_are_replaced_only_from_what_it_holds() {
+        credential_conformance::a_tokens_sealed_bytes_are_replaced_only_from_what_it_holds(
+            &on_sqlite("tokens-resealed"),
+        );
     }
 }

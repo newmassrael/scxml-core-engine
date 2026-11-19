@@ -38,25 +38,46 @@ pub const DIGEST_BYTES: usize = 32;
 /// The SHA-256 of a secret, as a store keeps it.
 pub type Digest = [u8; DIGEST_BYTES];
 
-/// Where a server keeps the installation pins: a name to the digest of its secret.
+/// Where a server keeps the installation pins: a name to the bytes it is pinned to, which the
+/// store keeps and never reads. The `install` authenticator pins the SHA-256 of the installation
+/// secret; a store that wraps another and seals what it keeps (ADR 0109, D8) pins its sealing of
+/// that digest in the one it wraps.
 ///
 /// Every method is one transaction. A handle may be shared between threads; whether handles on one
 /// store may live in several processes is the implementation's to say.
 pub trait PinStore: Send + Sync {
-    /// The digest `name` is pinned to, or `None`.
-    fn pinned(&self, name: &str) -> Result<Option<Digest>, Failure>;
+    /// The bytes `name` is pinned to, or `None`.
+    fn pinned(&self, name: &str) -> Result<Option<Vec<u8>>, Failure>;
 
-    /// Pin `name` to `digest` unless it is pinned already, in one step, and answer the digest it is
-    /// pinned to afterwards: `digest` when this call pinned it, the one held before when it did
-    /// not. A pin is never replaced; of two first exchanges that bring different secrets, the
-    /// first kept is the pin. Whether the answer is `digest` is the caller's to compare, in
-    /// constant time.
-    fn pin(&self, name: &str, digest: &Digest) -> Result<Digest, Failure>;
+    /// Pin `name` to `pin` unless it is pinned already, in one step, and answer the bytes it is
+    /// pinned to afterwards: `pin` when this call pinned it, the ones held before when it did
+    /// not. A pin is never replaced by this call; of two first exchanges that bring different
+    /// secrets, the first kept is the pin. Whether the answer is `pin` is the caller's to compare,
+    /// in constant time.
+    fn pin(&self, name: &str, pin: &[u8]) -> Result<Vec<u8>, Failure>;
 
     /// Remove the pin of `name`, so that the next secret it brings is pinned: `true` when it was
     /// pinned. This is how a client that lost its secret claims its name again, by the operator's
     /// hand or a statechart's revocation.
     fn unpin(&self, name: &str) -> Result<bool, Failure>;
+
+    /// Every pin held, in the order of the UTF-8 bytes of the names.
+    fn pins(&self) -> Result<Vec<PinRow>, Failure>;
+
+    /// Replace the bytes `name` is pinned to with `pin` when they are `held`, and answer whether
+    /// it did: `false`, writing nothing, when the name is pinned to other bytes or to none. This
+    /// is how a store that seals what it keeps seals a pin again under its active key (ADR 0109,
+    /// D8), the digest it holds unchanged: a pin read and sealed again is never written over one
+    /// that changed in between.
+    fn repin(&self, name: &str, held: &[u8], pin: &[u8]) -> Result<bool, Failure>;
+}
+
+/// An installation pin as a store keeps it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinRow {
+    pub name: String,
+    /// The bytes the name is pinned to.
+    pub pin: Vec<u8>,
 }
 
 /// A bearer token as a store keeps it: the digest of its text, never the text.
@@ -73,6 +94,11 @@ pub struct TokenRow {
     pub expires_ms: u64,
     /// Whether it was revoked. A revoked token proves nothing, and stays revoked.
     pub revoked: bool,
+    /// Bytes kept with the row that the store never reads: empty in a row its issuer writes. A
+    /// store that wraps another and seals what it keeps (ADR 0109, D8) keeps the row's sealed
+    /// record here in the one it wraps, and in that one's other columns only what that one
+    /// compares or sets.
+    pub sealed: Vec<u8>,
 }
 
 impl TokenRow {
@@ -98,6 +124,12 @@ pub trait TokenStore: Send + Sync {
 
     /// Every token held, revoked and expired ones included, in the order of their digests.
     fn tokens(&self) -> Result<Vec<TokenRow>, Failure>;
+
+    /// Replace the [`TokenRow::sealed`] bytes of the token whose digest is `digest` with `sealed`
+    /// when they are `held`, every other column kept, and answer whether it did: `false`, writing
+    /// nothing, when the store holds no such token or its bytes are others. This is how a store
+    /// that seals what it keeps seals a token again under its active key (ADR 0109, D8).
+    fn reseal(&self, digest: &Digest, held: &[u8], sealed: &[u8]) -> Result<bool, Failure>;
 }
 
 /// What the revocation of a name took away.
@@ -134,7 +166,7 @@ pub struct MemoryCredentials {
 
 #[derive(Default)]
 struct CredentialRecords {
-    pins: BTreeMap<String, Digest>,
+    pins: BTreeMap<String, Vec<u8>>,
     tokens: BTreeMap<Digest, TokenRow>,
 }
 
@@ -151,20 +183,44 @@ impl MemoryCredentials {
 }
 
 impl PinStore for MemoryCredentials {
-    fn pinned(&self, name: &str) -> Result<Option<Digest>, Failure> {
-        Ok(self.records().pins.get(name).copied())
+    fn pinned(&self, name: &str) -> Result<Option<Vec<u8>>, Failure> {
+        Ok(self.records().pins.get(name).cloned())
     }
 
-    fn pin(&self, name: &str, digest: &Digest) -> Result<Digest, Failure> {
-        Ok(*self
+    fn pin(&self, name: &str, pin: &[u8]) -> Result<Vec<u8>, Failure> {
+        Ok(self
             .records()
             .pins
             .entry(name.to_string())
-            .or_insert(*digest))
+            .or_insert_with(|| pin.to_vec())
+            .clone())
     }
 
     fn unpin(&self, name: &str) -> Result<bool, Failure> {
         Ok(self.records().pins.remove(name).is_some())
+    }
+
+    fn pins(&self) -> Result<Vec<PinRow>, Failure> {
+        Ok(self
+            .records()
+            .pins
+            .iter()
+            .map(|(name, pin)| PinRow {
+                name: name.clone(),
+                pin: pin.clone(),
+            })
+            .collect())
+    }
+
+    fn repin(&self, name: &str, held: &[u8], pin: &[u8]) -> Result<bool, Failure> {
+        let mut records = self.records();
+        Ok(match records.pins.get_mut(name) {
+            Some(kept) if kept.as_slice() == held => {
+                *kept = pin.to_vec();
+                true
+            }
+            _ => false,
+        })
     }
 }
 
@@ -188,6 +244,17 @@ impl TokenStore for MemoryCredentials {
 
     fn tokens(&self) -> Result<Vec<TokenRow>, Failure> {
         Ok(self.records().tokens.values().cloned().collect())
+    }
+
+    fn reseal(&self, digest: &Digest, held: &[u8], sealed: &[u8]) -> Result<bool, Failure> {
+        let mut records = self.records();
+        Ok(match records.tokens.get_mut(digest) {
+            Some(row) if row.sealed == held => {
+                row.sealed = sealed.to_vec();
+                true
+            }
+            _ => false,
+        })
     }
 }
 

@@ -1616,7 +1616,7 @@ mod tests {
         assert_eq!(exchange(1).status, 200, "the first secret");
         assert_eq!(
             pins.pinned("phone").expect("the pin"),
-            Some(install_digest(&[1; 32])),
+            Some(install_digest(&[1; 32]).to_vec()),
             "the name is pinned to the secret's SHA-256 in the store given"
         );
         assert_eq!(exchange(1).status, 200, "the same secret again");
@@ -1625,7 +1625,7 @@ mod tests {
         assert_eq!(refused.header("WWW-Authenticate"), Some(INSTALL_SCHEME));
         assert_eq!(
             pins.pinned("phone").expect("the pin"),
-            Some(install_digest(&[1; 32])),
+            Some(install_digest(&[1; 32]).to_vec()),
             "a second secret replaced nothing"
         );
         assert!(pins.unpin("phone").expect("the operator removes the pin"));
@@ -1644,7 +1644,7 @@ mod tests {
     }
 
     impl PinStore for FailingPins {
-        fn pinned(&self, _: &str) -> Result<Option<[u8; 32]>, sce_rust_session_store::Failure> {
+        fn pinned(&self, _: &str) -> Result<Option<Vec<u8>>, sce_rust_session_store::Failure> {
             if self.reads_fail {
                 Err(sce_rust_session_store::Failure::new("the medium is gone"))
             } else {
@@ -1652,11 +1652,26 @@ mod tests {
             }
         }
 
-        fn pin(&self, _: &str, _: &[u8; 32]) -> Result<[u8; 32], sce_rust_session_store::Failure> {
+        fn pin(&self, _: &str, _: &[u8]) -> Result<Vec<u8>, sce_rust_session_store::Failure> {
             Err(sce_rust_session_store::Failure::new("the medium is gone"))
         }
 
         fn unpin(&self, _: &str) -> Result<bool, sce_rust_session_store::Failure> {
+            Err(sce_rust_session_store::Failure::new("the medium is gone"))
+        }
+
+        fn pins(
+            &self,
+        ) -> Result<Vec<sce_rust_session_store::PinRow>, sce_rust_session_store::Failure> {
+            Err(sce_rust_session_store::Failure::new("the medium is gone"))
+        }
+
+        fn repin(
+            &self,
+            _: &str,
+            _: &[u8],
+            _: &[u8],
+        ) -> Result<bool, sce_rust_session_store::Failure> {
             Err(sce_rust_session_store::Failure::new("the medium is gone"))
         }
     }
@@ -1711,6 +1726,7 @@ mod tests {
                     issued_ms: 1_000,
                     expires_ms: 2_000,
                     revoked: false,
+                    sealed: Vec::new(),
                 })
                 .expect("issuing a token");
         }
