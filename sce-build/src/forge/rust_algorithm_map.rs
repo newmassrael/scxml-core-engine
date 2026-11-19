@@ -625,23 +625,23 @@ fn returned_names(stmts: &[AlgorithmStmt], into: &mut Vec<String>) {
 
 /// What a statement of a map writes into its `outcome`: the place, and the
 /// document enum's spelling of each variant of the runtime's answer, in the
-/// runtime's order (`static_lowering::RUST_PUT_OUTCOMES`,
-/// `RUST_REMOVE_OUTCOMES`).
+/// runtime's order ([`crate::forge::static_lowering::MapOutcomes`]).
 pub(crate) struct Outcome<'a> {
     pub(crate) place: &'a str,
     pub(crate) variants: &'a [String],
 }
 
-/// `<place> = match <call> { … };`: the runtime's answer `runtime`, of the
-/// variants `declared`, written as the variant of the same name of the
-/// document's enum.
+/// `<place> = match <call> { … };`: the runtime's answer, one of `outcomes`,
+/// written as the variant of the same name of the document's enum.
 fn written_outcome(
     pad: &str,
     call: &str,
-    (runtime, declared): (&str, &[&str]),
+    outcomes: &crate::forge::static_lowering::MapOutcomes,
     outcome: &Outcome<'_>,
 ) -> String {
-    let arms: Vec<String> = declared
+    let runtime = outcomes.rust;
+    let arms: Vec<String> = outcomes
+        .variants
         .iter()
         .zip(outcome.variants)
         .map(|(variant, spelled)| {
@@ -678,7 +678,7 @@ pub(crate) fn put(
         Some(outcome) => written_outcome(
             pad,
             &call,
-            crate::forge::static_lowering::RUST_PUT_OUTCOMES,
+            &crate::forge::static_lowering::PUT_OUTCOMES,
             outcome,
         ),
         None => format!(
@@ -698,7 +698,7 @@ pub(crate) fn remove(pad: &str, map: &str, key: &str, outcome: Option<&Outcome<'
         Some(outcome) => written_outcome(
             pad,
             &call,
-            crate::forge::static_lowering::RUST_REMOVE_OUTCOMES,
+            &crate::forge::static_lowering::REMOVE_OUTCOMES,
             outcome,
         ),
         None => format!("{pad}let _ = {call};\n"),

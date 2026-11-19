@@ -5003,16 +5003,45 @@ const RUST_MAP_SEEDS: &str = "sce_map_seeds";
 /// the machine is built, after its own maps' (`rust/state_machine.rs.jinja2`).
 const RUST_ALGORITHM_SEED: &str = "sce_algorithm_seed";
 
-/// What a Rust map's `put` answers (docs/adr/0108, D3 and D4): the runtime's
-/// enum, and the declared name of each of its variants, in its order, which
-/// is the variant of the same name of the standard enum an `outcome` names.
-/// One pairing for a machine's statement and an algorithm's
-/// ([`crate::forge::rust_algorithm_map`]).
-pub(crate) const RUST_PUT_OUTCOMES: (&str, &[&str]) =
-    ("PutOutcome", &["inserted", "replaced", "full"]);
+/// What a map's put or remove answers (docs/adr/0108, D3 and D4): each
+/// variant the runtime answers, by its declared name and in the runtime's
+/// order, which is the variant of the same name of the standard enum an
+/// `outcome` is written as, and how each lane's runtime spells the answer. One
+/// table for a machine's statement and an algorithm's, on every lane
+/// ([`crate::forge::rust_algorithm_map`], [`c11_outcome_variant`]).
+pub(crate) struct MapOutcomes {
+    /// The standard enum document that declares the variants
+    /// (`sce:std/collection/<document>.scxml`).
+    pub document: &'static str,
+    /// Each variant the runtime answers, by its declared name, in its order.
+    pub variants: &'static [&'static str],
+    /// The Rust runtime's enum of the answer, whose variants are the declared
+    /// names in Pascal case.
+    pub rust: &'static str,
+    /// The C11 runtime's type of the answer (`sce/forge/map.h`).
+    pub c11: &'static str,
+    /// What each C11 constant of the answer begins with, the declared name in
+    /// upper case following it.
+    pub c11_constant: &'static str,
+}
 
-/// ... and what its `remove` answers.
-pub(crate) const RUST_REMOVE_OUTCOMES: (&str, &[&str]) = ("RemoveOutcome", &["removed", "absent"]);
+/// What a put answers.
+pub(crate) const PUT_OUTCOMES: MapOutcomes = MapOutcomes {
+    document: "put_outcome",
+    variants: &["inserted", "replaced", "full"],
+    rust: "PutOutcome",
+    c11: "sce_map_put_outcome_t",
+    c11_constant: "SCE_MAP_PUT_",
+};
+
+/// What a remove answers.
+pub(crate) const REMOVE_OUTCOMES: MapOutcomes = MapOutcomes {
+    document: "remove_outcome",
+    variants: &["removed", "absent"],
+    rust: "RemoveOutcome",
+    c11: "sce_map_remove_outcome_t",
+    c11_constant: "SCE_MAP_REMOVE_",
+};
 
 /// `text` as a Rust string literal.
 fn rust_text(text: &str) -> String {
@@ -6321,10 +6350,11 @@ impl StaticTarget for RustTarget {
         ];
         let mut lines = match (write.outcome, write.outcome_enum, &write.op) {
             (Some(outcome), Some((ty, document)), op) => {
-                let (runtime, variants) = match op {
-                    MapOp::Put { .. } => RUST_PUT_OUTCOMES,
-                    MapOp::Remove => RUST_REMOVE_OUTCOMES,
+                let outcomes = match op {
+                    MapOp::Put { .. } => &PUT_OUTCOMES,
+                    MapOp::Remove => &REMOVE_OUTCOMES,
                 };
+                let (runtime, variants) = (outcomes.rust, outcomes.variants);
                 let arms: Vec<String> = variants
                     .iter()
                     .map(|variant| {
@@ -17450,57 +17480,24 @@ pub(crate) fn c11_lent_map_type(written_in_place: bool) -> &'static str {
     }
 }
 
-/// What `sce/forge/map.h` answers a put or a remove with, and the variant of
-/// the standard outcome enum each answer is written as (docs/adr/0108, D4):
-/// the variant of the same name ([`c11_outcome_variant`]).
-pub(crate) struct C11Outcomes {
-    /// The runtime's type of the answer.
-    pub runtime: &'static str,
-    /// The name of the standard enum document that declares the variants.
-    pub document: &'static str,
-    /// Each constant the runtime answers, with the variant of the same name.
-    pub variants: &'static [(&'static str, &'static str)],
-}
-
-/// What a put answers: `sce:std/collection/put_outcome.scxml`.
-pub(crate) const C11_PUT_OUTCOMES: C11Outcomes = C11Outcomes {
-    runtime: "sce_map_put_outcome_t",
-    document: "put_outcome",
-    variants: &[
-        ("SCE_MAP_PUT_INSERTED", "inserted"),
-        ("SCE_MAP_PUT_REPLACED", "replaced"),
-        ("SCE_MAP_PUT_FULL", "full"),
-    ],
-};
-
-/// What a remove answers: `sce:std/collection/remove_outcome.scxml`.
-pub(crate) const C11_REMOVE_OUTCOMES: C11Outcomes = C11Outcomes {
-    runtime: "sce_map_remove_outcome_t",
-    document: "remove_outcome",
-    variants: &[
-        ("SCE_MAP_REMOVE_REMOVED", "removed"),
-        ("SCE_MAP_REMOVE_ABSENT", "absent"),
-    ],
-};
-
 /// The C expression of the variant of the standard outcome enum `outcomes`
-/// names that `answer`, what the runtime answered, is: the variant of the same
-/// name, each spelled by `variant`. One reading for a statechart's statement
-/// and an algorithm's.
+/// names that `answer`, what `sce/forge/map.h` answered, is: the variant of
+/// the same name, each spelled by `variant`. One reading for a statechart's
+/// statement and an algorithm's.
 pub(crate) fn c11_outcome_variant(
-    outcomes: &C11Outcomes,
+    outcomes: &MapOutcomes,
     answer: &str,
     variant: &dyn Fn(&str) -> String,
 ) -> Option<String> {
     let (last, earlier) = outcomes.variants.split_last()?;
-    Some(
-        earlier
-            .iter()
-            .rev()
-            .fold(variant(last.1), |rest, (constant, name)| {
-                format!("{answer} == {constant} ? {} : {rest}", variant(name))
-            }),
-    )
+    Some(earlier.iter().rev().fold(variant(last), |rest, name| {
+        format!(
+            "{answer} == {}{} ? {} : {rest}",
+            outcomes.c11_constant,
+            name.to_ascii_uppercase(),
+            variant(name)
+        )
+    }))
 }
 
 /// A C11 record of the type `ty` built field by field from `from`, a record of
@@ -19962,13 +19959,13 @@ impl StaticTarget for CTarget {
         match (write.outcome, write.outcome_enum, &write.op) {
             (Some(outcome), Some((ty, document)), op) => {
                 let outcomes = match op {
-                    MapOp::Put { .. } => &C11_PUT_OUTCOMES,
-                    MapOp::Remove => &C11_REMOVE_OUTCOMES,
+                    MapOp::Put { .. } => &PUT_OUTCOMES,
+                    MapOp::Remove => &REMOVE_OUTCOMES,
                 };
                 let written = c11_outcome_variant(outcomes, "sce_outcome", &|variant| {
                     self.enum_variant(ty, document, variant)
                 })?;
-                let runtime = outcomes.runtime;
+                let runtime = outcomes.c11;
                 lines.push(format!("const {runtime} sce_outcome = {call};"));
                 lines.push(self.assign(outcome, &format!("({written})")));
             }
