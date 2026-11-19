@@ -277,7 +277,10 @@ private func leaf(_ id: String) -> SavedState {
                     processorType: "t", event: "e", target: "", content: "", params: ["z": ["1"], "a": ["2", "3"]],
                     sendID: "s", data: "", invokeID: ""))
         ],
-        hostInvokes: [SavedHostInvoke(processorType: "t", invokeID: "i", params: ["y": ["1"], "b": ["2"]], due: 9)])
+        hostInvokes: [SavedHostInvoke(processorType: "t", invokeID: "i", params: ["y": ["1"], "b": ["2"]], due: 9)],
+        // The running invocation is the first start of its `<invoke>`, so the session has counted one. A state of
+        // no session is format 1, which holds no count and is read as that one (docs/adr/0107, D4).
+        hostInvokeStarts: [SavedEntry("i", 1)])
     let text = state.toJSON()
     #expect(text.contains(#""params":{"a":["2","3"],"z":["1"]}"#), "\(text)")
     #expect(text.contains(#""params":{"b":["2"],"y":["1"]}"#), "\(text)")
