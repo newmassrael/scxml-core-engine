@@ -718,6 +718,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
                     ::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "{{ holder.variable | escape_rust }}",
                         list: {{ "true" if holder.list else "false" }},
+                        part: {% if holder.part is not none %}Some({{ holder.part }}){% else %}None{% endif %},
                     },
 {% endfor %}
                 ],
@@ -748,6 +749,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
                         variable: "{{ holder.variable | escape_rust }}",
                         field: {% if holder.field is not none %}Some("{{ holder.field | escape_rust }}"){% else %}None{% endif %},
                         list: {{ "true" if holder.list else "false" }},
+                        part: {% if holder.part is not none %}Some({{ holder.part }}){% else %}None{% endif %},
                     },
 {% endfor %}
                 ],

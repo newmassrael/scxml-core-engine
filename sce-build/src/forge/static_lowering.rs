@@ -406,6 +406,9 @@ pub struct SavedEnumHolder {
     pub field: Option<String>,
     /// Whether the variable holds a list of such records rather than one.
     pub list: bool,
+    /// For a map variable, the part of each of its saved entries `[key, value]`
+    /// the record is ([`SavedRecordHolder::part`]); `None` for any other.
+    pub part: Option<u32>,
 }
 
 /// A record schema a machine's variables are of, as a saved state names it.
@@ -463,8 +466,14 @@ pub struct SavedAddedField {
 pub struct SavedRecordHolder {
     /// The variable's document id.
     pub variable: String,
-    /// Whether it holds a list of records rather than one.
+    /// Whether it holds a list of records rather than one: a list's elements, a
+    /// set's keys and a map's entries alike, each saved as an element of an
+    /// array.
     pub list: bool,
+    /// For a map variable, the part of each of its saved entries `[key, value]`
+    /// (docs/adr/0108, D8) the record is: 0 its key and 1 its value. `None` for
+    /// any other variable, whose element, or which, is the record itself.
+    pub part: Option<u32>,
 }
 
 /// One field of a [`StaticRecord`].
@@ -9595,6 +9604,35 @@ fn saved_composed_record(
     Ok(StaticRecord { ty, fields })
 }
 
+/// The records a variable of the shape type `shaped` holds, each by the alias
+/// it names, whether it is held as an element of an array (a list's element, a
+/// set's key, a map's entry), and the part of a map's entry `[key, value]` it
+/// is (docs/adr/0108, D8; [`SavedRecordHolder`]).
+fn held_records(
+    shaped: Option<&crate::forge::model::AlgorithmValueType>,
+) -> Vec<(&str, bool, Option<u32>)> {
+    use crate::forge::model::AlgorithmValueType;
+    let Some(shaped) = shaped else {
+        return Vec::new();
+    };
+    match shaped {
+        AlgorithmValueType::Record { alias } => vec![(alias.as_str(), false, None)],
+        AlgorithmValueType::List { elem, .. } => elem
+            .record_alias()
+            .map(|alias| vec![(alias, true, None)])
+            .unwrap_or_default(),
+        AlgorithmValueType::Set { key, .. } => key
+            .record_alias()
+            .map(|alias| vec![(alias, true, None)])
+            .unwrap_or_default(),
+        AlgorithmValueType::Map { key, value, .. } => [(key, 0), (value, 1)]
+            .into_iter()
+            .filter_map(|(part, at)| part.record_alias().map(|alias| (alias, true, Some(at))))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// The shape a saved state of this machine is bound to (SCE Accepted Subset
 /// §2.15, "Saving and restoring"): a SHA-256 over every state with its kind
 /// and parent, in document order, and every variable with its type and bound,
@@ -9800,21 +9838,27 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                 .join(" ");
             text.line(&format!("record {} {} {fields}", var.id, record.name));
         }
-        // A record's fields, whether it is the variable or the element of the
-        // list the variable is: what a saved state names of it.
-        let own_record = shaped.as_ref().and_then(|t| t.record_alias());
-        let listed_record = shaped
-            .as_ref()
-            .and_then(|t| t.list_elem().and_then(|e| e.record_alias()));
-        let record_alias = own_record.or(listed_record);
-        if let Some(schema) = record_alias.and_then(|alias| entry_records.get(alias)) {
+        // A record's fields, whether it is the variable, the element of the
+        // list the variable is, a key of the set it is, or the key or the value
+        // of each entry of the map it is (docs/adr/0108, D8): what a saved state
+        // names of it, and where a restore finds each record it holds.
+        for (alias, list, part) in held_records(shaped.as_ref()) {
+            let Some(schema) = entry_records.get(alias) else {
+                continue;
+            };
+            // The path a shape line and a refusal name a field of the record by.
+            let holder = match part {
+                Some(part) => format!("{}[{part}]", var.id),
+                None => var.id.clone(),
+            };
             records
                 .entry(schema.event_name.clone())
                 .or_insert_with(|| record_lineage(model, schema))
                 .holders
                 .push(SavedRecordHolder {
                     variable: var.id.clone(),
-                    list: own_record.is_none(),
+                    list,
+                    part,
                 });
             // Every enum field holds a value of its enum, whichever revision of
             // the schema added the field.
@@ -9827,7 +9871,8 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                         SavedEnumHolder {
                             variable: var.id.clone(),
                             field: Some(field.id.clone()),
-                            list: own_record.is_none(),
+                            list,
+                            part,
                         },
                     ));
                 }
@@ -9846,11 +9891,11 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                     _ => by_alias.clone(),
                 };
                 text.spelled(
-                    &format!("field {}.{} {by_alias}", var.id, field.id),
-                    &format!("field {}.{} {by_document}", var.id, field.id),
+                    &format!("field {holder}.{} {by_alias}", field.id),
+                    &format!("field {holder}.{} {by_document}", field.id),
                 );
                 if let SceType::Enum(reference) = field.sce_type.present_type() {
-                    text.variants(model, &reference.alias, &format!("{}.{}", var.id, field.id));
+                    text.variants(model, &reference.alias, &format!("{holder}.{}", field.id));
                 }
             }
         }
@@ -9863,6 +9908,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                         variable: var.id.clone(),
                         field: None,
                         list: false,
+                        part: None,
                     },
                 ));
             }
@@ -26674,6 +26720,55 @@ mod tests {
             .map(|h| (h.variable.as_str(), h.list))
             .collect();
         assert_eq!(holders, [("last", false), ("seen", true)]);
+    }
+
+    /// docs/adr/0108, D8 and docs/adr/0044: a map of records is a holder of the
+    /// record's schema at each part of its entries `[key, value]` that is one,
+    /// and a set of records at each of its keys, so a restore reads each record
+    /// at the revision the state was saved at.
+    #[test]
+    fn a_map_of_records_holds_its_schema_at_each_part_of_its_entries() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        std::fs::write(
+            dir.path().join("schema_reading.scxml"),
+            reading_schema(3, &[LEVEL, URGENT, NOTE]),
+        )
+        .expect("the schema");
+        let statechart = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="reading" datamodel="sce-static" name="m">
+  <sce:import kind="event-schema" src="schema_reading.scxml" as="Reading"/>
+  <datamodel>
+    <data id="byKey" sce:type="map&lt;record:Reading, record:Reading&gt;[4]"/>
+    <data id="ids" sce:type="set&lt;record:Reading&gt;[2]"/>
+  </datamodel>
+  <state id="reading"/>
+</scxml>"#;
+        let path = dir.path().join("m.scxml");
+        std::fs::write(&path, statechart).expect("the statechart");
+        let mut model = SCXMLParser::new()
+            .parse_file(path.to_str().expect("a UTF-8 path"))
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let shape = lower_rust(&mut model, "M")
+            .expect("lowers")
+            .saved_shape
+            .expect("a machine of maps has a shape");
+        assert_eq!(shape.records.len(), 1);
+        assert_eq!(shape.records[0].revision, 3);
+        let holders: Vec<(&str, bool, Option<u32>)> = shape.records[0]
+            .holders
+            .iter()
+            .map(|h| (h.variable.as_str(), h.list, h.part))
+            .collect();
+        assert_eq!(
+            holders,
+            [
+                ("byKey", true, Some(0)),
+                ("byKey", true, Some(1)),
+                ("ids", true, None)
+            ]
+        );
     }
 
     #[test]

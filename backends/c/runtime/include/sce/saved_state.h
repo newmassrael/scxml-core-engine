@@ -1367,11 +1367,14 @@ typedef struct sce_saved_added_variant_s {
 } sce_saved_added_variant_t;
 
 /* Where a value of an enum is held: a variable of the enum (`field` NULL), or the field of the
- * record a variable holds, `list` being whether it holds a list of such records. */
+ * record a variable holds, `list` being whether it holds an array of such records, and `part`,
+ * for a map, the part of each entry `[key, value]` the record is (0 its key, 1 its value), -1
+ * for any other variable, whose element is the record itself (docs/adr/0108, D8). */
 typedef struct sce_saved_enum_holder_s {
     const char *variable;
     const char *field;
     bool list;
+    int part;
 } sce_saved_enum_holder_t;
 
 /* A record schema or an enum a machine's state holds, as a saved state names it: `key` is the
@@ -1627,9 +1630,37 @@ static inline bool sce_saved_enum_holders_(const sce_saved_session_t *session, c
             size_t index = 0u;
             (void)sce_jv_iter(value, &it);
             for (; sce_jiter_element(&it, &item); ++index) {
-                if (sce_jv_kind(item) == SCE_JSON_OBJECT && sce_jv_get(item, holder->field, &member)) {
-                    (void)snprintf(what, sizeof(what), "%s[%lu].%s", holder->variable, (unsigned long)index,
-                                   holder->field);
+                sce_jv_t record = item;
+                if (holder->part >= 0) {
+                    /* A map's entry `[key, value]`: the record is its part. One that is not such
+                       an entry is left for the variable's own read to refuse. */
+                    sce_jiter_t entry;
+                    sce_jv_t element;
+                    int at_part = 0;
+                    bool found = false;
+                    if (sce_jv_kind(item) != SCE_JSON_ARRAY) {
+                        continue;
+                    }
+                    (void)sce_jv_iter(item, &entry);
+                    while (!found && sce_jiter_element(&entry, &element)) {
+                        if (at_part == holder->part) {
+                            record = element;
+                            found = true;
+                        }
+                        ++at_part;
+                    }
+                    if (!found) {
+                        continue;
+                    }
+                }
+                if (sce_jv_kind(record) == SCE_JSON_OBJECT && sce_jv_get(record, holder->field, &member)) {
+                    if (holder->part >= 0) {
+                        (void)snprintf(what, sizeof(what), "%s[%lu][%d].%s", holder->variable, (unsigned long)index,
+                                       holder->part, holder->field);
+                    } else {
+                        (void)snprintf(what, sizeof(what), "%s[%lu].%s", holder->variable, (unsigned long)index,
+                                       holder->field);
+                    }
                     if (!sce_saved_enum_value_(lineage, at, what, member, err)) {
                         return false;
                     }

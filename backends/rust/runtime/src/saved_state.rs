@@ -482,6 +482,9 @@ pub struct EnumHolder {
     pub field: Option<&'static str>,
     /// Whether the variable holds a list of such records rather than one.
     pub list: bool,
+    /// For a map variable, the part of each saved entry `[key, value]` the
+    /// record is ([`RecordHolder::part`]); `None` for any other.
+    pub part: Option<usize>,
 }
 
 /// A record schema a machine's variables are of, as a saved state names it.
@@ -534,8 +537,42 @@ pub struct AddedField {
 pub struct RecordHolder {
     /// The variable's document id.
     pub variable: &'static str,
-    /// Whether it holds a list of records rather than one.
+    /// Whether it holds a list of records rather than one: a list's elements,
+    /// a set's keys and a map's entries alike, each an item of an array.
     pub list: bool,
+    /// For a map variable, the part of each saved entry `[key, value]` the
+    /// record is (docs/adr/0108, D8): 0 its key and 1 its value. `None` for any
+    /// other variable, whose item, or which, is the record itself.
+    pub part: Option<usize>,
+}
+
+/// The record `holder` holds in `item`, an item of the array its variable is
+/// saved as: the item itself, or the part of the map entry `[key, value]` it
+/// is. `None` for an item that is no such entry, which the variable's own read
+/// refuses.
+fn held_record(item: &Value, part: Option<usize>) -> Option<&Value> {
+    match (part, item) {
+        (None, item) => Some(item),
+        (Some(part), Value::Array(entry)) => entry.get(part),
+        (Some(_), _) => None,
+    }
+}
+
+/// [`held_record`], to be grown in place.
+fn held_record_mut(item: &mut Value, part: Option<usize>) -> Option<&mut Value> {
+    match (part, item) {
+        (None, item) => Some(item),
+        (Some(part), Value::Array(entry)) => entry.get_mut(part),
+        (Some(_), _) => None,
+    }
+}
+
+/// The path a refusal names the record of `holder` at item `i` by.
+fn held_path(variable: &str, i: usize, part: Option<usize>) -> String {
+    match part {
+        Some(part) => format!("{variable}[{i}][{part}]"),
+        None => format!("{variable}[{i}]"),
+    }
 }
 
 /// One delayed `<send>` that has not been delivered yet.
@@ -3278,9 +3315,12 @@ pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, Sta
             match value {
                 Value::Array(items) if holder.list => {
                     for (i, item) in items.iter_mut().enumerate() {
+                        let Some(held) = held_record_mut(item, holder.part) else {
+                            continue;
+                        };
                         grow_record(
-                            item,
-                            &format!("{}[{i}]", holder.variable),
+                            held,
+                            &held_path(holder.variable, i, holder.part),
                             record,
                             at,
                             &added,
@@ -3319,10 +3359,13 @@ fn check_enum_holder(
         (Some(field), true, Value::Array(items)) => items
             .iter()
             .enumerate()
-            .filter_map(|(i, record)| {
-                record
-                    .member(field)
-                    .map(|v| (format!("{}[{i}].{field}", holder.variable), v))
+            .filter_map(|(i, item)| {
+                held_record(item, holder.part)?.member(field).map(|v| {
+                    (
+                        format!("{}.{field}", held_path(holder.variable, i, holder.part)),
+                        v,
+                    )
+                })
             })
             .collect(),
         (Some(_), true, _) => Vec::new(),
@@ -3360,9 +3403,12 @@ fn check_widened_holder(
     match value {
         Value::Array(items) if holder.list => {
             for (i, item) in items.iter().enumerate() {
+                let Some(held) = held_record(item, holder.part) else {
+                    continue;
+                };
                 check_widened_record(
-                    item,
-                    &format!("{}[{i}]", holder.variable),
+                    held,
+                    &held_path(holder.variable, i, holder.part),
                     record,
                     at,
                     widened,
@@ -5170,10 +5216,12 @@ mod tests {
                 RecordHolder {
                     variable: "last",
                     list: false,
+                    part: None,
                 },
                 RecordHolder {
                     variable: "seen",
                     list: true,
+                    part: None,
                 },
             ],
         }],
@@ -5215,10 +5263,12 @@ mod tests {
                 RecordHolder {
                     variable: "last",
                     list: false,
+                    part: None,
                 },
                 RecordHolder {
                     variable: "seen",
                     list: true,
+                    part: None,
                 },
             ],
         }],
@@ -5249,11 +5299,13 @@ mod tests {
                     variable: "layout",
                     field: None,
                     list: false,
+                    part: None,
                 },
                 EnumHolder {
                     variable: "seen",
                     field: Some("layout"),
                     list: true,
+                    part: None,
                 },
             ],
         }],
@@ -5354,6 +5406,67 @@ mod tests {
                 r#"[{"level":1,"urgent":true,"note":7},{"level":2,"urgent":true,"note":7}]"#
             ))
         );
+    }
+
+    /// docs/adr/0108, D8 and docs/adr/0044: a map of the records of
+    /// `reading.taken` is a holder of its value's part of each entry `[key,
+    /// value]`, which a state saved at the first revision grows by the later
+    /// defaults, its keys left as they were, and a field a later revision added
+    /// that the saved revision did not declare is refused at its entry's value.
+    #[test]
+    fn a_map_of_records_saved_at_the_first_revision_takes_every_later_default() {
+        const MAP_SHAPE: SavedShape = SavedShape {
+            records: &[RecordLineage {
+                event: "reading.taken",
+                revision: 3,
+                revisions: &[SECOND, THIRD],
+                added: &[
+                    AddedField {
+                        id: "urgent",
+                        since: 2,
+                        default: "true",
+                    },
+                    AddedField {
+                        id: "note",
+                        since: 3,
+                        default: "7",
+                    },
+                ],
+                widened: &[],
+                holders: &[RecordHolder {
+                    variable: "seen",
+                    list: true,
+                    part: Some(1),
+                }],
+            }],
+            ..READING_SHAPE
+        };
+        let saved = reading_state(
+            FIRST_SHAPE,
+            r#"{"level":4}"#,
+            r#"[[{"level":9},{"level":1}],[2,{"level":2}]]"#,
+            "",
+        );
+        let grown = upgrade(&saved, &MAP_SHAPE).expect("an earlier revision restores");
+        assert_eq!(
+            grown.variable("seen"),
+            Ok(&json_of(
+                r#"[[{"level":9},{"level":1,"urgent":true,"note":7}],[2,{"level":2,"urgent":true,"note":7}]]"#
+            ))
+        );
+        // `last` is no holder of this shape, and is left as it was.
+        assert_eq!(grown.variable("last"), Ok(&json_of(r#"{"level":4}"#)));
+        let early = reading_state(
+            FIRST_SHAPE,
+            r#"{"level":4}"#,
+            r#"[[1,{"level":1,"note":3}]]"#,
+            "",
+        );
+        let refusal = upgrade(&early, &MAP_SHAPE)
+            .expect_err("refused")
+            .reason()
+            .to_string();
+        assert!(refusal.contains("'seen[0][1]' holds 'note'"), "{refusal}");
     }
 
     #[test]

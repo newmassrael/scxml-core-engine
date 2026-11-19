@@ -811,7 +811,9 @@ static void a_state_is_bound_to_its_shape_and_to_the_revision_each_schema_was_sa
 
 static void a_value_of_a_variant_a_later_revision_added_is_refused(void) {
     static const sce_saved_added_variant_t added[] = {{"high", 2u}};
-    static const sce_saved_enum_holder_t holders[] = {{"v", NULL, false}, {"r", "level", false}, {"l", "level", true}};
+    // The last is the value of each entry of a map (docs/adr/0108, D8).
+    static const sce_saved_enum_holder_t holders[] = {
+        {"v", NULL, false, -1}, {"r", "level", false, -1}, {"l", "level", true, -1}, {"m", "level", true, 1}};
     sce_saved_lineage_t enums[1];
     sce_saved_shape_t shape;
     sce_saved_session_t session;
@@ -829,7 +831,7 @@ static void a_value_of_a_variant_a_later_revision_added_is_refused(void) {
     enums[0].added = added;
     enums[0].added_count = 1u;
     enums[0].holders = holders;
-    enums[0].holder_count = 3u;
+    enums[0].holder_count = 4u;
     memset(&shape, 0, sizeof(shape));
     shape.first = shape.format2_first = "S";
     shape.enums = enums;
@@ -851,6 +853,15 @@ static void a_value_of_a_variant_a_later_revision_added_is_refused(void) {
     CHECK(sce_saved_read(text, strlen(text), &session, &err), "%s", err.message);
     CHECK(!sce_saved_check_shape(&session, &shape, NULL, enum_at, &err) &&
               strstr(err.message, "'l[1].level' holds 'high'") == err.message,
+          "%s", err.message);
+    // A map's value is read at its part of each entry, and its key is no record of the enum.
+    (void)snprintf(text, sizeof(text),
+                   "%s{\"v\":\"low\",\"r\":{},\"l\":[],\"m\":[[{\"level\":\"high\"},{\"level\":\"low\"}],"
+                   "[1,{\"level\":\"high\"}]]}%s",
+                   head, tail);
+    CHECK(sce_saved_read(text, strlen(text), &session, &err), "%s", err.message);
+    CHECK(!sce_saved_check_shape(&session, &shape, NULL, enum_at, &err) &&
+              strstr(err.message, "'m[1][1].level' holds 'high'") == err.message,
           "%s", err.message);
     (void)snprintf(text, sizeof(text), "%s{\"v\":\"low\",\"r\":{},\"l\":[]}%s", head, tail);
     CHECK(sce_saved_read(text, strlen(text), &session, &err), "%s", err.message);

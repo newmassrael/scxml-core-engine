@@ -62,13 +62,14 @@ if (({{ expr }}).present) {
 {%- endmacro %}
 {#- Which revision of its schema the record the variable `field` holds was saved at:
     the entry of `record_at` for the lineage that names the variable a holder, and 1
-    for a variable that is no record. -#}
-{% macro record_at_of(field) -%}
+    for a variable that is no record. `part` is, for a map, the part of each entry
+    `[key, value]` the record is (docs/adr/0108, D8), and none for any other variable. -#}
+{% macro record_at_of(field, part=none) -%}
 {%- set found = namespace(index=-1) -%}
 {%- for record in static_saved_shape.records -%}
 {%- set outer = loop.index0 -%}
 {%- for holder in record.holders -%}
-{%- if holder.variable == field.id -%}{%- set found.index = outer -%}{%- endif -%}
+{%- if holder.variable == field.id and holder.part == part -%}{%- set found.index = outer -%}{%- endif -%}
 {%- endfor -%}
 {%- endfor -%}
 {%- if found.index >= 0 -%}record_at[{{ found.index }}]{%- else -%}1u{%- endif -%}
@@ -146,7 +147,7 @@ static const sce_saved_added_variant_t {{ _t }}_saved_added_enum_{{ loop.index0 
 {% if lineage.holders %}
 static const sce_saved_enum_holder_t {{ _t }}_saved_holders_enum_{{ loop.index0 }}[] = {
 {% for holder in lineage.holders %}
-    { "{{ holder.variable | escape_c }}", {% if holder.field is not none %}"{{ holder.field | escape_c }}"{% else %}NULL{% endif %}, {{ 'true' if holder.list else 'false' }} },
+    { "{{ holder.variable | escape_c }}", {% if holder.field is not none %}"{{ holder.field | escape_c }}"{% else %}NULL{% endif %}, {{ 'true' if holder.list else 'false' }}, {% if holder.part is not none %}{{ holder.part }}{% else %}-1{% endif %} },
 {% endfor %}
 };
 {% endif %}
