@@ -6265,7 +6265,23 @@ wherever it is read. The Interpreter's lowering holds an algorithm's map
 never changed in place: a parameter lent to be read is the caller's array, and
 one declared `inout` arrives in a holder `{map, capacity}` the function reads
 the array out of, holds each put to the capacity, the bound of the caller's
-variable, and leaves the array it ends with in, however it returns. A generated
+variable, and leaves the array it ends with in, however it returns. C11 lends
+an algorithm each map by the address of its caller's storage, the core every map
+type of `sce/forge/map.h` begins with (`const sce_map_core_t *` for a slot read,
+`sce_map_core_t *` for one declared `inout`), which views a map of any bound and
+is never copied: `len`, `has` and `m[k]` are the header's functions over that
+address, the value read as the type the algorithm names for it, and a read at a
+key in an algorithm that does not declare `may-fail`, proven present, records no
+failure. A put, a remove and a clear write the map where the caller holds it,
+the key and the value computed into locals of one entry each, and an `outcome`
+takes the standard enum's variant of the same name as what the header answered.
+A `<sce:foreach in>` whose body writes nothing of the map walks the map itself,
+binding a copy of one entry at a time. A C11 algorithm holds no map of its own:
+a map local, a map return and a walk whose body writes the map it walks (which
+walks a copy of the map's whole bound) would each hold a bound the caller holds
+no storage of for the call, in a frame (docs/adr/0082) and keyed under no seed
+the caller hands it, and each is refused as `generate/unsupported-feature`. A
+key or a value of a byte string is refused there too. A generated
 backend that does not lower one yet refuses such an algorithm as
 `generate/unsupported-feature`, naming the slot and that record, before any
 statement of its body is lowered, and a statechart lends one a map by name, as
@@ -6307,8 +6323,12 @@ is refused as `generate/unsupported-feature` where the call is lowered. The
 Interpreter lowers the call ("Order of work", step 7): a `<script>` that lends
 each map written in place in a holder carrying its variable's bound, makes the
 call, and then writes each variable from its holder and the answer into
-`location`, all once the call has returned. A generated lane that lends no
-algorithm a map yet refuses the document as `generate/unsupported-feature`,
+`location`, all once the call has returned. C11 lowers the call as a call of
+the machine's adapter, each map lent by the address of the machine's own
+storage, which the adapter hands on as it is: the algorithm writes the map where
+the machine holds it, so nothing is written back, and the statement stores the
+answer into `location` as an `<assign>` of it does. A generated lane that lends
+no algorithm a map yet refuses the document as `generate/unsupported-feature`,
 naming that record.
 `sce-build/tests/fixtures/static_datamodel/static_map_take.scxml` hands
 `algorithm_take_generation.scxml` its table and branches on the union it
