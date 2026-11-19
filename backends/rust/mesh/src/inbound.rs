@@ -66,6 +66,24 @@ pub struct Delivery {
     pub ordered: bool,
 }
 
+/// Whether an envelope of `pattern` is in its sender's sequence on a binding
+/// that orders (§mesh-10.6.3, §mesh-10.6.4): stamped by the sender from the
+/// binding's counter, and released by the receiver in that order. The one
+/// answer the send half and the receive half both ask, so a number is taken
+/// exactly by the envelopes a receiver waits for.
+///
+/// A reply (`RpcReply`) and a field notification (`FieldNotify`) find what
+/// they answer by its id, not by their place in the stream: on a binding
+/// without durable receipt they take no number, and the receiver passes them
+/// past its ordering buffer (still through the duplicate window), whether or
+/// not their sender numbered them. On a binding with durable receipt
+/// (`durable`, SCE_MESH.md section 10.11) the number is also what the
+/// receiver acknowledges, so every envelope takes one and every envelope is
+/// ordered.
+pub(crate) fn sequenced(pattern: PatternKind, durable: bool) -> bool {
+    durable || !matches!(pattern, PatternKind::RpcReply | PatternKind::FieldNotify)
+}
+
 /// An envelope the engine may now see.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Received {
@@ -128,9 +146,10 @@ pub(crate) struct Cached {
 pub enum AdmitError {
     /// The bytes are not an envelope the standard document accepts.
     Malformed(CodecError),
-    /// The binding is ordered and the envelope carries no `sequence_no`
-    /// (§mesh-10.6.3). Refused before the dedup window sees its id, so a
-    /// refused envelope does not take a window slot.
+    /// The binding is ordered, the envelope is one it orders (`sequenced`),
+    /// and it carries no `sequence_no` (§mesh-10.6.3). Refused before the
+    /// dedup window sees its id, so a refused envelope does not take a window
+    /// slot.
     Unstamped,
     /// A rule refused its input: a sequence at the `u64` maximum, or a clock
     /// reading that cannot be subtracted.
@@ -289,7 +308,7 @@ impl Inbound {
         durable_from: Option<u64>,
         now_ms: i64,
     ) -> Result<Outcome, AdmitError> {
-        let (raw_id, sequence, request) = {
+        let (raw_id, sequence, request, pattern) = {
             let envelope =
                 Envelope::decode(&mut SceCursor::new(&bytes)).map_err(AdmitError::Malformed)?;
             // A request a reply can answer: one that carries the wire id the
@@ -298,10 +317,19 @@ impl Inbound {
                 .then_some(envelope.invoke_id)
                 .flatten()
                 .map(<[u8; 16]>::from);
-            (<[u8; 16]>::from(envelope.id), envelope.sequence_no, request)
+            (
+                <[u8; 16]>::from(envelope.id),
+                envelope.sequence_no,
+                request,
+                envelope.pattern,
+            )
         };
         let id = envelope_id(&raw_id);
-        if delivery.ordered && sequence.is_none() {
+        // §mesh-10.6.4: a reply or a field notification on a binding without
+        // durable receipt passes the ordering buffer, numbered or not; every
+        // other envelope of an ordered binding is placed by its number.
+        let ordered = delivery.ordered && sequenced(pattern, durable_from.is_some());
+        if ordered && sequence.is_none() {
             return Err(AdmitError::Unstamped);
         }
 
@@ -365,7 +393,7 @@ impl Inbound {
             });
         }
 
-        let Some(seq) = sequence.filter(|_| delivery.ordered) else {
+        let Some(seq) = sequence.filter(|_| ordered) else {
             out.released.push(Received { bytes });
             return Ok(out);
         };
@@ -647,12 +675,17 @@ mod tests {
     };
 
     fn wire(source: &str, id: u8, sequence_no: Option<u64>) -> Vec<u8> {
+        wire_as(PatternKind::FireForget, source, id, sequence_no)
+    }
+
+    /// [`wire`], of the pattern `pattern`.
+    fn wire_as(pattern: PatternKind, source: &str, id: u8, sequence_no: Option<u64>) -> Vec<u8> {
         let id = [id; 16];
         Envelope {
             id: (&id).into(),
             source: Bounded::new(source).expect("a source within its bound"),
             event_type: Bounded::new("evt").expect("an event type within its bound"),
-            pattern: PatternKind::FireForget,
+            pattern,
             datacontenttype: PayloadCodec::None,
             sequence_no,
             ..Envelope::new()
@@ -848,6 +881,123 @@ mod tests {
         assert_eq!(
             sequences(&inbound.admit("a", wire("a", 1, Some(1)), both, 0).unwrap()),
             vec![1]
+        );
+    }
+
+    /// §mesh-10.6.4: a reply and a field notification are not in their
+    /// sender's sequence. Unnumbered on an ordered binding, each is released
+    /// at once, past a gap the stream is waiting on, and the duplicate window
+    /// still drops a second copy. Red if the receiver asks them for a number:
+    /// each is then refused as `Unstamped` (SCE_MESH.md section 16.7, row 11).
+    #[test]
+    fn an_unnumbered_reply_or_field_notification_passes_an_ordered_binding() {
+        let mut inbound = Inbound::new(8, 50).expect("a valid configuration");
+        let both = Delivery {
+            dedup: true,
+            ordered: true,
+        };
+        assert_eq!(
+            sequences(&inbound.admit("a", wire("a", 1, Some(1)), both, 0).unwrap()),
+            vec![1]
+        );
+        assert!(inbound
+            .admit("a", wire("a", 3, Some(3)), both, 0)
+            .unwrap()
+            .released
+            .is_empty());
+        for (id, pattern) in [(10, PatternKind::RpcReply), (11, PatternKind::FieldNotify)] {
+            let bytes = wire_as(pattern, "a", id, None);
+            let out = inbound.admit("a", bytes.clone(), both, 0).unwrap();
+            assert_eq!(out.released.len(), 1, "{pattern:?} is released at once");
+            assert_eq!(out.released[0].bytes(), bytes.as_slice());
+            assert!(
+                inbound
+                    .admit("a", bytes, both, 0)
+                    .unwrap()
+                    .released
+                    .is_empty(),
+                "a second copy of {pattern:?} is a duplicate"
+            );
+        }
+        // The stream still waits for 2, and 3 follows it.
+        assert_eq!(
+            sequences(&inbound.admit("a", wire("a", 2, Some(2)), both, 0).unwrap()),
+            vec![2, 3]
+        );
+    }
+
+    /// §mesh-10.6.4: a reply its sender numbered anyway is passed as one that
+    /// carries no number. It neither anchors the stream nor is held behind a
+    /// gap, and its number is never waited for, so no gap times out. Red if a
+    /// numbered reply is ordered: the first one would anchor the stream at 9
+    /// and the envelope numbered 1 would be dropped as a straggler.
+    #[test]
+    fn a_numbered_reply_takes_no_place_in_the_stream() {
+        let mut inbound = Inbound::new(8, 50).expect("a valid configuration");
+        let reply = wire_as(PatternKind::RpcReply, "a", 9, Some(9));
+        let out = inbound.admit("a", reply.clone(), ORDERED, 0).unwrap();
+        assert_eq!(out.released.len(), 1);
+        assert_eq!(out.released[0].bytes(), reply.as_slice());
+        for seq in [1, 2] {
+            assert_eq!(
+                sequences(
+                    &inbound
+                        .admit("a", wire("a", seq as u8, Some(seq)), ORDERED, 10)
+                        .unwrap()
+                ),
+                vec![seq]
+            );
+        }
+        let between = wire_as(PatternKind::RpcReply, "a", 20, Some(3));
+        assert_eq!(
+            inbound
+                .admit("a", between, ORDERED, 20)
+                .unwrap()
+                .released
+                .len(),
+            1
+        );
+        assert_eq!(
+            sequences(
+                &inbound
+                    .admit("a", wire("a", 3, Some(3)), ORDERED, 30)
+                    .unwrap()
+            ),
+            vec![3]
+        );
+        assert_eq!(inbound.tick(10_000).unwrap(), Outcome::default());
+    }
+
+    /// SCE_MESH.md section 10.11: on a durable stream the number is what the
+    /// receiver acknowledges, so a reply keeps its place: one ahead of the
+    /// stream waits for the envelope before it, and one with no number is
+    /// refused. Red if the exemption of §mesh-10.6.4 reached a durable stream.
+    #[test]
+    fn on_a_durable_stream_a_reply_keeps_its_place() {
+        let mut inbound = Inbound::new(8, 50).expect("a valid configuration");
+        let reply = wire_as(PatternKind::RpcReply, "a", 2, Some(2));
+        assert!(inbound
+            .admit_from("a", reply, ORDERED, Some(1), 0)
+            .unwrap()
+            .released
+            .is_empty());
+        assert_eq!(
+            sequences(
+                &inbound
+                    .admit_from("a", wire("a", 1, Some(1)), ORDERED, Some(1), 0)
+                    .unwrap()
+            ),
+            vec![1, 2]
+        );
+        assert_eq!(
+            inbound.admit_from(
+                "a",
+                wire_as(PatternKind::RpcReply, "a", 3, None),
+                ORDERED,
+                Some(3),
+                0
+            ),
+            Err(AdmitError::Unstamped)
         );
     }
 

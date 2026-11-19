@@ -45,7 +45,7 @@ use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
 use crate::generated::rpc_status::RpcStatus;
-use crate::inbound::{AdmitError, ConfigError, Delivery, Inbound, Outcome};
+use crate::inbound::{sequenced, AdmitError, ConfigError, Delivery, Inbound, Outcome};
 use crate::outbound::{Admitted, Outbound, OutboundBuffer, RetryPolicy};
 use crate::rpc::{self, Answer, Correlation, Pending, MESH_DEADLINE_PARAM, MESH_EVENT_PARAM};
 use crate::signal::{Binding, Signal};
@@ -63,7 +63,8 @@ pub struct PeerConfig {
     pub retry: Option<RetryPolicy>,
     /// Whether envelopes TO this peer carry a `sequence_no`: the binding
     /// declares `ordering: required` on a transport that does not itself
-    /// order (§mesh-10.6.3).
+    /// order (§mesh-10.6.3). Only the envelopes the receiver orders take
+    /// one; a reply goes unnumbered (SCE_MESH.md section 10.6.4).
     pub stamp_sequence: bool,
     /// How envelopes FROM this peer are delivered (§mesh-10.5, §mesh-10.6).
     pub delivery: Delivery,
@@ -1730,9 +1731,11 @@ pub use sce_rust_runtime::helpers::send::mesh_peer;
 
 /// `envelope` as the bytes that go to `peer`, with the sequence number it is
 /// stamped with: the peer's next, when its binding stamps one (§mesh-10.6.3)
-/// or sends with durable receipt, which numbers every envelope (SCE_MESH.md
-/// section 10.11). What [`Router::send`] and [`Router::invoke`] share once they
-/// know what to say.
+/// and the envelope is one the receiver orders (`sequenced`: a reply takes
+/// none), or when the binding sends with durable receipt, which numbers every
+/// envelope (SCE_MESH.md section 10.11). What [`Router::send`] and
+/// [`Router::invoke`] share once they know what to say, so a request and a
+/// send to one peer draw from one counter.
 ///
 /// Refused, as `backpressureDrop` (§mesh-16.7 row 9), when a binding with
 /// durable receipt already holds its window of envelopes: a send that was
@@ -1749,7 +1752,8 @@ fn write_envelope(
             });
         }
     }
-    let stamps = peer.config.stamp_sequence || peer.durable_out.is_some();
+    let durable = peer.durable_out.is_some();
+    let stamps = (peer.config.stamp_sequence || durable) && sequenced(envelope.pattern, durable);
     let sequence = stamps.then_some(peer.next_sequence);
     envelope.sequence_no = sequence;
     let bytes = envelope.encode_to_vec();
@@ -3203,6 +3207,124 @@ mod tests {
             ecu.receive("hmi", reply, 50).unwrap().as_slice(),
             [Effect::Complete { invoke_id, .. }] if invoke_id == "ask"
         ));
+    }
+
+    /// The sequence number each of the envelopes `sent` carries, in order.
+    fn numbers(sent: &[&[u8]]) -> Vec<Option<u64>> {
+        sent.iter()
+            .map(|bytes| {
+                Envelope::decode(&mut SceCursor::new(bytes))
+                    .unwrap()
+                    .sequence_no
+            })
+            .collect()
+    }
+
+    /// SCE_MESH.md section 10.6.4: a reply is not in its sender's sequence on
+    /// an ordered binding, so it is written with no `sequence_no` and the
+    /// counter does not move: the sends around it are numbered 1 and 2. Red if
+    /// the send half stamps every envelope: the reply takes 2 and the next
+    /// send 3, a number the receiver waits for and never gets.
+    #[test]
+    fn a_reply_on_an_ordered_binding_takes_no_number() {
+        let mut hmi = ordered_responder();
+        let before = sent_to_ecu(hmi.send(&request("#ecu", "status.changed", ""), [2; 16], 0));
+        let reply = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 0));
+        let after = sent_to_ecu(hmi.send(&request("#ecu", "status.changed", ""), [3; 16], 0));
+        assert_eq!(
+            Envelope::decode(&mut SceCursor::new(&reply))
+                .unwrap()
+                .pattern,
+            PatternKind::RpcReply
+        );
+        assert_eq!(
+            numbers(&[&before, &reply, &after]),
+            alloc::vec![Some(1), None, Some(2)]
+        );
+    }
+
+    /// SCE_MESH.md section 10.6.4: a reply with no `sequence_no`, as the C++
+    /// router's server answers, completes its request on an ordered binding.
+    /// Red if the receive half asks a reply for a number: it is then refused
+    /// as `missingSequence` (§mesh-16.7 row 11) and the request waits for
+    /// ever.
+    #[test]
+    fn an_unnumbered_reply_completes_its_request_on_an_ordered_binding() {
+        let mut ecu = ordered_requester();
+        started(&mut ecu, None);
+        assert_eq!(
+            ecu.receive("hmi", reply(5, None, None, r#"{"force":12}"#), 20)
+                .unwrap(),
+            alloc::vec![Effect::Complete {
+                invoke_id: "ask".to_string(),
+                token: 7,
+                data: r#"{"force":12}"#.to_string(),
+                source: "hmi".to_string(),
+            }]
+        );
+    }
+
+    /// The whole ordered round trip: a reply sent between two sends leaves no
+    /// gap in the stream, so the send after it is delivered at once and no
+    /// `orderingGap` (§mesh-16.7 row 12) is raised once the gap timeout has
+    /// passed. Red if the reply took a number: the send after it then waits
+    /// for that number and ends in a timed-out gap.
+    #[test]
+    fn a_reply_between_two_sends_leaves_no_gap() {
+        let mut ecu = ordered_requester();
+        let mut hmi = ordered_responder();
+        let asked = started(&mut ecu, None);
+        assert_eq!(
+            events(&hmi.receive("ecu", asked, 0).unwrap()),
+            ["service.request.force"]
+        );
+        let first = sent_to_ecu(hmi.send(&request("#ecu", "status.changed", ""), [2; 16], 10));
+        let answered =
+            sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 10));
+        let second = sent_to_ecu(hmi.send(&request("#ecu", "status.done", ""), [3; 16], 10));
+
+        assert_eq!(
+            events(&ecu.receive("hmi", first, 20).unwrap()),
+            ["status.changed"]
+        );
+        assert!(matches!(
+            ecu.receive("hmi", answered, 20).unwrap().as_slice(),
+            [Effect::Complete { invoke_id, .. }] if invoke_id == "ask"
+        ));
+        assert_eq!(
+            events(&ecu.receive("hmi", second, 20).unwrap()),
+            ["status.done"],
+            "the send after the reply waits for no number"
+        );
+        let later = ecu.tick(10_000).unwrap();
+        assert!(later.is_empty(), "no gap times out: {later:?}");
+    }
+
+    /// SCE_MESH.md section 10.11: on a binding with durable receipt the
+    /// number is also what the receiver acknowledges, so a reply is numbered
+    /// there like every envelope. Red if the exemption of section 10.6.4
+    /// reached a durable binding: the reply would leave with no number, and could be
+    /// neither acknowledged nor sent again.
+    #[test]
+    fn a_reply_on_a_durable_binding_is_numbered() {
+        let mut hmi = ordered_responder();
+        hmi.enable_checkpoints();
+        hmi.send_durably("ecu", DurableSend::default()).unwrap();
+        assert!(hmi.peer_ready("ecu", 0).unwrap().is_empty());
+        assert!(hmi
+            .send(&answer("service.response.force", WIRE_TEXT), [5; 16], 0)
+            .unwrap()
+            .is_empty());
+        hmi.seal(
+            1,
+            Clocks {
+                monotonic_ms: 0,
+                wall_ms: 1000,
+            },
+        )
+        .unwrap();
+        let reply = sent_to_ecu(hmi.durable(1, 10));
+        assert_eq!(numbers(&[&reply]), alloc::vec![Some(1)]);
     }
 
     #[test]
