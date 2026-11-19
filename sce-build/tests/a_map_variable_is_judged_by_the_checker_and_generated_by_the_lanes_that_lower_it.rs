@@ -1048,6 +1048,76 @@ fn a_read_of_a_map_that_is_no_read_of_it_is_refused() {
     }
 }
 
+/// docs/adr/0108, D3: the value at a key of a map of enum values is a value of
+/// that enum where an equality judges it, as a variable of the enum is: compared
+/// with a variant of its own enum it is accepted, and with a variant of another
+/// enum refused, as a variable of the enum compared with one is.
+#[test]
+fn a_maps_enum_value_is_compared_as_a_value_of_its_enum() {
+    let document = edited(
+        &faces(),
+        "<data id=\"order\"",
+        "<data id=\"outcomes\" sce:type=\"map&lt;uint32, enum:PutOutcome&gt;[2]\"/>\n    \
+         <data id=\"order\"",
+    );
+    let compared = |with: &str| {
+        edited(
+            &document,
+            "<sce:clear target=\"flags\"/>",
+            &format!(
+                "<sce:clear target=\"flags\"/>\n      \
+                 <sce:put target=\"outcomes\" key=\"1\" expr=\"putResult\"/>\n      \
+                 <if cond=\"outcomes[1] === {with}\"><assign location=\"refused\" \
+                 expr=\"refused\"/></if>"
+            ),
+        )
+    };
+    let (ok, out) = check(&compared("PutOutcome.inserted"));
+    assert!(
+        ok,
+        "check compares a map's enum value with a variant of its enum:\n{out}"
+    );
+    refused(
+        &compared("RemoveOutcome.absent"),
+        "expression/unsupported-construct",
+        "a comparison of an enum value with anything but a value of the same enum",
+    );
+}
+
+/// docs/adr/0108, D1 and D3: a map keyed by an enum is read at a variant of
+/// that enum, which is its key and no enum value used as an index; a variant of
+/// another enum is no key of it, and is refused.
+#[test]
+fn a_map_keyed_by_an_enum_is_read_at_a_variant_of_it() {
+    let document = edited(
+        &faces(),
+        "<data id=\"order\"",
+        "<data id=\"byOutcome\" sce:type=\"map&lt;enum:PutOutcome, uint32&gt;[3]\"/>\n    \
+         <data id=\"order\"",
+    );
+    let read_at = |key: &str| {
+        edited(
+            &document,
+            "<sce:clear target=\"flags\"/>",
+            &format!(
+                "<sce:clear target=\"flags\"/>\n      \
+                 <sce:put target=\"byOutcome\" key=\"PutOutcome.inserted\" expr=\"1\"/>\n      \
+                 <assign location=\"walked\" expr=\"byOutcome[{key}]\"/>"
+            ),
+        )
+    };
+    let (ok, out) = check(&read_at("PutOutcome.inserted"));
+    assert!(
+        ok,
+        "check reads a map keyed by an enum at a variant:\n{out}"
+    );
+    let (ok, out) = check(&read_at("RemoveOutcome.absent"));
+    assert!(
+        !ok && out.contains("\"code\":\"expression/unsupported-construct\""),
+        "a variant of another enum is no key of the map:\n{out}"
+    );
+}
+
 /// docs/adr/0108, D2 and D3: an entry is written by `<sce:put>`, a map takes
 /// whole only another map variable whose type it fits, and the value at a key
 /// taken whole is the record its key reads once, of the variable's schema.
