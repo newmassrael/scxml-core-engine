@@ -17743,9 +17743,13 @@ impl StaticTarget for CTarget {
         failed: &str,
     ) -> String {
         // An optional value's type carries a bound or a document its inferred type
-        // does not (docs/adr/0055), so its local is declared of the value's own
-        // type, as a failed index read of an aggregate names its type.
-        let local = if ty.is_optional() {
+        // does not (docs/adr/0055), and a value of an enum is one the expression
+        // layer does not type at all, so the local of either is declared of the
+        // value's own type, as a failed index read of an aggregate names its type:
+        // the place is then written as the statement that cannot fail writes it.
+        // `int` is no enum's type: one whose variants are none negative is
+        // unsigned, and an `int` local of it is a sign conversion.
+        let local = if ty.is_optional() || ty == InferredType::Unknown {
             format!("__typeof__({value})")
         } else {
             Self::value_type(ty)

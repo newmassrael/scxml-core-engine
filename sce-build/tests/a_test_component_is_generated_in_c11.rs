@@ -1207,6 +1207,47 @@ fn a_message_of_every_part_its_content_reads_is_made_by_functions_on_c11() {
     }
 }
 
+/// Pinned by `CTarget::receiving_write` and `C11Composed`'s writers
+/// (`sce-build/src/forge/static_lowering.rs`,
+/// `sce-build/src/forge/composed_lowering/c11.rs`), which the integration test
+/// of `received/parts_reader.scxml` compiles under `-Wsign-conversion` and
+/// `-Wshadow`: an enum read through an index that can fail is held in a local
+/// of the value's own type, not `int`, and the seam that writes the message
+/// numbers the locals of each part by its depth, so the writer of a list
+/// within a list, of a value that may be absent within a list and of a list
+/// within a value that may be absent declares none of the names of the writer
+/// around it.
+#[test]
+fn the_parts_reader_holds_an_enum_in_its_type_and_shadows_no_local_on_c11() {
+    let code = text_at(&profile_dir().join("received/parts_reader.scxml"));
+    let color = "(sce_forge_checked_index_from_i(&sce_failure_, 0, \
+                 (sm->pending_payload.as.received_parts.lines).len) ? \
+                 sm->pending_payload.as.received_parts.lines.data[0].color : 0)";
+    let held = format!("__typeof__({color}) sce_value = {color};");
+    assert!(code.contains(&held), "`{held}` in:\n{code}");
+    assert!(
+        !code.contains(&format!("int sce_value = {color};")),
+        "{code}"
+    );
+    for needle in [
+        "for (size_t sce_i_0 = 0u; sce_i_0 < ((*payload).grid).len; ++sce_i_0) {",
+        "for (size_t sce_i_1 = 0u; sce_i_1 < (*sce_item_0).len; ++sce_i_1) {",
+        "__typeof__((*sce_item_0).data[0]) const *const sce_item_1 = &(*sce_item_0).data[sce_i_1];",
+        "__typeof__((*sce_item_0).value) const *const sce_item_1 = &(*sce_item_0).value;",
+        "__typeof__(((*payload).spare).value) const *const sce_item_0 = &((*payload).spare).value;",
+        "const char *const sce_variant_0 = parts_reader_union_order_payment_variant(sce_union_0);",
+    ] {
+        assert!(code.contains(needle), "`{needle}` in:\n{code}");
+    }
+    for gone in [
+        "const *const sce_next = ",
+        "for (size_t sce_i = ",
+        "const *const sce_item = ",
+    ] {
+        assert!(!code.contains(gone), "`{gone}` in:\n{code}");
+    }
+}
+
 /// docs/SCE_TEST_PROFILE.md §12.3, docs/adr/0092 section 7: a receive branch
 /// whose content reads a message that holds a union (`order_placed`'s
 /// `payment`), a record within the record (`customer`) and a list of records
