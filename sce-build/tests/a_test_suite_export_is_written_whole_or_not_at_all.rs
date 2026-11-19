@@ -51,11 +51,13 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// The text of the module at `path` after the two lines of the header every
-/// generated source carries, which it is held to open with.
+/// The text of the module at `path` after the header every generated source
+/// carries, which it is held to open with: the banner, its `source-hash`,
+/// and a `source` line naming the suite, the one document it was exported
+/// from (ADR 0094).
 fn below_the_header(path: &Path) -> String {
     let module = read(path);
-    let mut lines = module.splitn(3, '\n');
+    let mut lines = module.splitn(4, '\n');
     assert_eq!(
         lines.next(),
         Some(format!("// {}", sce_build::forge::drift::HEADER_BANNER).as_str()),
@@ -68,6 +70,7 @@ fn below_the_header(path: &Path) -> String {
             .is_some_and(|line| line.starts_with("// source-hash: ")),
         "{module}"
     );
+    assert_eq!(lines.next(), Some("// source: job_suite.scxml"), "{module}");
     lines.next().unwrap_or_default().to_string()
 }
 
