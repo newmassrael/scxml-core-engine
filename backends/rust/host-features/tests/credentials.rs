@@ -13,12 +13,16 @@ use std::sync::{Arc, Mutex};
 use sce_rust_crypto::credential::{
     issue_message, token_digest, token_text, StoredTokens, TOKEN_PREFIX, TOKEN_TEXT_BYTES,
 };
+use sce_rust_crypto::keyring::{Keyring, MemoryKeys, ISSUING_KEY_ID};
 use sce_rust_crypto::mac::hmac_sha256;
+use sce_rust_crypto::wrap::KeyEncryptionKey;
 use sce_rust_host_features::{
     HttpRequest, HttpResponse, Invocation, MemoryCredentials, Outcome, Params, RandomSource,
     Reading, ReferenceHost, ScriptedClock, ScriptedRandom, Transport, TransportFailure,
 };
-use sce_rust_session_store::{PinStore, TokenRow, TokenStore};
+use sce_rust_session_store::{
+    CredentialStore, Digest, Failure, KeyStore, PinStore, Revoked, TokenRow, TokenStore,
+};
 
 struct Unreachable;
 
@@ -362,4 +366,100 @@ fn an_issue_the_host_cannot_carry_out_fails_unavailable() {
         serde_json::json!({ "error": "unavailable", "revoked": 0 })
     );
     assert!(store.tokens().expect("the tokens").is_empty());
+}
+
+/// An issue under an issuing key the operator retired fails `key_retired` and
+/// keeps nothing more: a retired key makes nothing new (section 13).
+#[test]
+fn an_issue_under_a_retired_issuing_key_fails_key_retired() {
+    let store = MemoryCredentials::new();
+    let (mut host, _clock) = host(&store);
+    let keys = MemoryKeys::new();
+    host.set_keyring(Keyring::new(
+        Box::new(keys.clone()),
+        Box::new(KeyEncryptionKey::new([7; 32])),
+    ));
+    issue(&mut host, &first(), "phone", "60");
+    assert_eq!(
+        keys.retire(ISSUING_KEY_ID)
+            .expect("the operator retires the issuing key"),
+        Some(true)
+    );
+    assert_eq!(
+        done(start(
+            &mut host,
+            "sce-host-credential-issue",
+            &Invocation::new("session", "issue", 2),
+            &[("name", "phone"), ("ttl_s", "60")]
+        )),
+        serde_json::json!({ "error": "key_retired", "token": "" })
+    );
+    assert_eq!(store.tokens().expect("the tokens").len(), 1);
+}
+
+/// A credential store whose medium is gone.
+struct Broken;
+
+fn gone() -> Failure {
+    Failure::new("the medium is gone")
+}
+
+impl PinStore for Broken {
+    fn pinned(&self, _: &str) -> Result<Option<Digest>, Failure> {
+        Err(gone())
+    }
+
+    fn pin(&self, _: &str, _: &Digest) -> Result<Digest, Failure> {
+        Err(gone())
+    }
+
+    fn unpin(&self, _: &str) -> Result<bool, Failure> {
+        Err(gone())
+    }
+}
+
+impl TokenStore for Broken {
+    fn token(&self, _: &Digest) -> Result<Option<TokenRow>, Failure> {
+        Err(gone())
+    }
+
+    fn issue(&self, _: &TokenRow) -> Result<TokenRow, Failure> {
+        Err(gone())
+    }
+
+    fn tokens(&self) -> Result<Vec<TokenRow>, Failure> {
+        Err(gone())
+    }
+}
+
+impl CredentialStore for Broken {
+    fn revoke(&self, _: &str) -> Result<Revoked, Failure> {
+        Err(gone())
+    }
+}
+
+/// A credential store that cannot keep or revoke fails both operations
+/// `unavailable`.
+#[test]
+fn a_store_that_fails_fails_both_operations_unavailable() {
+    let (mut host, _clock) = host(&MemoryCredentials::new());
+    host.set_credentials(Arc::new(Broken));
+    assert_eq!(
+        done(start(
+            &mut host,
+            "sce-host-credential-issue",
+            &first(),
+            &[("name", "phone"), ("ttl_s", "60")]
+        )),
+        serde_json::json!({ "error": "unavailable", "token": "" })
+    );
+    assert_eq!(
+        done(start(
+            &mut host,
+            "sce-host-credential-revoke",
+            &first(),
+            &[("name", "phone")]
+        )),
+        serde_json::json!({ "error": "unavailable", "revoked": 0 })
+    );
 }

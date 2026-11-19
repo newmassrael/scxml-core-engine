@@ -1637,6 +1637,60 @@ mod tests {
         assert_eq!(exchange(1).status, 401, "and refuses the first now");
     }
 
+    /// A pin store whose medium fails: on every read when `reads_fail`, else only when it is
+    /// asked to pin.
+    struct FailingPins {
+        reads_fail: bool,
+    }
+
+    impl PinStore for FailingPins {
+        fn pinned(&self, _: &str) -> Result<Option<[u8; 32]>, sce_rust_session_store::Failure> {
+            if self.reads_fail {
+                Err(sce_rust_session_store::Failure::new("the medium is gone"))
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn pin(&self, _: &str, _: &[u8; 32]) -> Result<[u8; 32], sce_rust_session_store::Failure> {
+            Err(sce_rust_session_store::Failure::new("the medium is gone"))
+        }
+
+        fn unpin(&self, _: &str) -> Result<bool, sce_rust_session_store::Failure> {
+            Err(sce_rust_session_store::Failure::new("the medium is gone"))
+        }
+    }
+
+    /// ADR 0109, D3: a pin store that cannot be read, or cannot keep the pin, answers the exchange
+    /// `503` with `Retry-After`, as load shed: the client is not at fault, and is not told `401`.
+    #[test]
+    fn a_pin_store_that_fails_is_answered_as_load_shed() {
+        use super::super::HttpsTransport;
+
+        for reads_fail in [true, false] {
+            let Serving {
+                _runtime,
+                server: _,
+                address,
+                port,
+            } = serving_authenticated(
+                Authenticator::Install(Arc::new(FailingPins { reads_fail })),
+                |_events: Vec<LinkEvent>| {},
+                Duration::from_secs(5),
+            );
+            let shed = port
+                .exchange(request_authorized(
+                    "phone",
+                    address,
+                    Vec::new(),
+                    install(1).as_str(),
+                ))
+                .expect("a response");
+            assert_eq!(shed.status, 503, "reads fail: {reads_fail}");
+            assert_eq!(shed.header("Retry-After"), Some("1"));
+        }
+    }
+
     /// ADR 0109, D3: the `bearer` authenticator over a credential store admits a token the store
     /// holds for the name the path claims, and answers `401` for another name, an expired token
     /// and a revoked one.
