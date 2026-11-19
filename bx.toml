@@ -159,7 +159,14 @@ needs =["cargo", "cmake", "ninja", "g++", "node", "git", "go", "java", "python3"
 # `curl` is what the Swift tool's install downloads with. It is a package and not a `need`
 # because nothing a job runs calls it; provision installs packages before it builds a tool.
 # Measured 2026-10-20: one build machine had no curl, and the install exited 127 there.
-packages = ["libssl-dev", "openjdk-17-jdk-headless", "curl", "binutils", "libc6-dev", "libcurl4-openssl-dev", "libedit2", "libncurses-dev", "libpython3-dev", "libsqlite3-0", "libxml2-dev", "libz3-dev", "pkg-config", "tzdata", "unzip", "zlib1g-dev"]
+#
+# `libsqlite3-dev`: the Rust session store (`backends/rust/session-store`, docs/adr/0107 D6)
+# links the system SQLite (`-lsqlite3`), which `libsqlite3-0` alone does not let a linker find
+# (the `.so` name is the dev package's). Measured 2026-11-19: the server suite failed to link on
+# a build machine without it, five runs in a row, while the same tree passed on the others.
+# Installed on the two machines that lacked it (hkl001, pc4) the same day, by the owner's
+# decision, before this line declared it, so every build machine satisfies it.
+packages = ["libssl-dev", "openjdk-17-jdk-headless", "curl", "binutils", "libc6-dev", "libcurl4-openssl-dev", "libedit2", "libncurses-dev", "libpython3-dev", "libsqlite3-0", "libsqlite3-dev", "libxml2-dev", "libz3-dev", "pkg-config", "tzdata", "unzip", "zlib1g-dev"]
 
 # The C++ tree is the constraint on disk: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.
