@@ -7403,9 +7403,95 @@ serves with its type as well, and every variable with its type and bound
 hashes what it did before either was saved. A guard, an action, an initial
 value or a comment changed leaves it restorable, so an app update does not
 lose its users' state; a state, history or variable renamed, re-typed,
-re-parented or re-bounded refuses it. What the shape cannot see — a
-variable of the same name and type whose meaning changed — is the author's to
-avoid until a document can declare a migration.
+re-parented or re-bounded refuses it, unless the document declares the
+migration that carries it (below). What the shape cannot see — a variable of
+the same name and type whose meaning changed — the author says with a
+`<sce:convert>`.
+
+**A declared migration** (docs/adr/0109, D11). The text the shape is the
+digest of is the document's SHAPE FILE: its header `sce-saved-state-shape 1`,
+then one line per state (`state <id> <kind> <parent>`), history, invocation
+and variable (`variable <id> <type> <bound>`), and the lines of what a
+variable's type holds, each ending in a newline, in format 2's spelling, which
+every state a backend writes today names. `sce-codegen shape <document>`
+prints it (`-o` writes it, `--host-invoker` declares the types a host serves,
+as `generate` takes them); an author commits it for each released version as
+`shapes/<version>.shape`, the writer's schema of every state that version
+saves (a `pre-release` surface in `SCE_WIRE_CONTRACTS.md`). A later version
+declares each step from one released shape to the next, as a child of its
+root, in the order of the chain:
+
+```xml
+<sce:migration from="shapes/2.shape" to="shapes/3.shape">
+  <sce:rename kind="state" from="waiting" to="pending"/>
+  <sce:rename kind="data" from="count" to="attempts"/>
+  <sce:map-state from="legacy" to="idle"/>
+  <sce:drop-data id="scratch"/>
+  <sce:add-data id="limit" expr="16"/>
+  <sce:convert data="due" algorithm="DueFromSeconds"/>
+  <sce:drop-invoke id="poller"/>
+</sce:migration>
+```
+
+`rename` carries a state, history, variable (`data`) or invocation (`invoke`)
+of the old shape to one of the new, or an event a waiting send names (`event`)
+to its new name; `map-state` puts a state of the new shape in place of a
+removed one wherever a configuration, the current leaf or a history's record
+held it, and a history declared in the removed state is let go with it;
+`drop-data` lets a variable go; `add-data` gives a variable of the new shape a
+constant of its type (a whole number, a real, `true` or `false`, a quoted text,
+an enum's `Alias.Variant`, or `null` for an optional variable of the last
+step), and in the last step a `<data>` initialiser that is such a constant
+serves when `expr` is left out; `convert` gives a variable of the new shape the
+algorithm the document imports under that alias, applied to the old value, an
+algorithm that cannot fail, of one parameter of the old value's type, returning
+the new one's (on Rust and C++ a fixed-width number or `bool`; another type is
+refused by name, `generate/unsupported-feature`); `drop-invoke` lets an
+invocation the new document no longer runs end without a start, and a waiting
+send to its child with it. A widening needs no element: an integer to a wider
+one of the same sign or an unsigned one to a wider signed one (one of 32 bits
+or fewer widened to 64 is read from its number as the text a 64-bit integer is
+saved as), `float32` to `float64`, a larger bound of a text, a byte string or a
+list, `T` to `optional<T>`, and a record schema or an enum to a later revision,
+which `upgrade` reads as it always has.
+
+The build judges every step against its two shape files where the machine is
+generated, since the shape is the build's (a host-run `<invoke>` is part of it
+only where the host serves its type), and refuses: a shape file it cannot read
+or whose text is no shape, `validation/migration-shape-unreadable`; steps that
+do not form one chain in the order they are written, whose last `to` is the
+document's own shape, or that start twice from one shape or from the
+document's own, `validation/migration-chain-broken`; a step that leaves an old
+state, history, invocation or variable neither kept (same name, kind and
+carried parent, a type it widens to), renamed, mapped nor dropped, a new
+variable neither kept, renamed nor added, or whose child names what its shape
+does not hold or one name twice, `validation/migration-not-total`; and a
+variable carried to a type its old one does not widen to with no conversion,
+or given a conversion or a constant of another type,
+`validation/migration-type-change`. Each is the document's refusal and exits
+as `validation/*` does, from whichever route generated it.
+
+The plan the build writes rides the machine's saved shape (Rust
+`SavedShape::migrations`, C++ `SavedShape::migrations`), and the restore's
+upgrade (`saved_state::upgrade`, `upgradeSavedState`) applies it before it
+judges the shape: each step in order to a state of format 2 or later whose
+shape is the step's `from` (the revised one for a state that names revisions),
+leaving it at the step's `to`, so a state of the first version runs through
+every step. A state whose shape no step starts from is judged and refused as
+before, and a format-1 state, which names an enum by its import's alias and
+so no shape file's spelling, is not migrated. The configuration the mapping
+leaves is judged by the rule every restored configuration is held to. A
+running child's session is its own document's to migrate. A restored machine
+saves under its new shape. The Mesh endpoint sections of a checkpoint, keyed
+by the deployment's machine names, are not migrated, and neither is a state of
+another configuration of a product line (docs/adr/0057 §7). Rust and C++ apply
+a migration; every other backend, and the Interpreter's lowering, refuses a
+document that declares one by name (`generate/unsupported-feature`;
+docs/adr/0109, D0). The step leaves the saved-state text as it is, so no
+backend's format moves. `static_migration_1.scxml` and
+`static_migration_2.scxml`, with their shape files under `shapes/`, hold this
+on both backends (`a_saved_state_is_migrated_into_the_next_version.rs`,
+`ASavedStateIsMigratedIntoTheNextVersionTest.cpp`).
 
 **A value that may be absent** (docs/adr/0055, section 6). A saved state holds
 an optional value as `null` where it is absent and as its present value writes
@@ -10281,7 +10367,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (547 codes)
+## Appendix — `DiagnosticCode` index (551 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10449,6 +10535,10 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/event-schema-on-builtin-event` | Validation |
 | `validation/event-payload-field-unknown` | Validation |
 | `validation/bytes-comparison-not-equality` | Validation |
+| `validation/migration-not-total` | Validation |
+| `validation/migration-type-change` | Validation |
+| `validation/migration-shape-unreadable` | Validation |
+| `validation/migration-chain-broken` | Validation |
 | `mesh/event-schema-mismatch` | Validation |
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |

@@ -3361,6 +3361,19 @@ impl SCXMLParser {
         // role-declaration` (same kind declared twice on one doc).
         self.parse_sce_session_roles(&root, &mut model, diag_label)?;
 
+        // docs/adr/0109, D11: the steps a state an earlier version of this
+        // document saved is carried to this one by, each shape file read from
+        // the directory the imports are read from. A file read is an input of
+        // the build, as an included fragment is.
+        let (migrations, shape_files) = crate::forge::saved_migration::read(
+            &root,
+            model.datamodel,
+            import_dir.as_deref(),
+            diag_label,
+        )?;
+        model.migrations = migrations;
+        self.preprocessor_deps.extend(shape_files);
+
         // Rank state elements by document position before parsing them —
         // `parse_states` visits one element name at a time, so it cannot
         // number a mixed sibling set correctly on its own.

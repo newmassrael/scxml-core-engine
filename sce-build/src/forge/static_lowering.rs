@@ -309,6 +309,17 @@ pub struct SavedShape {
     /// by the features that differ rather than by a digest. `None` for a
     /// machine of no configuration, whose saved state carries no `features`.
     pub features: Option<Vec<String>>,
+    /// The text [`Self::format2_first`] is the digest of: what a shape file of
+    /// this version of the document holds (docs/adr/0109, D11), the writer's
+    /// schema of every state it saves, which `sce-codegen shape` writes and an
+    /// author commits for each released version.
+    #[serde(skip)]
+    pub text: String,
+    /// The plan of each `<sce:migration>` the document declares, in order
+    /// ([`crate::forge::saved_migration::plan`]): what a restore applies to a
+    /// state saved under an earlier shape before it judges this one. Empty for a
+    /// document that declares none.
+    pub migrations: Vec<crate::forge::saved_migration::SavedMigrationStep>,
 }
 
 impl SavedShape {
@@ -1346,6 +1357,15 @@ pub trait StaticTarget {
     /// algorithm takes and gives back"). A target that does not refuses the
     /// document that makes one, by name, rather than leave the call undefined.
     fn lowers_state_calls(&self) -> bool {
+        false
+    }
+    /// Whether this target's restore applies a migration a document declares
+    /// (docs/adr/0109, D11): the plan [`crate::forge::saved_migration::plan`]
+    /// makes rides the machine's saved shape, and the runtime applies it before
+    /// it judges the shape. A target that does not refuses a document that
+    /// declares one, by name (D0), rather than generate a machine that refuses
+    /// every state an earlier version saved.
+    fn lowers_migrations(&self) -> bool {
         false
     }
     /// Whether this target lowers a variable that holds an optional value
@@ -4202,6 +4222,10 @@ impl StaticTarget for RustTarget {
         ))
     }
     fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    // docs/adr/0109, D11: `saved_state::upgrade` applies the plan.
+    fn lowers_migrations(&self) -> bool {
         true
     }
     // `core`'s `Option<T>` (docs/adr/0055, section 5): the type is the default
@@ -7165,7 +7189,14 @@ pub fn lower(
     let mut declarations = TypeDeclarations::new(target, machine, &held_enums);
     // Taken before any expression is rewritten: the shape is the document's,
     // and the same for every backend.
-    let saved_shape = saved_shape(model, &scope);
+    let mut saved_shape = saved_shape(model, &scope);
+    // docs/adr/0109, D11: the migrations the document declares, judged against
+    // the shape just taken, which is this build's, and planned for the target.
+    let migrations =
+        crate::forge::saved_migration::plan(model, &scope, saved_shape.as_ref(), target)?;
+    if let Some(shape) = saved_shape.as_mut() {
+        shape.migrations = migrations;
+    }
     // docs/SCE_TEST_PROFILE.md §11.5, §11.8: the variables of a test component
     // whose values are the suite's module parameters, which the component reads
     // into them before its machine starts. Every other variable starts at its
@@ -8816,7 +8847,9 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     if !a_tree_can_hold(model) {
         return None;
     }
-    let mut text = ShapeTexts::new("sce-saved-state-shape 1");
+    // The header a shape file's reader holds a text to
+    // ([`crate::forge::saved_migration::Shape::read`]).
+    let mut text = ShapeTexts::new(crate::forge::saved_migration::SHAPE_HEADER);
     let mut states: Vec<_> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
@@ -9054,6 +9087,9 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             .push(holder);
     }
     let [first, format2_first] = text.digests();
+    // What a shape file of this version holds (docs/adr/0109, D11): the text a
+    // state of format 2 or later names its shape by.
+    let shape_text = text.format2.clone();
     // One line more, the same for every document: what makes a reader that
     // knows only the first shape refuse a state that names revisions, instead of
     // reading it without the fields it does not know.
@@ -9067,7 +9103,24 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         records: records.into_values().collect(),
         enums: enums.into_values().collect(),
         features: model.configuration.clone(),
+        text: shape_text,
+        // Planned where the machine is lowered for a target, which spells the
+        // conversions' calls ([`lower`]).
+        migrations: Vec::new(),
     })
+}
+
+/// The shape file of `model` (docs/adr/0109, D11): the text a state its machine
+/// saves names the digest of ([`SavedShape::text`]), what `sce-codegen shape`
+/// writes and an author commits for a released version. `None` for a machine a
+/// saved state cannot hold, which has no save API and so no shape. The model is
+/// one a build prepared: analysed, with the host's declaration of what it serves
+/// applied, since a host-run `<invoke>` is part of the shape only where it is
+/// served. The shape is the document's and the same for every backend, so no
+/// target is asked.
+pub fn saved_shape_text(model: &SCXMLModel) -> Option<String> {
+    let scope = StaticScope::of(model)?;
+    saved_shape(model, &scope).map(|shape| shape.text)
 }
 
 /// The shape type of `value_type` (docs/adr/0055, section 6): the type a
@@ -10283,6 +10336,10 @@ impl StaticTarget for CppTarget {
         ))
     }
     fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    // docs/adr/0109, D11: `upgradeSavedState` applies the plan.
+    fn lowers_migrations(&self) -> bool {
         true
     }
     // `std::optional<T>` (docs/adr/0055, section 5): the type is the default

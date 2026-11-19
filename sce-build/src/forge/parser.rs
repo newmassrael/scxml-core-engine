@@ -13959,7 +13959,7 @@ pub(crate) fn sce_children<'a, 'input>(
 /// order, each put on the parse's read ledger as it is handed out — for a
 /// reader that takes several kinds of child from one parent and leaves the
 /// rest to the ledger to refuse.
-fn sce_children_among<'a, 'input>(
+pub(crate) fn sce_children_among<'a, 'input>(
     node: &roxmltree::Node<'a, 'input>,
     locals: &'static [&'static str],
 ) -> impl Iterator<Item = roxmltree::Node<'a, 'input>> {

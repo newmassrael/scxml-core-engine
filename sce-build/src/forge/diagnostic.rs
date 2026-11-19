@@ -3932,6 +3932,21 @@ pub enum DiagnosticCode {
     ValidationBytesComparisonNotEquality,
     #[serde(rename = "mesh/event-schema-mismatch")]
     MeshEventSchemaMismatch,
+    // ── docs/adr/0109, D11: a saved state carried into a new version of its
+    //    document by a declared migration. Each is judged where the machine
+    //    is built, against the shape it is bound to. ────────────────────
+    /// See [`ValidationError::MigrationNotTotal`].
+    #[serde(rename = "validation/migration-not-total")]
+    ValidationMigrationNotTotal,
+    /// See [`ValidationError::MigrationTypeChange`].
+    #[serde(rename = "validation/migration-type-change")]
+    ValidationMigrationTypeChange,
+    /// See [`ValidationError::MigrationShapeUnreadable`].
+    #[serde(rename = "validation/migration-shape-unreadable")]
+    ValidationMigrationShapeUnreadable,
+    /// See [`ValidationError::MigrationChainBroken`].
+    #[serde(rename = "validation/migration-chain-broken")]
+    ValidationMigrationChainBroken,
 }
 
 /// Canonical enumeration of every `DiagnosticCode` variant.
@@ -4628,6 +4643,11 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationEventPayloadFieldUnknown,
         ValidationBytesComparisonNotEquality,
         MeshEventSchemaMismatch,
+        // ── docs/adr/0109, D11: a declared migration ────
+        ValidationMigrationNotTotal,
+        ValidationMigrationTypeChange,
+        ValidationMigrationShapeUnreadable,
+        ValidationMigrationChainBroken,
     ]
 };
 
@@ -4841,6 +4861,10 @@ impl DiagnosticCode {
 
             // ── A map's key and where a map stands (docs/adr/0108, D1 and D7) ──
             ValidationMapKeyType => Some("ADR 0108 D1"),
+            ValidationMigrationNotTotal
+            | ValidationMigrationTypeChange
+            | ValidationMigrationShapeUnreadable
+            | ValidationMigrationChainBroken => Some("ADR 0109 D11"),
             ValidationMapInWirePosition => Some("ADR 0108 D7"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
@@ -6264,7 +6288,13 @@ impl DiagnosticCode {
             | ValidationEventSchemaOnBuiltinEvent
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality
-            | MeshEventSchemaMismatch => DerivationClass::ProductOnly,
+            | MeshEventSchemaMismatch
+            // docs/adr/0109, D11: a step is judged against the shape of the
+            // variant being built, whose states and variables are its own.
+            | ValidationMigrationNotTotal
+            | ValidationMigrationTypeChange
+            | ValidationMigrationShapeUnreadable
+            | ValidationMigrationChainBroken => DerivationClass::ProductOnly,
         }
     }
 
@@ -6972,6 +7002,11 @@ impl DiagnosticCode {
             ValidationEventPayloadFieldUnknown => "validation/event-payload-field-unknown",
             ValidationBytesComparisonNotEquality => "validation/bytes-comparison-not-equality",
             MeshEventSchemaMismatch => "mesh/event-schema-mismatch",
+            // ── docs/adr/0109, D11 ──
+            ValidationMigrationNotTotal => "validation/migration-not-total",
+            ValidationMigrationTypeChange => "validation/migration-type-change",
+            ValidationMigrationShapeUnreadable => "validation/migration-shape-unreadable",
+            ValidationMigrationChainBroken => "validation/migration-chain-broken",
         }
     }
 }
@@ -11732,6 +11767,46 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 op.clone(),
             ],
         },
+        // docs/adr/0109, D11. No `fix`: which of keeping, renaming, mapping,
+        // dropping, adding or converting accounts for a name is the author's
+        // to say, and no closed set of values names it. The identity is the
+        // step's two shape files and the name the refusal is about.
+        ValidationError::MigrationNotTotal {
+            from, to, subject, ..
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMigrationNotTotal,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(subject.clone()),
+            fix: None,
+            key_fragments: vec![from.clone(), to.clone(), subject.clone()],
+        },
+        ValidationError::MigrationTypeChange {
+            from, to, variable, ..
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMigrationTypeChange,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(variable.clone()),
+            fix: None,
+            key_fragments: vec![from.clone(), to.clone(), variable.clone()],
+        },
+        ValidationError::MigrationShapeUnreadable { path, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMigrationShapeUnreadable,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(path.clone()),
+            fix: None,
+            key_fragments: vec![path.clone()],
+        },
+        ValidationError::MigrationChainBroken { path, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMigrationChainBroken,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(path.clone()),
+            fix: None,
+            key_fragments: vec![path.clone()],
+        },
     }
 }
 
@@ -12784,6 +12859,12 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 ty.clone(),
             ],
         },
+        // docs/adr/0109, D11: a migration refused where the machine is built is
+        // the document's refusal, recorded as the validation stage records it,
+        // so its code, its stage and its id are those of the same refusal raised
+        // anywhere else; its position rides `at`, which the generation stage's
+        // locator reads (`locate_codegen_error`).
+        GenerateError::Migration { refusal, .. } => validation_fields(refusal),
     }
 }
 
@@ -18427,6 +18508,55 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:dd6f31b5df3a391c","code":"validation/bytes-comparison-not-equality","stage":"validation","message":"statechart 'demo': operator '<' is not defined on the bytes payload '_event.data.raw' — only equality ('===' / '!==') is supported on bytes","expected":["=== or !=="],"actual":"&lt;"}"#,
             ),
+            // ── docs/adr/0109, D11: a declared migration, each refusal keyed by
+            //   the step's shape files and the name it is about.
+            (
+                "validation/migration-not-total",
+                ValidationError::MigrationNotTotal {
+                    from: "shapes/1.shape".into(),
+                    to: "shapes/2.shape".into(),
+                    subject: "waiting".into(),
+                    detail: "the state 'waiting' of 'shapes/1.shape' is neither kept, renamed nor mapped"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9e3b149333af908e","code":"validation/migration-not-total","stage":"validation","spec":"ADR 0109 D11","message":"<sce:migration from=\"shapes/1.shape\" to=\"shapes/2.shape\">: the state 'waiting' of 'shapes/1.shape' is neither kept, renamed nor mapped","actual":"waiting"}"#,
+            ),
+            (
+                "validation/migration-type-change",
+                ValidationError::MigrationTypeChange {
+                    from: "shapes/1.shape".into(),
+                    to: "shapes/2.shape".into(),
+                    variable: "total".into(),
+                    detail: "is int64 in 'shapes/1.shape' and int32 in 'shapes/2.shape': the \
+                             integer narrowed or changed its sign, which is no widening, and no \
+                             <sce:convert> converts it"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a993bc3a8e476db2","code":"validation/migration-type-change","stage":"validation","spec":"ADR 0109 D11","message":"<sce:migration from=\"shapes/1.shape\" to=\"shapes/2.shape\">: the variable 'total' is int64 in 'shapes/1.shape' and int32 in 'shapes/2.shape': the integer narrowed or changed its sign, which is no widening, and no <sce:convert> converts it","actual":"total"}"#,
+            ),
+            (
+                "validation/migration-shape-unreadable",
+                ValidationError::MigrationShapeUnreadable {
+                    path: "shapes/1.shape".into(),
+                    detail: "its last line does not end in a newline".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:25142249464fe96a","code":"validation/migration-shape-unreadable","stage":"validation","spec":"ADR 0109 D11","message":"<sce:migration>: the shape file 'shapes/1.shape' cannot be read as a shape: its last line does not end in a newline","actual":"shapes/1.shape"}"#,
+            ),
+            (
+                "validation/migration-chain-broken",
+                ValidationError::MigrationChainBroken {
+                    path: "shapes/2.shape".into(),
+                    detail: "the step from 'shapes/2.shape' does not start where the step before \
+                             it ends, 'shapes/1.shape': the steps form one chain, in the order \
+                             they are written"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:40531a739cfdbe25","code":"validation/migration-chain-broken","stage":"validation","spec":"ADR 0109 D11","message":"<sce:migration>: the step from 'shapes/2.shape' does not start where the step before it ends, 'shapes/1.shape': the steps form one chain, in the order they are written","actual":"shapes/2.shape"}"#,
+            ),
         ]
     }
 
@@ -21057,6 +21187,12 @@ mod tests {
 
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
+            // docs/adr/0109, D11: which step accounts for a name is the
+            // author's to choose, so none carries a fix or an `expected`.
+            | ValidationMigrationNotTotal
+            | ValidationMigrationTypeChange
+            | ValidationMigrationShapeUnreadable
+            | ValidationMigrationChainBroken
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
             | CodecUndeclaredEncodeRefusal
@@ -22589,7 +22725,12 @@ mod tests {
                 | ValidationEventSchemaOnBuiltinEvent
                 | ValidationEventPayloadFieldUnknown
                 | ValidationBytesComparisonNotEquality
-                | MeshEventSchemaMismatch => true,
+                | MeshEventSchemaMismatch
+                // docs/adr/0109, D11
+                | ValidationMigrationNotTotal
+                | ValidationMigrationTypeChange
+                | ValidationMigrationShapeUnreadable
+                | ValidationMigrationChainBroken => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -22601,9 +22742,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            547,
+            551,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 547 distinct variants to match the DiagnosticCode \
+             expected 551 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23700,6 +23841,14 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // resolves the enclosing anchor; no scenario takes an entry that
             // returns one source, so the roster has not seen it carry.
             | GenerateInlineChildUnreturnable
+            // docs/adr/0109, D11: located on the `<sce:migration>`, or the
+            // child of it the refusal is about, through `locate_codegen_error`,
+            // which resolves the enclosing anchor; no scenario declares a
+            // migration, so the roster has not seen one carry.
+            | ValidationMigrationNotTotal
+            | ValidationMigrationTypeChange
+            | ValidationMigrationShapeUnreadable
+            | ValidationMigrationChainBroken
             | ProfileInterfaceNotClosed
             | ProfileNameStyle
             | ProfileNameLimit

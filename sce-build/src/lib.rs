@@ -1546,7 +1546,8 @@ fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
             GenerateError::UnsupportedFeature { at, .. }
             | GenerateError::SourceHashUnavailable { at, .. }
             | GenerateError::InlineChildUnreturnable { at, .. }
-            | GenerateError::CodegenStandardHostTypeNotServed { at, .. } => at.clone(),
+            | GenerateError::CodegenStandardHostTypeNotServed { at, .. }
+            | GenerateError::Migration { at, .. } => at.clone(),
             _ => None,
         },
         _ => None,

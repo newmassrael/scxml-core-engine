@@ -1069,6 +1069,10 @@ references against a real document and drift silently.
 | `validation/mesh-rpc-duplicate-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-missing-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-reserved-param` | `validation` | no | SCE Mesh §9.5 |
+| `validation/migration-chain-broken` | `validation` | no | ADR 0109 D11 |
+| `validation/migration-not-total` | `validation` | no | ADR 0109 D11 |
+| `validation/migration-shape-unreadable` | `validation` | no | ADR 0109 D11 |
+| `validation/migration-type-change` | `validation` | no | ADR 0109 D11 |
 | `validation/misplaced-element` | `validation` | `move_element` |  |
 | `validation/missing-attribute` | `validation` | `add_attribute` |  |
 | `validation/missing-context` | `validation` | no |  |

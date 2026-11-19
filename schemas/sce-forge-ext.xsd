@@ -2622,6 +2622,89 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- docs/adr/0109, D11: one step a state saved by an earlier version of a
+       `datamodel="sce-static"` document is carried to the next by. `from` and
+       `to` are shape files (`sce-codegen shape`), relative to the document;
+       a direct child of the `<scxml>` root, in chain order. The parser reads
+       the children (`forge::saved_migration::read`), and the build holds the
+       step to its two shapes where the machine is generated. -->
+  <xs:element name="migration">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="sce:rename"/>
+        <xs:element ref="sce:map-state"/>
+        <xs:element ref="sce:drop-data"/>
+        <xs:element ref="sce:add-data"/>
+        <xs:element ref="sce:convert"/>
+        <xs:element ref="sce:drop-invoke"/>
+      </xs:choice>
+      <xs:attribute name="from" type="xs:string" use="required"/>
+      <xs:attribute name="to" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- A state, history, variable or invocation of the old shape that is the
+       new shape's `to`, or an event a waiting send names that is now `to`. -->
+  <xs:element name="rename">
+    <xs:complexType>
+      <xs:attribute name="kind" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="state"/>
+            <xs:enumeration value="history"/>
+            <xs:enumeration value="data"/>
+            <xs:enumeration value="invoke"/>
+            <xs:enumeration value="event"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="from" type="xs:string" use="required"/>
+      <xs:attribute name="to" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- A configuration that holds `from`, a state the new shape no longer
+       holds, holds `to` in its place. -->
+  <xs:element name="map-state">
+    <xs:complexType>
+      <xs:attribute name="from" type="xs:string" use="required"/>
+      <xs:attribute name="to" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- A variable of the old shape the new one does not carry. -->
+  <xs:element name="drop-data">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- A variable of the new shape, given the constant `expr`; in the last
+       step a `<data>` initialiser that is a constant serves when `expr` is
+       left out. -->
+  <xs:element name="add-data">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="expr" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- The variable `data` of the new shape is the pure algorithm the import
+       aliased `algorithm` of its old value. -->
+  <xs:element name="convert">
+    <xs:complexType>
+      <xs:attribute name="data" type="xs:string" use="required"/>
+      <xs:attribute name="algorithm" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- An invocation the new document no longer runs ends without a start. -->
+  <xs:element name="drop-invoke">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
   <!-- ── Elements the tree reads that this grammar did not declare ──
 
        Measured 2026-09-20: five `sce:` elements were read by a parser,

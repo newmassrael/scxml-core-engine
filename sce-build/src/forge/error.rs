@@ -5514,6 +5514,47 @@ pub enum ValidationError {
         /// on one row. The record's `actual`.
         observed: Option<String>,
     },
+
+    /// A `<sce:migration from to>` (docs/adr/0109, D11) that leaves part of its
+    /// old shape or of its new one unaccounted for: an old state, history,
+    /// invocation or variable neither kept, renamed, mapped nor dropped, a new
+    /// variable neither kept, renamed nor added, or a child that names what its
+    /// shape does not hold, names one thing twice, or gives an added variable no
+    /// constant. `from` and `to` are the shape files as the document writes
+    /// them, and `subject` the name the refusal is about, the record's
+    /// `actual`. Wire code: `validation/migration-not-total`.
+    #[error("<sce:migration from=\"{from}\" to=\"{to}\">: {detail}")]
+    MigrationNotTotal {
+        from: String,
+        to: String,
+        subject: String,
+        detail: String,
+    },
+
+    /// A `<sce:migration from to>` that carries the variable `variable` (as the
+    /// new shape names it) to a type its old one does not widen to, with no
+    /// `<sce:convert>`, or gives it a conversion or a constant of another type
+    /// (docs/adr/0109, D11). Wire code: `validation/migration-type-change`.
+    #[error("<sce:migration from=\"{from}\" to=\"{to}\">: the variable '{variable}' {detail}")]
+    MigrationTypeChange {
+        from: String,
+        to: String,
+        variable: String,
+        detail: String,
+    },
+
+    /// A shape file a `<sce:migration>` names that cannot be read, or whose text
+    /// is no shape (docs/adr/0109, D11). `path` is as the document writes it.
+    /// Wire code: `validation/migration-shape-unreadable`.
+    #[error("<sce:migration>: the shape file '{path}' cannot be read as a shape: {detail}")]
+    MigrationShapeUnreadable { path: String, detail: String },
+
+    /// The `<sce:migration>` steps of a document that do not form one chain, in
+    /// the order they are written, whose last `to` is the document's own shape
+    /// (docs/adr/0109, D11). `path` is the shape file the chain breaks at, as the
+    /// document writes it. Wire code: `validation/migration-chain-broken`.
+    #[error("<sce:migration>: {detail}")]
+    MigrationChainBroken { path: String, detail: String },
 }
 
 /// [`ValidationError::ReservedCodeIdentifier`]'s message. Names the spelling
@@ -7263,6 +7304,23 @@ pub enum GenerateError {
         ty: String,
         observed: String,
     },
+
+    /// A `<sce:migration>` the document declares refused where the machine is
+    /// built (docs/adr/0109, D11): the step is judged against the shape the
+    /// machine is bound to, which only the build knows, since the host's
+    /// declaration of what it serves is part of it. `refusal` is one of
+    /// [`ValidationError::MigrationNotTotal`],
+    /// [`ValidationError::MigrationTypeChange`],
+    /// [`ValidationError::MigrationShapeUnreadable`] and
+    /// [`ValidationError::MigrationChainBroken`]: a document every backend that
+    /// applies a migration refuses alike, so its record is the validation
+    /// stage's and its status the one `validation/*` exits with. `at` is the
+    /// `<sce:migration>`, or the child of it the refusal is about.
+    #[error("{refusal}")]
+    Migration {
+        refusal: Box<ValidationError>,
+        at: Option<SourceLocation>,
+    },
 }
 
 impl GenerateError {
@@ -7314,6 +7372,15 @@ impl ForgeError {
             ForgeError::Expression(_) => 4,
             ForgeError::Import(_) => 5,
             ForgeError::Manifest(_) => 6,
+            // A migration refused where the machine is built is a document's
+            // refusal, `validation/migration-*`, and exits as `validation/*`
+            // does (SCE_ERROR_CONTRACT.md §6): a caller that reads 7 as "this
+            // backend does not lower it" must not pass over a wrong document.
+            ForgeError::Generate(refused)
+                if matches!(**refused, GenerateError::Migration { .. }) =>
+            {
+                3
+            }
             ForgeError::Generate(_) => 7,
             // §wire-W5 D2: SCXML semantic-validation shares the
             // forge-validation exit code (3) — both are post-parse

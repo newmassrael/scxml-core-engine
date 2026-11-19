@@ -573,7 +573,11 @@
         "validation/event-schema-on-builtin-event",
         "validation/event-payload-field-unknown",
         "validation/bytes-comparison-not-equality",
-        "mesh/event-schema-mismatch"
+        "mesh/event-schema-mismatch",
+        "validation/migration-not-total",
+        "validation/migration-type-change",
+        "validation/migration-shape-unreadable",
+        "validation/migration-chain-broken"
       ]
     },
     "stage": {

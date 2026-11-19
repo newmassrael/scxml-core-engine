@@ -4681,6 +4681,14 @@ pub struct SCXMLModel {
     /// outside C).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub driver_refs: Vec<DriverRef>,
+    /// Each `<sce:migration>` on the document root, in document order: the
+    /// steps a state saved by an earlier version of the document is carried to
+    /// this one by (docs/adr/0109, D11), each shape file it names read beside
+    /// the document. Judged and planned where the machine is built
+    /// ([`crate::forge::saved_migration::plan`]), against the shape the machine
+    /// is bound to. Empty for a document that declares none.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub migrations: Vec<crate::forge::saved_migration::Migration>,
     /// Set of session-FSM roles this SCXML document explicitly
     /// declares via top-level `<sce:session-role kind="..."/>`
     /// elements. Each variant appears at most once (parse-time
