@@ -922,6 +922,15 @@ pub enum DiagnosticCode {
     /// declares a field under the tag's key.
     #[serde(rename = "validation/union-tag-collision")]
     ValidationUnionTagCollision,
+    /// A map's or a set's key (docs/adr/0108, D1) that is no key: a float, an
+    /// optional, a union, a list, a map or a set, or a record with a field
+    /// that is none.
+    #[serde(rename = "validation/map-key-type")]
+    ValidationMapKeyType,
+    /// A map or a set (docs/adr/0108, D7) in a type that crosses the wire: an
+    /// event schema's field, a codec's entry, a test message's type.
+    #[serde(rename = "validation/map-in-wire-position")]
+    ValidationMapInWirePosition,
     /// A type whose largest encoding is past 2^64 - 1 bytes (docs/adr/0101,
     /// section 4.4): a CBOR codec's entry or map, or an event schema's or a
     /// union's payload, that no number the build holds sizes.
@@ -4033,6 +4042,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationRenderBound,
         ValidationUnionCases,
         ValidationUnionTagCollision,
+        ValidationMapKeyType,
+        ValidationMapInWirePosition,
         ValidationEncodedSizeOverflow,
         TestProfileDatamodel,
         TestProfileMatcherType,
@@ -4827,6 +4838,10 @@ impl DiagnosticCode {
 
             // ── A union document's cases and its tag (docs/adr/0092, section 1.1) ──
             ValidationUnionCases | ValidationUnionTagCollision => Some("ADR 0092 §1.1"),
+
+            // ── A map's key and where a map stands (docs/adr/0108, D1 and D7) ──
+            ValidationMapKeyType => Some("ADR 0108 D1"),
+            ValidationMapInWirePosition => Some("ADR 0108 D7"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
             ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
@@ -5794,6 +5809,8 @@ impl DiagnosticCode {
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | ValidationMapKeyType
+            | ValidationMapInWirePosition
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -6338,6 +6355,8 @@ impl DiagnosticCode {
             ValidationRenderBound => "validation/render-bound",
             ValidationUnionCases => "validation/union-cases",
             ValidationUnionTagCollision => "validation/union-tag-collision",
+            ValidationMapKeyType => "validation/map-key-type",
+            ValidationMapInWirePosition => "validation/map-in-wire-position",
             ValidationEncodedSizeOverflow => "validation/encoded-size-overflow",
             TestProfileDatamodel => "test-profile/datamodel",
             TestProfileMatcherType => "test-profile/matcher-type",
@@ -8745,6 +8764,38 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 record.clone(),
                 field.clone(),
             ],
+        },
+        // docs/adr/0108, D1: the type as written is `actual`; which key a
+        // table is found by is the author's choice, so neither `expected` nor
+        // `fix`.
+        ValidationError::MapKeyType {
+            element,
+            attr,
+            value,
+            rule: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMapKeyType,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), attr.clone(), value.clone()],
+        },
+        // docs/adr/0108, D7: the type as written is `actual`; how the table
+        // crosses instead is the author's choice, so neither `expected` nor
+        // `fix`.
+        ValidationError::MapInWirePosition {
+            element,
+            attr,
+            value,
+            place: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMapInWirePosition,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), attr.clone(), value.clone()],
         },
         // docs/adr/0101, section 4.4: the type is `actual`; the repair (which
         // bound to lower, and by how much) is the author's, so neither
@@ -14545,6 +14596,37 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:4a393eeefed3dd8c","code":"validation/union-tag-collision","stage":"validation","spec":"ADR 0092 §1.1","message":"union 'date_expression', case 'absolute': the record 'CivilDate' declares the field 'kind', the key the union's tag is written under — the tag and a case's fields stand beside each other in one object, so no case's record declares the tag's key: rename the field or the tag","actual":"kind"}"#,
+            ),
+            (
+                // A map whose key is a float (docs/adr/0108, D1): the type as
+                // written is `actual`.
+                "forge/map-key-type",
+                ValidationError::MapKeyType {
+                    element: "<data id=\"faces\">".into(),
+                    attr: "sce:type".into(),
+                    value: "map&lt;float64, bool&gt;[4]".into(),
+                    rule: "`float64` is no key of `map<float64, bool>[4]`: a float is no key: NaN \
+                           is not equal to itself and -0.0 equals 0.0; a key is a fixed-width \
+                           integer, bool, enum:<alias>, string[N], bytes[N] or a record whose \
+                           every field is a key, whose equality is exact and whose every value \
+                           is bounded (docs/adr/0108, D1)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c98bc570eb1af5a0","code":"validation/map-key-type","stage":"validation","spec":"ADR 0108 D1","message":"<data id=\"faces\">: sce:type 'map&lt;float64, bool&gt;[4]' has a map or a set whose key is no key: `float64` is no key of `map<float64, bool>[4]`: a float is no key: NaN is not equal to itself and -0.0 equals 0.0; a key is a fixed-width integer, bool, enum:<alias>, string[N], bytes[N] or a record whose every field is a key, whose equality is exact and whose every value is bounded (docs/adr/0108, D1)","actual":"map&lt;float64, bool&gt;[4]"}"#,
+            ),
+            (
+                // A map in an event schema's field (docs/adr/0108, D7): the
+                // type as written is `actual`.
+                "forge/map-in-wire-position",
+                ValidationError::MapInWirePosition {
+                    element: "field 'faces'".into(),
+                    attr: "sce:type".into(),
+                    value: "map&lt;uint32, bool&gt;[4]".into(),
+                    place: "map<uint32, bool>[4]".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:30e65a588afd39ce","code":"validation/map-in-wire-position","stage":"validation","spec":"ADR 0108 D7","message":"field 'faces': sce:type 'map&lt;uint32, bool&gt;[4]' holds `map<uint32, bool>[4]`, and a map or a set has no wire form yet, so no event schema's field, codec's entry or payload holds one (docs/adr/0108, D7): a table crosses the wire as a list of its entries","actual":"map&lt;uint32, bool&gt;[4]"}"#,
             ),
             (
                 // A CBOR entry whose largest encoding is past 2^64 - 1 bytes
@@ -21030,6 +21112,8 @@ mod tests {
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | ValidationMapKeyType
+            | ValidationMapInWirePosition
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -22064,6 +22148,7 @@ mod tests {
                 | ValidationTextTemplateHole | ValidationTextTemplateFence
                 | ValidationRenderHoles | ValidationRenderBound
                 | ValidationUnionCases | ValidationUnionTagCollision
+                | ValidationMapKeyType | ValidationMapInWirePosition
                 | ValidationEncodedSizeOverflow
                 | TestProfileDatamodel | TestProfileMatcherType | TestProfileLiteral
                 | TestProfileTemplateParameter | TestProfileTemplateFloat
@@ -22510,9 +22595,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            545,
+            547,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 545 distinct variants to match the DiagnosticCode \
+             expected 547 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23169,6 +23254,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | ValidationMapKeyType
+            | ValidationMapInWirePosition
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType

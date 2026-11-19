@@ -2037,7 +2037,9 @@ fn required_name(
 }
 
 /// A type the test profile reads in the type grammar of an event schema's
-/// fields (docs/SCE_TEST_PROFILE.md §11.4), every bound in it stated.
+/// fields (docs/SCE_TEST_PROFILE.md §11.4), every bound in it stated. A map
+/// or a set is refused as an event schema's field refuses one: a test's
+/// values cross the wire, where none has a form yet (docs/adr/0108, D7).
 fn read_profile_type(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -2045,7 +2047,9 @@ fn read_profile_type(
     attr: &str,
     text: &str,
 ) -> Result<ValueType, Located<ForgeError>> {
-    read_written_type(node, doc_name, element, attr, text, OptionalElems::Scalar)?
+    let written = read_written_type(node, doc_name, element, attr, text, OptionalElems::Scalar)?;
+    refuse_map_on_the_wire(node, doc_name, element, attr, text, &written)?;
+    written
         .bounded()
         .map_err(|refusal| type_rule_refusal(node, doc_name, element, attr, text, &refusal))
 }
@@ -3965,6 +3969,7 @@ fn read_cbor_entry_type(
         text,
         OptionalElems::OrRecord,
     )?;
+    refuse_map_on_the_wire(node, doc, &type_element, "sce:type", text, &written)?;
     refuse_required_attribute(node, doc, element, text)?;
     let length = match sce_attr(node, "length") {
         None => None,
@@ -14472,6 +14477,13 @@ fn type_rule_refusal(
             value,
             rule: refusal.rule(),
         },
+        // docs/adr/0108, D1: a key is a fact of its own, its code the map's.
+        TypeRefusal::NotAKey { .. } => ValidationError::MapKeyType {
+            element: element.to_string(),
+            attr: attr.into(),
+            value,
+            rule: refusal.rule(),
+        },
         _ => ValidationError::AttributeRuleViolated {
             element: element.to_string(),
             attr: attr.into(),
@@ -14685,6 +14697,35 @@ fn legacy_number(
     })
 }
 
+/// The refusal of a map or a set in the type `written`, read from `attr` of
+/// `node`, at a place that crosses the wire (docs/adr/0108, D7): an event
+/// schema's field, and so a payload and a lift's answer, a union's tag, a text
+/// template's hole, a codec's entry and a test message's type. No wire form
+/// holds a map yet, so it is refused where it is declared, naming the
+/// outermost one, before anything sizes or lowers the type.
+fn refuse_map_on_the_wire(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    attr: &str,
+    text: &str,
+    written: &WrittenType,
+) -> Result<(), Located<ForgeError>> {
+    match written.keyed() {
+        None => Ok(()),
+        Some(keyed) => Err(located(
+            node,
+            doc_name,
+            ValidationError::MapInWirePosition {
+                element: element.to_string(),
+                attr: attr.to_string(),
+                value: type_as_written(node, attr, text),
+                place: keyed.to_string(),
+            },
+        )),
+    }
+}
+
 /// Read an event schema's field's `sce:type` through the one type grammar
 /// (docs/adr/0086, section 1): its type, every bound inside it.
 ///
@@ -14693,9 +14734,12 @@ fn legacy_number(
 /// `sce:limit` beside it. Every text, byte string and list is bounded, the
 /// field's own included (section 1.4). Every type of the grammar is a field's
 /// type: a position that does not lower a composition yet refuses it where it
-/// reads the schema (section 7.3), not here. A `sce:max-size` beside a type
-/// with no length is handed back with the `sce:limit` beside it, kept as the
-/// field's bound as it always was; its rule is the validators'.
+/// reads the schema (section 7.3), not here. A map and a set are the
+/// exception, refused here at any depth: no wire form holds one yet
+/// (`validation/map-in-wire-position`, docs/adr/0108, D7). A `sce:max-size`
+/// beside a type with no length is handed back with the `sce:limit` beside
+/// it, kept as the field's bound as it always was; its rule is the
+/// validators'.
 fn read_schema_value_type(
     data: &roxmltree::Node,
     doc_name: &str,
@@ -14710,6 +14754,7 @@ fn read_schema_value_type(
         text,
         OptionalElems::Scalar,
     )?;
+    refuse_map_on_the_wire(data, doc_name, element, "sce:type", text, &written)?;
     let bound_attr = match written.outermost_bounded() {
         Some(WrittenType::List { .. }) => "max-count",
         _ => "max-size",

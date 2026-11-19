@@ -1064,6 +1064,8 @@ references against a real document and drift silently.
 | `validation/lower-count-past-bound` | `validation` | no | ADR 0086 §15 |
 | `validation/malformed-code-identifier` | `validation` | no | SCE Accepted Subset §2.14 |
 | `validation/malformed-identifier` | `validation` | no | W3C SCXML §3.3.1 |
+| `validation/map-in-wire-position` | `validation` | no | ADR 0108 D7 |
+| `validation/map-key-type` | `validation` | no | ADR 0108 D1 |
 | `validation/mesh-rpc-duplicate-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-missing-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-reserved-param` | `validation` | no | SCE Mesh §9.5 |

@@ -1537,6 +1537,41 @@ pub enum ValidationError {
         field: String,
     },
 
+    /// docs/adr/0108, D1: a map or a set whose key is no key — a float, an
+    /// optional, a union, a list, a map or a set, or a record one of whose
+    /// fields, through every record a field names, is none. `value` is the
+    /// type as the document spells it, the record's `actual`; `rule` names the
+    /// map, its key and what makes the key none, a record key's field among
+    /// it. No fix: which key a table is found by is the author's choice.
+    ///
+    /// Wire code: `validation/map-key-type`.
+    #[error("{element}: {attr} '{value}' has a map or a set whose key is no key: {rule}")]
+    MapKeyType {
+        element: String,
+        attr: String,
+        value: String,
+        rule: String,
+    },
+
+    /// docs/adr/0108, D7: a map or a set, spelled `place`, in a type that
+    /// crosses the wire — an event schema's field, and so a payload and a
+    /// lift's answer, a codec's entry, a union's or a text template's place,
+    /// a test message's type — where no wire form holds one yet. `value` is
+    /// the type as the document spells it, the record's `actual`.
+    ///
+    /// Wire code: `validation/map-in-wire-position`.
+    #[error(
+        "{element}: {attr} '{value}' holds `{place}`, and a map or a set has no wire form yet, \
+         so no event schema's field, codec's entry or payload holds one (docs/adr/0108, D7): \
+         a table crosses the wire as a list of its entries"
+    )]
+    MapInWirePosition {
+        element: String,
+        attr: String,
+        value: String,
+        place: String,
+    },
+
     /// docs/adr/0101, section 4.4: the largest encoding of a value of `ty` at
     /// `place` is past 2^64 - 1 bytes, so the build has no number to size an
     /// encode, a buffer or a slot by. Raised where `C` of a CBOR codec's entry

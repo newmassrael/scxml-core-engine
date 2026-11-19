@@ -101,6 +101,8 @@
         "validation/render-bound",
         "validation/union-cases",
         "validation/union-tag-collision",
+        "validation/map-key-type",
+        "validation/map-in-wire-position",
         "validation/encoded-size-overflow",
         "test-profile/datamodel",
         "test-profile/matcher-type",

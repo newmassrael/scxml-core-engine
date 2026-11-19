@@ -982,8 +982,16 @@ fn enforce_static_datamodel(
             // The type as the one type grammar reads it (docs/adr/0086). A text
             // that is no type is the variable's reader's to refuse, by name; the
             // rules below are of the shapes it can be.
-            let written = crate::sce_attr::read(&node, "type")
-                .and_then(|t| crate::forge::value_type::WrittenType::read(t).ok());
+            let read = crate::sce_attr::read(&node, "type")
+                .map(crate::forge::value_type::WrittenType::read);
+            // A type whose key is no key holds a map or a set (docs/adr/0108,
+            // D1): its shape is a map's, and its refusal the reader's, which
+            // names the key.
+            let key_refused = matches!(
+                read,
+                Some(Err(crate::forge::value_type::TypeRefusal::NotAKey { .. }))
+            );
+            let written = read.and_then(Result::ok);
             // The outermost bound written in the type's bracket, which states
             // what `sce:capacity` states (docs/adr/0086, section 1.3).
             let bracket = written
@@ -1031,17 +1039,38 @@ fn enforce_static_datamodel(
             // a bound instead of an initial value. The bound is the one the
             // machine keeps on every backend, so it is required, and it
             // means nothing on any other variable.
-            let is_list = matches!(
-                written,
-                Some(crate::forge::value_type::WrittenType::List { .. })
+            //
+            // A map or a set variable starts empty the same way, and is
+            // filled by `<sce:put>` (docs/adr/0108, D3 and D4). No lowering
+            // holds one yet: it is refused by name where the document's
+            // variables are judged (`crate::forge::static_datamodel::check`),
+            // and a key that is no key where its type is read.
+            let keyed = (
+                "map or set",
+                "<sce:put>",
+                "entries",
+                "map<K, T>[N] or set<K>[N]",
             );
+            let filled = match &written {
+                Some(crate::forge::value_type::WrittenType::List { .. }) => {
+                    Some(("list", "<sce:append>", "elements", "list<T>[N]"))
+                }
+                Some(
+                    crate::forge::value_type::WrittenType::Map { .. }
+                    | crate::forge::value_type::WrittenType::Set { .. },
+                ) => Some(keyed),
+                None if key_refused => Some(keyed),
+                _ => None,
+            };
             let capacity = attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "capacity");
-            if is_list {
+            if let Some((kind, filler, unit, form)) = filled {
                 if let Some(written) = attribute_as_written(&node, "expr") {
                     return Err(refused(
                         format!("expr=\"{written}\""),
-                        "a list variable starts empty and is filled by <sce:append> — it \
-                         takes no expr",
+                        &format!(
+                            "a {kind} variable starts empty and is filled by {filler} — it \
+                             takes no expr"
+                        ),
                         &node,
                         (!written.is_empty()).then(|| written.to_string()),
                     ));
@@ -1049,20 +1078,26 @@ fn enforce_static_datamodel(
                 if !inline_data_value(&node).is_empty() {
                     return Err(refused(
                         format!("<data id=\"{id}\"> with in-line content"),
-                        "a list variable starts empty and is filled by <sce:append> — \
-                         in-line content has no type",
+                        &format!(
+                            "a {kind} variable starts empty and is filled by {filler} — \
+                             in-line content has no type"
+                        ),
                         &node,
                         Some(name.to_string()),
                     ));
                 }
                 match capacity {
-                    None if bracket => {}
+                    // A type the reader refuses is its to name, before any
+                    // bound is asked of it.
+                    None if bracket || written.is_none() => {}
                     None => {
                         return Err(refused(
                             format!("<data id=\"{id}\">"),
-                            "a list variable declares the most elements it holds in its type, \
-                             list<T>[N] (or with sce:capacity, the attribute that stated it \
-                             before)",
+                            &format!(
+                                "a {kind} variable declares the most {unit} it holds in its \
+                                 type, {form} (or with sce:capacity, the attribute that stated \
+                                 it before)"
+                            ),
                             &node,
                             Some(name.to_string()),
                         ))
@@ -1077,8 +1112,10 @@ fn enforce_static_datamodel(
                     {
                         return Err(refused(
                             format!("sce:capacity=\"{written}\""),
-                            "sce:capacity is a whole number of elements, at least one, that \
-                             fits 32 bits",
+                            &format!(
+                                "sce:capacity is a whole number of {unit}, at least one, that \
+                                 fits 32 bits"
+                            ),
                             &node,
                             Some(written.to_string()),
                         ))
@@ -1112,6 +1149,10 @@ fn enforce_static_datamodel(
                 Some(crate::forge::value_type::WrittenType::List { .. }) => {
                     Some(("list", "elements", "list<T>[N]"))
                 }
+                Some(
+                    crate::forge::value_type::WrittenType::Map { .. }
+                    | crate::forge::value_type::WrittenType::Set { .. },
+                ) => Some(("map or set", "entries", "map<K, T>[N] or set<K>[N]")),
                 _ => None,
             };
             if let Some((kind, unit, form)) = bounded {

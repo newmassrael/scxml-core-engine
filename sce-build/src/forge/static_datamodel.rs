@@ -221,6 +221,11 @@ pub fn check(
     let plain = judge.ctx(&record_paths);
 
     for var in &scope.variables {
+        // A map or a set (docs/adr/0108) is judged and refused before any
+        // expression is judged over it: the judge has no reading of one yet.
+        if let Some(ty) = var.value_type.as_ref() {
+            judge.map_variable(var, ty)?;
+        }
         if let Some(alias) = var
             .value_type
             .as_ref()
@@ -2578,6 +2583,55 @@ impl<'a> Judge<'a> {
             Expected::Slot(variable_type(var)),
         )?;
         Ok(())
+    }
+
+    /// A variable whose type holds a map or a set at any depth
+    /// (docs/adr/0108): every key is judged against the records the document
+    /// imports, through every record a field names, and one that is no key is
+    /// refused on the type (`validation/map-key-type`, D1), what the reader of
+    /// the type could not ask without the records. A variable whose keys are
+    /// keys is then refused by name (`generate/unsupported-feature`, D10): no
+    /// lowering holds a map yet, so no expression is judged over one. `Ok`
+    /// for a type that holds none.
+    fn map_variable(
+        &self,
+        var: &Variable,
+        ty: &crate::forge::model::AlgorithmValueType,
+    ) -> Result<(), Located<ForgeError>> {
+        let Some(keyed) = ty.keyed() else {
+            return Ok(());
+        };
+        let spelling = var.value_type_spelling.as_ref();
+        let (line, col) = (spelling.map(|s| s.row()), spelling.map(|s| s.col()));
+        let element = format!("<data id=\"{}\">", var.id);
+        if let Some(refusal) = crate::forge::value_type::map_key_refusal(ty, &self.type_scope) {
+            // The type as the document spells it, the record's `actual`.
+            let value = spelling
+                .and_then(|s| s.value())
+                .map_or_else(|| ty.as_attr(), |written| written.text.to_string());
+            return Err(Located::new(
+                crate::forge::error::ValidationError::MapKeyType {
+                    element,
+                    attr: "sce:type".into(),
+                    value,
+                    rule: refusal.rule(),
+                }
+                .into(),
+                self.diag_label,
+                line,
+                col,
+            ));
+        }
+        Err(Located::new(
+            crate::forge::error::GenerateError::unsupported(format!(
+                "{element}: {}",
+                crate::forge::value_type::map_unlowered(&keyed.to_string())
+            ))
+            .into(),
+            self.diag_label,
+            line,
+            col,
+        ))
     }
 
     /// A `union:<alias>` variable (docs/adr/0092, section 6.1 item 5, and its
