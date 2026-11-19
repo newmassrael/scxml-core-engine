@@ -7263,9 +7263,7 @@ fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         KeyedBuiltin::Len => "count",
         KeyedBuiltin::Has => "holds",
     };
-    *callee = Box::new(TypedExpr::new(ExprKind::Raw(format!(
-        "{RUST_MAP_READS}::{function}"
-    ))));
+    **callee = TypedExpr::new(ExprKind::Raw(format!("{RUST_MAP_READS}::{function}")));
     for (position, arg) in args.iter_mut().enumerate() {
         if position == 1 {
             rust_typed_key_literal(arg, &held);
