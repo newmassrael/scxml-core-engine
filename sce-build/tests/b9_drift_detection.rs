@@ -727,6 +727,31 @@ fn verify_passes_on_real_committed_mesh_rust_tree() {
     );
 }
 
+/// The standard rate limiter (`sce:std/rate`) the Rust Mesh crate's HTTPS
+/// edge judges its limits with (docs/adr/0109, D2), committed beside the Mesh
+/// tree. Turns red when a `stdlib/rate/*.scxml` changes and the tree is not
+/// regenerated.
+#[test]
+fn verify_passes_on_real_committed_mesh_rate_rust_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("backends")
+        .join("rust")
+        .join("mesh")
+        .join("src")
+        .join("generated_rate");
+    let input_root = workspace.join("stdlib").join("rate");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Rust rate tree. A failure here \
+         means a stdlib/rate/*.scxml or a Rust forge template changed \
+         without refreshing backends/rust/mesh/src/generated_rate/. Run \
+         `backends/rust/mesh/generate.sh` and commit the result. \
+         stderr:\n{stderr}"
+    );
+}
+
 /// The Rust runtime's standard engine documents, the one committed tree the
 /// generator is itself compiled from (ADR 0097, amendment of 2026-11-17). Turns
 /// red when a `stdlib/engine/*.scxml` changes and the tree is not regenerated.
