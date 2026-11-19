@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 84316cd62ded95c431d6e6a91cda76565f65491ed180cf702fb630a2c90862b7
+// source-hash: 533ef0760e619c9413bd88ab32b43d3a9be7377c761db11817ce503ffebcd536
+// source: sce:std/host/model_generate_result.scxml
 // SCE-MAP: model_generate_result.scxml:17 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -40,7 +41,7 @@ public enum ModelGenerateResult {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:model_generate_result:1\",\"x-sce-source-hash\":\"84316cd62ded95c431d6e6a91cda76565f65491ed180cf702fb630a2c90862b7\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"text\":{\"type\":\"string\",\"maxLength\":4096,\"x-sce-max-bytes\":4096},\"constrained\":{\"type\":\"boolean\"},\"model\":{\"type\":\"string\",\"maxLength\":128,\"x-sce-max-bytes\":128},\"prompt_tokens\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"answer_tokens\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"finish\":{\"type\":\"string\",\"maxLength\":16,\"x-sce-max-bytes\":16}},\"required\":[\"error\",\"text\",\"constrained\",\"model\",\"prompt_tokens\",\"answer_tokens\",\"finish\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:model_generate_result:1\",\"x-sce-source-hash\":\"533ef0760e619c9413bd88ab32b43d3a9be7377c761db11817ce503ffebcd536\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"text\":{\"type\":\"string\",\"maxLength\":4096,\"x-sce-max-bytes\":4096},\"constrained\":{\"type\":\"boolean\"},\"model\":{\"type\":\"string\",\"maxLength\":128,\"x-sce-max-bytes\":128},\"prompt_tokens\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"answer_tokens\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"finish\":{\"type\":\"string\",\"maxLength\":16,\"x-sce-max-bytes\":16}},\"required\":[\"error\",\"text\",\"constrained\",\"model\",\"prompt_tokens\",\"answer_tokens\",\"finish\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built

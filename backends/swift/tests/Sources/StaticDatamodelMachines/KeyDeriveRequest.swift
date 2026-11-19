@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 84316cd62ded95c431d6e6a91cda76565f65491ed180cf702fb630a2c90862b7
+// source-hash: abf62adbff4612069c564c4172d3f04bd3b5b39dac8829c81858adadd0e9bf08
+// source: sce:std/host/key_derive_request.scxml
 // SCE-MAP: key_derive_request.scxml:13 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -40,7 +41,7 @@ public enum KeyDeriveRequest {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:key_derive_request:1\",\"x-sce-source-hash\":\"84316cd62ded95c431d6e6a91cda76565f65491ed180cf702fb630a2c90862b7\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"secret\":{\"type\":\"string\",\"maxLength\":256,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"},\"input_key_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"salt\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"},\"info\":{\"type\":\"string\",\"maxLength\":256,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"secret\",\"input_key_id\",\"salt\",\"info\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:key_derive_request:1\",\"x-sce-source-hash\":\"abf62adbff4612069c564c4172d3f04bd3b5b39dac8829c81858adadd0e9bf08\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"secret\":{\"type\":\"string\",\"maxLength\":256,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"},\"input_key_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"salt\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"},\"info\":{\"type\":\"string\",\"maxLength\":256,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"secret\",\"input_key_id\",\"salt\",\"info\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built
