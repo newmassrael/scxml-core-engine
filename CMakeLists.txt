@@ -309,6 +309,11 @@ include(cmake/dispatchers/glib.cmake)
 # (docs/adr/0107, D7): option SCE_HOST_COSE, target sce_host_cose.
 include(cmake/SCEHostCose.cmake)
 
+# The network transport of the C++ reference host's HTTP operation, on libcurl
+# where it is found, behind a destination policy (docs/adr/0109, D4): option
+# SCE_HOST_HTTP_CURL, target sce_host_http_curl.
+include(cmake/SCEHostHttp.cmake)
+
 # Position independent code generation (for shared libraries)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
