@@ -3783,9 +3783,9 @@ impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
 /// run their `cases` as before. A CBOR map and a content-line component derive
 /// nothing, so their source is the value itself, every entry stated (`source_notation`): Rust
 /// makes the map or the component, C++ its constructor and Python its
-/// dataclass's. `capacities` are what the deployment the harness's C11 tree is
-/// generated with gives each codec ([`conformance_capacities`]): a C11 case
-/// that states more of an element than its struct holds is refused by name.
+/// dataclass's. `deployment` is the one the harness's C11 tree is generated
+/// with ([`RunDeployment`]): a C11 case that states more of an element than
+/// its struct holds at the capacity it gives is refused by name.
 ///
 /// Answers whether anything was folded, as [`fold_reject_vectors`] does.
 fn fold_source_cases(
@@ -3795,7 +3795,7 @@ fn fold_source_cases(
     language: Language,
     resource_dir: &Path,
     reference_path: &Path,
-    capacities: &crate::forge::model::CodecCapacities,
+    deployment: &RunDeployment,
 ) -> Result<bool, String> {
     let Some(sources) = reference
         .get(&fixture.ref_section)
@@ -3817,7 +3817,7 @@ fn fold_source_cases(
         &where_,
         CaseDocuments {
             resource_dir,
-            capacities,
+            deployment,
         },
         |_, at, row, case| {
             let encoded = row
@@ -3859,7 +3859,7 @@ fn fold_source_cases(
 /// exactly that refusal and to leaving the sink empty. The stated refusal must
 /// be one the codec's encode can answer, and one the backend's runtime names:
 /// a case a backend cannot state is refused by name, never left out, as is a
-/// C11 case its struct cannot hold at the `capacities` of the deployment its
+/// C11 case its struct cannot hold at the capacities of the `deployment` its
 /// tree is generated with.
 ///
 /// Answers whether anything was folded, as [`fold_reject_vectors`] does.
@@ -3870,7 +3870,7 @@ fn fold_refused_cases(
     language: Language,
     resource_dir: &Path,
     reference_path: &Path,
-    capacities: &crate::forge::model::CodecCapacities,
+    deployment: &RunDeployment,
 ) -> Result<bool, String> {
     let Some(refused) = reference
         .get(&fixture.ref_section)
@@ -3892,7 +3892,7 @@ fn fold_refused_cases(
         &where_,
         CaseDocuments {
             resource_dir,
-            capacities,
+            deployment,
         },
         |totality, at, row, case| {
             let error = row
@@ -3947,6 +3947,50 @@ fn conformance_capacities(
     crate::mesh::deploy::parse_deploy(deploy_path)
         .map(|deployment| deployment.codec_capacities())
         .map_err(|e| format!("read {}: {e}", deploy_path.display()))
+}
+
+/// The deployment of the conformance run ([`conformance_capacities`]), read
+/// the first time a C11 byte case asks for its capacities. A catalog whose C11
+/// harness folds no byte case never reads it, so it neither needs the file
+/// nor names it as a prerequisite of the render.
+struct RunDeployment {
+    path: PathBuf,
+    capacities: std::cell::OnceCell<crate::forge::model::CodecCapacities>,
+}
+
+impl RunDeployment {
+    /// The deployment at `path`, not yet read.
+    fn at(path: PathBuf) -> Self {
+        Self {
+            path,
+            capacities: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// A deployment that gives no element a capacity, read from no file: a
+    /// fold under it holds a case to its document's bounds alone.
+    #[cfg(test)]
+    fn bounding_nothing() -> Self {
+        Self {
+            path: PathBuf::new(),
+            capacities: std::cell::OnceCell::from(crate::forge::model::CodecCapacities::new()),
+        }
+    }
+
+    /// The capacities the deployment gives each codec, read once.
+    fn capacities(&self) -> Result<&crate::forge::model::CodecCapacities, String> {
+        if let Some(capacities) = self.capacities.get() {
+            return Ok(capacities);
+        }
+        let read = conformance_capacities(&self.path)?;
+        Ok(self.capacities.get_or_init(|| read))
+    }
+
+    /// Whether a case consulted the deployment, which makes its file a
+    /// prerequisite of the render.
+    fn was_read(&self) -> bool {
+        self.capacities.get().is_some()
+    }
 }
 
 /// The keys of a codec's oracle entry a fold owns: the decode-rejection vectors
@@ -4216,13 +4260,12 @@ impl From<crate::forge::generator::KotlinSourceCase> for PrintedCase {
 }
 
 /// What a fold of a codec's byte cases reads besides the oracle: the directory
-/// of the fixtures' documents, and the capacities the deployment the C11 tree
-/// is generated with gives each codec ([`conformance_capacities`]), which a C11
-/// case is held to.
+/// of the fixtures' documents, and the deployment the C11 tree is generated
+/// with ([`RunDeployment`]), whose capacities a C11 case is held to.
 #[derive(Clone, Copy)]
 struct CaseDocuments<'a> {
     resource_dir: &'a Path,
-    capacities: &'a crate::forge::model::CodecCapacities,
+    deployment: &'a RunDeployment,
 }
 
 /// Each row of a codec fixture's byte cases under `key`, its `source` made into
@@ -4248,7 +4291,7 @@ fn fold_case_rows(
     use crate::forge::encode_plan::CodecPlan;
     let CaseDocuments {
         resource_dir,
-        capacities,
+        deployment,
     } = documents;
     let document = fixture.document_path(resource_dir);
     let include = [resource_dir.to_path_buf()];
@@ -4332,7 +4375,12 @@ fn fold_case_rows(
                                 ),
                                 CasePrinter::C11 => PrintedCase::from(
                                     crate::forge::generator::c11_source_case(
-                                        plan, source, inputs, tag, &mut held, capacities,
+                                        plan,
+                                        source,
+                                        inputs,
+                                        tag,
+                                        &mut held,
+                                        deployment.capacities()?,
                                     )
                                     .map_err(|e| format!("{at}: {e}"))?,
                                 ),
@@ -5132,18 +5180,14 @@ pub fn render_harness(
     let mut baked_from_reference = false;
     // The deployment the C11 tree of the run is generated with (CMake hands
     // each fixture's generation the same file), whose capacities a C11 byte
-    // case is held to. Declared, as the oracle is, only where a C11 fold of
-    // byte cases consulted it.
-    let deploy_path = resource_dir
-        .parent()
-        .map(|p| p.join("conformance/deploy.yaml"))
-        .ok_or_else(|| "cannot derive deploy.yaml path from resource_dir".to_string())?;
-    let capacities = if matches!(language, Language::C11) {
-        conformance_capacities(&deploy_path)?
-    } else {
-        crate::forge::model::CodecCapacities::new()
-    };
-    let mut held_to_capacities = false;
+    // case is held to. Read, and declared as the oracle is, only where a C11
+    // fold of byte cases consulted it.
+    let deployment = RunDeployment::at(
+        resource_dir
+            .parent()
+            .map(|p| p.join("conformance/deploy.yaml"))
+            .ok_or_else(|| "cannot derive deploy.yaml path from resource_dir".to_string())?,
+    );
 
     let (fixtures_value, float_tolerance): (minijinja::Value, Option<f64>) = {
         let bake_cases = matches!(language, Language::C11);
@@ -5170,7 +5214,7 @@ pub fn render_harness(
                 language,
                 resource_dir,
                 &reference_path,
-                &capacities,
+                &deployment,
             )?;
             let refused = fold_refused_cases(
                 &mut v,
@@ -5179,10 +5223,9 @@ pub fn render_harness(
                 language,
                 resource_dir,
                 &reference_path,
-                &capacities,
+                &deployment,
             )?;
             baked_from_reference |= sources || refused;
-            held_to_capacities |= matches!(language, Language::C11) && (sources || refused);
             fold_enum_identifiers(&mut v, f, language)?;
             fold_event_schema_enum_fields(&mut v, f, language, resource_dir)?;
             // `oracle_eligible: false` fixtures don't have a field oracle —
@@ -5237,8 +5280,8 @@ pub fn render_harness(
     if baked_from_reference {
         extra_inputs.push(reference_path.clone());
     }
-    if held_to_capacities {
-        extra_inputs.push(deploy_path);
+    if deployment.was_read() {
+        extra_inputs.push(deployment.path);
     }
 
     let ctx = minijinja::context! {
@@ -5670,7 +5713,7 @@ mod tests {
             Language::Kotlin,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("Kotlin is handed nothing");
         assert!(
@@ -5684,7 +5727,7 @@ mod tests {
             Language::Cpp,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect_err("a codec the C++ backend does not print is refused");
         assert!(
@@ -5735,7 +5778,7 @@ mod tests {
                 Language::Python,
                 &resource_dir,
                 &reference_path,
-                &crate::forge::model::CodecCapacities::new(),
+                &RunDeployment::bounding_nothing(),
             )
             .map(|folded| (folded, value))
         };
@@ -5803,7 +5846,7 @@ mod tests {
                 Language::Kotlin,
                 &resource_dir,
                 &reference_path,
-                &crate::forge::model::CodecCapacities::new(),
+                &RunDeployment::bounding_nothing(),
             )
             .map(|folded| (folded, value))
         };
@@ -5965,7 +6008,7 @@ mod tests {
                 Language::C11,
                 &resource_dir,
                 &reference_path,
-                &crate::forge::model::CodecCapacities::new(),
+                &RunDeployment::bounding_nothing(),
             )
             .map(|folded| (folded, value))
         };
@@ -6024,12 +6067,15 @@ mod tests {
             "encoded": [1, 3, 10, 20, 30],
             "note": "three bytes"
         }] } } });
+        let deployments = tempfile::tempdir().expect("tempdir");
         let fold = |most: u32| {
-            let capacities: crate::forge::model::CodecCapacities = [(
-                "codec_length_ref".to_string(),
-                [("payload".to_string(), most)].into(),
-            )]
-            .into();
+            let deploy_path = deployments.path().join(format!("deploy_{most}.yaml"));
+            std::fs::write(
+                &deploy_path,
+                format!("codecs:\n  codec_length_ref:\n    capacity:\n      payload: {most}\n"),
+            )
+            .expect("write the deployment");
+            let deployment = RunDeployment::at(deploy_path);
             let mut value = serde_json::to_value(&fixture).expect("a fixture serializes");
             fold_source_cases(
                 &mut value,
@@ -6038,7 +6084,7 @@ mod tests {
                 Language::C11,
                 &resource_dir,
                 &reference_path,
-                &capacities,
+                &deployment,
             )
         };
 
@@ -6129,7 +6175,7 @@ mod tests {
             Language::C11,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("C11 states a list");
         assert!(folded);
@@ -6196,7 +6242,7 @@ mod tests {
             Language::C11,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("C11 states a variant");
         assert!(folded);
@@ -6257,7 +6303,7 @@ mod tests {
             language,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )?;
         Ok(value["sources"][0].clone())
     }
@@ -6585,7 +6631,7 @@ mod tests {
             Language::Swift,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("the Swift printer prints a frame of integers");
         assert!(folded, "the sources of a printed codec are folded");
@@ -6608,7 +6654,7 @@ mod tests {
             Language::Swift,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("the Swift printer prints a gated number");
         assert!(folded, "the sources of a printed codec are folded");
@@ -6627,7 +6673,7 @@ mod tests {
             Language::Swift,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("the Swift printer prints a codec that refuses a value");
         assert!(folded, "the refused cases of a printed codec are folded");
@@ -6649,7 +6695,7 @@ mod tests {
             Language::Swift,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("the Swift printer prints a byte string and its derived length");
         assert!(folded, "the sources of a printed codec are folded");
@@ -6674,7 +6720,7 @@ mod tests {
             Language::Swift,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("the Swift printer prints a list of entries");
         assert!(folded, "the sources of a printed codec are folded");
@@ -6700,7 +6746,7 @@ mod tests {
             Language::Swift,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("the Swift printer prints a variant of printed arms");
         assert!(folded, "the sources of a printed codec are folded");
@@ -6730,7 +6776,7 @@ mod tests {
             Language::Swift,
             &resource_dir,
             &reference_path,
-            &crate::forge::model::CodecCapacities::new(),
+            &RunDeployment::bounding_nothing(),
         )
         .expect("a codec the Swift printer does not print is handed nothing");
         assert!(
@@ -6856,7 +6902,7 @@ mod tests {
                 language,
                 &resource_dir,
                 reference_path,
-                &crate::forge::model::CodecCapacities::new(),
+                &RunDeployment::bounding_nothing(),
             )
             .map(|folded| (folded, value))
         };
@@ -7011,7 +7057,7 @@ mod tests {
                 Language::Rust,
                 &resource_dir,
                 reference_path,
-                &crate::forge::model::CodecCapacities::new(),
+                &RunDeployment::bounding_nothing(),
             )
             .map(|folded| (folded, value))
         };
