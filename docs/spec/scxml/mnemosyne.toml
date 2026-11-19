@@ -248,6 +248,10 @@ scan_exclusions = [
     # D4): it implements no clause of the Recommendation and carries no `§` citation (measured
     # 2026-11-19).
     "backends/rust/host-http/",
+    # The shared cryptography of the reference hosts (`sce-rust-crypto`, ADR 0109 D5-D7): it
+    # implements no clause of the Recommendation and carries no `§` citation (measured
+    # 2026-11-19).
+    "backends/rust/crypto/",
     # The group key agreement of a shared list (`sce-rust-mls`): it implements no clause of the
     # Recommendation and carries no `§` citation.
     "backends/rust/mls/",
