@@ -519,10 +519,14 @@ fn a_retired_key_makes_nothing_new_and_still_verifies_and_exports() {
     }
 }
 
+/// What an injected failure of one operation is held to: its result record with
+/// every field at its zero, and the request that starts it.
+type ZeroOf = (serde_json::Value, Vec<(&'static str, &'static str)>);
+
 #[test]
 fn an_injected_failure_answers_each_record_at_its_zero() {
     let mut host = host(&[]);
-    let zero: BTreeMap<&str, (serde_json::Value, Vec<(&str, &str)>)> = BTreeMap::from([
+    let zero: BTreeMap<&str, ZeroOf> = BTreeMap::from([
         (
             "sce-host-random-bytes",
             (serde_json::json!({ "bytes": "" }), vec![("length", "1")]),
