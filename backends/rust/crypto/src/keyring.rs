@@ -327,7 +327,7 @@ impl Keyring {
 
     /// The Ed25519 public key of the signing key `id` names, retired or not.
     pub fn public_key(&self, id: &str) -> Result<[u8; KEY_BYTES], KeyError> {
-        Ok(public_key_of(&self.key(id, Purpose::Export)?))
+        Ok(public_key_of(&*self.key(id, Purpose::Export)?))
     }
 
     /// Retire the key `id` names: `true` when it was active, `false` when it was retired already.
