@@ -265,10 +265,18 @@ struct Exchange {
     enum class Kind {
         /// The response as it came.
         Response,
-        /// No response was received: name resolution, connection, TLS, or the connection ended.
+        /// No response was received: name resolution, connection, TLS, a timeout, or the connection
+        /// ended (`network`).
         Failure,
         /// The transport has not answered; the host holds the exchange until it is cancelled.
         Hold,
+        /// The transport's destination policy refused the target before anything was sent: it is not on
+        /// the allow-list, or every address its name resolved to is refused (`destination_refused`;
+        /// docs/adr/0109, D4).
+        DestinationRefused,
+        /// The response passed a bound of the transport before it was read whole (`response_too_large`);
+        /// nothing of it is kept.
+        ResponseTooLarge,
     };
     Kind kind = Kind::Failure;
     HttpResponse response;
@@ -1055,10 +1063,16 @@ private:
     Outcome httpFetch(const std::string &id, const std::string &method, const std::string &url,
                       const std::string &headers, const std::string &body) {
         const Exchange exchange = transport_.exchange({method, url, detail::headerLines(headers).value(), body});
-        if (exchange.kind == Exchange::Kind::Failure) {
+        switch (exchange.kind) {
+        case Exchange::Kind::Response:
+            break;
+        case Exchange::Kind::Failure:
             return detail::failure("sce-host-http-fetch", "network");
-        }
-        if (exchange.kind == Exchange::Kind::Hold) {
+        case Exchange::Kind::DestinationRefused:
+            return detail::failure("sce-host-http-fetch", "destination_refused");
+        case Exchange::Kind::ResponseTooLarge:
+            return detail::failure("sce-host-http-fetch", "response_too_large");
+        case Exchange::Kind::Hold:
             held_.push_back(id);
             return {Outcome::Kind::Hold, ""};
         }
