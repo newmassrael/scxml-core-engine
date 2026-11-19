@@ -2168,6 +2168,103 @@ impl<T: SavedValue, const N: usize> SavedValue for crate::BoundedList<T, N> {
     }
 }
 
+/// The entries of a saved map or set `value`, each read by `entry` at the name
+/// of its index, read back only if there are no more than the `N` its type
+/// bounds it by and no key is held twice (docs/adr/0108, D8) — a machine never
+/// holds more, nor one key twice, and a restored one must not be the first to.
+/// The count is judged before any entry is read, and each entry is put in the
+/// order it was saved, which is the map's order. A restored map hashes its keys
+/// under a seed of its own ([`crate::map_seed`]), which nothing it holds
+/// depends on.
+fn keyed_entries<T>(
+    value: &Value,
+    what: &str,
+    bound: usize,
+    mut entry: impl FnMut(&Value, &str) -> Result<T, StateRefusal>,
+    mut put: impl FnMut(T) -> crate::PutOutcome,
+) -> Result<(), StateRefusal> {
+    let Value::Array(items) = value else {
+        return Err(not_a(value, what, "an array"));
+    };
+    if items.len() > bound {
+        return Err(StateRefusal::new(format!(
+            "'{what}' holds {} entries, past the {bound} it is bounded by",
+            items.len()
+        )));
+    }
+    for (i, item) in items.iter().enumerate() {
+        let at = format!("{what}[{i}]");
+        match put(entry(item, &at)?) {
+            crate::PutOutcome::Inserted => {}
+            crate::PutOutcome::Replaced => {
+                return Err(StateRefusal::new(format!(
+                    "'{at}' holds a key an entry before it holds"
+                )))
+            }
+            crate::PutOutcome::Full => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}' is past the {bound} it is bounded by"
+                )))
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A map a machine holds (docs/adr/0108, D8), written as the array of its
+/// entries in its order, each the array of its key and its value as their own
+/// types write them, and read back held to its bound with no key twice
+/// ([`keyed_entries`]).
+impl<K: SavedValue + crate::MapKey, V: SavedValue, const N: usize> SavedValue
+    for crate::BoundedMap<K, V, N>
+{
+    fn to_saved(&self) -> Value {
+        Value::Array(
+            self.iter()
+                .map(|(key, value)| Value::Array(vec![key.to_saved(), value.to_saved()]))
+                .collect(),
+        )
+    }
+    fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        let mut map = Self::with_seed(crate::map_seed());
+        keyed_entries(
+            value,
+            what,
+            N,
+            |item, at| {
+                let Value::Array(pair) = item else {
+                    return Err(not_a(item, at, "an entry [key, value]"));
+                };
+                let [key, value] = pair.as_slice() else {
+                    return Err(StateRefusal::new(format!(
+                        "'{at}' is not an entry [key, value]: it holds {} items",
+                        pair.len()
+                    )));
+                };
+                Ok((
+                    K::from_saved(key, &format!("{at}[0]"))?,
+                    V::from_saved(value, &format!("{at}[1]"))?,
+                ))
+            },
+            |(key, value)| map.put(key, value),
+        )?;
+        Ok(map)
+    }
+}
+
+/// A set a machine holds (docs/adr/0108, D8), written as the array of its keys
+/// in its order and read back as a map is ([`keyed_entries`]).
+impl<K: SavedValue + crate::MapKey, const N: usize> SavedValue for crate::BoundedSet<K, N> {
+    fn to_saved(&self) -> Value {
+        Value::Array(self.iter().map(SavedValue::to_saved).collect())
+    }
+    fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        let mut set = Self::with_seed(crate::map_seed());
+        keyed_entries(value, what, N, K::from_saved, |key| set.put(key))?;
+        Ok(set)
+    }
+}
+
 /// A saved string `value`, read back only if it holds no more than the `N`
 /// UTF-8 bytes its type bounds it by (docs/adr/0086, section 7.4) — a machine
 /// never holds more, and a restored one must not be the first to.
@@ -5517,6 +5614,82 @@ mod tests {
             .expect_err("past the bound");
         assert!(past.reason().contains("'pick.title'"), "{past}");
         assert!(past.reason().contains("past the 8"), "{past}");
+    }
+
+    /// docs/adr/0108, D8: a map is saved as the array of its entries in its
+    /// order, each `[key, value]` as the key's and the value's own types write
+    /// them, a record value as an object of its fields, and read back in that
+    /// order under a seed of its own; a set as the array of its keys.
+    #[test]
+    fn a_map_is_saved_as_its_entries_in_order_and_read_back_in_it() {
+        let mut amounts = crate::BoundedMap::<u32, i32, 3>::with_seed(crate::map_seed());
+        assert_eq!(amounts.put(9, -2), crate::PutOutcome::Inserted);
+        assert_eq!(amounts.put(7, 5), crate::PutOutcome::Inserted);
+        assert_eq!(amounts.put(9, 3), crate::PutOutcome::Replaced);
+        let saved = amounts.to_saved();
+        assert_eq!(saved, json_of("[[9,3],[7,5]]"));
+        let restored =
+            crate::BoundedMap::<u32, i32, 3>::from_saved(&saved, "amounts").expect("restores");
+        assert_eq!(restored, amounts);
+        assert_eq!(restored.get(&7), Some(&5));
+
+        let mut items = crate::BoundedMap::<u32, Item, 2>::with_seed(crate::map_seed());
+        let item = Item {
+            id: 4,
+            title: sce_portable_bytes::SceString::<8>::from_text("gate").expect("fits"),
+        };
+        assert_eq!(items.put(4, item.clone()), crate::PutOutcome::Inserted);
+        let saved = items.to_saved();
+        assert_eq!(saved, json_of(r#"[[4,{"id":4,"title":"gate"}]]"#));
+        let restored =
+            crate::BoundedMap::<u32, Item, 2>::from_saved(&saved, "items").expect("restores");
+        assert_eq!(restored.get(&4), Some(&item));
+
+        type Tag = sce_portable_bytes::SceString<8>;
+        let mut tags = crate::BoundedSet::<Tag, 3>::with_seed(crate::map_seed());
+        assert_eq!(
+            tags.put(Tag::from_text("blue").expect("fits")),
+            crate::PutOutcome::Inserted
+        );
+        assert_eq!(
+            tags.put(Tag::from_text("red").expect("fits")),
+            crate::PutOutcome::Inserted
+        );
+        let saved = tags.to_saved();
+        assert_eq!(saved, json_of(r#"["blue","red"]"#));
+        let restored = crate::BoundedSet::<Tag, 3>::from_saved(&saved, "tags").expect("restores");
+        assert_eq!(restored, tags);
+    }
+
+    /// docs/adr/0108, D8: a saved map with more entries than its bound, or with
+    /// a key twice, is refused as a saved list with too many elements is, and so
+    /// is an entry that is no `[key, value]`; a saved set likewise.
+    #[test]
+    fn a_saved_map_past_its_bound_or_with_a_key_twice_is_refused() {
+        type Slots = crate::BoundedMap<u8, u8, 2>;
+        let past = Slots::from_saved(&json_of("[[1,1],[2,2],[3,3]]"), "slots")
+            .expect_err("past its bound");
+        assert!(
+            past.reason()
+                .contains("'slots' holds 3 entries, past the 2 it is bounded by"),
+            "{past}"
+        );
+        let twice = Slots::from_saved(&json_of("[[1,1],[1,2]]"), "slots").expect_err("a key twice");
+        assert!(
+            twice
+                .reason()
+                .contains("'slots[1]' holds a key an entry before it holds"),
+            "{twice}"
+        );
+        let lone = Slots::from_saved(&json_of("[[1]]"), "slots").expect_err("no value");
+        assert!(lone.reason().contains("'slots[0]'"), "{lone}");
+        assert!(Slots::from_saved(&json_of("[[1,300]]"), "slots").is_err());
+        assert!(Slots::from_saved(&json_of("{}"), "slots").is_err());
+
+        type Tags = crate::BoundedSet<sce_portable_bytes::SceString<8>, 2>;
+        assert!(Tags::from_saved(&json_of(r#"["red","red"]"#), "tags").is_err());
+        assert!(Tags::from_saved(&json_of(r#"["red","blue","green"]"#), "tags").is_err());
+        assert!(Tags::from_saved(&json_of(r#"["red","blue"]"#), "tags").is_ok());
     }
 
     /// A `null` where the restoring build holds a record that is never absent is
