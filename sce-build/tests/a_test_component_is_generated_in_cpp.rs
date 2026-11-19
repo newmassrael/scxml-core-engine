@@ -275,6 +275,32 @@ fn a_log_is_recorded_in_the_test_log() {
     assert!(text("answerer").contains("this->testContext_->log(::std::string(\"asked\"));"));
 }
 
+/// P8, §12.5: a component that declares no variable and logs as a state exits
+/// (`boundary/leaving_logger`) records the log through its runtime context
+/// from its exit actions, which are the policy's own method and not a static
+/// one, so the onexit block's lambda reaches the context through `this`.
+#[test]
+fn a_log_as_a_state_exits_is_recorded_from_the_policys_own_exit_actions() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_profile/boundary/leaving_logger.scxml");
+    let code: String = generate(&path, Language::Cpp)
+        .unwrap_or_else(|e| panic!("leaving_logger generates on C++: {e:?}"))
+        .into_iter()
+        .map(|(_, code)| code)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !code.contains("static void executeExitActions("),
+        "the exit actions reach `this`:\n{code}"
+    );
+    let exits = at(&code, "SCE_HOT void executeExitActions(");
+    let logged = at(
+        &code,
+        "this->testContext_->log(::std::string(\"leaving waiting\"));",
+    );
+    assert!(exits < logged, "{code}");
+}
+
 /// The text of the file of the component `name` whose name ends in `suffix`.
 fn file_of(name: &str, suffix: &str) -> String {
     files(name)
