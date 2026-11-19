@@ -2123,56 +2123,98 @@ fn keyed_entries<T>(
 }
 
 /// A map a machine holds (docs/adr/0108, D8), written as the array of its
-/// entries in its order, each the array of its key and its value as their own
-/// types write them, and read back held to its bound with no key twice
-/// ([`keyed_entries`]).
+/// entries in its order, each the array of its key and its value, each written
+/// by `key` and `value` in the form its type has in a saved state: a byte
+/// string as its Latin-1 text ([`bytes_to_saved`]), every other value by its
+/// own [`SavedValue`]. What a generated machine writes a map variable with.
+pub fn map_to_saved<K, V, const N: usize>(
+    map: &crate::BoundedMap<K, V, N>,
+    key: impl Fn(&K) -> Value,
+    value: impl Fn(&V) -> Value,
+) -> Value {
+    Value::Array(
+        map.iter()
+            .map(|(k, v)| Value::Array(vec![key(k), value(v)]))
+            .collect(),
+    )
+}
+
+/// A saved map `saved`, named `what` in a refusal, its keys read by `key` and
+/// its values by `value` as [`map_to_saved`] wrote them (a byte string by
+/// [`bounded_bytes`]), held to its bound with no key twice
+/// ([`keyed_entries`]). What a generated machine reads a map variable back with.
+pub fn map_from_saved<K: crate::MapKey, V, const N: usize>(
+    saved: &Value,
+    what: &str,
+    mut key: impl FnMut(&Value, &str) -> Result<K, StateRefusal>,
+    mut value: impl FnMut(&Value, &str) -> Result<V, StateRefusal>,
+) -> Result<crate::BoundedMap<K, V, N>, StateRefusal> {
+    let mut map = crate::BoundedMap::with_seed(crate::map_seed());
+    keyed_entries(
+        saved,
+        what,
+        N,
+        |item, at| {
+            let Value::Array(pair) = item else {
+                return Err(not_a(item, at, "an entry [key, value]"));
+            };
+            let [held_key, held_value] = pair.as_slice() else {
+                return Err(StateRefusal::new(format!(
+                    "'{at}' is not an entry [key, value]: it holds {} items",
+                    pair.len()
+                )));
+            };
+            Ok((
+                key(held_key, &format!("{at}[0]"))?,
+                value(held_value, &format!("{at}[1]"))?,
+            ))
+        },
+        |(k, v)| map.put(k, v),
+    )?;
+    Ok(map)
+}
+
+/// A set a machine holds, written as the array of its keys in its order, each
+/// by `key` as [`map_to_saved`] writes a map's.
+pub fn set_to_saved<K, const N: usize>(
+    set: &crate::BoundedSet<K, N>,
+    key: impl Fn(&K) -> Value,
+) -> Value {
+    Value::Array(set.iter().map(key).collect())
+}
+
+/// A saved set `saved`, its keys read by `key`, held to its bound with no key
+/// twice, as [`map_from_saved`] reads a map.
+pub fn set_from_saved<K: crate::MapKey, const N: usize>(
+    saved: &Value,
+    what: &str,
+    key: impl FnMut(&Value, &str) -> Result<K, StateRefusal>,
+) -> Result<crate::BoundedSet<K, N>, StateRefusal> {
+    let mut set = crate::BoundedSet::with_seed(crate::map_seed());
+    keyed_entries(saved, what, N, key, |k| set.put(k))?;
+    Ok(set)
+}
+
+/// A map whose keys and values each write themselves ([`map_to_saved`] by
+/// their own [`SavedValue`]).
 impl<K: SavedValue + crate::MapKey, V: SavedValue, const N: usize> SavedValue
     for crate::BoundedMap<K, V, N>
 {
     fn to_saved(&self) -> Value {
-        Value::Array(
-            self.iter()
-                .map(|(key, value)| Value::Array(vec![key.to_saved(), value.to_saved()]))
-                .collect(),
-        )
+        map_to_saved(self, K::to_saved, V::to_saved)
     }
     fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
-        let mut map = Self::with_seed(crate::map_seed());
-        keyed_entries(
-            value,
-            what,
-            N,
-            |item, at| {
-                let Value::Array(pair) = item else {
-                    return Err(not_a(item, at, "an entry [key, value]"));
-                };
-                let [key, value] = pair.as_slice() else {
-                    return Err(StateRefusal::new(format!(
-                        "'{at}' is not an entry [key, value]: it holds {} items",
-                        pair.len()
-                    )));
-                };
-                Ok((
-                    K::from_saved(key, &format!("{at}[0]"))?,
-                    V::from_saved(value, &format!("{at}[1]"))?,
-                ))
-            },
-            |(key, value)| map.put(key, value),
-        )?;
-        Ok(map)
+        map_from_saved(value, what, K::from_saved, V::from_saved)
     }
 }
 
-/// A set a machine holds (docs/adr/0108, D8), written as the array of its keys
-/// in its order and read back as a map is ([`keyed_entries`]).
+/// A set whose keys each write themselves ([`set_to_saved`]).
 impl<K: SavedValue + crate::MapKey, const N: usize> SavedValue for crate::BoundedSet<K, N> {
     fn to_saved(&self) -> Value {
-        Value::Array(self.iter().map(SavedValue::to_saved).collect())
+        set_to_saved(self, K::to_saved)
     }
     fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
-        let mut set = Self::with_seed(crate::map_seed());
-        keyed_entries(value, what, N, K::from_saved, |key| set.put(key))?;
-        Ok(set)
+        set_from_saved(value, what, K::from_saved)
     }
 }
 
@@ -5345,6 +5387,48 @@ mod tests {
         assert_eq!(saved, json_of(r#"["blue","red"]"#));
         let restored = crate::BoundedSet::<Tag, 3>::from_saved(&saved, "tags").expect("restores");
         assert_eq!(restored, tags);
+    }
+
+    /// docs/adr/0108, D8 and §2.15 "A byte string": a byte string a map holds as
+    /// a key or a value is saved as its Latin-1 text, as a byte-string variable
+    /// is, a zero byte and a byte above 0x7f among them, and read back whole; a
+    /// set of byte strings likewise, and a key past its bound is refused.
+    #[test]
+    fn a_byte_string_in_a_map_is_saved_as_its_latin1_text() {
+        type Key = crate::SceBytes<16>;
+        type Blob = crate::SceBytes<4>;
+        let key = Key::from_slice(&[0x00, 0x41, 0xff]).expect("fits");
+        let blob = Blob::from_slice(&[0x80, 0x00]).expect("fits");
+        let mut blobs = crate::BoundedMap::<Key, Blob, 2>::with_seed(crate::map_seed());
+        assert_eq!(
+            blobs.put(key.clone(), blob.clone()),
+            crate::PutOutcome::Inserted
+        );
+        let saved = map_to_saved(&blobs, |k| bytes_to_saved(k), |v| bytes_to_saved(v));
+        assert_eq!(
+            saved,
+            Value::Array(vec![Value::Array(vec![
+                Value::Text("\u{0}A\u{ff}".to_string()),
+                Value::Text("\u{80}\u{0}".to_string()),
+            ])])
+        );
+        let restored: crate::BoundedMap<Key, Blob, 2> =
+            map_from_saved(&saved, "blobs", bounded_bytes, bounded_bytes).expect("restores");
+        assert_eq!(restored, blobs);
+        assert_eq!(restored.get(&[0x00u8, 0x41, 0xff][..]), Some(&blob));
+
+        let mut ids = crate::BoundedSet::<Key, 2>::with_seed(crate::map_seed());
+        assert_eq!(ids.put(key), crate::PutOutcome::Inserted);
+        let saved = set_to_saved(&ids, |k| bytes_to_saved(k));
+        assert_eq!(
+            saved,
+            Value::Array(vec![Value::Text("\u{0}A\u{ff}".to_string())])
+        );
+        let restored: crate::BoundedSet<Key, 2> =
+            set_from_saved(&saved, "ids", bounded_bytes).expect("restores");
+        assert_eq!(restored, ids);
+        let long = Value::Array(vec![Value::Text("x".repeat(17))]);
+        assert!(set_from_saved::<Key, 2>(&long, "ids", bounded_bytes).is_err());
     }
 
     /// docs/adr/0108, D8: a saved map with more entries than its bound, or with
