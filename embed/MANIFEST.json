@@ -1,9 +1,9 @@
 {
-  "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "99c1631",
+  "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
+  "embed_version": "26f5f11",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 616,
+  "symbol_count": 615,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -73,14 +73,9 @@
         "field std::string actionId",
         "field std::string actionType",
         "field std::string errorMessage",
-        "method ActionResult &(ActionResult &&) operator=",
-        "method ActionResult &(const ActionResult &) operator=",
         "method void () ActionResult",
-        "method void () ~ActionResult",
-        "method void (ActionResult &&) ActionResult",
         "method void (bool) ActionResult",
-        "method void (bool, const std::string &, const std::string &, const std::string &) ActionResult",
-        "method void (const ActionResult &) ActionResult"
+        "method void (bool, const std::string &, const std::string &, const std::string &) ActionResult"
       ],
       "name": "SCE::ActionResult"
     },
@@ -283,32 +278,7 @@
         "field std::string name",
         "field std::string sendId",
         "field std::string sender",
-        "field std::string type",
-        "method ForwardedEvent &(ForwardedEvent &&) operator=",
-        "method ForwardedEvent &(const ForwardedEvent &) operator=",
-        "method void () noexcept ForwardedEvent",
-        "method void () noexcept ~ForwardedEvent",
-        "method void (ForwardedEvent &&) ForwardedEvent",
-        "method void (const ForwardedEvent &) ForwardedEvent"
-      ],
-      "name": "SCE::Common::ForwardedEvent"
-    },
-    {
-      "header": "common/ForwardedEvent.h",
-      "kind": "struct",
-      "members": [
-        "field std::optional<Core::EventOrigin> origin",
-        "field std::string data",
-        "field std::string invokeId",
-        "field std::string name",
-        "field std::string sendId",
-        "field std::string sender",
-        "field std::string type",
-        "method ForwardedEvent &(ForwardedEvent &&) operator=",
-        "method ForwardedEvent &(const ForwardedEvent &) operator=",
-        "method void () ~ForwardedEvent",
-        "method void (ForwardedEvent &&) ForwardedEvent",
-        "method void (const ForwardedEvent &) ForwardedEvent"
+        "field std::string type"
       ],
       "name": "SCE::Common::ForwardedEvent"
     },
@@ -349,12 +319,7 @@
       "kind": "struct",
       "members": [
         "field std::optional<Core::EventOrigin> origin",
-        "field std::string sender",
-        "method StoredOrigin &(StoredOrigin &&) operator=",
-        "method StoredOrigin &(const StoredOrigin &) operator=",
-        "method void () ~StoredOrigin",
-        "method void (StoredOrigin &&) StoredOrigin",
-        "method void (const StoredOrigin &) StoredOrigin"
+        "field std::string sender"
       ],
       "name": "SCE::StoredOrigin"
     },
@@ -363,13 +328,7 @@
       "kind": "struct",
       "members": [
         "field std::string location",
-        "field std::string name",
-        "method IOProcessorDescriptor &(IOProcessorDescriptor &&) operator=",
-        "method IOProcessorDescriptor &(const IOProcessorDescriptor &) operator=",
-        "method void () IOProcessorDescriptor",
-        "method void () noexcept ~IOProcessorDescriptor",
-        "method void (IOProcessorDescriptor &&) noexcept IOProcessorDescriptor",
-        "method void (const IOProcessorDescriptor &) IOProcessorDescriptor"
+        "field std::string name"
       ],
       "name": "SCE::IOProcessorDescriptor"
     },
@@ -598,29 +557,7 @@
       "members": [
         "field ScriptSessionStage stage",
         "field std::string message",
-        "method ScriptSessionFailure &(ScriptSessionFailure &&) noexcept operator=",
-        "method ScriptSessionFailure &(const ScriptSessionFailure &) noexcept(false) operator=",
-        "method std::string () const describe",
-        "method void () noexcept ScriptSessionFailure",
-        "method void () noexcept ~ScriptSessionFailure",
-        "method void (ScriptSessionFailure &&) noexcept ScriptSessionFailure",
-        "method void (const ScriptSessionFailure &) noexcept(false) ScriptSessionFailure"
-      ],
-      "name": "SCE::ScriptSessionFailure"
-    },
-    {
-      "header": "common/ScriptSessionFailure.h",
-      "kind": "struct",
-      "members": [
-        "field ScriptSessionStage stage",
-        "field std::string message",
-        "method ScriptSessionFailure &(ScriptSessionFailure &&) operator=",
-        "method ScriptSessionFailure &(const ScriptSessionFailure &) operator=",
-        "method std::string () const describe",
-        "method void () ScriptSessionFailure",
-        "method void () ~ScriptSessionFailure",
-        "method void (ScriptSessionFailure &&) ScriptSessionFailure",
-        "method void (const ScriptSessionFailure &) ScriptSessionFailure"
+        "method std::string () const describe"
       ],
       "name": "SCE::ScriptSessionFailure"
     },
@@ -687,30 +624,7 @@
         "field std::string address",
         "field std::string eventName",
         "field std::string meshInvokeId",
-        "method ScheduledRoute &(ScheduledRoute &&) noexcept operator=",
-        "method ScheduledRoute &(const ScheduledRoute &) noexcept(false) operator=",
-        "method void () noexcept ~ScheduledRoute",
-        "method void (Kind, std::string, std::string, std::string) ScheduledRoute",
-        "method void (ScheduledRoute &&) noexcept ScheduledRoute",
-        "method void (const ScheduledRoute &) noexcept(false) ScheduledRoute"
-      ],
-      "name": "SCE::ScheduledRoute"
-    },
-    {
-      "header": "common/SendSchedulingHelper.h",
-      "kind": "struct",
-      "members": [
-        "enum Kind",
-        "field Kind kind",
-        "field std::string address",
-        "field std::string eventName",
-        "field std::string meshInvokeId",
-        "method ScheduledRoute &(ScheduledRoute &&) operator=",
-        "method ScheduledRoute &(const ScheduledRoute &) operator=",
-        "method void () ~ScheduledRoute",
-        "method void (Kind, std::string, std::string, std::string) ScheduledRoute",
-        "method void (ScheduledRoute &&) ScheduledRoute",
-        "method void (const ScheduledRoute &) ScheduledRoute"
+        "method void (Kind, std::string, std::string, std::string) ScheduledRoute"
       ],
       "name": "SCE::ScheduledRoute"
     },
@@ -726,28 +640,7 @@
         "method source_location (const char *, const char *, std::uint_least32_t) noexcept current",
         "method std::uint_least32_t () const noexcept column",
         "method std::uint_least32_t () const noexcept line",
-        "method void () noexcept source_location",
-        "method void () noexcept ~source_location",
-        "method void (const source_location &) source_location",
-        "method void (source_location &&) noexcept source_location"
-      ],
-      "name": "SCE::source_location"
-    },
-    {
-      "header": "common/SourceLocation.h",
-      "kind": "struct",
-      "members": [
-        "field const char * file_",
-        "field const char * function_",
-        "field std::uint_least32_t line_",
-        "method const char *() const noexcept file_name",
-        "method const char *() const noexcept function_name",
-        "method source_location (const char *, const char *, std::uint_least32_t) noexcept current",
-        "method std::uint_least32_t () const noexcept column",
-        "method std::uint_least32_t () const noexcept line",
-        "method void () noexcept source_location",
-        "method void (const source_location &) source_location",
-        "method void (source_location &&) noexcept source_location"
+        "method void () noexcept source_location"
       ],
       "name": "SCE::source_location"
     },
@@ -950,24 +843,7 @@
       "members": [
         "field ConfigurationRejection rejection",
         "field std::optional< ::SCE::ScriptSessionFailure> scriptSessionFailure",
-        "method std::string () const describe",
-        "method void () ConfigurationVerdict",
-        "method void () noexcept ~ConfigurationVerdict",
-        "method void (ConfigurationVerdict &&) ConfigurationVerdict",
-        "method void (const ConfigurationVerdict &) ConfigurationVerdict"
-      ],
-      "name": "SCE::Core::ConfigurationVerdict"
-    },
-    {
-      "header": "core/ConfigurationHelper.h",
-      "kind": "struct",
-      "members": [
-        "field ConfigurationRejection rejection",
-        "field std::optional< ::SCE::ScriptSessionFailure> scriptSessionFailure",
-        "method std::string () const describe",
-        "method void () ConfigurationVerdict",
-        "method void (ConfigurationVerdict &&) ConfigurationVerdict",
-        "method void (const ConfigurationVerdict &) ConfigurationVerdict"
+        "method std::string () const describe"
       ],
       "name": "SCE::Core::ConfigurationVerdict"
     },
@@ -1120,11 +996,6 @@
         "field std::string sendId",
         "field std::string sender",
         "field std::string type",
-        "method EventMetadata &(EventMetadata &&) operator=",
-        "method EventMetadata &(const EventMetadata &) operator=",
-        "method void () ~EventMetadata",
-        "method void (EventMetadata &&) EventMetadata",
-        "method void (const EventMetadata &) EventMetadata",
         "method void (const std::string &, const std::string &) EventMetadata",
         "method void (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, std::optional<EventOrigin>, std::string) EventMetadata"
       ],
@@ -1154,11 +1025,6 @@
       "members": [
         "field std::string address",
         "field std::string processor",
-        "method EventOrigin &(EventOrigin &&) noexcept operator=",
-        "method EventOrigin &(const EventOrigin &) noexcept(false) operator=",
-        "method void () noexcept ~EventOrigin",
-        "method void (EventOrigin &&) noexcept EventOrigin",
-        "method void (const EventOrigin &) noexcept(false) EventOrigin",
         "method void (std::string, std::string) EventOrigin"
       ],
       "name": "SCE::Core::EventOrigin"
@@ -1277,13 +1143,7 @@
         "field std::string data",
         "field std::string invokeId",
         "field uint64_t token",
-        "method HostInvokeEnded &(HostInvokeEnded &&) noexcept operator=",
-        "method HostInvokeEnded &(const HostInvokeEnded &) noexcept(false) operator=",
-        "method std::string () const eventName",
-        "method void () noexcept HostInvokeEnded",
-        "method void () noexcept ~HostInvokeEnded",
-        "method void (HostInvokeEnded &&) noexcept HostInvokeEnded",
-        "method void (const HostInvokeEnded &) noexcept(false) HostInvokeEnded"
+        "method std::string () const eventName"
       ],
       "name": "SCE::Core::HostInvokeEnded"
     },
@@ -1294,13 +1154,7 @@
         "field std::string doneData",
         "field std::string invokeId",
         "field std::string processorType",
-        "field uint64_t token",
-        "method HostInvokeCompletedAtOnce &(HostInvokeCompletedAtOnce &&) noexcept operator=",
-        "method HostInvokeCompletedAtOnce &(const HostInvokeCompletedAtOnce &) noexcept(false) operator=",
-        "method void () HostInvokeCompletedAtOnce",
-        "method void () noexcept ~HostInvokeCompletedAtOnce",
-        "method void (HostInvokeCompletedAtOnce &&) noexcept HostInvokeCompletedAtOnce",
-        "method void (const HostInvokeCompletedAtOnce &) noexcept(false) HostInvokeCompletedAtOnce"
+        "field uint64_t token"
       ],
       "name": "SCE::Core::HostInvokeCompletedAtOnce"
     },
@@ -1309,14 +1163,8 @@
       "kind": "struct",
       "members": [
         "field std::string invokeId",
-        "method HostInvokeTimedOut &(HostInvokeTimedOut &&) noexcept operator=",
-        "method HostInvokeTimedOut &(const HostInvokeTimedOut &) noexcept(false) operator=",
         "method std::string () const eventName",
-        "method std::string () data",
-        "method void () HostInvokeTimedOut",
-        "method void () noexcept ~HostInvokeTimedOut",
-        "method void (HostInvokeTimedOut &&) noexcept HostInvokeTimedOut",
-        "method void (const HostInvokeTimedOut &) noexcept(false) HostInvokeTimedOut"
+        "method std::string () data"
       ],
       "name": "SCE::Core::HostInvokeTimedOut"
     },
@@ -1324,13 +1172,7 @@
       "header": "core/HostInvokeLedger.h",
       "kind": "struct",
       "members": [
-        "field std::string reason",
-        "method HostInvokeNotStarted &(HostInvokeNotStarted &&) noexcept operator=",
-        "method HostInvokeNotStarted &(const HostInvokeNotStarted &) noexcept(false) operator=",
-        "method void () HostInvokeNotStarted",
-        "method void () noexcept ~HostInvokeNotStarted",
-        "method void (HostInvokeNotStarted &&) noexcept HostInvokeNotStarted",
-        "method void (const HostInvokeNotStarted &) noexcept(false) HostInvokeNotStarted"
+        "field std::string reason"
       ],
       "name": "SCE::Core::HostInvokeNotStarted"
     },
@@ -1386,30 +1228,7 @@
         "field std::string data",
         "field std::string invokeId",
         "field std::string processorType",
-        "field uint64_t token",
-        "method HostInvokeEnding &(HostInvokeEnding &&) operator=",
-        "method HostInvokeEnding &(const HostInvokeEnding &) operator=",
-        "method void () noexcept ~HostInvokeEnding",
-        "method void (HostInvokeEnding &&) HostInvokeEnding",
-        "method void (const HostInvokeEnding &) HostInvokeEnding"
-      ],
-      "name": "SCE::HostInvokeEnding"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field bool done",
-        "field std::optional<Core::EventOrigin> origin",
-        "field std::string data",
-        "field std::string invokeId",
-        "field std::string processorType",
-        "field uint64_t token",
-        "method HostInvokeEnding &(HostInvokeEnding &&) operator=",
-        "method HostInvokeEnding &(const HostInvokeEnding &) operator=",
-        "method void () ~HostInvokeEnding",
-        "method void (HostInvokeEnding &&) HostInvokeEnding",
-        "method void (const HostInvokeEnding &) HostInvokeEnding"
+        "field uint64_t token"
       ],
       "name": "SCE::HostInvokeEnding"
     },
@@ -1425,13 +1244,8 @@
         "field std::string processorType",
         "field std::string sessionId",
         "field std::string src",
-        "field uint64_t token",
-        "method HostInvokeRequest &(HostInvokeRequest &&) noexcept operator=",
-        "method HostInvokeRequest &(const HostInvokeRequest &) noexcept(false) operator=",
-        "method void () noexcept HostInvokeRequest",
-        "method void () noexcept ~HostInvokeRequest",
-        "method void (HostInvokeRequest &&) noexcept HostInvokeRequest",
-        "method void (const HostInvokeRequest &) noexcept(false) HostInvokeRequest"
+        "field uint64_t start",
+        "field uint64_t token"
       ],
       "name": "SCE::HostInvokeRequest"
     },
@@ -1447,13 +1261,7 @@
         "field std::string invokeId",
         "field std::string processorType",
         "field std::string sendId",
-        "field std::string target",
-        "method HostSendRequest &(HostSendRequest &&) operator=",
-        "method HostSendRequest &(const HostSendRequest &) operator=",
-        "method void () noexcept HostSendRequest",
-        "method void () noexcept ~HostSendRequest",
-        "method void (HostSendRequest &&) HostSendRequest",
-        "method void (const HostSendRequest &) HostSendRequest"
+        "field std::string target"
       ],
       "name": "SCE::HostSendRequest"
     },
@@ -1461,33 +1269,7 @@
       "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
-        "field std::any value",
-        "field std::map<std::string, std::vector<std::string>> params",
-        "field std::string content",
-        "field std::string eventData",
-        "field std::string eventName",
-        "field std::string invokeId",
-        "field std::string processorType",
-        "field std::string sendId",
-        "field std::string target",
-        "method HostSendRequest &(HostSendRequest &&) operator=",
-        "method HostSendRequest &(const HostSendRequest &) operator=",
-        "method void () ~HostSendRequest",
-        "method void (HostSendRequest &&) HostSendRequest",
-        "method void (const HostSendRequest &) HostSendRequest"
-      ],
-      "name": "SCE::HostSendRequest"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field std::map<std::string, HostInvokeHandler> handlers",
-        "method TreeInvokers &(TreeInvokers &&) operator=",
-        "method TreeInvokers &(const TreeInvokers &) operator=",
-        "method void () ~TreeInvokers",
-        "method void (TreeInvokers &&) TreeInvokers",
-        "method void (const TreeInvokers &) TreeInvokers"
+        "field std::map<std::string, HostInvokeHandler> handlers"
       ],
       "name": "SCE::TreeInvokers"
     },
@@ -1495,12 +1277,7 @@
       "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
-        "field std::map<std::string, HostSendHandler> handlers",
-        "method TreeEventProcessors &(TreeEventProcessors &&) operator=",
-        "method TreeEventProcessors &(const TreeEventProcessors &) operator=",
-        "method void () ~TreeEventProcessors",
-        "method void (TreeEventProcessors &&) TreeEventProcessors",
-        "method void (const TreeEventProcessors &) TreeEventProcessors"
+        "field std::map<std::string, HostSendHandler> handlers"
       ],
       "name": "SCE::TreeEventProcessors"
     },
@@ -1510,42 +1287,9 @@
       "members": [
         "field std::optional<Core::EventOrigin> origin",
         "field std::string eventData",
-        "field std::string eventName",
-        "method HostSendResponse &(HostSendResponse &&) operator=",
-        "method HostSendResponse &(const HostSendResponse &) operator=",
-        "method void () noexcept ~HostSendResponse",
-        "method void (HostSendResponse &&) HostSendResponse",
-        "method void (const HostSendResponse &) HostSendResponse"
+        "field std::string eventName"
       ],
       "name": "SCE::HostSendResponse"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field std::optional<Core::EventOrigin> origin",
-        "field std::string eventData",
-        "field std::string eventName",
-        "method HostSendResponse &(HostSendResponse &&) operator=",
-        "method HostSendResponse &(const HostSendResponse &) operator=",
-        "method void () ~HostSendResponse",
-        "method void (HostSendResponse &&) HostSendResponse",
-        "method void (const HostSendResponse &) HostSendResponse"
-      ],
-      "name": "SCE::HostSendResponse"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field std::optional<HostInvokeCancel> cancel",
-        "field std::optional<HostInvokeRequest> start",
-        "method void () noexcept HostInvokeEvent",
-        "method void () noexcept ~HostInvokeEvent",
-        "method void (HostInvokeEvent &&) HostInvokeEvent",
-        "method void (const HostInvokeEvent &) HostInvokeEvent"
-      ],
-      "name": "SCE::HostInvokeEvent"
     },
     {
       "header": "core/HostProcessor.h",
@@ -1555,21 +1299,6 @@
         "field std::optional<HostInvokeRequest> start"
       ],
       "name": "SCE::HostInvokeEvent"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field std::optional<std::string> doneData",
-        "field std::optional<std::string> refusal",
-        "method HostInvokeResponse &(HostInvokeResponse &&) noexcept operator=",
-        "method HostInvokeResponse &(const HostInvokeResponse &) noexcept(false) operator=",
-        "method void () noexcept HostInvokeResponse",
-        "method void () noexcept ~HostInvokeResponse",
-        "method void (HostInvokeResponse &&) noexcept HostInvokeResponse",
-        "method void (const HostInvokeResponse &) noexcept(false) HostInvokeResponse"
-      ],
-      "name": "SCE::HostInvokeResponse"
     },
     {
       "header": "core/HostProcessor.h",
@@ -1586,13 +1315,7 @@
       "members": [
         "field std::string invokeId",
         "field std::string processorType",
-        "field uint64_t token",
-        "method HostInvokeCancel &(HostInvokeCancel &&) noexcept operator=",
-        "method HostInvokeCancel &(const HostInvokeCancel &) noexcept(false) operator=",
-        "method void () noexcept HostInvokeCancel",
-        "method void () noexcept ~HostInvokeCancel",
-        "method void (HostInvokeCancel &&) noexcept HostInvokeCancel",
-        "method void (const HostInvokeCancel &) noexcept(false) HostInvokeCancel"
+        "field uint64_t token"
       ],
       "name": "SCE::HostInvokeCancel"
     },
@@ -1602,27 +1325,7 @@
       "members": [
         "field std::string invokeId",
         "field std::string processorType",
-        "field uint64_t token",
-        "method HostInvokeDeadline &(HostInvokeDeadline &&) operator=",
-        "method HostInvokeDeadline &(const HostInvokeDeadline &) operator=",
-        "method void () noexcept ~HostInvokeDeadline",
-        "method void (HostInvokeDeadline &&) HostInvokeDeadline",
-        "method void (const HostInvokeDeadline &) HostInvokeDeadline"
-      ],
-      "name": "SCE::HostInvokeDeadline"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field std::string invokeId",
-        "field std::string processorType",
-        "field uint64_t token",
-        "method HostInvokeDeadline &(HostInvokeDeadline &&) operator=",
-        "method HostInvokeDeadline &(const HostInvokeDeadline &) operator=",
-        "method void () ~HostInvokeDeadline",
-        "method void (HostInvokeDeadline &&) HostInvokeDeadline",
-        "method void (const HostInvokeDeadline &) HostInvokeDeadline"
+        "field uint64_t token"
       ],
       "name": "SCE::HostInvokeDeadline"
     },
@@ -2022,11 +1725,7 @@
       "members": [
         "field std::shared_ptr< ::SCE::TreeInvokers> invokers",
         "field std::shared_ptr<InboxWaker> waker",
-        "field std::shared_ptr<TreeSessions> sessions",
-        "method SessionTree &(SessionTree &&) operator=",
-        "method SessionTree &(const SessionTree &) operator=",
-        "method void (SessionTree &&) SessionTree",
-        "method void (const SessionTree &) SessionTree"
+        "field std::shared_ptr<TreeSessions> sessions"
       ],
       "name": "SCE::Core::SessionTree"
     },
@@ -2107,13 +1806,7 @@
       "members": [
         "field bool beyond",
         "field bool negative",
-        "field uint64_t magnitude",
-        "method Whole &(Whole &&) noexcept operator=",
-        "method Whole &(const Whole &) noexcept operator=",
-        "method void () noexcept Whole",
-        "method void () noexcept ~Whole",
-        "method void (Whole &&) noexcept Whole",
-        "method void (const Whole &) noexcept Whole"
+        "field uint64_t magnitude"
       ],
       "name": "SCE::TypedHostInvokeRequestDetail::Whole"
     },
@@ -2144,14 +1837,8 @@
         "field std::optional<std::string> responseEventName",
         "field std::string errorMessage",
         "field std::string sendId",
-        "method SendResult &(SendResult &&) operator=",
-        "method SendResult &(const SendResult &) operator=",
         "method SendResult (const std::string &) success",
-        "method SendResult (const std::string &, ErrorType) error",
-        "method void () noexcept SendResult",
-        "method void () noexcept ~SendResult",
-        "method void (SendResult &&) noexcept SendResult",
-        "method void (const SendResult &) SendResult"
+        "method SendResult (const std::string &, ErrorType) error"
       ],
       "name": "SCE::SendResult"
     },
@@ -2173,15 +1860,10 @@
         "field std::string target",
         "field std::string targetExpr",
         "field std::string type",
-        "method EventDescriptor &(EventDescriptor &&) operator=",
-        "method EventDescriptor &(const EventDescriptor &) operator=",
         "method bool () const isDelayed",
         "method bool () const isInternal",
         "method std::string () const payload",
-        "method std::vector<std::string> () const validate",
-        "method void () ~EventDescriptor",
-        "method void (EventDescriptor &&) EventDescriptor",
-        "method void (const EventDescriptor &) EventDescriptor"
+        "method std::vector<std::string> () const validate"
       ],
       "name": "SCE::EventDescriptor"
     },
@@ -2235,12 +1917,7 @@
         "field std::chrono::milliseconds eventTimeout",
         "field std::function<bool (const EventDescriptor &)> eventFilter",
         "field std::function<void (const EventDescriptor &)> eventLogger",
-        "field std::string loopbackEventPrefix",
-        "method HttpCoordinatorConfig &(HttpCoordinatorConfig &&) operator=",
-        "method HttpCoordinatorConfig &(const HttpCoordinatorConfig &) operator=",
-        "method void () ~HttpCoordinatorConfig",
-        "method void (HttpCoordinatorConfig &&) HttpCoordinatorConfig",
-        "method void (const HttpCoordinatorConfig &) HttpCoordinatorConfig"
+        "field std::string loopbackEventPrefix"
       ],
       "name": "SCE::HttpCoordinatorConfig"
     },
@@ -2281,12 +1958,7 @@
         "field int statusCode",
         "field std::string body",
         "field std::string contentType",
-        "field std::unordered_map<std::string, std::string> headers",
-        "method HttpResponse &(HttpResponse &&) operator=",
-        "method HttpResponse &(const HttpResponse &) operator=",
-        "method void () ~HttpResponse",
-        "method void (HttpResponse &&) HttpResponse",
-        "method void (const HttpResponse &) HttpResponse"
+        "field std::unordered_map<std::string, std::string> headers"
       ],
       "name": "SCE::HttpResponse"
     },
@@ -2301,12 +1973,7 @@
         "field std::string url",
         "field std::string userAgent",
         "field std::unordered_map<std::string, std::string> headers",
-        "field std::unordered_map<std::string, std::string> queryParams",
-        "method HttpRequest &(HttpRequest &&) operator=",
-        "method HttpRequest &(const HttpRequest &) operator=",
-        "method void () ~HttpRequest",
-        "method void (HttpRequest &&) HttpRequest",
-        "method void (const HttpRequest &) HttpRequest"
+        "field std::unordered_map<std::string, std::string> queryParams"
       ],
       "name": "SCE::HttpRequest"
     },
@@ -2344,12 +2011,7 @@
         "field std::string eventType",
         "field std::string sendId",
         "field std::string sessionId",
-        "field std::string targetUri",
-        "method ScheduledEventInfo &(ScheduledEventInfo &&) operator=",
-        "method ScheduledEventInfo &(const ScheduledEventInfo &) operator=",
-        "method void () ~ScheduledEventInfo",
-        "method void (ScheduledEventInfo &&) ScheduledEventInfo",
-        "method void (const ScheduledEventInfo &) ScheduledEventInfo"
+        "field std::string targetUri"
       ],
       "name": "SCE::ScheduledEventInfo"
     },
@@ -2414,12 +2076,7 @@
         "field bool success",
         "field int statusCode",
         "field std::map<std::string, std::string> headers",
-        "field std::string body",
-        "method Response &(Response &&) operator=",
-        "method Response &(const Response &) operator=",
-        "method void () ~Response",
-        "method void (Response &&) Response",
-        "method void (const Response &) Response"
+        "field std::string body"
       ],
       "name": "SCE::HttpClient::Response"
     },
@@ -2431,12 +2088,7 @@
         "field std::string body",
         "field std::string contentType",
         "field std::string method",
-        "field std::string url",
-        "method Request &(Request &&) operator=",
-        "method Request &(const Request &) operator=",
-        "method void () ~Request",
-        "method void (Request &&) Request",
-        "method void (const Request &) Request"
+        "field std::string url"
       ],
       "name": "SCE::HttpClient::Request"
     },
@@ -2664,12 +2316,7 @@
         "field bool isValid",
         "field std::chrono::steady_clock::time_point timestamp",
         "field std::string parentStateId",
-        "field std::vector<std::string> recordedStateIds",
-        "method HistoryEntry &(HistoryEntry &&) operator=",
-        "method HistoryEntry &(const HistoryEntry &) operator=",
-        "method void () ~HistoryEntry",
-        "method void (HistoryEntry &&) HistoryEntry",
-        "method void (const HistoryEntry &) HistoryEntry"
+        "field std::vector<std::string> recordedStateIds"
       ],
       "name": "SCE::HistoryEntry"
     },
@@ -2681,14 +2328,8 @@
         "field bool success",
         "field std::string errorMessage",
         "field std::vector<std::string> targetStateIds",
-        "method HistoryRestorationResult &(HistoryRestorationResult &&) operator=",
-        "method HistoryRestorationResult &(const HistoryRestorationResult &) operator=",
         "method HistoryRestorationResult (const std::string &) createError",
-        "method HistoryRestorationResult (const std::vector<std::string> &, bool) createSuccess",
-        "method void () noexcept HistoryRestorationResult",
-        "method void () noexcept ~HistoryRestorationResult",
-        "method void (HistoryRestorationResult &&) noexcept HistoryRestorationResult",
-        "method void (const HistoryRestorationResult &) HistoryRestorationResult"
+        "method HistoryRestorationResult (const std::vector<std::string> &, bool) createSuccess"
       ],
       "name": "SCE::HistoryRestorationResult"
     },
@@ -2866,12 +2507,7 @@
         "field std::string parentStateId",
         "field std::string scxmlContent",
         "field std::string type",
-        "method InvokeSnapshot &(InvokeSnapshot &&) operator=",
-        "method InvokeSnapshot &(const InvokeSnapshot &) operator=",
         "method void () InvokeSnapshot",
-        "method void () noexcept ~InvokeSnapshot",
-        "method void (InvokeSnapshot &&) InvokeSnapshot",
-        "method void (const InvokeSnapshot &) InvokeSnapshot",
         "method void (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, bool) InvokeSnapshot"
       ],
       "name": "SCE::InvokeSnapshot"
@@ -2899,12 +2535,7 @@
         "field std::vector<InvokeSnapshot> activeInvokes",
         "field std::vector<ScheduledEventSnapshot> scheduledEvents",
         "field std::vector<std::string> activeStates",
-        "method StateSnapshot &(StateSnapshot &&) operator=",
-        "method StateSnapshot &(const StateSnapshot &) operator=",
-        "method void () StateSnapshot",
-        "method void () noexcept ~StateSnapshot",
-        "method void (StateSnapshot &&) StateSnapshot",
-        "method void (const StateSnapshot &) StateSnapshot"
+        "method void () StateSnapshot"
       ],
       "name": "SCE::StateSnapshot"
     },
@@ -2922,12 +2553,7 @@
         "field std::string sendId",
         "field std::string sessionId",
         "field std::string targetUri",
-        "method ScheduledEventSnapshot &(ScheduledEventSnapshot &&) operator=",
-        "method ScheduledEventSnapshot &(const ScheduledEventSnapshot &) operator=",
         "method void () ScheduledEventSnapshot",
-        "method void () noexcept ~ScheduledEventSnapshot",
-        "method void (ScheduledEventSnapshot &&) ScheduledEventSnapshot",
-        "method void (const ScheduledEventSnapshot &) ScheduledEventSnapshot",
         "method void (const std::string &, const std::string &, int64_t, int64_t, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::map<std::string, std::string> &) ScheduledEventSnapshot"
       ],
       "name": "SCE::ScheduledEventSnapshot"
@@ -2943,12 +2569,7 @@
         "field std::string origin",
         "field std::string origintype",
         "field std::string sendid",
-        "method EventSnapshot &(EventSnapshot &&) operator=",
-        "method EventSnapshot &(const EventSnapshot &) operator=",
         "method void () EventSnapshot",
-        "method void () noexcept ~EventSnapshot",
-        "method void (EventSnapshot &&) EventSnapshot",
-        "method void (const EventSnapshot &) EventSnapshot",
         "method void (const std::string &, const std::string &) EventSnapshot",
         "method void (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, int64_t) EventSnapshot"
       ],
@@ -2966,12 +2587,7 @@
         "field std::string event",
         "field std::string source",
         "field std::string target",
-        "field std::vector<std::string> exitSet",
-        "method TransitionDescriptorString &(TransitionDescriptorString &&) operator=",
-        "method TransitionDescriptorString &(const TransitionDescriptorString &) operator=",
-        "method void () ~TransitionDescriptorString",
-        "method void (TransitionDescriptorString &&) TransitionDescriptorString",
-        "method void (const TransitionDescriptorString &) TransitionDescriptorString"
+        "field std::vector<std::string> exitSet"
       ],
       "name": "SCE::TransitionDescriptorString"
     },
@@ -2987,28 +2603,7 @@
       "members": [
         "field bool completed",
         "field std::map<std::string, std::string> done_data",
-        "field std::string final_state",
-        "method ProcedureRunResult &(ProcedureRunResult &&) operator=",
-        "method ProcedureRunResult &(const ProcedureRunResult &) operator=",
-        "method void () noexcept ProcedureRunResult",
-        "method void () noexcept ~ProcedureRunResult",
-        "method void (ProcedureRunResult &&) noexcept ProcedureRunResult",
-        "method void (const ProcedureRunResult &) ProcedureRunResult"
-      ],
-      "name": "SCE::Forge::ProcedureRunResult"
-    },
-    {
-      "header": "sce/forge/ProcedureServiceTypes.h",
-      "kind": "struct",
-      "members": [
-        "field bool completed",
-        "field std::map<std::string, std::string> done_data",
-        "field std::string final_state",
-        "method ProcedureRunResult &(ProcedureRunResult &&) operator=",
-        "method ProcedureRunResult &(const ProcedureRunResult &) operator=",
-        "method void () ~ProcedureRunResult",
-        "method void (ProcedureRunResult &&) ProcedureRunResult",
-        "method void (const ProcedureRunResult &) ProcedureRunResult"
+        "field std::string final_state"
       ],
       "name": "SCE::Forge::ProcedureRunResult"
     },
@@ -3017,12 +2612,7 @@
       "kind": "struct",
       "members": [
         "field bool success",
-        "field std::string data",
-        "method ProcedureServiceResponse &(ProcedureServiceResponse &&) operator=",
-        "method ProcedureServiceResponse &(const ProcedureServiceResponse &) operator=",
-        "method void () ~ProcedureServiceResponse",
-        "method void (ProcedureServiceResponse &&) ProcedureServiceResponse",
-        "method void (const ProcedureServiceResponse &) ProcedureServiceResponse"
+        "field std::string data"
       ],
       "name": "SCE::Forge::ProcedureServiceResponse"
     },
@@ -3033,12 +2623,7 @@
         "field std::optional<std::string> addr",
         "field std::optional<std::string> subfunc",
         "field std::optional<std::vector<std::uint8_t>> payload",
-        "field std::string service",
-        "method ProcedureServiceRequest &(ProcedureServiceRequest &&) operator=",
-        "method ProcedureServiceRequest &(const ProcedureServiceRequest &) operator=",
-        "method void () ~ProcedureServiceRequest",
-        "method void (ProcedureServiceRequest &&) ProcedureServiceRequest",
-        "method void (const ProcedureServiceRequest &) ProcedureServiceRequest"
+        "field std::string service"
       ],
       "name": "SCE::Forge::ProcedureServiceRequest"
     },
@@ -3547,8 +3132,7 @@
         "field std::uint64_t skipped",
         "method Read () noexcept empty",
         "method Read (std::uint64_t) noexcept item",
-        "method Read (std::uint64_t) noexcept lagged",
-        "method void () noexcept ~Read"
+        "method Read (std::uint64_t) noexcept lagged"
       ],
       "name": "SCE::Forge::Broadcast::Read"
     },
@@ -3592,8 +3176,44 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::bits_of",
+      "signature": "std::uint32_t SCE::Forge::Cbor::detail::bits_of(float) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::bits_of",
+      "signature": "std::uint64_t SCE::Forge::Cbor::detail::bits_of(double) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::double_of",
+      "signature": "double SCE::Forge::Cbor::detail::double_of(std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::detail::expect",
       "signature": "Decoded<std::uint64_t> SCE::Forge::Cbor::detail::expect(SceCursor &, std::uint8_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::float_of",
+      "signature": "float SCE::Forge::Cbor::detail::float_of(std::uint32_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::half_of",
+      "signature": "std::optional<std::uint16_t> SCE::Forge::Cbor::detail::half_of(double) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::half_value",
+      "signature": "double SCE::Forge::Cbor::detail::half_value(std::uint16_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3606,6 +3226,12 @@
       "kind": "function",
       "name": "SCE::Forge::Cbor::detail::read_payload",
       "signature": "Decoded<const std::uint8_t *> SCE::Forge::Cbor::detail::read_payload(SceCursor &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::single_of",
+      "signature": "std::optional<float> SCE::Forge::Cbor::detail::single_of(double) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3640,8 +3266,26 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::read_float",
+      "signature": "Decoded<double> SCE::Forge::Cbor::read_float(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_float32",
+      "signature": "Decoded<float> SCE::Forge::Cbor::read_float32(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::read_head",
       "signature": "Decoded<Head> SCE::Forge::Cbor::read_head(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_int_within",
+      "signature": "Decoded<std::int64_t> SCE::Forge::Cbor::read_int_within(SceCursor &, std::int64_t, std::int64_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3670,6 +3314,12 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::read_variant",
+      "signature": "Decoded<std::size_t> SCE::Forge::Cbor::read_variant(SceCursor &, Span<const std::string_view>) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::skip",
       "signature": "Decoded<Skipped> SCE::Forge::Cbor::skip(SceCursor &) noexcept"
     },
@@ -3694,8 +3344,20 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::write_float",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_float(SceSink &, double) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::write_head",
       "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_head(SceSink &, std::uint8_t, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_int",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_int(SceSink &, std::int64_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3717,30 +3379,24 @@
     },
     {
       "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_variant",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_variant(SceSink &, std::string_view) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
       "kind": "struct",
       "members": [
         "field std::uint64_t value",
-        "field std::uint8_t major",
-        "method Head &(Head &&) noexcept operator=",
-        "method Head &(const Head &) noexcept operator=",
-        "method void () noexcept Head",
-        "method void () noexcept ~Head",
-        "method void (Head &&) noexcept Head",
-        "method void (const Head &) noexcept Head"
+        "field std::uint8_t info",
+        "field std::uint8_t major"
       ],
       "name": "SCE::Forge::Cbor::Head"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "struct",
-      "members": [
-        "method Skipped &(Skipped &&) noexcept operator=",
-        "method Skipped &(const Skipped &) noexcept operator=",
-        "method void () noexcept Skipped",
-        "method void () noexcept ~Skipped",
-        "method void (Skipped &&) noexcept Skipped",
-        "method void (const Skipped &) noexcept Skipped"
-      ],
+      "members": [],
       "name": "SCE::Forge::Cbor::Skipped"
     },
     {
@@ -3805,7 +3461,11 @@
         "CborMalformed",
         "CborRequiredKeyMissing",
         "CborTooDeep",
-        "CapacityExceeded"
+        "CapacityExceeded",
+        "CborWrongType",
+        "CborDuplicateKey",
+        "CborUnknownVariant",
+        "CborUnionEntries"
       ]
     },
     {
@@ -3898,13 +3558,7 @@
       "members": [
         "field bool terminated",
         "field std::size_t from",
-        "field std::size_t to",
-        "method RawLine &(RawLine &&) noexcept operator=",
-        "method RawLine &(const RawLine &) noexcept operator=",
-        "method void () noexcept RawLine",
-        "method void () noexcept ~RawLine",
-        "method void (RawLine &&) noexcept RawLine",
-        "method void (const RawLine &) noexcept RawLine"
+        "field std::size_t to"
       ],
       "name": "SCE::Forge::ContentLine::detail::RawLine"
     },
@@ -3932,13 +3586,7 @@
       "members": [
         "field int separator",
         "field std::size_t name_end",
-        "field std::size_t rest_start",
-        "method Head &(Head &&) noexcept operator=",
-        "method Head &(const Head &) noexcept operator=",
-        "method void () noexcept Head",
-        "method void () noexcept ~Head",
-        "method void (Head &&) noexcept Head",
-        "method void (const Head &) noexcept Head"
+        "field std::size_t rest_start"
       ],
       "name": "SCE::Forge::ContentLine::detail::Head"
     },
@@ -4045,16 +3693,6 @@
         "using State = std::tuple<typename A::State...>"
       ],
       "name": "SCE::Forge::Laws<T>"
-    },
-    {
-      "header": "sce/forge/law.h",
-      "kind": "struct",
-      "members": [
-        "method void () FixedStart",
-        "method void (FixedStart &&) FixedStart",
-        "method void (const FixedStart &) FixedStart"
-      ],
-      "name": "SCE::Forge::FixedStart"
     },
     {
       "header": "sce/forge/law.h",
@@ -4352,12 +3990,7 @@
       "members": [
         "field std::atomic<Retired *> chain",
         "field void (*)(Retired *, void *) noexcept reclaim",
-        "field void * context",
-        "method Retired &(Retired &&) operator=",
-        "method Retired &(const Retired &) operator=",
-        "method void () ~Retired",
-        "method void (Retired &&) Retired",
-        "method void (const Retired &) Retired"
+        "field void * context"
       ],
       "name": "SCE::Forge::Queue::Retired"
     },
@@ -4456,19 +4089,6 @@
       "kind": "struct",
       "members": [
         "field PayloadReading reading",
-        "field ScriptResult status",
-        "method void () SetCurrentEventResult",
-        "method void () noexcept ~SetCurrentEventResult",
-        "method void (SetCurrentEventResult &&) noexcept SetCurrentEventResult",
-        "method void (const SetCurrentEventResult &) SetCurrentEventResult"
-      ],
-      "name": "SCE::SetCurrentEventResult"
-    },
-    {
-      "header": "scripting/IScriptEngine.h",
-      "kind": "struct",
-      "members": [
-        "field PayloadReading reading",
         "field ScriptResult status"
       ],
       "name": "SCE::SetCurrentEventResult"
@@ -4483,31 +4103,7 @@
         "field std::string invokeId",
         "field std::string origin",
         "field std::string originType",
-        "field std::string sendId",
-        "method SetCurrentEventArgs &(SetCurrentEventArgs &&) operator=",
-        "method SetCurrentEventArgs &(const SetCurrentEventArgs &) operator=",
-        "method void () noexcept ~SetCurrentEventArgs",
-        "method void (SetCurrentEventArgs &&) SetCurrentEventArgs",
-        "method void (const SetCurrentEventArgs &) SetCurrentEventArgs"
-      ],
-      "name": "SCE::SetCurrentEventArgs"
-    },
-    {
-      "header": "scripting/IScriptEngine.h",
-      "kind": "struct",
-      "members": [
-        "field std::string eventData",
-        "field std::string eventName",
-        "field std::string eventType",
-        "field std::string invokeId",
-        "field std::string origin",
-        "field std::string originType",
-        "field std::string sendId",
-        "method SetCurrentEventArgs &(SetCurrentEventArgs &&) operator=",
-        "method SetCurrentEventArgs &(const SetCurrentEventArgs &) operator=",
-        "method void () ~SetCurrentEventArgs",
-        "method void (SetCurrentEventArgs &&) SetCurrentEventArgs",
-        "method void (const SetCurrentEventArgs &) SetCurrentEventArgs"
+        "field std::string sendId"
       ],
       "name": "SCE::SetCurrentEventArgs"
     },
@@ -4650,8 +4246,6 @@
         "field ScriptValue value_internal",
         "field bool success_internal",
         "field std::string errorMessage_internal",
-        "method ScriptResult &(ScriptResult &&) operator=",
-        "method ScriptResult &(const ScriptResult &) operator=",
         "method ScriptResult (const ScriptValue &) createSuccess",
         "method ScriptResult (const std::string &) createError",
         "method ScriptValue (const std::string &) const getObjectProperty",
@@ -4666,10 +4260,6 @@
         "method std::shared_ptr<ScriptObject> () const getObject",
         "method std::string () const getErrorMessage",
         "method std::string () const getValueAsString",
-        "method void () noexcept ScriptResult",
-        "method void () noexcept ~ScriptResult",
-        "method void (ScriptResult &&) noexcept ScriptResult",
-        "method void (const ScriptResult &) ScriptResult",
         "template FunctionTemplateDecl getValue"
       ],
       "name": "SCE::ScriptResult"

@@ -110,11 +110,7 @@ public:
     // returns (Event::NONE, "") so that the loop falls through to
     // eventless transitions.
 
-    std::pair<Event, std::string> executeEntryActions(State state) {
-        switch (state) {
-            default:
-                break;
-        }
+    std::pair<Event, std::string> executeEntryActions([[maybe_unused]] State state) {
         return { Event::NONE, std::string() };
     }
 
