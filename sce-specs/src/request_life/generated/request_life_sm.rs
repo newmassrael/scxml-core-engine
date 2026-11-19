@@ -797,6 +797,7 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
                     variable: "verdict",
                     field: None,
                     list: false,
+                    part: None,
                 }],
             }],
             features: None,

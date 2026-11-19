@@ -577,6 +577,7 @@ impl ImportLifePersist for Engine<ImportLifePolicy> {
                     variable: "verdict",
                     field: None,
                     list: false,
+                    part: None,
                 }],
             }],
             features: None,
