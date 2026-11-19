@@ -2832,6 +2832,12 @@ fn carry_ids(ids: &mut Vec<String>, table: &[Renamed]) {
     });
 }
 
+/// Whether `names`, a list a migration step names, holds `id`. One lifetime for
+/// both, so a `'static` list of the plan is read against an id of the state.
+fn listed<'a>(names: &[&'a str], id: &'a str) -> bool {
+    names.contains(&id)
+}
+
 /// Carry the key of each entry of `entries` by `table`.
 fn carry_keys<V>(entries: &mut [(String, V)], table: &[Renamed]) {
     for (id, _) in entries.iter_mut() {
@@ -2857,7 +2863,6 @@ fn apply_step(state: &mut SavedState, step: &MigrationStep) -> Result<(), StateR
     }
     // Histories: a removed state's is let go, and the rest keyed by their new ids,
     // in the order of those ids, as a saved state orders them.
-    let listed = |names: &[&str], id: &str| names.iter().any(|name| *name == id);
     state
         .history
         .retain(|(id, _)| !listed(step.dropped_histories, id.as_str()));
