@@ -11726,6 +11726,27 @@ pub fn compile_mesh_transport(
         })
         .transpose()?;
 
+    // docs/adr/0109, D12: the values the machine's deployment supplies,
+    // checked against what its document declares before anything is emitted.
+    // A configuration written in the deployment is written beside the machine
+    // as the JSON its generated reader reads at start, whatever else the
+    // machine needs of the transport; one in a file is the host's to read.
+    let config_files: Vec<(String, String)> = device
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .map(|entry| {
+            mesh::deploy_config::check_machine_config(&effective_machine_name, entry, model)
+        })
+        .transpose()?
+        .flatten()
+        .map(|json| {
+            (
+                mesh::deploy_config::config_file_name(&effective_machine_name),
+                json,
+            )
+        })
+        .into_iter()
+        .collect();
+
     // SCE_MESH.md §16.5 wire-21: a partition may produce no
     // conventional `<send target="#X">` traffic and still need a
     // transport.h that opens inter-partition shm channels for
@@ -11776,9 +11797,11 @@ pub fn compile_mesh_transport(
         && !has_scxml_remote_wire
     {
         // No bindings, so no resolved ID is consumed; the configurations were
-        // read all the same, and are inputs of the run.
+        // read all the same, and are inputs of the run. The machine's own
+        // configuration is written whether or not it has a transport.
         return Ok(MeshResult {
             output: generator::GeneratedOutput {
+                files: config_files,
                 deps: external_resolution.configs.iter().cloned().collect(),
                 ..Default::default()
             },
@@ -11958,6 +11981,8 @@ pub fn compile_mesh_transport(
     output
         .deps
         .extend(external_resolution.configs.iter().cloned());
+    // docs/adr/0109, D12: the machine's configuration, beside its transport.
+    output.files.extend(config_files);
     Ok(MeshResult {
         output,
         dynamic_target_sends,

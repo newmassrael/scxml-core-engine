@@ -3119,6 +3119,19 @@ pub enum DiagnosticCode {
     /// machine serves.
     #[serde(rename = "mesh/deploy-sessions-key-not-in-request")]
     MeshDeploySessionsKeyNotInRequest,
+    /// A value a machine's document declares its deployment supplies
+    /// (docs/adr/0109, D12) that the deployment gives none.
+    #[serde(rename = "mesh/deploy-config-missing")]
+    MeshDeployConfigMissing,
+    /// A key of a machine's `config:` that names no value its document
+    /// declares the deployment supplies.
+    #[serde(rename = "mesh/deploy-config-unknown")]
+    MeshDeployConfigUnknown,
+    /// A machine's configuration the deployment cannot supply as written: a
+    /// value no value of its type by the type's payload schema, two sources,
+    /// or a file for a machine that reads none.
+    #[serde(rename = "mesh/deploy-config-invalid")]
+    MeshDeployConfigInvalid,
     #[serde(rename = "mesh/deploy-invalid-retry-policy")]
     MeshDeployInvalidRetryPolicy,
     #[serde(rename = "mesh/deploy-invalid-auth-policy")]
@@ -4461,6 +4474,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidOutboundBuffer,
         MeshDeployInvalidSessions,
         MeshDeploySessionsKeyNotInRequest,
+        MeshDeployConfigMissing,
+        MeshDeployConfigUnknown,
+        MeshDeployConfigInvalid,
         MeshDeployInvalidRetryPolicy,
         MeshDeployInvalidAuthPolicy,
         MeshDeployDiscoveryNotSupported,
@@ -5282,6 +5298,11 @@ impl DiagnosticCode {
             MeshDeployInvalidSessions
             | MeshDeploySessionsKeyNotInRequest
             | MeshCodegenKeyedPoolUnsupported => Some("SCE Mesh §14.4"),
+
+            // ── A value the deployment supplies (docs/adr/0109, D12) ──
+            MeshDeployConfigMissing | MeshDeployConfigUnknown | MeshDeployConfigInvalid => {
+                Some("ADR 0109 D12")
+            }
 
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
@@ -6160,6 +6181,9 @@ impl DiagnosticCode {
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
             | MeshDeploySessionsKeyNotInRequest
+            | MeshDeployConfigMissing
+            | MeshDeployConfigUnknown
+            | MeshDeployConfigInvalid
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
@@ -6771,6 +6795,9 @@ impl DiagnosticCode {
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
             MeshDeployInvalidSessions => "mesh/deploy-invalid-sessions",
             MeshDeploySessionsKeyNotInRequest => "mesh/deploy-sessions-key-not-in-request",
+            MeshDeployConfigMissing => "mesh/deploy-config-missing",
+            MeshDeployConfigUnknown => "mesh/deploy-config-unknown",
+            MeshDeployConfigInvalid => "mesh/deploy-config-invalid",
             MeshDeployInvalidRetryPolicy => "mesh/deploy-invalid-retry-policy",
             MeshDeployInvalidAuthPolicy => "mesh/deploy-invalid-auth-policy",
             MeshDeployDiscoveryNotSupported => "mesh/deploy-discovery-not-supported",
@@ -18866,6 +18893,41 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:28e78c52e22db9cc","code":"mesh/deploy-sessions-key-not-in-request","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'rooms': `sessions.key_from` names the field 'room' of a request's data, and the schema of the request 'service.request.join' declares no such field; every request the machine serves carries the key of the session it is for.","actual":"room"}"#,
             ),
             (
+                // docs/adr/0109, D12: a value the document declares and the
+                // deployment leaves out.
+                "mesh/deploy-config-missing",
+                DeployError::ConfigMissing {
+                    machine: "calendar".into(),
+                    value: "limits".into(),
+                    written_type: "record:Limits".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f3a8d3a9c6458af7","code":"mesh/deploy-config-missing","stage":"mesh-deploy","spec":"ADR 0109 D12","message":"machine 'calendar': its document declares `limits`, a value of `record:Limits` the deployment supplies, and the deployment gives it none. Write it under the machine's `config:`, or name the `config_file:` the host reads it from.","actual":"limits"}"#,
+            ),
+            (
+                // A key of `config:` the document declares no value of.
+                "mesh/deploy-config-unknown",
+                DeployError::ConfigUnknown {
+                    machine: "calendar".into(),
+                    key: "limit".into(),
+                    declared: vec!["limits".into(), "hosts".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4287d83c7703590c","code":"mesh/deploy-config-unknown","stage":"mesh-deploy","spec":"ADR 0109 D12","message":"machine 'calendar': `config:` gives 'limit', which the machine's document declares no value of (it declares `limits`, `hosts`). Remove it, or declare it as a `<data sce:from=\"deployment\">`.","expected":["limits","hosts"],"actual":"limit"}"#,
+            ),
+            (
+                // A value of `config:` that is no value of its type.
+                "mesh/deploy-config-invalid",
+                DeployError::ConfigInvalid {
+                    machine: "calendar".into(),
+                    place: crate::mesh::error::ConfigSource::Inline,
+                    pointer: "/limits/max_rows".into(),
+                    reason: "is -1, below the least uint32 (0)".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9b47b798a4e78ba3","code":"mesh/deploy-config-invalid","stage":"mesh-deploy","spec":"ADR 0109 D12","message":"machine 'calendar': `config` at '/limits/max_rows': is -1, below the least uint32 (0).","actual":"config/limits/max_rows"}"#,
+            ),
+            (
                 "mesh/deploy-invalid-retry-policy",
                 DeployError::InvalidRetryPolicy {
                     machine: "throttle".into(),
@@ -21715,6 +21777,9 @@ mod tests {
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
             | MeshDeploySessionsKeyNotInRequest
+            | MeshDeployConfigMissing
+            | MeshDeployConfigUnknown
+            | MeshDeployConfigInvalid
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
@@ -22604,6 +22669,9 @@ mod tests {
                 | MeshDeployInvalidOutboundBuffer
                 | MeshDeployInvalidSessions
                 | MeshDeploySessionsKeyNotInRequest
+                | MeshDeployConfigMissing
+                | MeshDeployConfigUnknown
+                | MeshDeployConfigInvalid
                 | MeshDeployInvalidRetryPolicy
                 | MeshDeployInvalidAuthPolicy
                 | MeshDeployDiscoveryNotSupported
@@ -22789,9 +22857,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            552,
+            555,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 552 distinct variants to match the DiagnosticCode \
+             expected 555 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23712,6 +23780,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
             | MeshDeploySessionsKeyNotInRequest
+            | MeshDeployConfigMissing
+            | MeshDeployConfigUnknown
+            | MeshDeployConfigInvalid
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported

@@ -343,6 +343,19 @@
           "type": "array",
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
+        },
+        "deployment": {
+          "description": "The values the machine's deployment supplies (<data sce:from=\"deployment\">, docs/adr/0109, D12), each with its type as the document writes it, in declaration order: the machine's interface to its deployment, which a configuration is checked against. Omitted when the document declares none.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "description": "The <data> id, the key of the value in the machine's configuration.", "type": "string", "minLength": 1 },
+              "type": { "description": "The type, as the document's sce:type spells it in the type grammar.", "type": "string", "minLength": 1 }
+            }
+          }
         }
       }
     },

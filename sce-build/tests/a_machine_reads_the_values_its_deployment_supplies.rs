@@ -7,7 +7,10 @@
 // reads it and never writes it, so every statement that would write it is refused on
 // its own code and on the row of the element; its declaration takes no initial value
 // of the document's; and Rust and C++ build the machine from it while every other
-// backend, and the Interpreter's lowering, refuses it by name.
+// backend, and the Interpreter's lowering, refuses it by name. A configuration the
+// deployment writes under the machine (docs/SCE_ACCEPTED_SUBSET.md §2.8.4) is checked
+// against the document when the machine is generated, each refusal on its own code, and
+// written beside the machine as the JSON its reader reads.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -304,4 +307,143 @@ fn every_other_backend_refuses_a_deployment_value_by_name() {
             && out.contains("reads no value a deployment supplies"),
         "the Interpreter refuses it by name:\n{out}"
     );
+}
+
+/// A deployment of the machine `probe` whose entry ends with `lines`.
+fn deployment(lines: &str) -> String {
+    format!(
+        "version: \"1.0\"\ntopology:\n  host:\n    machines:\n      probe:\n        source: \
+         probe.scxml\n{lines}"
+    )
+}
+
+/// The configuration of [`statechart`]'s machine, written in the deployment.
+const CONFIG: &str =
+    "        config:\n          limits: { label: main, max_rows: 200 }\n          \
+                      hosts: [a.example, b.example]\n";
+
+/// `generate -l <language> --deploy` of [`statechart`]'s machine, which reads its two
+/// values, with `deploy` as its deployment: whether it succeeded, what it said, and
+/// the configuration the build wrote beside the machine, if it wrote one.
+fn generate_deployed(language: &str, deploy: &str) -> (bool, String, Option<String>) {
+    let dir = tempdir().expect("tempdir");
+    for (name, text) in siblings() {
+        std::fs::write(dir.path().join(name), text).expect("write sibling");
+    }
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(&path, statechart("sce-static", "", READS)).expect("write probe");
+    let deploy_path = dir.path().join("deploy.yaml");
+    std::fs::write(&deploy_path, deploy).expect("write deploy");
+    let out_dir = dir.path().join("out");
+    std::fs::create_dir_all(&out_dir).expect("out dir");
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .arg("generate")
+        .arg("-l")
+        .arg(language)
+        .arg("-o")
+        .arg(&out_dir)
+        // The configuration is what is asked of the run, not the C++ formatting.
+        .arg("--no-format")
+        .arg("--deploy")
+        .arg(&deploy_path)
+        .arg(&path)
+        .output()
+        .expect("invoke sce-codegen");
+    let config = std::fs::read_to_string(out_dir.join("probe.config.json")).ok();
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
+        config,
+    )
+}
+
+/// A configuration written under the machine is checked against the values its
+/// document declares and written beside the machine as the JSON its reader reads: one
+/// object of the values by id, in declaration order, each record's fields in the
+/// order its schema declares them, whatever order the deployment wrote them in. The
+/// manifest lists each value with its type.
+#[test]
+fn a_configuration_in_the_deployment_is_written_beside_the_machine() {
+    for language in ["rust", "cpp"] {
+        let (ok, out, config) = generate_deployed(language, &deployment(CONFIG));
+        assert!(ok, "{language} takes the configuration:\n{out}");
+        assert_eq!(
+            config.as_deref().map(str::trim_end),
+            Some(r#"{"limits":{"max_rows":200,"label":"main"},"hosts":["a.example","b.example"]}"#),
+            "{language}:\n{out}"
+        );
+        assert!(
+            out.contains(r#""deployment":[{"id":"limits","type":"record:Limits"}"#),
+            "the manifest lists each value with its type:\n{out}"
+        );
+    }
+}
+
+/// A file the deployment names is the host's to read at start: the build checks only
+/// that the machine reads a configuration, and writes none of its own.
+#[test]
+fn a_configuration_file_is_left_to_the_host() {
+    let (ok, out, config) = generate_deployed(
+        "rust",
+        &deployment("        config_file: /etc/probe/config.json\n"),
+    );
+    assert!(ok, "a file the host reads is accepted:\n{out}");
+    assert!(
+        config.is_none(),
+        "the build writes no configuration of its own"
+    );
+}
+
+/// Each refusal of a configuration the deployment writes, on its own code: a value
+/// the document declares and the deployment leaves out, a key the document declares no
+/// value of, and a value that is no value of its type by its payload schema.
+#[test]
+fn each_refusal_of_a_configuration_has_its_own_code() {
+    for (lines, code, actual) in [
+        (
+            "        config:\n          limits: { label: main, max_rows: 200 }\n",
+            "mesh/deploy-config-missing",
+            "hosts",
+        ),
+        ("", "mesh/deploy-config-missing", "limits"),
+        (
+            "        config:\n          limits: { label: main, max_rows: 200 }\n          \
+             hosts: []\n          host: [a]\n",
+            "mesh/deploy-config-unknown",
+            "host",
+        ),
+        (
+            "        config:\n          limits: { label: main, max_rows: -1 }\n          \
+             hosts: []\n",
+            "mesh/deploy-config-invalid",
+            "config/limits/max_rows",
+        ),
+        (
+            "        config:\n          limits: { label: main, max_rows: 1, extra: 2 }\n          \
+             hosts: []\n",
+            "mesh/deploy-config-invalid",
+            "config/limits/extra",
+        ),
+        (
+            "        config:\n          limits: { label: main, max_rows: 1 }\n          \
+             hosts: [a, b, c, d, e]\n",
+            "mesh/deploy-config-invalid",
+            "config/hosts",
+        ),
+    ] {
+        let (ok, out, config) = generate_deployed("rust", &deployment(lines));
+        assert!(!ok, "`{lines}` is refused:\n{out}");
+        assert!(
+            out.contains(&format!("\"code\":\"{code}\"")),
+            "`{lines}` is {code}:\n{out}"
+        );
+        assert!(
+            out.contains(&format!("\"actual\":\"{actual}\"")),
+            "`{lines}` names `{actual}`:\n{out}"
+        );
+        assert!(config.is_none(), "a refused configuration is not written");
+    }
 }
