@@ -29,6 +29,7 @@ pub mod adapter;
 pub mod client;
 #[cfg(feature = "https-conformance")]
 pub mod conformance;
+pub mod rate;
 pub mod server;
 
 use alloc::string::{String, ToString};
