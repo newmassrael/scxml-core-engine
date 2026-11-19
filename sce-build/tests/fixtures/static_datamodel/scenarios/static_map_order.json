@@ -1,0 +1,34 @@
+{
+  "machine": "static_map_order",
+  "about": "The order of a map's entries (docs/adr/0108, D2 and D5): the order their keys were first put, which a key put again keeps and a key removed and put again leaves, going last; a walk meets the entries in that order, which `order` and `values` record, and is of the map as it was when the loop began, so a walk that removes each key it meets meets every one. A map is stated as the array of its entries, each [key, value]. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "ordering", "variables": { "entries": [], "order": [], "values": [], "lastAt": 0 } } },
+
+    { "event": "put.one",
+      "expect": { "variables": { "entries": [[1, 10]] } } },
+    { "event": "put.two",
+      "expect": { "variables": { "entries": [[1, 10], [2, 20]] } } },
+    { "event": "put.three",
+      "expect": { "variables": { "entries": [[1, 10], [2, 20], [3, 30]] } } },
+    { "note": "1 put again keeps its place, first",
+      "event": "replace.one",
+      "expect": { "variables": { "entries": [[1, 11], [2, 20], [3, 30]] } } },
+    { "event": "walk",
+      "expect": { "variables": { "order": [1, 2, 3], "values": [11, 20, 30], "lastAt": 2 } } },
+
+    { "event": "remove.one",
+      "expect": { "variables": { "entries": [[2, 20], [3, 30]] } } },
+    { "note": "1 removed and put again goes last",
+      "event": "put.one",
+      "expect": { "variables": { "entries": [[2, 20], [3, 30], [1, 10]] } } },
+    { "event": "walk",
+      "expect": { "variables": { "order": [2, 3, 1], "values": [20, 30, 10], "lastAt": 2 } } },
+
+    { "note": "each key the walk meets is removed, and the walk still meets every entry the map held when it began",
+      "event": "drain",
+      "expect": { "variables": { "entries": [], "order": [2, 3, 1], "values": [20, 30, 10], "lastAt": 2 } } },
+    { "note": "an empty map is walked by no turn of the loop",
+      "event": "walk",
+      "expect": { "variables": { "entries": [], "order": [], "values": [], "lastAt": 2 } } }
+  ]
+}

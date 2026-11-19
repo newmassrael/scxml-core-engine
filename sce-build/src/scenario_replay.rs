@@ -794,10 +794,12 @@ impl Holds {
                 },
                 None => Self::Record(BTreeMap::new()),
             },
-            // No statechart holds a map yet (docs/adr/0108, D10), and no
-            // payload holds one (D7): a document that declares one is refused
-            // by name before a scenario is replayed, and its replay reading
-            // lands with its lowering.
+            // A map or a set is stated as the array of its entries (docs/adr/0108,
+            // D8), each `[key, value]` of a map and the key itself of a set, and
+            // no payload holds one (D7). A map's key and value are a number, a
+            // bool, an enum, a text, a byte string or a record, and this reading
+            // admits `null` nowhere in its entries, an optional field of a record
+            // value among them, which no scenario of a map states yet.
             ValueType::Map { .. } | ValueType::Set { .. } => Self::Present,
         }
     }

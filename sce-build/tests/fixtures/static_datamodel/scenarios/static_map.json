@@ -1,0 +1,43 @@
+{
+  "machine": "static_map",
+  "about": "A map of amounts by a number (docs/adr/0108, D2 to D4): a put of a key that is absent goes last and one of a key that is present replaces its value where it stands; `has` asks whether a key is held, and a read of a key that is absent fails, raising error.execution and ending its block; a remove with an outcome says whether it removed, one without says nothing, and `<sce:clear>` empties the map. A map is stated as the array of its entries, each [key, value], in the order its keys were first put. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "counting", "variables": { "amounts": [], "held": 0, "found": false, "seven": 0, "after": 0, "removed": "absent", "errors": 0 } } },
+
+    { "note": "an empty map holds no 7",
+      "event": "ask",
+      "expect": { "variables": { "found": false, "errors": 0 } } },
+    { "note": "nor an amount at 7: the read fails, error.execution is raised and the block ends before `after` counts it",
+      "event": "read",
+      "expect": { "variables": { "seven": 0, "after": 0, "errors": 1 } } },
+
+    { "event": "ledger.entry", "data": { "id": 7, "amount": 5 },
+      "expect": { "variables": { "amounts": [[7, 5]], "held": 1 } } },
+    { "event": "ledger.entry", "data": { "id": 9, "amount": -2 },
+      "expect": { "variables": { "amounts": [[7, 5], [9, -2]], "held": 2 } } },
+    { "event": "ask",
+      "expect": { "variables": { "found": true } } },
+    { "event": "read",
+      "expect": { "variables": { "seven": 5, "after": 1, "errors": 1 } } },
+
+    { "note": "7 is held already: its amount is replaced where it stands, and the map holds as many as it did",
+      "event": "ledger.entry", "data": { "id": 7, "amount": 6 },
+      "expect": { "variables": { "amounts": [[7, 6], [9, -2]], "held": 2 } } },
+
+    { "event": "remove",
+      "expect": { "variables": { "amounts": [[9, -2]], "held": 1, "removed": "removed" } } },
+    { "note": "7 is gone: removing it again removes nothing and says so",
+      "event": "remove",
+      "expect": { "variables": { "amounts": [[9, -2]], "held": 1, "removed": "absent", "errors": 1 } } },
+    { "event": "drop",
+      "expect": { "variables": { "amounts": [], "held": 0 } } },
+    { "note": "a remove that names no outcome removes nothing of a key that is absent, and raises nothing",
+      "event": "drop",
+      "expect": { "variables": { "amounts": [], "held": 0, "errors": 1 } } },
+
+    { "event": "ledger.entry", "data": { "id": 7, "amount": 1 },
+      "expect": { "variables": { "amounts": [[7, 1]], "held": 1 } } },
+    { "event": "clear",
+      "expect": { "variables": { "amounts": [], "held": 0, "removed": "absent", "errors": 1 } } }
+  ]
+}

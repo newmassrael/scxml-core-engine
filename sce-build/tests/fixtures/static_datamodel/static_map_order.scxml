@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Iterating a
+  map"; docs/adr/0108, D2 and D5): the order of a map's entries is the order
+  their keys were first put. A key put again keeps its place, and a key removed
+  and put again goes last.
+
+  `walk` walks `entries` and appends each key to `order` and each value to
+  `values`, the lists the walk is read back from, and keeps the position of
+  the last entry it met in `lastAt`. `drain` walks the map and removes each
+  key it meets: the walk is of the map as it was when the loop began, so it
+  meets every entry, and the map is empty after it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="ordering" datamodel="sce-static" name="static_map_order">
+  <datamodel>
+    <data id="entries" sce:type="map&lt;uint8, uint8&gt;[4]" sce:direction="out"/>
+    <data id="order" sce:type="list&lt;uint8&gt;[4]" sce:direction="out"/>
+    <data id="values" sce:type="list&lt;uint8&gt;[4]" sce:direction="out"/>
+    <data id="lastAt" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="ordering">
+    <transition event="put.one" type="internal">
+      <sce:put target="entries" key="1" expr="10"/>
+    </transition>
+    <transition event="put.two" type="internal">
+      <sce:put target="entries" key="2" expr="20"/>
+    </transition>
+    <transition event="put.three" type="internal">
+      <sce:put target="entries" key="3" expr="30"/>
+    </transition>
+    <transition event="replace.one" type="internal">
+      <sce:put target="entries" key="1" expr="11"/>
+    </transition>
+    <transition event="remove.one" type="internal">
+      <sce:remove target="entries" key="1"/>
+    </transition>
+    <transition event="walk" type="internal">
+      <sce:clear target="order"/>
+      <sce:clear target="values"/>
+      <foreach array="entries" item="value" sce:key="key" index="at">
+        <sce:append target="order" expr="key"/>
+        <sce:append target="values" expr="value"/>
+        <assign location="lastAt" expr="at"/>
+      </foreach>
+    </transition>
+    <transition event="drain" type="internal">
+      <sce:clear target="order"/>
+      <foreach array="entries" item="value" sce:key="key" index="at">
+        <sce:append target="order" expr="key"/>
+        <sce:remove target="entries" key="key"/>
+        <assign location="lastAt" expr="at"/>
+      </foreach>
+    </transition>
+  </state>
+</scxml>

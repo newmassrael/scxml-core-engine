@@ -1,0 +1,39 @@
+{
+  "machine": "static_set",
+  "about": "A set of texts (docs/adr/0108, D1 to D5): a put of a label the set holds is `replaced` and leaves it as it was, one past the bound is `full`, `has` asks whether a label is held, a walk meets the labels in the order they were first put, and a label removed and put again goes last. A set is stated as the array of its keys. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "tagging", "variables": { "tags": [], "putResult": "inserted", "removeResult": "absent", "tagged": false, "count": 0, "lastTag": "", "walked": 0 } } },
+
+    { "event": "labelled.taken", "data": { "sensor": 1, "label": "red" },
+      "expect": { "variables": { "tags": ["red"], "putResult": "inserted", "count": 1 } } },
+    { "event": "labelled.taken", "data": { "sensor": 2, "label": "blue" },
+      "expect": { "variables": { "tags": ["red", "blue"], "putResult": "inserted", "count": 2 } } },
+    { "note": "red is held: the set is as it was",
+      "event": "labelled.taken", "data": { "sensor": 3, "label": "red" },
+      "expect": { "variables": { "tags": ["red", "blue"], "putResult": "replaced", "count": 2 } } },
+    { "event": "ask",
+      "expect": { "variables": { "tagged": true } } },
+    { "note": "the walk meets red, then blue",
+      "event": "walk",
+      "expect": { "variables": { "lastTag": "blue", "walked": 2 } } },
+
+    { "event": "untag",
+      "expect": { "variables": { "tags": ["blue"], "removeResult": "removed", "count": 1 } } },
+    { "event": "ask",
+      "expect": { "variables": { "tagged": false } } },
+    { "note": "red was removed, and put again it goes last",
+      "event": "labelled.taken", "data": { "sensor": 4, "label": "red" },
+      "expect": { "variables": { "tags": ["blue", "red"], "putResult": "inserted", "count": 2 } } },
+    { "event": "walk",
+      "expect": { "variables": { "lastTag": "red", "walked": 2 } } },
+    { "event": "labelled.taken", "data": { "sensor": 5, "label": "green" },
+      "expect": { "variables": { "tags": ["blue", "red", "green"], "putResult": "inserted", "count": 3 } } },
+    { "note": "the set holds its three: pink is refused as a value, and nothing is raised",
+      "event": "labelled.taken", "data": { "sensor": 6, "label": "pink" },
+      "expect": { "variables": { "tags": ["blue", "red", "green"], "putResult": "full", "count": 3 } } },
+    { "event": "untag",
+      "expect": { "variables": { "tags": ["blue", "green"], "removeResult": "removed", "count": 2 } } },
+    { "event": "untag",
+      "expect": { "variables": { "tags": ["blue", "green"], "removeResult": "absent", "count": 2 } } }
+  ]
+}

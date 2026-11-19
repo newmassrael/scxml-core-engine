@@ -1,0 +1,32 @@
+{
+  "machine": "static_map_record",
+  "about": "A map whose value is a record (docs/adr/0108, D2 and D3): the payload is put whole at the face's id; a field of the value at a key is read where a value of its type is, and a read at a key that is absent raises error.execution and ends its block; the value at a key taken whole into a record variable is a copy, which a write of the variable does not reach, and a put of a key that is held replaces its record where it stands. A map is stated as the array of its entries, each [key, value], a record as an object of its fields. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "open", "variables": { "faces": [], "last": { "id": 0, "active": false, "label": "" }, "active": false, "label": "", "errors": 0 } } },
+
+    { "note": "no face is held at 7: the first read fails and the block ends before the second",
+      "event": "look",
+      "expect": { "variables": { "active": false, "label": "", "errors": 1 } } },
+
+    { "event": "face.opened", "data": { "id": 7, "active": true, "label": "door" },
+      "expect": { "variables": { "faces": [[7, { "id": 7, "active": true, "label": "door" }]] } } },
+    { "event": "face.opened", "data": { "id": 3, "active": false, "label": "hall" },
+      "expect": { "variables": { "faces": [[7, { "id": 7, "active": true, "label": "door" }], [3, { "id": 3, "active": false, "label": "hall" }]] } } },
+    { "event": "look",
+      "expect": { "variables": { "active": true, "label": "door", "errors": 1 } } },
+
+    { "event": "take",
+      "expect": { "variables": { "last": { "id": 7, "active": true, "label": "door" } } } },
+    { "note": "the copy is written, and the face the map holds is not",
+      "event": "mute",
+      "expect": { "variables": { "last": { "id": 7, "active": false, "label": "door" }, "faces": [[7, { "id": 7, "active": true, "label": "door" }], [3, { "id": 3, "active": false, "label": "hall" }]] } } },
+    { "event": "look",
+      "expect": { "variables": { "active": true, "label": "door" } } },
+
+    { "note": "7 is held: its record is replaced where it stands, and the copy taken before keeps what it held",
+      "event": "face.opened", "data": { "id": 7, "active": false, "label": "gate" },
+      "expect": { "variables": { "faces": [[7, { "id": 7, "active": false, "label": "gate" }], [3, { "id": 3, "active": false, "label": "hall" }]], "last": { "id": 7, "active": false, "label": "door" } } } },
+    { "event": "look",
+      "expect": { "variables": { "active": false, "label": "gate", "errors": 1 } } }
+  ]
+}

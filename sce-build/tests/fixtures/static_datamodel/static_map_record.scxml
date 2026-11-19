@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Reading a map";
+  docs/adr/0108, D2 and D3): a map whose value is a record, its fields read at
+  a key and the value taken whole.
+
+  `face.opened` puts its payload, a record of schema_map_face, at the face's
+  id. `look` reads two fields of the face at 7 into `active` and `label`: a
+  read of a key that is absent fails, raising error.execution, counted in
+  `errors`, and ends the block. `take` copies the face at 7 whole into `last`,
+  and `mute` writes a field of `last`, which changes the copy and not the map:
+  a map is a value, and so is what is taken out of it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="static_map_record">
+  <sce:import kind="event-schema" src="schema_map_face.scxml" as="Face"/>
+  <datamodel>
+    <data id="faces" sce:type="map&lt;uint32, record:Face&gt;[4]" sce:direction="out"/>
+    <data id="last" sce:type="record:Face" sce:direction="out">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="active" expr="false"/>
+      <sce:set name="label" expr="''"/>
+    </data>
+    <data id="active" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="label" sce:type="string[8]" expr="''" sce:direction="out"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="face.opened" type="internal">
+      <sce:put target="faces" key="_event.data.id" expr="_event.data"/>
+    </transition>
+    <transition event="look" type="internal">
+      <assign location="active" expr="faces[7].active"/>
+      <assign location="label" expr="faces[7].label"/>
+    </transition>
+    <transition event="take" type="internal">
+      <assign location="last" expr="faces[7]"/>
+    </transition>
+    <transition event="mute" type="internal">
+      <assign location="last.active" expr="false"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

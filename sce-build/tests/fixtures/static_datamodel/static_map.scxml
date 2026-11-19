@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Map and set
+  variables"; docs/adr/0108, D2 to D4): a map of amounts by a number, put,
+  read, asked and removed.
+
+  `ledger.entry` puts the amount at its id, a key that is absent going last
+  and one that is present taking the new amount where it stands, and counts
+  the entries into `held`. `ask` asks whether 7 is a key, `read` reads the
+  amount at 7 into `seven`, which fails for a key that is absent:
+  error.execution, counted in `errors`, and the block ends, so `after` does not
+  count the read.
+  `remove` removes 7 and says what it did in `removed`; `drop` removes 9 and
+  says nothing, a key that is absent removed by nothing; `clear` empties it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="counting" datamodel="sce-static" name="static_map">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:import kind="enum" src="sce:std/collection/remove_outcome.scxml" as="RemoveOutcome"/>
+  <datamodel>
+    <data id="amounts" sce:type="map&lt;uint32, int32&gt;[3]" sce:direction="out"/>
+    <data id="held" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="found" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="seven" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="after" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="removed" sce:type="enum:RemoveOutcome" expr="RemoveOutcome.absent" sce:direction="out"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="counting">
+    <transition event="ledger.entry" type="internal">
+      <sce:put target="amounts" key="_event.data.id" expr="_event.data.amount"/>
+      <assign location="held" expr="len(amounts)"/>
+    </transition>
+    <transition event="ask" type="internal">
+      <assign location="found" expr="has(amounts, 7)"/>
+    </transition>
+    <transition event="read" type="internal">
+      <assign location="seven" expr="amounts[7]"/>
+      <assign location="after" expr="after + 1"/>
+    </transition>
+    <transition event="remove" type="internal">
+      <sce:remove target="amounts" key="7" outcome="removed"/>
+      <assign location="held" expr="len(amounts)"/>
+    </transition>
+    <transition event="drop" type="internal">
+      <sce:remove target="amounts" key="9"/>
+      <assign location="held" expr="len(amounts)"/>
+    </transition>
+    <transition event="clear" type="internal">
+      <sce:clear target="amounts"/>
+      <assign location="held" expr="len(amounts)"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

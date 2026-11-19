@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Writing a map";
+  docs/adr/0108, D4): a full map answers `full` as a value where the put names
+  an outcome, and fails where it names none.
+
+  `slots` holds two. `ledger.entry` puts the amount at its id and says what
+  it did in `putResult`: a put into the full map of a key it does not hold is
+  `full`, which leaves the map as it was and raises nothing, and the document
+  counts it in `refused`; a key it holds is replaced all the same. `force`
+  puts at 99 and names no outcome, so into the full map it raises
+  error.execution and ends its block, as an append to a full list does, and
+  `afterPut` does not count it. `free` removes 1, which makes room.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="filling" datamodel="sce-static" name="static_map_full">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <datamodel>
+    <data id="slots" sce:type="map&lt;uint32, int32&gt;[2]" sce:direction="out"/>
+    <data id="putResult" sce:type="enum:PutOutcome" expr="PutOutcome.inserted" sce:direction="out"/>
+    <data id="refused" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="afterPut" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="filling">
+    <transition event="ledger.entry" type="internal">
+      <sce:put target="slots" key="_event.data.id" expr="_event.data.amount" outcome="putResult"/>
+      <if cond="putResult === PutOutcome.full">
+        <assign location="refused" expr="refused + 1"/>
+      </if>
+    </transition>
+    <transition event="force" type="internal">
+      <sce:put target="slots" key="99" expr="0"/>
+      <assign location="afterPut" expr="afterPut + 1"/>
+    </transition>
+    <transition event="free" type="internal">
+      <sce:remove target="slots" key="1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

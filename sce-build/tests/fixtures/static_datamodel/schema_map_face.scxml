@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A record value of a map (docs/adr/0108, D3): what static_map_record keeps of
+  each face it holds by the face's id, taken whole from the payload of the event
+  that opens it. Its fields are read at a key (`faces[7].active`), and the value
+  is taken whole into a record variable of this schema.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_map_face"
+       sce:event-name="face.opened">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="active" sce:type="bool" sce:direction="in"/>
+    <data id="label" sce:type="string[8]" sce:direction="in"/>
+  </datamodel>
+</scxml>
