@@ -28,8 +28,11 @@ sce-rust-host-features = { path = "../host-features" }
 # The stack the Mesh `https` binding's adapter is built on (sce-rust-mesh, feature `https`), so one
 # build of each serves both: hyper 1's HTTP/1.1 client connection on a tokio runtime the transport
 # owns, and rustls with `ring`'s cryptography and the operating system's certificate verifier.
-tokio = { version = "1", default-features = false, features = ["net", "rt", "time"] }
-hyper = { version = "1", default-features = false, features = ["client", "http1"] }
+tokio = { version = "1", default-features = false, features = ["net", "rt", "time", "io-util"] }
+# `server` for `hyper::Error::is_parse_too_large` alone, which hyper compiles only beside its server
+# though the kind it reads (a message head past `max_buf_size`) is the client connection's too: the
+# head's bound is told from every other parse error by it. No server is built here.
+hyper = { version = "1", default-features = false, features = ["client", "server", "http1"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
