@@ -43,8 +43,10 @@ inline constexpr size_t KEY_BYTES = crypto_aead_xchacha20poly1305_ietf_KEYBYTES;
 inline constexpr size_t NONCE_BYTES = crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
 /// The bytes of a record's tag.
 inline constexpr size_t TAG_BYTES = crypto_aead_xchacha20poly1305_ietf_ABYTES;
-/// The most bytes a sealing key's id or a store's name has: each is written after its length in one byte.
-inline constexpr size_t NAME_MAX = 255;
+/// The most bytes a sealing key's id or a store's name has: each is written after its length in one byte. The
+/// Rust record's `NAME_MAX`; spelled apart from it here, since POSIX's <limits.h>, which <sodium.h> includes,
+/// defines `NAME_MAX` as a macro.
+inline constexpr size_t NAME_MAX_BYTES = 255;
 
 static_assert(MAGIC_BYTES == 12, "the magic is twelve bytes");
 static_assert(KEY_BYTES == 32 && NONCE_BYTES == 24 && TAG_BYTES == 16, "XChaCha20-Poly1305 in its IETF form");
@@ -63,9 +65,9 @@ inline const unsigned char *in(const Bytes &bytes) {
 }
 
 /// `text` after its length in one byte, appended to `out`: nothing, and false, for a text that is empty when
-/// `nonEmpty` or longer than NAME_MAX.
+/// `nonEmpty` or longer than NAME_MAX_BYTES.
 inline bool appendName(Bytes &out, const std::string &text, bool nonEmpty) {
-    if (text.size() > NAME_MAX || (nonEmpty && text.empty())) {
+    if (text.size() > NAME_MAX_BYTES || (nonEmpty && text.empty())) {
         return false;
     }
     out.push_back(static_cast<uint8_t>(text.size()));
@@ -114,7 +116,7 @@ inline std::optional<Parts> parts(const Bytes &record) {
 
 /// The record of `plaintext` sealed under `key`, whose id is `keyId`, with `nonce`, for the row of the store
 /// `store` whose entry is `indexed`; nothing for a key or nonce of another size, an id that is empty or past
-/// NAME_MAX bytes, a store's name past it, or a library that cannot be used. A store draws a fresh nonce for
+/// NAME_MAX_BYTES, a store's name past it, or a library that cannot be used. A store draws a fresh nonce for
 /// every record (`sealFresh`); a test that holds a sealing to its bytes gives one.
 inline std::optional<Bytes> seal(const std::string &keyId, const Bytes &key, const Bytes &nonce,
                                  const std::string &store, const Bytes &indexed, const Bytes &plaintext) {
