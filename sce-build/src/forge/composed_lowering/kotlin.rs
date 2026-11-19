@@ -210,6 +210,11 @@ fn kotlin_bound_check(ty: &ValueType, path: &str, value: &str, depth: usize) -> 
             })
         }
         ValueType::Scalar(_) | ValueType::Record { .. } | ValueType::Union { .. } => None,
+        // A record a payload holds has no map at any depth: an event schema's
+        // field that holds one is refused where the schema is read
+        // (`validation/map-in-wire-position`, docs/adr/0108, D7), so no check
+        // is written for one.
+        ValueType::Map { .. } | ValueType::Set { .. } => None,
     }
 }
 
@@ -265,6 +270,10 @@ fn kotlin_saved_write(ty: &ValueType, value: &str, depth: usize) -> Result<Strin
                 "SavedValues.list({value}) {{ {element} -> {} }}",
                 kotlin_saved_write(elem, &element, depth + 1)?
             )
+        }
+        // docs/adr/0108, D10: no Kotlin machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
         }
     })
 }
@@ -340,6 +349,10 @@ impl KotlinSavedReader<'_, '_> {
                     "{}.fromSaved({saved}, {what})",
                     self.spelling.union_type(&held.union.name)
                 )
+            }
+            // docs/adr/0108, D10: no Kotlin machine holds a map yet.
+            ValueType::Map { .. } | ValueType::Set { .. } => {
+                return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
             }
         })
     }

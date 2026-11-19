@@ -9724,7 +9724,12 @@ fn algorithm_record_slots(
             // no slot of such a call: no place of an algorithm takes whole a
             // union a call answers, so the callee is called by a host alone.
             AlgorithmValueType::Union { alias } if param => union(alias).map(CalleeSlot::Union),
-            AlgorithmValueType::List { .. } | AlgorithmValueType::Union { .. } => None,
+            // No algorithm's slot holds a map yet (docs/adr/0108, D10): the
+            // callee's own document is refused where its slot is read.
+            AlgorithmValueType::List { .. }
+            | AlgorithmValueType::Union { .. }
+            | AlgorithmValueType::Map { .. }
+            | AlgorithmValueType::Set { .. } => None,
             AlgorithmValueType::Record { alias } => {
                 schema(alias).map(|(id, qualified_type)| CalleeSlot::Record { id, qualified_type })
             }

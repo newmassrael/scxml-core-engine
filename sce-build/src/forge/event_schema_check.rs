@@ -501,11 +501,15 @@ fn first_unlowered_composed_use(
                 col: Some(spelling.col()),
             });
         if let Err(composition) = ty.variable_view(lowers_unions) {
+            // A map's or a set's lowering lands lane by lane (docs/adr/0108,
+            // D10), and its refusal names that record.
+            let basis = composition
+                .landing()
+                .unwrap_or("docs/adr/0086, section 7.3");
             return not_lowered(
                 format!(
                     "<data id=\"{}\">: `{}` in a statechart's variable is a type of the \
-                     language, and has no {lowering} lowering of its {} yet (docs/adr/0086, \
-                     section 7.3)",
+                     language, and has no {lowering} lowering of its {} yet ({basis})",
                     var.id, composition.place, composition.constructor
                 ),
                 at,

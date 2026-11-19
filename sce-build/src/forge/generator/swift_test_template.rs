@@ -834,6 +834,11 @@ pub(super) fn unwritten(ty: &ValueType, scope: &TypeScope) -> Option<String> {
         TypeOf::Scalar(_) | TypeOf::Text { .. } | TypeOf::Bytes { .. } | TypeOf::Union { .. } => {
             None
         }
+        // A template's type holds no map: it is refused where the template is
+        // read, as no wire form holds one (docs/adr/0108, D7).
+        TypeOf::Map { .. } | TypeOf::Set { .. } => Some(format!(
+            "`{ty}`: a map or a set has no wire form, and no Swift lowering (docs/adr/0108, D7)"
+        )),
     }
 }
 

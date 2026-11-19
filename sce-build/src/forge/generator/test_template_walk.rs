@@ -1622,6 +1622,10 @@ pub(crate) fn canonical_form<S: CanonicalForm>(
                 .collect::<Result<Vec<CanonicalCase>, String>>()?;
             spelling.union(at, union, cases)?
         }
+        // A map has no wire form, and so no form in the test log
+        // (docs/adr/0108, D7); a test's type that holds one is refused where
+        // it is read.
+        TypeOf::Map { .. } | TypeOf::Set { .. } => return Err(formless(ty)),
     })
 }
 

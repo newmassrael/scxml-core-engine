@@ -13840,7 +13840,9 @@ fn read_field_revision(
         | ValueType::Bytes { .. }
         | ValueType::Record { .. }
         | ValueType::Union { .. }
-        | ValueType::List { .. } => None,
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => None,
     };
     field.since = since;
     field.optional_since = optional_since;

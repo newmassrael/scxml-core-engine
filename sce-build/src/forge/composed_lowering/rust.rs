@@ -358,6 +358,10 @@ pub(crate) fn rust_saved_read(
                 max.max, max.min
             ))
         }
+        // No machine holds a map yet (docs/adr/0108, D10): the type the
+        // machine holds a value in refuses one by name before any read of it
+        // is written ([`machine_type`]), and its saved form lands with it.
+        ValueType::Map { .. } | ValueType::Set { .. } => None,
         _ => None,
     }
 }

@@ -113,6 +113,9 @@ pub(crate) fn unit_type(
             .union(alias)
             .ok_or_else(|| format!("`union:{alias}` names no union the document imports"))
     };
+    // No unit holds a map or a set: it has no wire form, so no event schema's
+    // field holds one (docs/adr/0108, D7), and it is refused by name.
+    let keyed = |ty: &ValueType| crate::forge::value_type::map_unlowered(&ty.to_string());
     let inner = |elem: &ValueType, c11: &mut C11Declarations| unit_type(lang, elem, names, c11);
     Ok(match lang {
         Language::Rust => match ty {
@@ -122,6 +125,7 @@ pub(crate) fn unit_type(
             ValueType::Optional { elem } => format!("Option<{}>", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
             ValueType::Union { alias } => union_type(alias)?,
+            ValueType::Map { .. } | ValueType::Set { .. } => return Err(keyed(ty)),
             ValueType::List { elem, max } => format!(
                 "::sce_portable_bytes::BoundedList<{}, {}>",
                 inner(elem, c11)?,
@@ -135,6 +139,7 @@ pub(crate) fn unit_type(
             ValueType::Optional { elem } => format!("{}?", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
             ValueType::Union { alias } => union_type(alias)?,
+            ValueType::Map { .. } | ValueType::Set { .. } => return Err(keyed(ty)),
             ValueType::List { elem, .. } => format!("List<{}>", inner(elem, c11)?),
         },
         Language::Cpp => match ty {
@@ -144,6 +149,7 @@ pub(crate) fn unit_type(
             ValueType::Optional { elem } => format!("std::optional<{}>", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
             ValueType::Union { alias } => union_type(alias)?,
+            ValueType::Map { .. } | ValueType::Set { .. } => return Err(keyed(ty)),
             ValueType::List { elem, max } => {
                 crate::forge::composed_lowering::cpp_bounded_list(&inner(elem, c11)?, max.max)
             }
@@ -155,6 +161,7 @@ pub(crate) fn unit_type(
             ValueType::Optional { elem } => format!("optional.Of[{}]", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
             ValueType::Union { alias } => union_type(alias)?,
+            ValueType::Map { .. } | ValueType::Set { .. } => return Err(keyed(ty)),
             ValueType::List { elem, .. } => format!("[]{}", inner(elem, c11)?),
         },
         Language::Python => match ty {
@@ -164,6 +171,7 @@ pub(crate) fn unit_type(
             ValueType::Optional { elem } => format!("Optional[{}]", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
             ValueType::Union { alias } => union_type(alias)?,
+            ValueType::Map { .. } | ValueType::Set { .. } => return Err(keyed(ty)),
             ValueType::List { elem, .. } => format!("list[{}]", inner(elem, c11)?),
         },
         Language::Swift => match ty {
@@ -173,6 +181,7 @@ pub(crate) fn unit_type(
             ValueType::Optional { elem } => format!("{}?", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
             ValueType::Union { alias } => union_type(alias)?,
+            ValueType::Map { .. } | ValueType::Set { .. } => return Err(keyed(ty)),
             ValueType::List { elem, .. } => format!("[{}]", inner(elem, c11)?),
         },
         Language::C11 => match ty {
@@ -194,6 +203,7 @@ pub(crate) fn unit_type(
             }
             ValueType::Record { alias } => record(alias)?,
             ValueType::Union { alias } => union_type(alias)?,
+            ValueType::Map { .. } | ValueType::Set { .. } => return Err(keyed(ty)),
             ValueType::List { elem, max } => {
                 let item = inner(elem, c11)?;
                 c11.declare(
@@ -236,6 +246,15 @@ fn c11_mangle(ty: &ValueType, names: &dyn UnitNames) -> String {
                 .trim_end_matches("_t")
         ),
         ValueType::List { elem, max } => format!("list_{}_{}", max.max, c11_mangle(elem, names)),
+        // By its bound, its key and its value, as a list is; [`unit_type`]
+        // refuses a map before it names one (docs/adr/0108, D7).
+        ValueType::Map { key, value, max } => format!(
+            "map_{}_{}_{}",
+            max.max,
+            c11_mangle(key, names),
+            c11_mangle(value, names)
+        ),
+        ValueType::Set { key, max } => format!("set_{}_{}", max.max, c11_mangle(key, names)),
     }
 }
 

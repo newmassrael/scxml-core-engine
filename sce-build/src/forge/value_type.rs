@@ -13,6 +13,10 @@
 //!     | record:<alias>
 //!     | union:<alias>
 //!     | list<T>[B]
+//!     | map<K, T>[B] | set<K>[B]
+//! K ::= uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64 | bool
+//!     | enum:<alias> | string[B] | bytes[B]
+//!     | record:<alias>            -- every field of the record is itself a K
 //! B ::= <positive integer> | <limit name>=<positive integer>
 //! ```
 //!
@@ -20,6 +24,17 @@
 //! holding exactly one of the cases its document declares, told apart by a tag
 //! of a closed enum (docs/adr/0092, section 1). Each names its document by an
 //! alias, and its shape is read from that document through [`TypeEnv`].
+//!
+//! A map holds at most its bound of entries, each a key and a value, no two
+//! keys equal; a set is a map whose value carries nothing (docs/adr/0108, D1).
+//! A key is a type whose equality is exact and whose every value is bounded:
+//! a float, an optional, a union, a list, a map and a set are not keys
+//! ([`TypeRefusal::NotAKey`]), and neither is a record one of whose fields is
+//! not a key ([`map_key_refusal`], which reads the record's fields). A map
+//! and a set state no lower count, and no wire form holds one yet
+//! (docs/adr/0108, D7): an event schema's field holds none, and the sizes and
+//! the grammars of a value refuse one by name ([`SizeError::NoWireForm`],
+//! [`GrammarError::NoWireForm`]).
 //!
 //! Every constructor takes every type, and a bound is written in the type it
 //! bounds, at every depth: `list<list<string[8]>[4]>[3]` is at most 3 lists of
@@ -143,10 +158,11 @@ impl schemars::JsonSchema for Bound {
 /// always was (`"int64"`), and each other constructor an object keyed by its
 /// own name, its bound beside it: `{"string": 8}`, `{"bytes": 4}`,
 /// `{"optional": "int64"}`, `{"record": "Item"}`, `{"union": "Shape"}`,
-/// `{"list": "uint8", "max": 2}`. A text, byte string or list whose bound is
-/// not written (an algorithm's parameter, whose outermost bound is its
+/// `{"list": "uint8", "max": 2}`, `{"map": "uint32", "value": "int64", "max":
+/// 4}`, `{"set": "uint32", "max": 4}`. A text, byte string or list whose bound
+/// is not written (an algorithm's parameter, whose outermost bound is its
 /// argument's) is the shape it had before a type held bounds: `"string"`,
-/// `"bytes"`, `{"list": "uint8"}`.
+/// `"bytes"`, `{"list": "uint8"}`; a map or a set leaves out its `max`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeOf<B> {
     /// A fixed-width number, `bool`, or `enum:<alias>`.
@@ -167,6 +183,19 @@ pub enum TypeOf<B> {
     Union { alias: String },
     /// `list<T>[B]`: an ordered sequence of at most `max` values of `elem`.
     List { elem: Box<TypeOf<B>>, max: B },
+    /// `map<K, T>[B]`: at most `max` entries, each a key of `key` and a value
+    /// of `value`, no two keys equal, in the order each key was first put
+    /// (docs/adr/0108, D1 and D2). `key` is a key type
+    /// ([`TypeRefusal::NotAKey`]); its bound states no lower count.
+    Map {
+        key: Box<TypeOf<B>>,
+        value: Box<TypeOf<B>>,
+        max: B,
+    },
+    /// `set<K>[B]`: at most `max` keys of `key`, no two equal, in the order
+    /// each was first put: a map whose value carries nothing (docs/adr/0108,
+    /// D1).
+    Set { key: Box<TypeOf<B>>, max: B },
 }
 
 impl<B: BoundSlot> Serialize for TypeOf<B> {
@@ -225,6 +254,28 @@ impl<B: BoundSlot> Serialize for TypeOf<B> {
                 }
                 map.end()
             }
+            // docs/adr/0108, D1: keyed by its constructor, as a list is, its
+            // value and its bound beside it; no lower count, which neither
+            // states.
+            Self::Map { key, value, max } => {
+                let stated = max.stated();
+                let mut map = serializer.serialize_map(Some(2 + usize::from(stated.is_some())))?;
+                map.serialize_entry("map", &**key)?;
+                map.serialize_entry("value", &**value)?;
+                if let Some(bound) = stated {
+                    map.serialize_entry("max", bound)?;
+                }
+                map.end()
+            }
+            Self::Set { key, max } => {
+                let stated = max.stated();
+                let mut map = serializer.serialize_map(Some(1 + usize::from(stated.is_some())))?;
+                map.serialize_entry("set", &**key)?;
+                if let Some(bound) = stated {
+                    map.serialize_entry("max", bound)?;
+                }
+                map.end()
+            }
         }
     }
 }
@@ -249,6 +300,17 @@ impl<B: BoundSlot> schemars::JsonSchema for TypeOf<B> {
         } else {
             serde_json::json!(["list"])
         };
+        let (map_required, set_required) = if B::REQUIRED {
+            (
+                serde_json::json!(["map", "value", "max"]),
+                serde_json::json!(["set", "max"]),
+            )
+        } else {
+            (
+                serde_json::json!(["map", "value"]),
+                serde_json::json!(["set"]),
+            )
+        };
         serde_json::from_value(serde_json::json!({
             "description": "A type of the one type grammar (docs/adr/0086, section 1): a \
                             scalar's bare name, or an object keyed by its constructor, its \
@@ -264,6 +326,16 @@ impl<B: BoundSlot> schemars::JsonSchema for TypeOf<B> {
                     "type": "object",
                     "required": list_required,
                     "properties": {"list": this, "max": bound, "min": bound}
+                },
+                {
+                    "type": "object",
+                    "required": map_required,
+                    "properties": {"map": this, "value": this, "max": bound}
+                },
+                {
+                    "type": "object",
+                    "required": set_required,
+                    "properties": {"set": this, "max": bound}
                 }
             ]
         }))
@@ -339,14 +411,22 @@ impl<B: BoundSlot> fmt::Display for TypeOf<B> {
                 write!(f, "list<{elem}>")?;
                 bracket(f, max)
             }
+            Self::Map { key, value, max } => {
+                write!(f, "map<{key}, {value}>")?;
+                bracket(f, max)
+            }
+            Self::Set { key, max } => {
+                write!(f, "set<{key}>")?;
+                bracket(f, max)
+            }
         }
     }
 }
 
 impl<B> TypeOf<B> {
     /// The name of the constructor at the top of the type, as a refusal names
-    /// it: `list`, `optional`, `record`, `union`, `string`, `bytes`, or the
-    /// scalar's own spelling.
+    /// it: `list`, `map`, `set`, `optional`, `record`, `union`, `string`,
+    /// `bytes`, or the scalar's own spelling.
     pub fn constructor(&self) -> String {
         match self {
             Self::Scalar(t) => t.as_attr(),
@@ -356,6 +436,35 @@ impl<B> TypeOf<B> {
             Self::Record { .. } => "record".to_string(),
             Self::Union { .. } => "union".to_string(),
             Self::List { .. } => "list".to_string(),
+            Self::Map { .. } => "map".to_string(),
+            Self::Set { .. } => "set".to_string(),
+        }
+    }
+
+    /// The outermost map or set the type holds at any depth, itself
+    /// included, or `None`: what a position no map stands in yet names when it
+    /// refuses one (docs/adr/0108, D7 and D10).
+    pub fn keyed(&self) -> Option<&Self> {
+        let mut found = None;
+        self.walk(&mut |ty| {
+            if found.is_none() && matches!(ty, Self::Map { .. } | Self::Set { .. }) {
+                found = Some(ty);
+            }
+        });
+        found
+    }
+
+    /// The key of a map or a set, or `None` for any other type.
+    pub fn map_key(&self) -> Option<&Self> {
+        match self {
+            Self::Map { key, .. } | Self::Set { key, .. } => Some(key),
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Optional { .. }
+            | Self::Record { .. }
+            | Self::Union { .. }
+            | Self::List { .. } => None,
         }
     }
 
@@ -396,11 +505,17 @@ impl<B> TypeOf<B> {
         out
     }
 
-    /// Every type the type is made of, itself first, outermost to innermost.
+    /// Every type the type is made of, itself first, outermost to innermost;
+    /// a map's key before its value.
     fn walk<'a>(&'a self, visit: &mut dyn FnMut(&'a Self)) {
         visit(self);
         match self {
             Self::Optional { elem } | Self::List { elem, .. } => elem.walk(visit),
+            Self::Map { key, value, .. } => {
+                key.walk(visit);
+                value.walk(visit);
+            }
+            Self::Set { key, .. } => key.walk(visit),
             Self::Scalar(_)
             | Self::Text { .. }
             | Self::Bytes { .. }
@@ -410,10 +525,13 @@ impl<B> TypeOf<B> {
     }
 
     /// How deep the type nests: 1 for a type of no element, one more for each
-    /// `optional<…>` and `list<…>` around it.
+    /// `optional<…>`, `list<…>`, `map<…>` and `set<…>` around it, a map as deep
+    /// as the deeper of its key and its value.
     pub fn depth(&self) -> usize {
         match self {
             Self::Optional { elem } | Self::List { elem, .. } => 1 + elem.depth(),
+            Self::Map { key, value, .. } => 1 + key.depth().max(value.depth()),
+            Self::Set { key, .. } => 1 + key.depth(),
             Self::Scalar(_)
             | Self::Text { .. }
             | Self::Bytes { .. }
@@ -424,15 +542,17 @@ impl<B> TypeOf<B> {
 
     /// The type as one scalar: a fixed-width number, `bool` or an enum, or a
     /// text or a byte string read as `string` or `bytes`; `None` for a list,
-    /// a record, a union or an optional value. An optional scalar is not a
-    /// scalar: a value of it may be absent. A written type and a resolved one
-    /// answer alike: the bound plays no part.
+    /// a map, a set, a record, a union or an optional value. An optional
+    /// scalar is not a scalar: a value of it may be absent. A written type and
+    /// a resolved one answer alike: the bound plays no part.
     pub fn scalar(&self) -> Option<&SceType> {
         match self {
             Self::Scalar(t) => Some(t),
             Self::Text { .. } => Some(&TEXT_SCALAR),
             Self::Bytes { .. } => Some(&BYTES_SCALAR),
             Self::List { .. }
+            | Self::Map { .. }
+            | Self::Set { .. }
             | Self::Record { .. }
             | Self::Union { .. }
             | Self::Optional { .. } => None,
@@ -448,8 +568,28 @@ impl<B> TypeOf<B> {
             | Self::Text { .. }
             | Self::Bytes { .. }
             | Self::List { .. }
+            | Self::Map { .. }
+            | Self::Set { .. }
             | Self::Record { .. }
             | Self::Union { .. } => None,
+        }
+    }
+}
+
+/// Why a type is no key by its constructor alone (docs/adr/0108, D1), or
+/// `None` for one that may be a key: a fixed-width integer, `bool`, an enum, a
+/// text, a byte string or a record. Whether a record's fields are keys is read
+/// from the record ([`map_key_refusal`]).
+fn not_a_key_by_constructor<B>(key: &TypeOf<B>) -> Option<NotAKeyWhy> {
+    match key {
+        TypeOf::Scalar(SceType::Float32 | SceType::Float64) => Some(NotAKeyWhy::Float),
+        TypeOf::Scalar(_) | TypeOf::Text { .. } | TypeOf::Bytes { .. } | TypeOf::Record { .. } => {
+            None
+        }
+        TypeOf::Optional { .. } => Some(NotAKeyWhy::MayBeAbsent),
+        TypeOf::Union { .. } => Some(NotAKeyWhy::Union),
+        TypeOf::List { .. } | TypeOf::Map { .. } | TypeOf::Set { .. } => {
+            Some(NotAKeyWhy::Collection)
         }
     }
 }
@@ -494,6 +634,56 @@ pub enum TypeRefusal {
     /// type of a place that is filled an element at a time. `place` is the
     /// part of the type that states it; `why` says where it stands.
     CountMisplaced { place: String, why: CountPlace },
+    /// A map or a set whose key is no key (docs/adr/0108, D1): `place` is the
+    /// map or the set, `key` the type of its key, `why` what makes it none.
+    NotAKey {
+        place: String,
+        key: String,
+        why: NotAKeyWhy,
+    },
+}
+
+/// What makes a type no key of a map or a set (docs/adr/0108, D1). A key's
+/// equality is exact and its every value bounded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotAKeyWhy {
+    /// `float32` or `float64`: `NaN` is not equal to itself and `-0.0`
+    /// equals `0.0`.
+    Float,
+    /// `optional<T>`: an absent value is no key.
+    MayBeAbsent,
+    /// `union:<alias>`.
+    Union,
+    /// A list, a map or a set: a collection is compared by no equality a key
+    /// has.
+    Collection,
+    /// A record one of whose fields is no key: the field's name, its path from
+    /// the key's record where it lies in a record of a field
+    /// (`peer.half`), and why its type is none.
+    Field {
+        field: String,
+        ty: String,
+        why: Box<NotAKeyWhy>,
+    },
+}
+
+impl NotAKeyWhy {
+    /// The reason as a refusal states it.
+    pub fn sentence(&self) -> String {
+        match self {
+            Self::Float => {
+                "a float is no key: NaN is not equal to itself and -0.0 equals 0.0".to_string()
+            }
+            Self::MayBeAbsent => "an optional value is no key: a key is present".to_string(),
+            Self::Union => "a union is no key".to_string(),
+            Self::Collection => "a list, a map or a set is no key".to_string(),
+            Self::Field { field, ty, why } => format!(
+                "its field `{field}` is a `{ty}`, and every field of a record key is itself a \
+                 key: {}",
+                why.sentence()
+            ),
+        }
+    }
 }
 
 /// Where a lower count stands that nothing reads (docs/adr/0086, section 15).
@@ -508,6 +698,9 @@ pub enum CountPlace {
     /// On a list a later revision of its schema adds, which a delivery that
     /// lacks it reads as the empty list.
     Added,
+    /// In the bracket of a `map` or a `set`, which holds what its puts and
+    /// removes leave and states no fewest entries (docs/adr/0108, D1).
+    Keyed,
 }
 
 impl TypeRefusal {
@@ -517,7 +710,8 @@ impl TypeRefusal {
             Self::Unknown { written } => format!(
                 "`{written}` names no type: a type is a number (uint8 to uint64, int8 to \
                  int64, float32, float64), bool, enum:<alias>, string[N], bytes[N], \
-                 optional<T>, record:<alias>, union:<alias> or list<T>[N]"
+                 optional<T>, record:<alias>, union:<alias>, list<T>[N], map<K, T>[N] or \
+                 set<K>[N]"
             ),
             Self::Malformed { place, expected } => {
                 format!("the type is not complete after `{place}`: {expected}")
@@ -528,17 +722,18 @@ impl TypeRefusal {
                  count, a whole number of zero or more, as `M..N`"
             ),
             Self::BoundOnUnboundable { place } => format!(
-                "`{place}` takes no bound: a bound is written after a string, a bytes or a \
-                 list, the types whose values have a length"
+                "`{place}` takes no bound: a bound is written after a string, a bytes, a \
+                 list, a map or a set, the types whose values have a length"
             ),
             Self::NestedOptional { place } => format!(
                 "`{place}` is an optional value inside an optional value, and the wire spells \
                  both absences as one null"
             ),
             Self::Unbounded { place } => format!(
-                "`{place}` has no bound: every string, bytes and list states the most it \
-                 holds in its type (`string[N]`, `bytes[N]`, `list<T>[N]`), so the type has \
-                 a largest value the build can size"
+                "`{place}` has no bound: every string, bytes, list, map and set states the \
+                 most it holds in its type (`string[N]`, `bytes[N]`, `list<T>[N]`, \
+                 `map<K, T>[N]`, `set<K>[N]`), so the type has a largest value the build can \
+                 size"
             ),
             Self::BothForms { place } => format!(
                 "the bound of `{place}` is written in the type and by an attribute: one bound, \
@@ -546,7 +741,7 @@ impl TypeRefusal {
             ),
             Self::NothingToBound { place } => format!(
                 "`{place}` has no length to bound: an attribute bound stands beside a \
-                 string, a bytes or a list"
+                 string, a bytes, a list, a map or a set"
             ),
             Self::CountPastBound { place, least, most } => format!(
                 "the lower count {least} of `{place}` is past its bound {most}: a list holds \
@@ -569,7 +764,19 @@ impl TypeRefusal {
                      as the empty list from a delivery that lacks it: it states none \
                      (`list<T>[N]`), or is declared optional<…> and reads absent"
                 ),
+                CountPlace::Keyed => format!(
+                    "`{place}` states a lower count, and a map or a set holds what its puts \
+                     and removes leave, so no lower count holds of it: its bracket states \
+                     the most entries alone (`map<K, T>[N]`, `set<K>[N]`), as a variable's \
+                     does (docs/adr/0108, D1)"
+                ),
             },
+            Self::NotAKey { place, key, why } => format!(
+                "`{key}` is no key of `{place}`: {}; a key is a fixed-width integer, bool, \
+                 enum:<alias>, string[N], bytes[N] or a record whose every field is a key, \
+                 whose equality is exact and whose every value is bounded (docs/adr/0108, D1)",
+                why.sentence()
+            ),
         }
     }
 }
@@ -656,24 +863,33 @@ impl WrittenType {
     }
 
     /// The bound written on the outermost type that takes one, seen through
-    /// every `optional<…>` around it: `Some(slot)` for a text, a byte string or
-    /// a list, `None` for a type with no length (a number, `bool`, an enum, a
-    /// record, or an optional over one of them). What a legacy attribute
-    /// bounds.
+    /// every `optional<…>` around it: `Some(slot)` for a text, a byte string,
+    /// a list, a map or a set, `None` for a type with no length (a number,
+    /// `bool`, an enum, a record, or an optional over one of them). What a
+    /// legacy attribute bounds.
     pub fn outer_bound(&self) -> Option<&Option<Bound>> {
         match self {
-            Self::Text { max } | Self::Bytes { max } | Self::List { max, .. } => Some(max),
+            Self::Text { max }
+            | Self::Bytes { max }
+            | Self::List { max, .. }
+            | Self::Map { max, .. }
+            | Self::Set { max, .. } => Some(max),
             Self::Optional { elem } => elem.outer_bound(),
             Self::Scalar(_) | Self::Record { .. } | Self::Union { .. } => None,
         }
     }
 
-    /// The outermost text, byte string or list of the type, seen through every
-    /// `optional<…>`, or `None` for a type with no length: the type a legacy
-    /// attribute bounds, and so which attribute a position reads for it.
+    /// The outermost text, byte string, list, map or set of the type, seen
+    /// through every `optional<…>`, or `None` for a type with no length: the
+    /// type a legacy attribute bounds, and so which attribute a position reads
+    /// for it.
     pub fn outermost_bounded(&self) -> Option<&Self> {
         match self {
-            Self::Text { .. } | Self::Bytes { .. } | Self::List { .. } => Some(self),
+            Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::List { .. }
+            | Self::Map { .. }
+            | Self::Set { .. } => Some(self),
             Self::Optional { elem } => elem.outermost_bounded(),
             Self::Scalar(_) | Self::Record { .. } | Self::Union { .. } => None,
         }
@@ -698,9 +914,24 @@ impl WrittenType {
                 elem,
                 max: Some(bound),
             }),
+            Self::Map {
+                key,
+                value,
+                max: None,
+            } => Ok(Self::Map {
+                key,
+                value,
+                max: Some(bound),
+            }),
+            Self::Set { key, max: None } => Ok(Self::Set {
+                key,
+                max: Some(bound),
+            }),
             Self::Text { max: Some(_) }
             | Self::Bytes { max: Some(_) }
-            | Self::List { max: Some(_), .. } => Err(TypeRefusal::BothForms {
+            | Self::List { max: Some(_), .. }
+            | Self::Map { max: Some(_), .. }
+            | Self::Set { max: Some(_), .. } => Err(TypeRefusal::BothForms {
                 place: place.to_string(),
             }),
             Self::Optional { elem } => Ok(Self::Optional {
@@ -752,6 +983,23 @@ impl WrittenType {
                     max,
                 }
             }
+            // A map's and a set's bracket states no lower count: the reader
+            // refuses one (docs/adr/0108, D1).
+            Self::Map { key, value, max } => {
+                let max = required(max)?;
+                ValueType::Map {
+                    key: Box::new(key.bounded()?),
+                    value: Box::new(value.bounded()?),
+                    max,
+                }
+            }
+            Self::Set { key, max } => {
+                let max = required(max)?;
+                ValueType::Set {
+                    key: Box::new(key.bounded()?),
+                    max,
+                }
+            }
         })
     }
 
@@ -790,6 +1038,12 @@ impl WrittenType {
             | Self::Union { .. } => None,
             Self::Optional { elem } => elem.unbounded_inside(),
             Self::List { elem, .. } => (**elem).clone().bounded().err(),
+            Self::Map { key, value, .. } => (**key)
+                .clone()
+                .bounded()
+                .err()
+                .or_else(|| (**value).clone().bounded().err()),
+            Self::Set { key, .. } => (**key).clone().bounded().err(),
         }
     }
 
@@ -824,6 +1078,21 @@ impl WrittenType {
                     max,
                 }
             }
+            Self::Map { key, value, max } => {
+                let max = bound(max);
+                Self::Map {
+                    key: Box::new(key.resolve_limits(resolve)),
+                    value: Box::new(value.resolve_limits(resolve)),
+                    max,
+                }
+            }
+            Self::Set { key, max } => {
+                let max = bound(max);
+                Self::Set {
+                    key: Box::new(key.resolve_limits(resolve)),
+                    max,
+                }
+            }
         }
     }
 }
@@ -838,7 +1107,9 @@ fn value_leaf(ty: &ValueType) -> Option<(SceType, Option<&Bound>)> {
         ValueType::Optional { .. }
         | ValueType::Record { .. }
         | ValueType::Union { .. }
-        | ValueType::List { .. } => None,
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => None,
     }
 }
 
@@ -861,7 +1132,9 @@ impl ValueType {
             | Self::Bytes { .. }
             | Self::Record { .. }
             | Self::Union { .. }
-            | Self::List { .. } => Err(Composition::of(self)),
+            | Self::List { .. }
+            | Self::Map { .. }
+            | Self::Set { .. } => Err(Composition::of(self)),
         }
     }
 
@@ -877,7 +1150,11 @@ impl ValueType {
     /// The enum a value of the type holds at its one leaf, seen through every
     /// `optional<…>` and `list<…>` around it; `None` for a type whose leaf is
     /// no enum, or that names a record (whose enums are its own schema's). A
-    /// type has one leaf: a record is named, never written out.
+    /// type has one leaf: a record is named, never written out. A map and a
+    /// set have a leaf in their key and another in their value, and answer
+    /// `None`: an event schema's field, the one place this is read, holds
+    /// neither (docs/adr/0108, D7), and [`TypeOf::enum_aliases`] names every
+    /// enum of either.
     pub fn enum_leaf(&self) -> Option<&crate::forge::model::EnumRef> {
         match self {
             Self::Scalar(SceType::Enum(reference)) => Some(reference),
@@ -886,7 +1163,9 @@ impl ValueType {
             | Self::Text { .. }
             | Self::Bytes { .. }
             | Self::Record { .. }
-            | Self::Union { .. } => None,
+            | Self::Union { .. }
+            | Self::Map { .. }
+            | Self::Set { .. } => None,
         }
     }
 
@@ -899,17 +1178,23 @@ impl ValueType {
             | Self::Text { .. }
             | Self::Bytes { .. }
             | Self::Record { .. }
-            | Self::Union { .. } => None,
+            | Self::Union { .. }
+            | Self::Map { .. }
+            | Self::Set { .. } => None,
         }
     }
 
-    /// The bound of the outermost text, byte string or list of the type, seen
-    /// through every `optional<…>`, and that part of the type; `None` for a
-    /// type with no length (a number, `bool`, an enum, a record, or an
-    /// optional over one): what a unit names its field's outer bound by.
+    /// The bound of the outermost text, byte string, list, map or set of the
+    /// type, seen through every `optional<…>`, and that part of the type;
+    /// `None` for a type with no length (a number, `bool`, an enum, a record,
+    /// or an optional over one): what a unit names its field's outer bound by.
     pub fn outermost_bound(&self) -> Option<(&Bound, &Self)> {
         match self {
-            Self::Text { max } | Self::Bytes { max } | Self::List { max, .. } => Some((max, self)),
+            Self::Text { max }
+            | Self::Bytes { max }
+            | Self::List { max, .. }
+            | Self::Map { max, .. }
+            | Self::Set { max, .. } => Some((max, self)),
             Self::Optional { elem } => elem.outermost_bound(),
             Self::Scalar(_) | Self::Record { .. } | Self::Union { .. } => None,
         }
@@ -937,6 +1222,15 @@ impl ValueType {
             },
             Self::List { elem, max } => WrittenType::List {
                 elem: Box::new(elem.written()),
+                max: Some(max.clone()),
+            },
+            Self::Map { key, value, max } => WrittenType::Map {
+                key: Box::new(key.written()),
+                value: Box::new(value.written()),
+                max: Some(max.clone()),
+            },
+            Self::Set { key, max } => WrittenType::Set {
+                key: Box::new(key.written()),
                 max: Some(max.clone()),
             },
         }
@@ -967,6 +1261,62 @@ fn read_type(cursor: &mut Cursor<'_>) -> Result<WrittenType, TypeRefusal> {
                 elem: Box::new(elem),
                 max,
             });
+        }
+        // docs/adr/0108, D1: the key first, then for a map its value, then the
+        // bound, which states no lower count. The key is judged once the type
+        // is read, so the refusal names the whole map or set.
+        "map" | "set" => {
+            if !cursor.eat('<') {
+                return Err(TypeRefusal::Malformed {
+                    place: cursor.since(start),
+                    expected: if word == "map" {
+                        "`map` takes its key and its value in angle brackets, as in \
+                         `map<uint32, int64>[16]`"
+                    } else {
+                        "`set` takes its key in angle brackets, as in `set<uint32>[16]`"
+                    },
+                });
+            }
+            let key = read_type(cursor)?;
+            let value = if word == "map" {
+                if !cursor.eat(',') {
+                    return Err(TypeRefusal::Malformed {
+                        place: cursor.since(start),
+                        expected: "a `,` separates a map's key from its value",
+                    });
+                }
+                Some(read_type(cursor)?)
+            } else {
+                None
+            };
+            if !cursor.eat('>') {
+                return Err(TypeRefusal::Malformed {
+                    place: cursor.since(start),
+                    expected: "a `>` closes the element",
+                });
+            }
+            let max = read_bracket(cursor, start, Counted::Entries)?;
+            let refused = not_a_key_by_constructor(&key);
+            let key_text = key.to_string();
+            let ty = match value {
+                Some(value) => WrittenType::Map {
+                    key: Box::new(key),
+                    value: Box::new(value),
+                    max,
+                },
+                None => WrittenType::Set {
+                    key: Box::new(key),
+                    max,
+                },
+            };
+            return match refused {
+                Some(why) => Err(TypeRefusal::NotAKey {
+                    place: ty.to_string(),
+                    key: key_text,
+                    why,
+                }),
+                None => Ok(ty),
+            };
         }
         "string" => {
             let max = read_bracket(cursor, start, Counted::Bytes)?;
@@ -1008,7 +1358,7 @@ fn read_type(cursor: &mut Cursor<'_>) -> Result<WrittenType, TypeRefusal> {
             None => {
                 let rest = &cursor.text[start..];
                 let written = rest
-                    .split(|c: char| matches!(c, '<' | '>' | '[' | ']') || c.is_whitespace())
+                    .split(|c: char| matches!(c, '<' | '>' | '[' | ']' | ',') || c.is_whitespace())
                     .next()
                     .unwrap_or(rest);
                 return Err(TypeRefusal::Unknown {
@@ -1053,12 +1403,14 @@ fn read_element(
 }
 
 /// What the bracket of a type counts: a list's elements, which it bounds from
-/// below and above, or a text's or a byte string's bytes, which it bounds from
-/// above only (docs/adr/0086, section 15.2).
+/// below and above, a text's or a byte string's bytes, which it bounds from
+/// above only (docs/adr/0086, section 15.2), or a map's or a set's entries,
+/// which it bounds from above only (docs/adr/0108, D1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Counted {
     Elements,
     Bytes,
+    Entries,
 }
 
 /// The bracket after a type that takes one, or `None` when none is written.
@@ -1128,11 +1480,20 @@ fn read_bracket(
     let Some(least) = least else {
         return Ok(Some(bound));
     };
-    if counted == Counted::Bytes {
-        return Err(TypeRefusal::CountMisplaced {
-            place: cursor.since(start),
-            why: CountPlace::Length,
-        });
+    match counted {
+        Counted::Bytes => {
+            return Err(TypeRefusal::CountMisplaced {
+                place: cursor.since(start),
+                why: CountPlace::Length,
+            })
+        }
+        Counted::Entries => {
+            return Err(TypeRefusal::CountMisplaced {
+                place: cursor.since(start),
+                why: CountPlace::Keyed,
+            })
+        }
+        Counted::Elements => {}
     }
     if least > bound.max {
         return Err(TypeRefusal::CountPastBound {
@@ -1206,10 +1567,36 @@ impl Composition {
     pub fn sentence(&self, element: &str, position: &str) -> String {
         format!(
             "{element}: `{}` in {position} is a type of the language, and no backend lowers \
-             its {} there yet",
-            self.place, self.constructor
+             its {} there yet{}",
+            self.place,
+            self.constructor,
+            self.landing()
+                .map_or_else(String::new, |record| format!(" ({record})"))
         )
     }
+
+    /// The record that lands the lowering of this composition where it is
+    /// one of its own: a map's and a set's, docs/adr/0108 (D10). `None` for
+    /// a composition of docs/adr/0086, whose refusals name it as they always
+    /// did.
+    pub fn landing(&self) -> Option<&'static str> {
+        matches!(self.constructor.as_str(), "map" | "set").then_some(MAP_LANDING)
+    }
+}
+
+/// The record a refusal of a map or a set names: the decision that lands it
+/// on each lane, one step at a time (docs/adr/0108, D10).
+pub const MAP_LANDING: &str = "docs/adr/0108, D10";
+
+/// The sentence of the refusal of a map or a set, spelled `place`, by a
+/// position or a walk that holds none yet: the type is the language's, and
+/// its lowering lands lane by lane (docs/adr/0108, D10). One wording for
+/// every such refusal, as [`union_unlowered`] is for a union.
+pub fn map_unlowered(place: &str) -> String {
+    format!(
+        "`{place}`: a map or a set is a type of the language, and no lowering holds one \
+         here yet ({MAP_LANDING})"
+    )
 }
 
 /// The sentence of the refusal of `union:<alias>` by a walk of a type that
@@ -1294,6 +1681,8 @@ impl WrittenType {
             | Self::Bytes { .. }
             | Self::Record { .. }
             | Self::Union { .. }
+            | Self::Map { .. }
+            | Self::Set { .. }
             | Self::Optional { .. } => None,
         }
     }
@@ -1308,6 +1697,8 @@ impl WrittenType {
             | Self::Bytes { .. }
             | Self::Union { .. }
             | Self::List { .. }
+            | Self::Map { .. }
+            | Self::Set { .. }
             | Self::Optional { .. } => None,
         }
     }
@@ -1322,6 +1713,8 @@ impl WrittenType {
             | Self::Bytes { .. }
             | Self::Record { .. }
             | Self::List { .. }
+            | Self::Map { .. }
+            | Self::Set { .. }
             | Self::Optional { .. } => None,
         }
     }
@@ -1363,13 +1756,16 @@ impl WrittenType {
     /// event schema's field. A union is held only by the positions that say so
     /// beside this one: a statechart's variable where its lowering holds one
     /// ([`Self::variable_view`]) and an algorithm's slot, whole
-    /// ([`Self::algorithm_view`]) (docs/adr/0092, landing order).
+    /// ([`Self::algorithm_view`]) (docs/adr/0092, landing order). A map and a
+    /// set are held by no slot yet, at any depth (docs/adr/0108, D10): each
+    /// is refused by name, its constructor naming the record that lands it
+    /// ([`Composition::landing`]).
     pub fn slot_view(&self) -> Result<&Self, Composition> {
         match self {
             Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => {
                 Ok(self)
             }
-            Self::Union { .. } => Err(Composition::of(self)),
+            Self::Union { .. } | Self::Map { .. } | Self::Set { .. } => Err(Composition::of(self)),
             Self::List { elem, .. } => match &**elem {
                 Self::Scalar(t) if Self::list_elem_admitted(t) => Ok(self),
                 Self::Record { .. } => Ok(self),
@@ -1440,6 +1836,15 @@ impl WrittenType {
             Self::Text { max } => (Self::Text { max: None }, max),
             Self::Bytes { max } => (Self::Bytes { max: None }, max),
             Self::List { elem, max } => (Self::List { elem, max: None }, max),
+            Self::Map { key, value, max } => (
+                Self::Map {
+                    key,
+                    value,
+                    max: None,
+                },
+                max,
+            ),
+            Self::Set { key, max } => (Self::Set { key, max: None }, max),
             Self::Optional { elem } => {
                 let (elem, max) = elem.split_outer_bound();
                 (
@@ -1636,6 +2041,18 @@ pub enum SizeError {
     ContainsItself { cycle: Vec<String> },
     /// A size past 2^64 - 1 bytes.
     Overflow,
+    /// A map or a set, spelled `place`, which has no wire form yet
+    /// (docs/adr/0108, D7): no number the build makes up stands for its size.
+    NoWireForm { place: String },
+}
+
+/// Why a map or a set has no size and no grammar: its wire form is a decision
+/// of its own (docs/adr/0108, D7 and its first open question).
+fn no_wire_form(place: &str) -> String {
+    format!(
+        "`{place}` is a map or a set, which has no wire form yet (docs/adr/0108, D7): an event \
+         schema's field, a codec's entry and a payload hold none"
+    )
 }
 
 impl fmt::Display for SizeError {
@@ -1645,6 +2062,7 @@ impl fmt::Display for SizeError {
             Self::Unresolved { alias } => {
                 write!(f, "`{alias}` names no record or enum the document imports")
             }
+            Self::NoWireForm { place } => f.write_str(&no_wire_form(place)),
             Self::ContainsItself { cycle } => write!(
                 f,
                 "the record `{}` holds itself ({}), and has no largest value",
@@ -1851,6 +2269,9 @@ fn size(
             records.pop();
             Ok(largest)
         }
+        ValueType::Map { .. } | ValueType::Set { .. } => Err(SizeError::NoWireForm {
+            place: ty.to_string(),
+        }),
     }
 }
 
@@ -2014,6 +2435,88 @@ pub fn contains_itself(alias: &str, env: &dyn TypeEnv) -> Option<Vec<String>> {
     visit(alias, env, &mut Vec::new())
 }
 
+// ── The key of a map (docs/adr/0108, D1) ────────────────────────────────────
+
+/// The refusal of the first map or set `ty` holds, outermost first, whose key
+/// is no key (docs/adr/0108, D1), or `None`: what the reader of a type cannot
+/// ask alone, whether every field of a record key is itself a key, through
+/// every record a field names. A key no constructor makes one is refused here
+/// too, as the reader refuses it ([`TypeRefusal::NotAKey`]).
+///
+/// A record's fields are read through `env`, in the record's own document's
+/// scope. A record `env` does not resolve, and one met again inside itself,
+/// is no refusal here: the first is its import's, the second
+/// [`contains_itself`]'s.
+pub fn map_key_refusal<B: BoundSlot>(ty: &TypeOf<B>, env: &dyn TypeEnv) -> Option<TypeRefusal> {
+    let mut found = None;
+    ty.walk(&mut |part| {
+        if found.is_some() {
+            return;
+        }
+        let Some(key) = part.map_key() else {
+            return;
+        };
+        let why = match (not_a_key_by_constructor(key), key) {
+            (Some(why), _) => Some(why),
+            (None, TypeOf::Record { alias }) => record_not_a_key(alias, env, &mut Vec::new()),
+            (None, _) => None,
+        };
+        if let Some(why) = why {
+            found = Some(TypeRefusal::NotAKey {
+                place: part.to_string(),
+                key: key.to_string(),
+                why,
+            });
+        }
+    });
+    found
+}
+
+/// Why the record `alias` names is no key: its first field, in the schema's
+/// order, that is none, through every record a field names, by its path from
+/// this record (`peer.half`); `None` when every field is a key. `on_path`
+/// holds the key of each record on the way ([`TypeEnv::record_key`]).
+fn record_not_a_key(
+    alias: &str,
+    env: &dyn TypeEnv,
+    on_path: &mut Vec<String>,
+) -> Option<NotAKeyWhy> {
+    let record = env.record_key(alias);
+    if on_path.contains(&record) {
+        return None;
+    }
+    let fields = env.record_fields(alias)?;
+    // The record's fields name types by its own document's aliases.
+    let scope = env.record_scope(alias).unwrap_or(env);
+    on_path.push(record);
+    let mut found = None;
+    for (id, field) in &fields {
+        let why = match (not_a_key_by_constructor(field), field) {
+            (Some(why), _) => Some(NotAKeyWhy::Field {
+                field: id.clone(),
+                ty: field.to_string(),
+                why: Box::new(why),
+            }),
+            (None, ValueType::Record { alias: inner }) => record_not_a_key(inner, scope, on_path)
+                .map(|below| match below {
+                    NotAKeyWhy::Field { field, ty, why } => NotAKeyWhy::Field {
+                        field: format!("{id}.{field}"),
+                        ty,
+                        why,
+                    },
+                    other => other,
+                }),
+            (None, _) => None,
+        };
+        if why.is_some() {
+            found = why;
+            break;
+        }
+    }
+    on_path.pop();
+    found
+}
+
 // ── What a lift reads of a type (docs/adr/0087, section 2) ──────────────────
 //
 // Two folds beside the size calculus, by the same recursion and environment:
@@ -2134,6 +2637,10 @@ fn depth_at(
             records.pop();
             Ok(deepest.saturating_add(1))
         }
+        // No lift reads a map: it has no wire form yet (docs/adr/0108, D7).
+        ValueType::Map { .. } | ValueType::Set { .. } => Err(SizeError::NoWireForm {
+            place: ty.to_string(),
+        }),
     }
 }
 
@@ -2205,6 +2712,10 @@ fn pointer_at(
             records.pop();
             Ok(longest)
         }
+        // No lift reads a map: it has no wire form yet (docs/adr/0108, D7).
+        ValueType::Map { .. } | ValueType::Set { .. } => Err(SizeError::NoWireForm {
+            place: ty.to_string(),
+        }),
     }
 }
 
@@ -2256,6 +2767,9 @@ pub enum GrammarError {
     /// Two records or unions of different documents under one document name,
     /// which a JSON Schema's `$defs` would name alike.
     SharedName { name: String },
+    /// A map or a set, spelled `place`, which has no wire form yet
+    /// (docs/adr/0108, D7), and so no grammar.
+    NoWireForm { place: String },
 }
 
 impl fmt::Display for GrammarError {
@@ -2289,6 +2803,7 @@ impl fmt::Display for GrammarError {
                 "two records or unions of different documents are named `{name}`, which the \
                  schema's `$defs` would name alike"
             ),
+            Self::NoWireForm { place } => f.write_str(&no_wire_form(place)),
         }
     }
 }
@@ -3041,6 +3556,11 @@ fn json_schema(
                 |defs, on_path| json_cases(union, defs, on_path),
             )?
         }
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(GrammarError::NoWireForm {
+                place: ty.to_string(),
+            })
+        }
     })
 }
 
@@ -3522,6 +4042,11 @@ fn gbnf(
                 |rules, on_path| gbnf_cases(union, rules, on_path),
             )?
         }
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(GrammarError::NoWireForm {
+                place: ty.to_string(),
+            })
+        }
     })
 }
 
@@ -3601,8 +4126,9 @@ pub trait TypeIdentity {
 /// `path` leads from the outermost type to that place, one `/*` for each list
 /// element on the way (an optional is passed through, since a present value is
 /// the value of its element): `""` for the types themselves, `/*/*` for the
-/// elements of the elements. A caller puts the name of the field or variable in
-/// front of it.
+/// elements of the elements. A map's entry is `/*` too, its key `/*/key` and
+/// its value `/*/value`; a set's key is its element, `/*`. A caller puts the
+/// name of the field or variable in front of it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Misfit {
     pub path: String,
@@ -3669,6 +4195,9 @@ impl Misfit {
 /// - `string[a]` fits `string[b]`, and `bytes[a]` fits `bytes[b]`, when
 ///   `a <= b`;
 /// - `list<S>[a]` fits `list<T>[b]` when `S` fits `T` and `a <= b`;
+/// - `map<K, S>[a]` fits `map<L, T>[b]` when `K` fits `L`, `S` fits `T` and
+///   `a <= b`, and `set<K>[a]` fits `set<L>[b]` when `K` fits `L` and `a <= b`
+///   (docs/adr/0108, D1);
 /// - `optional<S>` fits `optional<T>` when `S` fits `T`, and `S` fits
 ///   `optional<T>` when `S` fits `T`;
 /// - `record:R` fits `record:Q` when both are one record
@@ -3802,11 +4331,44 @@ fn fits_at(
                 Err(misfit(MisfitReason::Identity))
             }
         }
+        // docs/adr/0108, D1: as a list, its key and its value judged before
+        // its bound. Two keys equal as values of the key's type are equal as
+        // values of a type it fits, so a map that fits holds no key twice.
+        (
+            ValueType::Map {
+                key: k,
+                value: s,
+                max: a,
+            },
+            ValueType::Map {
+                key: l,
+                value: t,
+                max: b,
+            },
+        ) => {
+            fits_at(k, l, identity, &format!("{path}/*/key"))?;
+            fits_at(s, t, identity, &format!("{path}/*/value"))?;
+            if a.max > b.max {
+                Err(misfit(MisfitReason::Bound))
+            } else {
+                Ok(())
+            }
+        }
+        (ValueType::Set { key: k, max: a }, ValueType::Set { key: l, max: b }) => {
+            fits_at(k, l, identity, &format!("{path}/*"))?;
+            if a.max > b.max {
+                Err(misfit(MisfitReason::Bound))
+            } else {
+                Ok(())
+            }
+        }
         (
             ValueType::Scalar(_)
             | ValueType::Text { .. }
             | ValueType::Bytes { .. }
             | ValueType::List { .. }
+            | ValueType::Map { .. }
+            | ValueType::Set { .. }
             | ValueType::Record { .. }
             | ValueType::Union { .. },
             _,
@@ -3866,13 +4428,25 @@ mod tests {
         ("bytes", true),
     ];
 
+    /// Why the oracle says a written text is no type of the grammar.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Refused {
+        /// An optional directly inside an optional.
+        NestedOptional,
+        /// A map or a set whose key is a float, an optional, a list, a map or
+        /// a set (docs/adr/0108, D1).
+        NotAKey,
+    }
+
     /// A written type of the enumeration, with what the oracle says of it:
-    /// whether it is a type of the grammar at all (`well_formed`: no optional
-    /// directly inside an optional) and whether every bound is stated.
+    /// whether it is a type of the grammar at all (`well_formed`), the
+    /// refusal it is read with when it is not (`refused`, the innermost
+    /// first, as the reader reads), and whether every bound is stated.
     #[derive(Debug, Clone)]
     struct Case {
         text: String,
         well_formed: bool,
+        refused: Option<Refused>,
         every_bound: bool,
         depth: usize,
         /// The text with every bracket removed from its outermost bounded
@@ -3880,8 +4454,19 @@ mod tests {
         outer: Option<(String, String)>,
     }
 
+    /// Whether the written type `text` is a key by its constructor alone
+    /// (docs/adr/0108, D1): every leaf of the enumeration but `float64`; no
+    /// optional, list, map or set.
+    fn key_by_constructor(text: &str) -> bool {
+        !["float64", "optional<", "list<", "map<", "set<"]
+            .iter()
+            .any(|prefix| text.starts_with(prefix))
+    }
+
     /// Every written type up to `depth` constructors deep, each text, byte
-    /// string and list once with its bound and once without.
+    /// string, list, map and set once with its bound and once without; a map
+    /// once over a key of `uint8` and once over a value of `uint8`, so the
+    /// type below stands in each place.
     fn cases(depth: usize) -> Vec<Case> {
         let mut out: Vec<Case> = Vec::new();
         for (leaf, bounded) in LEAVES {
@@ -3890,6 +4475,7 @@ mod tests {
                     out.push(Case {
                         text: format!("{leaf}{bracket}"),
                         well_formed: true,
+                        refused: None,
                         every_bound: stated,
                         depth: 1,
                         outer: Some((leaf.to_string(), bracket.to_string())),
@@ -3899,6 +4485,7 @@ mod tests {
                 out.push(Case {
                     text: leaf.to_string(),
                     well_formed: true,
+                    refused: None,
                     every_bound: true,
                     depth: 1,
                     outer: None,
@@ -3909,9 +4496,11 @@ mod tests {
         for d in 2..=depth {
             let mut next = Vec::new();
             for inner in &previous {
+                let nested = inner.well_formed && inner.text.starts_with("optional<");
                 next.push(Case {
                     text: format!("optional<{}>", inner.text),
-                    well_formed: inner.well_formed && !inner.text.starts_with("optional<"),
+                    well_formed: inner.well_formed && !nested,
+                    refused: inner.refused.or(nested.then_some(Refused::NestedOptional)),
                     every_bound: inner.every_bound,
                     depth: d,
                     // An optional has no bound: an attribute bounds the type inside.
@@ -3921,10 +4510,31 @@ mod tests {
                     next.push(Case {
                         text: format!("list<{}>{bracket}", inner.text),
                         well_formed: inner.well_formed,
+                        refused: inner.refused,
                         every_bound: inner.every_bound && stated,
                         depth: d,
                         outer: Some((format!("list<{}>", inner.text), bracket.to_string())),
                     });
+                    // The type below as the value of a map, then as the key of
+                    // a map and of a set, which refuse it unless it is a key.
+                    let not_a_key = inner.well_formed && !key_by_constructor(&inner.text);
+                    for bare in [
+                        format!("map<uint8, {}>", inner.text),
+                        format!("map<{}, uint8>", inner.text),
+                        format!("set<{}>", inner.text),
+                    ] {
+                        let keyed = !bare.starts_with("map<uint8, ");
+                        next.push(Case {
+                            text: format!("{bare}{bracket}"),
+                            well_formed: inner.well_formed && !(keyed && not_a_key),
+                            refused: inner
+                                .refused
+                                .or((keyed && not_a_key).then_some(Refused::NotAKey)),
+                            every_bound: inner.every_bound && stated,
+                            depth: d,
+                            outer: Some((bare, bracket.to_string())),
+                        });
+                    }
                 }
             }
             out.extend(next.iter().cloned());
@@ -3940,7 +4550,16 @@ mod tests {
             let constructors: &[&str] = if d == 1 {
                 &["string", "bytes", "record:", "enum:", "uint8", "bool"]
             } else {
-                &["optional<", "list<", "string", "bytes", "record:", "enum:"]
+                &[
+                    "optional<",
+                    "list<",
+                    "map<",
+                    "set<",
+                    "string",
+                    "bytes",
+                    "record:",
+                    "enum:",
+                ]
             };
             for constructor in constructors {
                 assert!(
@@ -3950,10 +4569,39 @@ mod tests {
                 );
             }
         }
-        // 10 written leaves, then 3 per type of the depth below.
+        // 10 written leaves, then 9 per type of the depth below: an optional,
+        // and a list, a map over it as a value, a map over it as a key and a
+        // set over it, each with a bracket and without.
         assert_eq!(all.iter().filter(|c| c.depth == 1).count(), 10);
-        assert_eq!(all.iter().filter(|c| c.depth == 2).count(), 30);
-        assert_eq!(all.iter().filter(|c| c.depth == 3).count(), 90);
+        assert_eq!(all.iter().filter(|c| c.depth == 2).count(), 90);
+        assert_eq!(all.iter().filter(|c| c.depth == 3).count(), 810);
+        // Both refusals of the grammar are among them: a key that is no key
+        // from the first depth a map stands at, an optional inside an optional
+        // from the first it can (`optional<optional<T>>` is three deep).
+        for (d, refused) in [
+            (2, Refused::NotAKey),
+            (3, Refused::NotAKey),
+            (3, Refused::NestedOptional),
+        ] {
+            assert!(
+                all.iter()
+                    .any(|c| c.depth == d && c.refused == Some(refused)),
+                "no case of depth {d} is refused as {refused:?}"
+            );
+        }
+        for key in [
+            "set<float64>",
+            "map<optional<",
+            "set<list<",
+            "map<map<",
+            "set<set<",
+        ] {
+            assert!(
+                all.iter()
+                    .any(|c| c.text.starts_with(key) && c.refused == Some(Refused::NotAKey)),
+                "no case {key}… is refused as no key"
+            );
+        }
     }
 
     #[test]
@@ -3961,13 +4609,17 @@ mod tests {
         for case in cases(3) {
             let read = WrittenType::read(&case.text);
             if !case.well_formed {
-                assert!(
-                    matches!(read, Err(TypeRefusal::NestedOptional { .. })),
-                    "{}: {read:?}",
-                    case.text
-                );
+                let refused = match case.refused {
+                    Some(Refused::NestedOptional) => {
+                        matches!(read, Err(TypeRefusal::NestedOptional { .. }))
+                    }
+                    Some(Refused::NotAKey) => matches!(read, Err(TypeRefusal::NotAKey { .. })),
+                    None => false,
+                };
+                assert!(refused, "{}: {:?}, read {read:?}", case.text, case.refused);
                 continue;
             }
+            assert_eq!(case.refused, None, "{}", case.text);
             let written = read.unwrap_or_else(|e| panic!("{}: {e:?}", case.text));
             assert_eq!(written.to_string(), case.text, "the printer is the inverse");
             assert_eq!(written.depth(), case.depth, "{}", case.text);
@@ -4489,9 +5141,13 @@ mod tests {
         // The oracle, from the text the enumeration built: every leaf is held;
         // a list of a fixed-width number, `bool` or a record is held; an
         // optional over any leaf is held; anything else is a composition named
-        // by its element.
+        // by its element. A map and a set are held by no slot yet, named by
+        // themselves (docs/adr/0108, D10).
         let held_list_elements = ["uint8", "int64", "float64", "bool", "record:Item"];
         let expected = |text: &str| -> Result<(), String> {
+            if text.starts_with("map<") || text.starts_with("set<") {
+                return Err(text.to_string());
+            }
             if let Some(inner) = text
                 .strip_prefix("optional<")
                 .and_then(|t| t.strip_suffix('>'))
@@ -4872,8 +5528,17 @@ mod tests {
                     .max_by_key(String::len)
                     .unwrap()
             }
+            ValueType::Map { .. } | ValueType::Set { .. } => {
+                unreachable!("{NO_MAP_WIRE_FORM}")
+            }
         }
     }
+
+    /// Why the writers of a largest value below meet no map: a map has no
+    /// wire form yet (docs/adr/0108, D7), and its size is refused by name
+    /// (`a_map_has_no_wire_form_and_no_grammar`).
+    const NO_MAP_WIRE_FORM: &str =
+        "no type the sizes are held to holds a map, which has no wire form";
 
     /// A negative double between -1e-5 and -1e-6 as ECMAScript's
     /// Number::toString spells it: `-0.00000` and then its shortest digits.
@@ -5048,6 +5713,9 @@ mod tests {
                     })
                     .max_by_key(Vec::len)
                     .unwrap()
+            }
+            ValueType::Map { .. } | ValueType::Set { .. } => {
+                unreachable!("{NO_MAP_WIRE_FORM}")
             }
         }
     }
@@ -5301,12 +5969,60 @@ mod tests {
                 }
                 out
             }
+            ValueType::Map { key, value, max } => {
+                let values: Vec<String> = values_of(value).into_iter().collect();
+                keyed_values("map", &values_of(key), Some(values.as_slice()), max.max)
+            }
+            ValueType::Set { key, max } => keyed_values("set", &values_of(key), None, max.max),
         }
+    }
+
+    /// Every map (or set, where no `values` are given) of at most `most`
+    /// entries over `keys`, no key twice, its entries in the order they were
+    /// put (docs/adr/0108, D2): `map{k:v,…}`, `set{k,…}`. Two orders of the
+    /// same entries are two values, as the order is observable.
+    fn keyed_values(
+        name: &str,
+        keys: &BTreeSet<String>,
+        values: Option<&[String]>,
+        most: u32,
+    ) -> BTreeSet<String> {
+        let mut out: BTreeSet<String> = [format!("{name}{{}}")].into();
+        let mut entries: Vec<Vec<(&String, String)>> = vec![Vec::new()];
+        for _ in 1..=most {
+            let mut longer = Vec::new();
+            for held in &entries {
+                for key in keys {
+                    if held.iter().any(|(k, _)| *k == key) {
+                        continue;
+                    }
+                    let spelled: Vec<String> = match values {
+                        Some(values) => values.iter().map(|v| format!("{key}:{v}")).collect(),
+                        None => vec![key.clone()],
+                    };
+                    for entry in spelled {
+                        let mut next = held.clone();
+                        next.push((key, entry));
+                        longer.push(next);
+                    }
+                }
+            }
+            out.extend(longer.iter().map(|held| {
+                let spelled: Vec<&str> = held.iter().map(|(_, entry)| entry.as_str()).collect();
+                format!("{name}{{{}}}", spelled.join(","))
+            }));
+            entries = longer;
+        }
+        out
     }
 
     /// Every type up to three constructors deep over leaves that tell each rule
     /// apart: two bounds of each text and byte string and list, two revisions of
-    /// a record and an enum beside another of each, and numbers of two widths.
+    /// a record and an enum beside another of each, and numbers of two widths;
+    /// and beside them every map and set over a key with more values than its
+    /// bound (a text or a byte string, so the bound tells two of them apart)
+    /// and a value of the leaves, at two bounds (docs/adr/0108, D1). A map is
+    /// not nested further: its values would be too many to enumerate.
     fn fit_universe() -> Vec<String> {
         let leaves = [
             "uint8",
@@ -5336,6 +6052,25 @@ mod tests {
             }
             all.extend(next.iter().cloned());
             previous = next;
+        }
+        let keys = ["string[1]", "string[2]", "bytes[1]"];
+        let values = [
+            "uint8",
+            "int64",
+            "enum:E",
+            "enum:F",
+            "record:R",
+            "record:R2",
+            "string[1]",
+            "string[2]",
+        ];
+        for bound in ["[1]", "[2]"] {
+            for key in keys {
+                for value in values {
+                    all.push(format!("map<{key}, {value}>{bound}"));
+                }
+                all.push(format!("set<{key}>{bound}"));
+            }
         }
         all
     }
@@ -5371,7 +6106,9 @@ mod tests {
                 }
             }
         }
-        assert_eq!(universe.len(), 13 + 39 + 104);
+        // The leaves, two depths of optionals and lists over them, then 3 keys
+        // at 2 bounds of 8 maps and a set (docs/adr/0108, D1).
+        assert_eq!(universe.len(), 13 + 39 + 104 + 2 * 3 * (8 + 1));
         assert!(fitting > universe.len(), "{fitting} pairs fit");
         assert!(misfitting > fitting, "{misfitting} pairs do not fit");
         assert_eq!(
@@ -6900,5 +7637,421 @@ mod tests {
                 })
             );
         }
+    }
+
+    // ── A map and a set (docs/adr/0108) ───────────────────────────────────
+
+    /// A map and a set read and print as the grammar spells them, their bound
+    /// in their bracket, a named bound moved by a build, every bound inside
+    /// them required, and their bracket stating the most entries alone
+    /// (docs/adr/0108, D1).
+    #[test]
+    fn a_map_and_a_set_are_read_and_printed_with_their_bound() {
+        let written = WrittenType::read("map<uint32, list<string[8]>[4]>[faces=16]").unwrap();
+        assert_eq!(
+            written.to_string(),
+            "map<uint32, list<string[8]>[4]>[faces=16]"
+        );
+        assert_eq!(written.depth(), 3);
+        assert_eq!(
+            WrittenType::read(" map < uint32 ,bool > [ 4 ] ")
+                .unwrap()
+                .to_string(),
+            "map<uint32, bool>[4]"
+        );
+        let resolved = written.resolve_limits(&mut |name, n| if name == "faces" { 2 } else { n });
+        let ValueType::Map { key, value, max } = resolved.bounded().unwrap() else {
+            panic!("a map");
+        };
+        assert_eq!(*key, ValueType::Scalar(SceType::Uint32));
+        assert_eq!(value.to_string(), "list<string[8]>[4]");
+        assert_eq!(max, Bound::named("faces", 2));
+        let set = WrittenType::read("set<record:Zid>[8]").unwrap();
+        assert_eq!(set.to_string(), "set<record:Zid>[8]");
+        assert_eq!(set.record_aliases(), ["Zid"]);
+        assert_eq!(
+            set.map_key().map(ToString::to_string).as_deref(),
+            Some("record:Zid")
+        );
+        assert_eq!(set.keyed(), Some(&set));
+        // Every bound inside is required, the outermost first.
+        assert_eq!(
+            WrittenType::read("map<uint8, bytes>[2]").unwrap().bounded(),
+            Err(TypeRefusal::Unbounded {
+                place: "bytes".into()
+            })
+        );
+        assert_eq!(
+            WrittenType::read("set<string[4]>").unwrap().bounded(),
+            Err(TypeRefusal::Unbounded {
+                place: "set<string[4]>".into()
+            })
+        );
+        // The bracket counts the most entries alone.
+        for text in [
+            "map<uint8, bool>[1..4]",
+            "set<uint8>[0..4]",
+            "list<set<uint8>[2..3]>[2]",
+        ] {
+            assert!(
+                matches!(
+                    WrittenType::read(text),
+                    Err(TypeRefusal::CountMisplaced {
+                        why: CountPlace::Keyed,
+                        ..
+                    })
+                ),
+                "{text}: {:?}",
+                WrittenType::read(text)
+            );
+        }
+        // A map takes a key and a value, a set a key alone.
+        let malformed =
+            |text: &str| matches!(WrittenType::read(text), Err(TypeRefusal::Malformed { .. }));
+        assert!(malformed("map<uint8>[2]"));
+        assert!(malformed("map uint8"));
+        assert!(malformed("set<uint8, bool>[2]"));
+        assert!(malformed("map<uint8, bool"));
+        assert_eq!(
+            WrittenType::read("map<uint8, bol>[2]"),
+            Err(TypeRefusal::Unknown {
+                written: "bol".into()
+            })
+        );
+        // A legacy attribute bounds the outermost map or set, as a list's does.
+        assert_eq!(
+            WrittenType::read("optional<set<uint8>>")
+                .unwrap()
+                .with_outer_bound(Bound::of(3))
+                .unwrap()
+                .to_string(),
+            "optional<set<uint8>[3]>"
+        );
+        // It crosses the AST keyed by its constructor, its value and its bound
+        // beside it, the bound left out where it is not written.
+        let json = |t: &str| serde_json::to_value(WrittenType::read(t).unwrap()).unwrap();
+        assert_eq!(
+            json("map<uint32, list<uint8>[2]>[4]"),
+            serde_json::json!({"map": "uint32", "value": {"list": "uint8", "max": 2}, "max": 4})
+        );
+        assert_eq!(
+            json("set<string[8]>[n=4]"),
+            serde_json::json!({"set": {"string": 8}, "max": 4})
+        );
+        assert_eq!(
+            json("map<uint8, bool>"),
+            serde_json::json!({"map": "uint8", "value": "bool"})
+        );
+        assert_eq!(json("set<uint8>"), serde_json::json!({"set": "uint8"}));
+    }
+
+    /// A key is a type whose equality is exact and whose every value is
+    /// bounded (docs/adr/0108, D1): refused by its constructor where the type
+    /// is read, and through the fields of a record where the record is read.
+    #[test]
+    fn a_map_key_is_a_type_with_exact_equality() {
+        for key in [
+            "uint8",
+            "uint64",
+            "int8",
+            "int64",
+            "bool",
+            "enum:Level",
+            "string[8]",
+            "bytes[16]",
+            "record:Zid",
+        ] {
+            for text in [format!("map<{key}, float64>[4]"), format!("set<{key}>[4]")] {
+                assert!(
+                    WrittenType::read(&text).is_ok(),
+                    "{text}: {:?}",
+                    WrittenType::read(&text)
+                );
+            }
+        }
+        for (key, why) in [
+            ("float32", NotAKeyWhy::Float),
+            ("float64", NotAKeyWhy::Float),
+            ("optional<uint8>", NotAKeyWhy::MayBeAbsent),
+            ("union:Shape", NotAKeyWhy::Union),
+            ("list<uint8>[2]", NotAKeyWhy::Collection),
+            ("map<uint8, uint8>[2]", NotAKeyWhy::Collection),
+            ("set<uint8>[2]", NotAKeyWhy::Collection),
+        ] {
+            let text = format!("set<{key}>[4]");
+            assert_eq!(
+                WrittenType::read(&text),
+                Err(TypeRefusal::NotAKey {
+                    place: text.clone(),
+                    key: key.to_string(),
+                    why: why.clone(),
+                })
+            );
+            let text = format!("list<map<{key}, uint8>[4]>[2]");
+            assert_eq!(
+                WrittenType::read(&text),
+                Err(TypeRefusal::NotAKey {
+                    place: format!("map<{key}, uint8>[4]"),
+                    key: key.to_string(),
+                    why,
+                })
+            );
+        }
+        // A map's value is any type.
+        assert!(WrittenType::read("map<uint8, optional<float64>>[4]").is_ok());
+        // The refusal names the key, the map and what makes the key none.
+        let rule = WrittenType::read("map<float64, bool>[4]")
+            .unwrap_err()
+            .rule();
+        assert!(
+            rule.starts_with(
+                "`float64` is no key of `map<float64, bool>[4]`: a float is no key: NaN"
+            ),
+            "{rule}"
+        );
+        assert!(rule.contains("(docs/adr/0108, D1)"), "{rule}");
+
+        // A record key: each field a key, through every record a field names.
+        let mut env = Table::default();
+        let record = |fields: &[(&str, &str)]| -> Vec<(String, ValueType)> {
+            fields
+                .iter()
+                .map(|(id, text)| (id.to_string(), ty(text)))
+                .collect()
+        };
+        env.records.insert(
+            "Zid".into(),
+            record(&[("low", "uint64"), ("high", "uint64")]),
+        );
+        env.records.insert(
+            "Chain".into(),
+            record(&[
+                ("zid", "record:Zid"),
+                ("label", "string[8]"),
+                ("on", "bool"),
+            ]),
+        );
+        env.records.insert(
+            "Ratio".into(),
+            record(&[("id", "uint8"), ("ratio", "float64")]),
+        );
+        env.records.insert(
+            "Deep".into(),
+            record(&[("id", "uint8"), ("inner", "record:Maybe")]),
+        );
+        env.records
+            .insert("Maybe".into(), record(&[("half", "optional<uint8>")]));
+        env.records
+            .insert("Tags".into(), record(&[("tags", "list<uint8>[2]")]));
+        env.records.insert(
+            "Node".into(),
+            record(&[("id", "uint8"), ("next", "record:Node")]),
+        );
+        let judged = |text: &str| map_key_refusal(&ty(text), &env);
+        assert_eq!(judged("map<record:Zid, string[8]>[4]"), None);
+        assert_eq!(judged("set<record:Chain>[4]"), None);
+        assert_eq!(
+            judged("map<uint8, record:Ratio>[4]"),
+            None,
+            "a value is no key"
+        );
+        assert_eq!(
+            judged("set<record:Ratio>[4]"),
+            Some(TypeRefusal::NotAKey {
+                place: "set<record:Ratio>[4]".into(),
+                key: "record:Ratio".into(),
+                why: NotAKeyWhy::Field {
+                    field: "ratio".into(),
+                    ty: "float64".into(),
+                    why: Box::new(NotAKeyWhy::Float),
+                },
+            })
+        );
+        assert_eq!(
+            judged("list<map<record:Deep, uint8>[2]>[2]"),
+            Some(TypeRefusal::NotAKey {
+                place: "map<record:Deep, uint8>[2]".into(),
+                key: "record:Deep".into(),
+                why: NotAKeyWhy::Field {
+                    field: "inner.half".into(),
+                    ty: "optional<uint8>".into(),
+                    why: Box::new(NotAKeyWhy::MayBeAbsent),
+                },
+            })
+        );
+        let rule = judged("set<record:Tags>[2]")
+            .map(|refusal| refusal.rule())
+            .unwrap_or_default();
+        assert!(
+            rule.contains(
+                "its field `tags` is a `list<uint8>[2]`, and every field of a record key is \
+                 itself a key: a list, a map or a set is no key"
+            ),
+            "{rule}"
+        );
+        // A record that holds itself is no refusal here, and the walk ends.
+        assert_eq!(judged("set<record:Node>[2]"), None);
+        // A record no table resolves is its import's to refuse.
+        assert_eq!(judged("set<record:Missing>[2]"), None);
+        // The outermost map is judged first.
+        let first = judged("map<record:Ratio, set<record:Deep>[2]>[2]");
+        assert!(
+            matches!(&first, Some(TypeRefusal::NotAKey { key, .. }) if key == "record:Ratio"),
+            "{first:?}"
+        );
+    }
+
+    /// A map has no wire form yet (docs/adr/0108, D7): its sizes, its depth,
+    /// its longest pointer and its grammars are refused naming it, inside a
+    /// list, an optional or a record too, never answered with a number made up
+    /// for it.
+    #[test]
+    fn a_map_has_no_wire_form_and_no_grammar() {
+        let mut env = table();
+        env.records.insert(
+            "Holder".into(),
+            vec![
+                ("id".into(), ty("uint8")),
+                ("faces".into(), ty("map<uint32, bool>[4]")),
+            ],
+        );
+        for (text, place) in [
+            ("map<uint32, bool>[4]", "map<uint32, bool>[4]"),
+            ("set<string[8]>[2]", "set<string[8]>[2]"),
+            ("list<set<uint8>[2]>[3]", "set<uint8>[2]"),
+            ("optional<map<uint8, uint8>[1]>", "map<uint8, uint8>[1]"),
+            ("record:Holder", "map<uint32, bool>[4]"),
+        ] {
+            let no_wire = SizeError::NoWireForm {
+                place: place.into(),
+            };
+            let t = ty(text);
+            assert_eq!(json_max_len(&t, &env), Err(no_wire.clone()), "{text}");
+            assert_eq!(cbor_max_len(&t, &env), Err(no_wire.clone()), "{text}");
+            assert_eq!(container_depth(&t, &env), Err(no_wire.clone()), "{text}");
+            assert_eq!(longest_pointer(&t, &env), Err(no_wire), "{text}");
+        }
+        assert_eq!(
+            payload_json_max_len(&[("faces".into(), ty("set<uint8>[2]"))], &env),
+            Err(SizeError::NoWireForm {
+                place: "set<uint8>[2]".into()
+            })
+        );
+        for (text, place) in [
+            ("map<uint32, bool>[4]", "map<uint32, bool>[4]"),
+            ("list<set<uint8>[2]>[3]", "set<uint8>[2]"),
+        ] {
+            let refused = GrammarError::NoWireForm {
+                place: place.into(),
+            };
+            assert_eq!(
+                schema_of(&ty(text)).map(|_| ()),
+                Err(refused.clone()),
+                "{text}"
+            );
+            assert_eq!(grammar_of(&ty(text)).map(|_| ()), Err(refused), "{text}");
+        }
+        // The refusal names the type and the record that decides its wire form.
+        let why = SizeError::NoWireForm {
+            place: "set<uint8>[2]".into(),
+        }
+        .to_string();
+        assert!(
+            why.starts_with(
+                "`set<uint8>[2]` is a map or a set, which has no wire form yet (docs/adr/0108, \
+                 D7)"
+            ),
+            "{why}"
+        );
+        assert_eq!(
+            GrammarError::NoWireForm {
+                place: "set<uint8>[2]".into()
+            }
+            .to_string(),
+            why
+        );
+    }
+
+    /// No slot holds a map or a set yet, at any depth (docs/adr/0108, D10):
+    /// each refusal names the type and the record that lands it.
+    #[test]
+    fn a_map_is_held_by_no_slot_yet_and_names_its_landing() {
+        for (text, place, constructor) in [
+            ("map<uint32, bool>[4]", "map<uint32, bool>[4]", "map"),
+            ("set<uint8>", "set<uint8>", "set"),
+            ("list<map<uint8, bool>[2]>[3]", "map<uint8, bool>[2]", "map"),
+            ("optional<set<uint8>[2]>", "set<uint8>[2]", "set"),
+        ] {
+            let written = WrittenType::read(text).unwrap();
+            let refused = Composition {
+                place: place.into(),
+                constructor: constructor.into(),
+            };
+            assert_eq!(written.slot_view(), Err(refused.clone()), "{text}");
+            assert_eq!(written.variable_view(true), Err(refused.clone()), "{text}");
+            assert_eq!(written.algorithm_view(), Err(refused.clone()), "{text}");
+            assert_eq!(WrittenType::from_attr(text), None, "{text}");
+            assert_eq!(WrittenType::algorithm_from_attr(text), None, "{text}");
+            assert_eq!(
+                written.keyed().map(ToString::to_string),
+                Some(place.to_string())
+            );
+            assert_eq!(refused.landing(), Some(MAP_LANDING));
+            let sentence = refused.sentence("<data id=\"faces\">", "a statechart's variable");
+            assert!(
+                sentence.ends_with("there yet (docs/adr/0108, D10)"),
+                "{sentence}"
+            );
+        }
+        // A composition of another constructor names no landing of its own.
+        let list = Composition::of(&ty("list<list<uint8>[2]>[2]"));
+        assert_eq!(list.landing(), None);
+        assert!(list.sentence("e", "p").ends_with("its list there yet"));
+        assert!(map_unlowered("set<uint8>[2]").contains("(docs/adr/0108, D10)"));
+        assert_eq!(ty("list<uint8>[2]").keyed(), None);
+    }
+
+    /// A map fits as a list does, its key and its value judged before its
+    /// bound, and a misfit names the key or the value by its path
+    /// (docs/adr/0108, D1).
+    #[test]
+    fn a_misfit_inside_a_map_names_its_key_or_its_value() {
+        let refused = |from: &str, to: &str| fits(&ty(from), &ty(to), &Documents).unwrap_err();
+        let at = refused("map<string[4], uint8>[2]", "map<string[2], uint8>[2]");
+        assert_eq!(
+            (at.path.as_str(), at.from.as_str(), at.why),
+            ("/*/key", "string[4]", MisfitReason::Bound)
+        );
+        let at = refused(
+            "map<uint8, list<record:Q>[2]>[2]",
+            "map<uint8, list<record:R>[2]>[2]",
+        );
+        assert_eq!(
+            (at.path.as_str(), at.why),
+            ("/*/value/*", MisfitReason::Identity)
+        );
+        let at = refused("set<uint8>[3]", "set<uint8>[2]");
+        assert_eq!((at.path.as_str(), at.why), ("", MisfitReason::Bound));
+        let at = refused("set<int8>[2]", "set<uint8>[2]");
+        assert_eq!(
+            (at.path.as_str(), at.why),
+            ("/*", MisfitReason::Constructor)
+        );
+        assert_eq!(
+            refused("set<uint8>[2]", "map<uint8, bool>[2]").why,
+            MisfitReason::Constructor
+        );
+        assert_eq!(
+            refused("list<uint8>[2]", "set<uint8>[2]").why,
+            MisfitReason::Constructor
+        );
+        assert_eq!(
+            fits(
+                &ty("map<record:R2, string[1]>[1]"),
+                &ty("optional<map<record:R, string[2]>[2]>"),
+                &Documents
+            ),
+            Ok(())
+        );
     }
 }

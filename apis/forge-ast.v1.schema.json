@@ -8617,6 +8617,44 @@
             "max"
           ],
           "type": "object"
+        },
+        {
+          "properties": {
+            "map": {
+              "$ref": "#/definitions/ValueType"
+            },
+            "max": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "value": {
+              "$ref": "#/definitions/ValueType"
+            }
+          },
+          "required": [
+            "map",
+            "value",
+            "max"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "max": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "set": {
+              "$ref": "#/definitions/ValueType"
+            }
+          },
+          "required": [
+            "set",
+            "max"
+          ],
+          "type": "object"
         }
       ],
       "description": "A type of the one type grammar (docs/adr/0086, section 1): a scalar's bare name, or an object keyed by its constructor, its bound beside it."
@@ -8871,6 +8909,42 @@
           },
           "required": [
             "list"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "map": {
+              "$ref": "#/definitions/WrittenType"
+            },
+            "max": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "value": {
+              "$ref": "#/definitions/WrittenType"
+            }
+          },
+          "required": [
+            "map",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "max": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "set": {
+              "$ref": "#/definitions/WrittenType"
+            }
+          },
+          "required": [
+            "set"
           ],
           "type": "object"
         }

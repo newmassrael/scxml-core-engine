@@ -1271,8 +1271,13 @@ mod tests {
                     .collect();
                 case_value(union, case, members)
             }
+            ValueType::Map { .. } | ValueType::Set { .. } => unreachable!("{NO_MAP_PAYLOAD}"),
         }
     }
+
+    /// Why the walks of a value below meet no map: a map has no wire form, so
+    /// no event schema's field holds one (docs/adr/0108, D7).
+    const NO_MAP_PAYLOAD: &str = "no fixture schema holds a map, which has no wire form";
 
     /// The value of `ty` that holds least: a list as many of its element's
     /// smallest as its lower count needs (docs/adr/0086, section 15).
@@ -1310,6 +1315,7 @@ mod tests {
                     .collect();
                 case_value(union, case, members)
             }
+            ValueType::Map { .. } | ValueType::Set { .. } => unreachable!("{NO_MAP_PAYLOAD}"),
         }
     }
 
@@ -1385,6 +1391,7 @@ mod tests {
                 }
                 out
             }
+            ValueType::Map { .. } | ValueType::Set { .. } => unreachable!("{NO_MAP_PAYLOAD}"),
         }
     }
 

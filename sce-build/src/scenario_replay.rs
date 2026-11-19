@@ -794,6 +794,11 @@ impl Holds {
                 },
                 None => Self::Record(BTreeMap::new()),
             },
+            // No statechart holds a map yet (docs/adr/0108, D10), and no
+            // payload holds one (D7): a document that declares one is refused
+            // by name before a scenario is replayed, and its replay reading
+            // lands with its lowering.
+            ValueType::Map { .. } | ValueType::Set { .. } => Self::Present,
         }
     }
 
@@ -859,6 +864,10 @@ impl Holds {
             // docs/adr/0092, section 6.1 item 7: read by its type, the tag
             // first and then the record of the case it names.
             Some(AlgorithmValueType::Union { alias }) => union(alias),
+            // No statechart holds a map yet (docs/adr/0108, D10): a document
+            // that declares one is refused by name before a scenario is
+            // replayed.
+            Some(AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. }) => Self::Present,
             Some(AlgorithmValueType::Optional { elem }) => {
                 Self::Optional(Box::new(match &**elem {
                     AlgorithmValueType::Union { alias } => union(alias),

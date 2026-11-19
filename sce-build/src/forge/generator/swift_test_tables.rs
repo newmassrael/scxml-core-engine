@@ -387,7 +387,9 @@ fn parameter_reader(ty: &ValueType) -> Option<String> {
         | TypeOf::Optional { .. }
         | TypeOf::Record { .. }
         | TypeOf::Union { .. }
-        | TypeOf::List { .. } => None,
+        | TypeOf::List { .. }
+        | TypeOf::Map { .. }
+        | TypeOf::Set { .. } => None,
     }
 }
 
@@ -428,7 +430,9 @@ fn saved_default(ty: &ValueType, value: &str) -> Option<String> {
         TypeOf::Optional { .. }
         | TypeOf::Record { .. }
         | TypeOf::Union { .. }
-        | TypeOf::List { .. } => return None,
+        | TypeOf::List { .. }
+        | TypeOf::Map { .. }
+        | TypeOf::Set { .. } => return None,
     };
     Some(format!("{SWIFT_RUNTIME_MODULE}.SavedValues.of({written})"))
 }

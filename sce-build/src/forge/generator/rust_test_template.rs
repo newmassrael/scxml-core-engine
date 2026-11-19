@@ -620,6 +620,8 @@ fn passed_by_value(ty: &ValueType) -> bool {
         TypeOf::Text { .. }
         | TypeOf::Bytes { .. }
         | TypeOf::List { .. }
+        | TypeOf::Map { .. }
+        | TypeOf::Set { .. }
         | TypeOf::Record { .. }
         | TypeOf::Union { .. } => false,
     }

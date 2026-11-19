@@ -1094,7 +1094,9 @@ fn plain(ty: &ValueType) -> bool {
         | ValueType::Bytes { .. }
         | ValueType::Record { .. }
         | ValueType::Union { .. }
-        | ValueType::List { .. } => false,
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => false,
     }
 }
 
@@ -1208,6 +1210,10 @@ pub fn machine_type(
         ValueType::Union { alias } => {
             spelling.union_type(&records.union(within, alias)?.union.name)
         }
+        // docs/adr/0108, D10: no machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -1281,6 +1287,10 @@ pub fn held_records(
                 reached.unions.push(held.key);
             }
         }
+        // docs/adr/0108, D10: no machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     }
     Ok(())
 }
@@ -1308,6 +1318,11 @@ pub fn union_reached(
             ValueType::Optional { elem } | ValueType::List { elem, .. } => {
                 walk(elem, within, records, seen)
             }
+            // The key first, then the value (docs/adr/0108, D1).
+            ValueType::Map { key, value, .. } => {
+                walk(key, within, records, seen).or_else(|| walk(value, within, records, seen))
+            }
+            ValueType::Set { key, .. } => walk(key, within, records, seen),
             ValueType::Record { alias } => {
                 let held = records.record(within, alias).ok()?;
                 // Each record is walked once, so the walk ends whatever names
@@ -1533,6 +1548,10 @@ pub fn reader(
             &reader(elem, within, records, enums, spelling, bound)?,
             &typed(elem)?,
         ),
+        // docs/adr/0108, D7: a map has no wire form, so no payload holds one.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
         ValueType::Record { alias } => {
             let held = records.record(within, alias)?;
             let fields = field_readers(held, records, enums, spelling)?;
@@ -1647,6 +1666,10 @@ pub fn writer(
         ValueType::List { elem, .. } => {
             spelling.write_list(held, &writer(elem, within, records, spelling, &bound)?)
         }
+        // docs/adr/0108, D7: a map has no wire form, so no payload holds one.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
         ValueType::Record { alias } => {
             let record = records.record(within, alias)?;
             spelling.write_record(&field_writers(record, records, spelling, held)?)
@@ -1717,6 +1740,10 @@ fn names_a_declared_type(ty: &ValueType) -> bool {
         | ValueType::Record { .. }
         | ValueType::Union { .. } => true,
         ValueType::Optional { elem } | ValueType::List { elem, .. } => names_a_declared_type(elem),
+        ValueType::Map { key, value, .. } => {
+            names_a_declared_type(key) || names_a_declared_type(value)
+        }
+        ValueType::Set { key, .. } => names_a_declared_type(key),
         ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => false,
     }
 }
@@ -1860,6 +1887,10 @@ fn part_from_unit(
             spelling
                 .unit_union(held, &union.union.name, &arms)
                 .ok_or_else(|| unmade(&format!("`union:{alias}`")))
+        }
+        // docs/adr/0108, D7: no unit holds a map, which has no wire form.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
         }
         // A number, a truth value, a text, a byte string, and a list or a
         // value that may be absent of them: one type in the unit and the

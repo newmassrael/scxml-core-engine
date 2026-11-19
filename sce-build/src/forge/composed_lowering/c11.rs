@@ -494,6 +494,10 @@ pub(crate) fn c11_path_len(
             }
             longest
         }
+        // docs/adr/0108, D7: no lift reads a map, which has no wire form.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -1741,6 +1745,10 @@ fn c11_saved_writer(
                 )?
             )
         }
+        // docs/adr/0108, D10: no C11 machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -1826,6 +1834,10 @@ fn c11_saved_reader(
                     depth + 2
                 )?
             )
+        }
+        // docs/adr/0108, D10: no C11 machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
         }
     })
 }

@@ -13,6 +13,10 @@
   on 2026-11-08, at the owner's order: who owns an event's data in a C11 machine and its runtime, the inputs of
   the slot section 8.1 did not list, and no buffer of an event's size on a stack (section 8.5, answer I).
 - Date: 2026-11-03; amended 2026-11-04, 2026-11-06 and 2026-11-08
+- Amended by: ADR 0108 D1 and D7 (2026-11-19): section 1's grammar gains `map<K, T>[B]` and `set<K>[B]`, whose
+  key is a fixed-width integer, `bool`, an enum, a bounded text or byte string, or a record whose every field is
+  a key (`validation/map-key-type`), whose bracket states no lower count, and which no event schema's field holds
+  (`validation/map-in-wire-position`).
 - Amends:
   - ADR 0087 section 1.1: the JSON Schema of a list that states a lower count carries `minItems`, and its GBNF
     grammar leaves the shorter lists out (section 15.9, 15.10); section 2.3: a fourteenth refusal code, `tooFew`

@@ -120,6 +120,10 @@ fn swift_saved_write(ty: &ValueType, value: &str, depth: usize) -> Result<String
             )
         }
         ValueType::Record { .. } | ValueType::Union { .. } => format!("{value}.toSaved()"),
+        // docs/adr/0108, D10: no Swift machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -207,6 +211,10 @@ impl SavedReader<'_, '_> {
                     "try {}.fromSaved({saved}, {what})",
                     self.spelling.union_type(&held.union.name)
                 )
+            }
+            // docs/adr/0108, D10: no Swift machine holds a map yet.
+            ValueType::Map { .. } | ValueType::Set { .. } => {
+                return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
             }
         })
     }
@@ -445,6 +453,10 @@ fn swift_bound_check(
                 arms.push("default: break".to_string());
             }
             Some(format!("switch {value} {{ {} }}", arms.join("; ")))
+        }
+        // docs/adr/0108, D7: no payload holds a map, which has no wire form.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
         }
     })
 }

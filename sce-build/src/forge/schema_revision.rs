@@ -175,11 +175,14 @@ pub fn composed_defaults_wire(
                 Err(_) => match &f.sce_type {
                     ValueType::List { .. } => "[]".to_string(),
                     ValueType::Optional { .. } => "null".to_string(),
+                    // No event schema's field holds a map (docs/adr/0108, D7).
                     ValueType::Scalar(_)
                     | ValueType::Text { .. }
                     | ValueType::Bytes { .. }
                     | ValueType::Record { .. }
-                    | ValueType::Union { .. } => return None,
+                    | ValueType::Union { .. }
+                    | ValueType::Map { .. }
+                    | ValueType::Set { .. } => return None,
                 },
             };
             Some(format!("{}:{default}", json_text(&f.id)))

@@ -136,6 +136,13 @@ pub fn union_reached(ty: &ValueType, scope: &TypeScope) -> Option<String> {
                 .iter()
                 .find_map(|(_, field)| union_reached(field, &record.scope))
         }
+        // A test's type holds no map, which has no wire form (docs/adr/0108,
+        // D7): one is refused where the type is read. The walk reads it as a
+        // type that holds what its key and its value hold.
+        TypeOf::Map { key, value, .. } => {
+            union_reached(key, scope).or_else(|| union_reached(value, scope))
+        }
+        TypeOf::Set { key, .. } => union_reached(key, scope),
         TypeOf::Scalar(_) | TypeOf::Text { .. } | TypeOf::Bytes { .. } => None,
     }
 }
@@ -177,6 +184,10 @@ pub fn fieldless_record_reached(ty: &ValueType, scope: &TypeScope) -> Option<Str
         TypeOf::Optional { elem } | TypeOf::List { elem, .. } => {
             fieldless_record_reached(elem, scope)
         }
+        TypeOf::Map { key, value, .. } => {
+            fieldless_record_reached(key, scope).or_else(|| fieldless_record_reached(value, scope))
+        }
+        TypeOf::Set { key, .. } => fieldless_record_reached(key, scope),
         TypeOf::Scalar(_) | TypeOf::Text { .. } | TypeOf::Bytes { .. } => None,
     }
 }
@@ -188,6 +199,8 @@ pub fn holds_float(ty: &ValueType) -> bool {
     match ty {
         TypeOf::Scalar(scalar) => scalar.is_float(),
         TypeOf::Optional { elem } | TypeOf::List { elem, .. } => holds_float(elem),
+        TypeOf::Map { key, value, .. } => holds_float(key) || holds_float(value),
+        TypeOf::Set { key, .. } => holds_float(key),
         TypeOf::Text { .. }
         | TypeOf::Bytes { .. }
         | TypeOf::Record { .. }
@@ -233,6 +246,12 @@ pub fn literal_of(ty: &ValueType, text: &str) -> Result<(), String> {
         }
         TypeOf::Record { .. } | TypeOf::Union { .. } | TypeOf::List { .. } => Err(format!(
             "a matcher for each part of a {}: no literal is written for one",
+            ty.constructor()
+        )),
+        // No test's type holds a map (docs/adr/0108, D7).
+        TypeOf::Map { .. } | TypeOf::Set { .. } => Err(format!(
+            "a type a literal is written for: a {} has no wire form and no literal \
+             (docs/adr/0108, D7)",
             ty.constructor()
         )),
     }
@@ -309,6 +328,8 @@ pub fn matcher_admitted(form: &TestMatcherForm, ty: &ValueType) -> Result<(), St
             TypeOf::Record { .. }
             | TypeOf::Union { .. }
             | TypeOf::List { .. }
+            | TypeOf::Map { .. }
+            | TypeOf::Set { .. }
             | TypeOf::Optional { .. } => false,
         },
         TestMatcherForm::RecordMatch { .. } => matches!(value, TypeOf::Record { .. }),

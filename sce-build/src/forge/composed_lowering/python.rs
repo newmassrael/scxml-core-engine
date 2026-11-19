@@ -164,6 +164,10 @@ fn python_saved_writer(
                 python_saved_writer(elem, within, names, spelling, depth + 1)?
             )
         }
+        // docs/adr/0108, D10: no Python machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -206,6 +210,10 @@ fn python_saved_reader(
             max.max,
             python_saved_reader(elem, within, names, spelling, depth + 1)?
         ),
+        // docs/adr/0108, D10: no Python machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -309,6 +317,11 @@ fn python_check_type(ty: &ValueType) -> Option<String> {
             python_check_type(elem).map(|inner| format!("{PYTHON_PAYLOAD}.OptionalOf({inner})"))
         }
         ValueType::Record { .. } | ValueType::Union { .. } => None,
+        // A record a payload holds has no map at any depth: an event schema's
+        // field that holds one is refused where the schema is read
+        // (`validation/map-in-wire-position`, docs/adr/0108, D7), so no check
+        // is written for one.
+        ValueType::Map { .. } | ValueType::Set { .. } => None,
     }
 }
 
@@ -622,6 +635,8 @@ impl ComposedSpelling for PythonComposed<'_> {
     fn unit_whole(&self, held: &Held, ty: &ValueType) -> Option<String> {
         Some(match ty {
             ValueType::List { .. } => format!("list({})", held.text),
+            // No unit holds a map, which has no wire form (docs/adr/0108, D7).
+            ValueType::Map { .. } | ValueType::Set { .. } => return None,
             _ => held.text.clone(),
         })
     }

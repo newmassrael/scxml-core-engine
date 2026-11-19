@@ -1025,6 +1025,9 @@ fn holds(ty: &AlgorithmValueType) -> bool {
         // A union is the plain object of its wire form (docs/adr/0092, section
         // 7, the Interpreter row), held whole.
         AlgorithmValueType::Union { .. } => true,
+        // No algorithm's slot holds a map yet (docs/adr/0108, D10): refused by
+        // the view above, and named here too.
+        AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => false,
         // A value that may be absent is `null` or its present value
         // (docs/adr/0055): a number, a `bool`, a text, a value of an enum (its
         // declared name) or a record (a plain object). A byte string is the array
@@ -1043,6 +1046,8 @@ fn holds_optional(elem: &AlgorithmValueType) -> bool {
         | AlgorithmValueType::Bytes { .. } => elem.scalar().is_some_and(has_a_value_form),
         AlgorithmValueType::Record { .. } => true,
         AlgorithmValueType::List { .. }
+        | AlgorithmValueType::Map { .. }
+        | AlgorithmValueType::Set { .. }
         | AlgorithmValueType::Optional { .. }
         | AlgorithmValueType::Union { .. } => false,
     }
@@ -1147,10 +1152,14 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, For
             .map_or(InferredType::Unknown, InferredType::from_sce_type),
         // A list and a union are returned by name, never judged as an operand
         // (SCE_FORGE.md §4.12; docs/adr/0092, "Decided while landing step 5"
-        // item 4).
-        Some(AlgorithmValueType::List { .. } | AlgorithmValueType::Union { .. }) => {
-            InferredType::Unknown
-        }
+        // item 4). A map is refused by the guard above, as no slot holds one
+        // yet (docs/adr/0108, D10).
+        Some(
+            AlgorithmValueType::List { .. }
+            | AlgorithmValueType::Union { .. }
+            | AlgorithmValueType::Map { .. }
+            | AlgorithmValueType::Set { .. },
+        ) => InferredType::Unknown,
         // An optional return takes `null`, a value of its element or an optional
         // value (docs/adr/0055).
         Some(AlgorithmValueType::Optional { elem }) => {

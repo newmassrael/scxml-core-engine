@@ -53,15 +53,23 @@ impl Place {
         }
     }
 
-    /// Whether the value is composed: a list, a record, a union, or an optional
-    /// value of one. Such a value is read through its fields, its elements and
-    /// its length, and is never an operand.
+    /// Whether the value is composed: a list, a map, a set, a record, a union,
+    /// or an optional value of one. Such a value is read through its fields,
+    /// its elements or entries and its length, and is never an operand.
     pub fn is_composed(&self) -> bool {
         match &self.ty {
-            ValueType::List { .. } | ValueType::Record { .. } | ValueType::Union { .. } => true,
+            ValueType::List { .. }
+            | ValueType::Map { .. }
+            | ValueType::Set { .. }
+            | ValueType::Record { .. }
+            | ValueType::Union { .. } => true,
             ValueType::Optional { elem } => matches!(
                 **elem,
-                ValueType::List { .. } | ValueType::Record { .. } | ValueType::Union { .. }
+                ValueType::List { .. }
+                    | ValueType::Map { .. }
+                    | ValueType::Set { .. }
+                    | ValueType::Record { .. }
+                    | ValueType::Union { .. }
             ),
             ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => false,
         }
@@ -480,7 +488,11 @@ pub fn resolve_narrowed<'r>(
 pub fn holds_composition(base: Option<&TypeScope>, at: &Place) -> bool {
     fn composed(ty: &ValueType) -> bool {
         match ty {
-            ValueType::List { .. } | ValueType::Record { .. } | ValueType::Union { .. } => true,
+            ValueType::List { .. }
+            | ValueType::Map { .. }
+            | ValueType::Set { .. }
+            | ValueType::Record { .. }
+            | ValueType::Union { .. } => true,
             ValueType::Optional { elem } => composed(elem),
             ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => false,
         }

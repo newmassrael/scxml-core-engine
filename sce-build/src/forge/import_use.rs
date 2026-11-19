@@ -153,6 +153,13 @@ impl Names {
             AlgorithmValueType::List { elem, .. } | AlgorithmValueType::Optional { elem } => {
                 self.value_ty(elem)
             }
+            // A map names what its key and its value name, a set what its key
+            // names (docs/adr/0108, D1).
+            AlgorithmValueType::Map { key, value, .. } => {
+                self.value_ty(key);
+                self.value_ty(value);
+            }
+            AlgorithmValueType::Set { key, .. } => self.value_ty(key),
         }
     }
 

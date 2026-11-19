@@ -162,6 +162,9 @@ fn cbor_codec(codec: &SizedCodec) -> Result<u64, Unbounded> {
             alias: cycle.first().cloned().unwrap_or_default(),
         }),
         SizeError::Overflow => None,
+        // A codec's entry holds no map, refused where the entry is read
+        // (docs/adr/0108, D7); one built here has no size, and says why.
+        why @ SizeError::NoWireForm { .. } => Some(Unbounded::NoWireForm(format!("{site}: {why}"))),
     };
     for entry in m.cbor_entries.iter().filter(|e| e.leaf_type().is_none()) {
         if let Err(why) = crate::forge::value_type::cbor_max_len(entry.present_type(), &codec.scope)

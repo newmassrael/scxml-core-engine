@@ -4256,7 +4256,9 @@ fn key_bytes(sce_type: &crate::forge::value_type::ValueType) -> Option<u32> {
         | TypeOf::Optional { .. }
         | TypeOf::Record { .. }
         | TypeOf::Union { .. }
-        | TypeOf::List { .. } => None,
+        | TypeOf::List { .. }
+        | TypeOf::Map { .. }
+        | TypeOf::Set { .. } => None,
     }
 }
 

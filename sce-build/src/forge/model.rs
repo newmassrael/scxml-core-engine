@@ -1350,6 +1350,11 @@ impl SchemaField {
             )),
             ValueType::Union { .. } => FieldStart::Unstarted("a union".to_string()),
             ValueType::Record { .. } => FieldStart::Unstarted("a record".to_string()),
+            // No event schema's field holds a map (docs/adr/0108, D7): one is
+            // refused where the schema is read, and has no start here.
+            ValueType::Map { .. } | ValueType::Set { .. } => {
+                FieldStart::Unstarted("a map or a set".to_string())
+            }
             // A scalar, a text and a byte string are one entry, taken above.
             ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
                 unreachable!("a field of a scalar, a text or a byte string is one entry")
@@ -3652,7 +3657,9 @@ impl CborEntry {
             | ValueType::Optional { .. }
             | ValueType::Record { .. }
             | ValueType::Union { .. }
-            | ValueType::List { .. } => None,
+            | ValueType::List { .. }
+            | ValueType::Map { .. }
+            | ValueType::Set { .. } => None,
         }
     }
 

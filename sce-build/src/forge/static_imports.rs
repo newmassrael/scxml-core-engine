@@ -565,11 +565,15 @@ fn value_signature(
     };
     let slot = |name: &str, ty: &AlgorithmValueType| -> Result<StaticSlot, String> {
         // A composition no call of a statechart hands over yet, refused by the
-        // part of the type it stops at (docs/adr/0086, section 7.3).
+        // part of the type it stops at (docs/adr/0086, section 7.3), a map and a
+        // set by the record that lands them (docs/adr/0108, D10).
         let composed = |part: &AlgorithmValueType| {
+            let basis = crate::forge::value_type::Composition::of(part)
+                .landing()
+                .unwrap_or("docs/adr/0086, section 7.3");
             format!(
                 "its {name} is of type {}, and a statechart does not hand an algorithm the {} \
-                 `{part}` yet (docs/adr/0086, section 7.3)",
+                 `{part}` yet ({basis})",
                 ty.as_attr(),
                 part.constructor()
             )
@@ -606,6 +610,7 @@ fn value_signature(
                 AlgorithmValueType::Record { alias } => Ok(StaticSlot::RecordList(record(alias)?)),
                 other => Err(composed(other)),
             },
+            AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => Err(composed(ty)),
             AlgorithmValueType::Optional { elem } => match &**elem {
                 // A value that may be absent, of a number, a `bool` or a text: the
                 // same type on both sides, handed over and taken back as it is

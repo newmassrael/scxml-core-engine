@@ -263,6 +263,11 @@ fn shape(ty: &BuildType, scope: &TypeScope) -> Shape {
         // The encoder maps a union once its deterministic CBOR lands
         // (docs/adr/0092, section 5.3); no type of this test holds one.
         BuildType::Union { .. } => panic!("the encoder holds no union yet"),
+        // A map has no wire form, and so no signed bytes (docs/adr/0108, D7);
+        // no type of this test holds one.
+        BuildType::Map { .. } | BuildType::Set { .. } => {
+            panic!("a map has no wire form, and the encoder holds none")
+        }
     }
 }
 

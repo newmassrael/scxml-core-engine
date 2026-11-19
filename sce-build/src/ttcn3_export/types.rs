@@ -295,6 +295,12 @@ pub(super) fn type_expr(
             "{ty} may be absent where TTCN-3 writes no `optional`: only a field of a \
              record may be absent"
         ))),
+        // A test's type holds no map, which has no wire form (docs/adr/0108,
+        // D7): refused where the type is read, and named here.
+        TypeOf::Map { .. } | TypeOf::Set { .. } => Err(site.refuse(format!(
+            "{ty} is a map or a set, which has no wire form and no type in the test profile \
+             (docs/adr/0108, D7)"
+        ))),
     }
 }
 

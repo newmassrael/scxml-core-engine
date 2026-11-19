@@ -368,6 +368,8 @@ fn read_value<'v>(ty: &ValueType, at: &Place<'v>, scope: &TypeScope) -> Result<(
         TypeOf::List { elem, max } => read_list(elem, max, at, scope),
         TypeOf::Record { alias } => read_record(alias, at, scope),
         TypeOf::Union { alias } => read_union(alias, at, scope),
+        // A map has no form in the test log (docs/adr/0108, D7).
+        TypeOf::Map { .. } | TypeOf::Set { .. } => Err(Unread::NoForm(formless(ty))),
     }
 }
 

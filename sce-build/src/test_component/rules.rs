@@ -1014,6 +1014,34 @@ fn same_type(a: &ValueType, a_scope: &ImportScope, b: &ValueType, b_scope: &Impo
         }
         (TypeOf::Record { alias: x }, TypeOf::Record { alias: y })
         | (TypeOf::Union { alias: x }, TypeOf::Union { alias: y }) => one_document(x, y),
+        // One shape with the same bound, its key and its value one type
+        // (docs/adr/0108, D1).
+        (
+            TypeOf::Map {
+                key: x_key,
+                value: x_value,
+                max: x_bound,
+            },
+            TypeOf::Map {
+                key: y_key,
+                value: y_value,
+                max: y_bound,
+            },
+        ) => {
+            x_bound.max == y_bound.max
+                && same_type(x_key, a_scope, y_key, b_scope)
+                && same_type(x_value, a_scope, y_value, b_scope)
+        }
+        (
+            TypeOf::Set {
+                key: x_key,
+                max: x_bound,
+            },
+            TypeOf::Set {
+                key: y_key,
+                max: y_bound,
+            },
+        ) => x_bound.max == y_bound.max && same_type(x_key, a_scope, y_key, b_scope),
         _ => false,
     }
 }

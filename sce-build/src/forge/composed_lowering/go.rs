@@ -257,6 +257,10 @@ fn go_saved_writer(
                 go_saved_writer(elem, within, names, spelling, depth + 1)?
             )
         }
+        // docs/adr/0108, D10: no Go machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -307,6 +311,10 @@ fn go_saved_reader(
             max.max,
             go_saved_reader(elem, within, names, spelling, depth + 1)?
         ),
+        // docs/adr/0108, D10: no Go machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -454,6 +462,10 @@ fn go_bound_check(
                     "func() error {{ switch {value}.{GO_UNION_KIND}() {{ {arms}}}; return nil }}()"
                 )
             })
+        }
+        // docs/adr/0108, D7: no payload holds a map, which has no wire form.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
         }
     })
 }
@@ -853,6 +865,8 @@ impl ComposedSpelling for GoComposed<'_> {
     fn unit_whole(&self, held: &Held, ty: &ValueType) -> Option<String> {
         Some(match ty {
             ValueType::List { .. } => self.copy_whole(held, false),
+            // No unit holds a map, which has no wire form (docs/adr/0108, D7).
+            ValueType::Map { .. } | ValueType::Set { .. } => return None,
             _ => held.text.clone(),
         })
     }

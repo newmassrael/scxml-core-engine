@@ -367,6 +367,10 @@ fn cpp_bound_check(
             }
             (!arms.is_empty()).then(|| format!("[&]() -> ::std::string {{ {arms}return {{}}; }}()"))
         }
+        // docs/adr/0108, D7: no payload holds a map, which has no wire form.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -1267,6 +1271,10 @@ fn cpp_saved_writer(
                 cpp_saved_writer(elem, within, names, spelling, depth + 1)?
             )
         }
+        // docs/adr/0108, D10: no C++ machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 
@@ -1313,6 +1321,10 @@ fn cpp_saved_reader(
             max.min,
             cpp_saved_reader(elem, within, names, spelling, depth + 1)?
         ),
+        // docs/adr/0108, D10: no C++ machine holds a map yet.
+        ValueType::Map { .. } | ValueType::Set { .. } => {
+            return Err(crate::forge::value_type::map_unlowered(&ty.to_string()))
+        }
     })
 }
 

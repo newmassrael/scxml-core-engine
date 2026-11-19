@@ -99,7 +99,14 @@ pub fn unlowered_part(e: &CborEntry) -> Option<&ValueType> {
         ValueType::Scalar(t) => t.is_unsigned() || matches!(t, SceType::Bool | SceType::Enum(_)),
         ValueType::Text { .. } | ValueType::Bytes { .. } => true,
         ValueType::List { elem, .. } => matches!(**elem, ValueType::Record { .. }),
-        ValueType::Optional { .. } | ValueType::Record { .. } | ValueType::Union { .. } => false,
+        // A map has no wire form, and a codec's entry holds none (docs/adr/0108,
+        // D7): refused where the entry is read, and named here as every other
+        // form the printers do not lower.
+        ValueType::Optional { .. }
+        | ValueType::Record { .. }
+        | ValueType::Union { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => false,
     };
     (!printed).then_some(present)
 }
@@ -293,7 +300,9 @@ pub(crate) fn record_field(ty: &ValueType) -> Option<(&'static str, Option<u32>)
         | ValueType::Optional { .. }
         | ValueType::Record { .. }
         | ValueType::Union { .. }
-        | ValueType::List { .. } => None,
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => None,
     }
 }
 
@@ -762,7 +771,9 @@ fn scalar_record_field_type(l: &LangCtx, ty: &ValueType) -> String {
         ValueType::Optional { .. }
         | ValueType::Record { .. }
         | ValueType::Union { .. }
-        | ValueType::List { .. } => String::new(),
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => String::new(),
     }
 }
 
@@ -1230,7 +1241,9 @@ fn rust_context(
         ValueType::Optional { .. }
         | ValueType::Record { .. }
         | ValueType::Union { .. }
-        | ValueType::List { .. } => String::new(),
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => String::new(),
     })?;
     // docs/adr/0065: whether the encode can refuse a value, which decides what
     // `encode` and `encode_to_vec` return.

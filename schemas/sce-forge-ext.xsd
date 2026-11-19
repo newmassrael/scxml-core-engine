@@ -154,7 +154,10 @@
          T ::= uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64
              | float32 | float64 | bool | enum:<alias> | string[B] | bytes[B]
              | optional<T> | record:<alias> | union:<alias> | list<T>[B]
-             | list<T>[M..B]
+             | list<T>[M..B] | map<K, T>[B] | set<K>[B]
+         K ::= uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64
+             | bool | enum:<alias> | string[B] | bytes[B]
+             | record:<alias>     (every field of the record is itself a K)
          B ::= <positive integer> | <limit name>=<positive integer>
          M ::= <whole number of zero or more, at most the number of B>
 
@@ -171,7 +174,9 @@
        that names the rule and the place in the type: a misspelled keyword, a
        bracket on a type with no length, an optional inside an optional, a
        text, byte string or list with no bound, an alias the document does not
-       import. Only a character outside the alphabet is the schema's to refuse.
+       import, a map's key that is no key (docs/adr/0108, D1). Only a
+       character outside the alphabet is the schema's to refuse; the `,` of
+       the alphabet separates a map's key from its value.
 
        What each position holds of the grammar is its reader's to say: a
        content-line codec's entry stays a scalar or an optional scalar
@@ -182,7 +187,7 @@
        (`generate/unsupported-feature`), never by this declaration. -->
   <xs:simpleType name="valueTypeExpression">
     <xs:restriction base="xs:string">
-      <xs:pattern value="\s*[A-Za-z_][A-Za-z0-9_:&lt;&gt;\[\]=.\-\s]*"/>
+      <xs:pattern value="\s*[A-Za-z_][A-Za-z0-9_:&lt;&gt;\[\]=.,\-\s]*"/>
     </xs:restriction>
   </xs:simpleType>
 

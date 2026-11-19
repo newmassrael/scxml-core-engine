@@ -4568,6 +4568,11 @@ fn render_event_schema(
                 ValueType::Text { .. } => ("UTF-8 bytes", "MAX_SIZE", "MaxSize"),
                 ValueType::Bytes { .. } => ("bytes", "MAX_SIZE", "MaxSize"),
                 ValueType::List { .. } => ("elements", "MAX_COUNT", "MaxCount"),
+                // A map's bound is its most entries (docs/adr/0108, D1); an
+                // event schema's field holds none (D7), refused where it is read.
+                ValueType::Map { .. } | ValueType::Set { .. } => {
+                    ("entries", "MAX_COUNT", "MaxCount")
+                }
                 ValueType::Scalar(_)
                 | ValueType::Optional { .. }
                 | ValueType::Record { .. }
@@ -40055,6 +40060,8 @@ fn c11_algorithm_optional(
         )),
         AlgorithmValueType::Bytes { .. }
         | AlgorithmValueType::List { .. }
+        | AlgorithmValueType::Map { .. }
+        | AlgorithmValueType::Set { .. }
         | AlgorithmValueType::Union { .. }
         | AlgorithmValueType::Optional { .. } => Err(refused("")),
         AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
