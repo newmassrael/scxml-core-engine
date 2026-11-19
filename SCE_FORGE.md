@@ -2439,7 +2439,7 @@ A parameter, a local and a return may be a `map<K, T>` or a `set<K>` of the one 
 - **A map return** declares `may-fail`, as a list a statechart takes does, and the variable it is assigned to holds its bound.
 - **A loop** walks the map itself where its body writes the map at no depth, and a copy of it as it was when the loop began only where the body writes it (D6 item 3).
 
-`sce-build/tests/fixtures/static_datamodel/algorithm_take_generation.scxml` keeps the latest generation of each peer in an `inout` map keyed by a record of two `uint64` halves and answers a union of `taken`, `duplicate` (the last generation) and `no_room`. No backend lowers an algorithm's map yet (`ALGORITHM_MAP_BACKENDS` in `sce-build/src/forge/codegen_matrix.rs` is empty, docs/adr/0108 "Order of work" step 7): each refuses such an algorithm by name (`generate/unsupported-feature`) where it renders it, after the body was judged as it is on every backend.
+`sce-build/tests/fixtures/static_datamodel/algorithm_take_generation.scxml` keeps the latest generation of each peer in an `inout` map keyed by a record of two `uint64` halves and answers a union of `taken`, `duplicate` (the last generation) and `no_room`. A backend lowers an algorithm's map in the step that lists it in `ALGORITHM_MAP_BACKENDS` (`sce-build/src/forge/codegen_matrix.rs`, docs/adr/0108 "Order of work" step 7); C11 is listed, and lends each map by the address of its caller's storage and holds none of its own (docs/SCE_ACCEPTED_SUBSET.md §2.15). Every other backend refuses such an algorithm by name (`generate/unsupported-feature`) where it renders it, after the body was judged as it is on every backend.
 
 ---
 
