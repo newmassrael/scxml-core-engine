@@ -24,7 +24,6 @@ sce-rust-trust = { path = "../trust" }
 sce-rust-relay = { path = "../relay" }
 openmls = "0.9.1"
 openmls_rust_crypto = "0.6.0"
-openmls_basic_credential = "0.6.0"
 openmls_traits = "0.6.0"
 sha2 = { version = "0.10", default-features = false }
 

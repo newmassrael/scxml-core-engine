@@ -18,10 +18,6 @@ description = "SCE W3C SCXML 1.0 conformance test harness (202 tests)"
 # tests that hold the rows a run takes to the machine's emitted transition table
 # (docs/adr/0089).
 sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer"] }
-# Engine DI Parity RFC (Path B+): test wrappers construct `LuaEngine` and
-# pass it to `Policy::new(engine)`, so the Lua crate is a hard dependency
-# rather than an optional feature.
-sce-rust-lua = { path = "../lua" }
 # A `datamodel="sce-static"` machine checks its integer operations with the
 # forge runtime's helpers, and the algorithms it calls answer through the
 # same crate's error type (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).
@@ -43,6 +39,11 @@ serde_json = "1"
 
 [dev-dependencies]
 env_logger = "0.11"
+# Engine DI Parity RFC (Path B+): the test wrappers under `tests/` construct
+# `LuaEngine` and pass it to `Policy::new(engine)`, so the Lua crate is a
+# dependency of theirs rather than an optional feature; nothing the library
+# or a bin compiles names it.
+sce-rust-lua = { path = "../lua" }
 # The Mesh host core, for the tests that run a generated machine's
 # `<invoke type="sce:mesh-rpc">` through the router a host actually
 # registers rather than a stand-in (SCE_MESH.md §mesh-9.5, §mesh-19).

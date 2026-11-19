@@ -2944,23 +2944,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "openmls_basic_credential"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbd3f0c3422e7c7a8496f042b547b0c28d0793f8ba97feb401966e58196a1e40"
-dependencies = [
- "ed25519-dalek",
- "ml-dsa",
- "openmls_traits",
- "p256",
- "p384",
- "rand_core 0.6.4",
- "serde",
- "tls_codec",
- "zeroize",
-]
-
-[[package]]
 name = "openmls_memory_storage"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4102,7 +4085,6 @@ name = "sce-rust-mls"
 version = "0.1.0"
 dependencies = [
  "openmls",
- "openmls_basic_credential",
  "openmls_rust_crypto",
  "openmls_traits",
  "sce-rust-mesh",

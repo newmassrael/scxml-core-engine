@@ -36,7 +36,6 @@ default = ["gated-arm"]
 cbor-pin = ["alloc"]
 
 [dependencies]
-sce-forge-runtime = { path = "../forge-runtime", default-features = false }
 # A generated `bytes`-returning algorithm imports `SceBytes` from the shared
 # leaf crate by its own name, so the crate compiling it must name it too.
 sce-portable-bytes = { path = "../portable-bytes", default-features = false }
@@ -47,6 +46,9 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 sce-build = { path = "../../../sce-build" }
 
 [dev-dependencies]
+# The runtime every generated fixture and every test here is compiled
+# against; the library holds nothing that names it.
+sce-forge-runtime = { path = "../forge-runtime", default-features = false }
 # The queue history checker (`sce_build::queue_history`), which the queue arm's
 # tests judge their recorded runs with.
 sce-build = { path = "../../../sce-build" }
