@@ -227,20 +227,32 @@ pub(crate) fn imports_one_that_takes_map_seed(model: &SCXMLModel, base_dir: &Pat
             .forge_imports
             .iter()
             .filter(|import| import.kind == ForgeKind::Algorithm)
-            .any(|import| {
-                let Ok(source) = crate::forge::import_source::ImportSource::read(base_dir, import)
-                else {
-                    return false;
-                };
-                let Ok(Some(parsed)) = source.parse() else {
-                    return false;
-                };
-                takes_map_seed(
-                    &parsed.document,
-                    &parsed.imports,
-                    source.path.parent().unwrap_or(base_dir),
-                )
-            })
+            .any(|import| imported_takes_map_seed(import, base_dir, &mut Vec::new()))
+}
+
+/// Whether the algorithm `import` names, read relative to `base_dir`, takes
+/// its caller's map seed ([`takes_map_seed`]), read from where it is; `false`
+/// for one the walk is already inside (`within`) and for one that cannot be
+/// read, which the resolution of its import refuses.
+fn imported_takes_map_seed(
+    import: &ForgeImport,
+    base_dir: &Path,
+    within: &mut Vec<std::path::PathBuf>,
+) -> bool {
+    let Ok(source) = crate::forge::import_source::ImportSource::read(base_dir, import) else {
+        return false;
+    };
+    if within.contains(&source.path) {
+        return false;
+    }
+    let Ok(Some(parsed)) = source.parse() else {
+        return false;
+    };
+    let callee_base = source.path.parent().unwrap_or(base_dir);
+    within.push(source.path.clone());
+    let takes = takes_map_seed_within(&parsed.document, &parsed.imports, callee_base, within);
+    within.pop();
+    takes
 }
 
 /// [`takes_map_seed`], with `within` the documents the walk is inside.
@@ -275,24 +287,7 @@ fn calls_one_that_takes_map_seed_within(
     imports
         .iter()
         .filter(|import| import.kind == ForgeKind::Algorithm && named.contains(&import.alias))
-        .any(|import| {
-            let Ok(source) = crate::forge::import_source::ImportSource::read(base_dir, import)
-            else {
-                return false;
-            };
-            if within.contains(&source.path) {
-                return false;
-            }
-            let Ok(Some(parsed)) = source.parse() else {
-                return false;
-            };
-            let callee_base = source.path.parent().unwrap_or(base_dir);
-            within.push(source.path.clone());
-            let takes =
-                takes_map_seed_within(&parsed.document, &parsed.imports, callee_base, within);
-            within.pop();
-            takes
-        })
+        .any(|import| imported_takes_map_seed(import, base_dir, within))
 }
 
 /// What of the algorithm `document` (whose own imports are `imports`, written relative
