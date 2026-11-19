@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use sce_rust_mesh::https::adapter::{AdapterSettings, HyperTransport, ProxyPolicy};
 use sce_rust_mesh::https::rate::Cidr;
-use sce_rust_mesh::https::server::{Authenticator, HttpsServer, MemoryPins, ServerSettings};
+use sce_rust_mesh::https::server::{Authenticator, HttpsServer, MemoryCredentials, ServerSettings};
 use sce_rust_mesh::https::{
     draw_install_secret, Credential, HttpsRequest, HttpsResponse, HttpsTransport, ACK_HEADER,
     CONTENT_TYPE, HOLD_HEADER,
@@ -75,7 +75,7 @@ impl Edge {
                 trusted_proxies: vec![Cidr::parse("127.0.0.1/32").expect("a block")],
                 ..ServerSettings::default()
             },
-            Authenticator::Install(std::sync::Arc::new(MemoryPins::default())),
+            Authenticator::Install(std::sync::Arc::new(MemoryCredentials::new())),
             |_: &str| true,
             |_: Vec<LinkEvent>| {},
         )
