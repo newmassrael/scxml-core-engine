@@ -653,8 +653,8 @@ impl ComposedSpelling for SwiftComposed<'_> {
         )
     }
 
-    fn write_binding(&self) -> &'static str {
-        SWIFT_ELEMENT_BINDING
+    fn write_binding(&self, _depth: usize) -> String {
+        SWIFT_ELEMENT_BINDING.to_string()
     }
     // The JSON a scalar param of the same type crosses as (`WireValue.json`): a
     // narrow integer as a number and a real as a double, both exactly, and a

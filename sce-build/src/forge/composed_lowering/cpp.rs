@@ -575,8 +575,8 @@ impl ComposedSpelling for CppComposed<'_> {
         )
     }
 
-    fn write_binding(&self) -> &'static str {
-        CPP_ELEMENT_BINDING
+    fn write_binding(&self, _depth: usize) -> String {
+        CPP_ELEMENT_BINDING.to_string()
     }
     fn write_scalar(&self, ty: &SceType, held: &Held) -> String {
         let value = &held.text;

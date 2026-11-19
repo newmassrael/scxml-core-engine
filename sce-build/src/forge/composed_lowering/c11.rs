@@ -35,13 +35,16 @@
 //! **Writers.** A writer is the statements that write a value bare where the
 //! wire writer `sce_wire` (a `sce_forge_wire_t *`, `sce/forge/wire.h`)
 //! stands, part by part: a scalar is a value, a list and a record a container
-//! of parts. An element and a present value are bound to `sce_item`, a
-//! pointer to it, in a block of their own, through a pointer named apart
-//! first so the binding never reads itself. A host builds a payload by hand,
-//! so each writer holds the value to its type as it writes it: a list past
-//! the room of its type, a text with no end in its buffer, a byte string past
-//! its buffer and an enum value no variant names each refuse the object
-//! whole (section 5.4, `sce_forge_wire_refuse`).
+//! of parts. An element and a present value are bound to `sce_item_<depth>`,
+//! a pointer to it, in a block of their own. Every local a writer declares
+//! around the writer of a part is numbered by the depth of the bindings it
+//! stands inside (`write_local`), so a binding never reads itself, and a part
+//! nested in another, whose block stands inside the outer one's, shadows none
+//! of the outer one's locals (`-Wshadow`). A host builds a
+//! payload by hand, so each writer holds the value to its type as it writes
+//! it: a list past the room of its type, a text with no end in its buffer, a
+//! byte string past its buffer and an enum value no variant names each refuse
+//! the object whole (section 5.4, `sce_forge_wire_refuse`).
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -79,8 +82,29 @@ pub(crate) const C11_UNION_CASES: &str = "as";
 /// The wire writer a C11 writer writes through, a `sce_forge_wire_t *`.
 pub(crate) const C11_WIRE: &str = "sce_wire";
 
-/// The name a C11 writer binds a pointer to an element or a present value to.
+/// The name a C11 writer binds a pointer to an element, a present value or the
+/// record of a union's case to, numbered by the depth it is bound at
+/// (`write_local`), so the binding never reads itself: the value it points into
+/// is read through the binding one depth out.
 const C11_WRITE_BINDING: &str = "sce_item";
+
+/// The index a C11 writer walks the elements of a list by.
+const C11_WRITE_INDEX: &str = "sce_i";
+
+/// The pointer to a union a C11 writer writes, and the declared name of the
+/// case the union is in.
+const C11_WRITE_UNION: &str = "sce_union";
+const C11_WRITE_VARIANT: &str = "sce_variant";
+
+/// The local `name` a C11 writer declares around the writer of a part of a
+/// value spelled inside `depth` bindings ([`Held::depth`]), numbered by that
+/// depth. The writer of a part stands in a block inside the block of the
+/// writer of the value that holds it, so locals of one name at two depths
+/// would shadow one another (`-Wshadow`); writers of parts side by side stand
+/// in blocks of their own, and share their names.
+fn write_local(name: &str, depth: usize) -> String {
+    format!("{name}_{depth}")
+}
 
 /// The name a C11 copy binds a pointer to an element or a present value to.
 const C11_COPY_BINDING: &str = "sce_copied";
@@ -865,8 +889,11 @@ impl ComposedSpelling for C11Composed<'_> {
         })
     }
 
-    fn write_binding(&self) -> &'static str {
-        C11_WRITE_BINDING
+    // A local of the block the element or the present value is written in,
+    // which stands inside the block of every binding the value is written
+    // inside: one name per depth.
+    fn write_binding(&self, depth: usize) -> String {
+        write_local(C11_WRITE_BINDING, depth)
     }
     // As a scalar param crosses (`StaticTarget::wire_value`): an integer of at
     // most 32 bits widened to 64 and a `float32` to `float64`, both exactly, and
@@ -939,10 +966,11 @@ impl ComposedSpelling for C11Composed<'_> {
     // `null` where it is absent, and its present value where it is present.
     fn write_optional(&self, held: &Held, elem: &str) -> String {
         let value = value_of(held);
+        let item = self.write_binding(held.depth);
         format!(
             "if ({value}.present) {{\n    \
-             __typeof__({value}.value) const *const sce_next = &{value}.value;\n    {{\n        \
-             __typeof__(sce_next) {C11_WRITE_BINDING} = sce_next;\n{elem}    }}\n}} else {{\n    {}}}\n",
+             __typeof__({value}.value) const *const {item} = &{value}.value;\n\
+             {elem}}} else {{\n    {}}}\n",
             Self::put("sce_forge_wire_null()")
         )
     }
@@ -950,14 +978,15 @@ impl ComposedSpelling for C11Composed<'_> {
     // of the list's type.
     fn write_list(&self, held: &Held, elem: &str) -> String {
         let value = value_of(held);
+        let index = write_local(C11_WRITE_INDEX, held.depth);
+        let item = self.write_binding(held.depth);
         format!(
             "if ({value}.len > sizeof({value}.data) / sizeof({value}.data[0])) {{\n    \
              sce_forge_wire_refuse({C11_WIRE});\n}} else {{\n    \
              sce_forge_wire_open_container({C11_WIRE}, '[');\n    \
-             for (size_t sce_i = 0u; sce_i < {value}.len; ++sce_i) {{\n        \
-             __typeof__({value}.data[0]) const *const sce_next = &{value}.data[sce_i];\n        \
-             sce_forge_wire_next_in_container({C11_WIRE});\n        {{\n            \
-             __typeof__(sce_next) {C11_WRITE_BINDING} = sce_next;\n{elem}        }}\n    }}\n    \
+             for (size_t {index} = 0u; {index} < {value}.len; ++{index}) {{\n        \
+             __typeof__({value}.data[0]) const *const {item} = &{value}.data[{index}];\n        \
+             sce_forge_wire_next_in_container({C11_WIRE});\n{elem}    }}\n    \
              sce_forge_wire_close({C11_WIRE});\n}}\n"
         )
     }
@@ -1608,7 +1637,10 @@ impl ComposedSpelling for C11Composed<'_> {
     // hand might, refuses the object whole (section 5.4).
     fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
         let value = value_of(held);
-        let tag_written = Self::put("sce_forge_wire_string(sce_variant)");
+        let union = write_local(C11_WRITE_UNION, held.depth);
+        let named = write_local(C11_WRITE_VARIANT, held.depth);
+        let item = self.write_binding(held.depth);
+        let tag_written = Self::put(&format!("sce_forge_wire_string({named})"));
         let arms: String = arms
             .iter()
             .map(|arm| {
@@ -1618,22 +1650,21 @@ impl ComposedSpelling for C11Composed<'_> {
                 let written = self.write_record(&members);
                 match &arm.fields {
                     Some(_) => format!(
-                        " else if (strcmp(sce_variant, \"{variant}\") == 0) {{\n    \
-                         __typeof__(sce_union->{C11_UNION_CASES}.{case}) const *const sce_next = \
-                         &sce_union->{C11_UNION_CASES}.{case};\n    {{\n        \
-                         __typeof__(sce_next) {C11_WRITE_BINDING} = sce_next;\n{written}    }}\n}}",
+                        " else if (strcmp({named}, \"{variant}\") == 0) {{\n    \
+                         __typeof__({union}->{C11_UNION_CASES}.{case}) const *const {item} = \
+                         &{union}->{C11_UNION_CASES}.{case};\n{written}}}",
                         case = arm.case_ident
                     ),
-                    None => format!(
-                        " else if (strcmp(sce_variant, \"{variant}\") == 0) {{\n{written}}}"
-                    ),
+                    None => {
+                        format!(" else if (strcmp({named}, \"{variant}\") == 0) {{\n{written}}}")
+                    }
                 }
             })
             .collect();
         format!(
-            "{{\n    __typeof__({value}) const *const sce_union = &{value};\n    \
-             const char *const sce_variant = {}_variant(sce_union);\n    \
-             if (sce_variant == NULL) {{\n        sce_forge_wire_refuse({C11_WIRE});\n    }}\
+            "{{\n    __typeof__({value}) const *const {union} = &{value};\n    \
+             const char *const {named} = {}_variant({union});\n    \
+             if ({named} == NULL) {{\n        sce_forge_wire_refuse({C11_WIRE});\n    }}\
              {arms} else {{\n        sce_forge_wire_refuse({C11_WIRE});\n    }}\n}}\n",
             stem(ty)
         )
@@ -2144,7 +2175,7 @@ mod tests {
                  sce_forge_wire_refuse(sce_wire);\n}"
             ) && list.contains("sce_forge_wire_open_container(sce_wire, '[');")
                 && list.contains(
-                    "sce_forge_wire_put_value(sce_wire, sce_forge_wire_uint((uint64_t)(*sce_item)));"
+                    "sce_forge_wire_put_value(sce_wire, sce_forge_wire_uint((uint64_t)(*sce_item_0)));"
                 )
                 && list.contains("sce_forge_wire_close(sce_wire);"),
             "{list}"
@@ -2468,13 +2499,13 @@ mod tests {
         )
         .expect("a writer");
         for fragment in [
-            "__typeof__((p)) const *const sce_union = &(p);",
-            "const char *const sce_variant = m_union_shape_variant(sce_union);",
-            "if (sce_variant == NULL) {\n        sce_forge_wire_refuse(sce_wire);\n    }",
-            " else if (strcmp(sce_variant, \"disc\") == 0) {\n    __typeof__(sce_union->as.disc) \
-             const *const sce_next = &sce_union->as.disc;",
-            "sce_forge_wire_put_value(sce_wire, sce_forge_wire_string(sce_variant));",
-            "sce_forge_wire_uint((uint64_t)((*sce_item).radius))",
+            "__typeof__((p)) const *const sce_union_0 = &(p);",
+            "const char *const sce_variant_0 = m_union_shape_variant(sce_union_0);",
+            "if (sce_variant_0 == NULL) {\n        sce_forge_wire_refuse(sce_wire);\n    }",
+            " else if (strcmp(sce_variant_0, \"disc\") == 0) {\n    \
+             __typeof__(sce_union_0->as.disc) const *const sce_item_0 = &sce_union_0->as.disc;",
+            "sce_forge_wire_put_value(sce_wire, sce_forge_wire_string(sce_variant_0));",
+            "sce_forge_wire_uint((uint64_t)((*sce_item_0).radius))",
         ] {
             assert!(
                 written.contains(fragment),
@@ -2490,6 +2521,88 @@ mod tests {
             .find("\"\\\"radius\\\":\"")
             .expect("the radius key");
         assert!(kind < radius, "{written}");
+    }
+
+    /// The locals a writer declares around the writer of a part are numbered by
+    /// the depth of the bindings the part stands inside, so the writer of a
+    /// part nested in another, whose block stands inside the outer one's,
+    /// declares none of the outer one's names (`-Wshadow`, which the C11
+    /// received-parts component compiles under): a list of lists, a list of
+    /// values that may be absent, a value that may be absent of a list, and a
+    /// union in a list.
+    #[test]
+    fn a_c11_writer_numbers_its_locals_by_the_depth_of_the_part() {
+        let held = held();
+        let shapes = shapes();
+        let spelling = c11();
+        let write = |text: &str, records: &dyn RecordEnv| {
+            writer(&ty(text), None, records, &spelling, &Held::place("p")).expect("a writer")
+        };
+        // Each name a declaration in `written` introduces, in its order.
+        let declared = |written: &str| -> Vec<String> {
+            written
+                .split(['=', ';'])
+                .filter_map(|part| {
+                    let head = part.trim_end();
+                    let name = head.rsplit([' ', '*', '(']).next()?;
+                    (head.contains("const *const ") || head.contains("size_t "))
+                        .then(|| name.to_string())
+                })
+                .collect()
+        };
+        let grid = write("list<list<uint8>[2]>[2]", &held);
+        for fragment in [
+            "for (size_t sce_i_0 = 0u; sce_i_0 < (p).len; ++sce_i_0) {",
+            "__typeof__((p).data[0]) const *const sce_item_0 = &(p).data[sce_i_0];",
+            "for (size_t sce_i_1 = 0u; sce_i_1 < (*sce_item_0).len; ++sce_i_1) {",
+            "__typeof__((*sce_item_0).data[0]) const *const sce_item_1 = \
+             &(*sce_item_0).data[sce_i_1];",
+            "sce_forge_wire_uint((uint64_t)(*sce_item_1))",
+        ] {
+            assert!(grid.contains(fragment), "`{fragment}` in:\n{grid}");
+        }
+        assert_eq!(
+            declared(&grid),
+            ["sce_i_0", "sce_item_0", "sce_i_1", "sce_item_1"],
+            "{grid}"
+        );
+        let slots = write("list<optional<uint16>>[2]", &held);
+        assert!(
+            slots.contains(
+                "if ((*sce_item_0).present) {\n    __typeof__((*sce_item_0).value) const *const \
+                 sce_item_1 = &(*sce_item_0).value;\n"
+            ),
+            "{slots}"
+        );
+        assert_eq!(
+            declared(&slots),
+            ["sce_i_0", "sce_item_0", "sce_item_1"],
+            "{slots}"
+        );
+        let spare = write("optional<list<uint8>[2]>", &held);
+        assert!(
+            spare.contains(
+                "__typeof__((p).value) const *const sce_item_0 = &(p).value;\n\
+                 if ((*sce_item_0).len > "
+            ) && spare
+                .contains("for (size_t sce_i_1 = 0u; sce_i_1 < (*sce_item_0).len; ++sce_i_1)"),
+            "{spare}"
+        );
+        assert_eq!(
+            declared(&spare),
+            ["sce_item_0", "sce_i_1", "sce_item_1"],
+            "{spare}"
+        );
+        let union = write("list<union:Shape>[2]", &shapes);
+        for fragment in [
+            "__typeof__((*sce_item_0)) const *const sce_union_1 = &(*sce_item_0);",
+            "const char *const sce_variant_1 = m_union_shape_variant(sce_union_1);",
+            "__typeof__(sce_union_1->as.disc) const *const sce_item_1 = &sce_union_1->as.disc;",
+            "sce_forge_wire_uint((uint64_t)((*sce_item_1).radius))",
+            "sce_forge_wire_string(sce_variant_1)",
+        ] {
+            assert!(union.contains(fragment), "`{fragment}` in:\n{union}");
+        }
     }
 
     /// The saved form (docs/adr/0092, section 6.1 item 7): one object, the tag

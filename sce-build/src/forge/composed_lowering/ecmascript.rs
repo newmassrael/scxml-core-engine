@@ -192,8 +192,8 @@ impl ComposedSpelling for JsComposed {
         format!("{{record: {{{}}}{defaults}}}", members.join(", "))
     }
 
-    fn write_binding(&self) -> &'static str {
-        JS_ELEMENT_BINDING
+    fn write_binding(&self, _depth: usize) -> String {
+        JS_ELEMENT_BINDING.to_string()
     }
     // As a scalar param crosses (`JsTarget::wire_value`): a 64-bit integer as
     // the text of its digits, every other number and a truth value as held.

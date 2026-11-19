@@ -611,8 +611,8 @@ impl ComposedSpelling for KotlinComposed<'_> {
         )
     }
 
-    fn write_binding(&self) -> &'static str {
-        "it"
+    fn write_binding(&self, _depth: usize) -> String {
+        "it".to_string()
     }
     fn write_scalar(&self, ty: &SceType, held: &Held) -> String {
         match self.carrier {

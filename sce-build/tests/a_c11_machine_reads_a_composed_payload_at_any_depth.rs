@@ -266,8 +266,8 @@ fn the_inject_seam_writes_each_part_held_to_its_type() {
              sce_forge_wire_begin(sce_wire, out, cap);\n",
             "if (((*payload).late).len > sizeof(((*payload).late).data) / \
              sizeof(((*payload).late).data[0])) {\n    sce_forge_wire_refuse(sce_wire);\n}",
-            "if (memchr(((*sce_item).label).data, '\\0', sizeof(((*sce_item).label).data)) == NULL)",
-            "const char *const sce_name = enum_signal_level_declared_name((*sce_item));",
+            "if (memchr(((*sce_item_0).label).data, '\\0', sizeof(((*sce_item_0).label).data)) == NULL)",
+            "const char *const sce_name = enum_signal_level_declared_name((*sce_item_0));",
             "    if (!sce_forge_wire_end(sce_wire)) {\n        return false;\n    }\n",
         ],
     );
@@ -356,7 +356,7 @@ fn a_send_writes_each_composed_field_where_its_pair_stands() {
              sizeof((sm->pending_payload.as.batch_sent.items).data[0])) {",
             "sce_forge_wire_pair_key(sce_wire, \"\\\"late\\\"\");\nif ((sm->policy.v_late).len > ",
             "if ((sm->pending_payload.as.batch_sent.spare).present) {",
-            "const char *const sce_name = enum_signal_level_declared_name((*sce_item));",
+            "const char *const sce_name = enum_signal_level_declared_name((*sce_item_0));",
         ],
     );
     // A send to the machine itself hands no host its pairs.

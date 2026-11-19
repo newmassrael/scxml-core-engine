@@ -476,8 +476,8 @@ impl ComposedSpelling for PythonComposed<'_> {
         )
     }
 
-    fn write_binding(&self) -> &'static str {
-        "sce_element"
+    fn write_binding(&self, _depth: usize) -> String {
+        "sce_element".to_string()
     }
     fn write_scalar(&self, ty: &SceType, held: &Held) -> String {
         let wide = matches!(ty, SceType::Uint64 | SceType::Int64);
@@ -962,7 +962,7 @@ impl ComposedSpelling for PythonComposed<'_> {
                 let body = match &arm.fields {
                     Some(_) => format!(
                         "(lambda {}: {written})(sce_union.{PYTHON_CASE_VALUE})",
-                        self.write_binding()
+                        self.write_binding(held.depth)
                     ),
                     None => written,
                 };

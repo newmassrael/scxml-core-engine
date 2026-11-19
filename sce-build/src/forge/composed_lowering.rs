@@ -308,6 +308,11 @@ pub fn within_of(chain: &[String], records: &dyn RecordEnv) -> Result<Option<Str
 pub struct Held {
     pub text: String,
     pub by_reference: bool,
+    /// How many bindings of an element or a present value the writer walk
+    /// spells the value inside ([`writer`]): the depth an element or a present
+    /// value of it is bound at ([`ComposedSpelling::write_binding`]). A value
+    /// the walk is handed stands inside none.
+    pub depth: usize,
 }
 
 impl Held {
@@ -316,6 +321,7 @@ impl Held {
         Self {
             text: text.into(),
             by_reference: false,
+            depth: 0,
         }
     }
 
@@ -324,6 +330,27 @@ impl Held {
         Self {
             text: text.into(),
             by_reference: true,
+            depth: 0,
+        }
+    }
+
+    /// The part of this value at the place `text` (a field of a record),
+    /// spelled inside the bindings this value is.
+    pub fn part(&self, text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            by_reference: false,
+            depth: self.depth,
+        }
+    }
+
+    /// The reference `binding` an element or a present value of this value is
+    /// bound to, spelled inside one binding more than this value is.
+    pub fn bound_to(&self, binding: impl Into<String>) -> Self {
+        Self {
+            text: binding.into(),
+            by_reference: true,
+            depth: self.depth + 1,
         }
     }
 
@@ -412,8 +439,13 @@ pub trait ComposedSpelling {
         fields: &[(String, String)],
     ) -> String;
 
-    /// The name a writer binds a reference to an element or a present value to.
-    fn write_binding(&self) -> &'static str;
+    /// The name a writer binds a reference to an element or a present value to,
+    /// of a value spelled inside `depth` such bindings ([`Held::depth`]). A
+    /// spelling whose binding is the parameter of a closure names it alike at
+    /// every depth, an inner one standing for the outer as the language lets
+    /// it; one whose binding is a local of a nested block (C11) names each
+    /// depth apart, so no local shadows another (`-Wshadow`).
+    fn write_binding(&self, depth: usize) -> String;
     /// The JSON of the scalar `ty` (no enum).
     fn write_scalar(&self, ty: &SceType, held: &Held) -> String;
     /// The JSON of a value of an enum: the declared name of its variant.
@@ -431,10 +463,10 @@ pub trait ComposedSpelling {
     /// The JSON of a byte string.
     fn write_bytes(&self, held: &Held) -> String;
     /// The JSON of a value that may be absent, `elem` the writer of its present
-    /// value, a reference bound to [`Self::write_binding`].
+    /// value, a reference bound to [`Self::write_binding`] at `held`'s depth.
     fn write_optional(&self, held: &Held, elem: &str) -> String;
     /// The JSON of a list, `elem` the writer of an element, a reference bound to
-    /// [`Self::write_binding`].
+    /// [`Self::write_binding`] at `held`'s depth.
     fn write_list(&self, held: &Held, elem: &str) -> String;
     /// The place of the field `field` of the record `held`.
     fn write_field(&self, held: &Held, field: &str) -> String;
@@ -744,7 +776,8 @@ pub trait ComposedSpelling {
     fn read_union(&self, value: &str, read: &UnionRead<'_>) -> String;
     /// The JSON of a value of a union held in `ty`: its tag under the key
     /// `tag` beside the fields of its case, by the arm of the case it is in,
-    /// the case's record a reference bound to [`Self::write_binding`].
+    /// the case's record a reference bound to [`Self::write_binding`] at
+    /// `held`'s depth.
     fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String;
     /// What follows a value of `union` to read its member `member` where it
     /// may be in the cases `left` (docs/adr/0092, section 6.1): its tag, or a
@@ -1644,7 +1677,10 @@ pub fn field_readers(
 }
 
 /// The JSON a value of `ty` held at `held` is spelled as, written in the scope
-/// `within` names: one call of the runtime's writers per constructor.
+/// `within` names: one call of the runtime's writers per constructor. An
+/// element or a present value of it, and the record of its case, are bound one
+/// binding deeper than `held` ([`Held::bound_to`]), and a field is spelled
+/// inside the bindings its record is ([`Held::part`]).
 pub fn writer(
     ty: &ValueType,
     within: Option<&str>,
@@ -1652,7 +1688,7 @@ pub fn writer(
     spelling: &dyn ComposedSpelling,
     held: &Held,
 ) -> Result<String, String> {
-    let bound = Held::reference(spelling.write_binding());
+    let bound = held.bound_to(spelling.write_binding(held.depth));
     Ok(match ty {
         ValueType::Scalar(SceType::Enum(reference)) => {
             spelling.write_enum_of(&reference.alias, held)
@@ -1716,7 +1752,7 @@ pub fn field_writers(
         .fields
         .iter()
         .map(|field| {
-            let place = Held::place(spelling.write_field(held, &field.id));
+            let place = held.part(spelling.write_field(held, &field.id));
             Ok((
                 field.id.clone(),
                 writer(

@@ -518,8 +518,8 @@ impl ComposedSpelling for RustComposed<'_> {
         )
     }
 
-    fn write_binding(&self) -> &'static str {
-        "h"
+    fn write_binding(&self, _depth: usize) -> String {
+        "h".to_string()
     }
     fn write_scalar(&self, ty: &SceType, held: &Held) -> String {
         match (self.carrier, ty) {

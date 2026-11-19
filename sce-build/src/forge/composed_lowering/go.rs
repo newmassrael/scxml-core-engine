@@ -662,8 +662,8 @@ impl ComposedSpelling for GoComposed<'_> {
         )
     }
 
-    fn write_binding(&self) -> &'static str {
-        GO_ELEMENT_BINDING
+    fn write_binding(&self, _depth: usize) -> String {
+        GO_ELEMENT_BINDING.to_string()
     }
     fn write_scalar(&self, ty: &SceType, held: &Held) -> String {
         match self.carrier {
