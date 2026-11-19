@@ -186,6 +186,9 @@ scan_exclusions = [
     # Where a server keeps the saved sessions of a keyed pool (`sce-rust-session-store`, ADR 0107):
     # no citation of any ledger.
     "backends/rust/session-store/",
+    # A server's HTTP transport behind its destination policy (`sce-rust-host-http`, ADR 0109
+    # D4). Measured 2026-11-19: no citation of any ledger.
+    "backends/rust/host-http/",
     # The group key agreement of a shared list (`sce-rust-mls`): no citation of any ledger.
     "backends/rust/mls/",
     "backends/rust/mls-capi/",
