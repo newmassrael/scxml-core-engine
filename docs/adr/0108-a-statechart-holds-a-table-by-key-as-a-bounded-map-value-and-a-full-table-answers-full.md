@@ -280,9 +280,13 @@ statechart holds is a map (this record) and that an algorithm walks it through a
 
 ### D10. Lanes
 
-The Interpreter (whose lowered ECMAScript holds a map as a JavaScript `Map` of canonical key text, which keeps
-insertion order as D2 does), Rust and C11 land first, in that order, because the consumer's targets are Rust and C11 and the
-Interpreter is the reference every scenario is compared with. C++, Kotlin, Go, Python and Swift follow. Until a lane
+The Interpreter, Rust and C11 land first, in that order, because the consumer's targets are Rust and C11 and the
+Interpreter is the reference every scenario is compared with. The Interpreter's lowered ECMAScript holds a map as the
+array of its entries in D2's order, `[key, value]` for a map and the key itself for a set, which is D8's saved form,
+and finds a key through a JavaScript `Map` from each key's canonical text to its position, kept beside the array and
+never inside it. The array is what crosses its data model: a `Map` held in a variable would cross as an object of its
+own enumerable properties, which a `Map` has none of, and would arrive empty. The array is never changed in place: a
+put or a remove makes a new one. C++, Kotlin, Go, Python and Swift follow. Until a lane
 lands, a document that declares a map refuses to generate for that lane as `generate/unsupported-feature`, naming
 the type and this record, as ADR 0092's union did on the Swift lane (ADR 0099).
 
@@ -349,7 +353,7 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
    `a_map_key_is_a_type_with_exact_equality`, `a_map_is_refused_in_a_wire_position`.
 3. (Landed 2026-11-19.) The `sce-static` checker: the statements, reads and loop of D3–D5, the standard outcome
    enums in `stdlib/collection`, the codes of D11 in the appendix.
-4. The Interpreter's lowering, with `scenarios/static_map.json`, `static_map_full.json` (outcome and
+4. (Landed 2026-11-19.) The Interpreter's lowering, with `scenarios/static_map.json`, `static_map_full.json` (outcome and
    `error.execution`), `static_map_record.json`, `static_map_composite_key.json`, `static_set.json` and
    `static_map_order.json` (replace in place, remove and put again goes last).
 5. Rust: `BoundedMap` and `BoundedSet` in the runtime (slots, links, keyed index, D8), the machine lowering, the saved
