@@ -242,8 +242,11 @@ size of the table. Each type is therefore:
   takes a free slot and a remove gives it back;
 - **a doubly linked order through the slots** (a previous and a next slot index in each, a head and a tail), which
   is D2's order: a put links its slot at the tail, a replace leaves the links alone, and a remove unlinks its slot;
-- **an open-addressing index** from a hash of the key to a slot, sized to the next power of two at or above twice
-  the bound, with tombstones that a put reuses and a rebuild clears when they outnumber the live entries.
+- **an open-addressing index** from a hash of the key to a slot, of exactly twice the bound's cells, its first cell
+  chosen by multiplying the hash into that range, with tombstones that a put reuses and a rebuild clears when they
+  outnumber the live entries. The load is at most one half whatever the bound. A power-of-two size would let a mask
+  choose the cell, but a lane without a heap holds the index inline, and its size must then be a constant expression
+  of the bound, which twice the bound is and the next power of two at or above it is not on every lane's compiler.
 
 Lookup, put and remove take expected constant time, and no operation moves an entry. Iteration follows the links,
 so the observable order, the saved form and the snapshot are D2's whatever slots the entries sit in. A table of
@@ -356,7 +359,7 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
 4. (Landed 2026-11-19.) The Interpreter's lowering, with `scenarios/static_map.json`, `static_map_full.json` (outcome and
    `error.execution`), `static_map_record.json`, `static_map_composite_key.json`, `static_set.json` and
    `static_map_order.json` (replace in place, remove and put again goes last).
-5. Rust: `BoundedMap` and `BoundedSet` in the runtime (slots, links, keyed index, D8), the machine lowering, the saved
+5. (Landed 2026-11-19.) Rust: `BoundedMap` and `BoundedSet` in the runtime (slots, links, keyed index, D8), the machine lowering, the saved
    form and the snapshot. The scenarios of step 4 run on the Rust lane. Unit tests hold that a remove moves no
    entry, that order survives any sequence of puts and removes (a property test against a reference list), and that
    keys chosen to collide under one seed spread under another.
