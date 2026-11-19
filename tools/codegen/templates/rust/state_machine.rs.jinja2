@@ -523,18 +523,20 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ enum.ty }} {
 {# docs/adr/0108, D8: a key or a value of a map is written and read in the form
    its type has in a saved state, a byte string as its Latin-1 text as a
    byte-string variable is (§2.15, "A byte string"), and every other by its own
-   `SavedValue`. #}
-{% macro saved_part_writer(bytes) -%}
-{% if bytes %}|bytes| ::sce_rust_runtime::saved_state::bytes_to_saved(bytes){% else %}::sce_rust_runtime::saved_state::SavedValue::to_saved{% endif %}
+   `SavedValue`. A record or an enum the map holds in its unit's type (D6
+   item 4) crosses into the machine's own type, and is written and read as
+   that type is, so its saved form is the one a variable of it has. #}
+{% macro saved_part_writer(bytes, crossing) -%}
+{% if bytes %}|bytes| ::sce_rust_runtime::saved_state::bytes_to_saved(bytes){% elif crossing %}|part| ::sce_rust_runtime::saved_state::SavedValue::to_saved(&{{ crossing.back }}(::core::clone::Clone::clone(part))){% else %}::sce_rust_runtime::saved_state::SavedValue::to_saved{% endif %}
 {%- endmacro %}
-{% macro saved_part_reader(bytes) -%}
-{% if bytes %}::sce_rust_runtime::saved_state::bounded_bytes{% else %}::sce_rust_runtime::saved_state::SavedValue::from_saved{% endif %}
+{% macro saved_part_reader(bytes, crossing) -%}
+{% if bytes %}::sce_rust_runtime::saved_state::bounded_bytes{% elif crossing %}|saved, what| ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved, what).map({{ crossing.into }}){% else %}::sce_rust_runtime::saved_state::SavedValue::from_saved{% endif %}
 {%- endmacro %}
 {% macro saved_read(field) -%}
 {% if field.saved_map and field.saved_kind == "set" -%}
-::sce_rust_runtime::saved_state::set_from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ saved_part_reader(field.saved_map.key_bytes) }})?
+::sce_rust_runtime::saved_state::set_from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ saved_part_reader(field.saved_map.key_bytes, field.saved_map.key_crossing) }})?
 {%- elif field.saved_map -%}
-::sce_rust_runtime::saved_state::map_from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ saved_part_reader(field.saved_map.key_bytes) }}, {{ saved_part_reader(field.saved_map.value_bytes) }})?
+::sce_rust_runtime::saved_state::map_from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ saved_part_reader(field.saved_map.key_bytes, field.saved_map.key_crossing) }}, {{ saved_part_reader(field.saved_map.value_bytes, field.saved_map.value_crossing) }})?
 {%- elif field.saved_kind == "optional" and field.bound is not none and field.saved_type == "bytes" -%}
 ::sce_rust_runtime::saved_state::optional(saved.variable("{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, "{{ field.id }}"))?
 {%- elif field.bound is not none and field.saved_type == "bytes" -%}
@@ -856,9 +858,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% elif field.saved_type == "bytes" %}
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.{{ field.name }})),
 {% elif field.saved_map and field.saved_kind == "set" %}
-                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::set_to_saved(&policy.{{ field.name }}, {{ saved_part_writer(field.saved_map.key_bytes) }})),
+                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::set_to_saved(&policy.{{ field.name }}, {{ saved_part_writer(field.saved_map.key_bytes, field.saved_map.key_crossing) }})),
 {% elif field.saved_map %}
-                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::map_to_saved(&policy.{{ field.name }}, {{ saved_part_writer(field.saved_map.key_bytes) }}, {{ saved_part_writer(field.saved_map.value_bytes) }})),
+                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::map_to_saved(&policy.{{ field.name }}, {{ saved_part_writer(field.saved_map.key_bytes, field.saved_map.key_crossing) }}, {{ saved_part_writer(field.saved_map.value_bytes, field.saved_map.value_crossing) }})),
 {% else %}
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.{{ field.name }})),
 {% endif %}

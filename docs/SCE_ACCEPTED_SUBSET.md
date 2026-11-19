@@ -6204,7 +6204,11 @@ not yet lowered, and the other drivers name no scenario they do not replay.
 **Rust's map.** A Rust machine holds a map in the runtime's
 `BoundedMap<K, V, N>` and a set in its `BoundedSet<K, N>` (`sce_rust_runtime`,
 from `sce-portable-bytes`), each key and value in the type a variable of its
-type is held in (docs/adr/0108, D8): an array of `N` entry slots with a free
+type is held in, but a record and an enum, which are held in the type their
+unit declares (docs/adr/0108, D6 item 4), a put crossing the machine's value
+into it through `<Type>ToDocument` and a read of an entry crossing back through
+`<Type>FromDocument`, field by field as a call's adapter crosses one; the map is
+(docs/adr/0108, D8) an array of `N` entry slots with a free
 list, a doubly linked order through them, which is the order a walk, the saved
 form and the snapshot follow, and an open-addressing index of twice the bound
 with tombstones, so no put or remove moves an entry. With `std` the slots and the
@@ -6250,12 +6254,14 @@ header includes that unit's header whether or not the machine calls an
 algorithm; an enum's is its document's type, which the machine's alias names;
 every other key and value is held in the type a variable of its type is held
 in. A record crosses one entry at a time: `<sce:put>` builds the unit's record
-field by field from the record it is given, as a call's record argument is
-built; the value at a key read whole, and the item or the key of a walk read
-whole, is the machine's own record built from the unit's by a function of the
-machine's (`<machine>_record_<alias>_of_unit`), as a call's record answer is;
-and a field of either (`m[k].f`, `item.f`) is read where the map holds it. A
-record key the machine holds in its own record is looked up by that record's
+from the record the machine holds by a function of the machine's
+(`<machine>_record_<alias>_to_unit`), field by field as a call's record argument
+is built, and puts the item or the key of a walk as it is; the value at a key
+read whole, and the item or the key of a walk read whole, is the machine's own
+record built from the unit's by the function back
+(`<machine>_record_<alias>_of_unit`), as a call's record answer is; and a
+field of either (`m[k].f`, `item.f`) is read where the map holds it. A record
+key the machine holds in its own record is looked up by that record's
 feed, which writes the bytes the unit's does. The algorithm is Rust's
 (docs/adr/0108, D8): `N` entry slots with a free list,
 a doubly linked order through them, and an open-addressing index of exactly

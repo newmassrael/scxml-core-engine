@@ -3512,7 +3512,6 @@ mod tests {
                     outcome_enum: None,
                     full: "",
                     failed: "",
-                    into_unit: &|_, _| None,
                 })
                 .expect("the Interpreter holds a map")
         };
@@ -3563,7 +3562,6 @@ mod tests {
                 outcome_enum: None,
                 full: "",
                 failed: "",
-                into_unit: &|_, _| None,
             })
             .is_none());
     }

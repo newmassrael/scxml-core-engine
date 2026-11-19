@@ -166,8 +166,8 @@ fn a_map_document_is_checked_and_refused_by_every_lane_by_name() {
 
 /// The Rust lowering of `document`, written beside the schemas it imports:
 /// whether `generate` passed, what it printed, and every Rust file it wrote,
-/// joined.
-fn generate_rust(document: &str) -> (bool, String, String) {
+/// by name.
+fn generate_rust_files(document: &str) -> (bool, String, Vec<(String, String)>) {
     let dir = tempfile::tempdir().expect("a scratch directory");
     for name in SIBLINGS {
         std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a schema");
@@ -177,14 +177,260 @@ fn generate_rust(document: &str) -> (bool, String, String) {
     let out_dir = tempfile::tempdir().expect("an output directory");
     let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
     let (ok, printed) = run(&["generate", "-l", "rust", "-o", out.as_str()], &path);
-    let mut code = String::new();
+    let mut files = Vec::new();
     for entry in std::fs::read_dir(out_dir.path()).expect("read the output") {
         let path = entry.expect("an output file").path();
         if path.extension().is_some_and(|ext| ext == "rs") {
-            code.push_str(&std::fs::read_to_string(&path).expect("read a generated file"));
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("a utf-8 file name")
+                .to_string();
+            files.push((
+                name,
+                std::fs::read_to_string(&path).expect("read a generated file"),
+            ));
         }
     }
+    (ok, printed, files)
+}
+
+/// [`generate_rust_files`], every file joined.
+fn generate_rust(document: &str) -> (bool, String, String) {
+    let (ok, printed, files) = generate_rust_files(document);
+    let code = files.into_iter().map(|(_, text)| text).collect();
     (ok, printed, code)
+}
+
+/// What a generated Rust machine declares, read off its syntax tree: the type
+/// of each field of its structs by name, each function by name with its
+/// parameters' types and its return type, and each `use` it writes, each type
+/// and path as its tokens print.
+#[derive(Default)]
+struct Declared {
+    fields: Vec<(String, syn::Type)>,
+    functions: Vec<(String, Vec<String>, String)>,
+    uses: Vec<String>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for Declared {
+    fn visit_field(&mut self, field: &'ast syn::Field) {
+        if let Some(ident) = &field.ident {
+            self.fields.push((ident.to_string(), field.ty.clone()));
+        }
+        syn::visit::visit_field(self, field);
+    }
+    fn visit_item_fn(&mut self, function: &'ast syn::ItemFn) {
+        use quote::ToTokens;
+        let params = function
+            .sig
+            .inputs
+            .iter()
+            .filter_map(|input| match input {
+                syn::FnArg::Typed(typed) => Some(typed.ty.to_token_stream().to_string()),
+                syn::FnArg::Receiver(_) => None,
+            })
+            .collect();
+        let output = match &function.sig.output {
+            syn::ReturnType::Type(_, ty) => ty.to_token_stream().to_string(),
+            syn::ReturnType::Default => String::new(),
+        };
+        self.functions
+            .push((function.sig.ident.to_string(), params, output));
+        syn::visit::visit_item_fn(self, function);
+    }
+    fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+        use quote::ToTokens;
+        self.uses.push(item.tree.to_token_stream().to_string());
+        syn::visit::visit_item_use(self, item);
+    }
+}
+
+/// The type arguments of `ty`, a path whose last segment is `BoundedMap`, each
+/// as its tokens print; `None` for any other type.
+fn bounded_map_arguments(ty: &syn::Type) -> Option<Vec<String>> {
+    use quote::ToTokens;
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    let last = path.path.segments.last()?;
+    if last.ident != "BoundedMap" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
+        return None;
+    };
+    Some(
+        arguments
+            .args
+            .iter()
+            .map(|argument| argument.to_token_stream().to_string())
+            .collect(),
+    )
+}
+
+/// The machine among `files`, read off its syntax tree ([`Declared`]), with
+/// the path of every function it calls ([`Called`]) and its text.
+fn declared_machine(files: &[(String, String)]) -> (Declared, Called, String) {
+    let (_, machine) = files
+        .iter()
+        .find(|(name, _)| name.ends_with("_sm.rs"))
+        .unwrap_or_else(|| panic!("no machine among the generated files: {files:?}"));
+    let tree = syn::parse_file(machine).expect("the generated machine parses as Rust");
+    let mut declared = Declared::default();
+    syn::visit::Visit::visit_file(&mut declared, &tree);
+    let mut called = Called::default();
+    syn::visit::Visit::visit_file(&mut called, &tree);
+    (declared, called, machine.clone())
+}
+
+impl Declared {
+    /// The type of the field `name` the machine holds a variable in, a type
+    /// named by its path: a view a host is lent of the same variable is a
+    /// reference to it. `machine` is the text a failure shows.
+    fn field(&self, name: &str, machine: &str) -> syn::Type {
+        self.fields
+            .iter()
+            .find(|(field, ty)| field == name && matches!(ty, syn::Type::Path(_)))
+            .map(|(_, ty)| ty.clone())
+            .unwrap_or_else(|| panic!("the machine declares no field `{name}`:\n{machine}"))
+    }
+
+    /// The name of the function from the type `from` to the type `to`, each as
+    /// its tokens print.
+    fn function(&self, from: &str, to: &str, machine: &str) -> String {
+        self.functions
+            .iter()
+            .find(|(_, params, output)| params == &[from.to_string()] && output == to)
+            .map(|(name, _, _)| name.clone())
+            .unwrap_or_else(|| panic!("no function from `{from}` to `{to}`:\n{machine}"))
+    }
+}
+
+/// The path of each function a generated Rust machine calls by its path, as
+/// its tokens print.
+#[derive(Default)]
+struct Called(Vec<String>);
+
+impl<'ast> syn::visit::Visit<'ast> for Called {
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        use quote::ToTokens;
+        if let syn::Expr::Path(path) = call.func.as_ref() {
+            self.0.push(path.path.to_token_stream().to_string());
+        }
+        syn::visit::visit_expr_call(self, call);
+    }
+}
+
+/// docs/adr/0108, D6 item 4 and "Order of work", step 7: the Rust machine
+/// holds a map's record key and record value in the types their units declare
+/// (`<schema>::<Schema>Payload`), the types an algorithm's map slot holds, so a
+/// map is lent to an algorithm whole. A machine that calls no algorithm names
+/// each unit all the same, and declares the functions its own record crosses
+/// into the unit's and back by, which a `<sce:put>` of a record variable and a
+/// value taken whole out of the map call. Read off the syntax tree of the
+/// generated machine, not its text.
+#[test]
+fn rust_holds_a_maps_record_entries_in_their_units_types() {
+    use quote::ToTokens;
+    let (ok, printed, files) = generate_rust_files(&faces());
+    assert!(ok, "Rust generates a map:\n{printed}");
+    let (declared, called, machine) = declared_machine(&files);
+    let faces = bounded_map_arguments(&declared.field("faces", &machine))
+        .unwrap_or_else(|| panic!("`faces` is no BoundedMap:\n{machine}"));
+    assert_eq!(
+        faces[..2],
+        [
+            "map_peer_key :: MapPeerKeyPayload".to_string(),
+            "map_face :: MapFacePayload".to_string()
+        ],
+        "`faces` holds its key and its value in their units' types:\n{machine}"
+    );
+    let by_id = bounded_map_arguments(&declared.field("by_id", &machine))
+        .unwrap_or_else(|| panic!("`byId` is no BoundedMap:\n{machine}"));
+    assert_eq!(
+        by_id[..2],
+        ["u32".to_string(), "map_face :: MapFacePayload".to_string()],
+        "`byId` holds its number key as it is and its value in its unit's type:\n{machine}"
+    );
+    // The record variable `last` is of the machine's own type, which a put of
+    // `face` crosses into the unit's, and a value taken whole back out of.
+    let record = declared
+        .field("last", &machine)
+        .to_token_stream()
+        .to_string();
+    for (from, to) in [
+        (record.as_str(), "map_face :: MapFacePayload"),
+        ("map_face :: MapFacePayload", record.as_str()),
+    ] {
+        let name = declared.function(from, to, &machine);
+        assert!(
+            called.0.iter().any(|path| *path == name),
+            "no statement of the machine crosses through `{name}`:\n{machine}"
+        );
+    }
+    for unit in ["super :: map_peer_key", "super :: map_face"] {
+        assert!(
+            declared.uses.iter().any(|used| used == unit),
+            "the machine does not bring `{unit}` in:\n{machine}"
+        );
+    }
+}
+
+/// docs/adr/0108, D6 item 4: a map's enum value is held in the type the
+/// enum's unit declares, as a record entry is. A value of the machine's own
+/// enum is put through the function that crosses it into the unit's type, and
+/// the saved state writes each value the map holds back through the other, so
+/// it is saved as a variable of the machine's enum is. Read off the syntax
+/// tree.
+#[test]
+fn rust_holds_a_maps_enum_entries_in_their_units_type() {
+    use quote::ToTokens;
+    let document = edited(
+        &faces(),
+        "<data id=\"order\"",
+        "<data id=\"outcomes\" sce:type=\"map&lt;uint32, enum:PutOutcome&gt;[2]\"/>\n    \
+         <data id=\"order\"",
+    );
+    let document = edited(
+        &document,
+        "<sce:clear target=\"flags\"/>",
+        "<sce:clear target=\"flags\"/>\n      \
+         <sce:put target=\"outcomes\" key=\"1\" expr=\"putResult\"/>",
+    );
+    let (ok, printed, files) = generate_rust_files(&document);
+    assert!(ok, "Rust generates a map of enum values:\n{printed}");
+    let (declared, called, machine) = declared_machine(&files);
+    let outcomes = bounded_map_arguments(&declared.field("outcomes", &machine))
+        .unwrap_or_else(|| panic!("`outcomes` is no BoundedMap:\n{machine}"));
+    assert_eq!(
+        outcomes[..2],
+        ["u32".to_string(), "put_outcome :: PutOutcome".to_string()],
+        "`outcomes` holds its value in the type the enum's unit declares:\n{machine}"
+    );
+    // `putResult` is of the machine's own enum, and crosses each way: into the
+    // unit's type where it is put, and back where the map is saved.
+    let own = declared
+        .field("put_result", &machine)
+        .to_token_stream()
+        .to_string();
+    for (from, to) in [
+        (own.as_str(), "put_outcome :: PutOutcome"),
+        ("put_outcome :: PutOutcome", own.as_str()),
+    ] {
+        let name = declared.function(from, to, &machine);
+        assert!(
+            called.0.iter().any(|path| *path == name),
+            "the put and the saved form of `outcomes` do not cross through `{name}`:\n{machine}"
+        );
+    }
+    assert!(
+        declared
+            .uses
+            .iter()
+            .any(|used| used == "super :: put_outcome"),
+        "the machine does not bring the enum's unit in:\n{machine}"
+    );
 }
 
 /// docs/adr/0108, "Order of work", step 5: Rust generates the document, each
@@ -592,8 +838,11 @@ fn a_c11_map_holds_its_records_in_the_types_their_units_declare() {
         "static inline void MapFacePayload_t_saved_write(sce_jw_t *w, const MapFacePayload_t *value)",
         "MapFacePayload_t_saved_write(w, &(slot->value));",
         "static inline map_faces_record_face_t map_faces_record_face_of_unit(MapFacePayload_t from)",
-        "__typeof__(sm->policy.v_peer) sce_key_in = sm->policy.v_peer;",
-        "sce_key = (MapPeerKeyPayload_t){ .low = sce_key_in.low, .high = sce_key_in.high };",
+        "static inline MapPeerKeyPayload_t \
+         map_faces_record_peer_key_to_unit(map_faces_record_peer_key_t from)",
+        "return (MapPeerKeyPayload_t){ .low = from.low, .high = from.high };",
+        "sce_key = map_faces_record_peer_key_to_unit(sm->policy.v_peer);",
+        "sce_value = map_faces_record_face_to_unit(sm->policy.v_face);",
         "map_faces_record_face_of_unit(SCE_MAP_VALUE_OF(sm->policy.v_faces, ",
         "map_faces_record_face_of_unit(f)",
         "sce_map_holds(&(sm->policy.v_faces), &(k), NULL)",
