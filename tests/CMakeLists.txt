@@ -1129,6 +1129,9 @@ endif()
 # ============================================================================
 add_executable(standard_host_scenario_test
     integration/AStandardHostScenarioTest.cpp
+    # The destination policy of a server's HTTP transport (docs/adr/0109, D4), which
+    # needs no network library.
+    integration/AStandardHostDestinationPolicyTest.cpp
 )
 
 # The reference host's cpp-httplib transport, held against a local server:
@@ -1170,6 +1173,16 @@ target_link_libraries(standard_host_scenario_test
 )
 if(TARGET httplib::httplib)
     target_link_libraries(standard_host_scenario_test PRIVATE httplib::httplib)
+endif()
+
+# The reference host's network transport on libcurl behind its destination policy
+# (docs/adr/0109, D4), in a build that found libcurl (cmake/SCEHostHttp.cmake),
+# held against a cpp-httplib server on a loopback port.
+if(TARGET sce_host_http_curl AND TARGET httplib::httplib)
+    target_sources(standard_host_scenario_test PRIVATE
+        integration/AStandardHostCurlTransportTest.cpp
+    )
+    target_link_libraries(standard_host_scenario_test PRIVATE sce_host_http_curl)
 endif()
 if(TARGET sce_host_cose)
     target_link_libraries(standard_host_scenario_test PRIVATE sce_host_cose)
