@@ -935,12 +935,14 @@ pub(crate) fn cbor_totality(items: &[CborItem<'_>]) -> Totality {
 /// their bounds (`Text`, `Bytes`; docs/adr/0065 §6 R1, docs/adr/0077 §3), a
 /// list in the language's list of its bound, which holds no more than the bound
 /// (docs/adr/0086, section 7.4), and a record in the payload type of its event
-/// schema's unit, which holds a text in the bounded text. What none of them
-/// holds is refused: a list of fewer elements than its lower count, at any
-/// depth, and a byte string below the entry's own level, which the language
-/// holds in its own vector, past its bound. A number of any sign is a value of
-/// its type, written as major type 0 or 1, so an enum of a signed carrier
-/// refuses nothing (docs/adr/0101, sections 2.1 and 5.2).
+/// schema's unit, which holds a text in the bounded text and a value inside a
+/// list in the bounded types of a composition (docs/adr/0086, section 7.1).
+/// What none of them holds is refused: a list of fewer elements than its lower
+/// count, at any depth, and a byte string a record's field holds, bare or
+/// optional, which the unit holds in the language's own vector, past its
+/// bound. A number of any sign is a value of its type, written as major type 0
+/// or 1, so an enum of a signed carrier refuses nothing (docs/adr/0101,
+/// sections 2.1 and 5.2).
 fn cbor(items: &[CborItem<'_>], out: &mut Vec<Refusal>) {
     for item in items {
         if let Some(reason) = out_of_range(&item.value, &item.entry.id, false) {
@@ -955,9 +957,11 @@ fn cbor(items: &[CborItem<'_>], out: &mut Vec<Refusal>) {
 
 /// Why a value of `shape`, at `place` in its entry, has no encoding though its
 /// presented type holds it: the first reason in the order the encode meets the
-/// parts, or `None` where every value it can present has one. `nested` is
-/// whether the shape stands below the entry's own level.
-fn out_of_range(shape: &CborShape, place: &str, nested: bool) -> Option<String> {
+/// parts, or `None` where every value it can present has one. `field` is
+/// whether the shape is a record's own field, held as the record's unit holds
+/// one entry, and not inside a list, held in the bounded types of a
+/// composition.
+fn out_of_range(shape: &CborShape, place: &str, field: bool) -> Option<String> {
     match shape {
         CborShape::List { elem, min, .. } => {
             if *min > 0 {
@@ -966,12 +970,12 @@ fn out_of_range(shape: &CborShape, place: &str, nested: bool) -> Option<String> 
                      encoding"
                 ));
             }
-            out_of_range(elem, &format!("{place}[]"), true)
+            out_of_range(elem, &format!("{place}[]"), false)
         }
-        CborShape::Bytes { max, .. } if nested => Some(format!(
+        CborShape::Bytes { max, .. } if field => Some(format!(
             "a byte string `{place}` past its bound {max} has no encoding"
         )),
-        CborShape::Nullable(elem) => out_of_range(elem, place, nested),
+        CborShape::Nullable(elem) => out_of_range(elem, place, field),
         CborShape::Record(record) => fields_out_of_range(record, place),
         CborShape::Union(union) => union.cases.iter().find_map(|case| {
             case.record.as_ref().and_then(|record| {
@@ -1307,13 +1311,31 @@ mod tests {
     }
 
     #[test]
-    fn a_byte_string_below_its_entry_is_refused_past_its_bound() {
+    fn a_byte_string_a_record_holds_is_refused_past_its_bound() {
         // A byte string the codec's map holds is presented as the `Bytes` of
-        // its bound; one a list, a record or a union's case holds is held in
-        // the language's own vector, which carries none.
+        // its bound, and one inside a list is held in the bounded byte string
+        // of a composition; one a record's field holds, bare or optional, is
+        // held in the language's own vector, which carries none.
         assert!(scoped_refusals("bytes[4]", scope(&[])).is_empty());
+        assert!(scoped_refusals("list<bytes[4]>[2]", scope(&[])).is_empty());
+        assert!(scoped_refusals("record:R", scope(&[("blobs", "list<bytes[4]>[2]")])).is_empty());
+        for (ty, fields, place) in [
+            (
+                "record:R",
+                [("id", "uint8"), ("blob", "optional<bytes[4]>")],
+                "`n.blob`",
+            ),
+            (
+                "list<record:R>[2]",
+                [("id", "uint8"), ("blob", "optional<bytes[4]>")],
+                "`n[].blob`",
+            ),
+        ] {
+            let refusals = scoped_refusals(ty, scope(&fields));
+            assert_eq!(refusals.len(), 1, "{ty}: {refusals:?}");
+            assert!(refusals[0].reason.contains(place), "{ty}: {refusals:?}");
+        }
         for (ty, place) in [
-            ("list<bytes[4]>[2]", "`n[]`"),
             ("record:R", "`n.blob`"),
             ("optional<record:R>", "`n.blob`"),
             ("list<record:R>[3]", "`n[].blob`"),
