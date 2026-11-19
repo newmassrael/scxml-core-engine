@@ -18905,15 +18905,18 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:f3a8d3a9c6458af7","code":"mesh/deploy-config-missing","stage":"mesh-deploy","spec":"ADR 0109 D12","message":"machine 'calendar': its document declares `limits`, a value of `record:Limits` the deployment supplies, and the deployment gives it none. Write it under the machine's `config:`, or name the `config_file:` the host reads it from.","actual":"limits"}"#,
             ),
             (
-                // A key of `config:` the document declares no value of.
+                // A key of `config:` the document declares no value of, beside
+                // `hosts`, given: `limits`, the value not given, is the name
+                // the key can become.
                 "mesh/deploy-config-unknown",
                 DeployError::ConfigUnknown {
                     machine: "calendar".into(),
                     key: "limit".into(),
                     declared: vec!["limits".into(), "hosts".into()],
+                    candidates: vec!["limits".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4287d83c7703590c","code":"mesh/deploy-config-unknown","stage":"mesh-deploy","spec":"ADR 0109 D12","message":"machine 'calendar': `config:` gives 'limit', which the machine's document declares no value of (it declares `limits`, `hosts`). Remove it, or declare it as a `<data sce:from=\"deployment\">`.","expected":["limits","hosts"],"actual":"limit"}"#,
+                r#"{"v":1,"id":"fnv1a:4287d83c7703590c","code":"mesh/deploy-config-unknown","stage":"mesh-deploy","spec":"ADR 0109 D12","message":"machine 'calendar': `config:` gives 'limit', which the machine's document declares no value of (it declares `limits`, `hosts`). Remove it, or declare it as a `<data sce:from=\"deployment\">`.","actual":"limit","fix":{"kind":"replace_one_of","candidates":["limits"]}}"#,
             ),
             (
                 // A value of `config:` that is no value of its type.
@@ -20956,6 +20959,9 @@ mod tests {
             // one of.
             | MeshDeployChildUnknownParent
             | MeshDeployChildUnknownInvoke
+            // The values a machine's document declares that its `config:`
+            // does not give yet: a closed set the unknown key names one of.
+            | MeshDeployConfigUnknown
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
             | MeshCodegenUnsupportedLanguage
@@ -21778,7 +21784,6 @@ mod tests {
             | MeshDeployInvalidSessions
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
-            | MeshDeployConfigUnknown
             | MeshDeployConfigInvalid
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy

@@ -127,10 +127,16 @@ pub fn check_machine_config(
             }
         };
     if let Some(key) = config.keys().find(|key| !names.contains(key)) {
+        let candidates = names
+            .iter()
+            .filter(|name| !config.contains_key(name.as_str()))
+            .cloned()
+            .collect();
         return Err(DeployError::ConfigUnknown {
             machine: machine.to_string(),
             key: key.clone(),
             declared: names,
+            candidates,
         });
     }
     if declared.is_empty() {
@@ -741,9 +747,28 @@ mod tests {
         }
         match check("        config:\n          limit: 3\n          hosts: []\n          limits: 4")
         {
-            Err(DeployError::ConfigUnknown { key, declared, .. }) => {
+            Err(DeployError::ConfigUnknown {
+                key,
+                declared,
+                candidates,
+                ..
+            }) => {
                 assert_eq!(key, "limits");
                 assert_eq!(declared, ["limit", "hosts"]);
+                // Both are given: no name replaces the key without giving one
+                // twice.
+                assert!(candidates.is_empty(), "{candidates:?}");
+            }
+            other => panic!("expected ConfigUnknown, got {other:?}"),
+        }
+        // A key beside a value left out: the one left out is the name it can
+        // become, and only that one.
+        match check("        config:\n          limit: 3\n          host: [a]") {
+            Err(DeployError::ConfigUnknown {
+                key, candidates, ..
+            }) => {
+                assert_eq!(key, "host");
+                assert_eq!(candidates, ["hosts"]);
             }
             other => panic!("expected ConfigUnknown, got {other:?}"),
         }
