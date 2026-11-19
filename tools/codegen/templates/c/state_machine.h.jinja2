@@ -2135,11 +2135,15 @@ bool {{ csym_prefix }}{{ model.name }}_register_child_mesh_routers({{ csym_prefi
                                        sce_child_mesh_routers_fn ask, void *user_data);
 {% endif %}
 
-/* W3C SCXML 5.10: Tear down any owned datamodel resources. Idempotent —
-   safe to call once per _init or zero times if the caller treats the
-   instance as bump-allocated. NULL-safe inside (lua_State* is checked).
-   Always present in the public API so callers can call uniformly across
-   datamodel-using and datamodel-less fixtures. */
+/* W3C SCXML 5.10: Tear down what the machine owns: the Lua state its
+   script session opened and every text it took from that engine's
+   allocator, its active invoke children, and its session on a Mesh router.
+   Every `_init*` that answered START_OK owes one call when the caller is
+   done with the machine; storage the caller reuses or frees releases none
+   of these, so a machine never destroyed keeps its Lua state for the life
+   of the process. Idempotent, and a no-op on a machine whose start was
+   refused (sm->L is checked). Always present in the public API so a caller
+   ends every machine the same way, whether or not it has a script engine. */
 void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* W3C SCXML 6.2: Single macrostep — drain queues, run eventless E* loop. */
