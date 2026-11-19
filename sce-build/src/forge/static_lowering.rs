@@ -84,6 +84,9 @@ pub struct StaticField {
     /// ([`Self::saved_type`] is then that type); `record` and `union` likewise
     /// by the machine's own type. `None` for every other kind.
     pub saved_elem: Option<&'static str>,
+    /// For a map or a set, the form a saved state writes its keys and its
+    /// values in ([`SavedMapParts`]). `None` for every other kind.
+    pub saved_map: Option<SavedMapParts>,
     /// For a list, the backend type of one element, which a saved state is read into
     /// an element at a time for a backend whose list holds its whole bound
     /// (docs/adr/0082). `None` for every other kind.
@@ -113,6 +116,19 @@ pub struct StaticField {
     /// machine starts; a template that declares the field writes no
     /// initializer for it.
     pub module_parameter: bool,
+}
+
+/// The form a saved state writes the keys and the values of a map or a set
+/// variable in (docs/adr/0108, D8): each in the form its type has in a saved
+/// state, a byte string as its Latin-1 text and not as the list of numbers it
+/// is held in (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"), so a
+/// target whose list type holds a byte string reads and writes it apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct SavedMapParts {
+    /// The key is a byte string.
+    pub key_bytes: bool,
+    /// The value is a byte string; `false` for a set, whose entries carry none.
+    pub value_bytes: bool,
 }
 
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
@@ -1254,6 +1270,40 @@ pub struct MapWalk<'a> {
     pub copies: bool,
     /// How many loops hold this one.
     pub depth: usize,
+    /// Whether every statement of the body, at any depth, reaches the machine
+    /// only through its fields one by one ([`reaches_fields_alone`]), so a
+    /// target may lend the body each entry where the map holds it; where one
+    /// does not, it binds a copy of an entry it would lend.
+    pub lends: bool,
+}
+
+/// Whether every statement of `block`, at any depth, is one a Rust machine
+/// lowers to reads and writes of its fields one by one, and of the engine it
+/// is handed beside itself, and never to a call that takes the machine whole:
+/// an `<assign>`, a `<log>`, a `<raise>` (`engine.raise`), an `<if>` and a
+/// `<foreach>`, and a list's or a map's own statements. A `<send>`, a host
+/// action, a `<cancel>`, a lift, a render, a `<script>` and a test component's
+/// statements reach the machine through calls or fields the lowering does not
+/// bound, so a body that holds one is lent no entry of the map it walks
+/// (docs/adr/0108, D6).
+fn reaches_fields_alone(block: &[Action]) -> bool {
+    block.iter().all(|action| {
+        matches!(
+            action.action_type.as_str(),
+            "assign"
+                | "log"
+                | "raise"
+                | "if"
+                | "foreach"
+                | "sce_append"
+                | "sce_clear"
+                | "sce_put"
+                | "sce_remove"
+        ) && action
+            .nested_blocks()
+            .iter()
+            .all(|nested| reaches_fields_alone(nested.actions))
+    })
 }
 
 /// How a target walks a map or a set in its own loop
@@ -2496,14 +2546,6 @@ pub trait StaticTarget {
     /// for a target that [`Self::types_maps`].
     fn map_type(&self, _key: &str, _value: Option<&str>, _capacity: u32) -> Option<String> {
         None
-    }
-    /// Whether a map of this target holds a byte string as a key or a value.
-    /// `false` for a target whose saved form of a map writes each key and value
-    /// by the one writer of its type, which writes a byte string as the list of
-    /// numbers it holds and not as the text a saved byte string is
-    /// (docs/adr/0108, D8): such a map is refused by name.
-    fn map_holds_bytes(&self) -> bool {
-        true
     }
     /// The declaration that makes a value of the record type `ty`, whose fields,
     /// as the type names them, are `fields` in the order its schema declares
@@ -5547,7 +5589,8 @@ impl StaticTarget for RustTarget {
     // (docs/adr/0108, D6 item 3), and any other walks the map itself, which
     // nothing in the body can change. Each turn binds the item and the key
     // where the walk holds them: a copy of plain data, and a borrow of a text
-    // or of a record that owns a buffer, which no read copies.
+    // or of a record that owns a buffer, which no read copies, or a clone of
+    // one where the body takes the machine whole ([`MapWalk::lends`]).
     fn map_loop(&self, walk: &MapWalk<'_>) -> Option<MapLoop> {
         let depth = walk.depth;
         let (cursor, at, position) = (
@@ -5568,9 +5611,16 @@ impl StaticTarget for RustTarget {
             String::new()
         };
         let opening = format!("{copy}let mut {cursor} = {walked}.first();{counter}");
-        let read = |accessor: &str, copied: bool| {
-            let deref = if copied { "*" } else { "" };
-            format!("{deref}{walked}.{accessor}({at})")
+        // An entry is lent where the walk holds it only where no statement of
+        // the body takes the machine whole while the borrow lasts: a copy the
+        // loop took is its own, and the machine's own map is lent to a body that
+        // reaches the machine through its fields alone. Any other body is
+        // handed a clone of the entry.
+        let lent = walk.copies || walk.lends;
+        let read = |accessor: &str, copied: bool| match (copied, lent) {
+            (true, _) => format!("*{walked}.{accessor}({at})"),
+            (false, true) => format!("{walked}.{accessor}({at})"),
+            (false, false) => format!("{walked}.{accessor}({at}).clone()"),
         };
         let item_accessor = if walk.set { "key_at" } else { "value_at" };
         let mut prologue = vec![
@@ -5613,11 +5663,6 @@ impl StaticTarget for RustTarget {
             Some(value) => format!("::sce_rust_runtime::BoundedMap<{key}, {value}, {capacity}>"),
             None => format!("::sce_rust_runtime::BoundedSet<{key}, {capacity}>"),
         })
-    }
-    // The saved form writes each key and value by its type's `SavedValue`
-    // (`saved_state`), and a byte string's is the list of its numbers.
-    fn map_holds_bytes(&self) -> bool {
-        false
     }
     // The runtime's `MapKey`, fed each field's canonical bytes in the order the
     // schema declares the fields.
@@ -6627,6 +6672,7 @@ fn union_variable_field(
             UnionStart::Built => None,
             UnionStart::Absent => Some("union"),
         },
+        saved_map: None,
         elem_ty: None,
         reader: None,
         holds_bytes: false,
@@ -6878,6 +6924,7 @@ fn composed_record_variable_field(
             ComposedRecordStart::Built => None,
             ComposedRecordStart::Absent => Some("record"),
         },
+        saved_map: None,
         elem_ty: None,
         reader: None,
         holds_bytes: false,
@@ -7654,6 +7701,7 @@ pub fn lower(
                     bound: None,
                     saved_kind: "record",
                     saved_elem: None,
+                    saved_map: None,
                     elem_ty: None,
                     reader: None,
                     holds_bytes: holds_bytes(schema),
@@ -7732,6 +7780,22 @@ pub fn lower(
                     saved_kind: if set { "set" } else { "map" },
                     saved_type: ty.as_attr(),
                     saved_elem: None,
+                    // A byte string is saved as its Latin-1 text, which a target
+                    // whose list type holds it writes and reads apart.
+                    saved_map: Some(SavedMapParts {
+                        key_bytes: matches!(
+                            ty.map_key(),
+                            Some(crate::forge::model::AlgorithmValueType::Bytes { .. })
+                        ),
+                        value_bytes: matches!(
+                            ty,
+                            crate::forge::model::AlgorithmValueType::Map { value, .. }
+                                if matches!(
+                                    value.as_ref(),
+                                    crate::forge::model::AlgorithmValueType::Bytes { .. }
+                                )
+                        ),
+                    }),
                     elem_ty: None,
                     reader: None,
                     holds_bytes: false,
@@ -7804,6 +7868,7 @@ pub fn lower(
                     saved_kind,
                     saved_type,
                     saved_elem: None,
+                    saved_map: None,
                     elem_ty: Some(elem_ty),
                     reader: None,
                     holds_bytes: holds,
@@ -7849,6 +7914,7 @@ pub fn lower(
                     saved_kind: "optional",
                     saved_type: record_ty,
                     saved_elem: Some("record"),
+                    saved_map: None,
                     elem_ty: None,
                     reader: None,
                     holds_bytes: holds_bytes(&place.schema),
@@ -7914,6 +7980,7 @@ pub fn lower(
                         SceType::Enum(_) => "enum",
                         _ => "scalar",
                     }),
+                    saved_map: None,
                     elem_ty: None,
                     reader: None,
                     holds_bytes: false,
@@ -7965,6 +8032,7 @@ pub fn lower(
                     bound: None,
                     saved_kind: "enum",
                     saved_elem: None,
+                    saved_map: None,
                     elem_ty: None,
                     reader: None,
                     holds_bytes: false,
@@ -8030,6 +8098,7 @@ pub fn lower(
                 saved_kind: "scalar",
                 saved_type: ty.as_attr(),
                 saved_elem: None,
+                saved_map: None,
                 elem_ty: None,
                 reader: None,
                 holds_bytes: false,
@@ -8904,14 +8973,6 @@ impl<'t> TypeDeclarations<'t> {
                 .map(|bound| bound.max)
                 .ok_or_else(|| unheld(format!("`{part}` states no bound")))
         };
-        let byte_string = || {
-            unheld(format!(
-                "a map of {lang} holds no byte string as a key or a value yet: its saved form \
-                 writes each by the one writer of its type, which writes a byte string as the \
-                 list of its numbers and not as the text a saved byte string is ({})",
-                crate::forge::value_type::MAP_LANDING
-            ))
-        };
         Ok(match part {
             AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
                 let ty = self.enum_type(&reference.alias).map_err(|alias| {
@@ -8935,9 +8996,6 @@ impl<'t> TypeDeclarations<'t> {
                 storage.ty
             }
             AlgorithmValueType::Bytes { max } => {
-                if !target.map_holds_bytes() {
-                    return Err(byte_string());
-                }
                 let storage = target
                     .bytes_storage(bound(max)?, "{ 0 }")
                     .ok_or_else(|| unheld(format!("{lang} holds no byte string of `{part}`")))?;
@@ -22404,6 +22462,7 @@ fn lower_map_foreach(
         set: place.is_set(),
         copies: Writes::of_block(&action.actions).reaches(map),
         depth: rewrites.loop_depth.get(),
+        lends: reaches_fields_alone(&action.actions),
     };
     let entry = match target.map_loop(&walk) {
         Some(walked) => {
