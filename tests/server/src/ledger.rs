@@ -142,6 +142,8 @@ pub fn machine(binding: Binding, idle_ms: u64) -> Machine {
             key_from: KeyFrom::Field("key"),
             max_key_bytes: 32,
             idle_ms,
+            max_live: 100_000,
+            max_inbox: 64,
         }),
     }
 }

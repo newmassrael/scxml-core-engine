@@ -117,6 +117,8 @@ pub const MACHINE: Machine = Machine {
 {%- endif %}
         max_key_bytes: {{ sessions.max_key_bytes }},
         idle_ms: {{ sessions.idle_ms }},
+        max_live: {{ sessions.max_live }},
+        max_inbox: {{ sessions.max_inbox }},
     }),
 {%- else %}
     sessions: None,
