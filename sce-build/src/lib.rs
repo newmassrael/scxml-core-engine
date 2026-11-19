@@ -11838,6 +11838,11 @@ pub fn compile_mesh_transport(
             someip_invoke_service_ids: &someip_invoke_service_ids,
             someip_liveness_service_ids: &someip_liveness_service_ids,
             someip_machine_liveness_service_ids: &someip_machine_liveness_service_ids,
+            deployment_machines: deploy_cfg
+                .topology
+                .values()
+                .map(|device| device.machines.len())
+                .sum(),
             source_location: model.source_location.as_ref(),
             template_base: &template_base,
             sessions: keyed_pool.as_ref(),

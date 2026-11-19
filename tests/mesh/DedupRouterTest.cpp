@@ -35,7 +35,9 @@
 
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -46,6 +48,10 @@ using SCE::Mesh::DedupResult;
 // rather than repeated at each instantiation.
 using DedupWindow = SCE::Mesh::DedupWindowT<256>;
 using DedupRouter = SCE::Mesh::DedupRouterT<256>;
+
+// The bound on senders of every router here but the one that tests it:
+// more than any test uses, so no sender is refused.
+constexpr std::size_t kSenders = 16;
 
 namespace {
 
@@ -122,7 +128,7 @@ TEST(DedupWindow, RecentIdsStillFilterAfterWrap) {
 // ── DedupRouter ───────────────────────────────────────────────
 
 TEST(DedupRouter, DuplicateFromSameSenderIsDropped) {
-    DedupRouter r;
+    DedupRouter r{kSenders};
     EXPECT_TRUE(r.admit("motor", id_of(7)));
     EXPECT_FALSE(r.admit("motor", id_of(7)));
 }
@@ -132,13 +138,13 @@ TEST(DedupRouter, SameIdFromDistinctSendersBothAdmitted) {
     // (env.source, env.id). Two senders independently generating
     // identical ids (rare for UUID v7 but legal under the wire
     // contract) MUST NOT collide on a shared window.
-    DedupRouter r;
+    DedupRouter r{kSenders};
     EXPECT_TRUE(r.admit("motor", id_of(7)));
     EXPECT_TRUE(r.admit("brake", id_of(7)));
 }
 
 TEST(DedupRouter, EachSenderGetsFullCapacity) {
-    DedupRouter r;
+    DedupRouter r{kSenders};
     for (std::uint32_t n = 1; n <= DedupWindow::kCapacity; ++n) {
         ASSERT_TRUE(r.admit("motor", id_of(n)));
         ASSERT_TRUE(r.admit("brake", id_of(n)));
@@ -170,7 +176,7 @@ TEST(DedupRouter, AdmitWithSignalRaisesOverflowOnFirstEviction) {
     // The DedupRouter wraps admitWithSignal — the codegen TransportRouter
     // calls this and stamps `error.communication / DEDUP_WINDOW_OVERFLOW`
     // when the result is NovelWithEviction.
-    DedupRouter r;
+    DedupRouter r{kSenders};
     for (std::uint32_t n = 1; n <= DedupWindow::kCapacity; ++n) {
         ASSERT_EQ(r.admitWithSignal("motor", id_of(n)), DedupResult::Novel);
     }
@@ -182,7 +188,7 @@ TEST(DedupRouter, BoolAdmitContractUnchanged) {
     // existing call sites that just check "should I dispatch?" keep
     // their behaviour. Regression guard against a refactor that flips
     // the eviction case to false.
-    DedupRouter r;
+    DedupRouter r{kSenders};
     for (std::uint32_t n = 1; n <= DedupWindow::kCapacity + 1; ++n) {
         EXPECT_TRUE(r.admit("motor", id_of(n))) << "bool admit must accept all novel ids including the "
                                                    "post-wrap (kCapacity+1)-th";
@@ -198,7 +204,7 @@ TEST(DedupRouter, ConcurrentAdmitsNeverDoubleAdmit) {
     constexpr int kIdsPerThread = 32;
     constexpr int kTotalIds = kThreads * kIdsPerThread;  // 256
 
-    DedupRouter r;
+    DedupRouter r{kSenders};
     std::atomic<int> admitted{0};
     std::vector<std::thread> workers;
     workers.reserve(kThreads);
@@ -239,8 +245,8 @@ TEST(DedupRouter, CapacityIsPerInstantiationNotGlobal) {
     // router must forget what the wide one still remembers. This is what
     // makes the per-machine `dedup.window_size` meaningful in a build
     // that emits several machines.
-    SCE::Mesh::DedupRouterT<2> narrow;
-    SCE::Mesh::DedupRouterT<8> wide;
+    SCE::Mesh::DedupRouterT<2> narrow{kSenders};
+    SCE::Mesh::DedupRouterT<8> wide{kSenders};
     for (std::uint32_t n = 1; n <= 3; ++n) {
         ASSERT_TRUE(narrow.admit("motor", id_of(n)));
         ASSERT_TRUE(wide.admit("motor", id_of(n)));
@@ -255,4 +261,31 @@ TEST(DedupRouter, CapacityConstantMatchesTheInstantiation) {
     // argument rather than a stale literal.
     EXPECT_EQ(SCE::Mesh::DedupRouterT<512>::kCapacity, 512u);
     EXPECT_EQ(DedupRouter::kCapacity, 256u);
+}
+
+// ── The bound on senders (SCE_MESH.md §10.5) ──────────────────
+
+TEST(DedupRouter, ClaimsOfTenThousandSourcesMakeNoWindowPastTheBound) {
+    // An envelope's source is only what its writer wrote. Ten thousand
+    // envelopes each claiming a source of its own make windows up to the
+    // router's bound and no more; each past it is refused and makes none,
+    // and a source that has a window keeps being served. Red if
+    // admitWithSignal makes a window for every source it sees.
+    DedupRouter r{2};
+    EXPECT_EQ(r.admitWithSignal("motor", id_of(1)), DedupResult::Novel);
+    EXPECT_EQ(r.admitWithSignal("brake", id_of(1)), DedupResult::Novel);
+    for (std::uint32_t n = 0; n < 10000; ++n) {
+        const std::string claimed = "s" + std::to_string(n);
+        ASSERT_EQ(r.admitWithSignal(claimed, id_of(n + 2)), DedupResult::SenderRefused) << claimed;
+        ASSERT_FALSE(r.admit(claimed, id_of(n + 2))) << "the bool admit refuses it too";
+    }
+    EXPECT_EQ(r.senders(), 2u);
+    EXPECT_TRUE(r.admit("motor", id_of(2))) << "a sender with a window is still served";
+    EXPECT_FALSE(r.admit("motor", id_of(2))) << "and its duplicates still dropped";
+}
+
+TEST(DedupRouter, ABoundOfZeroKeepsOneSender) {
+    DedupRouter r{0};
+    EXPECT_TRUE(r.admit("motor", id_of(1)));
+    EXPECT_EQ(r.admitWithSignal("brake", id_of(1)), DedupResult::SenderRefused);
 }

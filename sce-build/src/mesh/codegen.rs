@@ -1221,6 +1221,11 @@ pub struct MeshCodegenInputs<'a> {
     pub someip_invoke_service_ids: &'a BTreeMap<String, u16>,
     pub someip_liveness_service_ids: &'a BTreeMap<String, u16>,
     pub someip_machine_liveness_service_ids: &'a BTreeMap<String, u16>,
+    /// How many machines the deployment declares, on every device. With the
+    /// machine's own peers it bounds the sources a sender of the deployment
+    /// can write, which bounds the C++ router's duplicate windows
+    /// (SCE_MESH.md section 10.5).
+    pub deployment_machines: usize,
     pub source_location: Option<&'a SourceLocation>,
     pub template_base: &'a Path,
     /// The machine's keyed pool (`sessions:`, SCE_MESH.md section 14.4), resolved against
@@ -1571,6 +1576,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         someip_invoke_service_ids,
         someip_liveness_service_ids,
         someip_machine_liveness_service_ids,
+        deployment_machines,
         source_location,
         template_base,
         // `generate_mesh` refused a keyed pool for this backend.
@@ -2064,6 +2070,11 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     let machine_dedup_ctx = serde_json::json!({
         "window_size": machine_dedup.window_size,
     });
+    // SCE_MESH.md section 10.5: the most sources the router keeps a window
+    // for. A sender of the deployment is one of its machines, or a peer this
+    // machine binds (one an external configuration declares), and writes one
+    // name; a source past the sum is no sender of it.
+    let dedup_max_senders = deployment_machines.saturating_add(targets.len()).max(1);
 
     // SCE Mesh §mesh-16.7 row 8 (PEER_PARTITIONED): per-machine Zenoh
     // liveliness opt-in. `null` when the deploy.yaml author declared no
@@ -2282,6 +2293,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         machine_snake => filters::to_snake_case(machine_name.to_string()),
         machine_ordering => machine_ordering_ctx,
         machine_dedup => machine_dedup_ctx,
+        dedup_max_senders => dedup_max_senders,
         machine_liveliness => machine_liveliness_ctx,
         machine_outbound_buffer => machine_outbound_buffer_ctx,
         zenoh_session_json5 => zenoh_session_json5,
