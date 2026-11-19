@@ -365,7 +365,7 @@ fn rust_holds_a_maps_record_entries_in_their_units_types() {
     ] {
         let name = declared.function(from, to, &machine);
         assert!(
-            called.0.iter().any(|path| *path == name),
+            called.0.contains(&name),
             "no statement of the machine crosses through `{name}`:\n{machine}"
         );
     }
@@ -447,7 +447,7 @@ fn rust_holds_a_maps_enum_entries_in_their_units_type() {
     ] {
         let name = declared.function(from, to, &machine);
         assert!(
-            called.0.iter().any(|path| *path == name),
+            called.0.contains(&name),
             "the put and the saved form of `outcomes` do not cross through `{name}`:\n{machine}"
         );
     }
