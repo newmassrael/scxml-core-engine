@@ -15,7 +15,7 @@
 // writes are the runtime's CBOR primitives (`sce_forge_runtime::cbor`), so
 // no CBOR is spelled in this generator either.
 
-use crate::forge::encode_plan::{CborField, CborPlan, CborRecord, CborShape};
+use crate::forge::encode_plan::{CborField, CborPlan, CborRecord, CborShape, CborUnion};
 use crate::forge::error::{ForgeError, GenerateError};
 use crate::forge::generator::{
     insert_rust_storage, rust_origin_trait, rust_storage_field, rust_storage_tag,
@@ -295,6 +295,71 @@ fn unheld(shape: &CborShape) -> Option<String> {
         | CborShape::Bytes { .. }
         | CborShape::Enum(_) => None,
     }
+}
+
+/// A record or a union document a CBOR codec reaches, met first at a place of
+/// one of its entries: what a printer of every shape reads, writes and checks
+/// by one function of the codec's own each, named for the document and shared
+/// wherever it is met (docs/adr/0101, section 5.1).
+pub(crate) enum CborComposite<'p> {
+    Record(&'p CborRecord),
+    Union(&'p CborUnion),
+}
+
+impl CborComposite<'_> {
+    /// The name of the document it is.
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            CborComposite::Record(record) => &record.name,
+            CborComposite::Union(union) => &union.name,
+        }
+    }
+}
+
+/// Each record and union document a value of `shape` reaches, once by its
+/// document's name, appended to `out` in the order a walk of the shape meets
+/// them, each before what it holds.
+pub(crate) fn reach_composites<'p>(shape: &'p CborShape, out: &mut Vec<CborComposite<'p>>) {
+    match shape {
+        CborShape::Record(record) => reach_record(record, out),
+        CborShape::Union(union) => {
+            if out.iter().all(|met| met.name() != union.name) {
+                out.push(CborComposite::Union(union));
+                for record in union.cases.iter().filter_map(|case| case.record.as_ref()) {
+                    reach_record(record, out);
+                }
+            }
+        }
+        CborShape::List { elem, .. } | CborShape::Nullable(elem) => reach_composites(elem, out),
+        CborShape::Int { .. }
+        | CborShape::Float { .. }
+        | CborShape::Bool
+        | CborShape::Text { .. }
+        | CborShape::Bytes { .. }
+        | CborShape::Enum(_)
+        | CborShape::Unresolved { .. } => {}
+    }
+}
+
+/// [`reach_composites`] of a record.
+fn reach_record<'p>(record: &'p CborRecord, out: &mut Vec<CborComposite<'p>>) {
+    if out.iter().all(|met| met.name() != record.name) {
+        out.push(CborComposite::Record(record));
+        for field in &record.fields {
+            reach_composites(&field.shape, out);
+        }
+    }
+}
+
+/// Each record and union document the entries of `plan` reach, at any depth,
+/// once, in the order a walk of the entries meets them
+/// ([`reach_composites`]).
+pub(crate) fn reached_composites<'p>(plan: &'p CborPlan<'_>) -> Vec<CborComposite<'p>> {
+    let mut reached = Vec::new();
+    for item in &plan.entries {
+        reach_composites(&item.value, &mut reached);
+    }
+    reached
 }
 
 /// [`unheld_value`] of a record.

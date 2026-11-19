@@ -955,6 +955,15 @@ fn cbor(items: &[CborItem<'_>], out: &mut Vec<Refusal>) {
     }
 }
 
+/// Whether a value of `shape` that its presented type holds can still have no
+/// encoding ([`out_of_range`]): a list below its lower count at any depth, and
+/// a byte string a record's field holds past its bound, `field` saying the
+/// shape is a record's own field. The one reading every printer's checks make
+/// of a shape, so they check exactly where the totality names a refusal.
+pub(crate) fn cbor_value_refuses(shape: &CborShape, field: bool) -> bool {
+    out_of_range(shape, "", field).is_some()
+}
+
 /// Why a value of `shape`, at `place` in its entry, has no encoding though its
 /// presented type holds it: the first reason in the order the encode meets the
 /// parts, or `None` where every value it can present has one. `field` is
