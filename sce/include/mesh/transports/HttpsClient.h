@@ -42,11 +42,13 @@
 //   * `receive`: each mailbox envelope, once, in mailbox order;
 //   * `ready`: the first exchange answered `200` after the client was not
 //     ready (SCE_MESH.md section 10.10);
-//   * `notReady`: an exchange that failed at the transport, or a poll that was
-//     refused, while the client was ready or had not yet been either: section
-//     16.7 row 1, once per edge. It loses nothing: the server keeps the
-//     mailbox, a reply to a request the router waits on among it, so the
-//     router keeps every request waiting (SCE_MESH.md section 22.4);
+//   * `notReady`: an exchange that failed at the transport while the client
+//     was ready or had not yet been either: section 16.7 row 1, once per
+//     edge. The failure loses nothing: the server keeps the mailbox, a reply
+//     to a request the router waits on among it, so the router keeps every
+//     request waiting (SCE_MESH.md section 22.4). A status the server
+//     answered, a refusal among them, is no failure at the transport and
+//     leaves the client as ready as it was, since the server is there;
 //   * `restarted`: a response of a new incarnation that replaces the one the
 //     client knew, before that response's envelopes: the mailbox the client
 //     knew, and any reply it held, is gone, so the router sends each request
@@ -115,9 +117,11 @@ inline constexpr std::chrono::milliseconds kExchangeGrace{10000};
 inline constexpr std::size_t kOutboxCapacity = 4096;
 /// The most envelopes one send carries.
 inline constexpr std::size_t kMaxBatch = 64;
-/// The first wait before a poll after a failed one, when the binding declares
-/// no retry policy; it doubles up to kMaxReconnectBackoff.
-inline constexpr std::chrono::milliseconds kInitialReconnectBackoff{500};
+/// The first wait before a poll after a failed one, and before an exchange
+/// again after the server shed one without naming a wait, when the binding
+/// declares no retry policy; it doubles up to kMaxReconnectBackoff (250 ms
+/// doubling to 30 s, SCE_MESH.md section 22.4).
+inline constexpr std::chrono::milliseconds kInitialReconnectBackoff{250};
 /// The longest wait between polls after failed ones.
 inline constexpr std::chrono::milliseconds kMaxReconnectBackoff{30000};
 

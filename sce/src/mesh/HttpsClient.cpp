@@ -841,18 +841,29 @@ void Client::pollLoop() {
             break;
         case Verdict::Kind::Shed:
             // A server shedding load is alive: readiness stands, and the
-            // client waits at least as long as it was asked to.
-            if (waitStopping(verdict.wait.count() > 0 ? verdict.wait : kInitialReconnectBackoff)) {
+            // client waits at least as long as it was asked to, or on its own
+            // backoff when the answer named no wait.
+            ++failures;
+            if (waitStopping(verdict.wait.count() > 0 ? verdict.wait : reconnectBackoff(failures))) {
                 return;
             }
             break;
         case Verdict::Kind::TooBig:
         case Verdict::Kind::Refused:
         case Verdict::Kind::Transient:
-        case Verdict::Kind::Failed:
-            if (answer.kind == HttpsExchange::Kind::Response && answer.status == 401) {
+            // A refusal the server answered does not end readiness, since the
+            // server is there (SCE_MESH.md section 22.4): the client stays as
+            // ready as it was and polls again on its backoff.
+            if (answer.status == 401) {
                 refusedName(answer);
             }
+            ++failures;
+            if (waitStopping(reconnectBackoff(failures))) {
+                return;
+            }
+            break;
+        case Verdict::Kind::Failed:
+            // Only a failure at the transport ends readiness (section 22.4).
             ++failures;
             becomeNotReady(verdict.error);
             if (waitStopping(reconnectBackoff(failures))) {
@@ -864,6 +875,9 @@ void Client::pollLoop() {
 }
 
 void Client::sendLoop() {
+    // Consecutive sends not taken in, which the wait after a shed send that
+    // named none grows with, as the poll's does.
+    std::uint32_t failures = 0;
     for (;;) {
         std::vector<Pending> batch;
         {
@@ -890,6 +904,7 @@ void Client::sendLoop() {
             return;
         }
         const Verdict verdict = judge(answer);
+        failures = verdict.kind == Verdict::Kind::Taken ? 0u : failures + 1u;
         switch (verdict.kind) {
         case Verdict::Kind::Taken: {
             becomeReady();
@@ -906,7 +921,7 @@ void Client::sendLoop() {
                 outbox_.insert(outbox_.begin(), std::make_move_iterator(batch.begin()),
                                std::make_move_iterator(batch.end()));
             }
-            if (waitStopping(verdict.wait.count() > 0 ? verdict.wait : kInitialReconnectBackoff)) {
+            if (waitStopping(verdict.wait.count() > 0 ? verdict.wait : reconnectBackoff(failures))) {
                 return;
             }
             break;

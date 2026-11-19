@@ -170,9 +170,39 @@ Https::ClientConfig config(Https::Authenticator authenticator = Https::Authentic
     return c;
 }
 
+/// A poll answered `200` after a short wait, as by a server whose hold ended
+/// with nothing to say; one the client cancels ends at once.
+HttpsExchange anEmptyHold(const HttpsRequest &request) {
+    for (int i = 0; i < 4; ++i) {
+        if (request.cancellation != nullptr && request.cancellation->requested()) {
+            return HttpsExchange::failed(HttpsExchange::Failure::Other, "cancelled");
+        }
+        std::this_thread::sleep_for(5ms);
+    }
+    return HttpsExchange::response(200, {}, {});
+}
+
+/// When each exchange a script answers began, read by a test.
+class Starts {
+public:
+    std::size_t mark() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        at_.push_back(std::chrono::steady_clock::now());
+        return at_.size();
+    }
+
+    std::vector<std::chrono::steady_clock::time_point> at() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return at_;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::vector<std::chrono::steady_clock::time_point> at_;
+};
+
 /// A transport whose answers a test writes: a poll (an empty body) and a
-/// send each have a script. A poll that has no script is answered `200`
-/// after a short wait, as a server whose hold ended with nothing to say.
+/// send each have a script. A poll that has no script is anEmptyHold.
 class Scripted : public HttpsTransport {
 public:
     std::function<HttpsExchange(const HttpsRequest &)> onPoll;
@@ -183,13 +213,7 @@ public:
             if (onPoll) {
                 return onPoll(request);
             }
-            for (int i = 0; i < 4; ++i) {
-                if (request.cancellation != nullptr && request.cancellation->requested()) {
-                    return HttpsExchange::failed(HttpsExchange::Failure::Other, "cancelled");
-                }
-                std::this_thread::sleep_for(5ms);
-            }
-            return HttpsExchange::response(200, {}, {});
+            return anEmptyHold(request);
         }
         int attempt = 0;
         {
@@ -550,11 +574,13 @@ TEST(HttpsClient, ARefusedNameIsUnauthorizedOncePerRunOfRefusals) {
     Observed seen;
     Https::Client client(config(), Https::ClientHost{&transport, &credentials}, seen.events());
     ASSERT_TRUE(client.start());
-    // Two refused polls: the first and the one after a 500 ms backoff.
+    // Two refused polls: the first and the one after a 250 ms backoff.
     ASSERT_TRUE(seen.waitFor([&] { return mailbox.exchanges() >= 2; }, 3000ms));
     client.stop();
     EXPECT_EQ(seen.faultsOf(ReasonCode::Unauthorized), 1u);
-    EXPECT_EQ(seen.not_ready_.size(), 1u);
+    // A refusal the server answered is no failure at the transport: the
+    // client was never ready and is told no edge (SCE_MESH.md section 22.4).
+    EXPECT_TRUE(seen.not_ready_.empty());
     EXPECT_EQ(seen.ready_, 0);
     ASSERT_FALSE(seen.faults_.empty());
     EXPECT_EQ(seen.faults_[0].transport_status, std::optional<std::string>("401"));
@@ -708,6 +734,134 @@ TEST(HttpsClient, ABodyTooBigIsCarriedAgainInSmallerSends) {
     }));
     client.stop();
     EXPECT_TRUE(seen.faults_.empty());
+}
+
+// SCE_MESH.md section 22.4: the client is ready from the first `200` until an
+// exchange fails at the transport, and a status the server answered, a
+// refusal among them, does not end readiness, since the server is there. Each
+// status here is answered to the poll after the first `200`, then a poll
+// fails at the transport, then the next is answered `200`. Red if pollLoop
+// ends readiness for an answered status (becomeNotReady in the branch of
+// TooBig, Refused and Transient): the poll after it then finds the client not
+// ready, and the one edge told is the status's, not the failure's.
+TEST(HttpsClient, AnAnsweredStatusLeavesAReadyClientReadyAndOnlyATransportFailureEndsIt) {
+    const std::array<std::uint16_t, 6> statuses = {400, 401, 404, 408, 413, 502};
+    for (const std::uint16_t status : statuses) {
+        SCOPED_TRACE("status " + std::to_string(status));
+        Scripted transport;
+        Https::Client *running = nullptr;
+        std::atomic<int> polls{0};
+        std::atomic<bool> readyAfterTheStatus{false};
+        transport.onPoll = [&](const HttpsRequest &request) {
+            const int n = polls.fetch_add(1);
+            if (n == 0) {
+                return HttpsExchange::response(200, {}, {});
+            }
+            if (n == 1) {
+                return HttpsExchange::response(status, {}, {});
+            }
+            if (n == 2) {
+                readyAfterTheStatus.store(running != nullptr && running->ready());
+                return HttpsExchange::failed(HttpsExchange::Failure::Connect, "refused");
+            }
+            return anEmptyHold(request);
+        };
+        MemoryCredentials credentials("token");
+        Observed seen;
+        auto c = config();
+        // A short backoff keeps the run fast; readiness does not depend on it.
+        c.retry = Https::RetryPolicy{1, 10ms, 2.0, 40ms, 0};
+        Https::Client client(c, Https::ClientHost{&transport, &credentials}, seen.events());
+        running = &client;
+        ASSERT_TRUE(client.start());
+        ASSERT_TRUE(seen.waitFor([&] { return seen.ready_ == 2; }));
+        client.stop();
+        EXPECT_TRUE(readyAfterTheStatus.load());
+        ASSERT_EQ(seen.not_ready_.size(), 1u);
+        EXPECT_EQ(seen.not_ready_[0].reason, ReasonCode::TransportUnavailable);
+        ASSERT_TRUE(seen.not_ready_[0].detail.has_value());
+        EXPECT_NE(seen.not_ready_[0].detail->find("no response"), std::string::npos) << *seen.not_ready_[0].detail;
+        EXPECT_EQ(seen.faultsOf(ReasonCode::TransportUnavailable), 0u);
+        EXPECT_EQ(seen.faultsOf(ReasonCode::Unauthorized), static_cast<std::size_t>(status == 401 ? 1 : 0));
+    }
+}
+
+// SCE_MESH.md section 22.4: after a failure the client polls again on its
+// own backoff, 250 ms doubling to 30 s when the binding declares no retry
+// policy. Red if kInitialReconnectBackoff is not 250 ms (the first wait then
+// falls outside [250 ms, 500 ms)), or if the wait does not double.
+TEST(HttpsClient, WithoutARetryPolicyAFailedPollIsTriedAgainAfter250MsDoubling) {
+    EXPECT_EQ(Https::kInitialReconnectBackoff, 250ms);
+    EXPECT_EQ(Https::kMaxReconnectBackoff, 30000ms);
+    Scripted transport;
+    Starts polls;
+    transport.onPoll = [&polls](const HttpsRequest &) {
+        polls.mark();
+        return HttpsExchange::failed(HttpsExchange::Failure::Connect, "refused");
+    };
+    MemoryCredentials credentials("token");
+    Observed seen;
+    Https::Client client(config(), Https::ClientHost{&transport, &credentials}, seen.events());
+    ASSERT_TRUE(client.start());
+    ASSERT_TRUE(seen.waitFor([&] { return polls.at().size() >= 3; }));
+    client.stop();
+    const auto at = polls.at();
+    ASSERT_GE(at.size(), 3u);
+    EXPECT_GE(at[1] - at[0], 250ms);
+    EXPECT_LT(at[1] - at[0], 500ms);
+    EXPECT_GE(at[2] - at[1], 500ms);
+}
+
+// SCE_MESH.md section 22.4: a server that sheds an exchange names the wait in
+// `Retry-After`; one that names none is asked again on the client's own
+// backoff, here the binding's retry policy, for the poll and for the send
+// alike. Red if either loop waits kInitialReconnectBackoff (250 ms) there
+// instead of reconnectBackoff.
+TEST(HttpsClient, AShedThatNamesNoWaitIsAskedAgainOnTheClientsBackoff) {
+    auto c = config();
+    c.retry = Https::RetryPolicy{1, 20ms, 2.0, 40ms, 0};
+    // The poll.
+    {
+        Scripted transport;
+        Starts polls;
+        transport.onPoll = [&polls](const HttpsRequest &request) {
+            if (polls.mark() == 1) {
+                return HttpsExchange::response(503, {}, {});
+            }
+            return anEmptyHold(request);
+        };
+        MemoryCredentials credentials("token");
+        Observed seen;
+        Https::Client client(c, Https::ClientHost{&transport, &credentials}, seen.events());
+        ASSERT_TRUE(client.start());
+        ASSERT_TRUE(seen.waitFor([&] { return seen.ready_ == 1; }));
+        client.stop();
+        const auto at = polls.at();
+        ASSERT_GE(at.size(), 2u);
+        EXPECT_LT(at[1] - at[0], 200ms);
+        EXPECT_TRUE(seen.not_ready_.empty());
+        EXPECT_TRUE(seen.faults_.empty());
+    }
+    // The send.
+    {
+        Scripted transport;
+        Starts sends;
+        transport.onSend = [&sends](const HttpsRequest &, int attempt) {
+            sends.mark();
+            return attempt == 1 ? HttpsExchange::response(503, {}, {}) : HttpsExchange::response(200, {}, {});
+        };
+        MemoryCredentials credentials("token");
+        Observed seen;
+        Https::Client client(c, Https::ClientHost{&transport, &credentials}, seen.events());
+        ASSERT_TRUE(client.start());
+        ASSERT_TRUE(client.send(envelope("service.request.a", 11)));
+        ASSERT_TRUE(seen.waitFor([&] { return sends.at().size() >= 2; }));
+        client.stop();
+        const auto at = sends.at();
+        ASSERT_GE(at.size(), 2u);
+        EXPECT_LT(at[1] - at[0], 200ms);
+        EXPECT_TRUE(seen.faults_.empty());
+    }
 }
 
 TEST(HttpsClient, AMailboxEnvelopeThatDoesNotDecodeIsEnvelopeCorruptAndAcknowledged) {
