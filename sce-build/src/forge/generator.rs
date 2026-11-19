@@ -44009,12 +44009,14 @@ fn lower_algorithm_stmt(
         AlgorithmStmt::Foreach { key: Some(_), .. }
         | AlgorithmStmt::Put { .. }
         | AlgorithmStmt::Remove { .. }
-        | AlgorithmStmt::Clear { .. } => Err(GenerateError::unsupported(format!(
-            "a statement of a map or a set has no {} lowering in an algorithm yet ({})",
-            lang.canonical_name(),
-            crate::forge::value_type::MAP_LANDING
-        ))
-        .into()),
+        | AlgorithmStmt::Clear { .. } => {
+            return Err(GenerateError::unsupported(format!(
+                "a statement of a map or a set has no {} lowering in an algorithm yet ({})",
+                lang.canonical_name(),
+                crate::forge::value_type::MAP_LANDING
+            ))
+            .into());
+        }
         AlgorithmStmt::Foreach {
             item,
             source,
