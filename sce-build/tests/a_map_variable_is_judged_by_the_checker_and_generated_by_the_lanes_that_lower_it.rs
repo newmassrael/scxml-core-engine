@@ -377,12 +377,36 @@ fn rust_holds_a_maps_record_entries_in_their_units_types() {
     }
 }
 
+/// The paths of the calls each call of the function `name` holds in its
+/// arguments, as their tokens print ([`Called`]).
+struct CallsAround {
+    name: String,
+    within: Vec<Vec<String>>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for CallsAround {
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        use quote::ToTokens;
+        if let syn::Expr::Path(path) = call.func.as_ref() {
+            if path.path.to_token_stream().to_string() == self.name {
+                let mut inner = Called::default();
+                for argument in &call.args {
+                    syn::visit::Visit::visit_expr(&mut inner, argument);
+                }
+                self.within.push(inner.0);
+            }
+        }
+        syn::visit::visit_expr_call(self, call);
+    }
+}
+
 /// docs/adr/0108, D6 item 4: a map's enum value is held in the type the
 /// enum's unit declares, as a record entry is. A value of the machine's own
 /// enum is put through the function that crosses it into the unit's type, and
 /// the saved state writes each value the map holds back through the other, so
-/// it is saved as a variable of the machine's enum is. Read off the syntax
-/// tree.
+/// it is saved as a variable of the machine's enum is. A guard that reads a
+/// value out of the map compares it as a value of the machine's enum, crossed
+/// back where it is read. Read off the syntax tree.
 #[test]
 fn rust_holds_a_maps_enum_entries_in_their_units_type() {
     use quote::ToTokens;
@@ -396,7 +420,10 @@ fn rust_holds_a_maps_enum_entries_in_their_units_type() {
         &document,
         "<sce:clear target=\"flags\"/>",
         "<sce:clear target=\"flags\"/>\n      \
-         <sce:put target=\"outcomes\" key=\"1\" expr=\"putResult\"/>",
+         <sce:put target=\"outcomes\" key=\"1\" expr=\"putResult\"/>\n      \
+         <if cond=\"outcomes[1] === PutOutcome.inserted\">\n        \
+         <assign location=\"refused\" expr=\"refused + 1\"/>\n      \
+         </if>",
     );
     let (ok, printed, files) = generate_rust_files(&document);
     assert!(ok, "Rust generates a map of enum values:\n{printed}");
@@ -424,6 +451,22 @@ fn rust_holds_a_maps_enum_entries_in_their_units_type() {
             "the put and the saved form of `outcomes` do not cross through `{name}`:\n{machine}"
         );
     }
+    // The guard reads the value at 1, of the unit's type, and crosses it back
+    // into the machine's enum its variant literal is of: the function back is
+    // called on the map's read itself, which the saved form's call is not.
+    let back = declared.function("put_outcome :: PutOutcome", &own, &machine);
+    let tree = syn::parse_file(&machine).expect("the generated machine parses as Rust");
+    let mut around = CallsAround {
+        name: back.clone(),
+        within: Vec::new(),
+    };
+    syn::visit::Visit::visit_file(&mut around, &tree);
+    assert!(
+        around.within.iter().any(|inner| inner
+            .iter()
+            .any(|path| path.ends_with("map :: value_cloned"))),
+        "the read of `outcomes[1]` in the guard does not cross back through `{back}`:\n{machine}"
+    );
     assert!(
         declared
             .uses
