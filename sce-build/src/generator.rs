@@ -1871,6 +1871,12 @@ fn reject_static_datamodel_in_unsupported_lang(
         .copied()
         .collect();
     reject_static_datamodel_outside(model, language, &accepted)?;
+    // A call that lends an imported algorithm a map is refused for the call,
+    // the one refusal every lane asks first (docs/adr/0108, D6 item 2), before
+    // anything of the maps the document holds is asked of this backend.
+    if let Some(scope) = crate::forge::type_ctx::StaticScope::of(model) {
+        crate::forge::static_lowering::lent_map_unlowered(&scope, language.canonical_name())?;
+    }
     reject_static_invoke_idlocation_outside(model, language, STATIC_INVOKE_IDLOCATION_BACKENDS)?;
     // A composed value (docs/adr/0086) this backend does not lower is refused
     // by name before anything of the model is read, by the one decision keyed
