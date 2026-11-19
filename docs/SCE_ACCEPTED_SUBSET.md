@@ -6304,14 +6304,19 @@ of the largest bound it could lend, and a machine holds this storage in its
 under a seed derived from the seed of a map the algorithm is lent or returns
 (D8), on Rust by its number among such locals, on C11 under its name
 (`sce_map_seed_of_child`). An algorithm that has neither takes its caller's
-seed instead, a parameter after the declared ones and before any destination
-(Rust `sce_map_seed: MapSeed`, C11 `sce_map_seed_t` last): a Rust machine that
-calls one keeps a seed drawn from the seed of its maps where it is built
-(`sce_algorithm_seed`) and a C11 machine hands it the seed its own maps were
-started under, a C11 machine that holds no map, and so is started under no
-seed, refusing the call by name; a Rust algorithm that calls one hands it a
-seed drawn from its own after its locals' (one with no seed of its own to draw
-one from is refused by name). On Rust a text or a byte string key or value is
+seed instead where it builds a map or calls an algorithm that takes one, which
+is decided over the algorithms its calls reach as a whole (the least fixed
+point: a callee is answered before its caller, and a cycle of calls adds no
+map none of its algorithms builds). It takes the seed as a parameter after the
+declared ones and before the storage of its maps and any destination (Rust
+`sce_map_seed: MapSeed`, C11 `sce_map_seed_t sce_seed_`). A machine that calls
+one hands it the seed it keeps for it, whether or not it holds a map: Rust a
+seed drawn from the seed of its maps where it is built (`sce_algorithm_seed`),
+C11 the seed it was started with, which such a machine takes at every start as
+one that holds a map does. An algorithm that calls one hands it a seed derived
+from its own, Rust by its number after its locals', C11 under the callee's
+alias, and on C11 the struct of the callee's own maps, a member of its own, after
+it. On Rust a text or a byte string key or value is
 held in `SceString<N>` or `SceBytes<N>`, `N` the bound the slot's type states
 inside it or, for a parameter that states none, the caller's, a further bound
 the function is generic over (`K0`, `V0`); a put builds one from a walk's item
