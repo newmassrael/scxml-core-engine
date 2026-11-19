@@ -9,7 +9,7 @@
 // `ordering: required`: sender engine + codegen + OrderingBuffer.
 //
 // Hermeticity:
-//   * Cases 1–4 construct a `TransportRouter` without calling
+//   * Cases 1–4 and 6 construct a `TransportRouter` without calling
 //     `init()`. The admit path runs against the OrderingBuffer
 //     initialised from the per-machine `ordering:` block in
 //     `deploy_ordered.yaml` (10 ms gap, 5 ms tick) regardless of
@@ -35,6 +35,9 @@
 //   5. The router's periodic tick thread recovers a stalled gap with
 //      no further inbound traffic and no manual tick invocation
 //      (§10.6.4 gap-at-stream-end).
+//   6. The sender's stamp numbers only what an ordered receiver
+//      places: no RpcReply, no FieldNotify, and no subscription the
+//      transport realises natively (§10.6.3).
 //
 // Mutation guard (manual procedure): the ordering layer is load-bearing
 // iff this assertion fails when it is removed. Temporarily edit
@@ -53,6 +56,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -309,6 +313,38 @@ int run_test() {
                           "periodic tick must release buffered seq=3 after fast-forward");
 
         router.shutdown();  // joins ordering_tick_thread_; idempotent with dtor
+    }
+
+    // ── 6. The stamp numbers only what an ordered receiver places ──
+    // §10.6.3: the counter of the ordered `#motor` binding advances for
+    // a send and a request, and for nothing else. An RpcReply and a
+    // FieldNotify pass the receiver's buffer, and Zenoh realises a
+    // subscription natively with no envelope on the wire, so none of
+    // them takes a number: the request after them follows the send
+    // with no gap. Red if `stampSequence` numbers every envelope.
+    {
+        TestSenderEngine sender;
+        RouterT router({&sender});
+
+        const auto stamped = [&router](PK::PatternKind pattern) {
+            SCE::Mesh::MeshEnvelope env;
+            env.id = SCE::uuid::v7();
+            env.source = "brake";
+            env.type = "brake.activate";
+            env.pattern = pattern;
+            router.stampSequence("#motor", env);
+            return env.sequence_no;
+        };
+        MESH_TEST_REQUIRE(stamped(PK::PatternKind::FireForget) == std::optional<std::uint64_t>{1},
+                          "a send on the ordered binding takes number 1");
+        MESH_TEST_REQUIRE(!stamped(PK::PatternKind::RpcReply).has_value(), "an RpcReply takes no number");
+        MESH_TEST_REQUIRE(!stamped(PK::PatternKind::FieldNotify).has_value(), "a FieldNotify takes no number");
+        MESH_TEST_REQUIRE(!stamped(PK::PatternKind::EventSubscribe).has_value(),
+                          "a subscription Zenoh realises natively takes no number");
+        MESH_TEST_REQUIRE(!stamped(PK::PatternKind::EventUnsubscribe).has_value(),
+                          "an unsubscription Zenoh realises natively takes no number");
+        MESH_TEST_REQUIRE(stamped(PK::PatternKind::RpcRequest) == std::optional<std::uint64_t>{2},
+                          "the request after them follows the send with no gap");
     }
 
     std::printf("SCE Mesh ordering injection regression: PASS\n");

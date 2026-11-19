@@ -27,11 +27,16 @@
    immediately before `route_send` — the placement the section names — and
    `invokeMeshRpc` takes it before a request reaches any transport, so a
    `<send>` and a mesh-rpc request on one binding share one counter, as the
-   host cores' shared write step has them share it. The counter is plain
-   `uint64_t` rather than an atomic because both callers run only on the
-   engine's step thread, and carries no wrap guard, both as the section
-   allows. The receiving half (`admitOrdered`, MISSING_SEQUENCE) is
-   §mesh-10.6.4 and is bound separately. #}
+   host cores' shared write step has them share it. `init()` and
+   `shutdown()` take it too, for the deploy.yaml machine-lifetime subscribe
+   and unsubscribe (SCE_MESH.md §13), which are ordered like a send; they run off
+   the step thread, so the counter is a `std::atomic`, and carries no wrap
+   guard, as the section allows. The step numbers only what an ordered
+   receiver places: `sequenced` excludes RpcReply and FieldNotify, the
+   patterns the receiving half (`admitOrdered`, MISSING_SEQUENCE,
+   §mesh-10.6.4) lets past its buffer, and a subscription the binding's
+   transport realises natively takes no number, since no envelope carries
+   it. #}
 
 {# §mesh-15.2: one Zenoh session per device, shared by every zenoh user on
    it. `TransportRouter` declares a single `std::optional<zenoh::Session>
@@ -2195,13 +2200,15 @@ struct TransportRouter {
 {% endif %}
 {# SCE_MESH.md §10.6.3: per-target monotonic sequence counter. One
    counter per binding that has `needs_ordering = true`; counter is
-   incremented only by `stampSequence`, whose callers (the mesh send
-   callback and `invokeMeshRpc`) run on the engine's single step
-   thread, so no mutex is needed. The codegen emits counters
-   only for the specific targets that need them, so zero-overhead
-   mixed-binding machines keep their existing layout. #}
+   incremented only by `stampSequence`. Its callers are the mesh send
+   callback and `invokeMeshRpc` on the engine's step thread, and
+   `init()` / `shutdown()` for the machine-lifetime subscriptions off
+   it, so the counter is atomic: each caller draws a number no other
+   draws, with no gap. The codegen emits counters only for the
+   specific targets that need them, so zero-overhead mixed-binding
+   machines keep their existing layout. #}
 {% for target in targets if target.needs_ordering %}
-    std::uint64_t seq_counter_{{ target.target_snake }}_ = 0;
+    std::atomic<std::uint64_t> seq_counter_{{ target.target_snake }}_{0};
 {% endfor %}
 
 {# ── (D1c) SCE Mesh §10.10 per-target outbound buffers ──────────────
@@ -4878,6 +4885,11 @@ struct TransportRouter {
             sub_env.type = "{{ sub.event }}";
             sub_env.pattern = SCE::Mesh::PatternKind::EventSubscribe;
             sub_env.datacontenttype = SCE::Mesh::PayloadCodec::None;
+{% if has_ordered_binding %}
+            // SCE_MESH.md §10.6.3: a subscription is ordered like a send,
+            // so on an ordered binding it takes the binding's next number.
+            stampSequence("{{ sub.source }}", sub_env);
+{% endif %}
             (void)route_send("{{ sub.source }}", sub_env);
         }
 {% endfor %}
@@ -4989,6 +5001,10 @@ struct TransportRouter {
                 unsub_env.type = "{{ sub.event }}";
                 unsub_env.pattern = SCE::Mesh::PatternKind::EventUnsubscribe;
                 unsub_env.datacontenttype = SCE::Mesh::PayloadCodec::None;
+{% if has_ordered_binding %}
+                // SCE_MESH.md §10.6.3: numbered as its subscribe was.
+                stampSequence("{{ sub.source }}", unsub_env);
+{% endif %}
                 (void)route_send("{{ sub.source }}", unsub_env);
             }
 {% endfor %}
@@ -6362,21 +6378,51 @@ struct TransportRouter {
         }
     }
 
+    /// Whether an envelope of `pattern` is in its sender's sequence on an
+    /// ordered binding (SCE_MESH.md §10.6.3, §10.6.4): numbered by
+    /// `stampSequence` and placed by `admitOrdered`. RpcReply and
+    /// FieldNotify find what they answer by its id, not by their place
+    /// in the stream, so they take no number and pass the buffer. The
+    /// one answer both halves ask, as the host cores' `sequenced` is.
+    static constexpr bool sequenced(SCE::Mesh::PatternKind pattern) {
+        return pattern != SCE::Mesh::PatternKind::RpcReply && pattern != SCE::Mesh::PatternKind::FieldNotify;
+    }
+
     /// Stamp `env` with the next sequence number of the ordered binding
     /// `target` (SCE_MESH.md §10.6.3), or leave it as it is when the
-    /// binding does not stamp. The router's one stamping step: the mesh
-    /// send callback takes it immediately before `route_send`, and
-    /// `invokeMeshRpc` before the request reaches a transport, so a
-    /// `<send>` and a mesh-rpc request on one binding draw from one
-    /// counter and the receiver's `admitOrdered` sees one stream.
+    /// binding does not stamp or the envelope takes no number. The
+    /// router's one stamping step: the mesh send callback takes it
+    /// immediately before `route_send`, `invokeMeshRpc` before the
+    /// request reaches a transport, and `init()` / `shutdown()` before
+    /// the machine-lifetime subscriptions reach `route_send`, so every
+    /// envelope on one binding draws from one counter and the
+    /// receiver's `admitOrdered` sees one stream.
     ///
-    /// Both callers run on the engine's single step thread, so the
-    /// counter needs no atomic. u64 wrap takes ~5.8e8 years at 1 kHz,
-    /// so no wrap guard is emitted.
+    /// A number goes only to an envelope an ordered receiver places:
+    /// not to a pattern `sequenced` excludes, and not to a subscription
+    /// on a transport that realises it natively (SOME/IP SD, a Zenoh
+    /// subscriber, a DDS reader), which puts no envelope on the wire
+    /// for it. A number either took would be one the receiver waits for
+    /// and never gets, a gap reported as ORDERING_GAP.
+    ///
+    /// The counter is atomic because `init()` and `shutdown()` call this
+    /// off the step thread. u64 wrap takes ~5.8e8 years at 1 kHz, so no
+    /// wrap guard is emitted.
     void stampSequence(const std::string& target, SCE::Mesh::MeshEnvelope& env) {
+        if (!sequenced(env.pattern)) {
+            return;
+        }
 {% for t in targets if t.needs_ordering %}
         if (target == "{{ t.target }}") {
-            env.sequence_no = ++seq_counter_{{ t.target_snake }}_;
+{% if t.state.kind in ["someip", "zenoh_keyexpr", "dds"] %}
+            // {{ t.state.kind }} realises a subscription natively: no
+            // envelope carries it, so it takes no number.
+            if (env.pattern == SCE::Mesh::PatternKind::EventSubscribe
+                || env.pattern == SCE::Mesh::PatternKind::EventUnsubscribe) {
+                return;
+            }
+{% endif %}
+            env.sequence_no = seq_counter_{{ t.target_snake }}_.fetch_add(1, std::memory_order_relaxed) + 1;
             return;
         }
 {% endfor %}
@@ -6425,8 +6471,7 @@ struct TransportRouter {
     ///         not poll the return value.
     [[nodiscard]] bool admitOrdered(const SCE::Mesh::MeshEnvelope& env,
                                     std::size_t session_idx) {
-        using PK = SCE::Mesh::PatternKind;
-        if (env.pattern == PK::RpcReply || env.pattern == PK::FieldNotify) {
+        if (!sequenced(env.pattern)) {
 {% if has_undeduped_transport %}
             // §10.5 still applies past the buffer: a reply the
             // transport delivered twice reaches the engine once.
