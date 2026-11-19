@@ -1707,7 +1707,8 @@ against the machine's document when the machine is generated with the deployment
 (`generate --deploy`): a value the document declares and `config:` leaves out, and an
 entry that writes neither key for a machine that declares one, is
 `mesh/deploy-config-missing`; a key the document declares no value of is
-`mesh/deploy-config-unknown`, with the values it does declare as `expected`; a value that
+`mesh/deploy-config-unknown`, its fix a `replace_one_of` among the values the document
+declares and `config:` does not give yet (none when every one is given); a value that
 is no value of its type by the type's payload schema (docs/adr/0087, section 1: every
 bound held, an integer in its type's range, a 64-bit one written as a YAML integer or as
 the text of its digits, a byte string as the text of its bytes, an enum value by its

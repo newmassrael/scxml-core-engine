@@ -1231,7 +1231,7 @@ references against a real document and drift silently.
 | `mesh/deploy-child-unknown-parent` | `mesh-deploy` | `replace_one_of` | SCE Mesh §21 |
 | `mesh/deploy-config-invalid` | `mesh-deploy` | no | ADR 0109 D12 |
 | `mesh/deploy-config-missing` | `mesh-deploy` | no | ADR 0109 D12 |
-| `mesh/deploy-config-unknown` | `mesh-deploy` | no | ADR 0109 D12 |
+| `mesh/deploy-config-unknown` | `mesh-deploy` | `replace_one_of` | ADR 0109 D12 |
 | `mesh/deploy-cross-target-reply-not-supported` | `mesh-deploy` | no | SCE Mesh §14.6 |
 | `mesh/deploy-delivery-conflict` | `mesh-deploy` | no | SCE Mesh §10.12 |
 | `mesh/deploy-discovery-not-supported` | `mesh-deploy` | no | SCE Mesh §3.3 |

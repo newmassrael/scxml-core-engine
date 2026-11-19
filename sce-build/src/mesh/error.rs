@@ -1163,7 +1163,9 @@ pub enum DeployError {
     /// A key of the machine's `config:` that names no value its document
     /// declares the deployment supplies (docs/adr/0109, D12): a value the
     /// machine would never read. `declared` is every value the document
-    /// declares, in declaration order. Judged against the machine's
+    /// declares, in declaration order; `candidates` the ones of them
+    /// `config:` does not give, which are the names the key can be replaced
+    /// by without giving a value twice. Judged against the machine's
     /// document, when it is generated.
     #[error(
         "machine '{machine}': `config:` gives '{key}', which the machine's document declares no \
@@ -1174,6 +1176,7 @@ pub enum DeployError {
         machine: String,
         key: String,
         declared: Vec<String>,
+        candidates: Vec<String>,
     },
 
     /// A machine's configuration that the deployment cannot supply as it is
@@ -4357,18 +4360,23 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             key_fragments: vec![machine.clone(), value.clone()],
         },
         // The key no value is declared for is `actual`; the values the
-        // document declares are the candidates, closest first being the
-        // author's to choose, so no fix is offered.
+        // document declares and `config:` does not give yet are the closed
+        // set it can be replaced by, so they ride `Fix::ReplaceOneOf` and
+        // `expected` stays absent (SCE_ERROR_CONTRACT.md section 3.2). With
+        // every declared value given there is no name to offer, and no fix.
         DeployError::ConfigUnknown {
             machine,
             key,
-            declared,
+            declared: _,
+            candidates,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployConfigUnknown,
             stage: Stage::MeshDeploy,
             actual: Some(key.clone()),
-            expected: (!declared.is_empty()).then(|| declared.clone()),
-            fix: None,
+            expected: None,
+            fix: (!candidates.is_empty()).then(|| Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
             key_fragments: vec![machine.clone(), key.clone()],
         },
         // The place refused is `actual`, as a strict RFC 6901 pointer below
