@@ -107,6 +107,21 @@ use sce_rust_tests::integration::static_datamodel::static_list_index_sm::{
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPersist, StaticListPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_map_composite_key_sm::{
+    StaticMapCompositeKeyPersist, StaticMapCompositeKeyPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_map_full_sm::{
+    StaticMapFullPersist, StaticMapFullPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_map_order_sm::{
+    StaticMapOrderPersist, StaticMapOrderPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_map_record_sm::{
+    StaticMapRecordPersist, StaticMapRecordPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_map_sm::{
+    StaticMapPersist, StaticMapPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_optional_record_sm::{
     StaticOptionalRecordPersist, StaticOptionalRecordPolicy,
 };
@@ -196,6 +211,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_target_sm::{
 };
 use sce_rust_tests::integration::static_datamodel::static_send_type_sm::{
     StaticSendTypePersist, StaticSendTypePolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_set_sm::{
+    StaticSetPersist, StaticSetPolicy,
 };
 use sce_rust_tests::integration::static_datamodel::static_state_algorithm_enum_sm::{
     StaticStateAlgorithmEnumPersist, StaticStateAlgorithmEnumPolicy,
@@ -640,6 +658,87 @@ fn static_lift_reads_a_text_into_a_record_or_keeps_its_refusal() {
 // A text read into a record that holds a list of records, or its refusal kept, at
 // every depth of the record: the list's counts, a field of an item, and a container
 // opened past the deepest the record holds (docs/adr/0087, "Landing order" item 8).
+// A map of amounts by a number: a put of an absent key goes last and of a held
+// one replaces its value where it stands; `has`, a read that fails for an
+// absent key, a remove with and without an outcome, and `<sce:clear>`
+// (docs/adr/0108, D2 to D4).
+#[test]
+fn static_map_puts_reads_and_removes_by_key() {
+    replay(
+        Engine::new(StaticMapPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map.json"
+        ),
+    );
+}
+
+// A full map answers `full` as a value where the put names an outcome, and
+// fails where it names none (docs/adr/0108, D4).
+#[test]
+fn static_map_full_answers_full_and_fails_without_an_outcome() {
+    replay(
+        Engine::new(StaticMapFullPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_full.json"
+        ),
+    );
+}
+
+// A map of records: a field read at a key, and the value taken whole into a
+// record variable as a copy (docs/adr/0108, D2 and D3).
+#[test]
+fn static_map_record_reads_a_field_and_copies_a_value() {
+    replay(
+        Engine::new(StaticMapRecordPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_record.json"
+        ),
+    );
+}
+
+// A map keyed by a record of two 64-bit halves, compared field by field, and
+// looked up by the payload taken whole (docs/adr/0108, D1 and D3).
+#[test]
+fn static_map_composite_key_keeps_swapped_halves_apart() {
+    replay(
+        Engine::new(StaticMapCompositeKeyPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_composite_key.json"
+        ),
+    );
+}
+
+// The order of a map's entries is the order their keys were first put, and a
+// walk that removes each key it meets walks a copy (docs/adr/0108, D2, D5 and
+// D6).
+#[test]
+fn static_map_order_walks_the_entries_in_the_order_they_were_put() {
+    replay(
+        Engine::new(StaticMapOrderPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_order.json"
+        ),
+    );
+}
+
+// A set of texts: a held key is `replaced` and stays where it was, one past the
+// bound is `full`, and a walk meets the keys in order (docs/adr/0108, D1 to D5).
+#[test]
+fn static_set_holds_its_keys_in_the_order_they_were_put() {
+    replay(
+        Engine::new(StaticSetPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_set.json"
+        ),
+    );
+}
+
 #[test]
 fn static_lift_list_reads_a_text_into_a_record_that_holds_a_list() {
     replay(
