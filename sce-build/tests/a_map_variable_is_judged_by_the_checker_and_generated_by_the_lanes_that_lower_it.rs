@@ -1575,3 +1575,221 @@ fn an_algorithm_map_statement_is_refused_naming_what_it_takes() {
         "a map or a set an algorithm returns declares may-fail",
     );
 }
+
+/// What `generate -l c11` of the document `name`, written as `document` beside
+/// `siblings` copied from the fixture directory, prints and writes: whether it
+/// passed, what it printed, and every header and source it wrote, in the order
+/// of their names.
+fn generate_c11_beside(name: &str, document: &str, siblings: &[&str]) -> (bool, String, String) {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for sibling in siblings {
+        std::fs::copy(static_fixtures().join(sibling), dir.path().join(sibling))
+            .expect("copy an import");
+    }
+    let path = dir.path().join(name);
+    std::fs::write(&path, document).expect("write the document");
+    let out_dir = tempfile::tempdir().expect("an output directory");
+    let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
+    let (ok, printed) = run(&["generate", "-l", "c11", "-o", out.as_str()], &path);
+    let mut files: Vec<PathBuf> = std::fs::read_dir(out_dir.path())
+        .expect("read the output")
+        .map(|entry| entry.expect("an output file").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "h" || ext == "c"))
+        .collect();
+    files.sort();
+    let mut code = String::new();
+    for path in files {
+        code.push_str(&std::fs::read_to_string(&path).expect("read a generated file"));
+    }
+    (ok, printed, code)
+}
+
+/// The line of the generated `code` that opens the definition of a C function
+/// whose declaration holds `marker`.
+fn c11_definition<'c>(code: &'c str, marker: &str) -> &'c str {
+    code.lines()
+        .find(|line| line.starts_with("static inline ") && line.contains(marker))
+        .unwrap_or_else(|| panic!("no definition holding `{marker}` in:\n{code}"))
+}
+
+/// The parameters the definition line `line` declares, each as written, read
+/// apart at the commas of its parameter list.
+fn c11_parameters(line: &str) -> Vec<String> {
+    let list = &line[line.find('(').expect("a parameter list") + 1..];
+    let list = &list[..list.rfind(')').expect("a parameter list is closed")];
+    list.split(", ").map(str::to_string).collect()
+}
+
+/// The text of the function the definition line `line` opens in `code`, from
+/// that line to the brace that closes it at the start of a line.
+fn c11_function<'c>(code: &'c str, line: &str) -> &'c str {
+    let rest = &code[code.find(line).expect("the line is of the code")..];
+    &rest[..rest.find("\n}").expect("a function is closed") + 2]
+}
+
+/// docs/adr/0108, D6 items 1, 2 and 4 on C11: an algorithm is lent each map by
+/// the address of its caller's storage, the core every map type begins with,
+/// which views a map of any bound and is never copied. The `inout` table of
+/// `algorithm_take_generation.scxml` is that address, read by `has` and at a
+/// key through it, the value read as the type the algorithm names since the
+/// address names no type of the map, and put into where it stands with its
+/// outcome written as the standard enum's variant. A read-only slot is a
+/// `const` view, and a walk of it whose body writes nothing of the map walks the
+/// map itself, binding one entry at a time. A walk whose body writes the map it
+/// walks would walk a copy of the map's whole bound, and a map local would hold
+/// one in the frame: C11 refuses each by name.
+#[test]
+fn c11_lends_an_algorithm_its_map_by_address_and_copies_none() {
+    let (ok, printed, code) = generate_c11_beside(
+        "algorithm_take_generation.scxml",
+        &take_generation(),
+        &TAKE_SIBLINGS,
+    );
+    assert!(ok, "C11 generates the algorithm:\n{printed}");
+    let line = c11_definition(&code, " take_generation(");
+    assert_eq!(
+        c11_parameters(line).first().map(String::as_str),
+        Some("sce_map_core_t * resets"),
+        "the inout table is the address of the caller's storage: {line}"
+    );
+    let body = c11_function(&code, line);
+    for held in [
+        "sce_map_holds(&((*resets))",
+        "SCE_MAP_VALUE_AS(uint64_t, sce_map_lookup_found(sce_map_lookup(&((*resets))",
+        "sce_map_put(resets, &sce_key_, sizeof(sce_key_), &sce_value_, sizeof(sce_value_))",
+        "sce_put_ == SCE_MAP_PUT_INSERTED ? ",
+    ] {
+        assert!(
+            body.contains(held),
+            "no `{held}` in the generated algorithm:\n{body}"
+        );
+    }
+    assert!(
+        code.contains("#include \"sce/forge/map.h\""),
+        "the header of the map's functions is not included:\n{code}"
+    );
+    // A body that does not declare may-fail reads the value the lookup found,
+    // with no failure to record.
+    assert!(
+        !body.contains("sce_map_lookup_take") && !body.contains("sce_failure_"),
+        "the proven read records a failure:\n{body}"
+    );
+    for copy in ["sce_map_copy_for_walk", "sce_map_assign", "memcpy"] {
+        assert!(!body.contains(copy), "`{copy}` copies the map:\n{body}");
+    }
+
+    let walks = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="any_above" version="1.0">
+  <sce:signature>
+    <sce:param name="m" type="map&lt;uint32, uint64&gt;"/>
+    <sce:param name="least" type="uint64"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:foreach in="m" item="v" key="k">
+      <sce:if cond="v &gt; least &amp;&amp; k &gt; 0">
+        <sce:assign target="found" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>"#;
+    let (ok, printed, code) = generate_c11_beside("algorithm_any_above.scxml", walks, &[]);
+    assert!(ok, "C11 generates a walk of a read-only map:\n{printed}");
+    let line = c11_definition(&code, " any_above(");
+    assert_eq!(
+        c11_parameters(line).first().map(String::as_str),
+        Some("const sce_map_core_t * m"),
+        "a read-only slot is a const view of the caller's storage: {line}"
+    );
+    let body = c11_function(&code, line);
+    for held in [
+        "for (uint32_t sce_at_v_ = sce_map_first(m); sce_at_v_ != SCE_MAP_NO_ENTRY; \
+         sce_at_v_ = sce_map_next(m, sce_at_v_)) {",
+        "const uint64_t v = *(const uint64_t *)sce_map_value_at(m, sce_at_v_);",
+        "const uint32_t k = *(const uint32_t *)sce_map_key_at(m, sce_at_v_);",
+    ] {
+        assert!(body.contains(held), "no `{held}` in the walk:\n{body}");
+    }
+    for copy in ["sce_map_copy_for_walk", "sce_map_assign", "memcpy"] {
+        assert!(!body.contains(copy), "`{copy}` copies the map:\n{body}");
+    }
+
+    let writes_its_map = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="drop_below" version="1.0">
+  <sce:signature>
+    <sce:param name="m" type="map&lt;uint32, uint64&gt;" inout="true"/>
+    <sce:param name="least" type="uint64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:foreach in="m" item="v" key="k">
+      <sce:if cond="v &lt; least">
+        <sce:remove target="m" key="k"/>
+      </sce:if>
+    </sce:foreach>
+  </sce:body>
+</scxml>"#;
+    let (ok, printed, _) = generate_c11_beside("algorithm_drop_below.scxml", writes_its_map, &[]);
+    assert!(
+        !ok,
+        "C11 has no storage to copy the walked map into:\n{printed}"
+    );
+    assert!(
+        printed.contains("\"code\":\"generate/unsupported-feature\"")
+            && printed.contains("a walk of a map its body writes"),
+        "{printed}"
+    );
+
+    let holds_its_own = edited_algorithm(
+        &take_generation(),
+        "    <sce:var name=\"taken\" type=\"union:TakeResult\">",
+        "    <sce:var name=\"seen\" type=\"set&lt;uint32&gt;[4]\"/>\n    \
+         <sce:clear target=\"seen\"/>\n    <sce:var name=\"taken\" type=\"union:TakeResult\">",
+    );
+    let (ok, printed, _) = generate_c11_beside(
+        "algorithm_take_generation.scxml",
+        &holds_its_own,
+        &TAKE_SIBLINGS,
+    );
+    assert!(!ok, "C11 holds no map of an algorithm's own:\n{printed}");
+    assert!(
+        printed.contains("\"code\":\"generate/unsupported-feature\"")
+            && printed.contains("holds the local `seen`")
+            && printed.contains("a map of its own"),
+        "{printed}"
+    );
+}
+
+/// docs/adr/0108, D6 items 2 and 4 on C11: the statechart that lends
+/// `algorithm_take_generation.scxml` its table (`static_map_take.scxml`)
+/// generates, the `<sce:call>` a call of the machine's adapter with the table
+/// lent by the address of the machine's own storage and the answer stored into
+/// `took`. The adapter takes that address and hands it on as it is, so nothing
+/// of the map crosses and nothing is written back.
+#[test]
+fn a_c11_statechart_lends_its_map_to_an_algorithm_where_it_holds_it() {
+    let mut siblings = TAKE_SIBLINGS.to_vec();
+    siblings.push("algorithm_take_generation.scxml");
+    let statechart = std::fs::read_to_string(static_fixtures().join("static_map_take.scxml"))
+        .expect("read the statechart");
+    let (ok, printed, code) = generate_c11_beside("static_map_take.scxml", &statechart, &siblings);
+    assert!(ok, "C11 generates the statechart:\n{printed}");
+    assert!(
+        code.contains("&(sm->policy.v_resets).core"),
+        "the table is not lent by its address:\n{code}"
+    );
+    let line = c11_definition(&code, "(sce_map_core_t * p0");
+    assert!(
+        line.contains(" call_"),
+        "the table's address is taken by no adapter: {line}"
+    );
+    let body = c11_function(&code, line);
+    assert!(
+        body.contains("(p0, "),
+        "the adapter hands the address on as it is:\n{body}"
+    );
+    for copy in ["sce_map_copy_for_walk", "sce_map_assign", "memcpy"] {
+        assert!(!body.contains(copy), "`{copy}` copies the map:\n{body}");
+    }
+}

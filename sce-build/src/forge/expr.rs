@@ -7861,8 +7861,14 @@ const C_MAP_HOLDS: &str = "sce_map_holds";
 /// What finds the value `m[k]` reads, a call that may fail, whose failure its
 /// `_take` records ([`pass_failure_on`]).
 const C_MAP_LOOKUP: &str = "sce_map_lookup";
+/// What takes the value a lookup found where the read is proven to find its
+/// key, in a body that receives no failure.
+const C_MAP_FOUND: &str = "sce_map_lookup_found";
 /// What reads the value the lookup found as the map holds its values.
 const C_MAP_VALUE_OF: &str = "SCE_MAP_VALUE_OF";
+/// What reads it as a value of the type it is handed, for a map lent by the
+/// address of its storage ([`TypeCtx::lent_map_values`]).
+const C_MAP_VALUE_AS: &str = "SCE_MAP_VALUE_AS";
 
 /// Each read of a map or a set of `expr` (docs/adr/0108, D3), spelled for a
 /// C11 machine, which holds one in the type `sce/forge/map.h` declares for its
@@ -7874,6 +7880,13 @@ const C_MAP_VALUE_OF: &str = "SCE_MAP_VALUE_OF";
 /// fails `out-of-range`, as an index outside a list does, and gives the map's
 /// zero value. A text value is read as its buffer's text, and so is a text
 /// field of a record value (`m[k].f`).
+///
+/// An algorithm reads its map parameter the same way, through the address of
+/// the caller's storage, which names no type of its bound: the value is read
+/// as the type the algorithm names for it (`SCE_MAP_VALUE_AS`,
+/// [`TypeCtx::lent_map_values`]), and in a body that does not declare
+/// `may-fail`, whose reads at a key the analysis proved present, as the value
+/// the lookup found with no failure to record (`sce_map_lookup_found`).
 ///
 /// A record the map holds is of the type its unit declares (D6 item 4,
 /// [`TypeCtx::map_units`]), which names every field as the machine's record
@@ -8007,21 +8020,47 @@ fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusa
         return Ok(false);
     };
     let (map, key) = (*object, *index);
+    // A map an algorithm is lent by the address of its storage names no type
+    // its value could be read as, so the read names the value's own
+    // ([`TypeCtx::lent_map_values`]).
+    let lent_value = match &map.kind {
+        ExprKind::Ident(name) => ctx.lent_map_values.get(name).cloned(),
+        _ => None,
+    };
     let (probe, feed) = c_map_probe(key, &held, ctx)?;
     let mut address = map.clone();
     let address_ty = address.ty;
     wrap_in_call(&mut address, "&", address_ty);
+    // A body that receives no failure is one whose every read at a key the
+    // analysis proved present (`algorithm/undeclared-integer-failure`), so the
+    // value is the one the lookup found, read with no failure to record.
     let lookup = TypedExpr::new(ExprKind::Call {
         callee: Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_LOOKUP.to_string()))),
         args: vec![address, probe, feed],
         params: Vec::new(),
-        fails: true,
+        fails: ctx.receives_failures,
         into_destination: false,
         storage: None,
     });
+    let found = if ctx.receives_failures {
+        lookup
+    } else {
+        TypedExpr::new(ExprKind::Call {
+            callee: Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_FOUND.to_string()))),
+            args: vec![lookup],
+            params: Vec::new(),
+            fails: false,
+            into_destination: false,
+            storage: None,
+        })
+    };
+    let (read, typed_by) = match lent_value {
+        Some(value) => (C_MAP_VALUE_AS, TypedExpr::new(ExprKind::Raw(value))),
+        None => (C_MAP_VALUE_OF, map),
+    };
     node.kind = ExprKind::Call {
-        callee: Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_VALUE_OF.to_string()))),
-        args: vec![map, lookup],
+        callee: Box::new(TypedExpr::new(ExprKind::Raw(read.to_string()))),
+        args: vec![typed_by, found],
         params: Vec::new(),
         fails: false,
         into_destination: false,

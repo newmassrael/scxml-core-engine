@@ -41064,6 +41064,94 @@ fn reject_map_in_unsupported_lang(
     .into())
 }
 
+/// docs/adr/0108, D4 "Storage" and D8, on C11: an algorithm is lent each map
+/// it reads, or writes in place, by the address of its caller's storage
+/// ([`crate::forge::static_lowering::c11_lent_map_type`]), and holds no map of
+/// its own. A map local, and the map a body builds to return, would be the
+/// whole bound the local states in the algorithm's frame, which no C11 frame
+/// holds (docs/adr/0082: no frame grows with a bound), and a map keys its index
+/// under a seed its machine is started with, which reaches no algorithm. Each
+/// is refused by name, before any statement of the body is lowered.
+fn reject_c11_map_storage(m: &AlgorithmModel) -> Result<(), ForgeError> {
+    let local = m
+        .body_bindings()
+        .into_iter()
+        .find_map(|binding| match binding {
+            crate::forge::model::AlgorithmBinding::Local { name, sce_type }
+                if sce_type.map_key().is_some() =>
+            {
+                Some(format!("the local `{name}` of {}", sce_type.as_attr()))
+            }
+            _ => None,
+        });
+    let returned = m
+        .signature
+        .return_type
+        .as_ref()
+        .filter(|ty| ty.map_key().is_some())
+        .map(|ty| format!("a return of {}", ty.as_attr()));
+    let Some(held) = local.or(returned) else {
+        return Ok(());
+    };
+    Err(GenerateError::unsupported_at(
+        format!(
+            "algorithm '{}' holds {held}, a map of its own, and c11 lends an algorithm only \
+             the maps its caller holds: a map of its own would be its bound in the algorithm's \
+             frame, keyed under no seed its caller hands it (docs/adr/0108, D4 and D8)",
+            m.name
+        ),
+        m.source_location.clone(),
+    )
+    .into())
+}
+
+/// The C type a C11 algorithm names a key or a value of the type `part` of the
+/// map `map` it is lent in (docs/adr/0108, D6 item 4): the type the machine
+/// that lends the map holds that part in, so an entry is read and written where
+/// the map holds it with nothing crossing. A number, a `bool` and a value of an
+/// enum are the types they are on both sides (an enum the typedef its document
+/// declares, which the machine's name for it aliases); a text is the buffer of
+/// its bound ([`crate::forge::static_lowering::c_string_storage_type`]); a
+/// record is the type its schema's unit declares, the one a machine's map holds
+/// it in. A byte string, which an algorithm holds as a view and a map as the
+/// buffer of its bound, and every part no map of C11 holds, are refused by
+/// name.
+fn c11_map_part_type(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    map: &str,
+    part: &crate::forge::value_type::ValueType,
+) -> Result<String, ForgeError> {
+    use crate::forge::value_type::ValueType;
+    match part {
+        ValueType::Scalar(
+            SceType::String | SceType::Bytes | SceType::Float32 | SceType::Float64,
+        )
+        | ValueType::Bytes { .. }
+        | ValueType::Optional { .. }
+        | ValueType::Union { .. }
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => Err(GenerateError::unsupported(format!(
+            "the map `{map}` an algorithm is lent holds a key or a value of type `{part}`, \
+             which a c11 algorithm reads in no type of a map's entry ({})",
+            crate::forge::value_type::MAP_LANDING
+        ))
+        .into()),
+        ValueType::Scalar(scalar) => Ok(l.type_name(scalar).into_owned()),
+        ValueType::Text { max } => Ok(crate::forge::static_lowering::c_string_storage_type(
+            max.max,
+        )),
+        ValueType::Record { alias } => {
+            Ok(
+                resolve_record(imports, alias, None, &format!("the map `{map}`"))?
+                    .qualified_type
+                    .clone(),
+            )
+        }
+    }
+}
+
 /// The record type `record:<alias>` names, judged for what v1 can carry
 /// (SCE_FORGE.md §4.12): an imported event-schema whose every field is a
 /// fixed-width number, a `bool`, an enum, or a `string` the schema bounds with
@@ -42821,6 +42909,412 @@ fn c11_whole_optional(
     }))
 }
 
+/// The map `map` a C11 algorithm is lent, with the C type of its key and of its
+/// value (`None` for a set), each the type the machine that lends it holds the
+/// part in ([`c11_map_part_type`]): what a statement and a walk of it name.
+struct C11LentMap {
+    /// The pointer it is lent by, the parameter of its name.
+    at: String,
+    place: crate::forge::value_path::Place,
+    key: String,
+    value: Option<String>,
+}
+
+impl C11LentMap {
+    /// The map the statement names `map`, read where `type_ctx` holds: on C11 a
+    /// map is a parameter, lent by the address of its caller's storage
+    /// ([`reject_c11_map_storage`] refuses one of the algorithm's own).
+    fn of(
+        ctx: &AlgorithmLowerCtx<'_>,
+        type_ctx: &crate::forge::types::TypeCtx<'_>,
+        map: &str,
+    ) -> Result<Self, ForgeError> {
+        let map = map.trim();
+        let place = type_ctx
+            .value_of(map)
+            .filter(crate::forge::value_path::Place::is_keyed)
+            .ok_or_else(|| {
+                GenerateError::InvalidConfig(format!(
+                    "`{map}` is named as a map, and the algorithm holds no map of that name — the \
+                     parser refuses this before codegen"
+                ))
+            })?;
+        let part = |part: Option<crate::forge::value_path::Place>| {
+            part.map(|part| c11_map_part_type(ctx.l, ctx.imports, map, &part.ty))
+                .transpose()
+        };
+        let key = part(place.map_key())?.ok_or_else(|| {
+            GenerateError::InvalidConfig(format!("the map `{map}` has no key type"))
+        })?;
+        let value = part(place.map_value())?;
+        Ok(Self {
+            at: ctx.l.local_id(map),
+            place,
+            key,
+            value,
+        })
+    }
+}
+
+/// `written`, a key or a value of type `ty` a `<sce:put>` or a `<sce:remove>`
+/// hands a C11 map (docs/adr/0108, D3), as the slot of that part holds it: a
+/// record by the name of the parameter, local or loop item that holds it, a
+/// text in the buffer of its bound, and a number, a `bool` and a value of an
+/// enum as the expression it is. Read where `type_ctx` holds.
+fn c11_algorithm_map_part_value(
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    written: &str,
+    spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+    ty: &crate::forge::value_type::ValueType,
+) -> Result<String, ForgeError> {
+    use crate::forge::types::InferredType;
+    use crate::forge::value_type::ValueType;
+    let site = ExpressionSite::new(written, spelling);
+    let lowered = |expected: InferredType| {
+        expr::transpile_typed(
+            written,
+            ctx.l.expr_target(),
+            type_ctx,
+            ctx.renames,
+            expected,
+        )
+        .map_err(|refusal| site.place(refusal))
+    };
+    let name = written.trim();
+    match ty {
+        ValueType::Record { .. } => {
+            let named = ctx.records.contains_key(name)
+                || type_ctx
+                    .value_of(name)
+                    .is_some_and(|place| matches!(place.ty, ValueType::Record { .. }));
+            if !named {
+                return Err(GenerateError::unsupported(format!(
+                    "`{name}` as a record key or value of a map, which is the name of a record \
+                     parameter, local or loop item ({})",
+                    crate::forge::value_type::MAP_LANDING
+                ))
+                .into());
+            }
+            Ok(ctx
+                .renames
+                .get(name)
+                .map_or_else(|| ctx.l.local_id(name), |held| (*held).to_string()))
+        }
+        ValueType::Text { max } => Ok(format!(
+            "{}({})",
+            crate::forge::static_lowering::c_string_storage_of(max.max),
+            lowered(InferredType::Str)?
+        )),
+        ValueType::Scalar(scalar) => lowered(InferredType::from_sce_type(scalar)),
+        ValueType::Bytes { .. }
+        | ValueType::Optional { .. }
+        | ValueType::Union { .. }
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => Err(GenerateError::unsupported(format!(
+            "`{name}` as a key or a value of type `{ty}` of a map ({})",
+            crate::forge::value_type::MAP_LANDING
+        ))
+        .into()),
+    }
+}
+
+/// The standard outcome enum `outcomes` names, as the algorithm imports it:
+/// what a variant written into an `outcome` is spelled by.
+fn c11_outcome_import<'i>(
+    imports: &'i [ImportContext],
+    outcomes: &crate::forge::static_lowering::C11Outcomes,
+) -> Result<&'i ImportContext, ForgeError> {
+    imports
+        .iter()
+        .find(|imp| imp.kind == "enum" && imp.enum_source_name == outcomes.document)
+        .ok_or_else(|| {
+            GenerateError::InvalidConfig(format!(
+                "an outcome of a map's statement is written, and the algorithm imports no \
+                 `{}` — the parser refuses this before codegen",
+                outcomes.document
+            ))
+            .into()
+        })
+}
+
+/// A `<sce:put>`, a `<sce:remove>` or a `<sce:clear>` of a C11 algorithm
+/// (docs/adr/0108, D3, D4 and D6 item 2), which writes the map it is lent in
+/// place where the caller holds it, through the functions of
+/// `sce/forge/map.h`: the key and the value are computed into locals of the
+/// map's own types, one entry, and handed by their addresses, and what the
+/// statement did is written into its `outcome` as the variant of the same name
+/// of the standard enum ([`crate::forge::static_lowering::c11_outcome_variant`]).
+/// A remove that names no outcome leaves a map without the key as it was. A put
+/// that names none fails `capacity-exceeded` on a full map, which only a body
+/// that declares `may-fail` can (an algorithm that does not names an outcome on
+/// every put, D6 item 2); in any other it is a pipeline fault.
+fn c11_algorithm_map_write(
+    s: &AlgorithmStmt,
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    pad: &str,
+) -> Result<String, ForgeError> {
+    use crate::forge::static_lowering::{
+        c11_outcome_variant, C11Outcomes, C11_PUT_OUTCOMES, C11_REMOVE_OUTCOMES,
+    };
+    let inner = format!("{pad}    ");
+    let key_line = |map: &C11LentMap, key: &str, spelling| -> Result<String, ForgeError> {
+        let key_ty = map
+            .place
+            .map_key()
+            .map(|part| part.ty)
+            .ok_or_else(|| GenerateError::InvalidConfig("a map with no key type".into()))?;
+        Ok(format!(
+            "{inner}const {} sce_key_ = {};\n",
+            map.key,
+            c11_algorithm_map_part_value(ctx, type_ctx, key, spelling, &key_ty)?
+        ))
+    };
+    let written =
+        |outcomes: &C11Outcomes, outcome: &str, answer: &str| -> Result<String, ForgeError> {
+            let imp = c11_outcome_import(ctx.imports, outcomes)?;
+            let variant = c11_outcome_variant(outcomes, answer, &|variant| {
+                crate::forge::enum_naming::variant_ref(
+                    crate::generator::Language::C11,
+                    &imp.enum_qualified_type,
+                    &imp.enum_source_name,
+                    variant,
+                )
+            })
+            .ok_or_else(|| GenerateError::InvalidConfig("an outcome enum of no variant".into()))?;
+            Ok(format!(
+                "{inner}{} = ({variant});\n",
+                ctx.l.local_id(outcome)
+            ))
+        };
+    Ok(match s {
+        AlgorithmStmt::Put {
+            target,
+            key,
+            key_spelling,
+            expr,
+            expr_spelling,
+            outcome,
+            ..
+        } => {
+            let map = C11LentMap::of(ctx, type_ctx, target)?;
+            let mut text = format!("{pad}{{\n{}", key_line(&map, key, key_spelling.as_ref())?);
+            let value = match (&map.value, map.place.map_value(), expr) {
+                (Some(held), Some(part), Some(expr)) => {
+                    text.push_str(&format!(
+                        "{inner}const {held} sce_value_ = {};\n",
+                        c11_algorithm_map_part_value(
+                            ctx,
+                            type_ctx,
+                            expr,
+                            expr_spelling.as_ref(),
+                            &part.ty
+                        )?
+                    ));
+                    "&sce_value_, sizeof(sce_value_)"
+                }
+                (None, None, None) => "NULL, 0u",
+                _ => {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "<sce:put target=\"{}\"> puts a value into a set or none into a map — \
+                         the parser refuses this before codegen",
+                        target.trim()
+                    ))
+                    .into())
+                }
+            };
+            let call = format!(
+                "sce_map_put({}, &sce_key_, sizeof(sce_key_), {value})",
+                map.at
+            );
+            match outcome.as_deref().map(str::trim) {
+                Some(outcome) => {
+                    text.push_str(&format!(
+                        "{inner}const {} sce_put_ = {call};\n",
+                        C11_PUT_OUTCOMES.runtime
+                    ));
+                    text.push_str(&written(&C11_PUT_OUTCOMES, outcome, "sce_put_")?);
+                }
+                None if ctx.channel.may_fail => text.push_str(&format!(
+                    "{inner}if ({call} == SCE_MAP_PUT_FULL) {{\n{inner}    \
+                     sce_forge_algorithm_fail(&sce_failure_, \
+                     SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);\n{inner}}}\n"
+                )),
+                None => {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "<sce:put target=\"{}\"> names no outcome in an algorithm that does not \
+                         declare may-fail — the parser refuses this before codegen",
+                        target.trim()
+                    ))
+                    .into())
+                }
+            }
+            text.push_str(&format!("{pad}}}\n"));
+            text
+        }
+        AlgorithmStmt::Remove {
+            target,
+            key,
+            key_spelling,
+            outcome,
+            ..
+        } => {
+            let map = C11LentMap::of(ctx, type_ctx, target)?;
+            let mut text = format!("{pad}{{\n{}", key_line(&map, key, key_spelling.as_ref())?);
+            let call = format!("sce_map_remove({}, &sce_key_, NULL)", map.at);
+            match outcome.as_deref().map(str::trim) {
+                Some(outcome) => {
+                    text.push_str(&format!(
+                        "{inner}const {} sce_removed_ = {call};\n",
+                        C11_REMOVE_OUTCOMES.runtime
+                    ));
+                    text.push_str(&written(&C11_REMOVE_OUTCOMES, outcome, "sce_removed_")?);
+                }
+                None => text.push_str(&format!("{inner}(void){call};\n")),
+            }
+            text.push_str(&format!("{pad}}}\n"));
+            text
+        }
+        AlgorithmStmt::Clear { target, .. } => {
+            let map = C11LentMap::of(ctx, type_ctx, target)?;
+            format!("{pad}sce_map_clear({});\n", map.at)
+        }
+        AlgorithmStmt::Var { .. }
+        | AlgorithmStmt::RecordVar { .. }
+        | AlgorithmStmt::RecordFromCall { .. }
+        | AlgorithmStmt::UnionVar { .. }
+        | AlgorithmStmt::UnionCopied { .. }
+        | AlgorithmStmt::Assign { .. }
+        | AlgorithmStmt::Append { .. }
+        | AlgorithmStmt::If { .. }
+        | AlgorithmStmt::While { .. }
+        | AlgorithmStmt::Foreach { .. }
+        | AlgorithmStmt::Return { .. }
+        | AlgorithmStmt::Call { .. }
+        | AlgorithmStmt::Require { .. } => {
+            return Err(GenerateError::InvalidConfig(
+                "a statement that writes no map reached the writer of a map".into(),
+            )
+            .into())
+        }
+    })
+}
+
+/// A `<sce:foreach in="m" item="v" key="k">` of a C11 algorithm over the map
+/// `m` it is lent (docs/adr/0108, D5 and D6 item 3): a loop of its own over the
+/// positions of the map's entries in their order, read where the caller holds
+/// the map, each turn binding the item to a copy of the entry's value (a set's
+/// to its key) and the key to a copy of its key, one entry, a text as the text
+/// of its buffer. A body that writes nothing of the map walks it with no copy,
+/// since nothing in it can change the map. One that writes it walks the map as
+/// it was when the loop began (docs/adr/0108, D5), a copy of the map's whole bound,
+/// which only its caller holds storage for and no call hands an algorithm, and
+/// is refused by name.
+fn lower_c11_map_walk(
+    s: &AlgorithmStmt,
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    pad: &str,
+    indent: usize,
+    proven: &crate::forge::narrowing::Facts,
+    out: &mut String,
+) -> Result<(), ForgeError> {
+    use crate::forge::value_type::ValueType;
+    let AlgorithmStmt::Foreach {
+        item,
+        source,
+        key,
+        body,
+        ..
+    } = s
+    else {
+        return Err(GenerateError::InvalidConfig(
+            "a statement that walks no map reached the walk of a map".into(),
+        )
+        .into());
+    };
+    let source = source.trim();
+    if crate::forge::narrowing::Writes::of_block(body.as_slice()).reaches(source) {
+        return Err(GenerateError::unsupported(format!(
+            "<sce:foreach in=\"{source}\">, a walk of a map its body writes, which walks a copy \
+             of the map as it was when the loop began: c11 lends an algorithm no storage of the \
+             map's bound to copy it into ({})",
+            crate::forge::value_type::MAP_LANDING
+        ))
+        .into());
+    }
+    let map = C11LentMap::of(ctx, type_ctx, source)?;
+    let it = ctx.l.local_id(item);
+    let at = format!("sce_at_{it}_");
+    let walked = &map.at;
+    // Each part of the entry at `at`, read where the map holds it: a text as
+    // its buffer's text, any other a copy of the value.
+    let bind =
+        |local: &str, held: &str, part: Option<crate::forge::value_path::Place>, read: &str| {
+            let text = part.is_some_and(|part| matches!(part.ty, ValueType::Text { .. }));
+            if text {
+                format!(
+                "{pad}    const char *{local} = ((const {held} *){read}({walked}, {at}))->{};\n\
+                 {pad}    (void){local};\n",
+                crate::forge::expr::C_BUFFER_TEXT
+            )
+            } else {
+                format!(
+                    "{pad}    const {held} {local} = *(const {held} *){read}({walked}, {at});\n\
+                 {pad}    (void){local};\n"
+                )
+            }
+        };
+    let mut head = format!(
+        "{pad}for (uint32_t {at} = sce_map_first({walked}); {at} != SCE_MAP_NO_ENTRY; \
+         {at} = sce_map_next({walked}, {at})) {{\n"
+    );
+    match &map.value {
+        Some(value) => head.push_str(&bind(
+            it.as_str(),
+            value.as_str(),
+            map.place.map_value(),
+            "sce_map_value_at",
+        )),
+        None => head.push_str(&bind(
+            it.as_str(),
+            map.key.as_str(),
+            map.place.map_key(),
+            "sce_map_key_at",
+        )),
+    }
+    if let Some(key) = key.as_deref().map(str::trim) {
+        if map.value.is_none() {
+            return Err(GenerateError::InvalidConfig(format!(
+                "<sce:foreach in=\"{source}\" key=\"{key}\">, a key of a walk over a set — the \
+                 parser refuses this before codegen"
+            ))
+            .into());
+        }
+        let key_local = ctx.l.local_id(key);
+        head.push_str(&bind(
+            key_local.as_str(),
+            map.key.as_str(),
+            map.place.map_key(),
+            "sce_map_key_at",
+        ));
+    }
+    out.push_str(&head);
+    let inner_pad = "    ".repeat(indent + 1);
+    lower_algorithm_block(
+        body,
+        ctx,
+        &inner_pad,
+        indent + 1,
+        &crate::forge::narrowing::loop_entry(proven, body),
+        out,
+    )?;
+    out.push_str(&format!("{pad}}}\n"));
+    Ok(())
+}
+
 /// Lower one statement, without the failure check that follows it
 /// ([`lower_algorithm_stmt_and_check`]). Every refusal is placed at the
 /// attribute it names, from the statement's spellings
@@ -44025,6 +44519,22 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}}}\n"));
                 }
             }
+        }
+        // docs/adr/0108, D3 to D6 on C11: each map is the caller's storage the
+        // algorithm is lent, written and walked where it stands through the
+        // functions of `sce/forge/map.h`.
+        AlgorithmStmt::Put { .. } | AlgorithmStmt::Remove { .. } | AlgorithmStmt::Clear { .. }
+            if lang == Language::C11 =>
+        {
+            out.push_str(&c11_algorithm_map_write(s, ctx, type_ctx, pad)?);
+        }
+        AlgorithmStmt::Foreach { source, .. }
+            if lang == Language::C11
+                && type_ctx
+                    .value_of(source.trim())
+                    .is_some_and(|place| place.is_keyed()) =>
+        {
+            lower_c11_map_walk(s, ctx, type_ctx, pad, indent, proven, out)?;
         }
         // docs/adr/0108, D5: a walk over a map, and the statements that write
         // one, are lowered only by a backend that lowers an algorithm's map,
@@ -47324,6 +47834,9 @@ fn render_algorithm(
     reject_may_fail_in_unsupported_lang(m, lang)?;
     reject_union_in_unsupported_lang(m, lang)?;
     reject_map_in_unsupported_lang(m, lang)?;
+    if lang == Language::C11 {
+        reject_c11_map_storage(m)?;
+    }
     let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
 
@@ -47497,6 +48010,52 @@ fn render_algorithm(
             .unit_unions
             .insert(alias, algorithm_union_type(&l, imports, alias)?);
     }
+    // docs/adr/0108, D6 items 1 and 4: a C11 map parameter is the address of
+    // the caller's storage, which names no type of its bound, so a read at a key
+    // of it names the type of the value ([`TypeCtx::lent_map_values`]). Each part
+    // is judged here, and a text part's buffer is declared beside the function,
+    // under the guard every header that holds a text of that bound shares.
+    let mut map_texts = std::collections::BTreeSet::new();
+    if lang == Language::C11 {
+        for p in m
+            .signature
+            .params
+            .iter()
+            .filter(|p| p.sce_type.map_key().is_some())
+        {
+            let place = type_ctx
+                .value_of(&p.name)
+                .filter(crate::forge::value_path::Place::is_keyed)
+                .ok_or_else(|| {
+                    GenerateError::InvalidConfig(format!(
+                        "algorithm '{}' parameter '{}' is {}, which its types do not hold as a \
+                         map",
+                        m.name,
+                        p.name,
+                        p.sce_type.as_attr()
+                    ))
+                })?;
+            for part in place.map_key().into_iter().chain(place.map_value()) {
+                c11_map_part_type(&l, imports, &p.name, &part.ty)?;
+                if let crate::forge::value_type::ValueType::Text { max } = &part.ty {
+                    map_texts.insert(max.max);
+                }
+            }
+            if let Some(value) = place.map_value() {
+                let held = c11_map_part_type(&l, imports, &p.name, &value.ty)?;
+                type_ctx.lent_map_values.insert(p.name.clone(), held);
+            }
+        }
+    }
+    let map_texts: String = map_texts
+        .into_iter()
+        .map(|capacity| {
+            format!(
+                "{}\n\n",
+                crate::forge::static_lowering::c_string_storage_def(capacity)
+            )
+        })
+        .collect();
     let unions = types.union_rules();
 
     // Per-RFC §synth-5-J-5 signature emit (item C7 lowering, 2026-05-13):
@@ -47532,6 +48091,15 @@ fn render_algorithm(
                 return Ok(
                     l.place_param(&p.name, &ListSpelling::new(&l, elem, imports)?.param_type())
                 );
+            }
+            // A map or a set is lent whole, never copied (docs/adr/0108, D6
+            // items 1, 2 and 4): on C11 the address of the caller's storage,
+            // which views a map of any bound, the parameter's own being none.
+            if p.sce_type.map_key().is_some() && lang == Language::C11 {
+                return Ok(l.place_param(
+                    &p.name,
+                    crate::forge::static_lowering::c11_lent_map_type(p.written_in_place()),
+                ));
             }
             // A value that may be absent is passed by value, as a number is
             // (docs/adr/0055); a parameter is read-only, so a record it holds is
@@ -47967,8 +48535,9 @@ fn render_algorithm(
             enum_conversions.push_str("\n\n");
         }
     }
-    let consts_prelude =
-        format!("{enum_conversions}{record_views}{buffer_build_preamble}{consts_prelude}");
+    let consts_prelude = format!(
+        "{enum_conversions}{record_views}{map_texts}{buffer_build_preamble}{consts_prelude}"
+    );
 
     // RFC §synth-5-F: const names are emitted at SCREAMING_SNAKE_CASE in
     // every backend; without a rename here, the per-language
@@ -48002,6 +48571,18 @@ fn render_algorithm(
     // `(*out).items[i]`.
     if let (Language::C11, Some(name)) = (lang, destination_buffer.as_ref()) {
         const_renames_owned.push((name.clone(), c11_destination(&l.local_id(name))));
+    }
+    // ... and a map parameter through the address of the caller's storage
+    // (docs/adr/0108, D6 items 1 and 4): `len(m)` is `sce_map_count(&(*m))`.
+    if lang == Language::C11 {
+        for p in m
+            .signature
+            .params
+            .iter()
+            .filter(|p| p.sce_type.map_key().is_some())
+        {
+            const_renames_owned.push((p.name.clone(), c11_destination(&l.local_id(&p.name))));
+        }
     }
     let const_renames: std::collections::HashMap<&str, &str> = const_renames_owned
         .iter()
@@ -48123,6 +48704,13 @@ fn render_algorithm(
     ctx.insert("body".into(), body.into());
     ctx.insert("may_fail".into(), may_fail.into());
     ctx.insert("needs_span".into(), needs_span.into());
+    // C11 reads and writes a map it is lent through the functions of
+    // `sce/forge/map.h` (docs/adr/0108, D8), the header the core it is lent by
+    // is declared in.
+    ctx.insert(
+        "needs_map".into(),
+        (lang == Language::C11 && m.first_map().is_some()).into(),
+    );
     // C11 compares a record's text with `strcmp`.
     ctx.insert(
         "needs_string_h".into(),

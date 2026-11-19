@@ -477,7 +477,12 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
 /// (`static_lowering::lent_map_unlowered`). The Interpreter's ECMAScript
 /// lowering lowers both, the first lane to (D10), and is no [`Language`]: its
 /// target answers for itself.
-pub const ALGORITHM_MAP_BACKENDS: &[Language] = &[];
+///
+/// C11 lends a map by the address of the caller's storage and holds none of
+/// its own: a map local, a map return and a walk of a map its body writes are
+/// refused there by name, each being a map's whole bound the caller holds no
+/// storage of for the call (docs/adr/0108, D4 "Storage").
+pub const ALGORITHM_MAP_BACKENDS: &[Language] = &[Language::C11];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
 /// §11.9, §12.6): a unit that declares the template's `match` and, for a

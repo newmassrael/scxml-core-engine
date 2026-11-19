@@ -11872,7 +11872,7 @@ impl CppTarget {
                 // (docs/SCE_TEST_PROFILE.md §12.3).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 // A call of an algorithm that writes a map in place
-                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                // (docs/adr/0108, D6 item 2), which this lane does not lower yet.
                 "sce_call" => return Some(sce_call_unlowered(action)),
                 other => return Some(format!("<{other}>")),
             }
@@ -13584,7 +13584,7 @@ impl GoTarget<'_> {
                 // [`StaticTarget::test_statement`]).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 // A call of an algorithm that writes a map in place
-                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                // (docs/adr/0108, D6 item 2), which this lane does not lower yet.
                 "sce_call" => return Some(sce_call_unlowered(action)),
                 other => return Some(format!("<{other}>")),
             }
@@ -15332,7 +15332,7 @@ impl PythonTarget {
                 // [`StaticTarget::test_statement`]).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 // A call of an algorithm that writes a map in place
-                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                // (docs/adr/0108, D6 item 2), which this lane does not lower yet.
                 "sce_call" => return Some(sce_call_unlowered(action)),
                 other => return Some(format!("<{other}>")),
             }
@@ -16919,6 +16919,74 @@ pub(crate) fn c11_map_type(key: &str, value: Option<&str>, capacity: u32) -> Str
     }
 }
 
+/// The C11 type a map or a set is lent to an algorithm in (docs/adr/0108, D6
+/// items 1, 2 and 4): the address of its storage, the core every type of
+/// [`c11_map_type`] begins with, which views a map of any bound and is read and
+/// written through the functions of `sce/forge/map.h` by the layout the map
+/// was started with. A slot the algorithm only reads views it `const`; one it
+/// writes in place (`written_in_place`) takes the storage itself. One spelling
+/// for the algorithm's parameter and the machine's adapter that hands it on.
+pub(crate) fn c11_lent_map_type(written_in_place: bool) -> &'static str {
+    if written_in_place {
+        "sce_map_core_t *"
+    } else {
+        "const sce_map_core_t *"
+    }
+}
+
+/// What `sce/forge/map.h` answers a put or a remove with, and the variant of
+/// the standard outcome enum each answer is written as (docs/adr/0108, D4):
+/// the variant of the same name ([`c11_outcome_variant`]).
+pub(crate) struct C11Outcomes {
+    /// The runtime's type of the answer.
+    pub runtime: &'static str,
+    /// The name of the standard enum document that declares the variants.
+    pub document: &'static str,
+    /// Each constant the runtime answers, with the variant of the same name.
+    pub variants: &'static [(&'static str, &'static str)],
+}
+
+/// What a put answers: `sce:std/collection/put_outcome.scxml`.
+pub(crate) const C11_PUT_OUTCOMES: C11Outcomes = C11Outcomes {
+    runtime: "sce_map_put_outcome_t",
+    document: "put_outcome",
+    variants: &[
+        ("SCE_MAP_PUT_INSERTED", "inserted"),
+        ("SCE_MAP_PUT_REPLACED", "replaced"),
+        ("SCE_MAP_PUT_FULL", "full"),
+    ],
+};
+
+/// What a remove answers: `sce:std/collection/remove_outcome.scxml`.
+pub(crate) const C11_REMOVE_OUTCOMES: C11Outcomes = C11Outcomes {
+    runtime: "sce_map_remove_outcome_t",
+    document: "remove_outcome",
+    variants: &[
+        ("SCE_MAP_REMOVE_REMOVED", "removed"),
+        ("SCE_MAP_REMOVE_ABSENT", "absent"),
+    ],
+};
+
+/// The C expression of the variant of the standard outcome enum `outcomes`
+/// names that `answer`, what the runtime answered, is: the variant of the same
+/// name, each spelled by `variant`. One reading for a statechart's statement
+/// and an algorithm's.
+pub(crate) fn c11_outcome_variant(
+    outcomes: &C11Outcomes,
+    answer: &str,
+    variant: &dyn Fn(&str) -> String,
+) -> Option<String> {
+    let (last, earlier) = outcomes.variants.split_last()?;
+    Some(
+        earlier
+            .iter()
+            .rev()
+            .fold(variant(last.1), |rest, (constant, name)| {
+                format!("{answer} == {constant} ? {} : {rest}", variant(name))
+            }),
+    )
+}
+
 /// A C11 record of the type `ty` built field by field from `from`, a record of
 /// the schema `schema` on the side `direction` leaves, each field as the other
 /// side holds it ([`UnitCrossing::record_field_crossing`]): what a call's
@@ -17440,8 +17508,9 @@ impl CTarget {
                 // [`StaticTarget::test_statement`]).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 // A call of an algorithm that writes a map in place
-                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
-                "sce_call" => return Some(sce_call_unlowered(action)),
+                // (docs/adr/0108, D6 item 2) is the call of its adapter, the map
+                // lent by the address of its storage ([`StaticTarget::in_place_call`]).
+                "sce_call" => {}
                 // The pairs of a `<send>`'s `<param>`s are written as the JSON
                 // object of the event's data from the machine's own fields, as a
                 // `<donedata>`'s are, and for a processor the host serves also
@@ -17643,6 +17712,12 @@ impl StaticTarget for CTarget {
                 self.record_list_view(&self.record_type(machine, alias))
                     .unwrap_or_default()
             ),
+            // A map is lent by the address of its storage, the core every map
+            // type of `sce/forge/map.h` begins with, which the algorithm's
+            // parameter views whatever the map's bound (docs/adr/0108, D6 items
+            // 1 and 4): never copied, and written where it stands when the
+            // parameter is `inout`.
+            StaticSlot::Map(_) => format!("&({held}).core"),
             StaticSlot::OptionalRecord(alias) => {
                 let elem = c11_optional_elem(&self.record_type(machine, alias))
                     .expect("a record type is the element of an optional record");
@@ -17656,6 +17731,22 @@ impl StaticTarget for CTarget {
     }
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
+    }
+    // The algorithm writes each map it is lent where the machine holds it, through
+    // the address of its storage ([`Self::state_argument`]), so the statement is the
+    // call, its answer stored where `location` names a variable, and nothing is
+    // written back (docs/adr/0108, D6 item 2). The algorithm cannot fail, so what
+    // can is an argument the call computes, which the statement receives as a
+    // checked operation's failure before the call writes anything (§scxml-4.9).
+    fn in_place_call(&self, call: &InPlaceCall<'_>) -> Option<String> {
+        Some(match (&call.store, call.can_fail) {
+            (Some(store), true) => {
+                self.receiving_write(store.write, call.call, call.ty, call.failed)
+            }
+            (Some(store), false) => (store.write)(call.call),
+            (None, true) => self.receiving_statement(&format!("(void){};", call.call), call.failed),
+            (None, false) => format!("(void){};", call.call),
+        })
     }
     // The adapter has the algorithm write its list into the destination the machine
     // holds for the adapter (docs/adr/0082) and answers whether it did, as a direct call
@@ -17833,6 +17924,18 @@ impl StaticTarget for CTarget {
                     declarations.push(format!("{} {p}", self.list_view(ty)?));
                     arguments.push(p);
                 }
+                // A map is the address of the machine's own storage, handed on
+                // as it is: its entries are held in the types the algorithm's
+                // slot holds them in (docs/adr/0108, D6 item 4), so nothing
+                // crosses. A slot the algorithm writes in place takes the
+                // storage to write (D6 item 2), and any other only to read.
+                AdapterParam::State {
+                    slot: StaticSlot::Map(map),
+                    ..
+                } => {
+                    declarations.push(format!("{} {p}", c11_lent_map_type(map.inout)));
+                    arguments.push(p);
+                }
                 AdapterParam::State {
                     slot: StaticSlot::RecordList(alias),
                     ..
@@ -17870,6 +17973,20 @@ impl StaticTarget for CTarget {
         let storage = c11_adapter_storage_type(spec.machine, name);
         if self.adapter_storage(spec).is_some() {
             declarations.push(format!("{storage} *s"));
+        }
+        // An algorithm that returns nothing is called for the maps it writes in
+        // place (docs/adr/0108, D6 item 2): the adapter hands it its arguments
+        // and answers nothing, and a `<sce:call>` is the statement that calls it.
+        if value.ret.is_none() {
+            let adapter = format!(
+                "static inline void {name}({}) {{\n{prelude}    {call};\n}}",
+                declarations.join(", ")
+            );
+            return Some(if helpers.is_empty() {
+                adapter
+            } else {
+                format!("{}\n\n{adapter}", helpers.join("\n\n"))
+            });
         }
         // The machine's own element or value.
         enum Shape {
@@ -19225,33 +19342,14 @@ impl StaticTarget for CTarget {
         ));
         match (write.outcome, write.outcome_enum, &write.op) {
             (Some(outcome), Some((ty, document)), op) => {
-                let (runtime, variants): (&str, &[(&str, &str)]) = match op {
-                    MapOp::Put { .. } => (
-                        "sce_map_put_outcome_t",
-                        &[
-                            ("SCE_MAP_PUT_INSERTED", "inserted"),
-                            ("SCE_MAP_PUT_REPLACED", "replaced"),
-                            ("SCE_MAP_PUT_FULL", "full"),
-                        ],
-                    ),
-                    MapOp::Remove => (
-                        "sce_map_remove_outcome_t",
-                        &[
-                            ("SCE_MAP_REMOVE_REMOVED", "removed"),
-                            ("SCE_MAP_REMOVE_ABSENT", "absent"),
-                        ],
-                    ),
+                let outcomes = match op {
+                    MapOp::Put { .. } => &C11_PUT_OUTCOMES,
+                    MapOp::Remove => &C11_REMOVE_OUTCOMES,
                 };
-                let (last, earlier) = variants.split_last()?;
-                let written = earlier.iter().rev().fold(
-                    self.enum_variant(ty, document, last.1),
-                    |rest, (constant, variant)| {
-                        format!(
-                            "sce_outcome == {constant} ? {} : {rest}",
-                            self.enum_variant(ty, document, variant)
-                        )
-                    },
-                );
+                let written = c11_outcome_variant(outcomes, "sce_outcome", &|variant| {
+                    self.enum_variant(ty, document, variant)
+                })?;
+                let runtime = outcomes.runtime;
                 lines.push(format!("const {runtime} sce_outcome = {call};"));
                 lines.push(self.assign(outcome, &format!("({written})")));
             }
@@ -20677,7 +20775,7 @@ impl SwiftTarget {
                 // (docs/SCE_TEST_PROFILE.md §12.3, [`StaticTarget::test_statement`]).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 // A call of an algorithm that writes a map in place
-                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                // (docs/adr/0108, D6 item 2), which this lane does not lower yet.
                 "sce_call" => return Some(sce_call_unlowered(action)),
                 "send" => {
                     if let Some(what) = Self::unlowered_send(action) {

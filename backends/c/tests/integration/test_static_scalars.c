@@ -187,6 +187,7 @@
 #include "static_map_order_sm.h"
 #include "static_map_record_sm.h"
 #include "static_map_sm.h"
+#include "static_map_take_sm.h"
 #include "static_optional_record_sm.h"
 #include "static_optional_sm.h"
 #include "static_optional_widened_sm.h"
@@ -3638,6 +3639,9 @@ static int a_payload_enum_field_is_written_as_the_name_its_enum_declares(void) {
 //     walk whose body removes each entry walks the map as it was when the walk began.
 //   * `static_map_composite_key`: a key of two 64-bit halves, looked up by the payload taken whole.
 //   * `static_set`: a set of texts, put, asked, walked and removed from, and full.
+//   * `static_map_take`: a table keyed by a peer's two 64-bit halves, lent by the address of the
+//     machine's storage to an algorithm that writes each peer's latest generation into it in place
+//     and answers a union the machine branches on, through a full table.
 //
 // Every machine is started under one fixed seed, which nothing a scenario observes depends on.
 #define MAP_SCENARIO_SEED sce_map_seed_from_halves(UINT64_C(0x0123456789abcdef), UINT64_C(0xfedcba9876543210))
@@ -3722,6 +3726,15 @@ static const variable_t set_variables[] = {
 };
 MAP_SCENARIO(static_set, set_states, set_variables, STATIC_SET_START_OK)
 
+VARIABLE_READER(static_map_take, taken)
+static const name_value_t map_take_states[] = {
+    {"watching", STATIC_MAP_TAKE_STATE_WATCHING},
+};
+static const variable_t map_take_variables[] = {
+    {"taken", static_map_take_read_taken},
+};
+MAP_SCENARIO(static_map_take, map_take_states, map_take_variables, STATIC_MAP_TAKE_START_OK)
+
 int main(void) {
     int bad = 0;
     // Each scenario file by its name, and the steps it has at the least.
@@ -3759,6 +3772,7 @@ int main(void) {
     bad |= static_map_order_scenario("static_map_order", 11);
     bad |= static_map_composite_key_scenario("static_map_composite_key", 7);
     bad |= static_set_scenario("static_set", 14);
+    bad |= static_map_take_scenario("static_map_take", 12);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
