@@ -402,18 +402,38 @@ def literal_shift(prev: int, m: int, op: int):
 
 def literal_arith(prev: int, m: int, op: int):
     """algorithm_literal_arith, may-fail: op 0 prev + 2^32; 1 the low m bits of
-    prev; 2 prev - 2^m; 3 3 * 2^m; any other op prev. A result outside uint64
-    fails 'overflow'."""
+    prev; 2 prev - 2^m; 3 3 * 2^m; 4 2^m >> 1, plus 1; any other op prev. A
+    result outside uint64 fails 'overflow'."""
     exact = {
         0: prev + 65536 * 65536,
         1: prev & ((1 << m) - 1),
         2: prev - (1 << m),
         3: (1 << m) * 3,
+        4: ((1 << m) >> 1) + 1,
     }
     value = exact.get(op, prev)
     if not fits(value, 0, 2**64 - 1):
         return ("fails", "overflow")
     return ("ok", value)
+
+
+def narrow_shift(x: int, h: int, n: int, op: int):
+    """algorithm_narrow_shift: a shift and a `~` of a uint8 `x` and an int16 `h`,
+    each reduced to its operand's width before it lands in the int64; any other
+    op 0."""
+
+    def int16(v: int) -> int:
+        return ((v + 2**15) % 2**16) - 2**15
+
+    answers = {
+        0: (x << n) % 2**8,
+        1: ((x << n) % 2**8) >> n,
+        2: ~x % 2**8,
+        3: int16(h << n),
+        4: int16(h << n) >> n,
+        5: ~h,
+    }
+    return ("ok", answers.get(op, 0))
 
 
 # ── The civil calendar (sce:std/time) ─────────────────────────────────────
@@ -982,6 +1002,18 @@ def literal_width_args(ops: int, edges):
         return [prev, m, op]
 
     return generate
+
+
+def narrow_shift_args(rng: SplitMix64):
+    """Arguments for `algorithm_narrow_shift`: `x` and `h` from their types'
+    edges or anywhere in them, and a count below the width of the operand the op
+    shifts (8 for `x`, 16 for `h`), a count past the width not being specified."""
+    op = rng.between(0, 5) if rng.below(10) else rng.pick([6, 9, U8_MAX])
+    x = rng.pick([0, 1, 0x7F, 0x80, 0x81, 0xF0, 0xFE, U8_MAX]) if rng.below(2) else rng.between(0, U8_MAX)
+    h_edges = [-(2**15), -(2**15) + 1, -256, -2, -1, 0, 1, 0xFF, 0x100, 2**15 - 1]
+    h = rng.pick(h_edges) if rng.below(2) else rng.between(-(2**15), 2**15 - 1)
+    n = rng.between(0, 15 if op in (3, 4, 5) else 7)
+    return [x, h, n, op]
 
 
 def literal_shift_edges(m: int, op: int, rng: SplitMix64):
@@ -4598,9 +4630,15 @@ FIXTURES = {
     ),
     "algorithm_literal_arith": (
         lambda args: literal_arith(*args),
-        literal_width_args(4, literal_arith_edges),
+        literal_width_args(5, literal_arith_edges),
         300,
         0xE110_0072,
+    ),
+    "algorithm_narrow_shift": (
+        lambda args: narrow_shift(*args),
+        narrow_shift_args,
+        300,
+        0xE110_0073,
     ),
     "resolve_date": (lambda args: resolve_date(*args), resolve_date_args, 400, 0xE110_006E),
     "resolve_date_at": (lambda args: resolve_date_at(*args), resolve_date_at_args, 200, 0xE110_0070),

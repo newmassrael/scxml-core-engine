@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.1, "The width of a shift": a shift is as wide as its
+  left operand, here a uint8 `x` and an int16 `h`, and wraps there, whatever
+  the place its value lands in; so does a `~`. The value is stored in an
+  int64, wider than both, and one shift is shifted back right before it is
+  stored, so a shift made at another width is seen. One operation per `op`:
+
+    op 0  x << n          the bits past 8 are gone
+    op 1  (x << n) >> n   the low 8 - n bits of x
+    op 2  ~x              255 - x, not a negative number
+    op 3  h << n          the int16 two's-complement value
+    op 4  (h << n) >> n   the low 16 - n bits of h, sign-extended
+    op 5  ~h              -h - 1
+    any other op: 0
+
+  Until the rule, C, C++ and Kotlin made a uint8 or int16 shift in a 32-bit
+  integer and kept the bits it shifted out, and C made a left shift of a
+  negative int16 undefined. The count `n` is held below the operand's width:
+  a count past the width is not specified.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="x" type="uint8"/>
+    <sce:param name="h" type="int16"/>
+    <sce:param name="n" type="uint8"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="int64" init="0"/>
+    <sce:if cond="op === 0">
+      <sce:assign target="r" expr="x &lt;&lt; n"/>
+    </sce:if>
+    <sce:if cond="op === 1">
+      <sce:assign target="r" expr="(x &lt;&lt; n) &gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 2">
+      <sce:assign target="r" expr="~x"/>
+    </sce:if>
+    <sce:if cond="op === 3">
+      <sce:assign target="r" expr="h &lt;&lt; n"/>
+    </sce:if>
+    <sce:if cond="op === 4">
+      <sce:assign target="r" expr="(h &lt;&lt; n) &gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 5">
+      <sce:assign target="r" expr="~h"/>
+    </sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>
