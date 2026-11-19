@@ -24,6 +24,9 @@ members = [
     "backends/rust/mesh",
     "backends/rust/scenarios",
     "backends/rust/host-features",
+    # The network transport of the host features' HTTP operation, with its destination policy
+    # (docs/adr/0109, decision D4).
+    "backends/rust/host-http",
     "backends/rust/world",
     "backends/rust/trust",
     "backends/rust/relay",
