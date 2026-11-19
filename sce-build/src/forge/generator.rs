@@ -379,6 +379,14 @@ pub struct ImportContext {
     #[serde(skip)]
     pub may_fail: bool,
 
+    /// For an imported algorithm that builds a map local and is lent no map
+    /// and returns none: each call hands it the seed of that local's keys
+    /// (docs/adr/0108, D8,
+    /// [`crate::forge::model::AlgorithmModel::takes_map_seed`]). `false` for
+    /// every other import.
+    #[serde(skip)]
+    pub takes_map_seed: bool,
+
     /// For an imported algorithm or enum, when the generation is for Swift: what of it
     /// the Swift backend does not write (`None` when it writes all of it), read where
     /// it is and, for an algorithm, through the algorithms it calls in turn. A caller
@@ -1666,6 +1674,7 @@ fn resolve_single_import(
         host_only: None,
         record_slots: None,
         may_fail: false,
+        takes_map_seed: false,
         swift_unlowered: None,
         member_field_types: Vec::new(),
         member_method_sigs: Vec::new(),
@@ -43203,6 +43212,17 @@ impl<'a> HeldMaps<'a> {
         }
     }
 
+    /// The parameters the algorithm's maps take from its caller after the
+    /// declared ones (docs/adr/0108, D4 "Storage" and D8): on C11 the storage
+    /// of its own maps and of the copies its writing walks walk, and on both
+    /// the seed it takes where nothing it is lent carries one.
+    fn params(self) -> Vec<String> {
+        match self {
+            Self::C11(maps) => maps.params.clone(),
+            Self::Rust(maps) => maps.seed_parameter().into_iter().collect(),
+        }
+    }
+
     /// The map local the body returns, built in the caller's destination
     /// (docs/adr/0108, D5), by its declared name.
     fn output(self) -> Option<&'a str> {
@@ -43812,11 +43832,93 @@ fn lower_rust_map_stmt(
         expr::transpile_into(written, l.expr_target(), type_ctx, ctx.renames, slot)
             .map_err(|refusal| site.place(refusal))
     };
-    // A key or a value of type `ty`, as the map takes it: by value.
+    // A text or a byte string of type `ty`, held to `bound`: a put's own value
+    // (`owned`) in the map's type, or the probe a remove looks a key up by.
+    // A put takes a walk's item or key and a record's text field by a widening
+    // the compiler judges, a string literal by a construction it judges, and
+    // anything else, whose length the build does not know, by a copy that
+    // fails `capacity-exceeded` past the bound, which only a body that declares
+    // `may-fail` writes (D6 item 2).
+    let bounded = |written: &str,
+                   spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+                   ty: &AlgorithmValueType,
+                   bound: Option<&str>,
+                   owned: bool|
+     -> Result<Option<String>, ForgeError> {
+        use crate::forge::rust_algorithm_map::BoundedPart;
+        use crate::forge::value_type::ValueType;
+        let Some(held) = BoundedPart::of(ty) else {
+            return Ok(None);
+        };
+        let name = written.trim();
+        let bound =
+            bound.ok_or_else(|| pipeline(format!("`{name}` as a part of a map of no bound")))?;
+        let slot = match held {
+            BoundedPart::Text => InferredType::Str,
+            BoundedPart::Bytes => InferredType::Bytes,
+        };
+        let walked = type_ctx.value_of(name).is_some_and(|place| {
+            matches!(place.ty, ValueType::Text { .. } | ValueType::Bytes { .. })
+        });
+        if walked {
+            let local = l.local_id(name);
+            return Ok(Some(if owned {
+                held.widened(bound, &local)
+            } else {
+                local
+            }));
+        }
+        if !owned {
+            return lower(written, spelling, slot).map(Some);
+        }
+        if held == BoundedPart::Text {
+            if let Ok(ast) = expr::parse_to_ast(name) {
+                if let expr::ExprKind::StringLit { value, .. } = &ast.kind {
+                    return Ok(Some(crate::forge::rust_algorithm_map::literal_text(
+                        bound, value,
+                    )));
+                }
+            }
+            if let Some((record, field)) = name.split_once('.') {
+                if let Some(alias) = ctx.records.get(record) {
+                    let schema = resolve_record(ctx.imports, alias, None, "<sce:put>")?;
+                    let text = schema
+                        .field(field)
+                        .is_some_and(|f| matches!(f.ty, EntryType::Scalar(SceType::String)));
+                    if text {
+                        let member = format!(
+                            "{}.{}",
+                            l.local_id(record),
+                            event_schema_field_ident(field, ctx.lang)
+                        );
+                        return Ok(Some(held.widened(bound, &member)));
+                    }
+                }
+            }
+        }
+        if ctx.channel.may_fail {
+            return Ok(Some(held.checked(bound, &lower(written, spelling, slot)?)));
+        }
+        Err(GenerateError::unsupported(format!(
+            "`{name}` put into a map of {ty} by an algorithm that does not declare may-fail: its \
+             length is no length the build knows, and a put past the bound `{bound}` fails, \
+             which only a may-fail body does; such a body puts a string literal, the item or \
+             the key of a walk, or the text field of a record (docs/adr/0108, D6 item 2)"
+        ))
+        .into())
+    };
+    // A key or a value of type `ty`, as the map takes it: by value, a text or
+    // a byte string held to `bound`, or, where `owned` is false, the probe a
+    // remove looks a key up by.
     let part = |written: &str,
                 spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
-                ty: &AlgorithmValueType|
+                ty: &AlgorithmValueType,
+                bound: Option<&str>,
+                owned: bool|
      -> Result<String, ForgeError> {
+        if let Some(held) = bounded(written, spelling, ty, bound, owned)? {
+            return Ok(held);
+        }
         let name = written.trim();
         match ty {
             AlgorithmValueType::Record { .. } if ctx.records.contains_key(name) => Ok(ctx
@@ -43880,9 +43982,21 @@ fn lower_rust_map_stmt(
         } => {
             let name = target.trim();
             let held = held_map(name)?;
-            let key = part(key, key_spelling.as_ref(), &held.key)?;
+            let key = part(
+                key,
+                key_spelling.as_ref(),
+                &held.key,
+                held.key_bound.as_deref(),
+                true,
+            )?;
             let value = match (&held.value, expr) {
-                (Some(ty), Some(expr)) => Some(part(expr, expr_spelling.as_ref(), ty)?),
+                (Some(ty), Some(expr)) => Some(part(
+                    expr,
+                    expr_spelling.as_ref(),
+                    ty,
+                    held.value_bound.as_deref(),
+                    true,
+                )?),
                 (None, None) => None,
                 (Some(_), None) | (None, Some(_)) => {
                     return Err(pipeline(format!(
@@ -43926,7 +44040,13 @@ fn lower_rust_map_stmt(
         } => {
             let name = target.trim();
             let held = held_map(name)?;
-            let key = part(key, key_spelling.as_ref(), &held.key)?;
+            let key = part(
+                key,
+                key_spelling.as_ref(),
+                &held.key,
+                held.key_bound.as_deref(),
+                false,
+            )?;
             let spelled = outcome_of(
                 outcome,
                 crate::forge::static_lowering::RUST_REMOVE_OUTCOMES.1,
@@ -45977,7 +46097,7 @@ fn lower_algorithm_stmt(
                 )
                 .place(refusal));
             }
-            let lowered_args: Vec<String> = args
+            let mut lowered_args: Vec<String> = args
                 .iter()
                 .enumerate()
                 .map(|(i, arg)| {
@@ -46004,6 +46124,17 @@ fn lower_algorithm_stmt(
                     .map_err(|refusal| site.place(refusal))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            // docs/adr/0108, D8: an algorithm that takes its caller's seed is
+            // handed the one this body draws for it, last, as the expression
+            // form hands it ([`crate::forge::types::TypeCtx::seeded_calls`]).
+            if let CallTarget::Algorithm(imp) = &callee {
+                if let Some(seed) = maps
+                    .and_then(HeldMaps::rust)
+                    .and_then(|maps| maps.call_seeds().get(&imp.alias).cloned())
+                {
+                    lowered_args.push(seed);
+                }
+            }
             let call = match callee {
                 // The symbol the expression form calls, so the two forms
                 // cannot spell one algorithm two ways (`qualified_call` is
@@ -48840,7 +48971,14 @@ fn render_algorithm(
     // the type a machine's variable of the same parts is held in, a record in
     // the type its unit declares (D6 item 4), read through the functions of
     // the leaf crate that declares it.
-    let rust_maps = if lang == Language::Rust && m.first_map().is_some() {
+    // ... and each imported algorithm it may call that builds a map local with
+    // no map to draw its seed from, which it hands a seed (D8).
+    let seeded: Vec<&str> = imports
+        .iter()
+        .filter(|imp| imp.takes_map_seed && imp.is_callable_algorithm())
+        .map(|imp| imp.alias.as_str())
+        .collect();
+    let rust_maps = if lang == Language::Rust && (m.first_map().is_some() || !seeded.is_empty()) {
         let part = |part: &AlgorithmValueType| -> Result<Option<String>, ForgeError> {
             Ok(match part {
                 AlgorithmValueType::Record { alias } => Some(
@@ -48864,8 +49002,19 @@ fn render_algorithm(
             })
         };
         let local = |name: &str| l.local_id(name);
-        let maps = crate::forge::rust_algorithm_map::RustAlgorithmMaps::of(m, &part, &local)?;
+        let maps =
+            crate::forge::rust_algorithm_map::RustAlgorithmMaps::of(m, &part, &local, &seeded)?;
         type_ctx.rust_map_reads = Some(crate::forge::rust_algorithm_map::RUST_ALGORITHM_MAP_READS);
+        for imp in imports
+            .iter()
+            .filter(|imp| seeded.contains(&imp.alias.as_str()))
+        {
+            if let Some(seed) = maps.call_seeds().get(&imp.alias) {
+                type_ctx
+                    .seeded_calls
+                    .insert(imp.alias.as_str(), seed.clone());
+            }
+        }
         Some(maps)
     } else {
         None
@@ -48947,14 +49096,14 @@ fn render_algorithm(
         .filter(|imp| imp.kind == "bounded-collection")
         .map(|imp| algorithm_format_bc_import_param(lang, imp))
         .collect();
-    // docs/adr/0108, D4 "Storage": the storage of a C11 algorithm's own maps
-    // and of the copies its writing walks walk, and the seed its locals are
-    // keyed under where nothing it is lent carries one, after the declared
-    // parameters ([`C11AlgorithmMaps`]).
+    // docs/adr/0108, D4 "Storage" and D8: what the algorithm's maps take from
+    // its caller after the declared parameters and before any destination
+    // ([`HeldMaps::params`]).
+    let map_params = held_maps.map(HeldMaps::params).unwrap_or_default();
     let mut params_str = declared_params
         .iter()
         .chain(bc_import_params.iter())
-        .chain(c11_maps.iter().flat_map(|maps| maps.params.iter()))
+        .chain(map_params.iter())
         .cloned()
         .collect::<Vec<_>>()
         .join(", ");
@@ -51621,6 +51770,7 @@ mod tests {
             host_only: None,
             record_slots: None,
             may_fail: false,
+            takes_map_seed: false,
             swift_unlowered: None,
             member_field_types: Vec::new(),
             member_method_sigs: Vec::new(),
@@ -52554,6 +52704,7 @@ mod tests {
                 host_only: None,
                 record_slots: None,
                 may_fail: false,
+                takes_map_seed: false,
                 swift_unlowered: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
@@ -52630,6 +52781,7 @@ mod tests {
                 host_only: None,
                 record_slots: None,
                 may_fail: false,
+                takes_map_seed: false,
                 swift_unlowered: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),

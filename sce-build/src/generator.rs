@@ -3739,6 +3739,9 @@ fn render_rust(
         static_enums => minijinja::Value::from_serialize(&static_lowering.enums),
         static_unions => minijinja::Value::from_serialize(&static_lowering.unions),
         static_saved_shape => &static_lowering.saved_shape,
+        // docs/adr/0108, D8: the machine keeps a seed for the algorithms it
+        // calls that build a map local with no map to draw one from.
+        static_seeds_algorithms => static_lowering.seeds_algorithms,
         // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
         // reaches its runtime through, which the component the runtime drives
         // registers and delivers the snapshot by.

@@ -1609,6 +1609,16 @@ pub struct TypeCtx<'a> {
     ///
     /// ⚠ `None` everywhere but the body of a Rust algorithm that holds a map.
     pub rust_map_reads: Option<&'static str>,
+    /// Each function a call of which is handed a seed for the keys of the map
+    /// locals it builds, as its last argument (docs/adr/0108, D8,
+    /// [`crate::forge::model::AlgorithmModel::takes_map_seed`]): by its name as
+    /// the expression calls it (an imported algorithm's alias, or the name a
+    /// rewrite gave a call of it), with the seed as the caller spells it, a
+    /// machine's own or one an algorithm draws from a map it holds.
+    ///
+    /// ⚠ Empty everywhere but a caller of such an algorithm on a lane that
+    /// hands one a seed, and emptiness keeps every other call as it was.
+    pub seeded_calls: HashMap<&'a str, String>,
 }
 
 /// How a target holds one record or one enum as a map's key or value in the
@@ -1741,6 +1751,7 @@ impl<'a> TypeCtx<'a> {
             map_units: MapUnits::default(),
             unit_held_names: std::collections::HashSet::new(),
             rust_map_reads: None,
+            seeded_calls: HashMap::new(),
         }
     }
 

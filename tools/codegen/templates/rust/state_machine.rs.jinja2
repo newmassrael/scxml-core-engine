@@ -1011,6 +1011,14 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% endif %}
     {{ field.name }}: {{ field.ty }},
 {% endfor %}
+{% if static_seeds_algorithms %}
+    /// docs/adr/0108, D8: the seed each call of an algorithm that builds a map
+    /// local with no map to draw one from is handed, drawn where the machine is
+    /// built from the seed of its maps. Unread by a document that imports such
+    /// an algorithm and calls it nowhere.
+    #[allow(dead_code)]
+    sce_algorithm_seed: ::sce_rust_runtime::MapSeed,
+{% endif %}
 {% if no_std %}
     // W3C SCXML 5.10: the session's id, bound when the machine is built and
     // never empty (docs/adr/0045). SCE Protocol-Synthesis RFC §synth-5-J-2:
@@ -1123,6 +1131,7 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% endfor %}
 {# A machine with no source of randomness the runtime reads takes the seed of
    its maps from its host, as it takes its session id. #}
+{% set ns_maps.any = ns_maps.any or static_seeds_algorithms %}
 {% set map_seed_given = no_std and ns_maps.any %}
 {# What every constructor takes beside the session id, and passes on to
    `build`: the host of the `<sce:action>`s, then the script engine, then the
@@ -1201,7 +1210,7 @@ Default::default()
    A typed event payload starts at its type's `Default` and a datamodel
    variable at its declared initial value, neither of which this decides is a
    constant, so a machine with either is built by `new_with_session_id`. #}
-{% set const_buildable = no_std and event_payload_type == '()' and not static_fields %}
+{% set const_buildable = no_std and event_payload_type == '()' and not static_fields and not static_seeds_algorithms %}
 impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }} {
 {% if model.needs_script_engine %}
 {# Looked up rather than spelled as a ternary chain: a chain's last arm is a
@@ -1253,12 +1262,12 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     {{ 'const ' if const_buildable else '' }}fn build(session_id: {{ session_id_param_type }}{{ ctor_rest_params }}) -> Self {
 {# SCE Accepted Subset §2.15: each sce-static variable's initial value, in
    declaration order (`static_field_declarations`). #}
-{% if static_fields %}
 {% if ns_maps.any %}
         // docs/adr/0108, D8: the seeds the machine's maps hash their keys under,
         // one drawn for each from the seed {% if map_seed_given %}the host gave{% else %}drawn from the operating system{% endif %}.
         let mut sce_map_seeds = ::sce_rust_runtime::MapSeeds::new({% if map_seed_given %}map_seed{% else %}::sce_rust_runtime::map_seed(){% endif %});
 {% endif %}
+{% if static_fields %}
 {{ static_field_declarations(static_fields, static_enums, none) }}
 {% endif %}
         Self {
@@ -1293,6 +1302,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% for field in static_fields %}
             {{ field.name }},
 {% endfor %}
+{% if static_seeds_algorithms %}
+            sce_algorithm_seed: sce_map_seeds.draw(),
+{% endif %}
 {% if no_std %}
             session_id,
 {% else %}

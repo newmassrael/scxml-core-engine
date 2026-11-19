@@ -8237,6 +8237,12 @@ fn validate_and_enrich_imports(
                 // no scalar (a union parameter is filled, a union return is not).
                 ctx.host_only = call_refusal.or(sig.host_only);
                 ctx.may_fail = sig.may_fail;
+                // docs/adr/0108, D8: an algorithm that builds a map local with
+                // no map it is lent or returns takes its caller's seed.
+                ctx.takes_map_seed = matches!(
+                    &doc,
+                    forge::model::ForgeDocument::Algorithm(algorithm) if algorithm.takes_map_seed()
+                );
             } else {
                 // Qualify every discovered field key with the import's alias
                 // so the typed expression pipeline can look it up via the

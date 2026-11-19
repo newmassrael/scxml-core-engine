@@ -861,6 +861,7 @@ fn resolve_then_rename(
     // above, spelled as the target hands a value it keeps.
     lower_union_arguments(ast, ctx, target);
     lower_call_crossings(ast, ctx, target);
+    append_map_seeds(ast, ctx);
     lower_call_readings(ast, ctx, target);
     lower_enum_variant_refs(ast, ctx, target)?;
     // docs/adr/0108, D3: a read of a map or a set, judged above, spelled on the
@@ -8928,6 +8929,31 @@ fn wrap_in_found(expr: &mut TypedExpr, wrapper: &str) {
 /// borrows one (Rust). Runs before the call is read as its signature says
 /// ([`lower_call_readings`]), so a reading that may find nothing is read inside the
 /// crossing back: the value crosses once it is found.
+/// Each call of `expr` of a function that builds a map local with no map to
+/// draw its seed from, handed the seed its caller spells for it as its last
+/// argument (docs/adr/0108, D8, [`TypeCtx::seeded_calls`]). Run after the
+/// calls are judged, so the argument the author did not write is no argument
+/// the judge counts, and before any rename, while each callee is the name the
+/// author wrote or the rewrite of a call gave it.
+fn append_map_seeds(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    if ctx.seeded_calls.is_empty() {
+        return;
+    }
+    for child in expr.children_mut() {
+        append_map_seeds(child, ctx);
+    }
+    let seed = match &expr.kind {
+        ExprKind::Call { callee, .. } => match &callee.kind {
+            ExprKind::Ident(name) => ctx.seeded_calls.get(name.as_str()).cloned(),
+            _ => None,
+        },
+        _ => None,
+    };
+    if let (Some(seed), ExprKind::Call { args, .. }) = (seed, &mut expr.kind) {
+        args.push(TypedExpr::new(ExprKind::Raw(seed)));
+    }
+}
+
 fn lower_call_crossings(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarget) {
     for child in expr.children_mut() {
         lower_call_crossings(child, ctx, target);
