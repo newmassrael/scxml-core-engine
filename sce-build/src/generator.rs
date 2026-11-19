@@ -3615,6 +3615,16 @@ fn render_rust(
         .iter()
         .filter(|f| f.published)
         .collect();
+    // A Rust machine is one file: the units its types name (of the records and
+    // the enums its maps hold in their units' types, docs/adr/0108, D6 item 4)
+    // are imported beside every other, each once and in order.
+    let static_imports: Vec<&String> = static_lowering
+        .imports
+        .iter()
+        .chain(&static_lowering.header_imports)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
     // SCE Accepted Subset §2.12: a typed host-run invoke's records, its
     // host's interface and the adapter onto the generic invoker registry,
     // plus what the start site holds each request field to. Both empty for
@@ -3722,7 +3732,7 @@ fn render_rust(
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
-        static_imports => &static_lowering.imports,
+        static_imports => &static_imports,
         static_records => minijinja::Value::from_serialize(&static_lowering.records),
         static_enums => minijinja::Value::from_serialize(&static_lowering.enums),
         static_unions => minijinja::Value::from_serialize(&static_lowering.unions),

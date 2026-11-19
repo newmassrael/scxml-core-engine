@@ -7590,14 +7590,30 @@ pub(crate) const RUST_MAP_READS: &str = "::sce_rust_runtime::portable::map";
 /// of; an integer literal is written at the key's own type, which its value is
 /// held to where it is judged. Run after the reads are judged and before any
 /// rename, while each map is the place the author named.
+///
+/// A statechart's map holds a record and a value of an enum in the type its
+/// unit declares (docs/adr/0108, D6 item 4, [`TypeCtx::map_units`]): a field of
+/// a record entry is read by the name the unit gives it, and a value of an enum
+/// read out of one, an entry or a field of one, crosses into the machine's own
+/// type where it is read. A record entry taken whole crosses where the
+/// statement that takes it is lowered.
 fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     // `m[k].f`: the field of the value the map lends.
-    if let ExprKind::Member { object, .. } = &mut expr.kind {
+    if let ExprKind::Member { object, property } = &mut expr.kind {
+        let entry = keyed_entry(object, ctx);
         if rust_keyed_value(object, ctx, "value") {
+            let crossing = entry.and_then(|entry| rust_unit_field(&entry, property, ctx));
+            if let Some(crossing) = crossing {
+                crossing.apply(expr);
+            }
             return;
         }
     }
+    let entry = keyed_entry(expr, ctx);
     if rust_keyed_value(expr, ctx, "value_cloned") {
+        if let Some(crossing) = entry.and_then(|entry| rust_unit_enum(&entry, ctx)) {
+            crossing.apply(expr);
+        }
         return;
     }
     let builtin = match &expr.kind {
@@ -7625,6 +7641,115 @@ fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         let ty = arg.ty;
         wrap_in_call(arg, "&", ty);
     }
+}
+
+/// The place of the value `node` reads at a key of a map (`m[k]`,
+/// [`keyed_place`]); `None` for any other node.
+fn keyed_entry(node: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<crate::forge::value_path::Place> {
+    let ExprKind::Index { object, .. } = &node.kind else {
+        return None;
+    };
+    keyed_place(object, ctx)?.map_value()
+}
+
+/// How a value read out of a map's entry crosses from the type its unit
+/// declares into the machine's own (docs/adr/0108, D6 item 4): through `from`,
+/// the function the machine declares for its enum, applied to the value, or to
+/// the present value of an optional one.
+struct RustEntryCrossing {
+    from: String,
+    optional: bool,
+}
+
+impl RustEntryCrossing {
+    /// `node`, the read, made the machine's value it crosses into.
+    fn apply(self, node: &mut TypedExpr) {
+        let ty = node.ty;
+        if !self.optional {
+            wrap_in_call(node, &self.from, ty);
+            return;
+        }
+        let inner = std::mem::replace(node, TypedExpr::new(ExprKind::Raw(String::new())));
+        *node = TypedExpr {
+            kind: ExprKind::Call {
+                callee: Box::new(TypedExpr::new(ExprKind::Raw(
+                    "::core::option::Option::map".to_string(),
+                ))),
+                args: vec![inner, TypedExpr::new(ExprKind::Raw(self.from))],
+                params: Vec::new(),
+                fails: false,
+                into_destination: false,
+                storage: None,
+            },
+            ty,
+            span: None,
+        };
+    }
+}
+
+/// The crossing of a value of an enum at `at`, or of an optional value of one,
+/// that a statechart's map holds in its unit's type ([`TypeCtx::map_units`]),
+/// by the alias the statechart holds the enum by
+/// ([`crate::forge::value_path::enum_alias`]); `None` for a place that holds
+/// no value of an enum, and for an enum no map holds in its unit's type.
+fn rust_unit_enum(
+    at: &crate::forge::value_path::Place,
+    ctx: &TypeCtx<'_>,
+) -> Option<RustEntryCrossing> {
+    use crate::forge::model::SceType;
+    use crate::forge::value_type::ValueType;
+    if ctx.map_units.enums.is_empty() {
+        return None;
+    }
+    let (elem, optional) = match &at.ty {
+        ValueType::Optional { elem } => (elem.as_ref(), true),
+        other => (other, false),
+    };
+    let ValueType::Scalar(SceType::Enum(reference)) = elem else {
+        return None;
+    };
+    let present = crate::forge::value_path::Place {
+        ty: elem.clone(),
+        scope: at.scope.clone(),
+    };
+    let alias = ctx
+        .value_scope
+        .and_then(|base| crate::forge::value_path::enum_alias(base, &present))
+        .unwrap_or_else(|| reference.alias.clone());
+    let unit = ctx.map_units.enums.get(&alias)?;
+    Some(RustEntryCrossing {
+        from: unit.back.clone(),
+        optional,
+    })
+}
+
+/// The field `property` of a record entry of a statechart's map, `entry`,
+/// which the map holds in its unit's type ([`TypeCtx::map_units`]): renamed to
+/// the name the unit gives it, with the crossing of the value it reads where
+/// that is a value of an enum ([`rust_unit_enum`]). Nothing for an entry that
+/// is no record, and for a record no map holds in its unit's type.
+fn rust_unit_field(
+    entry: &crate::forge::value_path::Place,
+    property: &mut String,
+    ctx: &TypeCtx<'_>,
+) -> Option<RustEntryCrossing> {
+    use crate::forge::value_type::ValueType;
+    let ValueType::Record { alias } = &entry.ty else {
+        return None;
+    };
+    if !ctx.map_units.records.contains_key(alias) {
+        return None;
+    }
+    let field = crate::forge::value_path::walk(
+        ctx.value_scope,
+        entry,
+        &[crate::forge::value_path::Step::Field(property.as_str())],
+    );
+    *property = crate::forge::generator::event_schema_field_ident(
+        property,
+        crate::generator::Language::Rust,
+    );
+    rust_unit_enum(&field?, ctx)
 }
 
 /// `node`, when it reads the value at a key of a map (`m[k]`), as the read of
@@ -7736,9 +7861,10 @@ const C_MAP_VALUE_OF: &str = "SCE_MAP_VALUE_OF";
 /// field of a record value (`m[k].f`).
 ///
 /// A record the map holds is of the type its unit declares (D6 item 4,
-/// [`TypeCtx::unit_records`]): a field of it, at a key or as the item or the
-/// key of a walk ([`TypeCtx::unit_held_names`]), is read where it stands, and
-/// the record read whole is the machine's own record built from it.
+/// [`TypeCtx::map_units`]), which names every field as the machine's record
+/// does: a field of it, at a key or as the item or the key of a walk
+/// ([`TypeCtx::unit_held_names`]), is read where it stands. A record entry
+/// taken whole crosses where the statement that takes it is lowered.
 ///
 /// A key is handed as a probe and the function that writes the probe's
 /// canonical bytes ([`c_map_probe`]), so a value of another width, a text
@@ -7757,15 +7883,7 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
             }
             return Ok(());
         }
-        // `item.f`, where the walk binds the item to a record of its unit's
-        // type: the field of that record, read where it stands.
-        if c_unit_record(object, ctx).is_some() {
-            return Ok(());
-        }
     }
-    // A record a map holds, read whole: the machine's own record, built from
-    // the unit's.
-    let from_unit = c_unit_record(expr, ctx).map(|unit| unit.from_unit.clone());
     if c_keyed_value(expr, ctx)? {
         if ty == InferredType::Str {
             let value = std::mem::replace(expr, TypedExpr::new(ExprKind::NullLit));
@@ -7777,14 +7895,7 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
                     property: C_BUFFER_TEXT.to_string(),
                 },
             };
-        } else if let Some(from_unit) = &from_unit {
-            wrap_in_call(expr, from_unit, ty);
         }
-        return Ok(());
-    }
-    // ... and the item or the key of a walk bound to one.
-    if let Some(from_unit) = &from_unit {
-        wrap_in_call(expr, from_unit, ty);
         return Ok(());
     }
     let builtin = match &expr.kind {
@@ -7841,21 +7952,23 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
 
 /// How `node` is held where it reads a record a map holds in the type the
 /// record's own unit declares (docs/adr/0108, D6 item 4,
-/// [`TypeCtx::unit_records`]): the value at a key of a map of such records
+/// [`TypeCtx::map_units`]): the value at a key of a map of such records
 /// (`m[k]`), or the item or the key a walk of one binds
 /// ([`TypeCtx::unit_held_names`]). `None` for any other node, and in every
 /// scope whose maps hold no record in its unit's type.
 fn c_unit_record<'c>(
     node: &TypedExpr,
     ctx: &'c TypeCtx<'_>,
-) -> Option<&'c crate::forge::types::UnitHeldRecord> {
-    if ctx.unit_records.is_empty() {
+) -> Option<&'c crate::forge::types::MapUnit> {
+    if ctx.map_units.records.is_empty() {
         return None;
     }
     match &node.kind {
         ExprKind::Ident(name) => ctx.unit_held_name(name),
         ExprKind::Index { object, .. } => match keyed_place(object, ctx)?.map_value()?.ty {
-            crate::forge::value_type::ValueType::Record { alias } => ctx.unit_records.get(&alias),
+            crate::forge::value_type::ValueType::Record { alias } => {
+                ctx.map_units.records.get(&alias)
+            }
             _ => None,
         },
         _ => None,
@@ -7912,9 +8025,9 @@ fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusa
 /// declares, the map's own key type, by the map's own feed (`NULL`), read where
 /// that map holds it rather than built into the machine's record; one the
 /// machine holds in its own record type by that record's feed
-/// ([`crate::forge::types::UnitHeldRecord::machine_feed`]), which writes the
-/// same bytes; and the payload taken whole by the feed its key declaration
-/// names ([`TypeCtx::payload_key_feed`]).
+/// ([`crate::forge::types::MapUnit::key_feed`]), which writes the same bytes;
+/// and the payload taken whole by the feed its key declaration names
+/// ([`TypeCtx::payload_key_feed`]).
 fn c_map_probe(
     mut key: TypedExpr,
     held: &crate::forge::value_path::Place,
@@ -7940,11 +8053,7 @@ fn c_map_probe(
         return Err(unspelled(span, "a read of a value that is no map"));
     };
     let unit_held = c_unit_record(&key, ctx).is_some();
-    if unit_held {
-        c_keyed_value(&mut key, ctx)?;
-    } else {
-        lower_keyed_reads_for_c(&mut key, ctx)?;
-    }
+    lower_keyed_reads_for_c(&mut key, ctx)?;
     Ok(match key_place.ty {
         ValueType::Record { alias } => {
             let payload = place_path(&key).as_deref()
@@ -7956,9 +8065,11 @@ fn c_map_probe(
             } else if unit_held {
                 "NULL".to_string()
             } else {
-                ctx.unit_records
+                ctx.map_units
+                    .records
                     .get(&alias)
-                    .map_or_else(|| "NULL".to_string(), |unit| unit.machine_feed.clone())
+                    .and_then(|unit| unit.key_feed.clone())
+                    .unwrap_or_else(|| "NULL".to_string())
             };
             (probe("&", key), raw(&feed))
         }

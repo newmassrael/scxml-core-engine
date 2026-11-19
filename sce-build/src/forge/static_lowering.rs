@@ -123,12 +123,22 @@ pub struct StaticField {
 /// state, a byte string as its Latin-1 text and not as the list of numbers it
 /// is held in (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"), so a
 /// target whose list type holds a byte string reads and writes it apart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SavedMapParts {
     /// The key is a byte string.
     pub key_bytes: bool,
     /// The value is a byte string; `false` for a set, whose entries carry none.
     pub value_bytes: bool,
+    /// The unit the key is held in (docs/adr/0108, D6 item 4,
+    /// [`StaticTarget::map_unit`]), for a target whose saved form writes and
+    /// reads it as the machine's own type does, through its functions, so the
+    /// saved form is the one the machine's type has: `back` writes a saved
+    /// value and `into` reads one. A target that saves the unit's type by
+    /// functions of its own ([`MapUnitDefs::saved`]) reads none of it. `None`
+    /// for a key held in the machine's own type.
+    pub key_crossing: Option<crate::forge::types::MapUnit>,
+    /// ... and the value; `None` for a set.
+    pub value_crossing: Option<crate::forge::types::MapUnit>,
 }
 
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
@@ -155,10 +165,11 @@ pub struct StaticLowering {
     /// makes such a call.
     pub scratch: Option<Scratch>,
     /// The line of each unit whose types the machine's own header names, which
-    /// that header includes, for a target whose machine has a header: the unit
-    /// of each algorithm whose types the storage of [`Self::scratch`] is of
-    /// (docs/adr/0082), and of each record a map holds in its unit's type
-    /// (docs/adr/0108, D6 item 4, [`StaticTarget::unit_held_record`]).
+    /// that header includes: the unit of each algorithm whose types the storage
+    /// of [`Self::scratch`] is of (docs/adr/0082), and of each record and each
+    /// enum a map holds in its unit's type (docs/adr/0108, D6 item 4,
+    /// [`StaticTarget::map_unit`]). A target whose machine is one file imports
+    /// them beside [`Self::imports`].
     pub header_imports: Vec<String>,
     /// The annotations the machine's file begins with, before its package, for
     /// what it uses of the code it calls — Kotlin's opt-in to the unsigned arrays
@@ -744,29 +755,137 @@ struct RenderUnit {
 /// where the algorithm is imported ([`crate::forge::static_imports`]), as is one whose
 /// enum is not the document the statechart holds the field in.
 fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EntrySchema> {
-    // An optional field is held in the optional type of the machine's record and the
-    // algorithm's, which an adapter copies where it is present
-    // (docs/adr/0055), where the backend spells an algorithm's optional value of its
-    // element ([`crate::forge::generator::algorithm_optional_spelled`]): a number or
-    // a `bool` on every generated backend, and the rest as its own step 9 spells it.
-    spec.schemas.get(alias).filter(|schema| {
-        schema.fields.iter().all(|f| match &f.sce_type {
-            EntryType::Scalar(ty) => record_field_copies(ty, f.max_size),
-            // ... and a text that may be absent is bounded by the schema as a
-            // text is, since the algorithm's record holds it in a buffer of that
-            // bound.
-            EntryType::Optional { elem } => {
-                (!matches!(elem, SceType::String) || f.max_size.is_some())
-                    && match spec.lang {
-                        Some(lang) => crate::forge::generator::algorithm_optional_spelled(
-                            lang,
-                            &crate::forge::model::AlgorithmValueType::of_scalar(elem.clone()),
-                        ),
-                        None => true,
-                    }
-            }
+    spec.unit_crossing().plain_schema(alias)
+}
+
+/// What a record, and a value of an enum, crosses between the type a machine
+/// holds it in and the type its own unit declares by
+/// (docs/SCE_ACCEPTED_SUBSET.md §2.15, docs/adr/0086, section 7.1): the
+/// machine, the backend, every schema the document imports
+/// and every enum the machine holds, each by its alias. The one context of
+/// every such crossing, the adapter of a call ([`AdapterSpec::unit_crossing`])
+/// and a map whose entries are held in their units' types (docs/adr/0108, D6
+/// item 4), so a record crosses a map's statement exactly as it crosses a call.
+#[derive(Clone, Copy)]
+pub struct UnitCrossing<'a> {
+    machine: &'a str,
+    lang: Option<Language>,
+    schemas: &'a std::collections::BTreeMap<String, EntrySchema>,
+    enums: &'a std::collections::BTreeMap<String, EnumModel>,
+}
+
+impl<'a> UnitCrossing<'a> {
+    /// The schema the record `alias` is of, when every field of it is a number, a
+    /// truth value, a string the schema bounds or a value of an enum
+    /// ([`plain_schema`]).
+    fn plain_schema(&self, alias: &str) -> Option<&'a EntrySchema> {
+        // An optional field is held in the optional type of the machine's record and
+        // the algorithm's, which an adapter copies where it is present
+        // (docs/adr/0055), where the backend spells an algorithm's optional value of
+        // its element ([`crate::forge::generator::algorithm_optional_spelled`]): a
+        // number or a `bool` on every generated backend, and the rest as its own
+        // step 9 spells it.
+        self.schemas.get(alias).filter(|schema| {
+            schema.fields.iter().all(|f| match &f.sce_type {
+                EntryType::Scalar(ty) => record_field_copies(ty, f.max_size),
+                // ... and a text that may be absent is bounded by the schema as a
+                // text is, since the algorithm's record holds it in a buffer of that
+                // bound.
+                EntryType::Optional { elem } => {
+                    (!matches!(elem, SceType::String) || f.max_size.is_some())
+                        && match self.lang {
+                            Some(lang) => crate::forge::generator::algorithm_optional_spelled(
+                                lang,
+                                &crate::forge::model::AlgorithmValueType::of_scalar(elem.clone()),
+                            ),
+                            None => true,
+                        }
+                }
+            })
         })
-    })
+    }
+
+    /// `value`, a value of the enum the document imports as `alias`, as the variant
+    /// of the same declared name the other side holds
+    /// ([`StaticTarget::enum_crossing`]); `None` where the target has no such
+    /// spelling or the document no such enum.
+    fn enum_crossing(
+        &self,
+        target: &dyn StaticTarget,
+        alias: &str,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let model = self.enums.get(alias)?;
+        let machine_type = target.enum_type(self.machine, alias)?;
+        target.enum_crossing(&machine_type, model, value, crossing)
+    }
+
+    /// `value`, a field of a record of the schema `alias` read from the side
+    /// `crossing` leaves, as the other side's record holds it: a value of an enum
+    /// by [`Self::enum_crossing`], one that may be absent by
+    /// [`Self::optional_enum_crossing`], any other field as it is (`None` for an
+    /// enum field this target cannot spell). `text` spells the copy of a field
+    /// that is no enum.
+    fn record_field_crossing(
+        &self,
+        target: &dyn StaticTarget,
+        field: &crate::forge::model::EntryField,
+        value: &str,
+        crossing: Crossing,
+        text: impl FnOnce(&str) -> String,
+    ) -> Option<String> {
+        match &field.sce_type {
+            // The present value of an optional enum crosses by the same declared
+            // name, mapped where it is present and absent where it is absent
+            // (docs/adr/0055, step 9).
+            EntryType::Optional {
+                elem: ty @ SceType::Enum(_),
+            } => self.optional_enum_crossing(target, ty, value, crossing),
+            EntryType::Scalar(SceType::Enum(reference)) => {
+                self.enum_crossing(target, &reference.alias, value, crossing)
+            }
+            EntryType::Scalar(_) | EntryType::Optional { .. } => Some(text(value)),
+        }
+    }
+
+    /// `value`, an optional value of the enum `ty` names, as the other side's
+    /// optional value of the variant of the same declared name where it is present
+    /// ([`Self::enum_crossing`] applied through [`StaticTarget::optional_map`]), and
+    /// absent where it is absent (docs/adr/0055). `None` for a `ty` that is no enum
+    /// and for a target with no spelling of the mapping or of the optional type,
+    /// which refuses the crossing by name.
+    fn optional_enum_crossing(
+        &self,
+        target: &dyn StaticTarget,
+        ty: &SceType,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let SceType::Enum(reference) = ty else {
+            return None;
+        };
+        let model = self.enums.get(&reference.alias)?;
+        let machine_type = target.enum_type(self.machine, &reference.alias)?;
+        // The two types the enum is held in: the machine's own, and the one the enum
+        // document's generation declares, which the algorithm holds. The map is bound
+        // to the one it leaves, and a target that names both (Go's
+        // `optional.Convert`) takes the one it arrives at.
+        let algorithm_type = crate::forge::generator::enum_qualified_type(&model.name, self.lang?);
+        let (from, to) = match crossing {
+            Crossing::ToAlgorithm => (machine_type.clone(), algorithm_type),
+            Crossing::FromAlgorithm => (algorithm_type, machine_type.clone()),
+        };
+        // The variant mapping is asked once for its spelling before it is bound, so a
+        // target with no spelling of the crossing refuses the adapter rather than
+        // write an empty one.
+        target.enum_crossing(&machine_type, model, "v", crossing)?;
+        target.optional_convert(value, &from, &to, &|present| {
+            target
+                .enum_crossing(&machine_type, model, present, crossing)
+                .unwrap_or_default()
+        })
+    }
 }
 
 /// What a machine's declaration of its bounds says of itself
@@ -782,7 +901,9 @@ fn limit_doc(name: &str) -> String {
 /// The names of the functions a value of the machine's own type `ty` for an enum
 /// crosses through, into the enum document's type and back
 /// ([`StaticTarget::enum_crossing_names`]): one spelling, named by the type, which
-/// carries the machine's name, on every target that names them.
+/// carries the machine's name, on every target that names them. A record of the
+/// machine's own type crosses into its unit's by functions of the same spelling
+/// on Rust ([`StaticTarget::map_unit`]).
 fn enum_crossing_function_names(ty: &str) -> (String, String) {
     (format!("{ty}ToDocument"), format!("{ty}FromDocument"))
 }
@@ -912,107 +1033,16 @@ pub struct AdapterSpec<'a> {
     pub enums: &'a std::collections::BTreeMap<String, EnumModel>,
 }
 
-/// What a record of an imported schema crosses by between the type a machine
-/// holds it in and the type the schema's own unit declares, field by field
-/// (docs/SCE_ACCEPTED_SUBSET.md §2.15): the machine, the backend, and every
-/// enum the machine holds a value of, whose variants a value of one crosses by.
-/// A call's adapter crosses its records so ([`AdapterSpec::record_crossing`]),
-/// and so does a map that holds its records in the unit's type
-/// (docs/adr/0108, D6 item 4), whose put builds the unit's record and whose
-/// read builds the machine's. [`Crossing::ToAlgorithm`] is the way into the
-/// unit's type, [`Crossing::FromAlgorithm`] the way back.
-#[derive(Debug, Clone, Copy)]
-pub struct RecordCrossing<'a> {
-    pub machine: &'a str,
-    /// The backend, which spells an optional value of an element or does not
-    /// ([`crate::forge::generator::algorithm_optional_spelled`]); `None` for a
-    /// target that is no generated backend.
-    pub lang: Option<Language>,
-    /// Every enum the machine holds a value of, by the name it holds it by
-    /// ([`SCXMLModel::held_enums`]).
-    pub enums: &'a std::collections::BTreeMap<String, EnumModel>,
-}
-
-impl RecordCrossing<'_> {
-    /// `value`, a value of the enum the document imports as `alias`, as the variant of
-    /// the same declared name the other side holds ([`StaticTarget::enum_crossing`]);
-    /// `None` where the target has no such spelling or the document no such enum.
-    fn enum_crossing(
-        &self,
-        target: &dyn StaticTarget,
-        alias: &str,
-        value: &str,
-        crossing: Crossing,
-    ) -> Option<String> {
-        let model = self.enums.get(alias)?;
-        let machine_type = target.enum_type(self.machine, alias)?;
-        target.enum_crossing(&machine_type, model, value, crossing)
-    }
-
-    /// `value`, a field of a record of the schema `alias` read from the side
-    /// `crossing` leaves, as the other side's record holds it: a value of an enum by
-    /// [`Self::enum_crossing`], one that may be absent by
-    /// [`Self::optional_enum_crossing`], any other field as it is (`None` for an
-    /// enum field this target cannot spell). `text` spells the copy of a field that
-    /// is no enum.
-    fn record_field_crossing(
-        &self,
-        target: &dyn StaticTarget,
-        field: &crate::forge::model::EntryField,
-        value: &str,
-        crossing: Crossing,
-        text: impl FnOnce(&str) -> String,
-    ) -> Option<String> {
-        match &field.sce_type {
-            // The present value of an optional enum crosses by the same declared
-            // name, mapped where it is present and absent where it is absent
-            // (docs/adr/0055, step 9).
-            EntryType::Optional {
-                elem: ty @ SceType::Enum(_),
-            } => self.optional_enum_crossing(target, ty, value, crossing),
-            EntryType::Scalar(SceType::Enum(reference)) => {
-                self.enum_crossing(target, &reference.alias, value, crossing)
-            }
-            EntryType::Scalar(_) | EntryType::Optional { .. } => Some(text(value)),
+impl<'a> AdapterSpec<'a> {
+    /// What a record and a value of an enum this call hands over or takes back
+    /// cross by ([`UnitCrossing`]).
+    fn unit_crossing(&self) -> UnitCrossing<'a> {
+        UnitCrossing {
+            machine: self.machine,
+            lang: self.lang,
+            schemas: self.schemas,
+            enums: self.enums,
         }
-    }
-
-    /// `value`, an optional value of the enum `ty` names, as the other side's optional
-    /// value of the variant of the same declared name where it is present
-    /// ([`Self::enum_crossing`] applied through [`StaticTarget::optional_map`]), and
-    /// absent where it is absent (docs/adr/0055). `None` for a `ty` that is no enum
-    /// and for a target with no spelling of the mapping or of the optional type, which
-    /// refuses the call by name.
-    fn optional_enum_crossing(
-        &self,
-        target: &dyn StaticTarget,
-        ty: &SceType,
-        value: &str,
-        crossing: Crossing,
-    ) -> Option<String> {
-        let SceType::Enum(reference) = ty else {
-            return None;
-        };
-        let model = self.enums.get(&reference.alias)?;
-        let machine_type = target.enum_type(self.machine, &reference.alias)?;
-        // The two types the enum is held in: the machine's own, and the one the enum
-        // document's generation declares, which the algorithm holds. The map is bound
-        // to the one it leaves, and a target that names both (Go's
-        // `optional.Convert`) takes the one it arrives at.
-        let algorithm_type = crate::forge::generator::enum_qualified_type(&model.name, self.lang?);
-        let (from, to) = match crossing {
-            Crossing::ToAlgorithm => (machine_type.clone(), algorithm_type),
-            Crossing::FromAlgorithm => (algorithm_type, machine_type.clone()),
-        };
-        // The variant mapping is asked once for its spelling before it is bound, so a
-        // target with no spelling of the crossing refuses the adapter rather than
-        // write an empty one.
-        target.enum_crossing(&machine_type, model, "v", crossing)?;
-        target.optional_convert(value, &from, &to, &|present| {
-            target
-                .enum_crossing(&machine_type, model, present, crossing)
-                .unwrap_or_default()
-        })
     }
 }
 
@@ -1026,17 +1056,8 @@ impl AdapterSpec<'_> {
         target.optional_type(&optional_present(target, self.machine, ty, None))
     }
 
-    /// How a record of this call crosses between the machine's type and the
-    /// algorithm's ([`RecordCrossing`]).
-    fn record_crossing(&self) -> RecordCrossing<'_> {
-        RecordCrossing {
-            machine: self.machine,
-            lang: self.lang,
-            enums: self.enums,
-        }
-    }
-
-    /// [`RecordCrossing::enum_crossing`] for this call.
+    /// `value`, a value of the enum the document imports as `alias`, as the variant of
+    /// the same declared name the other side holds ([`UnitCrossing::enum_crossing`]).
     fn enum_crossing(
         &self,
         target: &dyn StaticTarget,
@@ -1044,11 +1065,13 @@ impl AdapterSpec<'_> {
         value: &str,
         crossing: Crossing,
     ) -> Option<String> {
-        self.record_crossing()
+        self.unit_crossing()
             .enum_crossing(target, alias, value, crossing)
     }
 
-    /// [`RecordCrossing::record_field_crossing`] for this call.
+    /// `value`, a field of a record of the schema `alias` read from the side
+    /// `crossing` leaves, as the other side's record holds it
+    /// ([`UnitCrossing::record_field_crossing`]).
     fn record_field_crossing(
         &self,
         target: &dyn StaticTarget,
@@ -1057,11 +1080,13 @@ impl AdapterSpec<'_> {
         crossing: Crossing,
         text: impl FnOnce(&str) -> String,
     ) -> Option<String> {
-        self.record_crossing()
+        self.unit_crossing()
             .record_field_crossing(target, field, value, crossing, text)
     }
 
-    /// [`RecordCrossing::optional_enum_crossing`] for this call.
+    /// `value`, an optional value of the enum `ty` names, as the other side's optional
+    /// value of the variant of the same declared name where it is present
+    /// ([`UnitCrossing::optional_enum_crossing`]).
     fn optional_enum_crossing(
         &self,
         target: &dyn StaticTarget,
@@ -1069,7 +1094,7 @@ impl AdapterSpec<'_> {
         value: &str,
         crossing: Crossing,
     ) -> Option<String> {
-        self.record_crossing()
+        self.unit_crossing()
             .optional_enum_crossing(target, ty, value, crossing)
     }
 
@@ -1385,12 +1410,6 @@ pub struct MapWrite<'a> {
     /// The statement that raises `error.execution` for a key or a value that
     /// cannot be computed or held, for a target that raises it itself.
     pub failed: &'a str,
-    /// For a key or a value that is a record of the schema the alias names, the
-    /// record of its unit's type the map holds it in, built from the record a
-    /// local of the name handed holds ([`StaticTarget::record_into_unit`],
-    /// docs/adr/0108, D6 item 4); `None` for a target that holds no map's record
-    /// in its unit's type.
-    pub into_unit: &'a dyn Fn(&str, &str) -> Option<String>,
 }
 
 /// A `<foreach>` over a map or a set (docs/adr/0108, D5), as a target that
@@ -2789,6 +2808,42 @@ pub trait StaticTarget {
     fn map_key_enum_def(&self, _ty: &str) -> Option<String> {
         None
     }
+    /// How a map of the machine `machine` holds `part`, a record or a value of
+    /// an enum, as its key or its value, for a target that holds it in the type
+    /// the part's own unit declares and not in the machine's own type
+    /// (docs/adr/0108, D6 item 4): that type, the type an algorithm's slot holds
+    /// the same part in, so a map is lent to an algorithm whole, and the two
+    /// functions a value crosses between the two by
+    /// ([`crate::forge::types::MapUnit`]). Asked once per machine
+    /// ([`map_units_of`]). `None` for a target whose map holds the machine's
+    /// own type ([`Self::record_type`], [`Self::enum_type`]).
+    fn map_unit(
+        &self,
+        _machine: &str,
+        _part: MapUnitPart<'_>,
+    ) -> Option<crate::forge::types::MapUnit> {
+        None
+    }
+    /// The declarations a record of the schema `schema`, imported as `alias`,
+    /// that a map holds in its unit's type `unit` ([`Self::map_unit`]) needs:
+    /// the two functions it crosses by, each the copy of the record field by
+    /// field a call's adapter makes (`crossing`, [`UnitCrossing`]), and what
+    /// the machine declares of the unit's type itself where its maps need it
+    /// ([`MapUnitDefs`]), each enum field held in the type `enum_types` names
+    /// by the enum's alias and the type made a key where a map is keyed by it
+    /// (`key`). `None` for a record whose fields do not cross, which refuses
+    /// the map by name.
+    fn map_unit_defs(
+        &self,
+        _crossing: &UnitCrossing<'_>,
+        _alias: &str,
+        _schema: &EntrySchema,
+        _unit: &crate::forge::types::MapUnit,
+        _key: bool,
+        _enum_types: &BTreeMap<String, String>,
+    ) -> Option<MapUnitDefs> {
+        None
+    }
     /// The declaration that makes the type the machine holds the payload of
     /// `event`, of the schema `schema`, in a key of the target's map, as a
     /// record of that schema is ([`Self::map_key_record_def`]), so a record key
@@ -2817,63 +2872,6 @@ pub trait StaticTarget {
     /// handed ([`crate::forge::types::TypeCtx::payload_key_feed`]). `None` for
     /// a target whose payload is a key by its own type.
     fn payload_key_feed(&self, _event: &str) -> Option<String> {
-        None
-    }
-    /// How a map of the machine `machine` holds a record of the schema
-    /// `schema_name`, which the statechart imports as `alias`, as its key or its
-    /// value, for a target that holds it in the type the record's own unit
-    /// declares and not in the machine's record type (docs/adr/0108, D6 item 4):
-    /// that type, and the functions a record crosses between the two by
-    /// ([`crate::forge::types::UnitHeldRecord`]). `None` for a target whose map
-    /// holds the machine's record.
-    fn unit_held_record(
-        &self,
-        _machine: &str,
-        _alias: &str,
-        _schema_name: &str,
-    ) -> Option<crate::forge::types::UnitHeldRecord> {
-        None
-    }
-    /// The declaration of the saved form of `unit`'s type
-    /// ([`Self::unit_held_record`]), a record of the schema `schema` imported as
-    /// `alias`, each enum field held in the type `enum_types` names by the
-    /// enum's alias: written and read as the machine's own record of the schema
-    /// is, made once however many machines of a program hold one. `None` for a
-    /// target that holds no map's record in its unit's type.
-    fn unit_record_def(
-        &self,
-        _unit: &crate::forge::types::UnitHeldRecord,
-        _alias: &str,
-        _schema: &EntrySchema,
-        _enum_types: &std::collections::BTreeMap<String, String>,
-    ) -> Option<String> {
-        None
-    }
-    /// The function that builds the machine's own record of the schema
-    /// `schema`, imported as `alias`, from one a map holds in its unit's type
-    /// ([`crate::forge::types::UnitHeldRecord::from_unit`]), each field crossed
-    /// as `crossing` crosses a call's record answer. `None` for a target that
-    /// holds no map's record in its unit's type.
-    fn unit_record_from_def(
-        &self,
-        _crossing: &RecordCrossing<'_>,
-        _alias: &str,
-        _schema: &EntrySchema,
-    ) -> Option<String> {
-        None
-    }
-    /// The record of the unit's type ([`Self::unit_held_record`]) of the schema
-    /// `schema`, imported as `alias`, that a map puts, built field by field from
-    /// `from`, a record of the schema held in a local of the machine's record
-    /// type or of the unit's, as `crossing` crosses a call's record argument.
-    /// `None` for a target that holds no map's record in its unit's type.
-    fn record_into_unit(
-        &self,
-        _crossing: &RecordCrossing<'_>,
-        _alias: &str,
-        _schema: &EntrySchema,
-        _from: &str,
-    ) -> Option<String> {
         None
     }
     /// The loop a `<foreach>` over a map or a set lowers to, for a target that
@@ -4556,6 +4554,116 @@ fn rust_union_crossing(value: &str, cases: &[CrossedCase]) -> String {
     format!("match {value} {{ {} }}", arms.join(", "))
 }
 
+/// How a Rust crossing of a record holds the record it reads
+/// ([`rust_record_to_unit`], [`rust_record_from_unit`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RustHeld {
+    /// Lent to it: a text is copied out, and the record stays its holder's, as
+    /// a call's adapter is lent the machine's record.
+    Lent,
+    /// Its own: each field is moved out, as a map's entry crosses
+    /// ([`StaticTarget::map_unit_defs`]).
+    Owned,
+}
+
+impl RustHeld {
+    /// `read`, the field `field` read off the record, as the record the
+    /// crossing builds takes it. Both sides hold the text of one field in one
+    /// type, the field's `SceString<N>` (docs/adr/0086, section 7.4), so a text
+    /// is taken as it is, absent where it is absent: copied out of a record
+    /// that is lent, and moved out of one that is the crossing's own. A payload
+    /// whose schema holds text never crosses a call: its struct holds the text
+    /// in the engine's own text type, which the lift holds to the bound (section
+    /// 4.4) and the type does not, so the call that hands one is refused at
+    /// check until the struct holds the field's `SceString<N>`.
+    fn field(self, field: &crate::forge::model::EntryField, read: &str) -> String {
+        match (self, field.sce_type.present_type()) {
+            (RustHeld::Lent, SceType::String) => format!("{read}.clone()"),
+            (RustHeld::Lent | RustHeld::Owned, _) => read.to_string(),
+        }
+    }
+}
+
+/// The record the unit of the schema `alias` declares
+/// ([`crate::forge::generator::event_schema_payload_type`]), built field by field
+/// from `from`, a record the machine holds, or (`payload`) the payload struct of
+/// the event a transition is on, held as `held` says. A payload is the schema's
+/// own struct, so its fields are named as the unit's are; a record the machine
+/// declares names them as the machine does. A value of an enum crosses by its
+/// declared name ([`UnitCrossing::record_field_crossing`]). `None` for a record
+/// whose fields do not cross ([`UnitCrossing::plain_schema`]). What a call's
+/// adapter hands the algorithm and what a map whose entries are held in their
+/// units' types is handed (docs/adr/0108, D6 item 4) are built by this one
+/// function.
+fn rust_record_to_unit(
+    target: &RustTarget,
+    crossing: &UnitCrossing<'_>,
+    alias: &str,
+    from: &str,
+    payload: bool,
+    held: RustHeld,
+) -> Option<String> {
+    use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+    let schema = crossing.plain_schema(alias)?;
+    let fields = schema
+        .fields
+        .iter()
+        .map(|f| {
+            let field = event_schema_field_ident(&f.id, Language::Rust);
+            let named = if payload {
+                field.clone()
+            } else {
+                target.record_field(&f.id)
+            };
+            let read = format!("{from}.{named}");
+            crossing
+                .record_field_crossing(target, f, &read, Crossing::ToAlgorithm, |read| {
+                    held.field(f, read)
+                })
+                .map(|value| format!("{field}: {value}"))
+        })
+        .collect::<Option<Vec<String>>>()?;
+    Some(format!(
+        "{} {{ {} }}",
+        event_schema_payload_type(&schema.name, Language::Rust),
+        fields.join(", ")
+    ))
+}
+
+/// The machine's record of the schema `alias`, built field by field from
+/// `from`, a record of the type its unit declares, held as `held` says: what
+/// an algorithm returned to a call's adapter, and an entry a map holds in its
+/// unit's type taken into a record of the machine (docs/adr/0108, D6 item 4).
+/// `None` for a record whose fields do not cross
+/// ([`UnitCrossing::plain_schema`]).
+fn rust_record_from_unit(
+    target: &RustTarget,
+    crossing: &UnitCrossing<'_>,
+    alias: &str,
+    from: &str,
+    held: RustHeld,
+) -> Option<String> {
+    use crate::forge::generator::event_schema_field_ident;
+    let schema = crossing.plain_schema(alias)?;
+    let fields = schema
+        .fields
+        .iter()
+        .map(|f| {
+            let read = format!("{from}.{}", event_schema_field_ident(&f.id, Language::Rust));
+            crossing
+                .record_field_crossing(target, f, &read, Crossing::FromAlgorithm, |read| {
+                    held.field(f, read)
+                })
+                .map(|value| format!("{}: {value}", target.record_field(&f.id)))
+        })
+        .collect::<Option<Vec<String>>>()?;
+    Some(format!(
+        "{} {{ {} }}",
+        target.record_type(crossing.machine, alias),
+        fields.join(", ")
+    ))
+}
+
 /// Rust: a variable is a field of the machine's policy struct, a record a
 /// plain `Copy` struct updated in place, a list a `BoundedList` whose bound is
 /// its type's (docs/adr/0086, section 7.4).
@@ -4804,78 +4912,20 @@ impl StaticTarget for RustTarget {
     // algorithm, so what it does cannot reach the machine's state except through
     // what it returns, and a variable is replaced only when the call succeeded.
     fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
-        use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+        use crate::forge::generator::event_schema_payload_type;
         let value = spec.callee.value.as_ref()?;
         let plain = |alias: &str| plain_schema(spec, alias);
         let scalar_ok = plain_scalar;
         let machine_record = |alias: &str| self.record_type(spec.machine, alias);
+        let crossing = spec.unit_crossing();
         // The algorithm's record built from the machine's (or the payload's) value
-        // `from`, field by field. A payload is the schema's own struct, so its fields
-        // are named as the algorithm's are; a record the machine declares names them
-        // as the machine does.
-        let to_algorithm = |alias: &str, from: &str, payload: bool| -> Option<String> {
-            let schema = plain(alias)?;
-            let fields = schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let field = event_schema_field_ident(&f.id, Language::Rust);
-                    let held = if payload {
-                        field.clone()
-                    } else {
-                        self.record_field(&f.id)
-                    };
-                    let read = format!("{from}.{held}");
-                    spec.record_field_crossing(self, f, &read, Crossing::ToAlgorithm, |read| {
-                        // The machine's record and the algorithm's hold the text
-                        // of one field in one type, the field's `SceString<N>`
-                        // (docs/adr/0086, section 7.4), so the algorithm takes a
-                        // copy of it as it is, absent where it is absent. A
-                        // payload whose schema holds text never crosses here: its
-                        // struct holds the text in the engine's own text type, which
-                        // the lift holds to the bound (section 4.4) and the type
-                        // does not, so the call that hands one is refused at check
-                        // until the struct holds the field's `SceString<N>`.
-                        match f.sce_type.present_type() {
-                            SceType::String => format!("{read}.clone()"),
-                            _ => read.to_string(),
-                        }
-                    })
-                    .map(|value| format!("{field}: {value}"))
-                })
-                .collect::<Option<Vec<String>>>()?;
-            Some(format!(
-                "{} {{ {} }}",
-                event_schema_payload_type(&schema.name, Language::Rust),
-                fields.join(", ")
-            ))
+        // `from`, lent to the adapter, and the machine's record built from what the
+        // algorithm returned, as a map's entry crosses (docs/adr/0108, D6 item 4).
+        let to_algorithm = |alias: &str, from: &str, payload: bool| {
+            rust_record_to_unit(self, &crossing, alias, from, payload, RustHeld::Lent)
         };
-        // The machine's record built from what the algorithm returned, `from`.
-        let from_algorithm = |alias: &str, from: &str| -> Option<String> {
-            let schema = plain(alias)?;
-            let fields = schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let read =
-                        format!("{from}.{}", event_schema_field_ident(&f.id, Language::Rust));
-                    // The algorithm's text is the machine's own type, the
-                    // field's `SceString<N>` (docs/adr/0086, section 7.4), so
-                    // the machine takes a copy of it as it is.
-                    spec.record_field_crossing(self, f, &read, Crossing::FromAlgorithm, |read| {
-                        match f.sce_type.present_type() {
-                            SceType::String => format!("{read}.clone()"),
-                            _ => read.to_string(),
-                        }
-                    })
-                    .map(|value| format!("{}: {value}", self.record_field(&f.id)))
-                })
-                .collect::<Option<Vec<String>>>()?;
-            Some(format!(
-                "{} {{ {} }}",
-                machine_record(alias),
-                fields.join(", ")
-            ))
+        let from_algorithm = |alias: &str, from: &str| {
+            rust_record_from_unit(self, &crossing, alias, from, RustHeld::Lent)
         };
         let algorithm_record = |alias: &str| {
             plain(alias).map(|schema| event_schema_payload_type(&schema.name, Language::Rust))
@@ -6037,6 +6087,65 @@ impl StaticTarget for RustTarget {
              ::sce_rust_runtime::MapKey::feed_key(&self.to_underlying(), into);\n    }}\n}}"
         ))
     }
+    // A map holds its record and enum entries in the types their units declare
+    // (docs/adr/0108, D6 item 4), the types a call's adapter hands an algorithm;
+    // each unit makes its type a key of the runtime's map
+    // (`forge/rust/event_schema.rs.jinja2`, `forge/rust/enum.rs.jinja2`). A
+    // record crosses by two functions of the module named as an enum's crossing
+    // is ([`enum_crossing_function_names`]), an enum by its own crossing
+    // ([`StaticTarget::enum_crossing_names`]).
+    fn map_unit(
+        &self,
+        machine: &str,
+        part: MapUnitPart<'_>,
+    ) -> Option<crate::forge::types::MapUnit> {
+        let (ty, (into, back)) = match part {
+            MapUnitPart::Record { alias, schema } => (
+                crate::forge::generator::event_schema_payload_type(&schema.name, Language::Rust),
+                enum_crossing_function_names(&self.record_type(machine, alias)),
+            ),
+            MapUnitPart::Enum { alias, model } => (
+                crate::forge::generator::enum_qualified_type(&model.name, Language::Rust),
+                self.enum_crossing_names(&self.enum_type(machine, alias)?)?,
+            ),
+        };
+        Some(crate::forge::types::MapUnit {
+            ty,
+            into,
+            back,
+            key_feed: None,
+        })
+    }
+    // The two functions, each taking the record it crosses as its own and
+    // moving every field out of it, so an entry taken out of a map, or a record
+    // put into one, is copied once. The unit makes its type a key itself, and a
+    // saved state writes the machine's own type ([`SavedMapParts`]).
+    fn map_unit_defs(
+        &self,
+        crossing: &UnitCrossing<'_>,
+        alias: &str,
+        _schema: &EntrySchema,
+        unit: &crate::forge::types::MapUnit,
+        _key: bool,
+        _enum_types: &BTreeMap<String, String>,
+    ) -> Option<MapUnitDefs> {
+        let ty = self.record_type(crossing.machine, alias);
+        let (to, from, held) = (&unit.into, &unit.back, &unit.ty);
+        let into = rust_record_to_unit(self, crossing, alias, "v", false, RustHeld::Owned)?;
+        let back = rust_record_from_unit(self, crossing, alias, "v", RustHeld::Owned)?;
+        Some(MapUnitDefs {
+            saved: None,
+            key: None,
+            functions: format!(
+                "/// A record of `{ty}` as the record of the same fields `{held}` declares.\n\
+                 #[allow(non_snake_case, dead_code)]\n\
+                 fn {to}(v: {ty}) -> {held} {{\n    {into}\n}}\n\n\
+                 /// A record of `{held}` as the record of the same fields `{ty}` declares.\n\
+                 #[allow(non_snake_case, dead_code)]\n\
+                 fn {from}(v: {held}) -> {ty} {{\n    {back}\n}}"
+            ),
+        })
+    }
     // The payload struct the typed channel holds the event's payload in, whose
     // fields are the schema's, named as written
     // (`forge::generator::rust_entry_payload`), as a record's are.
@@ -6491,54 +6600,120 @@ fn record_field_bounds<'a>(
 }
 
 /// [`StaticScope::ctx`] as `target` lowers the machine `machine`'s calls: each call
-/// typed with the storage the target hands it ([`StaticTarget::hand_call_storage`]).
+/// typed with the storage the target hands it ([`StaticTarget::hand_call_storage`]),
+/// and each map's entries read as `map_units` holds them (docs/adr/0108, D6
+/// item 4, [`map_units_of`]).
 fn lowering_ctx<'a>(
     scope: &'a StaticScope,
     target: &dyn StaticTarget,
     machine: &str,
     paths: &'a [(String, crate::forge::value_path::Place)],
     enums: &'a [StaticEnum],
+    map_units: &crate::forge::types::MapUnits,
 ) -> crate::forge::types::TypeCtx<'a> {
     let mut ctx = scope.ctx(paths, enums);
     target.hand_call_storage(scope, machine, &mut ctx);
-    ctx.unit_records = unit_held_records(scope, target, machine)
-        .into_iter()
-        .collect();
+    ctx.map_units = map_units.clone();
     ctx
 }
 
-/// Each record a map or a set variable of `scope` holds as its key or its
-/// value, by the alias the statechart imports its schema under, that `target`
-/// holds in the type the record's own unit declares (docs/adr/0108, D6 item 4,
-/// [`StaticTarget::unit_held_record`]), in the order of the aliases: empty for
-/// a target whose map holds the machine's record, and for a machine whose maps
-/// hold none.
-fn unit_held_records(
+/// A part of a map, its key or its value, that a target may hold in the type
+/// its own unit declares (docs/adr/0108, D6 item 4,
+/// [`StaticTarget::map_unit`]): a record of the schema the statechart imports
+/// under the alias, or a value of the enum the machine holds under it.
+#[derive(Debug, Clone, Copy)]
+pub enum MapUnitPart<'p> {
+    Record {
+        alias: &'p str,
+        schema: &'p EntrySchema,
+    },
+    Enum {
+        alias: &'p str,
+        model: &'p EnumModel,
+    },
+}
+
+/// What a machine declares for a record its maps hold in the type the
+/// record's unit declares ([`StaticTarget::map_unit_defs`]), each made once
+/// however many maps hold one.
+#[derive(Debug, Clone, Default)]
+pub struct MapUnitDefs {
+    /// How a saved state writes and reads the unit's type, for a target whose
+    /// saved form of a map writes the type the map holds (C11); `None` for one
+    /// that writes it as the machine's own type, crossed back first
+    /// ([`SavedMapParts::key_crossing`]).
+    pub saved: Option<String>,
+    /// What makes the unit's type a key of the target's map, for a target whose
+    /// machine declares it where a map is keyed by the record (C11); `None`
+    /// for one whose unit makes it a key itself.
+    pub key: Option<String>,
+    /// The two functions a record crosses into the unit's type and back by
+    /// ([`crate::forge::types::MapUnit::into`],
+    /// [`crate::forge::types::MapUnit::back`]), made beside the machine's
+    /// adapters, which cross a call's records the same way.
+    pub functions: String,
+}
+
+/// Every record and every enum a map or a set variable of `scope` holds as its
+/// key or its value, or as a field of a record it holds so, that `target`
+/// holds in the type the part's own unit declares (docs/adr/0108, D6 item 4),
+/// each with that type and the functions it crosses by, asked of
+/// [`StaticTarget::map_unit`] once for the machine `machine`: what its type
+/// declarations ([`TypeDeclarations::map_part`]), its statements and its
+/// expressions ([`crate::forge::types::TypeCtx::map_units`]) all read. Empty
+/// for a target whose map holds the machine's own types, and for a machine
+/// whose maps hold no record and no enum.
+fn map_units_of(
     scope: &StaticScope,
     target: &dyn StaticTarget,
     machine: &str,
-) -> BTreeMap<String, crate::forge::types::UnitHeldRecord> {
+    schemas: &BTreeMap<String, EntrySchema>,
+    enums: &BTreeMap<String, EnumModel>,
+) -> crate::forge::types::MapUnits {
     use crate::forge::model::AlgorithmValueType;
-    let mut held = BTreeMap::new();
+    let mut units = crate::forge::types::MapUnits::default();
+    let hold_enum = |units: &mut crate::forge::types::MapUnits, alias: &str| {
+        let Some(model) = enums.get(alias) else {
+            return;
+        };
+        if let Some(unit) = target.map_unit(machine, MapUnitPart::Enum { alias, model }) {
+            units.enums.insert(alias.to_string(), unit);
+        }
+    };
     for ty in scope.variables.iter().filter_map(|v| v.value_type.as_ref()) {
         let parts: Vec<&AlgorithmValueType> = match ty {
             AlgorithmValueType::Map { key, value, .. } => vec![key.as_ref(), value.as_ref()],
             AlgorithmValueType::Set { key, .. } => vec![key.as_ref()],
             _ => continue,
         };
-        for alias in parts
-            .into_iter()
-            .filter_map(AlgorithmValueType::record_alias)
-        {
-            let Some(record) = scope.type_scope.records.get(alias) else {
-                continue;
-            };
-            if let Some(unit) = target.unit_held_record(machine, alias, &record.name) {
-                held.insert(alias.to_string(), unit);
+        for part in parts {
+            match part {
+                AlgorithmValueType::Record { alias } => {
+                    let Some(schema) = schemas.get(alias) else {
+                        continue;
+                    };
+                    let Some(unit) =
+                        target.map_unit(machine, MapUnitPart::Record { alias, schema })
+                    else {
+                        continue;
+                    };
+                    units.records.insert(alias.clone(), unit);
+                    // A field of an enum of a record entry is read out of the
+                    // unit's record, in the enum's unit's type.
+                    for field in &schema.fields {
+                        if let SceType::Enum(reference) = field.sce_type.present_type() {
+                            hold_enum(&mut units, &reference.alias);
+                        }
+                    }
+                }
+                AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
+                    hold_enum(&mut units, &reference.alias);
+                }
+                _ => {}
             }
         }
     }
-    held
+    units
 }
 
 /// Every name a lowered `sce-static` expression spells differently on
@@ -6644,6 +6819,7 @@ fn map_not_lowered(element: &str, lang: &str) -> GenerateError {
 fn map_part(
     written: &str,
     ty: &crate::forge::value_type::ValueType,
+    ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
     lower: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
@@ -6652,6 +6828,16 @@ fn map_part(
     use crate::forge::value_type::ValueType;
     let target = rewrites.target;
     let written = written.trim();
+    // docs/adr/0108, D6 item 4: a record or a value of an enum the map holds in
+    // its unit's type is built from the machine's value it is given, as a call's
+    // record argument crosses ([`TypeCtx::map_units`]).
+    let into_unit = |value: Receiving| match ctx.map_units.of_value(ty) {
+        Some(unit) => Receiving {
+            text: format!("{}({})", unit.into, value.text),
+            can_fail: value.can_fail,
+        },
+        None => value,
+    };
     match ty {
         ValueType::Record { alias } => {
             let schema = rewrites.schemas.get(alias).ok_or_else(|| {
@@ -6666,15 +6852,23 @@ fn map_part(
                     schema,
                     target,
                     lower_bounded,
-                );
+                )
+                .map(into_unit);
             }
             let named = match renames.get(written) {
                 Some(held) => held.to_string(),
                 None => target.expr_target().local_spelling(written),
             };
-            Ok(Receiving {
+            let copy = Receiving {
                 text: target.record_copy(&named, schema),
                 can_fail: false,
+            };
+            // The item or the key of a walk of a map is held in its unit's type
+            // already, and is put as it is.
+            Ok(if ctx.unit_held_name(written).is_some() {
+                copy
+            } else {
+                into_unit(copy)
             })
         }
         ValueType::Text { max } => {
@@ -6691,7 +6885,9 @@ fn map_part(
                 can_fail: true,
             })
         }
-        ValueType::Scalar(scalar) => lower(written, InferredType::from_sce_type(scalar)),
+        ValueType::Scalar(scalar) => {
+            lower(written, InferredType::from_sce_type(scalar)).map(into_unit)
+        }
         ValueType::Optional { .. }
         | ValueType::Union { .. }
         | ValueType::List { .. }
@@ -7961,7 +8157,11 @@ pub fn lower(
     // how each backend holds them while the machine is being built.
     let no_payload = scope.paths(None);
     let mut fields = Vec::new();
-    let mut declarations = TypeDeclarations::new(target, machine, &held_enums);
+    // docs/adr/0108, D6 item 4: the records and the enums the machine's maps
+    // hold in their units' types, asked of the target once, which every
+    // declaration, statement and expression below reads.
+    let map_units = map_units_of(&scope, target, machine, &records, &held_enums);
+    let mut declarations = TypeDeclarations::new(target, machine, &held_enums, &map_units);
     // The schemas of the records a map variable is keyed by, by name, whose
     // payload a transition may look a key up by (docs/adr/0108, D3).
     let mut key_records: BTreeSet<String> = BTreeSet::new();
@@ -7988,7 +8188,7 @@ pub fn lower(
         .map(|profile| profile.module_parameters.iter().cloned().collect())
         .unwrap_or_default();
     {
-        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
+        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums, &map_units);
         let init_names: Vec<(String, String)> = variables
             .iter()
             .map(|v| {
@@ -8173,6 +8373,9 @@ pub fn lower(
                 } else {
                     (ty.as_attr(), None, None, empty)
                 };
+                let saved_crossing = |part: Option<&crate::forge::model::AlgorithmValueType>| {
+                    map_units.of_slot(part?).cloned()
+                };
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
@@ -8200,6 +8403,15 @@ pub fn lower(
                                     crate::forge::model::AlgorithmValueType::Bytes { .. }
                                 )
                         ),
+                        // A part held in its unit's type is saved as the
+                        // machine's own type saves it (docs/adr/0108, D6 item 4).
+                        key_crossing: saved_crossing(ty.map_key()),
+                        value_crossing: saved_crossing(match ty {
+                            crate::forge::model::AlgorithmValueType::Map { value, .. } => {
+                                Some(value.as_ref())
+                            }
+                            _ => None,
+                        }),
                     }),
                     elem_ty: None,
                     reader: None,
@@ -8522,7 +8734,7 @@ pub fn lower(
 
     let mut payload_events = BTreeSet::new();
     for state in model.states.values_mut() {
-        let plain_ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
+        let plain_ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums, &map_units);
         let plain_renames = renames(&names, None, target);
         for block in state
             .on_entry_blocks
@@ -8676,7 +8888,7 @@ pub fn lower(
                 .or_else(|| composed_payloads.get(&trigger).map(String::as_str));
             rewrites.open_payload(schema);
             let paths = scope.paths(payload);
-            let mut ctx = lowering_ctx(&scope, target, machine, &paths, &enums);
+            let mut ctx = lowering_ctx(&scope, target, machine, &paths, &enums, &map_units);
             // A payload of the schema of a record a map is keyed by is looked up
             // taken whole through the feed its key declaration names, for a
             // target whose lookup takes one (docs/adr/0108, D3).
@@ -8783,7 +8995,7 @@ pub fn lower(
         rewrites.open_payload(None);
     }
     for script in &mut model.global_scripts {
-        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
+        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums, &map_units);
         lower_action(script, &ctx, &renames(&names, None, target), &rewrites)?;
     }
     // A payload that is read rides the typed channel, whose struct holds every
@@ -9106,6 +9318,10 @@ pub fn lower(
             SceType::Enum(reference) => Some(reference.alias.as_str()),
             _ => None,
         })
+        // ... and each enum a map holds in its unit's type, a key, a value or a
+        // field of a record entry, which an expression reads into the machine's
+        // own type (docs/adr/0108, D6 item 4).
+        .chain(map_units.enums.keys().map(String::as_str))
         .collect();
     for alias in crossed {
         let (Some(model), Some(ty)) = (held_enums.get(alias), target.enum_type(machine, alias))
@@ -9143,25 +9359,21 @@ pub fn lower(
         }
     }
     // docs/adr/0108, D6 item 4: each record a map holds in the type its unit
-    // declares is read whole as the machine's own record through a function of
-    // the machine's, and its unit is included by the machine's header, whose
-    // map types name the unit's, as the unit of an algorithm whose types the
-    // storage is of is.
-    let crossing = RecordCrossing {
-        machine,
-        lang: target.expr_target().language(),
-        enums: &held_enums,
-    };
-    let mut header_imports = scratch_imports;
-    for alias in unit_held_records(&scope, target, machine).keys() {
-        let Some(schema) = records.get(alias) else {
-            continue;
-        };
-        adapter_defs.extend(target.unit_record_from_def(&crossing, alias, schema));
-        header_imports.extend(target.schema_import(&schema.name));
-    }
+    // declares crosses into it and back through functions of the machine's,
+    // beside its adapters, which cross a call's records the same way.
+    adapter_defs.extend(declarations.unit_functions.into_values());
     let imports: Vec<String> = imports.into_iter().collect();
     let scratch = target.scratch(machine, &scratch_sites);
+    // The units the machine's types name: of the storage its calls write into,
+    // where it holds one (docs/adr/0082), and of each record and each enum its
+    // maps hold in their units' types (docs/adr/0108, D6 item 4), whose map
+    // types name the unit's, whether or not it calls an algorithm.
+    let mut header_imports = if scratch.is_some() {
+        scratch_imports
+    } else {
+        BTreeSet::new()
+    };
+    header_imports.extend(declarations.unit_imports);
     Ok(StaticLowering {
         fields,
         payload_events,
@@ -9204,6 +9416,18 @@ struct TypeDeclarations<'t> {
     /// Each record that holds a composed value and each union a saved state
     /// writes, by its type, so each is described once ([`declare_composed`]).
     saved_composed: BTreeSet<String>,
+    /// Every record and every enum the machine's maps hold in their units'
+    /// types (docs/adr/0108, D6 item 4, [`map_units_of`]).
+    map_units: &'t crate::forge::types::MapUnits,
+    /// The line of each unit whose type a map holds a key or a value in
+    /// (docs/adr/0108, D6 item 4), and of each enum a field of such a record
+    /// holds in its unit's type, which the machine's types name
+    /// ([`StaticLowering::header_imports`]).
+    unit_imports: BTreeSet<String>,
+    /// The functions each record a map holds in its unit's type crosses into
+    /// it and back by ([`MapUnitDefs::functions`]), declared once per record,
+    /// by the alias of its schema.
+    unit_functions: BTreeMap<String, String>,
 }
 
 impl<'t> TypeDeclarations<'t> {
@@ -9211,6 +9435,7 @@ impl<'t> TypeDeclarations<'t> {
         target: &'t dyn StaticTarget,
         machine: &'t str,
         held_enums: &'t std::collections::BTreeMap<String, EnumModel>,
+        map_units: &'t crate::forge::types::MapUnits,
     ) -> Self {
         Self {
             target,
@@ -9222,6 +9447,9 @@ impl<'t> TypeDeclarations<'t> {
             enums: Vec::new(),
             unions: Vec::new(),
             saved_composed: BTreeSet::new(),
+            map_units,
+            unit_imports: BTreeSet::new(),
+            unit_functions: BTreeMap::new(),
         }
     }
 
@@ -9427,13 +9655,92 @@ impl<'t> TypeDeclarations<'t> {
         }
     }
 
+    /// The type a map holds a value of the enum the machine holds as `alias`
+    /// in, where it holds it in the type the enum's unit declares
+    /// ([`crate::forge::types::MapUnits::enums`], docs/adr/0108, D6 item 4),
+    /// that unit imported. `None` for an enum a map holds in the machine's own
+    /// type.
+    fn unit_enum(&mut self, alias: &str) -> Option<String> {
+        let (target, held_enums, map_units) = (self.target, self.held_enums, self.map_units);
+        let unit = map_units.enums.get(alias)?;
+        let model = held_enums.get(alias)?;
+        self.unit_imports.extend(target.enum_import(&model.name));
+        Some(unit.ty.clone())
+    }
+
+    /// The record `alias` of `schema` a map holds in the type its unit
+    /// declares, `unit` ([`crate::forge::types::MapUnits::records`],
+    /// docs/adr/0108, D6 item 4): what the machine declares for it
+    /// ([`StaticTarget::map_unit_defs`]), each made once however many maps hold
+    /// one, the unit's type made a key where a map is keyed by it (`key`), its
+    /// unit imported, and the unit of each enum a field of it holds in its own
+    /// unit's type ([`Self::unit_enum`]). Refused, naming `element`, where the
+    /// target copies no record of it into its unit's type.
+    fn unit_record(
+        &mut self,
+        alias: &str,
+        schema: &EntrySchema,
+        unit: &crate::forge::types::MapUnit,
+        key: bool,
+        records: &BTreeMap<String, EntrySchema>,
+        element: &str,
+    ) -> Result<(), GenerateError> {
+        let target = self.target;
+        // Each enum field held in the type the machine's record holds it in.
+        let mut enum_types = BTreeMap::new();
+        for field in &schema.fields {
+            if let SceType::Enum(reference) = field.sce_type.present_type() {
+                if let Ok(enum_ty) = self.enum_type(&reference.alias) {
+                    enum_types.insert(reference.alias.clone(), enum_ty);
+                }
+            }
+        }
+        let crossing = UnitCrossing {
+            machine: self.machine,
+            lang: target.expr_target().language(),
+            schemas: records,
+            enums: self.held_enums,
+        };
+        let defs = target
+            .map_unit_defs(&crossing, alias, schema, unit, key, &enum_types)
+            .ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "{element}: a map holds record:{alias} in the type its unit declares \
+                     (docs/adr/0108, D6 item 4), and {} copies no record of it there: a field \
+                     of it is a byte string or a text with no bound",
+                    target.name()
+                ))
+            })?;
+        if let Some(saved) = defs.saved {
+            if self.declared.insert(format!("unit record<{}>", unit.ty)) {
+                self.type_defs.push(saved);
+            }
+        }
+        self.map_key(&unit.ty, defs.key);
+        self.unit_functions
+            .entry(alias.to_string())
+            .or_insert(defs.functions);
+        self.unit_imports.extend(target.schema_import(&schema.name));
+        for field in &schema.fields {
+            if let SceType::Enum(reference) = field.sce_type.present_type() {
+                self.unit_enum(&reference.alias);
+            }
+        }
+        Ok(())
+    }
+
     /// The type a key or a value of a map of the type `part` is held in
     /// (docs/adr/0108, D1 and D8), declared as a variable of that type is: a
     /// number's and a bool's own, an enum's and a record's the machine's own,
     /// declared the first time any place names it, and a text's and a byte
     /// string's the storage of its bound. A key's type is made a key of the
     /// target's map besides (`key`), a record's field by field, each enum a
-    /// field holds made one too. `element` names the variable in a refusal.
+    /// field holds made one too. A record and an enum are held in the type
+    /// their unit declares instead on a target whose map holds them there
+    /// (docs/adr/0108, D6 item 4, [`Self::unit_record`], [`Self::unit_enum`]),
+    /// the machine's own declared and made a key all the same, since a read
+    /// looks a key up by a value of it. `element` names the variable in a
+    /// refusal.
     fn map_part(
         &mut self,
         part: &crate::forge::model::AlgorithmValueType,
@@ -9458,11 +9765,13 @@ impl<'t> TypeDeclarations<'t> {
                          could not be read"
                     ))
                 })?;
+                // The machine's own type is a key too, which a read looks a key
+                // up by (`has(m, Kind.on)`, docs/adr/0108, D3).
                 if key {
                     let def = target.map_key_enum_def(&ty);
                     self.map_key(&ty, def);
                 }
-                ty
+                self.unit_enum(&reference.alias).unwrap_or(ty)
             }
             AlgorithmValueType::Scalar(scalar) => target.scalar_type(scalar),
             AlgorithmValueType::Text { max } => {
@@ -9489,12 +9798,6 @@ impl<'t> TypeDeclarations<'t> {
                 // read whole as and built from where the map holds the type the
                 // record's unit declares (docs/adr/0108, D6 item 4).
                 let ty = self.record(alias, schema)?;
-                let unit = target.unit_held_record(self.machine, alias, &schema.name);
-                let fields: Vec<String> = schema
-                    .fields
-                    .iter()
-                    .map(|f| target.record_field(&f.id))
-                    .collect();
                 if key {
                     for field in &schema.fields {
                         if let SceType::Enum(reference) = field.sce_type.present_type() {
@@ -9506,33 +9809,25 @@ impl<'t> TypeDeclarations<'t> {
                     }
                     // The machine's record is a key by its fields' bytes too, so
                     // a key it holds finds the entry whose bytes it writes.
+                    let fields: Vec<String> = schema
+                        .fields
+                        .iter()
+                        .map(|f| target.record_field(&f.id))
+                        .collect();
                     let def = target.map_key_record_def(&ty, &fields, schema);
                     self.map_key(&ty, def);
                 }
-                let Some(unit) = unit else {
-                    return Ok(ty);
-                };
-                // ... and the unit's, saved as the machine's record is, a key by
-                // the same bytes, each enum field held in the type the record's
-                // is.
-                let mut enum_types = BTreeMap::new();
-                for field in &schema.fields {
-                    if let SceType::Enum(reference) = field.sce_type.present_type() {
-                        if let Ok(enum_ty) = self.enum_type(&reference.alias) {
-                            enum_types.insert(reference.alias.clone(), enum_ty);
-                        }
+                // docs/adr/0108, D6 item 4: held in the type its unit declares,
+                // into which the machine's record crosses, on a target that
+                // holds one there.
+                let map_units = self.map_units;
+                match map_units.records.get(alias) {
+                    Some(unit) => {
+                        self.unit_record(alias, schema, unit, key, records, element)?;
+                        unit.ty.clone()
                     }
+                    None => ty,
                 }
-                if let Some(def) = target.unit_record_def(&unit, alias, schema, &enum_types) {
-                    if self.declared.insert(format!("unit record<{}>", unit.ty)) {
-                        self.type_defs.push(def);
-                    }
-                }
-                if key {
-                    let def = target.map_key_record_def(&unit.ty, &fields, schema);
-                    self.map_key(&unit.ty, def);
-                }
-                unit.ty
             }
             AlgorithmValueType::Optional { .. }
             | AlgorithmValueType::Union { .. }
@@ -11026,6 +11321,32 @@ impl Rewrites<'_> {
         }
     }
 
+    /// `read`, the read of `name` whole, as the machine's own record, where a
+    /// walk binds `name` to a record a map holds in the type its unit declares
+    /// ([`crate::forge::types::TypeCtx::unit_held_name`], docs/adr/0108, D6
+    /// item 4): the entry copied as a named record is, and crossed back through
+    /// the unit's function. What an assignment, an append and a call's argument
+    /// take the name whole as. `None` for any other name.
+    fn unit_held_whole(
+        &self,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        name: &str,
+        read: &str,
+    ) -> Option<String> {
+        let name = name.trim();
+        let unit = ctx.unit_held_name(name)?;
+        let copy = match ctx.value_of(name)?.ty {
+            crate::forge::value_type::ValueType::Record { alias } => {
+                match self.schemas.get(&alias) {
+                    Some(schema) => self.target.record_copy(read, schema),
+                    None => read.to_string(),
+                }
+            }
+            _ => return None,
+        };
+        Some(format!("{}({copy})", unit.back))
+    }
+
     /// The calls of `text` that hand an algorithm a record or a list, found in the
     /// scope of the transition the walk is in ([`StaticScope::rewrite_state_calls`]).
     fn rewrite_state_calls(&self, text: &str) -> Result<StateRewrite, StateCallRefusal> {
@@ -11093,10 +11414,10 @@ impl Rewrites<'_> {
                 };
                 // ... and one a walk binds where a map holds it, in the type the
                 // record's unit declares, is handed as the machine's own record
-                // built from it, as any read of it whole is (docs/adr/0108, D6
-                // item 4).
-                let held = match ctx.unit_held_name(key) {
-                    Some(unit) if arg.code == 'i' => format!("{}({held})", unit.from_unit),
+                // built from it, as any statement that takes it whole takes it
+                // (docs/adr/0108, D6 item 4).
+                let held = match self.unit_held_whole(ctx, key, &held) {
+                    Some(crossed) if arg.code == 'i' => crossed,
                     _ => held,
                 };
                 self.target.state_argument(self.machine, arg, &held)
@@ -16220,8 +16541,8 @@ fn c_saved_read(
 /// revision of its schema it was saved at ([`c_record_saved_members`]). The
 /// machine's own record of the schema is saved by them
 /// ([`StaticTarget::record_def`]), and so is the type the schema's unit declares
-/// where a map holds the record in it ([`StaticTarget::unit_record_def`]), which
-/// names every field as the machine's record does.
+/// where a map holds the record in it ([`MapUnitDefs::saved`]), which names
+/// every field as the machine's record does.
 fn c11_record_saved_defs(
     ty: &str,
     schema: &EntrySchema,
@@ -16459,16 +16780,15 @@ pub(crate) fn c11_map_type(key: &str, value: Option<&str>, capacity: u32) -> Str
 
 /// A C11 record of the type `ty` built field by field from `from`, a record of
 /// the schema `schema` on the side `direction` leaves, each field as the other
-/// side holds it ([`RecordCrossing::record_field_crossing`]): what a call's
+/// side holds it ([`UnitCrossing::record_field_crossing`]): what a call's
 /// record argument and its answer cross by (docs/SCE_ACCEPTED_SUBSET.md §2.15),
 /// and what a map that holds the record in the type its unit declares crosses
 /// an entry by (docs/adr/0108, D6 item 4), its put into that type and its read
 /// whole back into the machine's. Every field is read by the name both types
-/// give it, so `from` may hold either. `None` for a field this target cannot
-/// cross.
+/// give it. `None` for a field this target cannot cross.
 fn c11_record_crossed(
     target: &CTarget,
-    crossing: &RecordCrossing<'_>,
+    crossing: &UnitCrossing<'_>,
     schema: &EntrySchema,
     ty: &str,
     from: &str,
@@ -17223,7 +17543,7 @@ impl StaticTarget for CTarget {
         // A record of the type `ty` made field by field from `from`, as a map
         // that holds the record in its unit's type crosses one too
         // ([`c11_record_crossed`]).
-        let crossing_of = spec.record_crossing();
+        let crossing_of = spec.unit_crossing();
         let record_of =
             |alias: &str, ty: String, from: &str, crossing: Crossing| -> Option<String> {
                 c11_record_crossed(
@@ -18733,52 +19053,25 @@ impl StaticTarget for CTarget {
     // remove did is the runtime's outcome, written into the variable `outcome`
     // names as the variant of the same name of its standard enum; a put that
     // names none fails into a full map, and a remove that names none does
-    // nothing of a key that is absent. A record key or value is held in the
-    // type its unit declares (docs/adr/0108, D6 item 4): the record it is given
-    // is held first in a local of whatever type it is, and the unit's record
-    // built from it field by field.
+    // nothing of a key that is absent. A record key or value the map holds in
+    // the type its unit declares (docs/adr/0108, D6 item 4) is handed already
+    // built in it ([`map_part`]).
     fn map_write(&self, write: &MapWrite<'_>) -> Option<String> {
         if write.ty.is_empty() {
             return None;
         }
         let prefix = write.ty.trim_end_matches("_t");
         let map = write.map;
-        let held_as = |local: &str,
-                       slot: &str,
-                       part: &crate::forge::value_path::Place,
-                       value: &str|
-         -> Vec<String> {
-            let into_unit = match &part.ty {
-                crate::forge::value_type::ValueType::Record { alias } => {
-                    (write.into_unit)(alias, &format!("{local}_in"))
-                }
-                _ => None,
-            };
-            match into_unit {
-                Some(unit) => vec![
-                    format!("__typeof__({value}) {local}_in = {value};"),
-                    format!("__typeof__(({map}).slots[0].{slot}) {local} = {unit};"),
-                ],
-                None => vec![format!(
-                    "__typeof__(({map}).slots[0].{slot}) {local} = {};",
-                    c11_map_part_value(&part.ty, value)
-                )],
-            }
-        };
-        let mut lines = vec!["{ sce_forge_algorithm_failure_t sce_failure_ = {0};".to_string()];
-        lines.extend(held_as(
-            "sce_key",
-            "key",
-            &write.place.map_key()?,
-            write.key,
-        ));
+        let key = c11_map_part_value(&write.place.map_key()?.ty, write.key);
+        let mut lines = vec![
+            "{ sce_forge_algorithm_failure_t sce_failure_ = {0};".to_string(),
+            format!("__typeof__(({map}).slots[0].key) sce_key = {key};"),
+        ];
         let call = match write.op {
             MapOp::Put { value: Some(value) } => {
-                lines.extend(held_as(
-                    "sce_value",
-                    "value",
-                    &write.place.map_value()?,
-                    value,
+                let value = c11_map_part_value(&write.place.map_value()?.ty, value);
+                lines.push(format!(
+                    "__typeof__(({map}).slots[0].value) sce_value = {value};"
                 ));
                 format!("{prefix}_put(&({map}), sce_key, sce_value)")
             }
@@ -19035,56 +19328,66 @@ impl StaticTarget for CTarget {
     }
     // A record a map holds is of the type its schema's unit declares
     // (docs/adr/0108, D6 item 4), `<Schema>Payload_t`, the type an algorithm's
-    // slot holds it in; the machine's own record is built from it by a function
-    // of the machine's, and a key the machine holds in its own record is written
-    // by that record's feed, whose bytes are the unit's (D1).
-    fn unit_held_record(
+    // slot holds it in; it crosses into it and back by two functions of the
+    // machine's, and a key the machine holds in its own record is written by
+    // that record's feed, whose bytes are the unit's (D1). An enum is held in
+    // the machine's own type.
+    fn map_unit(
         &self,
         machine: &str,
-        alias: &str,
-        schema_name: &str,
-    ) -> Option<crate::forge::types::UnitHeldRecord> {
+        part: MapUnitPart<'_>,
+    ) -> Option<crate::forge::types::MapUnit> {
+        let MapUnitPart::Record { alias, schema } = part else {
+            return None;
+        };
         let own = self.record_type(machine, alias);
         let own = own.trim_end_matches("_t");
-        Some(crate::forge::types::UnitHeldRecord {
-            ty: crate::forge::generator::event_schema_payload_type(schema_name, Language::C11),
-            from_unit: format!("{own}_of_unit"),
-            machine_feed: format!("{own}_map_key"),
+        Some(crate::forge::types::MapUnit {
+            ty: crate::forge::generator::event_schema_payload_type(&schema.name, Language::C11),
+            into: format!("{own}_to_unit"),
+            back: format!("{own}_of_unit"),
+            key_feed: Some(format!("{own}_map_key")),
         })
     }
-    // Saved by the functions the machine's own record of the schema is saved by
-    // ([`c11_record_saved_defs`]), under a guard of the type's name: every machine
-    // of a program that holds such a map declares the same text.
-    fn unit_record_def(
+    // The unit's type is saved by the functions the machine's own record of the
+    // schema is saved by ([`c11_record_saved_defs`]) and made a key by its fields'
+    // bytes, each under a guard of the type's name: every machine of a program
+    // that holds such a map declares the same text. The two functions sit beside
+    // the machine's adapters, which cross a call's records the same way
+    // ([`c11_record_crossed`]).
+    fn map_unit_defs(
         &self,
-        unit: &crate::forge::types::UnitHeldRecord,
-        _alias: &str,
+        crossing: &UnitCrossing<'_>,
+        alias: &str,
         schema: &EntrySchema,
-        enum_types: &std::collections::BTreeMap<String, String>,
-    ) -> Option<String> {
+        unit: &crate::forge::types::MapUnit,
+        key: bool,
+        enum_types: &BTreeMap<String, String>,
+    ) -> Option<MapUnitDefs> {
+        let held = &unit.ty;
         let guard = format!(
             "SCE_STATIC_UNIT_RECORD_{}",
-            unit.ty.trim_end_matches("_t").to_uppercase()
+            held.trim_end_matches("_t").to_uppercase()
         );
-        Some(format!(
+        let saved = format!(
             "#ifndef {guard}\n#define {guard}\n\
              /* docs/adr/0108, D6 item 4: a record of `{}` a map holds, in the type the schema's \
              unit declares,\n   saved as a record variable of the schema is. */\n{}\n#endif",
             schema.name,
-            c11_record_saved_defs(&unit.ty, schema, enum_types, self)
-        ))
-    }
-    // A function of the machine's, beside its adapters, which cross a call's
-    // record answer the same way ([`c11_record_crossed`]).
-    fn unit_record_from_def(
-        &self,
-        crossing: &RecordCrossing<'_>,
-        alias: &str,
-        schema: &EntrySchema,
-    ) -> Option<String> {
-        let unit = self.unit_held_record(crossing.machine, alias, &schema.name)?;
+            c11_record_saved_defs(held, schema, enum_types, self)
+        );
+        let fields: Vec<String> = schema
+            .fields
+            .iter()
+            .map(|f| self.record_field(&f.id))
+            .collect();
+        let key = if key {
+            self.map_key_record_def(held, &fields, schema)
+        } else {
+            None
+        };
         let own = self.record_type(crossing.machine, alias);
-        let built = c11_record_crossed(
+        let back = c11_record_crossed(
             self,
             crossing,
             schema,
@@ -19092,32 +19395,21 @@ impl StaticTarget for CTarget {
             "from",
             Crossing::FromAlgorithm,
         )?;
-        Some(format!(
-            "/* docs/adr/0108, D6 item 4: the machine's own `record:{alias}`, built from the one a \
-             map holds in the type\n   the record's unit declares: what the value at a key, or \
-             a walk's item or key, read whole is. */\n\
-             static inline {own} {}({} from) {{\n    return {built};\n}}",
-            unit.from_unit, unit.ty
-        ))
-    }
-    // ... and the unit's record a put holds, as a call's record argument is
-    // built.
-    fn record_into_unit(
-        &self,
-        crossing: &RecordCrossing<'_>,
-        alias: &str,
-        schema: &EntrySchema,
-        from: &str,
-    ) -> Option<String> {
-        let unit = self.unit_held_record(crossing.machine, alias, &schema.name)?;
-        c11_record_crossed(
-            self,
-            crossing,
-            schema,
-            &unit.ty,
-            from,
-            Crossing::ToAlgorithm,
-        )
+        let into = c11_record_crossed(self, crossing, schema, held, "from", Crossing::ToAlgorithm)?;
+        Some(MapUnitDefs {
+            saved: Some(saved),
+            key,
+            functions: format!(
+                "/* docs/adr/0108, D6 item 4: the machine's own `record:{alias}`, built from the \
+                 one a map holds in the type\n   the record's unit declares: what the value at a \
+                 key, or a walk's item or key, read whole is. */\n\
+                 static inline {own} {}({held} from) {{\n    return {back};\n}}\n\n\
+                 /* ... and the record of the unit's type built from the machine's own: what a \
+                 put of one holds. */\n\
+                 static inline {held} {}({own} from) {{\n    return {into};\n}}",
+                unit.back, unit.into
+            ),
+        })
     }
     // `machine` is the symbol every name of the machine starts with, prefix
     // included, which the generator hands the walk for it.
@@ -22673,9 +22965,43 @@ fn lower_action(
                 }
                 _ => None,
             };
+            // docs/adr/0108, D6 item 4: the value at a key of a map that holds its
+            // records in their unit's type, read whole, and the item or the key of
+            // a walk of one, are of that type, and the machine's record is built
+            // from the entry by the function it crosses back through
+            // ([`TypeCtx::map_units`]).
+            let walked = ctx.unit_held_name(action.expr.trim()).is_some();
+            let read_back = rewrites.records.get(location).and_then(|(alias, _)| {
+                let (map, _) = indexed_element(&action.expr)?;
+                rewrites.scope.map_variable(map)?;
+                ctx.map_units
+                    .records
+                    .get(alias)
+                    .map(|unit| unit.back.clone())
+            });
             let mut value = match rewrites.records.get(location) {
                 Some((alias, schema)) if action.expr.trim() == "_event.data" => {
                     payload_record_value(rewrites.machine, alias, schema, target, &lower_bounded)?
+                }
+                // The walk's entry is copied as a named record is before it
+                // crosses ([`Rewrites::unit_held_whole`]) ...
+                Some(_) if walked => {
+                    let value = lower(&action.expr, slot)?;
+                    Receiving {
+                        text: rewrites
+                            .unit_held_whole(ctx, &action.expr, &value.text)
+                            .expect("guarded by the match above"),
+                        can_fail: value.can_fail,
+                    }
+                }
+                // ... and the read is a copy the map lends no part of.
+                Some(_) if read_back.is_some() => {
+                    let value = lower(&action.expr, slot)?;
+                    let back = read_back.as_deref().expect("guarded by the match above");
+                    Receiving {
+                        text: format!("{back}({})", value.text),
+                        can_fail: value.can_fail,
+                    }
                 }
                 // The element of a list of records at an index, whole: a target
                 // that reads one whole copies it as it copies a named record; any
@@ -23036,11 +23362,18 @@ fn lower_action(
                         Some(field) => field.to_string(),
                         None => target.expr_target().local_spelling(written),
                     };
-                    Receiving {
-                        text: match rewrites.schemas.get(alias) {
+                    // The item or the key of a walk of a map that holds it in its
+                    // unit's type crosses into the machine's record the list
+                    // holds (docs/adr/0108, D6 item 4).
+                    let text = match rewrites.unit_held_whole(ctx, written, &named) {
+                        Some(crossed) => crossed,
+                        None => match rewrites.schemas.get(alias) {
                             Some(schema) => target.record_copy(&named, schema),
                             None => named,
                         },
+                    };
+                    Receiving {
+                        text,
                         can_fail: false,
                     }
                 }
@@ -23240,6 +23573,7 @@ fn lower_action(
             let key = map_part(
                 &action.key,
                 &key_place.ty,
+                ctx,
                 renames,
                 rewrites,
                 &lower,
@@ -23252,6 +23586,7 @@ fn lower_action(
                     map_part(
                         &action.expr,
                         &value.ty,
+                        ctx,
                         renames,
                         rewrites,
                         &lower,
@@ -23303,18 +23638,6 @@ fn lower_action(
                 .get(map.as_str())
                 .cloned()
                 .unwrap_or_default();
-            // A record key or value is put as the record of its unit's type the
-            // map holds, built from the record it is given (docs/adr/0108, D6
-            // item 4), for a target that holds one there.
-            let crossing = RecordCrossing {
-                machine: rewrites.machine,
-                lang: target.expr_target().language(),
-                enums: &rewrites.held_enums,
-            };
-            let into_unit = |alias: &str, from: &str| {
-                let schema = rewrites.schemas.get(alias)?;
-                target.record_into_unit(&crossing, alias, schema, from)
-            };
             let write = MapWrite {
                 map: renames.get(map.as_str()).copied().unwrap_or(map.as_str()),
                 ty: &held,
@@ -23335,7 +23658,6 @@ fn lower_action(
                     .map(|(ty, document)| (ty.as_str(), document.as_str())),
                 full: &full,
                 failed: &failed,
-                into_unit: &into_unit,
             };
             action.native_code = target
                 .map_write(&write)
@@ -24015,6 +24337,14 @@ fn lower_map_foreach(
     };
     let record_item = record_of(&element);
     let record_key = key_place.as_ref().and_then(record_of);
+    // docs/adr/0108, D6 item 4: an item or a key the map holds in its unit's
+    // type is read as that type holds it, a value of an enum crossed into the
+    // machine's own where the body reads it.
+    let item_reads = map_walk_unit_reads(rewrites, ctx, &item, &entry.value, &element);
+    let key_reads = match (key_local.as_ref(), key_place.as_ref()) {
+        (Some(_), Some(at)) => map_walk_unit_reads(rewrites, ctx, &key, &entry.key, at),
+        _ => Vec::new(),
+    };
     let loop_variables = LoopVariables::of_place(
         &item,
         (!index.is_empty()).then_some(index.as_str()),
@@ -24059,12 +24389,13 @@ fn lower_map_foreach(
     inner.proven = crate::forge::narrowing::loop_entry(&ctx.proven, &action.actions);
     // A record item or key the walk binds where the map holds it, in the type
     // the record's unit declares (docs/adr/0108, D6 item 4), for a target that
-    // holds one there: its fields are read where it stands, and the name read
-    // whole is the machine's own record built from it.
+    // holds one there: its fields are read where it stands, a statement that
+    // takes the name whole crosses it into the machine's own record, and a put
+    // of it into a map puts it as it is.
     for (name, alias) in [(&item, &record_item), (&key, &record_key)] {
         if alias
             .as_ref()
-            .is_some_and(|alias| inner.unit_records.contains_key(alias))
+            .is_some_and(|alias| inner.map_units.records.contains_key(alias))
         {
             inner.unit_held_names.insert(name.as_str());
         }
@@ -24077,6 +24408,8 @@ fn lower_map_foreach(
     if !key.is_empty() {
         reads.push((key.clone(), entry.key));
     }
+    reads.extend(item_reads);
+    reads.extend(key_reads);
     // A loop variable the generated machine already has a field of that name
     // would hide it in a backend that reaches fields by their bare names.
     if let Some(clash) = [item.as_str(), key.as_str(), index.as_str()]
@@ -24117,6 +24450,76 @@ fn lower_map_foreach(
     let kept = rewrites.loop_records.borrow().len() - records.len();
     rewrites.loop_records.borrow_mut().truncate(kept);
     lowered
+}
+
+/// How the body of a walk of a map reads `name`, the walk's item or key, bound
+/// to a value of the place `at` and held at `entry` ([`MapEntry`]), where the
+/// map holds that value in the type its unit declares (docs/adr/0108, D6 item
+/// 4, [`crate::forge::types::TypeCtx::map_units`]): each read as a rename of
+/// the body ([`lower_map_foreach`]). A value of an enum is read as the
+/// machine's own type, crossed back where it is read. A record is read as its
+/// unit's, so a read of a field copies no more than the field: a field the
+/// unit names otherwise than the machine's record does by the unit's name, and
+/// a field of an enum the map holds in its unit's type crossed back; any other
+/// field is read as the machine's record reads it. A statement that takes the
+/// record whole crosses it ([`Rewrites::unit_held_whole`]). Nothing for a value
+/// the map holds in the machine's own type.
+fn map_walk_unit_reads(
+    rewrites: &Rewrites<'_>,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    name: &str,
+    entry: &str,
+    at: &crate::forge::value_path::Place,
+) -> Vec<(String, String)> {
+    use crate::forge::value_type::ValueType;
+    let target = rewrites.target;
+    let Some(unit) = ctx.map_units.of_value(&at.ty) else {
+        return Vec::new();
+    };
+    let ValueType::Record { alias } = &at.ty else {
+        return vec![(name.to_string(), format!("{}({entry})", unit.back))];
+    };
+    let Some(lang) = target.expr_target().language() else {
+        return Vec::new();
+    };
+    let back_of = |alias: &str| {
+        ctx.map_units
+            .enums
+            .get(alias)
+            .map(|unit| unit.back.as_str())
+    };
+    rewrites
+        .schemas
+        .get(alias)
+        .map(|schema| {
+            schema
+                .fields
+                .iter()
+                .filter_map(|field| {
+                    let ident = crate::forge::generator::event_schema_field_ident(&field.id, lang);
+                    let renamed = ident != target.record_field(&field.id);
+                    let read = format!("{entry}.{ident}");
+                    let crossed = match &field.sce_type {
+                        EntryType::Scalar(SceType::Enum(reference)) => {
+                            format!("{}({read})", back_of(&reference.alias)?)
+                        }
+                        EntryType::Optional {
+                            elem: elem @ SceType::Enum(reference),
+                        } => {
+                            let back = back_of(&reference.alias)?;
+                            let present = optional_present(target, rewrites.machine, elem, None);
+                            target.optional_map(&read, &present, &|value| {
+                                format!("{back}({value})")
+                            })?
+                        }
+                        EntryType::Scalar(_) | EntryType::Optional { .. } if renamed => read,
+                        EntryType::Scalar(_) | EntryType::Optional { .. } => return None,
+                    };
+                    Some((format!("{name}.{}", field.id), crossed))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The list a `<foreach>` walks, as the loop's lowering reads it: a list
@@ -26071,7 +26474,6 @@ mod tests {
                     outcome_enum: outcome.map(|_| ("put_outcome_enum_t", "put_outcome")),
                     full: "FULL();",
                     failed: "FAILED();",
-                    into_unit: &|_, _| None,
                 })
                 .expect("C11 holds a map")
         };
@@ -26121,7 +26523,6 @@ mod tests {
                 outcome_enum: None,
                 full: "",
                 failed: "",
-                into_unit: &|_, _| None,
             })
             .expect("C11 holds a set");
         assert!(
@@ -26145,53 +26546,82 @@ mod tests {
                 outcome_enum: None,
                 full: "",
                 failed: "",
-                into_unit: &|_, _| None,
             })
             .is_none());
     }
 
-    /// docs/adr/0108, D6 item 4: a C11 put of a record key and a record value
-    /// holds each record it is given in a local of the type it is, and puts the
-    /// record of its unit's type built from that local; a remove builds its key
-    /// so too.
+    /// docs/adr/0108, D6 item 4: a C11 map holds a record key or value in the
+    /// type the record's unit declares, `<Schema>Payload_t`
+    /// ([`StaticTarget::map_unit`]): a record the machine holds crosses into it
+    /// through the machine's `<record>_to_unit`, the value at a key read whole
+    /// crosses back through `<record>_of_unit`, and a key the machine holds is
+    /// looked up by its own record's feed. A put and a remove hold the key and
+    /// the value so crossed in the map's slot types.
     #[test]
     fn a_c11_map_write_puts_a_record_as_its_unit_holds_it() {
         let target = CTarget::new("m", "m", &std::collections::BTreeMap::new());
+        let schema: EntrySchema = crate::forge::model::EventSchemaModel {
+            name: "map_peer_key".to_string(),
+            event_name: "peer.seen".to_string(),
+            fields: Vec::new(),
+            payload_none: false,
+            datamodel_markers: Vec::new(),
+            revision: None,
+            source_location: None,
+        };
+        let unit = target
+            .map_unit(
+                "m",
+                MapUnitPart::Record {
+                    alias: "Peer",
+                    schema: &schema,
+                },
+            )
+            .expect("C11 holds a map's record in its unit's type");
+        let own = target.record_type("m", "Peer");
+        let own = own.trim_end_matches("_t");
+        assert_eq!(
+            unit,
+            crate::forge::types::MapUnit {
+                ty: "MapPeerKeyPayload_t".to_string(),
+                into: format!("{own}_to_unit"),
+                back: format!("{own}_of_unit"),
+                key_feed: Some(format!("{own}_map_key")),
+            }
+        );
         let faces = c11_place("map<record:Peer, record:Face>[2]");
-        let into_unit: &dyn Fn(&str, &str) -> Option<String> =
-            &|alias, from| Some(format!("UNIT_{alias}({from})"));
+        let key = format!("{}(sm->policy.v_peer)", unit.into);
         let write = |op: MapOp<'_>| {
             target
                 .map_write(&MapWrite {
                     map: "sm->policy.v_faces",
-                    ty: "sce_static_map_PeerPayload_FacePayload_2_t",
+                    ty: "sce_static_map_MapPeerKeyPayload_MapFacePayload_2_t",
                     place: &faces,
                     types: None,
                     capacity: 2,
-                    key: "sm->policy.v_peer",
+                    key: &key,
                     op,
                     outcome: None,
                     outcome_enum: None,
                     full: "",
                     failed: "",
-                    into_unit,
                 })
                 .expect("C11 holds a map of records")
         };
         let put = write(MapOp::Put {
-            value: Some("sm->policy.v_face"),
+            value: Some("m_record_face_to_unit(sm->policy.v_face)"),
         });
         for held in [
-            "__typeof__(sm->policy.v_peer) sce_key_in = sm->policy.v_peer;",
-            "__typeof__((sm->policy.v_faces).slots[0].key) sce_key = UNIT_Peer(sce_key_in);",
-            "__typeof__(sm->policy.v_face) sce_value_in = sm->policy.v_face;",
-            "__typeof__((sm->policy.v_faces).slots[0].value) sce_value = UNIT_Face(sce_value_in);",
+            format!("__typeof__((sm->policy.v_faces).slots[0].key) sce_key = {key};"),
+            "__typeof__((sm->policy.v_faces).slots[0].value) sce_value = \
+             m_record_face_to_unit(sm->policy.v_face);"
+                .to_string(),
         ] {
-            assert!(put.contains(held), "no `{held}` in:\n{put}");
+            assert!(put.contains(&held), "no `{held}` in:\n{put}");
         }
         let removed = write(MapOp::Remove);
         assert!(
-            removed.contains("sce_key = UNIT_Peer(sce_key_in);") && !removed.contains("sce_value"),
+            removed.contains(&format!("sce_key = {key};")) && !removed.contains("sce_value"),
             "{removed}"
         );
     }
