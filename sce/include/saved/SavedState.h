@@ -1295,11 +1295,11 @@ inline SavedState savedSessionFromJson(const JsonObject &members, int format) {
                 SavedInvokeStart{id, readSavedCount(count.asString(), "hostinvokestarts." + id)});
         }
     } else {
-        std::map<std::string, std::int64_t> listed;
+        std::map<std::string, std::int64_t> firstStarts;
         for (const SavedHostInvoke &host : state.hostInvokes) {
-            listed[host.invokeId] = host.start;
+            firstStarts[host.invokeId] = host.start;
         }
-        for (const auto &[id, count] : listed) {
+        for (const auto &[id, count] : firstStarts) {
             state.hostInvokeStarts.push_back(SavedInvokeStart{id, count});
         }
     }

@@ -574,7 +574,7 @@ TEST(AStandardHostCose, ACoseObjectCrossesBetweenTheHosts) {
     feature.setTrustSets({{trustSet, signers}});
 
     const auto done = [&reference](const std::string &operation, const host::Params &params) {
-        const auto outcome = reference.start(operation, "op", params);
+        const auto outcome = reference.start(operation, host::Invocation{"session", "op", 1}, params);
         if (!outcome.has_value() || outcome->kind != host::Outcome::Kind::Done) {
             ADD_FAILURE() << operation << " did not complete";
             return json::object();
