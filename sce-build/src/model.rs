@@ -838,6 +838,15 @@ pub struct Action {
     /// every other action.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub outcome: String,
+    /// `<sce:call>` (docs/adr/0108, D6 items 2 and 3): the arguments the call
+    /// hands its algorithm to write in place, read from the callee where the
+    /// document's imports are resolved
+    /// ([`crate::forge::type_ctx::StaticCallee::in_place_arguments`]): what the
+    /// statement writes beside its location, and what a `<foreach>` around it
+    /// copies a map for. SCE's reading of the callee, never authored, and so
+    /// not serialized; empty on every other action.
+    #[serde(skip)]
+    pub in_place_arguments: Vec<String>,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name

@@ -396,26 +396,14 @@ impl Statement for Action {
                 into.write(&self.lift_refusal);
             }
             // A call of an algorithm that writes a map in place writes its
-            // location, and each map it hands over to be written (docs/adr/0108,
-            // D6 items 2 and 3). Which parameters are written is the callee's,
-            // which this reading of a statement alone does not hold, so every
-            // argument written as a bare name is taken as written: each map the
-            // call writes is among them, since the judge holds every such
-            // argument to the name of a map variable. A call that does not
-            // parse may write anything.
+            // location, and each map it hands over in a parameter declared
+            // `inout`, as the callee resolved where the document is read names
+            // them ([`Action::in_place_arguments`], docs/adr/0108, D6 items 2
+            // and 3); a map it hands over to be read is not written.
             "sce_call" => {
                 into.write(&self.location);
-                match crate::forge::expr::call_sites(&self.expr, &|_| true) {
-                    // The outermost call, the statement's own, is the first.
-                    Ok(sites) => {
-                        let args = sites.into_iter().next().map(|site| site.args);
-                        for arg in args.unwrap_or_default() {
-                            if let crate::forge::expr::ArgShape::Name(name) = arg.shape {
-                                into.write(&name);
-                            }
-                        }
-                    }
-                    Err(_) => into.anything(),
+                for argument in &self.in_place_arguments {
+                    into.write(argument);
                 }
             }
             "send" => into.write(&self.idlocation),
@@ -1488,21 +1476,21 @@ mod tests {
     }
 
     /// docs/adr/0108, D6 items 2 and 3: a `<sce:call>` writes its location and
-    /// each argument it names bare, so a loop whose body hands the map it walks
-    /// to such a call walks a copy of it; an argument that reads a part of a
-    /// value is no map the call writes.
+    /// each argument its callee writes in place, and no other argument: a map
+    /// it hands over to be read is not written, so a loop that walks that map
+    /// walks it without a copy.
     #[test]
     fn a_call_that_writes_in_place_reaches_each_map_it_names() {
         let call = Action {
             action_type: "sce_call".to_string(),
-            expr: "Take(resets, peer.low, 3)".to_string(),
+            expr: "Take(resets, faces, 3)".to_string(),
             location: "took".to_string(),
+            in_place_arguments: vec!["resets".to_string()],
             ..Default::default()
         };
         let writes = Writes::of(&call);
         assert!(writes.reaches("resets"));
         assert!(writes.reaches("took"));
-        assert!(!writes.reaches("peer"));
         assert!(!writes.reaches("faces"));
         assert_eq!(facts(&["took", "sid"]).after(&writes), facts(&["sid"]));
     }

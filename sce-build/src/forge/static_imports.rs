@@ -1005,6 +1005,41 @@ pub(crate) fn resolve(
     Ok(callees)
 }
 
+/// Each `<sce:call>` of `model` given the arguments its algorithm writes in
+/// place ([`crate::model::Action::in_place_arguments`]), read from the callees
+/// [`resolve`] answered (docs/adr/0108, D6 items 2 and 3): the one reading of
+/// which argument a call writes, so that what the judge and every lowering
+/// take the statement to write is the callee's own. A call of no callee the
+/// document imports is given none, and is refused where it is judged.
+pub(crate) fn name_in_place_arguments(model: &mut SCXMLModel) {
+    fn walk(actions: &mut [crate::model::Action], callees: &[StaticCallee]) {
+        for action in actions {
+            if action.action_type == "sce_call" {
+                let whole = crate::forge::expr::called_names(&action.expr)
+                    .ok()
+                    .and_then(|(whole, _)| whole);
+                action.in_place_arguments = callees
+                    .iter()
+                    .find(|callee| whole.as_deref() == Some(callee.alias.as_str()))
+                    .map(|callee| callee.in_place_arguments(&action.expr))
+                    .unwrap_or_default();
+            }
+            for block in action.nested_blocks_mut() {
+                walk(block, callees);
+            }
+        }
+    }
+    let callees = &model.imported_callees;
+    for state in model.states.values_mut() {
+        for block in state.executable_blocks_mut() {
+            walk(block, callees);
+        }
+    }
+    for history in model.history_states.values_mut() {
+        walk(&mut history.default_actions, callees);
+    }
+}
+
 /// The callee `import` is to a statechart when it names a transform, a condition, a
 /// lookup, an interpolation or a validator (docs/adr/0048), `parsed` being the
 /// document it names (its own imports read from `callee_base`): the function the
