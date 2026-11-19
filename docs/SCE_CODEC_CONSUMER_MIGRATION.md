@@ -2844,3 +2844,19 @@ Landing: the commits that add this section. No committed tree holds a CBOR enum 
   take. It narrows, so a buffer sized by it stays large enough, and one sized by an earlier value is larger than it
   needs. The C11 broadcast log's slot follows it.
 
+## A printed C++ CBOR map lends a list, a record and a union in the type a schema unit holds it in (ADR 0101 step 4b)
+
+Landing: the commits that add this section; the C++ Mesh envelope (`sce/src/mesh/generated/envelope.h`) is
+regenerated after them. A consumer regenerates the C++ CBOR codecs it owns.
+
+- A list entry, a list of records among them, is `value.<entry>()`, a `const ::SCE::Forge::OwnedList<T, N>&` (or a
+  `const std::optional<...>&` where it may be absent), where a list of records was a
+  `::SCE::Forge::List<<Schema>Payload, N>` view. The value is made by its constructor with a list made by
+  `OwnedList<T, N>::make(std::vector<T>)`, which refuses more than `N` elements and owns them, so no vector has to
+  outlive the call; a `decltype` of the accessor is a reference, which `std::decay_t` takes off.
+- A record entry is its schema's `<Schema>Payload` and a union entry the struct of its union's unit, each lent the
+  same way; a signed integer is `int8_t` to `int64_t` and a float `float` or `double`, presented by value. A text or
+  byte string entry keeps its `Text<N>` or `Bytes<N>` view.
+- The functions that read and write a record are the static members of the codec's `Composites` struct, named for
+  the record's document (`decode_record_<document>`), where they were `Records::decode_record_<alias>`.
+
