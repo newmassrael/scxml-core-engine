@@ -133,6 +133,13 @@
 //! item each entry, read in the body as the entry's value and key
 //! ([`JsTarget::map_entry`]), and its `sce:key` taken off ([`map_loop_edits`]).
 //!
+//! An imported algorithm is lent a map whole (docs/adr/0108, D6): the array
+//! itself where it only reads it, and, where it writes it in place, a holder
+//! `{map, capacity}` the algorithm reads the array out of and leaves the one it
+//! wrote in. A `<sce:call>` is a `<script>` that builds the holders, makes the
+//! call, and then writes each variable from its holder and the answer into the
+//! location, all once the call has returned ([`JsTarget::in_place_call`]).
+//!
 //! # An event's data
 //!
 //! An event's data reaches the Interpreter as untyped JSON, and a generated
@@ -188,8 +195,8 @@ use crate::forge::model::{
 };
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
-    lower, Callee, CalleeImport, LiftStatement, Lifted, LoweredElement, LoweredSite, MapEntry,
-    MapOp, MapWrite, RenderCall, StaticTarget,
+    lower, Callee, CalleeImport, InPlaceCall, LiftStatement, Lifted, LoweredElement, LoweredSite,
+    MapEntry, MapOp, MapWrite, RenderCall, StaticTarget,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
@@ -225,6 +232,15 @@ pub(crate) const INTEGER_WIDTHS: [u8; 4] = [8, 16, 32, 64];
 /// The data model the lowered document declares, and the name its lowering
 /// refuses what it does not lower yet by.
 pub(crate) const LOWERED_DATAMODEL: &str = "ecmascript";
+
+/// The names the `<script>` a `<sce:call>` lowers to binds
+/// ([`JsTarget::in_place_call`]): the object that holds each map the call
+/// lends to be written, by the placeholder its argument took, and what the
+/// call answered. `$` is no character of an XML name, which a variable's id
+/// is, so neither hides a variable the call's arguments read or the statement
+/// writes.
+const LENT_MAPS: &str = "$sceLent";
+const CALLED_VALUE: &str = "$sceCalled";
 
 /// The library's source as it is kept in the tree, formatted to be read.
 const RUNTIME_SOURCE: &str = include_str!("static_js/sce_static.js");
@@ -918,8 +934,58 @@ impl StaticTarget for JsTarget {
     fn has_state_adapters(&self) -> bool {
         false
     }
-    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
-        held.to_string()
+    // A map or a set is the array of its entries, never changed in place, so a
+    // map lent to be read is that array, as a list is (docs/adr/0108, D6 item
+    // 1). One lent to be written in place is the holder `JsTarget::in_place_call`
+    // builds for it, under the placeholder its argument took: the algorithm
+    // reads the array out of it and leaves the one it wrote there
+    // ([`crate::forge::static_js_algorithm`]), which the statement writes back
+    // into the variable once the call has returned.
+    fn state_argument(&self, _machine: &str, arg: &StateArg, held: &str) -> String {
+        if arg.slot.written_in_place() {
+            format!("{LENT_MAPS}.{}", arg.placeholder)
+        } else {
+            held.to_string()
+        }
+    }
+    // The Interpreter lends a map to an algorithm it lowers, the array or its
+    // holder (docs/adr/0108, D10).
+    fn lends_maps(&self) -> bool {
+        true
+    }
+    // The element that replaces the `<sce:call>` (docs/adr/0108, D6 item 2): a
+    // `<script>` that builds the holder of each map the call writes in place,
+    // `{map, capacity}` under its placeholder, makes the call, and then writes
+    // each variable from its holder and the answer into the location, in that
+    // order and only once the call has returned. A call that throws (an
+    // argument that cannot be computed) leaves the script before it writes
+    // anything, which the Interpreter answers as it does any script that
+    // fails: `error.execution` is raised and the block ends (§scxml-4.9).
+    fn in_place_call(&self, call: &InPlaceCall<'_>) -> Option<String> {
+        let holders: Vec<String> = call
+            .lent
+            .iter()
+            .map(|lent| {
+                format!(
+                    "{}: {{map: {}, capacity: {}}}",
+                    lent.placeholder, lent.map, lent.capacity
+                )
+            })
+            .collect();
+        let mut writes: Vec<String> = call
+            .lent
+            .iter()
+            .map(|lent| format!("{} = {LENT_MAPS}.{}.map;", lent.map, lent.placeholder))
+            .collect();
+        if let Some(store) = &call.store {
+            writes.push(format!("{} = {CALLED_VALUE};", store.location));
+        }
+        Some(self.script_element(&format!(
+            "(function ({LENT_MAPS}) {{ var {CALLED_VALUE} = {}; {} }})({{{}}});",
+            call.call,
+            writes.join(" "),
+            holders.join(", ")
+        )))
     }
     fn state_adapter_name(&self, _machine: &str, callee: &StaticCallee, _coded: &str) -> String {
         self.callee(callee)
@@ -1584,9 +1650,9 @@ fn unsupported_action(action: &Action) -> Option<String> {
         // writes the map (docs/adr/0108, D3 and D4): `JsTarget::map_write`.
         "sce_put" | "sce_remove" => None,
         // A call of an algorithm that writes a map in place (docs/adr/0108, D6
-        // item 2), which the Interpreter's lowering of an algorithm's map slot
-        // has to land first.
-        "sce_call" => Some(crate::forge::static_lowering::sce_call_unlowered(action)),
+        // item 2) is replaced by the `<script>` that makes it and writes back
+        // what it wrote: `JsTarget::in_place_call`.
+        "sce_call" => None,
         // A lift is lowered to a `<script>` that calls the library's reader of a
         // text (docs/adr/0087, section 2.1).
         "sce_lift" => None,
@@ -2118,13 +2184,10 @@ fn lower_parsed(
     if model.datamodel != Datamodel::SceStatic {
         return install_doors(text, model).map_err(refuse);
     }
-    // A call that lends an imported algorithm a map is refused for the call,
-    // the one refusal every lane asks first (docs/adr/0108, D6 item 2), before
-    // the algorithms it calls are lowered.
-    if let Some(scope) = StaticScope::of(model) {
-        crate::forge::static_lowering::lent_map_unlowered(&scope, LOWERED_DATAMODEL)
-            .map_err(refuse)?;
-    }
+    // A call that lends an imported algorithm a map is lowered here
+    // (docs/adr/0108, D10, [`JsTarget::lends_maps`]): the algorithm it calls
+    // takes the array, or the holder of the one it writes in place
+    // ([`static_js_algorithm`]), so nothing is refused for it before the walk.
     // A composed value this lowering does not hold yet is refused by name, by
     // the one place that decides it, before this lowering reads the model, as
     // every other backend's is (docs/adr/0086, section 7.3).

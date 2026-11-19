@@ -6260,8 +6260,13 @@ where a guard holds `has(m, k)` and nothing between writes the map or the key, a
 an index is proven below a length; any other is an operation the analysis cannot
 prove (`algorithm/undeclared-integer-failure`). A map return declares `may-fail`
 (`validation/attribute-rule-violated` otherwise). The document is judged alike
-wherever it is read, and no backend lowers an algorithm's map yet ("Order of
-work", step 7): each refuses such an algorithm as
+wherever it is read. The Interpreter's lowering holds an algorithm's map
+("Order of work", step 7) as it holds a statechart's, the array of its entries
+never changed in place: a parameter lent to be read is the caller's array, and
+one declared `inout` arrives in a holder `{map, capacity}` the function reads
+the array out of, holds each put to the capacity, the bound of the caller's
+variable, and leaves the array it ends with in, however it returns. A generated
+backend that does not lower one yet refuses such an algorithm as
 `generate/unsupported-feature`, naming the slot and that record, before any
 statement of its body is lowered, and a statechart lends one a map by name, as
 the next paragraph says. `sce-build/tests/fixtures/static_datamodel/algorithm_take_generation.scxml`
@@ -6297,12 +6302,17 @@ refused in its words. The writes to the map and the store into `location`
 happen together when the call returns, and nothing between them can fail, so the
 statement raises nothing. The grammar declares one `<sce:call>` for this
 statement and for an algorithm body's `<sce:call target args>`, and each reader
-refuses the other's attributes. No lane lowers the call, or a map slot, yet
-("Order of work", step 7): each refuses the document as
-`generate/unsupported-feature`, naming that record.
+refuses the other's attributes. The `location` names a variable: a part of one
+is refused as `generate/unsupported-feature` where the call is lowered. The
+Interpreter lowers the call ("Order of work", step 7): a `<script>` that lends
+each map written in place in a holder carrying its variable's bound, makes the
+call, and then writes each variable from its holder and the answer into
+`location`, all once the call has returned. A generated lane that lends no
+algorithm a map yet refuses the document as `generate/unsupported-feature`,
+naming that record.
 `sce-build/tests/fixtures/static_datamodel/static_map_take.scxml` hands
 `algorithm_take_generation.scxml` its table and branches on the union it
-answers, and
+answers, `scenarios/static_map_take.json` replays it through a full table, and
 `sce-build/tests/a_call_that_writes_a_map_in_place_is_a_statement_the_checker_judges.rs`
 holds what is accepted and each refusal.
 
