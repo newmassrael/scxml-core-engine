@@ -6,3 +6,9 @@ commit = "812dfba2cdb312160e56b35a10c882d9f65a9809"
 base = "7529c5e862afc99534c738bf01310f1188b276c2"
 machine = "mf977c53d872e"
 at = 1795059614
+
+[return]
+reason = "violated"
+detail = ""
+report = "mb2af4e1c456c:0000000247-d2f975ca0d2f/attempt-1.log"
+at = 1795060190
