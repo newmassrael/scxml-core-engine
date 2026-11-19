@@ -517,6 +517,18 @@ fn first_unlowered_composed_use(
         let Some(ty) = var.value_type.as_ref() else {
             continue;
         };
+        // A value the deployment supplies (docs/adr/0109, D12) is no slot of
+        // the machine's: it is held in the type the walks over a composed value
+        // give it, read out of the configuration by their reader, and only read
+        // by the machine, never written, saved or published, as a delivery's
+        // field is. A lowering that reads a composed value at any depth, a
+        // union among them, holds it whatever it holds of a variable; one that
+        // does not is held to a variable's rule below, and every lowering
+        // that reads no deployment value refuses it by name where it is
+        // generated.
+        if var.from_deployment && lowers_reads && lowers_unions {
+            continue;
+        }
         let at = var
             .value_type_spelling
             .as_ref()
@@ -2842,6 +2854,56 @@ mod tests {
                 "{language:?} holds a map inside a list"
             );
         }
+    }
+
+    /// docs/adr/0109, D12: a list of texts the deployment supplies is held and
+    /// read as a delivery's field is, so a lowering that reads a composed value
+    /// and holds a union holds it, Rust and C++ among them; the same list
+    /// declared as a variable of the machine's own is a slot no lowering holds
+    /// yet, refused by name as before.
+    #[test]
+    fn a_list_of_texts_the_deployment_supplies_passes_where_composed_values_are_read() {
+        use crate::generator::Language;
+        let mut model = SCXMLModel {
+            datamodel: crate::model::Datamodel::SceStatic,
+            ..SCXMLModel::default()
+        };
+        model.variables.push(crate::model::Variable {
+            id: "hosts".into(),
+            value_type: crate::forge::model::AlgorithmValueType::read("list<string[32]>[4]").ok(),
+            from_deployment: true,
+            ..crate::model::Variable::default()
+        });
+        assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_none());
+        for language in [Language::Rust, Language::Cpp] {
+            let lowering = ComposedLowering::of(language);
+            assert!(
+                first_unlowered_composed_use(&model, lowering).is_none(),
+                "{} reads the list its deployment supplies",
+                lowering.name
+            );
+        }
+        // A backend that reads no composed value, or holds no union, is held to a
+        // variable's rule, which holds no list of texts.
+        for language in Language::ALL {
+            let lowering = ComposedLowering::of(*language);
+            if lowering.reads && lowering.unions {
+                continue;
+            }
+            assert!(
+                first_unlowered_composed_use(&model, lowering).is_some(),
+                "{} holds no list of texts",
+                lowering.name
+            );
+        }
+        // The machine's own variable of the same type is a slot, refused by name.
+        model.variables[0].from_deployment = false;
+        let (refusal, _) = first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND)
+            .expect("a list of texts is no variable a lowering holds yet");
+        assert!(
+            refusal.contains("<data id=\"hosts\">") && refusal.contains("`string[32]`"),
+            "{refusal}"
+        );
     }
 
     /// Each backend's row says what its machine spells, no more and no less:
