@@ -6393,7 +6393,12 @@ struct TransportRouter {
     /// `correlation_id` and match pending requests by that field,
     /// so their wire-level order is irrelevant to correctness.
     /// Routing them through the ordering buffer would add reply
-    /// latency for an invariant no handler depends on.
+    /// latency for an invariant no handler depends on. They take no
+    /// sequence number on the sender's side either (the server reply
+    /// path never stamps), so one passes whether or not it carries a
+    /// number. The bypass skips only the buffer: on an undeduped
+    /// transport the (source, id) filter still drops a second copy,
+    /// as it does for a released envelope.
     ///
     /// Why missing-sequence raise: §10.6.3 guarantees every sender on
     /// an ordered route stamps `sequence_no`. An envelope that
@@ -6422,6 +6427,13 @@ struct TransportRouter {
                                     std::size_t session_idx) {
         using PK = SCE::Mesh::PatternKind;
         if (env.pattern == PK::RpcReply || env.pattern == PK::FieldNotify) {
+{% if has_undeduped_transport %}
+            // §10.5 still applies past the buffer: a reply the
+            // transport delivered twice reaches the engine once.
+            if (!dedup_.admit(env.source, env.id)) {
+                return false;
+            }
+{% endif %}
             return dispatchToSession(env, session_idx);
         }
         if (!env.sequence_no.has_value()) {

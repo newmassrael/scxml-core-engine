@@ -27,7 +27,8 @@
 //      wait out falls back to fast-forward via `tickOrdering()` and
 //      emits `error.communication` with `reason: ORDERING_GAP`
 //      (§16.7 row 12).
-//   3. RpcReply envelopes bypass the buffer entirely (correlation-keyed).
+//   3. RpcReply envelopes bypass the buffer entirely (correlation-keyed),
+//      and a second copy of one is still dropped by the dedup window.
 //   4. An envelope without `sequence_no` on an ordered route raises
 //      `error.communication` with `reason: MISSING_SEQUENCE`
 //      (§16.7 row 11) and is dropped from the ordering domain.
@@ -207,6 +208,18 @@ int run_test() {
         // before the stamp check.
         MESH_TEST_REQUIRE(!sender_received(sender, "error.communication"),
                           "RpcReply bypass must not trigger a MISSING_SEQUENCE raise");
+        // The bypass skips the buffer, not the (source, id) filter: a
+        // second copy of the same reply, as an unreliable transport may
+        // deliver it, reaches the engine no second time. Red if the
+        // bypass dispatches without consulting the dedup window.
+        const auto delivered = [&sender] {
+            std::lock_guard<std::mutex> lk(sender.received_.m);
+            return sender.received_.events.size();
+        };
+        const std::size_t after_first = delivered();
+        MESH_TEST_REQUIRE(!router.admitZenohInbound("#motor", reply),
+                          "a second copy of the RpcReply must be dropped as a duplicate");
+        MESH_TEST_REQUIRE(delivered() == after_first, "the reply must reach the sender engine exactly once");
     }
 
     // ── 4. Unstamped envelope → error.communication MISSING_SEQUENCE
