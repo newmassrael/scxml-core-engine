@@ -136,10 +136,21 @@ fn a_map_document_is_checked_and_refused_by_every_lane_by_name() {
     ] {
         assert!(lowered.contains(held), "no `{held}` in:\n{lowered}");
     }
-    for written in ["<sce:put", "<sce:remove", "<sce:clear", "sce:key"] {
+    // Asked of the elements, not the text: the fixture's own comment, which the
+    // lowering keeps as the author wrote it, names each statement.
+    const SCE: &str = "http://sce.dev/ext";
+    let document = roxmltree::Document::parse(&lowered).expect("the lowered document is XML");
+    for element in document.descendants().filter(|node| node.is_element()) {
+        let name = element.tag_name();
         assert!(
-            !lowered.contains(written),
-            "`{written}` is left in the document the Interpreter runs:\n{lowered}"
+            !(name.namespace() == Some(SCE) && ["put", "remove", "clear"].contains(&name.name())),
+            "<sce:{}> is left in the document the Interpreter runs:\n{lowered}",
+            name.name()
+        );
+        assert!(
+            element.attribute((SCE, "key")).is_none(),
+            "a <{}> keeps its sce:key in the document the Interpreter runs:\n{lowered}",
+            name.name()
         );
     }
 }
