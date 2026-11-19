@@ -72,6 +72,16 @@ fn at(haystack: &str, needle: &str) -> usize {
         .unwrap_or_else(|| panic!("the generated code holds `{needle}`"))
 }
 
+/// Where `needle` first stands in `haystack` at or after `from`, which holds
+/// it there: a line of one branch is found in that branch, not where another
+/// member writes the same text earlier in the file.
+fn at_after(haystack: &str, from: usize, needle: &str) -> usize {
+    haystack[from..]
+        .find(needle)
+        .map(|offset| from + offset)
+        .unwrap_or_else(|| panic!("the generated code holds `{needle}` after byte {from}"))
+}
+
 /// §12.3: each component is its machine's header and body, and beside the
 /// machine, in the header, the component the runtime drives: it binds the
 /// runtime context, registers the two doors and delivers the snapshot event.
@@ -199,7 +209,11 @@ fn taking_a_branch_runs_before_the_exits_and_its_content_after() {
     assert!(asker.contains(
         "const auto &sceValue = sceMessage.value.get<::SCE::Generated::ReplyOk::Value>();"
     ));
-    let tagged = at(&asker, "pendingPayloadTag_ = AskerPayloadTag::JobReply;");
+    let tagged = at_after(
+        &asker,
+        bound,
+        "pendingPayloadTag_ = AskerPayloadTag::JobReply;",
+    );
     let timeout = at(&asker, "this->testContext_->timeout(\"reply\");");
     let content = at(&asker, "this->testContext_->stopTimer(\"reply\");");
     assert!(take < receive && receive < bound && bound < tagged && tagged < content_fn);
@@ -442,20 +456,30 @@ fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_cpp() 
         &code,
         "const auto &sceValue = sceMessage.value.get<::SCE::Generated::EveryMatcher::Value>();",
     );
-    let first = at(
+    // The header's payload setters set the same tag earlier in the file, so
+    // the copies and the tag are read in the receive branch, after its read.
+    let first = at_after(
         &code,
+        read,
         "pendingJobStatusPayload_.elapsed_ms = sceValue.elapsed_ms;",
     );
-    for copy in [
-        "pendingJobStatusPayload_.note = sceValue.note;",
-        "pendingJobStatusPayload_.codes = sceValue.codes;",
-        "pendingJobStatusPayload_.count = sceValue.count;",
-    ] {
-        assert!(code.contains(copy), "{copy}:\n{code}");
-    }
-    let tagged = at(
+    let tagged = at_after(
         &code,
+        first,
         "pendingPayloadTag_ = JobTesterPayloadTag::JobStatus;",
     );
     assert!(read < first && first < tagged, "{code}");
+    for copy in [
+        "pendingJobStatusPayload_.note = sceValue.note;",
+        "pendingJobStatusPayload_.codes = sceValue.codes;",
+        "pendingJobStatusPayload_.tag = sceValue.tag;",
+        "pendingJobStatusPayload_.retry = sceValue.retry;",
+        "pendingJobStatusPayload_.count = sceValue.count;",
+    ] {
+        let copied = at_after(&code, first, copy);
+        assert!(
+            copied < tagged,
+            "{copy} is copied before the tag is set:\n{code}"
+        );
+    }
 }
