@@ -16227,12 +16227,14 @@ fn c11_map_part_saved_write(
 
 /// The C condition that reads the saved part `member`, which `what` names in a
 /// refusal, into `dest`, a key or a value of the part `part` held in its C type
-/// ([`c_saved_read`]); a record is read at the revision `at` of its schema.
+/// ([`c_saved_read`]); a record is read at the revision `at`, a C expression, of
+/// its schema (docs/adr/0044).
 fn c11_map_part_saved_read(
     part: (&str, &crate::forge::model::AlgorithmValueType),
     member: &str,
     what: &str,
     dest: &str,
+    at: &str,
 ) -> Option<String> {
     use crate::forge::model::AlgorithmValueType;
     let (held, ty) = part;
@@ -16258,7 +16260,7 @@ fn c11_map_part_saved_read(
             dest,
         ),
         AlgorithmValueType::Record { .. } => {
-            format!("{held}_saved_read({member}, {what}, at, &{dest}, err)")
+            format!("{held}_saved_read({member}, {what}, {at}, &{dest}, err)")
         }
         _ => return None,
     })
@@ -16274,8 +16276,10 @@ fn c11_map_part_saved_read(
 /// its order, each `[key, value]` and a set's each its key, written and read as
 /// a list's elements are, held to the bound with no key twice. A map a restore
 /// keeps is emptied first and keeps the seed its machine started it under; one
-/// a judge reads keeps nothing, and holds each key against each before it. `None`
-/// for a part no map of C11 holds.
+/// a judge reads is put into the check map it is handed, the machine's scratch
+/// or the host's, so a key held twice is found in one pass and nothing is kept.
+/// A record key is read at the revision `key_at` of its schema and a record
+/// value at `value_at` (docs/adr/0044). `None` for a part no map of C11 holds.
 fn c11_map_type_def(
     ty: &str,
     key: (&str, &crate::forge::model::AlgorithmValueType),
@@ -16288,7 +16292,7 @@ fn c11_map_type_def(
     let feed = c11_map_key_feed(key)?;
     let (declared, shape, local_value, put_args, entry_write, value_read) = match value {
         Some(part) => {
-            let read = c11_map_part_saved_read(part, "part", "part_what", "value")?;
+            let read = c11_map_part_saved_read(part, "part", "part_what", "value", "value_at")?;
             (
                 format!(
                     "SCE_MAP_DECLARE({prefix}, {held_key}, {}, {capacity}u, {prefix}_key_feed)",
@@ -16335,7 +16339,7 @@ fn c11_map_type_def(
     } else {
         "    const sce_jv_t part = entry;\n    const char *const part_what = what;\n"
     };
-    let read_key = c11_map_part_saved_read(key, "part", "part_what", "(*key)")?;
+    let read_key = c11_map_part_saved_read(key, "part", "part_what", "(*key)", "at")?;
     Some(format!(
         "#ifndef {guard}\n#define {guard}\n\
          /* SCE Accepted Subset §2.15 (docs/adr/0108, D8): {shape} at most {capacity} entries. */\n\
@@ -16357,38 +16361,38 @@ fn c11_map_type_def(
          return {read_key};\n}}\n\n\
          /* The map a saved state holds, refused unless it is the array of at most {capacity} entries with \
          no key twice.\n   \
-         `out` may be NULL, which judges the value and keeps nothing; a map kept is emptied first and keeps \
-         its seed. */\n\
-         static inline bool {ty}_saved_read(sce_jv_t v, const char *what, unsigned at, {ty} *out,\n    \
-         sce_saved_error_t *err) {{\n    \
-         sce_jiter_t it;\n    sce_jv_t item;\n    size_t count = 0u;\n    \
+         A map kept in `out` is emptied first and keeps its seed. With `out` NULL each entry is put into \
+         `check`,\n   \
+         which judges the value in one pass and keeps nothing: it is started under a fixed seed, since no \
+         key it\n   \
+         holds outlives the judge, and a state whose keys a peer chose to collide under it costs the judge \
+         time,\n   \
+         never its answer. */\n\
+         static inline bool {ty}_saved_read(sce_jv_t v, const char *what, unsigned key_at, unsigned value_at,\n    \
+         {ty} *out, {ty} *check, sce_saved_error_t *err) {{\n    \
+         sce_jiter_t it;\n    sce_jv_t item;\n    size_t count = 0u;\n    {ty} *into = out;\n    \
+         (void)value_at;\n    \
          if (sce_jv_kind(v) != SCE_JSON_ARRAY) {{\n        \
          return sce_saved_refuse(err, \"'%s' is not an array\", what);\n    }}\n    \
          count = sce_jv_count(v);\n    \
          if (count > {capacity}u) {{\n        \
          return sce_saved_refuse(err, \"'%s' holds %lu entries, past the %lu it is bounded by\", what,\n            \
          (unsigned long)count, (unsigned long){capacity}u);\n    }}\n    \
-         if (out != NULL) {{\n        sce_map_clear(out);\n    }}\n    \
+         if (into == NULL) {{\n        \
+         if (check == NULL) {{\n            \
+         return sce_saved_refuse(err, \"'%s' is a map, and no storage was given to judge it in\", what);\n        \
+         }}\n        \
+         {prefix}_start(check, sce_map_seed_from_halves(0u, 0u));\n        into = check;\n    \
+         }} else {{\n        sce_map_clear(into);\n    }}\n    \
          (void)sce_jv_iter(v, &it);\n    \
          for (size_t i = 0u; sce_jiter_element(&it, &item); ++i) {{\n        \
          char entry_what[SCE_SAVED_AT_LEN];\n        {held_key} key;\n{local_value}        \
          sce_saved_path_index(entry_what, sizeof(entry_what), what, i);\n        \
-         if (!{ty}_saved_key(item, entry_what, at, &key, err)) {{\n            return false;\n        }}\n\
+         if (!{ty}_saved_key(item, entry_what, key_at, &key, err)) {{\n            return false;\n        }}\n\
          {value_read}        \
-         if (out != NULL) {{\n            \
-         if ({prefix}_put(out, {put_args}) != SCE_MAP_PUT_INSERTED) {{\n                \
-         return sce_saved_refuse(err, \"'%s' holds a key an entry before it holds\", entry_what);\n            \
-         }}\n            continue;\n        }}\n        \
-         {{\n            sce_jiter_t before;\n            sce_jv_t earlier;\n            \
-         (void)sce_jv_iter(v, &before);\n            \
-         for (size_t j = 0u; j < i && sce_jiter_element(&before, &earlier); ++j) {{\n                \
-         char earlier_what[SCE_SAVED_AT_LEN];\n                {held_key} other;\n                \
-         sce_saved_path_index(earlier_what, sizeof(earlier_what), what, j);\n                \
-         if (!{ty}_saved_key(earlier, earlier_what, at, &other, err)) {{\n                    \
-         return false;\n                }}\n                \
-         if (sce_map_same_key(&key, {prefix}_layout()->feed, &other, {prefix}_layout()->feed)) {{\n                    \
-         return sce_saved_refuse(err, \"'%s' holds a key an entry before it holds\", entry_what);\n                \
-         }}\n            }}\n        }}\n    }}\n    \
+         if ({prefix}_put(into, {put_args}) != SCE_MAP_PUT_INSERTED) {{\n            \
+         return sce_saved_refuse(err, \"'%s' holds a key an entry before it holds\", entry_what);\n        \
+         }}\n    }}\n    \
          return true;\n}}\n#endif"
     ))
 }

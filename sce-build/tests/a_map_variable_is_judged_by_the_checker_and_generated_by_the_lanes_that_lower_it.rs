@@ -377,7 +377,14 @@ fn c11_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
         "SCE_MAP_PUT_FULL",
         "SCE_MAP_REMOVE_REMOVED",
         "sce_static_map_uint32_uint64_8_t_saved_write(w, &",
-        "sce_static_map_uint32_uint64_8_t_saved_read(v, what, at, out, err)",
+        "sce_static_map_uint32_uint64_8_t_saved_read(v, what, key_at, value_at, out, check, err)",
+        "&check->of_v_counts",
+        "sm->scratch.saved_check",
+        // A record key and a record value are read at their saved revisions, a
+        // map of numbers at none.
+        "\"faces\", record_at[",
+        "\"byId\", 1u, record_at[",
+        "\"counts\", 1u, 1u,",
         "sce_map_first(&(sm->policy.v_faces))",
     ] {
         assert!(

@@ -772,7 +772,36 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_queue {
    closed. The generated code reaches each through `SCE_SCRATCH_BUF`,
    `SCE_SCRATCH_CAP` and `SCE_SCRATCH_RESERVE` (the source). Only the typed
    roles, which the slot bounds, are unions.{% endif %} */
+{% if static_saved_shape and ns_maps.any %}
+/* docs/adr/0108, D8: where a judge of a saved state puts each map's entries, one map at
+   a time, to find a key it holds twice in one pass and keep nothing: a map of each type
+   this machine holds, and what each child it starts that holds one judges its own in.
+   Its maps are judged one after another, so one union holds them all. */
+typedef union {
+{% for field in static_fields if field.saved_kind in ["map", "set"] %}
+    {{ field.ty }} of_{{ field.name }};
+{% endfor %}
+{% for invoke_info in model.invokes | scxml %}
+{% if invoke_info.child_takes_map_seed %}
+    {{ csym_prefix }}{{ invoke_info.child_name }}_saved_check_t of_child_{{ invoke_info.field_suffix }};
+{% endif %}
+{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+{% for candidate in invoke_info.candidates %}
+{% if candidate.child_takes_map_seed %}
+    {{ csym_prefix }}{{ candidate.stem }}_saved_check_t of_child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }};
+{% endif %}
+{% endfor %}
+{% endfor %}
+} {{ csym_prefix }}{{ model.name }}_saved_check_t;
+
+{% endif %}
 typedef struct {{ csym_prefix }}{{ model.name }}_scratch {
+{% if static_saved_shape and ns_maps.any %}
+    /* docs/adr/0108, D8: where a restore of this machine judges the maps of the state it
+       is handed, which holds nothing from one call to the next. */
+    {{ csym_prefix }}{{ model.name }}_saved_check_t saved_check;
+{% endif %}
 {% for role in data_slot.grown %}
     /* {{ role.about }} */
     sce_grown_text_t {{ role.name }}{% if role.rows == 'pairs' %}[{{ data_slot.pairs }}]{% elif role.rows == 'responses' %}[SCE_MAX_HOST_RESPONSES]{% endif %};
@@ -2974,7 +3003,12 @@ bool {{ csym_prefix }}{{ model.name }}_save(const {{ csym_prefix }}{{ model.name
 /* Whether `text` is a state a machine of this document could restore, built from nothing and
    touching no machine: its shape, its variables, its configuration, its queue and its waiting
    sends are judged. What a parent's restore asks of the state of each child it holds. */
-bool {{ csym_prefix }}{{ model.name }}_judge(const char *text, size_t len, sce_saved_error_t *err);
+{% if ns_maps.any %}
+/* docs/adr/0108, D8: `check` is where the judge puts each map's entries to find a key held
+   twice, storage of the bound the host holds (`_saved_check_t`) and the judge's alone while
+   it runs; nothing the judge answers depends on what it held before. */
+{% endif %}
+bool {{ csym_prefix }}{{ model.name }}_judge(const char *text, size_t len{% if ns_maps.any %}, {{ csym_prefix }}{{ model.name }}_saved_check_t *check{% endif %}, sce_saved_error_t *err);
 
 /* Stand `sm`, storage the caller owns, where `text` left a machine of this document: in place of
    `_init`, so no `<onentry>` runs and no `<data>` is evaluated, since the saved run already did
@@ -3005,7 +3039,7 @@ bool {{ csym_prefix }}{{ model.name }}_save_members(const {{ csym_prefix }}{{ mo
 /* Refuse `members`, the object a child session was saved as in a tree of `form` (a child states no
    format: its tree's is its own), unless it is a state of this document, building nothing
    (docs/adr/0045, section 3, step 1). */
-bool {{ csym_prefix }}{{ model.name }}_judge_members(sce_jv_t members, int form, sce_saved_error_t *err);
+bool {{ csym_prefix }}{{ model.name }}_judge_members(sce_jv_t members, int form{% if ns_maps.any %}, {{ csym_prefix }}{{ model.name }}_saved_check_t *check{% endif %}, sce_saved_error_t *err);
 
 /* Stand `sm`, a machine its parent has begun (`_invoked_begin`) and not entered, where `members`
    left it, read in the format `form` of its tree, in place of `_invoked_enter`: no `<onentry>`, no

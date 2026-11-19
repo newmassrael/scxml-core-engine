@@ -6204,8 +6204,12 @@ item and key by copy and a text as the text of its buffer. A whole-map
 No frame of the machine grows with a map's bound
 (`no_c11_frame_grows_with_a_map_bound`). The saved form is the Interpreter's array
 of entries, a byte string as its Latin-1 text; a restore refuses a map of more
-entries than its bound or with a key twice, and a judge that keeps nothing holds
-each key against each before it. A host reads a published map through the type's
+entries than its bound or with a key twice. A judge that keeps nothing puts each
+map's entries into a check map, the machine's scratch for `_restore` and the
+host's `_saved_check_t` for `_judge`, so it finds a key held twice in one pass. A
+record key or value is read at the revision its schema was saved at: the saved
+shape names the map a holder of the record at each part of its entries that is
+one. A host reads a published map through the type's
 view: its slots, the position of its first entry and how many it holds, each
 entry naming the one after it.
 
