@@ -3908,6 +3908,33 @@ enum Commands {
         /// An `sce:std/...` document name, or the path of an algorithm document
         document: String,
     },
+    /// Print the shape file of a `datamodel="sce-static"` statechart: the text
+    /// whose digest a state the machine saves is bound to (docs/adr/0109, D11;
+    /// SCE Accepted Subset §2.15, "Saving and restoring").
+    ///
+    /// The shape file is the writer's schema of every state a version of the
+    /// document saves. An author commits it for each released version
+    /// (`shapes/<version>.shape`), and a later version's `<sce:migration from
+    /// to>` names two of them; the build holds the last `to` to the document's
+    /// own shape, which is what this prints. A host-run `<invoke>` is part of the
+    /// shape only where the host serves its type, so the types are declared as
+    /// `generate` takes them. A document whose machine has no saved state is
+    /// refused.
+    Shape {
+        /// Input SCXML file path
+        scxml: String,
+        /// Additional directories searched to resolve `<xi:include>` and
+        /// `<sce:use>` fragments — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+        /// A type of `<invoke>` the host serves, as `generate --host-invoker`
+        /// declares it.
+        #[arg(long = "host-invoker", value_name = "TYPE")]
+        host_invoker: Vec<String>,
+        /// Write the shape file here instead of printing it.
+        #[arg(short = 'o', long = "output", value_name = "FILE")]
+        output: Option<String>,
+    },
     /// Print, for every diagnostic code, whether a record of that code
     /// carries the `spec_provenance` of the anchor enclosing it.
     ///
@@ -4800,6 +4827,18 @@ fn main() {
             out_dir,
         } => cmd_lower(&scxml, &include_dir, out_dir.as_deref(), error_format),
         Commands::LowerAlgorithm { document } => cmd_lower_algorithm(&document, error_format),
+        Commands::Shape {
+            scxml,
+            include_dir,
+            host_invoker,
+            output,
+        } => cmd_shape(
+            &scxml,
+            &include_dir,
+            &host_invoker,
+            output.as_deref(),
+            error_format,
+        ),
         Commands::Verify {
             out_dir,
             input_root,
@@ -4979,6 +5018,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::CheckTrace { .. }
         | Commands::Lower { .. }
         | Commands::LowerAlgorithm { .. }
+        | Commands::Shape { .. }
         | Commands::Verify { .. }
         | Commands::VerifyGenerator { .. }
         | Commands::Materialize { .. }
@@ -14937,6 +14977,54 @@ fn cmd_lower_algorithm(document: &str, error_format: ErrorFormat) {
         "install": lowered.install,
     });
     outln!("{line}");
+}
+
+// ── Subcommand: shape ──────────────────────────────────────────
+//
+// docs/adr/0109, D11: the shape file of one statechart, the writer's schema of
+// every state its machine saves, which an author commits for a released
+// version and a later version's `<sce:migration>` names.
+
+fn cmd_shape(
+    scxml_path: &str,
+    include_dirs: &[String],
+    host_invoker: &[String],
+    output: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    let mut parser =
+        SCXMLParser::new().with_include_dirs(include_dirs.iter().map(PathBuf::from).collect());
+    let mut model = parser
+        .parse_file(scxml_path)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    analyzer::analyze(&mut model, scxml_path);
+    // A host-run `<invoke>` is part of the shape only where the host serves its
+    // type, so the types are declared as a build declares them before the shape
+    // is taken.
+    if let Err(refused) =
+        sce_build::host_processor_analyzer::declare_host_surfaces(&mut model, &[], host_invoker)
+    {
+        cli_exit(refused.into());
+    }
+    let Some(text) = sce_build::forge::static_lowering::saved_shape_text(&model) else {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "shape",
+            detail: format!(
+                "{scxml_path}: the machine has no saved state, so it has no shape: a document \
+                 of another data model, or one that waits on a session outside its tree, is \
+                 generated without the save API (SCE Accepted Subset §2.15)"
+            ),
+        });
+    };
+    match output {
+        Some(path) => fs::write(path, text.as_bytes()).unwrap_or_else(|source| {
+            cli_exit(CliError::WriteOutput {
+                path: path.to_string(),
+                source,
+            })
+        }),
+        None => out_bytes(text.as_bytes()),
+    }
 }
 
 // ── Subcommand: verify ─────────────────────────────────────────

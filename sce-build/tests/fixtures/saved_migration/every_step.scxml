@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A version of a machine that declares one step of each kind from the shape an
+  earlier version saved (docs/adr/0109, D11; docs/SCE_ACCEPTED_SUBSET.md §2.15,
+  "A declared migration"). The earlier version stood in `waiting`, renamed
+  `pending`, or in `legacy`, removed and mapped to `idle`; it ran an invocation
+  `poller` in `waiting`, which this version no longer runs; it held `count`,
+  renamed `attempts`, `scratch`, dropped, `total` as an int32, widened, and
+  `active` as a uint8, which `FlagOf` converts to a bool; a waiting send of its
+  named `tock`, which this version takes as `tick`. `ceiling` is new, and its
+  `<data>` initialiser is the constant a migrated state holds.
+
+  The shape files are not committed beside it: the test that generates it
+  (sce-build/tests/a_declared_migration_is_planned_from_its_shape_files.rs)
+  writes the earlier version's shape, and this one's as `sce-codegen shape`
+  prints it, into the directory it generates from.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="every_step">
+  <sce:import kind="algorithm" src="algorithm_flag_of.scxml" as="FlagOf"/>
+  <sce:migration from="shapes/1.shape" to="shapes/2.shape">
+    <sce:rename kind="state" from="waiting" to="pending"/>
+    <sce:rename kind="data" from="count" to="attempts"/>
+    <sce:rename kind="event" from="tock" to="tick"/>
+    <sce:map-state from="legacy" to="idle"/>
+    <sce:drop-data id="scratch"/>
+    <sce:add-data id="ceiling"/>
+    <sce:convert data="active" algorithm="FlagOf"/>
+    <sce:drop-invoke id="poller"/>
+  </sce:migration>
+  <datamodel>
+    <data id="attempts" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="total" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="active" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="ceiling" sce:type="uint32" expr="16" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="pending"/>
+  </state>
+  <state id="pending">
+    <transition event="tick" cond="attempts &lt; ceiling" type="internal">
+      <assign location="attempts" expr="attempts + 1"/>
+      <assign location="total" expr="total - 2"/>
+      <assign location="active" expr="true"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

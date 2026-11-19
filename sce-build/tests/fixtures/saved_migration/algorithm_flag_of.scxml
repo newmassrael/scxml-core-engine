@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether a number a version of every_step.scxml held as a flag is set: the
+  pure algorithm the next version's `<sce:convert>` gives `active` by, from the
+  uint8 the old shape holds to the bool the new one does (docs/adr/0109, D11).
+  A comparison, so it cannot fail, which a conversion requires.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="migration_flag_of"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="value" type="uint8"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="value &gt; 0"/>
+  </sce:body>
+</scxml>
