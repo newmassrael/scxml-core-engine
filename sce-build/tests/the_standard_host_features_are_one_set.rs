@@ -536,7 +536,7 @@ fn random_bytes_keyed_digests_and_keys_are_served_on_rust_and_cpp_and_refused_el
 /// serve the operation.
 #[test]
 fn a_key_use_that_is_no_value_of_its_enum_is_refused_where_it_is_written() {
-    let generate = |enums: &[(&str, &str)], key_use: (&str, &str, &str)| {
+    let key_generation = |enums: &[(&str, &str)], key_use: (&str, &str, &str)| {
         host_operation(
             "sce-host-key-generate",
             "key_generate_request",
@@ -545,7 +545,7 @@ fn a_key_use_that_is_no_value_of_its_enum_is_refused_where_it_is_written() {
             &[key_use, ("label", "string[64]", "''")],
         )
     };
-    let accepted = generate(&[KEY_USE_ENUM], KEY_USE_MAC);
+    let accepted = key_generation(&[KEY_USE_ENUM], KEY_USE_MAC);
     for language in ["rust", "cpp"] {
         let (ok, text) = run(&["check", "-l", language], &accepted, &[]);
         assert!(ok, "{language} refused a use of the enum: {text}");
@@ -564,7 +564,7 @@ fn a_key_use_that_is_no_value_of_its_enum_is_refused_where_it_is_written() {
         (&[KEY_USE_ENUM][..], "no value of an enum"),
         (&[][..], "does not import"),
     ] {
-        let doc = generate(enums, ("key_use", "string[8]", "'mac'"));
+        let doc = key_generation(enums, ("key_use", "string[8]", "'mac'"));
         let (ok, text) = run(&["check"], &doc, &[]);
         assert!(!ok, "a text was taken as a key's use: {text}");
         assert!(
