@@ -2,13 +2,13 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! A statechart's map or set variable (docs/adr/0108, D1 to D5), judged by the
-//! `sce-static` checker before any lane lowers one: `check` accepts a
-//! well-formed document (`fixtures/map/map_faces.scxml`, which writes every
-//! read, statement and loop the checker reads once), and refuses each read,
-//! statement and loop that is no use of a map by the code D11 names, saying
-//! what is accepted; and every lane's `generate`, the Interpreter's lowering
-//! among them, refuses the document by name, naming the record that lands a
-//! map lane by lane (D10).
+//! `sce-static` checker: `check` accepts a well-formed document
+//! (`fixtures/map/map_faces.scxml`, which writes every read, statement and loop
+//! the checker reads once), and refuses each read, statement and loop that is
+//! no use of a map by the code D11 names, saying what is accepted. The
+//! Interpreter's lowering, the first to hold a map ("Order of work", step 4),
+//! lowers the document, and every generated lane's `generate` refuses it by
+//! name, naming the record that lands a map lane by lane (D10).
 //!
 //! Each refusal is the well-formed document with one thing changed, so the
 //! refusal is the change's and nothing else's.
@@ -84,9 +84,10 @@ fn refused(document: &str, code: &str, part: &str) {
 }
 
 /// docs/adr/0108, D3 to D5 and D10: the document that writes every read,
-/// statement and loop of a map the checker reads is accepted by `check`, and
-/// refused by every lane that generates a statechart, and by the
-/// Interpreter's lowering, by name.
+/// statement and loop of a map the checker reads is accepted by `check`,
+/// refused by every lane that generates a statechart by name, and lowered by
+/// the Interpreter's lowering, every statement of a map replaced and every read
+/// of one a call of the library.
 #[test]
 fn a_map_document_is_checked_and_refused_by_every_lane_by_name() {
     let path = fixtures().join("map_faces.scxml");
@@ -116,16 +117,31 @@ fn a_map_document_is_checked_and_refused_by_every_lane_by_name() {
         );
     }
 
-    let out_dir = tempfile::tempdir().expect("an output directory");
-    let out_dir = out_dir.path().to_str().expect("a utf-8 path").to_string();
-    let (ok, out) = run(&["lower", "-o", out_dir.as_str()], &path);
-    assert!(!ok, "the Interpreter's lowering holds no map yet:\n{out}");
-    assert!(
-        out.contains("\"code\":\"generate/unsupported-feature\"")
-            && out.contains(place)
-            && out.contains("has no ecmascript lowering of its map yet (docs/adr/0108, D10)"),
-        "{out}"
-    );
+    // The Interpreter's lowering writes the document, which holds the
+    // statechart's every map as the array of its entries.
+    let lowered =
+        sce_build::forge::static_js::lower_file(path.to_str().expect("a utf-8 path"), Vec::new())
+            .unwrap_or_else(|refusal| panic!("the Interpreter lowers a map: {refusal:?}"));
+    for held in [
+        r#"<data id="faces" expr="[]"/>"#,
+        "SceStatic.mapPut(faces, {key: {record: [[&apos;low&apos;, &apos;integer&apos;], \
+         [&apos;high&apos;, &apos;integer&apos;]]}}, 4, peer, face)",
+        "SceStatic.mapHas(faces, ",
+        "SceStatic.mapGet(faces, ",
+        "SceStatic.mapRemove(faces, ",
+        "SceStatic.mapPutOrFail(byId, ",
+        "faces.length",
+        "f[1].id",
+        "f[0].low",
+    ] {
+        assert!(lowered.contains(held), "no `{held}` in:\n{lowered}");
+    }
+    for written in ["<sce:put", "<sce:remove", "<sce:clear", "sce:key"] {
+        assert!(
+            !lowered.contains(written),
+            "`{written}` is left in the document the Interpreter runs:\n{lowered}"
+        );
+    }
 }
 
 /// docs/adr/0108, D2, D3 and D11: a map is read through `len`, `has` and the

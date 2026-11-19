@@ -114,6 +114,25 @@
 //! list or a record, and the `<sce:append>` and `<sce:clear>` elements, are
 //! replaced whole ([`StaticLowering::elements`]).
 //!
+//! # Maps and sets
+//!
+//! A map or a set (docs/adr/0108) is the array of its entries in the order
+//! their keys were first put, each `[key, value]` of a map and the key itself of
+//! a set: the form its saved state writes (D8), which the Interpreter's data
+//! model carries whole as it carries a list. An object of any other kind, a
+//! JavaScript `Map` among them, crosses into the data model as plain data, its
+//! own members only, and an `<assign>` or a `<data>` would leave it empty. Two
+//! keys are one key when their canonical texts are one text (the library's
+//! `keyText`, handed the key's type by [`map_descriptor`]), and the library
+//! finds a key through a JavaScript `Map` from that text to the entry's
+//! position, kept beside the array and never in it. Like a list, the array is
+//! never changed in place: `<sce:put>` and `<sce:remove>` are an `<assign>` of
+//! the whole map, or a `<script>` that writes the map and the outcome together
+//! ([`JsTarget::map_write`]), and a map taken whole into another is the array
+//! itself. A `<foreach>` over one is the Interpreter's own over the array, its
+//! item each entry, read in the body as the entry's value and key
+//! ([`JsTarget::map_entry`]), and its `sce:key` taken off ([`map_loop_edits`]).
+//!
 //! # An event's data
 //!
 //! An event's data reaches the Interpreter as untyped JSON, and a generated
@@ -169,8 +188,8 @@ use crate::forge::model::{
 };
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
-    lower, Callee, CalleeImport, LiftStatement, Lifted, LoweredElement, LoweredSite, RenderCall,
-    StaticTarget,
+    lower, Callee, CalleeImport, LiftStatement, Lifted, LoweredElement, LoweredSite, MapEntry,
+    MapOp, MapWrite, RenderCall, StaticTarget,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
@@ -536,6 +555,83 @@ impl JsTarget {
 pub(crate) fn variant_list(variants: &[&str]) -> String {
     let names: Vec<String> = variants.iter().map(|name| format!("'{name}'")).collect();
     format!("[{}]", names.join(", "))
+}
+
+/// The type the library reads a map or a set of by (docs/adr/0108, D10):
+/// `{key: K}` for a map and `{key: K, set: true}` for a set, `K` the key's
+/// type as [`key_descriptor`] writes it. `map` is the place of the map, read
+/// where the expression or the statement stands
+/// ([`crate::forge::types::TypeCtx::value_of`]), and `base` the scope the
+/// statechart names its types in, in which a record key's fields are read.
+/// `None` for a place that holds no map or set, and for a key the scope does
+/// not resolve.
+pub(crate) fn map_descriptor(
+    map: &crate::forge::value_path::Place,
+    base: Option<&crate::forge::value_type::TypeScope>,
+) -> Option<String> {
+    let key = map.map_key()?;
+    let scope = match base {
+        Some(base) => Some(crate::forge::value_path::scope_at(base, &key.scope)?),
+        None => None,
+    };
+    let key = key_descriptor(&key.ty, scope)?;
+    Some(if map.is_set() {
+        format!("{{key: {key}, set: true}}")
+    } else {
+        format!("{{key: {key}}}")
+    })
+}
+
+/// The type of a key as the library's `keyText` reads it (docs/adr/0108, D1):
+/// the kind of the key wherever the kind decides its canonical text, so every
+/// fixed-width integer is `'integer'` (its text is its decimal digits, whatever
+/// its width), and `'bool'`, `'enum'`, `'string'` and `'bytes'` the others; a
+/// record key is `{record: [[field, K], ...]}`, its fields in the order its
+/// schema declares them, each read in the scope of the record's own document.
+/// `None` for a type that is no key, and for a record `scope` does not hold.
+pub(crate) fn key_descriptor(
+    key: &crate::forge::value_type::ValueType,
+    scope: Option<&crate::forge::value_type::TypeScope>,
+) -> Option<String> {
+    use crate::forge::value_type::ValueType;
+    match key {
+        ValueType::Scalar(scalar) => match scalar {
+            SceType::Uint8
+            | SceType::Uint16
+            | SceType::Uint32
+            | SceType::Uint64
+            | SceType::Int8
+            | SceType::Int16
+            | SceType::Int32
+            | SceType::Int64 => Some("'integer'".to_string()),
+            SceType::Bool => Some("'bool'".to_string()),
+            SceType::Enum(_) => Some("'enum'".to_string()),
+            SceType::Float32 | SceType::Float64 | SceType::String | SceType::Bytes => None,
+        },
+        ValueType::Text { .. } => Some("'string'".to_string()),
+        ValueType::Bytes { .. } => Some("'bytes'".to_string()),
+        ValueType::Record { alias } => {
+            let record = scope?.records.get(alias)?;
+            let fields = record
+                .fields
+                .iter()
+                .map(|(id, ty)| {
+                    key_descriptor(ty, Some(&record.scope)).map(|field| {
+                        format!(
+                            "[{}, {field}]",
+                            crate::filters::ecmascript_string_literal(id)
+                        )
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!("{{record: [{}]}}", fields.join(", ")))
+        }
+        ValueType::Optional { .. }
+        | ValueType::Union { .. }
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => None,
+    }
 }
 
 /// The type the library's `field` holds a field whose present value is of `ty`
@@ -1068,8 +1164,71 @@ impl StaticTarget for JsTarget {
             &format!("{RUNTIME_GLOBAL}.append({target}, {capacity}, {value})"),
         )
     }
+    // A list, a map and a set are each emptied to the empty array: a map's
+    // entries are an array as a list's elements are (docs/adr/0108, D3).
     fn clear(&self, target: &str) -> String {
         self.assign_element(target, "[]")
+    }
+    // A map or a set starts as the array of no entries (docs/adr/0108, D3).
+    fn map_empty(&self) -> Option<String> {
+        Some("[]".to_string())
+    }
+    // The array of entries is never changed in place, so the value taken whole is
+    // its own copy (docs/adr/0108, D2).
+    fn map_copy(&self, value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
+    // The element that replaces the `<sce:put>` or the `<sce:remove>`
+    // (docs/adr/0108, D3 and D4). One that names no outcome is an `<assign>` of
+    // the map written again: a put that finds the map full throws, which the
+    // Interpreter answers as it does any assignment that fails, nothing written,
+    // `error.execution` raised and the block ended (§scxml-4.9), as a full list's
+    // append does; a remove of a key that is absent writes the map as it was. One
+    // that names an outcome is a `<script>` that writes the map and the outcome
+    // together, from the one call that computed both: a key or a value that
+    // throws writes neither, and the script's failure is the block's.
+    fn map_write(&self, write: &MapWrite<'_>) -> Option<String> {
+        let descriptor = map_descriptor(write.place, write.types)?;
+        let (map, key) = (write.map, write.key);
+        let call = match write.op {
+            MapOp::Put { value } => {
+                let helper = if write.outcome.is_some() {
+                    "mapPut"
+                } else {
+                    "mapPutOrFail"
+                };
+                let value = value.map(|v| format!(", {v}")).unwrap_or_default();
+                format!(
+                    "{RUNTIME_GLOBAL}.{helper}({map}, {descriptor}, {}, {key}{value})",
+                    write.capacity
+                )
+            }
+            MapOp::Remove => format!("{RUNTIME_GLOBAL}.mapRemove({map}, {descriptor}, {key})"),
+        };
+        Some(match (write.outcome, &write.op) {
+            (Some(outcome), _) => self.script_element(&format!(
+                "(function (sceWrote) {{ {map} = sceWrote.map; {outcome} = sceWrote.outcome; \
+                 }})({call});"
+            )),
+            (None, MapOp::Put { .. }) => self.assign_element(map, &call),
+            (None, MapOp::Remove) => self.assign_element(map, &format!("{call}.map")),
+        })
+    }
+    // The loop binds each entry of the array: a map's `[key, value]`, read in the
+    // body as its value and its key, and a set's key, read as it is
+    // (docs/adr/0108, D5).
+    fn map_entry(&self, item: &str, set: bool) -> Option<MapEntry> {
+        Some(if set {
+            MapEntry {
+                value: item.to_string(),
+                key: item.to_string(),
+            }
+        } else {
+            MapEntry {
+                value: format!("{item}[1]"),
+                key: format!("{item}[0]"),
+            }
+        })
     }
     // The element that replaces the `<sce:lift>`: a `<script>` that hands the text
     // to the library's `lift` with the type the value is read as, written as the
@@ -1414,6 +1573,9 @@ fn unsupported_action(action: &Action) -> Option<String> {
         // the event's data, as the generated backends carry it whole.
         "send" => None,
         "sce_append" | "sce_clear" => None,
+        // A put and a remove are replaced by the `<assign>` or the `<script>` that
+        // writes the map (docs/adr/0108, D3 and D4): `JsTarget::map_write`.
+        "sce_put" | "sce_remove" => None,
         // A lift is lowered to a `<script>` that calls the library's reader of a
         // text (docs/adr/0087, section 2.1).
         "sce_lift" => None,
@@ -1569,6 +1731,59 @@ fn element_edits(text: &str, elements: &[LoweredElement]) -> Result<Vec<Edit>, G
             range: owner.range(),
             text: element.text.clone(),
         });
+    }
+    Ok(edits)
+}
+
+/// The edit that takes `sce:key` off each `<foreach>` over a map that names one
+/// (docs/adr/0108, D5), each found by its `array` attribute as the walk wrote it
+/// down ([`StaticLowering::keyed_loops`]). The loop of the lowered document is
+/// the Interpreter's own over the array of entries, and its body reads the key
+/// out of the entry the item is bound to ([`JsTarget::map_entry`]), so the
+/// attribute says nothing there, and the document it would be left in is an
+/// `ecmascript` one, where no `<foreach>` names a key.
+fn map_loop_edits(text: &str, loops: &[AttributeSpelling]) -> Result<Vec<Edit>, GenerateError> {
+    if loops.is_empty() {
+        return Ok(Vec::new());
+    }
+    let document = roxmltree::Document::parse(text).map_err(|e| {
+        GenerateError::unsupported(format!(
+            "the document cannot be read again to be rewritten: {e}"
+        ))
+    })?;
+    let mut edits: Vec<Edit> = Vec::with_capacity(loops.len());
+    for anchor in loops {
+        let key = anchor
+            .value()
+            .map(|written| written.range())
+            .and_then(|range| {
+                document
+                    .descendants()
+                    .filter(|node| is_scxml_element(node, "foreach"))
+                    .find(|node| {
+                        node.attributes().any(|attribute| {
+                            attribute.name() == "array"
+                                && attribute.namespace().is_none()
+                                && attribute.range_value().start <= range.start
+                                && range.end <= attribute.range_value().end
+                        })
+                    })
+            })
+            .and_then(|node| node.attribute_node((crate::forge::model::SCE_NAMESPACE, "key")));
+        let Some(key) = key else {
+            return Err(GenerateError::unsupported(
+                "a <foreach> over a map names its key where the document does not spell it, so \
+                 its `sce:key` cannot be taken off the loop the Interpreter runs"
+                    .to_string(),
+            ));
+        };
+        // A loop the model reaches twice is one element of the document.
+        if edits.iter().all(|edit| edit.range != key.range()) {
+            edits.push(Edit {
+                range: key.range(),
+                text: String::new(),
+            });
+        }
     }
     Ok(edits)
 }
@@ -1909,6 +2124,7 @@ fn lower_parsed(
     let lowering = lower(&mut lowered, &machine, &target).map_err(refuse)?;
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
     edits.extend(element_edits(text, &lowering.elements).map_err(refuse)?);
+    edits.extend(map_loop_edits(text, &lowering.keyed_loops).map_err(refuse)?);
     let counted_sends = counted_send_edits(text, &lowered).map_err(refuse)?;
     // The door of every event whose payload the machine reads: a schema of
     // entries' and a composed one's alike (docs/adr/0086, section 4.2).
@@ -2571,6 +2787,14 @@ mod tests {
             // held to a bound or written for the wire, absence kept.
             "otherwise: function",
             "mapPresent: function",
+            // A map or a set (docs/adr/0108): the text of a key, the reads the
+            // expression lowering writes and the statements `map_write` writes.
+            "keyText: keyText",
+            "mapHas: function",
+            "mapGet: function",
+            "mapPut: mapPut",
+            "mapPutOrFail: function",
+            "mapRemove: mapRemove",
         ] {
             assert!(text.contains(member), "no `{member}` in the library");
         }
@@ -3114,7 +3338,283 @@ mod tests {
         assert_eq!(lowering.copies, read.is_some());
         assert_eq!(lowering.sends, sent.is_some());
         assert_eq!(lowering.unions, holds_unions);
+        // A map or a set variable is held where the target spells the map it
+        // starts as, and every statement and loop of one (docs/adr/0108, D10).
+        assert_eq!(lowering.maps, target.map_empty().is_some());
+        assert_eq!(lowering.maps, target.map_copy("m").is_some());
+        assert_eq!(lowering.maps, target.map_entry("e", false).is_some());
         assert_eq!(lowering.name, target.name());
+    }
+
+    /// A value of `text`, a type of the grammar with every bound stated.
+    fn value_type(text: &str) -> crate::forge::value_type::ValueType {
+        crate::forge::model::AlgorithmValueType::read(text)
+            .expect("a type")
+            .bounded()
+            .expect("every bound stated")
+    }
+
+    /// A variable of the statechart that holds a value of `text`.
+    fn place_of(text: &str) -> crate::forge::value_path::Place {
+        crate::forge::value_path::Place::of(value_type(text))
+    }
+
+    /// The scope of a statechart that imports a key of two 64-bit halves,
+    /// `high` declared before `low`, as `Peer`, and a record that holds a text
+    /// and that key, as `Tagged`, which its own document imports as `Id`.
+    fn key_scope() -> crate::forge::value_type::TypeScope {
+        use crate::forge::value_type::{ScopedRecord, TypeScope};
+        let peer = ScopedRecord {
+            identity: "peer".into(),
+            name: "peer".into(),
+            fields: vec![
+                ("high".into(), value_type("uint64")),
+                ("low".into(), value_type("uint64")),
+            ],
+            scope: TypeScope::default(),
+        };
+        let mut tagged_scope = TypeScope::default();
+        tagged_scope.records.insert("Id".into(), peer.clone());
+        let tagged = ScopedRecord {
+            identity: "tagged".into(),
+            name: "tagged".into(),
+            fields: vec![
+                ("name".into(), value_type("string[8]")),
+                ("id".into(), value_type("record:Id")),
+            ],
+            scope: tagged_scope,
+        };
+        let mut scope = TypeScope::default();
+        scope.records.insert("Peer".into(), peer);
+        scope.records.insert("Tagged".into(), tagged);
+        scope
+    }
+
+    /// docs/adr/0108, D1 and D10: the library reads a key by its kind, every
+    /// fixed-width integer alike, so a key's text is the same whatever the width
+    /// of the map that holds it, and a record key by its fields in the order its
+    /// schema declares them, each read in its own document's scope; a set is
+    /// told from a map.
+    #[test]
+    fn a_key_is_read_by_its_kind_and_a_record_key_by_its_fields_in_order() {
+        let scope = key_scope();
+        let of = |text: &str| map_descriptor(&place_of(text), Some(&scope));
+        for integer in [
+            "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64",
+        ] {
+            assert_eq!(
+                of(&format!("map<{integer}, bool>[2]")).as_deref(),
+                Some("{key: 'integer'}"),
+                "{integer}"
+            );
+        }
+        assert_eq!(
+            of("set<bool>[2]").as_deref(),
+            Some("{key: 'bool', set: true}")
+        );
+        assert_eq!(
+            of("map<enum:Color, uint8>[2]").as_deref(),
+            Some("{key: 'enum'}")
+        );
+        assert_eq!(
+            of("map<string[8], uint8>[2]").as_deref(),
+            Some("{key: 'string'}")
+        );
+        assert_eq!(
+            of("set<bytes[16]>[2]").as_deref(),
+            Some("{key: 'bytes', set: true}")
+        );
+        assert_eq!(
+            of("map<record:Peer, uint32>[4]").as_deref(),
+            Some("{key: {record: [['high', 'integer'], ['low', 'integer']]}}")
+        );
+        assert_eq!(
+            of("set<record:Tagged>[4]").as_deref(),
+            Some(
+                "{key: {record: [['name', 'string'], ['id', {record: [['high', 'integer'], \
+                 ['low', 'integer']]}]]}, set: true}"
+            )
+        );
+        // A record the scope does not hold, or no scope at all, names no key.
+        assert_eq!(of("map<record:Nope, uint8>[2]"), None);
+        assert_eq!(
+            map_descriptor(&place_of("map<record:Peer, uint8>[2]"), None),
+            None
+        );
+        // A place that holds no map holds no key, and a type that is no key
+        // has no kind.
+        assert_eq!(of("list<uint8>[2]"), None);
+        assert_eq!(key_descriptor(&value_type("float64"), None), None);
+        assert_eq!(key_descriptor(&value_type("optional<uint8>"), None), None);
+    }
+
+    /// docs/adr/0108, D3 and D4: a put or a remove that names no outcome is an
+    /// `<assign>` of the map written again, the put the one that fails on a full
+    /// map; one that names an outcome is a `<script>` that writes the map and the
+    /// outcome from the one call that computed both.
+    #[test]
+    fn a_put_and_a_remove_write_the_map_and_their_outcome_together() {
+        let target = JsTarget::new(BTreeMap::new());
+        let counts = place_of("map<uint32, uint64>[8]");
+        let seen = place_of("set<uint32>[4]");
+        let written = |place: &crate::forge::value_path::Place,
+                       map: &str,
+                       capacity: u32,
+                       op: MapOp<'_>,
+                       outcome: Option<&str>| {
+            target
+                .map_write(&MapWrite {
+                    map,
+                    place,
+                    types: None,
+                    capacity,
+                    key: "k",
+                    op,
+                    outcome,
+                })
+                .expect("the Interpreter holds a map")
+        };
+        assert_eq!(
+            written(&counts, "counts", 8, MapOp::Put { value: Some("v") }, None),
+            "<assign location=\"counts\" expr=\"SceStatic.mapPutOrFail(counts, \
+             {key: &apos;integer&apos;}, 8, k, v)\"/>"
+        );
+        assert_eq!(
+            written(
+                &counts,
+                "counts",
+                8,
+                MapOp::Put { value: Some("v") },
+                Some("putResult")
+            ),
+            "<script>(function (sceWrote) { counts = sceWrote.map; putResult = \
+             sceWrote.outcome; })(SceStatic.mapPut(counts, {key: &apos;integer&apos;}, 8, k, \
+             v));</script>"
+        );
+        assert_eq!(
+            written(&seen, "seen", 4, MapOp::Put { value: None }, None),
+            "<assign location=\"seen\" expr=\"SceStatic.mapPutOrFail(seen, \
+             {key: &apos;integer&apos;, set: true}, 4, k)\"/>"
+        );
+        assert_eq!(
+            written(&seen, "seen", 4, MapOp::Remove, None),
+            "<assign location=\"seen\" expr=\"SceStatic.mapRemove(seen, \
+             {key: &apos;integer&apos;, set: true}, k).map\"/>"
+        );
+        assert_eq!(
+            written(&counts, "counts", 8, MapOp::Remove, Some("removeResult")),
+            "<script>(function (sceWrote) { counts = sceWrote.map; removeResult = \
+             sceWrote.outcome; })(SceStatic.mapRemove(counts, {key: &apos;integer&apos;}, \
+             k));</script>"
+        );
+        // A map whose key the scope does not resolve is no map the target spells.
+        assert!(target
+            .map_write(&MapWrite {
+                map: "faces",
+                place: &place_of("map<record:Peer, uint8>[2]"),
+                types: None,
+                capacity: 2,
+                key: "k",
+                op: MapOp::Remove,
+                outcome: None,
+            })
+            .is_none());
+    }
+
+    /// docs/adr/0108, D5: a loop over a map binds its item to each entry, the
+    /// pair of its key and its value, which the body reads apart; a loop over a
+    /// set binds its item to each key, read as it is.
+    #[test]
+    fn a_loop_over_a_map_reads_the_entry_its_item_is_bound_to() {
+        let target = JsTarget::new(BTreeMap::new());
+        assert_eq!(
+            target.map_entry("f", false),
+            Some(MapEntry {
+                value: "f[1]".to_string(),
+                key: "f[0]".to_string(),
+            })
+        );
+        assert_eq!(
+            target.map_entry("s", true),
+            Some(MapEntry {
+                value: "s".to_string(),
+                key: "s".to_string(),
+            })
+        );
+        assert_eq!(target.map_empty().as_deref(), Some("[]"));
+        assert_eq!(target.map_copy("spare").as_deref(), Some("spare"));
+    }
+
+    /// A statechart that holds a map of numbers by number and a set of
+    /// numbers, and reads, writes, copies and walks them once each.
+    const COUNTS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="counts">
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <datamodel>
+    <data id="counts" sce:type="map&lt;uint32, uint32&gt;[4]"/>
+    <data id="spare" sce:type="map&lt;uint32, uint32&gt;[4]"/>
+    <data id="seen" sce:type="set&lt;uint32&gt;[2]"/>
+    <data id="total" sce:type="uint32" expr="0"/>
+    <data id="found" sce:type="bool" expr="false"/>
+    <data id="putResult" sce:type="enum:PutOutcome" expr="PutOutcome.inserted"/>
+  </datamodel>
+  <state id="s">
+    <onentry>
+      <sce:put target="counts" key="7" expr="1" outcome="putResult"/>
+      <sce:put target="seen" key="7"/>
+      <assign location="found" expr="has(seen, 7)"/>
+      <assign location="total" expr="counts[7] + len(counts)"/>
+      <assign location="spare" expr="counts"/>
+      <foreach array="counts" item="count" sce:key="at" index="i">
+        <assign location="total" expr="total + count + at"/>
+        <sce:remove target="counts" key="at"/>
+      </foreach>
+      <sce:clear target="seen"/>
+    </onentry>
+  </state>
+</scxml>"#;
+
+    /// docs/adr/0108, D3 to D5 and D10: a map lowers to the array of its
+    /// entries, which starts empty, is read through the library by the type of
+    /// its key, is written by the element that replaces each statement, is
+    /// taken whole as it is, and is walked by the Interpreter's own loop, whose
+    /// body reads the key and the value out of the entry and which names no key
+    /// itself. What it lowers to is a document of the data model it runs under,
+    /// which lowering again leaves as it is.
+    #[test]
+    fn a_map_is_held_as_the_array_of_its_entries_and_read_through_the_library() {
+        let out =
+            lower_source(COUNTS, "counts").unwrap_or_else(|e| panic!("does not lower: {e:?}"));
+        for held in [
+            r#"<data id="counts" expr="[]"/>"#,
+            r#"<data id="seen" expr="[]"/>"#,
+            "SceStatic.mapPut(counts, {key: &apos;integer&apos;}, 4, 7, 1)",
+            "putResult = sceWrote.outcome;",
+            r#"<assign location="seen" expr="SceStatic.mapPutOrFail(seen, {key: &apos;integer&apos;, set: true}, 2, 7)"/>"#,
+            r#"expr="SceStatic.mapHas(seen, {key: &apos;integer&apos;, set: true}, 7)""#,
+            "SceStatic.mapGet(counts, {key: &apos;integer&apos;}, 7)",
+            "counts.length",
+            r#"<assign location="spare" expr="counts"/>"#,
+            "count[1]",
+            "count[0]",
+            r#"<assign location="counts" expr="SceStatic.mapRemove(counts, {key: &apos;integer&apos;}, count[0]).map"/>"#,
+            r#"<assign location="seen" expr="[]"/>"#,
+        ] {
+            assert!(out.contains(held), "no `{held}` in:\n{out}");
+        }
+        assert!(
+            !out.contains("sce:key"),
+            "the loop the Interpreter runs names no key:\n{out}"
+        );
+        assert!(
+            !out.contains("<sce:put") && !out.contains("<sce:remove"),
+            "a statement of a map is left as written:\n{out}"
+        );
+        assert_eq!(
+            lower_source(&out, "counts").expect("lowers again"),
+            out,
+            "a lowered document is lowered again as it is"
+        );
     }
 
     /// An element the lowering writes is named as the document names the SCXML

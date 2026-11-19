@@ -280,7 +280,10 @@ impl ComposedLowering {
     /// holds a variable of a record that holds a composition as the plain
     /// object a lift reads whole by the same walk (`Lifted::Whole`), which no
     /// saved state of the Interpreter keeps (docs/adr/0087, Landing order item
-    /// 8). Pinned beside that spelling (`composed_lowering/ecmascript.rs`).
+    /// 8), and holds a map or a set variable as the array of its entries, read
+    /// and written through the canonical text of each key (docs/adr/0108, D10
+    /// and "Order of work", step 4). Pinned beside that spelling
+    /// (`composed_lowering/ecmascript.rs`).
     pub const ECMASCRIPT: Self = Self {
         name: "ecmascript",
         reads: true,
@@ -288,7 +291,7 @@ impl ComposedLowering {
         unions: true,
         records: true,
         sends: true,
-        maps: false,
+        maps: true,
     };
 
     /// What some generated backend lowers: the gate every route asks before a
@@ -2780,8 +2783,9 @@ mod tests {
     }
 
     /// docs/adr/0108, D10: a statechart's map or set variable passes the gate
-    /// every route asks, and is refused by name, naming the record, by every
-    /// lowering whose row holds none, the Interpreter's among them.
+    /// every route asks and the Interpreter's lowering, the first to hold one
+    /// ("Order of work", step 4), and is refused by name, naming the record, by
+    /// every generated backend, none of whose rows holds one yet.
     #[test]
     fn a_map_variable_passes_the_gate_and_is_refused_by_each_lowering_that_holds_none() {
         let mut model = SCXMLModel {
@@ -2794,11 +2798,14 @@ mod tests {
             ..crate::model::Variable::default()
         });
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_none());
-        let lowerings = crate::generator::Language::ALL
-            .iter()
-            .map(|language| ComposedLowering::of(*language))
-            .chain([ComposedLowering::ECMASCRIPT]);
-        for lowering in lowerings.filter(|lowering| !lowering.maps) {
+        assert!(first_unlowered_composed_use(&model, ComposedLowering::ECMASCRIPT).is_none());
+        for language in crate::generator::Language::ALL {
+            let lowering = ComposedLowering::of(*language);
+            assert!(
+                !lowering.maps,
+                "{} holds a map before its step",
+                lowering.name
+            );
             let (refusal, _) = first_unlowered_composed_use(&model, lowering)
                 .unwrap_or_else(|| panic!("{} holds no map", lowering.name));
             assert!(
@@ -2813,6 +2820,7 @@ mod tests {
         model.variables[0].value_type =
             crate::forge::model::AlgorithmValueType::read("list<set<uint8>[2]>[3]").ok();
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_some());
+        assert!(first_unlowered_composed_use(&model, ComposedLowering::ECMASCRIPT).is_some());
     }
 
     /// Each backend's row says what its machine spells, no more and no less:
@@ -2843,6 +2851,9 @@ mod tests {
             // A record that holds a composition is read out of a lift's text by
             // the walks, so a backend holds one only where it spells them.
             assert!(!lowering.records || read.is_some(), "{language:?}");
+            // A map is held exactly where the target spells the map a variable
+            // starts as (docs/adr/0108, D10).
+            assert_eq!(lowering.maps, target.map_empty().is_some(), "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
     }

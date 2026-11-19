@@ -967,6 +967,136 @@
     return bytes;
   }
 
+  /* A map or a set a statechart holds (docs/adr/0108), as this engine holds
+     it: the array of its entries in the order their keys were first put (D2),
+     each the pair [key, value] of a map and the key itself of a set. That is
+     the form a saved state writes a map in (D8), and a value the
+     Interpreter's data model carries whole, as it carries a list: an object
+     of any other kind crosses into the data model as plain data, its own
+     members only. No array of entries is changed in place: a put and a
+     remove answer a new one, so a copy of the machine's state taken earlier,
+     or a map taken whole into another variable, keeps what it held.
+
+     Two keys are one key exactly when their canonical texts are one text
+     (keyText()). A map is read through a JavaScript Map from the text of each
+     key to the position of its entry, built the first time an array of
+     entries is read and kept beside it, never in it (INDEXES), so a read
+     finds its key without walking the entries.
+
+     A key's type is written by its kind wherever the kind decides its text:
+     'integer' for every fixed-width integer, whose text is its decimal
+     digits whatever its width, so a map taken whole into one of a wider key
+     holds the same keys; 'bool'; 'enum', a value of which is the name its
+     variant declares; 'string'; 'bytes'; and {record: [[field, type], ...]},
+     the fields in the order the schema declares them. A map's type is
+     {key: K}, a set's {key: K, set: true}. */
+  var INDEXES = new WeakMap();
+  var DIGITS = /^-?(0|[1-9][0-9]*)$/;
+
+  /* The canonical text of key, a key of type. Each kind is written as a tag
+     and a body whose end the body itself says, so the text of a record, its
+     fields' texts one after another between braces, is read back one way
+     only: an integer is 'i', its digits and ';'; a bool 't' or 'f'; the name
+     of an enum's variant, a text and a byte string are 'e', 's' and 'y', the
+     number of their UTF-16 units, ':' and the units themselves, so no unit
+     of the body is read as a separator. A 64-bit integer of an event's data
+     may cross as the text of its digits, and is read from it. */
+  function keyText(type, key) {
+    if (type === 'integer') {
+      if (typeof key === 'string' && DIGITS.test(key)) {
+        return 'i' + String(BigInt(key)) + ';';
+      }
+      return 'i' + String(exact(key)) + ';';
+    }
+    if (type === 'bool') {
+      if (typeof key !== 'boolean') {
+        fail('expected a bool as a key, read ' + String(key));
+      }
+      return key ? 't' : 'f';
+    }
+    if (type === 'enum' || type === 'string' || type === 'bytes') {
+      if (typeof key !== 'string') {
+        fail('expected a text as a key, read ' + String(key));
+      }
+      return (type === 'enum' ? 'e' : type === 'string' ? 's' : 'y') + String(key.length) + ':' + key;
+    }
+    if (type !== null && typeof type === 'object' && Array.isArray(type.record)) {
+      if (key === null || typeof key !== 'object') {
+        fail('expected a record as a key, read ' + String(key));
+      }
+      var text = '{';
+      for (var i = 0; i < type.record.length; i++) {
+        text += keyText(type.record[i][1], key[type.record[i][0]]);
+      }
+      return text + '}';
+    }
+    return fail('a key type names no kind of key');
+  }
+
+  /* The key an entry of a map or a set of type holds. */
+  function entryKey(type, entry) {
+    return type.set === true ? entry : entry[0];
+  }
+
+  /* The Map from the text of each key of map, an array of entries of type, to
+     the position of its entry: built the first time the array is read, and
+     kept for it from then on, since the array never changes. */
+  function indexOf(map, type) {
+    if (!Array.isArray(map)) {
+      fail('expected a map, read ' + String(map));
+    }
+    var index = INDEXES.get(map);
+    if (index === undefined) {
+      index = new Map();
+      for (var i = 0; i < map.length; i++) {
+        index.set(keyText(type.key, entryKey(type, map[i])), i);
+      }
+      INDEXES.set(map, index);
+    }
+    return index;
+  }
+
+  /* <sce:put> (docs/adr/0108, D2 and D4): {map, outcome}, the map with value
+     at key and what the put did, a name of sce:std/collection/put_outcome.
+     A key that is present keeps its place and takes the value, replaced (a
+     set's key is left as it was); one that is absent goes last, inserted,
+     while the map holds fewer entries than capacity, and past that the map
+     handed in is answered as it was, full, and nothing is thrown. */
+  function mapPut(map, type, capacity, key, value) {
+    var index = indexOf(map, type);
+    var text = keyText(type.key, key);
+    var at = index.get(text);
+    if (at !== undefined) {
+      if (type.set === true) {
+        return { map: map, outcome: 'replaced' };
+      }
+      var replaced = map.slice();
+      replaced[at] = [map[at][0], value];
+      INDEXES.set(replaced, index);
+      return { map: replaced, outcome: 'replaced' };
+    }
+    if (map.length >= capacity) {
+      return { map: map, outcome: 'full' };
+    }
+    var grown = map.concat([type.set === true ? key : [key, value]]);
+    var reindexed = new Map(index);
+    reindexed.set(text, map.length);
+    INDEXES.set(grown, reindexed);
+    return { map: grown, outcome: 'inserted' };
+  }
+
+  /* <sce:remove> (docs/adr/0108, D4): {map, outcome}, the map without the
+     entry at key and what the remove did, a name of
+     sce:std/collection/remove_outcome. The entries after it keep their
+     order, and a key that is absent leaves the map as it was. */
+  function mapRemove(map, type, key) {
+    var at = indexOf(map, type).get(keyText(type.key, key));
+    if (at === undefined) {
+      return { map: map, outcome: 'absent' };
+    }
+    return { map: map.slice(0, at).concat(map.slice(at + 1)), outcome: 'removed' };
+  }
+
   /* The fence of a text template's untrusted hole (docs/adr/0087, section 3.1,
      item 4): every occurrence of either marker removed from the value, the
      leftmost first (the longer where both start at one place), until neither
@@ -1049,6 +1179,32 @@
       }
       return list.concat([value]);
     },
+    /* A map or a set a statechart holds (docs/adr/0108, D3 and D4), read and
+       written through the text of each key (keyText()). mapGet fails
+       out-of-range for a key that is absent, as an index outside a list
+       does; mapPutOrFail is a put that names no outcome, which fails
+       capacity-exceeded where a put finds the map full, as an append to a
+       full list does. */
+    keyText: keyText,
+    mapHas: function (map, type, key) {
+      return indexOf(map, type).has(keyText(type.key, key));
+    },
+    mapGet: function (map, type, key) {
+      var at = indexOf(map, type).get(keyText(type.key, key));
+      if (at === undefined) {
+        fail('the key ' + String(key) + ' is not one the map holds', 'out-of-range');
+      }
+      return map[at][1];
+    },
+    mapPut: mapPut,
+    mapPutOrFail: function (map, type, capacity, key, value) {
+      var put = mapPut(map, type, capacity, key, value);
+      if (put.outcome === 'full') {
+        fail('the map already holds its capacity of ' + String(capacity), 'capacity-exceeded');
+      }
+      return put.map;
+    },
+    mapRemove: mapRemove,
     utf8Length: utf8Length,
     bounded: function (value, capacity) {
       var bytes = utf8Length(value);
