@@ -195,9 +195,10 @@ fn a_record_byte_string_past_its_bound_is_refused_on_cpp_as_on_rust() {
             format!("            const auto& v = _e_latest;\n            {each_record}").as_str(),
             format!("        if (_e_pending) {{\n            const auto& v = *_e_pending;\n            {each_record}").as_str(),
             // The record holds the byte string in the schema's vector, read
-            // within its bound and written as it is.
+            // within its bound (a read answers `Decoded`, its refusal kind
+            // handed back as it is) and written as it is.
             "        std::optional<std::vector<uint8_t>> held_digest;\n",
-            "held_digest = cbor::read_bytes(c, 4);",
+            "auto read = cbor::read_bytes(c, 4);\n                if (!read) return read.error();\n                held_digest = std::move(*read);",
             "if (auto _e = cbor::write_bytes(w, record.digest); _e) return _e;",
         ],
         2,
@@ -216,7 +217,9 @@ fn a_map_whose_encode_refuses_nothing_answers_its_bytes_as_they_are() {
     // unit holds within its bound, and lists with no lower count.
     let stem = "codec_cbor_record_list";
     let code = printed_cpp(stem);
-    assert!(!code.contains(REFUSED), "{stem}:\n{code}");
+    // The encode, not the decode: a decode answers `CborOutOfRange` for a
+    // value its bound does not hold (docs/adr/0099, amendment of 2026-11-16).
+    assert!(!wire_of(stem, &code).contains(REFUSED), "{stem}:\n{code}");
     assert!(!code.contains(REFUSING_TO_VEC), "{stem}:\n{code}");
     for expected in [
         "[[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {",
