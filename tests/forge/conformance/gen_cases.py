@@ -5650,6 +5650,12 @@ SCE_NS = "{http://sce.dev/ext}"
 
 CBOR_UINT_BITS = {"uint8": 8, "uint16": 16, "uint32": 32, "uint64": 64}
 
+#: A text or a byte string as the one type grammar writes it on a CBOR entry
+#: (docs/adr/0101, section 1.3): its kind, and the bracket of its bound, `[N]`
+#: or a named bound `[name=N]`; none where a byte string states its exact
+#: length by `sce:length`. Any other bracket is no type the model reads.
+CBOR_BOUNDED = re.compile(r"(string|bytes)(?:\[(?:[A-Za-z_]\w*=)?(\d+)\])?")
+
 
 class CborMap:
     """SCE_FORGE.md §4.6.1 read for one codec document, from the page and the
@@ -5657,7 +5663,9 @@ class CborMap:
     under its integer key, written in the deterministic encoding (§4.2.1:
     every head in its shortest form, the keys ascending) with an entry the
     value lacks not written. It reads a boolean, an unsigned integer, a text
-    and a byte string, and refuses by name any other entry the document
+    and a byte string, each bounded by the bracket of its type (`string[64]`),
+    by `sce:max-size`, the bracket's legacy spelling, or by the exact length
+    of `sce:length`, and refuses by name any other entry the document
     declares, so a case is never written for a rule the model does not read."""
 
     def __init__(self, path: Path):
@@ -5671,10 +5679,20 @@ class CborMap:
             optional = ty.startswith("optional<")
             if optional:
                 ty = ty[len("optional<") : -1]
+            bracket = None
+            bounded = CBOR_BOUNDED.fullmatch(ty)
+            if bounded is not None:
+                ty, bracket = bounded.group(1), bounded.group(2)
             if ty not in ("bool", "string", "bytes") and ty not in CBOR_UINT_BITS:
                 raise SystemExit(f"{path}: the CBOR model reads no entry of type {ty}")
             length = data.get(f"{SCE_NS}length")
             most = data.get(f"{SCE_NS}max-size")
+            if bracket is not None:
+                # One bound, one spelling: the reader refuses a bracket beside
+                # `sce:max-size` or `sce:length`, and so does the model.
+                if most is not None or length is not None:
+                    raise SystemExit(f"{path}: entry {data.get('id')} states its bound twice")
+                most = bracket
             self.entries.append(
                 {
                     "id": data.get("id"),
