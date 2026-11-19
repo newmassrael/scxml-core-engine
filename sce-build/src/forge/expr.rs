@@ -8054,13 +8054,25 @@ fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusa
             storage: None,
         })
     };
-    let (read, typed_by) = match lent_value {
-        Some(value) => (C_MAP_VALUE_AS, TypedExpr::new(ExprKind::Raw(value))),
-        None => (C_MAP_VALUE_OF, map),
+    // A byte string an algorithm holds is a view of its bytes, so one read out
+    // of a map lent to it is read as the view of the buffer the map holds.
+    let lent_bytes = match held.map_value().map(|value| value.ty) {
+        Some(crate::forge::value_type::ValueType::Bytes { max }) if lent_value.is_some() => {
+            Some(crate::forge::static_lowering::c_bytes_storage_view(max.max))
+        }
+        _ => None,
+    };
+    let (read, args) = match (lent_bytes, lent_value) {
+        (Some(view), _) => (view, vec![found]),
+        (None, Some(value)) => (
+            C_MAP_VALUE_AS.to_string(),
+            vec![TypedExpr::new(ExprKind::Raw(value)), found],
+        ),
+        (None, None) => (C_MAP_VALUE_OF.to_string(), vec![map, found]),
     };
     node.kind = ExprKind::Call {
-        callee: Box::new(TypedExpr::new(ExprKind::Raw(read.to_string()))),
-        args: vec![typed_by, found],
+        callee: Box::new(TypedExpr::new(ExprKind::Raw(read))),
+        args,
         params: Vec::new(),
         fails: false,
         into_destination: false,

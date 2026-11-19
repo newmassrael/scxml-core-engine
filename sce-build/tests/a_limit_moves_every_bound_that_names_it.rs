@@ -478,14 +478,16 @@ fn no_c11_frame_grows_with_a_map_bound() {
 }
 
 /// No frame of an algorithm a C11 machine lends its map to grows with the map's
-/// bound either (docs/adr/0108, D4 "Storage" and D6 items 1, 2 and 4): the
-/// algorithm is lent the address of the machine's own storage and holds no map
-/// of its own, and each of its statements and reads holds one entry at most in
-/// its frame. The statechart that hands an algorithm its table of each peer's
-/// latest generation to write in place (`static_map_take.scxml`), its table
-/// bounded by one name, is built with every import at that bound and at 64 times
-/// it: the algorithm's function is laid out in both, and every function has the
-/// frame it had.
+/// bound either (docs/adr/0108, D4 "Storage" and D6 items 1 to 4): the
+/// algorithm is lent the address of the machine's own storage, its map of its
+/// own and the copy a walk that writes the table walks are storage the machine
+/// holds for the call in its `scratch`, and each of its statements and reads
+/// holds one entry at most in its frame. The statechart that hands an algorithm
+/// its table of each peer's latest generation to write in place
+/// (`static_map_take.scxml`), its table and the algorithm's set bounded by one
+/// name, is built with every import at that bound and at 64 times it: the
+/// algorithm's function is laid out in both, and every function has the frame
+/// it had.
 #[test]
 fn no_c11_frame_grows_with_the_bound_of_a_map_an_algorithm_is_lent() {
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
@@ -495,10 +497,32 @@ fn no_c11_frame_grows_with_the_bound_of_a_map_an_algorithm_is_lent() {
         "enum_take_kind.scxml",
         "schema_take_duplicate.scxml",
         "union_take_result.scxml",
-        "algorithm_take_generation.scxml",
     ] {
         std::fs::copy(fixtures.join(name), dir.path().join(name)).expect("copy an import");
     }
+    // The algorithm holds a set of its own, bounded by the same name, and walks
+    // the table with a body that removes from it, so it is handed the storage
+    // of both: neither is any frame's.
+    let algorithm = std::fs::read_to_string(fixtures.join("algorithm_take_generation.scxml"))
+        .expect("the algorithm");
+    assert_eq!(algorithm.matches("  <sce:body>").count(), 1, "one body");
+    let algorithm = algorithm.replacen(
+        "  <sce:body>",
+        "  <sce:body>\n    \
+         <sce:var name=\"seen\" type=\"set&lt;uint32&gt;[peer_max=2]\"/>\n    \
+         <sce:clear target=\"seen\"/>\n    \
+         <sce:foreach in=\"resets\" item=\"held\" key=\"who\">\n      \
+         <sce:if cond=\"held === 0\">\n        \
+         <sce:remove target=\"resets\" key=\"who\"/>\n      \
+         </sce:if>\n    \
+         </sce:foreach>",
+        1,
+    );
+    std::fs::write(
+        dir.path().join("algorithm_take_generation.scxml"),
+        algorithm,
+    )
+    .expect("write the algorithm");
     let bound = "map&lt;record:Peer, uint64&gt;[2]";
     let named = "map&lt;record:Peer, uint64&gt;[peer_max=2]";
     let document =

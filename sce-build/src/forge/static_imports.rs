@@ -783,6 +783,7 @@ fn value_signature(
         params,
         ret,
         max_size,
+        map_storage: crate::forge::generator::algorithm_map_storage(algorithm),
     }))
 }
 

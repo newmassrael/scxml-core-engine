@@ -369,6 +369,48 @@ pub struct StaticValueSignature {
     pub ret: Option<StaticSlot>,
     /// `sce:returns-max-size`, when the algorithm returns a list.
     pub max_size: Option<u32>,
+    /// The storage of its maps a lane without a heap hands the call beside its
+    /// arguments ([`MapStorage`]).
+    pub map_storage: MapStorage,
+}
+
+/// The storage an algorithm's maps take from its caller on a lane without a
+/// heap (docs/adr/0108, D4 "Storage" and D6 item 3; docs/adr/0082): each map
+/// local of its own, and each copy a `<sce:foreach>` whose body writes the map
+/// it walks walks, is a map's whole bound, which no frame holds. The caller
+/// holds it where it holds the rest of a call's storage, the machine's
+/// `scratch` on C11.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MapStorage {
+    /// Whether the algorithm holds a map local, or walks a copy of one: the
+    /// struct the algorithm's own unit declares of them, which its caller
+    /// holds whole.
+    pub locals: bool,
+    /// Each copy of a map the caller lends or takes back that a writing walk
+    /// walks, in the order the body states the walks: storage of at least that
+    /// map's bound, which only the caller knows.
+    pub copies: Vec<MapCopy>,
+    /// Whether the algorithm takes the seed its own locals are keyed under from
+    /// its caller (docs/adr/0108, D8): it holds a map local and is lent no map
+    /// and returns none whose seed one could be derived from, so the caller
+    /// hands the seed its own maps were started under. Never a fixed one.
+    pub seeded: bool,
+}
+
+impl MapStorage {
+    /// Whether the call takes no storage for maps and no seed.
+    pub fn is_empty(&self) -> bool {
+        !self.locals && self.copies.is_empty() && !self.seeded
+    }
+}
+
+/// The map a copy of [`MapStorage::copies`] is a copy of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapCopy {
+    /// The map lent in the parameter of this index.
+    Lent(usize),
+    /// The map the algorithm returns, built in the caller's storage.
+    Returned,
 }
 
 impl StaticValueSignature {
