@@ -931,6 +931,11 @@ pub enum DiagnosticCode {
     /// event schema's field, a codec's entry, a test message's type.
     #[serde(rename = "validation/map-in-wire-position")]
     ValidationMapInWirePosition,
+    /// A statement that writes a value the deployment supplies
+    /// (`<data sce:from="deployment">`, docs/adr/0109, D12), which the
+    /// machine reads and never writes.
+    #[serde(rename = "validation/deployment-value-assigned")]
+    ValidationDeploymentValueAssigned,
     /// A type whose largest encoding is past 2^64 - 1 bytes (docs/adr/0101,
     /// section 4.4): a CBOR codec's entry or map, or an event schema's or a
     /// union's payload, that no number the build holds sizes.
@@ -4059,6 +4064,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationUnionTagCollision,
         ValidationMapKeyType,
         ValidationMapInWirePosition,
+        ValidationDeploymentValueAssigned,
         ValidationEncodedSizeOverflow,
         TestProfileDatamodel,
         TestProfileMatcherType,
@@ -4866,6 +4872,9 @@ impl DiagnosticCode {
             | ValidationMigrationShapeUnreadable
             | ValidationMigrationChainBroken => Some("ADR 0109 D11"),
             ValidationMapInWirePosition => Some("ADR 0108 D7"),
+
+            // ── A value the deployment supplies (docs/adr/0109, D12) ──
+            ValidationDeploymentValueAssigned => Some("ADR 0109 D12"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
             ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
@@ -5835,6 +5844,7 @@ impl DiagnosticCode {
             | ValidationUnionTagCollision
             | ValidationMapKeyType
             | ValidationMapInWirePosition
+            | ValidationDeploymentValueAssigned
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -6387,6 +6397,7 @@ impl DiagnosticCode {
             ValidationUnionTagCollision => "validation/union-tag-collision",
             ValidationMapKeyType => "validation/map-key-type",
             ValidationMapInWirePosition => "validation/map-in-wire-position",
+            ValidationDeploymentValueAssigned => "validation/deployment-value-assigned",
             ValidationEncodedSizeOverflow => "validation/encoded-size-overflow",
             TestProfileDatamodel => "test-profile/datamodel",
             TestProfileMatcherType => "test-profile/matcher-type",
@@ -8831,6 +8842,27 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(value.clone()),
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
+        },
+        // docs/adr/0109, D12: the place as written is `actual`; whether the
+        // machine keeps a variable of its own for what changes is the author's,
+        // so neither `expected` nor `fix`.
+        ValidationError::DeploymentValueAssigned {
+            element,
+            attr,
+            location,
+            value,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationDeploymentValueAssigned,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(location.clone()),
+            fix: None,
+            key_fragments: vec![
+                element.clone(),
+                attr.clone(),
+                location.clone(),
+                value.clone(),
+            ],
         },
         // docs/adr/0101, section 4.4: the type is `actual`; the repair (which
         // bound to lower, and by how much) is the author's, so neither
@@ -14708,6 +14740,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:30e65a588afd39ce","code":"validation/map-in-wire-position","stage":"validation","spec":"ADR 0108 D7","message":"field 'faces': sce:type 'map&lt;uint32, bool&gt;[4]' holds `map<uint32, bool>[4]`, and a map or a set has no wire form yet, so no event schema's field, codec's entry or payload holds one (docs/adr/0108, D7): a table crosses the wire as a list of its entries","actual":"map&lt;uint32, bool&gt;[4]"}"#,
+            ),
+            (
+                // An assignment to a field of a value the deployment supplies
+                // (docs/adr/0109, D12): the place as written is `actual`.
+                "forge/deployment-value-assigned",
+                ValidationError::DeploymentValueAssigned {
+                    element: "<assign>".into(),
+                    attr: "location".into(),
+                    location: "limits.max_rows".into(),
+                    value: "limits".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6aa21c0c5f89a5bc","code":"validation/deployment-value-assigned","stage":"validation","spec":"ADR 0109 D12","message":"<assign> location=\"limits.max_rows\": writes 'limits', a value the deployment supplies, which the machine reads and never writes (docs/adr/0109, D12): keep what changes in a variable of the machine's own","actual":"limits.max_rows"}"#,
             ),
             (
                 // A CBOR entry whose largest encoding is past 2^64 - 1 bytes
@@ -21256,6 +21301,7 @@ mod tests {
             | ValidationUnionTagCollision
             | ValidationMapKeyType
             | ValidationMapInWirePosition
+            | ValidationDeploymentValueAssigned
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -22291,6 +22337,7 @@ mod tests {
                 | ValidationRenderHoles | ValidationRenderBound
                 | ValidationUnionCases | ValidationUnionTagCollision
                 | ValidationMapKeyType | ValidationMapInWirePosition
+                | ValidationDeploymentValueAssigned
                 | ValidationEncodedSizeOverflow
                 | TestProfileDatamodel | TestProfileMatcherType | TestProfileLiteral
                 | TestProfileTemplateParameter | TestProfileTemplateFloat
@@ -22742,9 +22789,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            551,
+            552,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 551 distinct variants to match the DiagnosticCode \
+             expected 552 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23403,6 +23450,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationUnionTagCollision
             | ValidationMapKeyType
             | ValidationMapInWirePosition
+            | ValidationDeploymentValueAssigned
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType

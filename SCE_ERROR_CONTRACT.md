@@ -1019,6 +1019,7 @@ references against a real document and drift silently.
 | `validation/default-covers-not-a-value-space` | `validation` | `remove_fields` | SCE Accepted Subset §2.2 |
 | `validation/default-covers-tested-variant` | `validation` | `remove_fields` | SCE Accepted Subset §2.2 |
 | `validation/default-covers-unknown-variant` | `validation` | `replace_one_of` | SCE Accepted Subset §2.2 |
+| `validation/deployment-value-assigned` | `validation` | no | ADR 0109 D12 |
 | `validation/duplicate-context-object` | `validation` | `rename_duplicate` |  |
 | `validation/duplicate-id` | `validation` | `rename_duplicate` |  |
 | `validation/duplicate-requirement-id` | `validation` | no |  |

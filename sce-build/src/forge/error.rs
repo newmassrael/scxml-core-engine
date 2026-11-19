@@ -1572,6 +1572,29 @@ pub enum ValidationError {
         place: String,
     },
 
+    /// docs/adr/0109, D12: a statement that writes a value the deployment
+    /// supplies (`<data sce:from="deployment">`), or a place inside one: an
+    /// `<assign>`, an `<sce:append>`, an `<sce:clear>`, an `<sce:render>`, an
+    /// `<sce:lift>`, a `<send>`'s or an `<invoke>`'s `idlocation`, a
+    /// `<foreach>`'s item or index. The machine reads such a value and never
+    /// writes it. `element` and `attr` name the statement and the attribute
+    /// that names the place, `location` the place as written (the record's
+    /// `actual`), `value` the deployment value it is in. No fix: whether the
+    /// machine keeps a variable of its own for what changes is the author's.
+    ///
+    /// Wire code: `validation/deployment-value-assigned`.
+    #[error(
+        "{element} {attr}=\"{location}\": writes '{value}', a value the deployment supplies, \
+         which the machine reads and never writes (docs/adr/0109, D12): keep what changes in a \
+         variable of the machine's own"
+    )]
+    DeploymentValueAssigned {
+        element: String,
+        attr: String,
+        location: String,
+        value: String,
+    },
+
     /// docs/adr/0101, section 4.4: the largest encoding of a value of `ty` at
     /// `place` is past 2^64 - 1 bytes, so the build has no number to size an
     /// encode, a buffer or a slot by. Raised where `C` of a CBOR codec's entry

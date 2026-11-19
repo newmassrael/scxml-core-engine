@@ -8932,6 +8932,10 @@
         "expr": {
           "type": "string"
         },
+        "from_deployment": {
+          "description": "`sce:from=\"deployment\"` under `datamodel=\"sce-static\"` (docs/adr/0109, D12): the deployment supplies the value, which the machine reads when it starts and never writes. It has no initial value of the document's, holds a value of its type from the start on, and is not part of a saved state, so a restore takes the deployment's current value. `false` for every other variable.",
+          "type": "boolean"
+        },
         "id": {
           "type": "string"
         },

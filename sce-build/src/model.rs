@@ -1491,6 +1491,10 @@ pub struct Param {
     pub native_send_held: Option<String>,
 }
 
+/// The one source a `<data sce:from>` names under `datamodel="sce-static"`
+/// (docs/adr/0109, D12): the machine's deployment ([`Variable::from_deployment`]).
+pub const DEPLOYMENT_SOURCE: &str = "deployment";
+
 /// §scxml-5.2: Datamodel variable
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1548,6 +1552,14 @@ pub struct Variable {
     /// input/output declaration and the model does not carry it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<crate::forge::model::Direction>,
+    /// `sce:from="deployment"` under `datamodel="sce-static"`
+    /// (docs/adr/0109, D12): the deployment supplies the value, which the
+    /// machine reads when it starts and never writes. It has no initial value
+    /// of the document's, holds a value of its type from the start on, and is
+    /// not part of a saved state, so a restore takes the deployment's current
+    /// value. `false` for every other variable.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub from_deployment: bool,
     /// §scxml-5.3: each backend's name for this variable's typed reader.
     /// Set only on the entries of [`SCXMLModel::readable_variables`], by
     /// [`crate::reader_names::assign`]; templates spell the reader from

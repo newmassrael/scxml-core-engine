@@ -351,6 +351,54 @@ impl {{ machine_name }}Event {
 {{ static_adapter_defs }}
 
 {% endif %}
+{% if deployment %}
+// ── docs/adr/0109, D12: the values this machine's deployment supplies ──
+
+/// The values the deployment supplies (`<data sce:from="deployment">`): the
+/// configuration the deployment wrote under the machine (`config:`, which the
+/// build checked and wrote as JSON) or in the file it names (`config_file:`).
+/// The machine is built from them, reads them and never writes them, and no
+/// saved state holds them, so a restored machine is built from the
+/// deployment's current values.
+#[derive(Debug, Clone, PartialEq)]
+pub struct {{ machine_name }}Deployment {
+{% for value in deployment["values"] %}
+    /// The configuration's `{{ value.id }}`.
+    pub {{ value.name }}: {{ value.ty }},
+{% endfor %}
+}
+
+impl {{ machine_name }}Deployment {
+    /// Read the deployment's values out of `text`, the JSON object of the
+    /// configuration, each member by the reader a delivery's field of its
+    /// type is read by (docs/adr/0087, section 2.3). A member the machine
+    /// declares no value of is stepped over.
+    ///
+    /// # Errors
+    ///
+    /// A text that is no such object, or a member that is missing or is no
+    /// value of its type, is refused with the lift's code, the strict RFC 6901
+    /// pointer to the first place refused and the bound it broke. The machine
+    /// is then not built: the refusal is what its host is told.
+    pub fn read(text: &str) -> Result<Self, ::sce_rust_runtime::event_payload::PayloadRefusal> {
+        ::sce_rust_runtime::event_payload::lift_record(
+            text,
+            "{{ model.name | escape_rust }} deployment",
+            {{ deployment.depth }},
+            {{ deployment.path_bound }},
+            None,
+            |r| {
+                Ok(Self {
+{% for value in deployment["values"] %}
+                    {{ value.name }}: r.field("{{ value.id | escape_rust }}").and_then(|v| {{ value.reader }})?,
+{% endfor %}
+                })
+            },
+        )
+    }
+}
+
+{% endif %}
 {% if static_datamodel %}
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
 {% if static_published %}
@@ -1007,6 +1055,13 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% endif %}
     {{ field.name }}: {{ field.ty }},
 {% endfor %}
+{% if deployment %}
+{% for value in deployment["values"] %}
+    /// docs/adr/0109, D12: the `{{ value.id }}` value the deployment supplies,
+    /// which the machine is built from and never writes.
+    {{ value.name }}: {{ value.ty }},
+{% endfor %}
+{% endif %}
 {% if no_std %}
     // W3C SCXML 5.10: the session's id, bound when the machine is built and
     // never empty (docs/adr/0045). SCE Protocol-Synthesis RFC §synth-5-J-2:
@@ -1122,9 +1177,11 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% set map_seed_given = no_std and ns_maps.any %}
 {# What every constructor takes beside the session id, and passes on to
    `build`: the host of the `<sce:action>`s, then the script engine, then the
-   seed of the machine's maps where its host gives it. #}
-{% set ctor_param_list = (["actions: A"] if has_native_actions else []) + (["script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>"] if model.needs_script_engine else []) + (["map_seed: ::sce_rust_runtime::MapSeed"] if map_seed_given else []) %}
-{% set ctor_arg_list = (["actions"] if has_native_actions else []) + (["script_engine"] if model.needs_script_engine else []) + (["map_seed"] if map_seed_given else []) %}
+   seed of the machine's maps where its host gives it, then, for a machine
+   whose deployment supplies values (docs/adr/0109, D12), the values it is
+   built from. #}
+{% set ctor_param_list = (["actions: A"] if has_native_actions else []) + (["script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>"] if model.needs_script_engine else []) + (["map_seed: ::sce_rust_runtime::MapSeed"] if map_seed_given else []) + (["deployment: " ~ machine_name ~ "Deployment"] if deployment else []) %}
+{% set ctor_arg_list = (["actions"] if has_native_actions else []) + (["script_engine"] if model.needs_script_engine else []) + (["map_seed"] if map_seed_given else []) + (["deployment"] if deployment else []) %}
 {% set ctor_params = ctor_param_list | join(", ") %}
 {% set ctor_args = ctor_arg_list | join(", ") %}
 {% set ctor_rest_params = (", " ~ ctor_params) if ctor_params else "" %}
@@ -1172,6 +1229,17 @@ Default::default()
     component filled. A map or a set is declared again empty under the seed
     `build` drew it (docs/adr/0108, D8), which only `build` holds.
 #}
+{#
+    docs/adr/0109, D12: the values the deployment supplies, declared before
+    every variable, so an initial value that reads one reads the deployment's
+    value: moved out of `source` where the machine is built, and copied from the
+    machine's own where `accept_params` declares the variables again.
+#}
+{% macro deployment_declarations(values, source) %}
+{% for value in values %}
+        let {{ value.name }}: {{ value.ty }} = {{ source }}.{{ value.name }}{% if source == "self" %}.clone(){% endif %};
+{% endfor %}
+{% endmacro %}
 {% macro static_field_declarations(fields, enums, seed) %}
 {% for field in fields %}
 {% if field.module_parameter and seed %}
@@ -1248,7 +1316,11 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% else %}
     {{ 'const ' if const_buildable else '' }}fn build(session_id: {{ session_id_param_type }}{{ ctor_rest_params }}) -> Self {
 {# SCE Accepted Subset §2.15: each sce-static variable's initial value, in
-   declaration order (`static_field_declarations`). #}
+   declaration order (`static_field_declarations`), after the values the
+   deployment supplies (docs/adr/0109, D12). #}
+{% if deployment %}
+{{ deployment_declarations(deployment["values"], "deployment") }}
+{% endif %}
 {% if static_fields %}
 {% if ns_maps.any %}
         // docs/adr/0108, D8: the seeds the machine's maps hash their keys under,
@@ -1289,6 +1361,11 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% for field in static_fields %}
             {{ field.name }},
 {% endfor %}
+{% if deployment %}
+{% for value in deployment["values"] %}
+            {{ value.name }},
+{% endfor %}
+{% endif %}
 {% if no_std %}
             session_id,
 {% else %}
@@ -1555,6 +1632,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// that a variable declared after it whose initial value reads it reads the
     /// handed value (docs/adr/0098). Called before it initializes.
     pub fn accept_params(&mut self, handed: {{ machine_name }}InvokeParams) {
+{% if deployment %}
+{{ deployment_declarations(deployment["values"], "self") }}
+{% endif %}
 {{ static_field_declarations(static_fields, static_enums, 'handed') }}
 {% for field in static_fields %}
         self.{{ field.name }} = {{ field.name }};
@@ -1582,7 +1662,8 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% include 'invoke_methods.rs.jinja2' %}
 }
 
-{% if not model.needs_script_engine and not has_native_actions and not no_std %}
+{# A machine built from what its deployment supplies has no default (docs/adr/0109, D12). #}
+{% if not model.needs_script_engine and not has_native_actions and not no_std and not deployment %}
 // docs/adr/0045: a machine built with no arguments draws its session id, so it
 // has a default only where `new` can draw one.
 {{ draws_cfg }}

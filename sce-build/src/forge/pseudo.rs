@@ -2905,6 +2905,10 @@ fn render_variable_body(v: &crate::model::Variable, out: &mut Out<'_>) {
     if let Some(d) = v.direction {
         let _ = write!(line, " direction {}", d.as_attr());
     }
+    // docs/adr/0109, D12: a value the deployment supplies, which has no `= <expr>`.
+    if v.from_deployment {
+        line.push_str(" from deployment");
+    }
     if !v.src.is_empty() {
         let _ = write!(line, " src {}", text(&v.src));
     }

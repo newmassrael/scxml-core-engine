@@ -131,11 +131,58 @@ pub struct SavedMapParts {
     pub value_bytes: bool,
 }
 
+/// The values a machine's deployment supplies (`<data sce:from="deployment">`,
+/// docs/adr/0109, D12), as a backend declares them: the machine is built from
+/// them, each a field of it the machine reads and never writes, and none of
+/// them part of its saved state or its snapshot.
+///
+/// They reach the machine as one JSON object whose members are the values by
+/// their ids, the configuration the deployment wrote under the machine
+/// (`config:`, checked when the deployment is read and written by the build
+/// as that JSON) or in a file it names (`config_file:`). The machine's reader
+/// reads the object by the lift's reader (docs/adr/0087, section 2.3), each
+/// member by the reader of its value's type, so a configuration that is no
+/// value of the types is refused with the lift's code, pointer and bound, and
+/// the machine is not built.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeploymentValues {
+    /// The deepest container the configuration holds: one for its object, and
+    /// one more for each list and record a value holds inside another
+    /// ([`crate::forge::value_type::container_depth`]). A text that opens one
+    /// deeper is refused (`tooDeep`) before it is read as JSON.
+    pub depth: u32,
+    /// The longest strict RFC 6901 pointer to a place the configuration
+    /// declares, in bytes: what a `tooDeep` refusal's pointer is held to, by
+    /// whole tokens, as a lift's is to its refusal record's `path`.
+    pub path_bound: u32,
+    /// Each value, in declaration order.
+    pub values: Vec<DeploymentValue>,
+}
+
+/// One value a deployment supplies ([`DeploymentValues`]).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeploymentValue {
+    /// The `<data id>`, the member of the configuration that holds the value.
+    pub id: String,
+    /// The field the machine holds it in, as the backend names a variable's.
+    pub name: String,
+    /// The type it is held in: the type a variable of its type is held in.
+    pub ty: String,
+    /// The reader of a value of its type at the backend's read binding
+    /// ([`crate::forge::composed_lowering::reader`]), which a delivery's field
+    /// of the same type is read by.
+    pub reader: String,
+}
+
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
 #[derive(Debug, Clone, Default)]
 pub struct StaticLowering {
-    /// The machine's fields, in declaration order.
+    /// The machine's fields, in declaration order. A value the deployment
+    /// supplies is not among them ([`Self::deployment`]).
     pub fields: Vec<StaticField>,
+    /// The values the machine's deployment supplies, `None` for a machine
+    /// that declares none (docs/adr/0109, D12).
+    pub deployment: Option<DeploymentValues>,
     /// Events whose typed payload a lowered expression reads — the payload
     /// channel must carry them (see
     /// [`crate::forge::generator::build_kotlin_event_payload`] and its Rust
@@ -1856,6 +1903,15 @@ pub trait StaticTarget {
     /// is refused where the
     /// `<invoke>` is walked, by name, rather than left to start no child.
     fn lowers_hybrid_invoke(&self) -> bool {
+        false
+    }
+    /// Whether the machine reads the values its deployment supplies
+    /// (`<data sce:from="deployment">`, docs/adr/0109, D12): it is built from
+    /// them, each read from the configuration's JSON by the reader of its type
+    /// ([`DeploymentValues`]). Rust and C++ do (the ADR's D0); a target that
+    /// does not is refused where the `<data>` is walked, by name, rather than
+    /// left to start on a value no deployment gave.
+    fn reads_deployment_values(&self) -> bool {
         false
     }
     /// The id a start of a child session is started under,
@@ -5047,6 +5103,11 @@ impl StaticTarget for RustTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
+    // The machine is built from its `Deployment`, which the runtime's lift
+    // reader reads out of the configuration's JSON (docs/adr/0109, D12).
+    fn reads_deployment_values(&self) -> bool {
+        true
+    }
     // The start site holds the id it generates in the `String` local
     // `generated_invoke_id` (`defer_scxml_invoke_fn`), which it goes on to
     // start the child under, so the variable takes a copy, held to its bound
@@ -6957,6 +7018,135 @@ fn composed_record_variable_field(
     })
 }
 
+/// One value a deployment supplies as [`deployment_value`] lowers it, with the
+/// depth of its type's containers and the length of the longest pointer below
+/// it, which [`deployment_of`] folds into the configuration's.
+struct DeploymentPart {
+    value: DeploymentValue,
+    depth: u32,
+    pointer: u64,
+}
+
+/// A value the deployment supplies (docs/adr/0109, D12) as the machine holds
+/// it: in the type a variable of its type is held in, declared with every
+/// record, enum and union it holds, and read by the reader a delivery's field
+/// of its type is read by. A target that reads no deployment value is refused
+/// by name, as is a type the walks hold no value of.
+fn deployment_value(
+    var: &crate::model::Variable,
+    model: &SCXMLModel,
+    declarations: &mut TypeDeclarations<'_>,
+) -> Result<DeploymentPart, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    let target = declarations.target;
+    let machine = declarations.machine;
+    let what = format!("<data id=\"{}\" sce:from=\"deployment\">", var.id);
+    let refused =
+        |why: String| GenerateError::unsupported(format!("{what}: {why} (docs/adr/0109, D12)"));
+    if !target.reads_deployment_values() {
+        return Err(refused(format!(
+            "{} reads no value a deployment supplies yet; Rust and C++ do",
+            target.name()
+        )));
+    }
+    let ty = var
+        .value_type
+        .clone()
+        .and_then(|written| written.bounded().ok())
+        .ok_or_else(|| refused("its type states no bound".to_string()))?;
+    let enums = declare_composed(
+        declarations,
+        model,
+        &ty,
+        ComposedHolder::Deployment,
+        &refused,
+    )?;
+    let spelling = target.composed_spelling(machine).ok_or_else(|| {
+        refused(format!(
+            "{} has no lowering of a composed value yet",
+            target.name()
+        ))
+    })?;
+    let held = composed::StatechartRecords::of(model);
+    let field_ty = composed::machine_type(&ty, None, &held, &enums, &*spelling).map_err(refused)?;
+    let reader = composed::reader(
+        &ty,
+        None,
+        &held,
+        &enums,
+        &*spelling,
+        spelling.read_binding(),
+    )
+    .map_err(refused)?;
+    // The containers it opens and the places below it, in the statechart's
+    // scope, where its records and unions are named.
+    let scope = crate::forge::value_path::statechart_scope(model);
+    let depth = crate::forge::value_type::container_depth(&ty, &scope)
+        .map_err(|e| refused(format!("its type has no depth: {e}")))?;
+    let (_, pointer) = crate::forge::value_type::longest_pointer(&ty, &scope)
+        .map_err(|e| refused(format!("its type has no longest pointer: {e}")))?;
+    // A reader of a part that is a function of the machine would have to be
+    // declared beside the machine's statements, where no deployment reader
+    // stands: the targets that read a deployment value read every part in
+    // place.
+    if !spelling.take_functions().is_empty() {
+        return Err(refused(format!(
+            "{} reads a part of the value by a function of the machine, which the reader of \
+             a deployment does not declare",
+            target.name()
+        )));
+    }
+    for def in spelling.take_declared() {
+        if !declarations.type_defs.contains(&def) {
+            declarations.type_defs.push(def);
+        }
+    }
+    // The member's own token, `~` and `/` escaped (RFC 6901, section 3).
+    let token = var.id.replace('~', "~0").replace('/', "~1");
+    Ok(DeploymentPart {
+        value: DeploymentValue {
+            id: var.id.clone(),
+            name: target.field_name(&var.id),
+            ty: field_ty,
+            reader,
+        },
+        depth,
+        pointer: 1 + token.len() as u64 + pointer,
+    })
+}
+
+/// The values a machine's deployment supplies, as [`DeploymentValues`] states
+/// them: `None` for a machine that declares none. The depth and the longest
+/// pointer are those of a record whose fields are the values, the object the
+/// configuration is written as: one level more than the deepest value, and
+/// the longest pointer to a place inside any of them.
+fn deployment_of(parts: Vec<DeploymentPart>) -> Result<Option<DeploymentValues>, GenerateError> {
+    if parts.is_empty() {
+        return Ok(None);
+    }
+    let depth = parts.iter().map(|part| part.depth).max().unwrap_or(0);
+    let pointer = parts.iter().map(|part| part.pointer).max().unwrap_or(0);
+    let path_bound = u32::try_from(pointer).map_err(|_| {
+        GenerateError::unsupported(
+            "the longest place a deployment's configuration declares is past what the pointer \
+             of a refusal holds (docs/adr/0109, D12)"
+                .to_string(),
+        )
+    })?;
+    let depth = depth.checked_add(1).ok_or_else(|| {
+        GenerateError::unsupported(
+            "a deployment's configuration opens more containers than a depth counts \
+             (docs/adr/0109, D12)"
+                .to_string(),
+        )
+    })?;
+    Ok(Some(DeploymentValues {
+        depth,
+        path_bound,
+        values: parts.into_iter().map(|part| part.value).collect(),
+    }))
+}
+
 /// The optional place of a present value of `elem`, held to `bound` where it
 /// is a text or a byte string ([`OptionalPlace`]).
 fn optional_place(
@@ -7598,6 +7788,9 @@ pub fn lower(
     // how each backend holds them while the machine is being built.
     let no_payload = scope.paths(None);
     let mut fields = Vec::new();
+    // docs/adr/0109, D12: the values the deployment supplies, which are fields
+    // of the machine built from its `Deployment` and none of `fields`.
+    let mut deployment_values = Vec::new();
     let mut declarations = TypeDeclarations::new(target, machine, &held_enums);
     // The schemas of the records a map variable is keyed by, by name, whose
     // payload a transition may look a key up by (docs/adr/0108, D3).
@@ -7635,6 +7828,12 @@ pub fn lower(
             .collect();
         let renames = renames(&init_names, None, target);
         for var in variables {
+            // A value the deployment supplies has no initial value of the
+            // document's: the machine is built from it (docs/adr/0109, D12).
+            if var.from_deployment {
+                deployment_values.push(deployment_value(var, model, &mut declarations)?);
+                continue;
+            }
             let published = var.direction == Some(crate::forge::model::Direction::Out);
             let name = target.field_name(&var.id);
             // A module parameter is of a scalar, `string[N]` or `bytes[N]` type,
@@ -8728,8 +8927,10 @@ pub fn lower(
             imports: scratch_imports.into_iter().collect(),
             ..scratch
         });
+    let deployment = deployment_of(deployment_values)?;
     Ok(StaticLowering {
         fields,
+        deployment,
         payload_events,
         type_defs,
         adapter_defs,
@@ -9214,6 +9415,9 @@ enum ComposedHolder<'a> {
     /// union its value holds at any depth is written and read back by its
     /// type ([`StaticRecord`], [`StaticUnion`]).
     Variable,
+    /// A value the deployment supplies (docs/adr/0109, D12): a field of the
+    /// machine, which no saved state holds, so nothing of it is saved.
+    Deployment,
 }
 
 /// Declare in the machine's own unit what a value of `ty` holds at any depth
@@ -9260,7 +9464,7 @@ fn declare_composed(
     let saved = matches!(holder, ComposedHolder::Variable);
     for alias in reached.records.iter().filter(|alias| match holder {
         ComposedHolder::Payload(payload) => alias.as_str() != payload,
-        ComposedHolder::Variable => true,
+        ComposedHolder::Variable | ComposedHolder::Deployment => true,
     }) {
         match entries.get(alias) {
             Some(entry) => {
@@ -9525,7 +9729,11 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         &crate::forge::schema_revision::EnumDocument,
         SavedEnumHolder,
     )> = Vec::new();
-    for var in &scope.variables {
+    // A value the deployment supplies is part of the machine's interface and
+    // not of its state (docs/adr/0109, D12, and its Open question 3): a saved
+    // state holds none of it, and a restore takes the deployment's current
+    // value, so it is no line of the shape that judges what a state holds.
+    for var in scope.variables.iter().filter(|v| !v.from_deployment) {
         // A variable is named by its shape type, the type its present value is
         // (docs/adr/0055, section 6): an optional value by the type inside it,
         // so a variable widened from `T` to `optional<T>` keeps the shape, and
@@ -12147,6 +12355,12 @@ impl StaticTarget for CppTarget {
     // (`SCE::documentStem`) and starts the candidate it names, handing it the
     // values it keeps (`seed_static_child`).
     fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
+    // The machine is built from its `Deployment`, which the runtime's lift
+    // reader (`EventPayloadFields::liftRecord`) reads out of the
+    // configuration's JSON (docs/adr/0109, D12).
+    fn reads_deployment_values(&self) -> bool {
         true
     }
     // A Mesh request goes out by the router the build generates for the
@@ -24817,6 +25031,57 @@ mod tests {
             wrap("int64"),
             wrap("enum:Level")
         )
+    }
+
+    /// docs/adr/0109, D12 and its Open question 3: a value the deployment
+    /// supplies is part of the machine's interface and not of its state, so
+    /// declaring one leaves the saved shape as it was in both formats. It is
+    /// lowered beside the machine's fields and not among them, read by the
+    /// reader of its type out of a configuration one level deeper than the
+    /// value.
+    #[test]
+    fn a_deployment_value_is_no_line_of_the_saved_shape() {
+        let plain = |t: &str| t.to_string();
+        let before = marked_shape(&marked_variables(plain), &marked_fields(plain));
+        let deployed = format!(
+            "{}\n    <data id=\"limit\" sce:type=\"record:Mark\" sce:from=\"deployment\"/>",
+            marked_variables(plain)
+        );
+        let after = marked_shape(&deployed, &marked_fields(plain));
+        assert_eq!(after.first, before.first);
+        assert_eq!(after.revised, before.revised);
+        assert_eq!(after.format2_first, before.format2_first);
+        let (_dir, mut model) = marked(&deployed, &marked_fields(plain));
+        let lowered = lower_rust(&mut model, "M").expect("lowers");
+        assert!(
+            lowered.fields.iter().all(|field| field.id != "limit"),
+            "a deployment value is no field a saved state or a snapshot reads"
+        );
+        let deployment = lowered
+            .deployment
+            .expect("the machine declares a value its deployment supplies");
+        assert_eq!(deployment.values.len(), 1);
+        assert_eq!(deployment.values[0].id, "limit");
+        assert_eq!(
+            deployment.depth, 2,
+            "the configuration's object, and the record inside it"
+        );
+        assert_eq!(
+            deployment.path_bound,
+            "/limit/level".len() as u32,
+            "the longest place the configuration declares"
+        );
+        assert!(
+            deployment.values[0].reader.contains("r.field(\"due\")"),
+            "the record is read field by field: {}",
+            deployment.values[0].reader
+        );
+        // A machine that declares none has none.
+        let (_dir, mut model) = marked(&marked_variables(plain), &marked_fields(plain));
+        assert!(lower_rust(&mut model, "M")
+            .expect("lowers")
+            .deployment
+            .is_none());
     }
 
     /// docs/adr/0055, section 6 (the owner's answer 6): a saved shape names an

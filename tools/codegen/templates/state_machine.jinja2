@@ -98,7 +98,7 @@
 {# A test component's `<log>` shows its value through `sceLogName` and the
    forge runtime's `presentText` whether or not the machine holds a variable
    (docs/SCE_TEST_PROFILE.md §4.8). #}
-{% if static_fields or model.test_component %}
+{% if static_fields or deployment or model.test_component %}
 {# SCE Accepted Subset §2.15, docs/adr/0045: a record's and an enum's saved form is two
    functions beside the type (`static_type_defs`), which write and read a value as the
    one JSON value model every backend's saved state is made of. #}
@@ -135,6 +135,11 @@
 #include <optional>
 #include "common/EventPayloadLift.h"
 #include "core/TypedHostInvokeRequest.h"
+{% endif %}
+{% if deployment %}
+{# docs/adr/0109, D12: the values the deployment supplies are read out of the
+   configuration's JSON by the lift's reader. #}
+#include "common/EventPayloadLift.h"
 {% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid %}
 
@@ -384,7 +389,7 @@ enum class History : uint8_t {
     {% endfor %}
 };
 
-{% if static_fields or model.test_component %}
+{% if static_fields or deployment or model.test_component %}
 {# SCE Accepted Subset §2.15: the types a `sce-static` machine's variables
    are held in, declared in the machine's own unit. `sceLogName` is how a
    `<log>` shows a value: an enum declares one beside its type, which names the
@@ -430,6 +435,51 @@ template <typename C> auto sceIndexed(const C &list) {
 
 {% if static_type_defs %}
 {{ static_type_defs }}
+
+{% endif %}
+{% if deployment %}
+/// docs/adr/0109, D12: the values the deployment supplies
+/// (`<data sce:from="deployment">`): the configuration the deployment wrote
+/// under the machine (`config:`, which the build checked and wrote as JSON)
+/// or in the file it names (`config_file:`). The machine is built from them,
+/// reads them and never writes them, and no saved state holds them, so a
+/// restored machine is built from the deployment's current values.
+struct {{ model.name }}Deployment {
+{% for value in deployment["values"] %}
+    /// The configuration's `{{ value.id }}`.
+    {{ value.ty }} {{ value.name }}{};
+{% endfor %}
+
+    /// Read the deployment's values out of `text`, the JSON object of the
+    /// configuration, into `out`, each member by the reader a delivery's field
+    /// of its type is read by (docs/adr/0087, section 2.3); a member the
+    /// machine declares no value of is stepped over. Answers no refusal when
+    /// it filled `out`; otherwise the lift's refusal of the first place that is
+    /// no value of its type (its code, strict RFC 6901 pointer and bound), and
+    /// `out` is left as it was: the machine is then not built, and the refusal
+    /// is what its host is told.
+    [[nodiscard]] static ::SCE::Common::EventPayloadRefusal read(const ::std::string &text,
+                                                                {{ model.name }}Deployment &out) {
+        return ::SCE::Common::EventPayloadFields::liftRecord(
+            text, "{{ model.name | escape_cpp }} deployment", {{ deployment.depth }}u, {{ deployment.path_bound }}u, nullptr, out,
+            [](const ::SCE::Common::EventPayloadFields &sceFields,
+               {{ model.name }}Deployment &sceInto) -> ::SCE::Common::EventPayloadRefusal {
+                ::SCE::Common::EventPayloadValue sceField;
+                ::SCE::Common::EventPayloadRefusal sceRefused;
+{% for value in deployment["values"] %}
+                sceRefused = sceFields.value("{{ value.id | escape_cpp }}", sceField);
+                if (!sceRefused.empty()) {
+                    return sceRefused;
+                }
+                sceRefused = ({{ value.reader }})(sceField, sceInto.{{ value.name }});
+                if (!sceRefused.empty()) {
+                    return sceRefused;
+                }
+{% endfor %}
+                return {};
+            });
+    }
+};
 
 {% endif %}
 {% endif %}
@@ -672,6 +722,34 @@ struct {{ model.name }}Policy {
        DataModelReadHelper (see the accessors below) instead of shadowing it.
        Kotlin's template already drew this line; the other backends now do
        too. #}
+{% if deployment %}
+    {# docs/adr/0109, D12: declared before every variable, so an initial value
+       that reads one reads a member already declared; the machine's
+       constructor gives them the deployment's values before it starts
+       (`acceptDeployment`). #}
+{% for value in deployment["values"] %}
+    /// docs/adr/0109, D12: the `{{ value.id }}` value the deployment supplies, which the
+    /// machine is built from and never writes.
+    {{ value.ty }} {{ value.name }}{};
+{% endfor %}
+
+    /// docs/adr/0109, D12: take the values the deployment supplies, and give
+    /// every variable its initial value again in declaration order, so an
+    /// initial value that reads a deployment value reads the deployment's.
+    /// Each initial value can neither fail nor act (one that could fail is
+    /// refused where it is written), so giving it a second time before the
+    /// machine starts is not observable. Called by the machine's constructor.
+    void acceptDeployment(const {{ model.name }}Deployment &deployment) {
+{% for value in deployment["values"] %}
+        {{ value.name }} = deployment.{{ value.name }};
+{% endfor %}
+{% for field in static_fields %}
+{% if not field.module_parameter %}
+        {{ field.name }} = {{ field.init }};
+{% endif %}
+{% endfor %}
+    }
+{% endif %}
     {% if static_fields %}
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     {# Under `sce-static` this struct IS the datamodel's home: there is no
@@ -1241,8 +1319,13 @@ public:
    setter that could be called one act too late. Emitted into each of the three
    branches below, which is what makes "no host" a compile error instead of a
    null dereference at the first act. #}
+{# docs/adr/0109, D12: a machine whose deployment supplies values is built from
+   them, so the values lead every constructor, as the host of its acts does:
+   one built without them is a compile error, not a machine started on values
+   no deployment gave. #}
 {% if model.context_objects or model.needs_parent_template %}
     explicit {{ model.name }}(
+        {%- if deployment %}const {{ model.name }}Deployment& deployment, {% endif -%}
         {%- if has_native_actions %}{{ native_actions_interface }}& actions, {% endif -%}
         {%- for ctx in model.context_objects %}{% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}& {{ ctx.id }}{{ ', ' if not loop.last or model.needs_parent_template }}{% endfor %}
         {%- if model.needs_parent_template %}ParentStateMachine* parent = nullptr, const std::string& invokeId = "", const std::string& childSessionId = ""{% endif -%}
@@ -1271,10 +1354,13 @@ public:
         {% if model.invokes | scxml or model.invokes | hybrid %}
         this->policy_.self_ = this;
         {% endif %}
+        {% if deployment %}
+        this->policy_.acceptDeployment(deployment);
+        {% endif %}
     }
 {% elif model.invokes | scxml or model.invokes | hybrid or model.partition_parallel_roles %}
     {% if has_native_actions %}
-    explicit {{ model.name }}({{ native_actions_interface }}& actions{% if takes_simulated_host %}, ::SCE::SimulatedHost simulatedHost = ::SCE::SimulatedHost::Refuse{% endif %}) {
+    explicit {{ model.name }}({% if deployment %}const {{ model.name }}Deployment& deployment, {% endif %}{{ native_actions_interface }}& actions{% if takes_simulated_host %}, ::SCE::SimulatedHost simulatedHost = ::SCE::SimulatedHost::Refuse{% endif %}) {
         {% if has_native_duties %}
         // docs/adr/0038: refused before the host is stored, unless the caller
         // passed `::SCE::SimulatedHost::Accept`.
@@ -1285,10 +1371,17 @@ public:
         {% endif %}
         this->policy_.actions_ = &actions;
     {% else %}
+    {% if deployment %}
+    explicit {{ model.name }}(const {{ model.name }}Deployment& deployment) {
+    {% else %}
     {{ model.name }}() {
+    {% endif %}
     {% endif %}
         {% if model.invokes | scxml or model.invokes | hybrid %}
         this->policy_.self_ = this;
+        {% endif %}
+        {% if deployment %}
+        this->policy_.acceptDeployment(deployment);
         {% endif %}
 {# SCE_MESH.md §16.5: install the parallel-final dispatch hooks on the
    base StaticExecutionEngine so the Policy can fire local-region
@@ -1327,13 +1420,20 @@ public:
 {% endif %}
     }
 {% elif has_native_actions %}
-    explicit {{ model.name }}({{ native_actions_interface }}& actions{% if takes_simulated_host %}, ::SCE::SimulatedHost simulatedHost = ::SCE::SimulatedHost::Refuse{% endif %}) {
+    explicit {{ model.name }}({% if deployment %}const {{ model.name }}Deployment& deployment, {% endif %}{{ native_actions_interface }}& actions{% if takes_simulated_host %}, ::SCE::SimulatedHost simulatedHost = ::SCE::SimulatedHost::Refuse{% endif %}) {
         {% if has_native_duties %}
         // docs/adr/0038: refused before the host is stored, unless the caller
         // passed `::SCE::SimulatedHost::Accept`.
         ::SCE::requireHostPerforms("{{ model.name }}", actions.realization(), simulatedHost);
         {% endif %}
         this->policy_.actions_ = &actions;
+        {% if deployment %}
+        this->policy_.acceptDeployment(deployment);
+        {% endif %}
+    }
+{% elif deployment %}
+    explicit {{ model.name }}(const {{ model.name }}Deployment& deployment) {
+        this->policy_.acceptDeployment(deployment);
     }
 {% else %}
     {{ model.name }}() = default;
