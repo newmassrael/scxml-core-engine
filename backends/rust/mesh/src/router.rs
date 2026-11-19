@@ -1331,9 +1331,11 @@ impl Router {
             }
             _ => None,
         };
+        // SCE_MESH.md section 10.5: the window is the link's, so a router keeps
+        // one per peer it binds and no envelope makes one of its own.
         match self
             .inbound
-            .admit_from(bytes, delivery, durable.map(|(_, from)| from), now_ms)
+            .admit_from(peer, bytes, delivery, durable.map(|(_, from)| from), now_ms)
         {
             Ok(outcome) => {
                 if let Some((sequence, _)) = durable {
@@ -2924,6 +2926,30 @@ mod tests {
                 bytes: reply.clone(),
             }]
         );
+    }
+
+    /// SCE_MESH.md section 10.5: an endpoint keeps one window per link. Ten thousand envelopes
+    /// on alice's link, each claiming a source of its own, are each refused to the host and make
+    /// no window; alice's own envelope then makes the one window her link has. Red if the
+    /// router lets an envelope name its sender: each claim then makes a window of its own.
+    #[test]
+    fn claims_of_ten_thousand_sources_on_one_link_make_no_window_of_their_own() {
+        let mut cloud = https_server();
+        for n in 0..10_000u32 {
+            let claimed = alloc::format!("s{n}");
+            assert_eq!(
+                cloud.receive("alice", force_request_by(&claimed), i64::from(n)),
+                Err(RouterError::SourceNotLink {
+                    peer: "alice".to_string(),
+                    source: claimed,
+                })
+            );
+        }
+        assert_eq!(cloud.inbound.senders(), 0, "no claim made a window");
+        assert!(cloud
+            .receive("alice", force_request_by("alice"), 10_000)
+            .is_ok());
+        assert_eq!(cloud.inbound.senders(), 1, "alice's link has its one");
     }
 
     /// §mesh-16.7 row 5: the link a request waits on is lost. The request is
