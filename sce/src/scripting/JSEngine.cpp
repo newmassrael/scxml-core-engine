@@ -897,9 +897,11 @@ bool JSEngine::setupSystemVariables(JSContext *ctx) {
             ss << " ";
         }
 
-        const char *str = JS_ToCString(ctx, argv[i]);
+        // Written by its length, so a text that holds a U+0000 is logged whole.
+        size_t length = 0;
+        const char *str = JS_ToCStringLen(ctx, &length, argv[i]);
         if (str) {
-            ss << str;
+            ss.write(str, static_cast<std::streamsize>(length));
             JS_FreeCString(ctx, str);
         } else {
             ss << "[object]";
@@ -1078,8 +1080,11 @@ static JSValue bindNativeObjectCallback(JSContext *ctx, [[maybe_unused]] JSValue
         if (JS_IsBool(argv[i])) {
             args.emplace_back(static_cast<bool>(JS_ToBool(ctx, argv[i])));
         } else if (JS_IsString(argv[i])) {
-            const char *str = JS_ToCString(ctx, argv[i]);
-            args.emplace_back(std::string(str ? str : ""));
+            // Taken with its length, as `JSEngine::quickJSToJSValue` takes a
+            // text: a U+0000 it holds is a character of it, not its end.
+            size_t length = 0;
+            const char *str = JS_ToCStringLen(ctx, &length, argv[i]);
+            args.emplace_back(str ? std::string(str, length) : std::string());
             JS_FreeCString(ctx, str);
         } else if (JS_IsNumber(argv[i])) {
             double dVal = 0;
@@ -1112,7 +1117,7 @@ static JSValue bindNativeObjectCallback(JSContext *ctx, [[maybe_unused]] JSValue
             } else if constexpr (std::is_same_v<VT, double>) {
                 return JS_NewFloat64(ctx, v);
             } else if constexpr (std::is_same_v<VT, std::string>) {
-                return JS_NewString(ctx, v.c_str());
+                return JS_NewStringLen(ctx, v.data(), v.size());
             } else if constexpr (std::is_same_v<VT, ScriptNull>) {
                 return JS_NULL;
             } else {

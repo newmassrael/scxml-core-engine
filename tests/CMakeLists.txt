@@ -343,6 +343,7 @@ add_executable(js_engine_tests
     engine/JSEngineBasicTest.cpp
     engine/JSResultTypeConversionTest.cpp
     engine/ECMAScriptComplianceTest.cpp
+    engine/AStringCrossesTheEngineWholeTest.cpp
     mocks/MockEventRaiser.cpp
 )
 

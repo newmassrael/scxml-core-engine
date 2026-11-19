@@ -508,8 +508,9 @@ static ParsedEventData parseEventData(JSContext *ctx, const std::string &dataStr
     // (W3C test 562), and a payload that opened with a brace and would not
     // parse is a payload whose fields have just stopped existing. Only here is
     // that difference still visible, because only here was the structured read
-    // attempted.
-    return {JS_NewString(ctx, normalized.c_str()), SCE::payloadReadingOfText(dataStr)};
+    // attempted. The text is made with its length, as every value is
+    // (`jsValueToQuickJS`): a U+0000 in it is a character, not its end.
+    return {JS_NewStringLen(ctx, normalized.data(), normalized.size()), SCE::payloadReadingOfText(dataStr)};
 }
 
 // One `_event` field the Processor may leave blank (`sendid`, `origin`,
@@ -639,7 +640,7 @@ SetCurrentEventResult JSEngine::setCurrentEventInternal(const std::string &sessi
             // Used by W3C test 178 (manual visual verification of duplicate param keys)
             // Contains raw event data string (pre-parsing) for debugging and test validation
             // Not part of §scxml-5.10 specification - implementation-specific extension
-            JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, dataStr.c_str()));
+            JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewStringLen(ctx, dataStr.data(), dataStr.size()));
             SCE_LOG_DEBUG("JSEngine: Set _event.raw = '{}'", dataStr);
         } else {
             SCE_LOG_DEBUG("JSEngine: Event has no data, setting _event.data to undefined");
@@ -823,8 +824,12 @@ ScriptValue JSEngine::quickJSToJSValue(JSContext *ctx, JSValue qjsValue) {
         SCE_LOG_TRACE("JSEngine::quickJSToJSValue - Returning as double={}", d);
         return d;
     } else if (JS_IsString(qjsValue)) {
-        const char *str = JS_ToCString(ctx, qjsValue);
-        std::string result(str ? str : "");
+        // Taken with its length: QuickJS writes U+0000 as the byte 0x00, so a
+        // text or a byte string that holds one would end there if it were read
+        // as a C string, and a value leaves the engine whole or not at all.
+        size_t length = 0;
+        const char *str = JS_ToCStringLen(ctx, &length, qjsValue);
+        std::string result = str ? std::string(str, length) : std::string();
         if (str) {
             JS_FreeCString(ctx, str);
         }
@@ -850,10 +855,12 @@ ScriptValue JSEngine::quickJSToJSValue(JSContext *ctx, JSValue qjsValue) {
 
         if (JS_GetOwnPropertyNames(ctx, &props, &propCount, qjsValue, JS_GPN_STRING_MASK | JS_GPN_ENUM_ONLY) == 0) {
             for (uint32_t i = 0; i < propCount; ++i) {
-                const char *key = JS_AtomToCString(ctx, props[i].atom);
+                // A key is a text too, and is taken with its length as a value is.
+                size_t keyLength = 0;
+                const char *key = JS_AtomToCStringLen(ctx, &keyLength, props[i].atom);
                 if (key) {
                     JSValue propValue = JS_GetProperty(ctx, qjsValue, props[i].atom);
-                    scriptObject->properties[key] = quickJSToJSValue(ctx, propValue);
+                    scriptObject->properties[std::string(key, keyLength)] = quickJSToJSValue(ctx, propValue);
                     JS_FreeValue(ctx, propValue);
                     JS_FreeCString(ctx, key);
                 }
@@ -883,7 +890,9 @@ JSValue JSEngine::jsValueToQuickJS(JSContext *ctx, const ScriptValue &value) {
             } else if constexpr (std::is_same_v<T, double>) {
                 return JS_NewFloat64(ctx, v);
             } else if constexpr (std::is_same_v<T, std::string>) {
-                return JS_NewString(ctx, v.c_str());
+                // Made with its length, so a U+0000 the value holds is a character
+                // of it and not its end (`quickJSToJSValue` reads it the same way).
+                return JS_NewStringLen(ctx, v.data(), v.size());
             } else if constexpr (std::is_same_v<T, std::shared_ptr<ScriptArray>>) {
                 JSValue jsArray = JS_NewArray(ctx);
                 for (size_t i = 0; i < v->elements.size(); ++i) {
@@ -895,7 +904,15 @@ JSValue JSEngine::jsValueToQuickJS(JSContext *ctx, const ScriptValue &value) {
                 JSValue jsObject = JS_NewObject(ctx);
                 for (const auto &[key, val] : v->properties) {
                     JSValue propValue = jsValueToQuickJS(ctx, val);
-                    JS_SetPropertyStr(ctx, jsObject, key.c_str(), propValue);
+                    // The key by its length, as `JS_SetPropertyStr` would by
+                    // `strlen`: the same atom for every key without a U+0000.
+                    JSAtom atom = JS_NewAtomLen(ctx, key.data(), key.size());
+                    if (atom == JS_ATOM_NULL) {
+                        JS_FreeValue(ctx, propValue);
+                        continue;
+                    }
+                    JS_SetProperty(ctx, jsObject, atom, propValue);
+                    JS_FreeAtom(ctx, atom);
                 }
                 return jsObject;
             } else {

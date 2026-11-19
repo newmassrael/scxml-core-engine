@@ -1164,6 +1164,31 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AHostActionIsPerforme
     }
 }
 
+// A `<foreach>` hands each item of a list of records to its body whole, a byte
+// string a record holds among it, with a 0x00 in it and bytes past 0x7f: the loop
+// reads the list out of the engine and sets each item back in, and a byte string
+// carried as a C string would end at its first 0x00. `static_record_bytes`'s
+// `tally` takes the byte field of each record it walks into `spare`. The list is
+// written inside the engine, where nothing crosses, since no literal of the
+// document spells a 0x00.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ALoopHandsEachRecordItsByteStringWhole) {
+    const Lowered lowered = lower(kFixtures / "static_record_bytes.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    const auto written =
+        engine_->executeScript(machine->getSessionId(), "frames = [{sensor: 1, frame: 'a\\u0000\\u00ffb'}];").get();
+    ASSERT_TRUE(written.isSuccess()) << written.getErrorMessage();
+
+    machine->processEvent("tally", "");
+    EXPECT_EQ(nlohmann::json(true), variable(*machine, "spare.length === 4 && spare.charCodeAt(0) === 97 && "
+                                                       "spare.charCodeAt(1) === 0 && spare.charCodeAt(2) === 255 && "
+                                                       "spare.charCodeAt(3) === 98"))
+        << "spare is " << variable(*machine, "spare").dump();
+    EXPECT_EQ(nlohmann::json(0), variable(*machine, "errors"));
+}
+
 // A document under another data model is not the lowering's to touch: what it
 // prints for one is the document.
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ADocumentUnderAnotherDataModelIsPrintedAsItIs) {
