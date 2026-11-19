@@ -20224,16 +20224,22 @@ static void expect(int ok, const char *what) {
     }
 }
 
-/* A field gated by `sce:present-if` is the optional value of its element
- * (`present`, `value`). A zero expected stands for an absent one: no entry of
- * these fixtures carries the value zero. */
-static int held(bool present, unsigned long long value, unsigned long long want) {
-    return want == 0 ? !present : present && value == want;
-}
-
+/* An entry holds the short value while `wide` does not hold and the long one
+ * while it does, as the arm of its `wide` group (docs/adr/0065 §6 R4): the
+ * group's `kind` names the arm, and the arm holds its member. A zero expected
+ * stands for the value the other arm holds: no entry of these fixtures carries
+ * the value zero. */
 static int entry_is(const codec_chain_flag_entry_t *e, uint8_t header, uint8_t s, uint16_t l) {
-    return e->header == header && held(e->short_value.present, e->short_value.value, s) &&
-           held(e->long_value.present, e->long_value.value, l);
+    if (e->header != header) {
+        return 0;
+    }
+    if (e->wide.kind == CODEC_CHAIN_FLAG_ENTRY_WIDE_NOT_WIDE) {
+        return l == 0 && s != 0 && e->wide.arm.not_wide.short_value == s;
+    }
+    if (e->wide.kind == CODEC_CHAIN_FLAG_ENTRY_WIDE_WIDE) {
+        return s == 0 && l != 0 && e->wide.arm.wide.long_value == l;
+    }
+    return 0;
 }
 
 static int carrier_decode(const uint8_t *bytes, size_t len, codec_chain_flag_carrier_t *v) {
@@ -20292,7 +20298,9 @@ int main(void) {
                entry_is(&f.entries.value.data[0], 0x83, 0x11, 0) &&
                entry_is(&f.entries.value.data[1], 0x05, 0x22, 0),
            "forward narrow");
-    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 0) ==
+    /* The encode is not handed `wide`: the value says it, by the start of
+     * the entries' law (docs/adr/0065 §6 R4a, R8). */
+    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len) ==
                    SCE_FORGE_CODEC_OK &&
                out_len == sizeof FWD_NARROW && memcmp(out, FWD_NARROW, sizeof FWD_NARROW) == 0,
            "forward narrow round trip");
@@ -20302,7 +20310,7 @@ int main(void) {
                entry_is(&f.entries.value.data[0], 0x83, 0, 0x1234) &&
                entry_is(&f.entries.value.data[1], 0x05, 0, 0xABCD),
            "forward wide");
-    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 1) ==
+    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len) ==
                    SCE_FORGE_CODEC_OK &&
                out_len == sizeof WIDE && memcmp(out, WIDE, sizeof WIDE) == 0,
            "forward wide round trip");
@@ -20311,14 +20319,13 @@ int main(void) {
      * entries, and they are not read as wide. */
     expect(forward_decode(WIDE, sizeof WIDE, 0, &f), "forward flag decode");
     expect(f.entries.present && f.entries.value.len >= 1 &&
-               !f.entries.value.data[0].long_value.present &&
-               held(f.entries.value.data[0].short_value.present,
-                    f.entries.value.data[0].short_value.value, 0x12),
+               f.entries.value.data[0].wide.kind == CODEC_CHAIN_FLAG_ENTRY_WIDE_NOT_WIDE &&
+               f.entries.value.data[0].wide.arm.not_wide.short_value == 0x12,
            "forward flag ignored");
 
     expect(forward_decode(FWD_ABSENT, sizeof FWD_ABSENT, 1, &f), "forward absent decode");
     expect(!f.entries.present && f.entries.value.len == 0, "forward chain without its gate");
-    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 1) ==
+    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len) ==
                    SCE_FORGE_CODEC_OK &&
                out_len == sizeof FWD_ABSENT && memcmp(out, FWD_ABSENT, sizeof FWD_ABSENT) == 0,
            "forward absent round trip");
@@ -20584,11 +20591,12 @@ int main() {
 /// pass the compile gate and fail here, as the same bytes decode differently
 /// under the other answer.
 ///
-/// Only C11 can show the encode half: its encoder reads the carrier bit as the
-/// truth for an entry's optional value, so a constant there writes the wrong
-/// layout back. Every other backend's entry encoder writes by the presence of
-/// the value it holds and ignores the flag, so there the encode argument is
-/// held by the compile gate and the goldens, not by a round trip.
+/// An entry encoder printed from its plan writes by the arm of the `wide`
+/// group the entry holds, and a printed parent reads the flag it hands its
+/// entries off the start of the entries' law (docs/adr/0065 §6 R4a, R8), so
+/// the round trips of C11 and Python hold that the arms the handed flag
+/// decoded write the same layout back. Where an encode is still handed the
+/// flag, the argument is held by the compile gate and the goldens.
 ///
 /// Rust is run by `entries_are_handed_the_flag_their_import_binds_in_rust`;
 /// Kotlin is held to its golden and, where the runtime jar is built, the
@@ -21172,18 +21180,29 @@ static void expect(int ok, const char *what) {
     }
 }
 
-/* A field gated by `sce:present-if` is the optional value of its element
+/* A field gated by `sce:present-if` alone is the optional value of its element
  * (`present`, `value`). A zero expected stands for an absent one: no entry of
  * these fixtures carries the value zero. */
 static int held(bool present, unsigned long long value, unsigned long long want) {
     return want == 0 ? !present : present && value == want;
 }
 
+/* The short value or the long one, the two arms of the `after_marker` group
+ * (docs/adr/0065 §6 R4): the group's `kind` names the arm, and the arm holds
+ * its member. A zero expected stands for the value the other arm holds. */
+static int arm_is(const codec_chain_prev_entry_t *e, uint8_t s, uint16_t l) {
+    if (e->after_marker.kind == CODEC_CHAIN_PREV_ENTRY_AFTER_MARKER_NOT_AFTER_MARKER) {
+        return l == 0 && s != 0 && e->after_marker.arm.not_after_marker.short_value == s;
+    }
+    if (e->after_marker.kind == CODEC_CHAIN_PREV_ENTRY_AFTER_MARKER_AFTER_MARKER) {
+        return s == 0 && l != 0 && e->after_marker.arm.after_marker.long_value == l;
+    }
+    return 0;
+}
+
 static int entry_is(const codec_chain_prev_entry_t *e, uint8_t header, uint8_t s, uint16_t l,
                     uint8_t tag) {
-    return e->header == header && held(e->short_value.present, e->short_value.value, s) &&
-           held(e->long_value.present, e->long_value.value, l) &&
-           held(e->tag.present, e->tag.value, tag);
+    return e->header == header && arm_is(e, s, l) && held(e->tag.present, e->tag.value, tag);
 }
 
 static int carrier_decode(const uint8_t *bytes, size_t len, codec_chain_prev_carrier_t *v) {
