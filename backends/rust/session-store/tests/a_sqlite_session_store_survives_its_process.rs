@@ -11,10 +11,110 @@ use std::time::Duration;
 
 use rusqlite::{Connection, TransactionBehavior};
 use sce_rust_session_store::{
-    AcquireError, Due, Held, SessionStore, SqliteStore, Stored, WriteError, LATEST_MOMENT,
+    AcquireError, Due, Held, KeyRow, KeyState, KeyStore, KeyUse, SessionStore, SqliteStore, Stored,
+    WriteError, LATEST_MOMENT,
 };
 
 use common::Scratch;
+
+/// The tables a build of layout 1 made, as it made them, with one session in them.
+const LAYOUT_1_WITH_A_SESSION: &str = "
+    CREATE TABLE sessions (
+        session TEXT PRIMARY KEY NOT NULL,
+        state BLOB NOT NULL,
+        version INTEGER NOT NULL,
+        earliest_due INTEGER
+    );
+    CREATE INDEX sessions_by_due ON sessions (earliest_due, session)
+        WHERE earliest_due IS NOT NULL;
+    CREATE TABLE leases (
+        session TEXT PRIMARY KEY NOT NULL,
+        owner TEXT NOT NULL,
+        fence INTEGER NOT NULL,
+        expires_ms INTEGER NOT NULL
+    );
+    CREATE TABLE numbers (
+        id INTEGER PRIMARY KEY CHECK (id = 0),
+        issued INTEGER NOT NULL
+    );
+    INSERT INTO numbers (id, issued) VALUES (0, 1);
+    INSERT INTO sessions (session, state, version, earliest_due) VALUES ('k', X'6f6c64', 1, NULL);
+    PRAGMA user_version = 1;
+";
+
+/// ADR 0109, Open question 1: a file of layout 1 is brought to layout 2 when it is opened, its
+/// sessions and its counter kept, and the keys of layout 2 are then kept in it.
+#[test]
+fn a_file_of_layout_1_is_brought_to_layout_2_with_its_sessions() {
+    let scratch = Scratch::new("layout-1");
+    Connection::open(scratch.database())
+        .expect("a database of a build of layout 1")
+        .execute_batch(LAYOUT_1_WITH_A_SESSION)
+        .expect("its tables");
+    let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 1");
+    assert_eq!(
+        store.get("k").expect("its session"),
+        Some(Stored {
+            state: b"old".to_vec(),
+            version: 1,
+            earliest_due: None,
+        })
+    );
+    let layout: i64 = Connection::open(scratch.database())
+        .expect("a second connection")
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .expect("its layout");
+    assert_eq!(layout, 2, "the file was brought to layout 2");
+    let lease = store.acquire("k", "a", 1_000, 0).expect("a lease");
+    assert!(
+        lease.fence > 1,
+        "the counter goes on from the one layout 1 kept"
+    );
+    assert!(store
+        .ids()
+        .expect("the keys of an upgraded file")
+        .is_empty());
+}
+
+/// The keys kept in the file are there when it is opened again, their generations and the naming
+/// key with them (ADR 0109, D7).
+#[test]
+fn the_keys_a_store_kept_are_there_when_its_file_is_opened_again() {
+    let scratch = Scratch::new("keys-reopen");
+    let kept = KeyRow {
+        id: "generated:00".to_string(),
+        key_use: KeyUse::Sign,
+        algorithm: "EdDSA".to_string(),
+        wrapped: vec![0xAB; 57],
+        label: "device".to_string(),
+        created_ms: 1_700_000_000_000,
+        state: KeyState::Active,
+    };
+    {
+        let store = SqliteStore::open(scratch.database()).expect("making the store");
+        store
+            .insert(&kept, Some("generation"))
+            .expect("keeping a key");
+        store.keep_naming_key(&[0xCD; 57]).expect("a naming key");
+        store.retire("generated:00").expect("retiring it");
+    }
+    let store = SqliteStore::open(scratch.database()).expect("opening the store again");
+    assert_eq!(
+        store.key("generated:00").expect("the key"),
+        Some(KeyRow {
+            state: KeyState::Retired,
+            ..kept
+        })
+    );
+    assert_eq!(
+        store.generated_by("generation").expect("its generation"),
+        Some("generated:00".to_string())
+    );
+    assert_eq!(
+        store.naming_key().expect("the naming key"),
+        Some(vec![0xCD; 57])
+    );
+}
 
 #[test]
 fn what_a_store_wrote_is_there_when_its_file_is_opened_again() {
@@ -169,7 +269,7 @@ fn a_file_that_is_not_a_session_store_is_not_taken_for_one() {
     drop(SqliteStore::open(later.database()).expect("making the store"));
     Connection::open(later.database())
         .expect("a connection of a later build")
-        .pragma_update(None, "user_version", 2)
+        .pragma_update(None, "user_version", 3)
         .expect("a layout of a later build");
     assert!(
         SqliteStore::open(later.database()).is_err(),

@@ -36,6 +36,10 @@
 //! * [`conformance`] is what every implementation is held to: both of these run it, and a store
 //!   written elsewhere runs the same functions.
 //!
+//! The keys a host generates and derives are kept behind a contract of their own, [`KeyStore`]
+//! (ADR 0109, D7; module [`keys`]): [`MemoryKeys`] in memory, and `SqliteStore` in the same file
+//! as the sessions, held to [`key_conformance`].
+//!
 //! # Building the SQLite store
 //!
 //! The reference store links the system's SQLite (3.14 or later), found through `pkg-config`, or
@@ -61,11 +65,14 @@ use std::error::Error;
 use std::fmt;
 
 pub mod conformance;
+pub mod key_conformance;
+pub mod keys;
 mod memory;
 mod rules;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
+pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use memory::MemoryStore;
 #[cfg(feature = "sqlite")]
 pub use sqlite::SqliteStore;
