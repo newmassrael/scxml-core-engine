@@ -6,7 +6,9 @@
 // process. The names are answered by a resolver the test scripts, so nothing reaches another machine: a
 // name that resolves to loopback is refused before a byte is sent, one the allow-list lets reach loopback
 // is served, a name is resolved once per exchange and the connection is made to the address checked, a
-// redirect is answered as it came, and the bounds of time and size hold.
+// redirect is answered as it came, and the bounds of time and size hold. Through a proxy of this process
+// (POSIX sockets, so not on Windows), the target is still judged, the tunnel is opened to the address
+// checked, the socket guard admits the proxy's address, and the proxy's credentials reach the proxy alone.
 //
 // Compiled into standard_host_scenario_test only where libcurl (sce_host_http_curl,
 // cmake/SCEHostHttp.cmake) and cpp-httplib are both built.
@@ -19,10 +21,15 @@
 #include <winsock2.h>
 #else
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <gtest/gtest.h>
@@ -133,10 +140,19 @@ public:
         return hosts_;
     }
 
+    /// How many requests carried a `Proxy-Authorization`.
+    size_t proxyCredentialsSeen() {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        return proxyCredentials_;
+    }
+
 private:
     void seen(const httplib::Request &request) {
         const std::lock_guard<std::mutex> lock(mutex_);
         hosts_.push_back(request.get_header_value("Host"));
+        if (request.has_header("Proxy-Authorization")) {
+            ++proxyCredentials_;
+        }
     }
 
     httplib::Server server_;
@@ -144,6 +160,7 @@ private:
     std::thread serving_;
     std::mutex mutex_;
     std::vector<std::string> hosts_;
+    size_t proxyCredentials_ = 0;
 };
 
 host::HttpRequest get(const std::string &url) {
@@ -156,6 +173,195 @@ host::DestinationPolicy loopbackLiteral(uint16_t port) {
         {host::AllowedDestination(host::Scheme::Http, "127.0.0.1", port).reaching(network("127.0.0.1", 32))},
         std::make_shared<ScriptedResolver>(std::map<std::string, std::vector<std::vector<std::string>>>{}));
 }
+
+#if !defined(_WIN32)
+
+/// Send all of `size` bytes of `data` on `socket`; false when the peer is gone.
+bool sendAll(int socket, const char *data, size_t size) {
+#if defined(MSG_NOSIGNAL)
+    const int flags = MSG_NOSIGNAL;
+#else
+    const int flags = 0;
+#endif
+    while (size > 0) {
+        const ssize_t sent = ::send(socket, data, size, flags);
+        if (sent <= 0) {
+            return false;
+        }
+        data += sent;
+        size -= static_cast<size_t>(sent);
+    }
+    return true;
+}
+
+bool sendAll(int socket, const std::string &text) {
+    return sendAll(socket, text.data(), text.size());
+}
+
+/// Copy between `a` and `b` both ways until either ends or both are quiet for ten seconds.
+void relay(int a, int b) {
+    pollfd ends[2] = {{a, POLLIN, 0}, {b, POLLIN, 0}};
+    char buffer[16384];
+    while (::poll(ends, 2, 10000) > 0) {
+        for (int i = 0; i < 2; ++i) {
+            if ((ends[i].revents & (POLLIN | POLLHUP | POLLERR)) == 0) {
+                continue;
+            }
+            const ssize_t got = ::recv(ends[i].fd, buffer, sizeof buffer, 0);
+            if (got <= 0 || !sendAll(ends[1 - i].fd, buffer, static_cast<size_t>(got))) {
+                return;
+            }
+        }
+    }
+}
+
+/// An HTTP proxy on a loopback address that opens a `CONNECT` tunnel to the `address:port` it is asked for
+/// and relays both ways, or, when `refusing`, answers `407`; and the head of every `CONNECT` it read.
+class TunnellingProxy {
+public:
+    TunnellingProxy(const char *address, bool refusing) : refusing_(refusing), address_(address) {
+        listener_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        const int yes = 1;
+        ::setsockopt(listener_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
+        struct sockaddr_in at;
+        std::memset(&at, 0, sizeof at);
+        at.sin_family = AF_INET;
+        ::inet_pton(AF_INET, address, &at.sin_addr);
+        const bool listening =
+            ::bind(listener_, reinterpret_cast<struct sockaddr *>(&at), sizeof at) == 0 && ::listen(listener_, 8) == 0;
+        EXPECT_TRUE(listening) << address;
+        socklen_t length = sizeof at;
+        ::getsockname(listener_, reinterpret_cast<struct sockaddr *>(&at), &length);
+        port_ = ntohs(at.sin_port);
+        accepting_ = std::thread([this] { accept(); });
+    }
+
+    ~TunnellingProxy() {
+        // A connection of its own wakes the accept, which then sees the stop; closing a listening socket
+        // does not wake one on every platform.
+        stopping_ = true;
+        struct sockaddr_in at;
+        std::memset(&at, 0, sizeof at);
+        at.sin_family = AF_INET;
+        at.sin_port = htons(port_);
+        ::inet_pton(AF_INET, address_.c_str(), &at.sin_addr);
+        const int waking = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (waking >= 0) {
+            ::connect(waking, reinterpret_cast<struct sockaddr *>(&at), sizeof at);
+            ::close(waking);
+        }
+        accepting_.join();
+        ::close(listener_);
+        for (auto &handler : handlers_) {
+            handler.join();
+        }
+    }
+
+    TunnellingProxy(const TunnellingProxy &) = delete;
+    TunnellingProxy &operator=(const TunnellingProxy &) = delete;
+
+    uint16_t port() const {
+        return port_;
+    }
+
+    std::vector<std::string> heads() {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        return heads_;
+    }
+
+private:
+    void accept() {
+        for (;;) {
+            const int client = ::accept(listener_, nullptr, nullptr);
+            if (client < 0) {
+                return;
+            }
+            if (stopping_) {
+                ::close(client);
+                return;
+            }
+            handlers_.emplace_back([this, client] { handle(client); });
+        }
+    }
+
+    void handle(int client) {
+        std::string head;
+        char byte = 0;
+        while (head.size() < 8192 && (head.size() < 4 || head.compare(head.size() - 4, 4, "\r\n\r\n") != 0) &&
+               ::recv(client, &byte, 1, 0) == 1) {
+            head += byte;
+        }
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            heads_.push_back(head);
+        }
+        if (refusing_) {
+            sendAll(client, "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n");
+            ::close(client);
+            return;
+        }
+        // `CONNECT <address>:<port> HTTP/1.1`, an IPv6 address in brackets.
+        const size_t begin = head.find(' ') + 1;
+        const std::string target = head.substr(begin, head.find(' ', begin) - begin);
+        const size_t colon = target.rfind(':');
+        std::string name = target.substr(0, colon);
+        if (name.size() >= 2 && name.front() == '[') {
+            name = name.substr(1, name.size() - 2);
+        }
+        const std::string service = colon == std::string::npos ? "" : target.substr(colon + 1);
+        struct addrinfo hints;
+        std::memset(&hints, 0, sizeof hints);
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
+        struct addrinfo *found = nullptr;
+        int upstream = -1;
+        if (::getaddrinfo(name.c_str(), service.c_str(), &hints, &found) == 0) {
+            upstream = ::socket(found->ai_family, found->ai_socktype, found->ai_protocol);
+            if (upstream >= 0 && ::connect(upstream, found->ai_addr, found->ai_addrlen) != 0) {
+                ::close(upstream);
+                upstream = -1;
+            }
+            ::freeaddrinfo(found);
+        }
+        if (upstream < 0) {
+            sendAll(client, "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n");
+            ::close(client);
+            return;
+        }
+        if (sendAll(client, "HTTP/1.1 200 Connection established\r\n\r\n")) {
+            relay(client, upstream);
+        }
+        ::close(upstream);
+        ::close(client);
+    }
+
+    bool refusing_;
+    std::string address_;
+    std::atomic<bool> stopping_{false};
+    int listener_ = -1;
+    uint16_t port_ = 0;
+    std::thread accepting_;
+    std::vector<std::thread> handlers_;
+    std::mutex mutex_;
+    std::vector<std::string> heads_;
+};
+
+/// The proxy's own address: on Linux one of loopback the target server is not on, so that a socket guard
+/// admitting the target's address instead of the proxy's would refuse the connection.
+#if defined(__linux__)
+constexpr const char *PROXY_ADDRESS = "127.0.0.2";
+#else
+constexpr const char *PROXY_ADDRESS = "127.0.0.1";
+#endif
+
+host::CurlTransportSettings through(const TunnellingProxy &proxy) {
+    host::CurlTransportSettings settings;
+    settings.proxy = host::CurlProxy{PROXY_ADDRESS, proxy.port(), "Basic dTpw"};
+    return settings;
+}
+
+#endif
 
 }  // namespace
 
@@ -346,5 +552,56 @@ TEST(AStandardHostCurlTransport, TheReferenceHostAnswersARefusedDestinationWithI
     EXPECT_EQ(served.at("status"), 200);
     EXPECT_EQ(served.at("body"), "served");
 }
+
+#if !defined(_WIN32)
+
+/// Through a proxy the target is judged as it is without one, the proxy's own address is not (no entry
+/// names it), the tunnel is opened to the address the policy checked and not to the name, the socket guard
+/// admits the proxy's address, and the proxy's credentials reach the proxy alone.
+TEST(AStandardHostCurlTransport, ThroughAProxyJudgesTheTargetAndTunnelsToTheAddressChecked) {
+    LoopbackServer server;
+    const uint16_t port = server.port();
+    const std::string at = ":" + std::to_string(port);
+    TunnellingProxy proxy(PROXY_ADDRESS, false);
+    auto resolver = std::make_shared<ScriptedResolver>(std::map<std::string, std::vector<std::vector<std::string>>>{
+        {"loopback.test", {{"127.0.0.1"}}},
+        {"served.test", {{"127.0.0.1"}}},
+    });
+    host::CurlTransport transport(
+        host::DestinationPolicy::allowList(
+            {host::AllowedDestination(host::Scheme::Http, "loopback.test", port),
+             host::AllowedDestination(host::Scheme::Http, "served.test", port).reaching(network("127.0.0.0", 8))},
+            resolver),
+        through(proxy));
+
+    EXPECT_EQ(transport.exchange(get("http://loopback.test" + at + "/ok")).kind,
+              host::Exchange::Kind::DestinationRefused);
+    EXPECT_EQ(transport.exchange(get("http://other.test" + at + "/ok")).kind, host::Exchange::Kind::DestinationRefused);
+    EXPECT_TRUE(proxy.heads().empty());
+
+    const host::Exchange served = transport.exchange(get("http://served.test" + at + "/ok"));
+    ASSERT_EQ(served.kind, host::Exchange::Kind::Response);
+    EXPECT_EQ(served.response.status, 200);
+    EXPECT_EQ(served.response.body, "served");
+    const std::vector<std::string> tunnels = proxy.heads();
+    ASSERT_EQ(tunnels.size(), 1u);
+    EXPECT_EQ(tunnels[0].rfind("CONNECT 127.0.0.1" + at + " HTTP/1.1\r\n", 0), 0u) << tunnels[0];
+    EXPECT_NE(tunnels[0].find("Proxy-Authorization: Basic dTpw\r\n"), std::string::npos) << tunnels[0];
+    EXPECT_EQ(server.hosts(), std::vector<std::string>{"served.test" + at});
+    EXPECT_EQ(server.proxyCredentialsSeen(), 0u);
+}
+
+TEST(AStandardHostCurlTransport, FailsAsNetworkWhenTheProxyRefusesTheTunnel) {
+    LoopbackServer server;
+    const uint16_t port = server.port();
+    TunnellingProxy proxy(PROXY_ADDRESS, true);
+    host::CurlTransport transport(loopbackLiteral(port), through(proxy));
+    EXPECT_EQ(transport.exchange(get("http://127.0.0.1:" + std::to_string(port) + "/ok")).kind,
+              host::Exchange::Kind::Failure);
+    EXPECT_EQ(proxy.heads().size(), 1u);
+    EXPECT_TRUE(server.hosts().empty());
+}
+
+#endif
 
 }  // namespace SCE::Tests
