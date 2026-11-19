@@ -256,6 +256,7 @@ sce_generated_trees() {
         mesh-rust)
             printf '%s\n' \
                 backends/rust/mesh/src/generated \
+                backends/rust/mesh/src/generated_rate \
                 backends/rust/mesh/examples/generated
             ;;
         mesh-cpp)

@@ -3,8 +3,9 @@
 #
 # The Rust Mesh library's generated part (ADR 0097): every standard Mesh
 # document (`sce:std/mesh`) generated for Rust into src/generated, the index
-# that names them (src/generated.rs), and the loopback server's peer table the
-# examples build against.
+# that names them (src/generated.rs), the standard rate limiter
+# (`sce:std/rate`) in src/generated_rate with its own index, and the loopback
+# server's peer table the examples build against.
 
 [tree]
 name = "mesh-rust"
@@ -14,6 +15,15 @@ roots = ["backends/rust/mesh/src", "backends/rust/mesh/examples/generated"]
 each = { files = "stdlib/mesh/*.scxml", as = "document" }
 arguments = ["generate", "stdlib/mesh/{document}.scxml", "--language", "rust", "--output-dir", "{out}"]
 place = "backends/rust/mesh/src/generated"
+keep = ["*.rs"]
+
+# The standard rate limiter (`sce:std/rate`) the HTTPS server's edge judges
+# every limit with (docs/adr/0109, D2): a tree of its own, generated from its
+# own directory, so that `verify --input-root stdlib/rate` recomputes it.
+[[generation]]
+each = { files = "stdlib/rate/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/rate/{document}.scxml", "--language", "rust", "--output-dir", "{out}"]
+place = "backends/rust/mesh/src/generated_rate"
 keep = ["*.rs"]
 
 [[generation]]
@@ -42,6 +52,25 @@ header = """// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linki
 """
 entries = [{ files = "*.rs", line = "pub mod {module};\n" }]
 
+[[index]]
+directories = "backends/rust/mesh/src/generated_rate"
+file = "{dir}.rs"
+header = """// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! The standard rate limiter (`sce:std/rate`), generated.
+//!
+//! GENERATED -- DO NOT EDIT (backends/rust/mesh/generate.sh).
+//! Each module is one document; they name one another as siblings
+//! (`super::gcra_decision`), which is why they share this parent.
+
+"""
+entries = [{ files = "*.rs", line = "pub mod {module};\n" }]
+
 [[format]]
 tool = "rustfmt"
-directories = ["backends/rust/mesh/src/generated", "backends/rust/mesh/examples/generated"]
+directories = [
+    "backends/rust/mesh/src/generated",
+    "backends/rust/mesh/src/generated_rate",
+    "backends/rust/mesh/examples/generated",
+]
