@@ -257,6 +257,19 @@ fn a_c11_build_takes_a_bound_no_stack_could_hold() {
 /// the bytes and whether the compiler could bound them.
 fn todo_peer_frames(given: &[(&str, u32)]) -> BTreeMap<(String, String), String> {
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
+    c11_frames(&fixtures, &fixtures.join("todo_peer.scxml"), given)
+}
+
+/// The frame of every function of the C11 machine `document`, its imports read
+/// beside it under `input_root`, and of every algorithm it calls, as the compiler
+/// reports it (`-fstack-usage`), built under the limits `given`: by the file and
+/// the function, the bytes and whether the compiler could bound them.
+fn c11_frames(
+    input_root: &Path,
+    document: &Path,
+    given: &[(&str, u32)],
+) -> BTreeMap<(String, String), String> {
+    let fixtures = input_root;
     let out = tempdir().expect("tempdir");
     let limits: Vec<String> = given
         .iter()
@@ -276,8 +289,8 @@ fn todo_peer_frames(given: &[(&str, u32)]) -> BTreeMap<(String, String), String>
         "-o",
         out.path().to_str().expect("utf-8"),
     ]);
-    let (ok, text) = codegen(&args, &fixtures.join("todo_peer.scxml"));
-    assert!(ok, "todo_peer at {limits:?}:\n{text}");
+    let (ok, text) = codegen(&args, document);
+    assert!(ok, "{} at {limits:?}:\n{text}", document.display());
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let backends_c = repo_root().join("backends/c");
     let mut frames = BTreeMap::new();
@@ -365,6 +378,79 @@ fn no_c11_frame_grows_with_a_list_bound() {
     assert!(
         grown.is_empty(),
         "frames that grow with a list's bound:\n{}",
+        grown.join("\n")
+    );
+}
+
+/// No frame of a C11 machine grows with a map's bound either (docs/adr/0108, D4,
+/// "Storage", and "Order of work", step 6): a map is reserved in the machine, the copy
+/// a loop that writes its map walks is in its `scratch`, and a statement, a read, a
+/// walk and the saved form each hold one entry at most in a frame. The statechart of
+/// every read, statement and loop of a map (`fixtures/map/map_faces.scxml`), every map
+/// and set of it bounded by one name and one of its loops writing the set it walks,
+/// is built at that bound and at 64 times it, and every function has the frame it had.
+#[test]
+fn no_c11_frame_grows_with_a_map_bound() {
+    let map_fixtures = repo_root().join("sce-build/tests/fixtures/map");
+    let dir = tempdir().expect("tempdir");
+    for name in ["map_peer_key.scxml", "map_face.scxml"] {
+        std::fs::copy(map_fixtures.join(name), dir.path().join(name)).expect("copy a schema");
+    }
+    let mut document =
+        std::fs::read_to_string(map_fixtures.join("map_faces.scxml")).expect("the statechart");
+    for (bound, named) in [
+        (
+            "map&lt;uint32, uint64&gt;[8]",
+            "map&lt;uint32, uint64&gt;[face_max=4]",
+        ),
+        (
+            "map&lt;string[8], bool&gt;[2]",
+            "map&lt;string[8], bool&gt;[face_max=4]",
+        ),
+        ("set&lt;uint32&gt;[4]", "set&lt;uint32&gt;[face_max=4]"),
+        (
+            "map&lt;uint32, record:Face&gt;[4]",
+            "map&lt;uint32, record:Face&gt;[face_max=4]",
+        ),
+        (
+            "map&lt;uint32, uint64&gt;[16]",
+            "map&lt;uint32, uint64&gt;[face_max=4]",
+        ),
+        (
+            "<sce:put target=\"counts\" key=\"s\" expr=\"total\"/>",
+            "<sce:remove target=\"seen\" key=\"s\"/>",
+        ),
+    ] {
+        assert_eq!(document.matches(bound).count(), 1, "`{bound}` stands once");
+        document = document.replacen(bound, named, 1);
+    }
+    let path = dir.path().join("map_faces.scxml");
+    std::fs::write(&path, &document).expect("write the statechart");
+    let small = c11_frames(dir.path(), &path, &[("face_max", 4)]);
+    let large = c11_frames(dir.path(), &path, &[("face_max", 4 * 64)]);
+    assert!(
+        small.len() > 50,
+        "only {} frames were read at the small bound",
+        small.len()
+    );
+    assert_eq!(
+        small.keys().collect::<Vec<_>>(),
+        large.keys().collect::<Vec<_>>(),
+        "the two builds lay out the same functions"
+    );
+    let grown: Vec<String> = small
+        .iter()
+        .filter(|(function, frame)| large.get(*function) != Some(*frame))
+        .map(|((file, function), frame)| {
+            format!(
+                "{file} {function}: {frame} -> {}",
+                large[&(file.clone(), function.clone())]
+            )
+        })
+        .collect();
+    assert!(
+        grown.is_empty(),
+        "frames that grow with a map's bound:\n{}",
         grown.join("\n")
     );
 }
