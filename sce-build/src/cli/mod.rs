@@ -14593,7 +14593,9 @@ fn cmd_export_ttcn3(
                 }),
             }
         });
-    let drift = document_set_drift_context(input_root, None, &[suite]);
+    // The suite's closure reaches what its include dirs resolve, as every
+    // other document set's does (ADR 0094 section 4).
+    let drift = document_set_drift_context(input_root, None, &include_dirs, &[suite]);
     let dir = Path::new(output_dir);
     ensure_output_dir(dir).unwrap_or_else(|e| {
         cli_exit(CliError::CreateOutputDir {
