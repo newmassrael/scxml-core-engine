@@ -6,3 +6,9 @@ commit = "4d1e9bdb2849247b27593cec7b010b0ea8fa43a4"
 base = "fc7efd2cd0bace54ccdec801bbb5cae834c0c382"
 machine = "mf977c53d872e"
 at = 1795070230
+
+[return]
+reason = "conflict"
+detail = "Cargo.toml backends/rust/host-features/src/lib.rs"
+report = "mb2af4e1c456c:0000000260-25102fd50524/attempt-1.log"
+at = 1795070832
