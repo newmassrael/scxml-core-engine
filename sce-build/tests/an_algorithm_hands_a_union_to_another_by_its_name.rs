@@ -25,6 +25,8 @@
 //! host alone, so a consumer's algorithm that resolves a date expression it
 //! takes (`sce:std/time/resolve_date`) was refused on every backend.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -183,6 +185,9 @@ fn the_rust_of_a_union_handed_on_compiles_under_deny_warnings() {
     }
     let root = dir.path().join("lib.rs");
     std::fs::write(&root, modules).expect("write the crate root");
+    // An enum's unit and a record's are keys of a map, by the runtime's
+    // `MapKey` (docs/adr/0108, D6 item 4), so the crate links the runtime.
+    let runtime = tempfile::tempdir().expect("a scratch directory for the runtime");
     let out = Command::new(&rustc)
         .args([
             "--edition=2021",
@@ -194,6 +199,7 @@ fn the_rust_of_a_union_handed_on_compiles_under_deny_warnings() {
         ])
         .arg(dir.path().join("out"))
         .arg(&root)
+        .args(common::rust_runtime::rustc_flags(runtime.path()))
         .output()
         .expect("rustc runs");
     assert!(

@@ -54,6 +54,22 @@ pub struct {{ payload_struct_name }} {
     pub {{ f.rs_field_name }}: {{ f.rs_type }},
 {% endfor %}
 }
+{% if rust_map_key_fields %}
+{# docs/adr/0108, D6 item 4: a statechart holds a map's record key in this
+   type, so the unit makes it a key of the runtime's map; a machine of the
+   crate cannot, since two machines keyed by one record would each make it one.
+   Empty for a payload with a field that is no key (`render_event_schema`). #}
+
+/// docs/adr/0108, D1: a payload is a key of a map by its fields, in the order
+/// its schema declares them.
+impl ::sce_portable_bytes::MapKey for {{ payload_struct_name }} {
+    fn feed_key(&self, into: &mut dyn ::sce_portable_bytes::KeyFeed) {
+{% for field in rust_map_key_fields %}
+        ::sce_portable_bytes::MapKey::feed_key(&self.{{ field }}, into);
+{% endfor %}
+    }
+}
+{% endif %}
 {% else %}
 {# ⚠ No struct for a schema with no field: an empty one is not valid in every
    backend (Kotlin `data class`, ISO C), and the event carries no data a struct

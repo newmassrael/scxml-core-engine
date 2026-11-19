@@ -4716,6 +4716,31 @@ fn render_event_schema(
         }
     }
     ctx.insert("fields".into(), serde_json::json!(fields));
+    // docs/adr/0108, D1 and D6 item 4: a payload whose every field is a key (a
+    // fixed-width integer, a truth value, a value of an enum or a text the
+    // schema bounds) is a key of a map by those fields, in the order the schema
+    // declares them. A statechart holds a map's record key in this type, so the
+    // Rust unit makes it a key of the runtime's map itself: a machine of the
+    // same crate cannot, since two machines keyed by one record would each
+    // make it one. Empty for a payload with a field that is no key.
+    let rust_map_key_fields: Vec<String> = entries
+        .iter()
+        .map(|entry| {
+            let f = entry.as_ref()?;
+            let keyed = match &f.sce_type {
+                EntryType::Scalar(SceType::Float32 | SceType::Float64 | SceType::Bytes)
+                | EntryType::Optional { .. } => false,
+                EntryType::Scalar(SceType::String) => f.max_size.is_some(),
+                EntryType::Scalar(_) => true,
+            };
+            keyed.then(|| event_schema_field_ident(&f.id, crate::generator::Language::Rust))
+        })
+        .collect::<Option<Vec<String>>>()
+        .unwrap_or_default();
+    ctx.insert(
+        "rust_map_key_fields".into(),
+        serde_json::json!(rust_map_key_fields),
+    );
     // A field that may be absent, at any depth of its type, is held in a type
     // C++'s `<optional>`, C11's `sce/forge/optional.h` and Python's `typing`
     // declare (docs/adr/0055); Go's runtime package is read off the text by the

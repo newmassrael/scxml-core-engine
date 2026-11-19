@@ -28,7 +28,6 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use common::native_oracle::{run, Native};
 use common::source_lexing::Lang;
@@ -97,85 +96,6 @@ fn probe_line(file: &str) -> String {
     format!("pub mod {};\n", file.trim_end_matches(".rs"))
 }
 
-/// Build the crates a generated file names, once, and answer the flags that make
-/// `rustc` find them.
-///
-/// The crate that depends on them is a scratch one that is its own workspace and
-/// carries a copy of the workspace's lock file, so cargo resolves the versions
-/// the workspace resolved and, offline, from the cache the workspace filled.
-/// What it built is read from cargo's own artifact messages, not guessed from a
-/// file name, and the directory holds only this run's build, so there is one
-/// candidate for every crate a flag has to find.
-fn runtime_flags(scratch: &Path) -> Vec<String> {
-    let root = repo_root();
-    let crate_dir = scratch.join("runtime");
-    std::fs::create_dir_all(crate_dir.join("src")).expect("mkdir");
-    std::fs::write(crate_dir.join("src/lib.rs"), "").expect("write lib.rs");
-    std::fs::write(
-        crate_dir.join("Cargo.toml"),
-        format!(
-            "[package]\n\
-             name = \"sce-name-oracle-runtime\"\n\
-             version = \"0.0.0\"\n\
-             edition = \"2021\"\n\
-             publish = false\n\
-             \n\
-             [lib]\n\
-             path = \"src/lib.rs\"\n\
-             \n\
-             # The two crates the generated files name, with the heap tier the\n\
-             # conformance crate builds them with.\n\
-             [dependencies]\n\
-             sce-forge-runtime = {{ path = {forge:?}, default-features = false, features = [\"alloc\"] }}\n\
-             sce-portable-bytes = {{ path = {bytes:?}, default-features = false, features = [\"alloc\"] }}\n\
-             \n\
-             [workspace]\n",
-            forge = root.join("backends/rust/forge-runtime").to_string_lossy(),
-            bytes = root.join("backends/rust/portable-bytes").to_string_lossy(),
-        ),
-    )
-    .expect("write Cargo.toml");
-    std::fs::copy(root.join("Cargo.lock"), crate_dir.join("Cargo.lock"))
-        .expect("copy the workspace lock file");
-
-    let target = scratch.join("target");
-    let manifest = crate_dir.join("Cargo.toml");
-    let built = common::run_cargo_offline_first(|| {
-        let mut cmd = Command::new("cargo");
-        cmd.arg("build")
-            .arg("--message-format=json")
-            .arg("--manifest-path")
-            .arg(&manifest)
-            .env("CARGO_TARGET_DIR", &target);
-        cmd
-    });
-    assert!(
-        built.output.status.success(),
-        "the runtime crates a generated Rust file names do not build:\n{}",
-        String::from_utf8_lossy(&built.output.stderr)
-    );
-
-    let stdout = String::from_utf8_lossy(&built.output.stdout);
-    let mut flags = vec![
-        "-L".to_string(),
-        format!("dependency={}", target.join("debug/deps").display()),
-    ];
-    for crate_name in ["sce_forge_runtime", "sce_portable_bytes"] {
-        let rlib = stdout
-            .lines()
-            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-            .filter(|message| message["reason"] == "compiler-artifact")
-            .filter(|message| message["target"]["name"] == crate_name)
-            .flat_map(|message| message["filenames"].as_array().cloned().unwrap_or_default())
-            .filter_map(|file| file.as_str().map(str::to_string))
-            .find(|file| file.ends_with(".rlib"))
-            .unwrap_or_else(|| panic!("cargo built no rlib of `{crate_name}`"));
-        flags.push("--extern".to_string());
-        flags.push(format!("{crate_name}={rlib}"));
-    }
-    flags
-}
-
 #[test]
 fn an_authors_name_never_decides_whether_the_generated_rust_of_a_kind_builds() {
     if sce_build::toolchain::require_any_or_skip(&["rustc"], "the Rust kind name oracle").is_none()
@@ -183,7 +103,7 @@ fn an_authors_name_never_decides_whether_the_generated_rust_of_a_kind_builds() {
         return;
     }
     let scratch = tempfile::tempdir().expect("a scratch directory");
-    let flags = runtime_flags(scratch.path());
+    let flags = common::rust_runtime::rustc_flags(scratch.path());
     run(&Native {
         label: "rust",
         language: Language::Rust,
