@@ -595,6 +595,14 @@ impl<K, V, const N: usize> BoundedMap<K, V, N> {
         Self::with_seed(self.seed)
     }
 
+    /// The seed numbered `ordinal` drawn from the one this map was built with
+    /// ([`MapSeed::derive`]): what a map an algorithm builds for itself is
+    /// keyed by, from the map its caller lent it (docs/adr/0108, D8). The
+    /// seed itself is not handed out.
+    pub fn derived_seed(&self, ordinal: u32) -> MapSeed {
+        self.seed.derive(ordinal)
+    }
+
     /// How many entries the map holds.
     pub fn len(&self) -> usize {
         self.live as usize
@@ -977,6 +985,12 @@ impl<K, const N: usize> BoundedSet<K, N> {
         Self(self.0.empty_like())
     }
 
+    /// The seed numbered `ordinal` drawn from the one this set was built with
+    /// ([`BoundedMap::derived_seed`]).
+    pub fn derived_seed(&self, ordinal: u32) -> MapSeed {
+        self.0.derived_seed(ordinal)
+    }
+
     /// How many keys the set holds.
     pub fn len(&self) -> usize {
         self.0.len()
@@ -1141,6 +1155,37 @@ pub fn value_cloned<K: MapKey, V: Clone, Q: MapKey + ?Sized, const N: usize>(
     key: &Q,
 ) -> Option<V> {
     map.get(key).cloned()
+}
+
+/// `m[k].field` in an algorithm that does not declare `may-fail`, where the
+/// build proved `key` held (a guard of `has(m, k)` with nothing between that
+/// writes the map or the key, docs/adr/0108, D6 item 2): the value at `key`,
+/// lent, read as a proven index of a list is read.
+///
+/// # Panics
+///
+/// Where `key` is absent, which the proof the build made rules out.
+pub fn held<'m, K: MapKey, V, Q: MapKey + ?Sized, const N: usize>(
+    map: &'m BoundedMap<K, V, N>,
+    key: &Q,
+) -> &'m V {
+    match map.get(key) {
+        Some(value) => value,
+        None => panic!("a key the build proved held is absent from the map"),
+    }
+}
+
+/// `m[k]` where the build proved `key` held ([`held`]): a copy of the value
+/// at `key`.
+///
+/// # Panics
+///
+/// As [`held`].
+pub fn held_cloned<K: MapKey, V: Clone, Q: MapKey + ?Sized, const N: usize>(
+    map: &BoundedMap<K, V, N>,
+    key: &Q,
+) -> V {
+    held(map, key).clone()
 }
 
 #[cfg(test)]
@@ -1529,5 +1574,30 @@ mod tests {
         let mut text: heapless::String<32> = heapless::String::new();
         core::fmt::write(&mut text, format_args!("{first:?}")).expect("fits");
         assert_eq!(text.as_str(), "MapSeed(..)");
+    }
+
+    /// docs/adr/0108, D6 item 2 and D8: a read the build proved held reads
+    /// the value at its key, and a map an algorithm builds for itself is keyed
+    /// by a seed drawn from the one it was lent, as a machine's maps are drawn
+    /// from its seed.
+    #[test]
+    fn a_proven_read_reads_its_key_and_a_derived_seed_is_drawn_apart() {
+        let mut map = BoundedMap::<u32, u64, 4>::with_seed(SEED);
+        assert_eq!(map.put(7, 70), PutOutcome::Inserted);
+        assert_eq!(*held(&map, &7u32), 70);
+        assert_eq!(held_cloned(&map, &7u32), 70);
+        assert_eq!(map.derived_seed(0), SEED.derive(0));
+        assert_ne!(map.derived_seed(0), map.derived_seed(1));
+        let set = BoundedSet::<u8, 2>::with_seed(OTHER_SEED);
+        assert_eq!(set.derived_seed(3), OTHER_SEED.derive(3));
+    }
+
+    /// A proven read of a key that is absent is no value: it panics, as a
+    /// proven index past a list's end does.
+    #[test]
+    #[should_panic(expected = "a key the build proved held is absent from the map")]
+    fn a_proven_read_of_an_absent_key_panics() {
+        let map = BoundedMap::<u32, u64, 4>::with_seed(SEED);
+        let _ = held(&map, &7u32);
     }
 }
