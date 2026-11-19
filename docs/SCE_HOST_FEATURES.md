@@ -837,8 +837,17 @@ retire: the key is no key of the key ring, a configured key included) and
 not be used).
 
 Refusal (`invalid_argument`): a `key_use` that is not `sign`, `seal`, `mac` or
-`derive`; an empty `key_id`; a value past its field's bound. `key_use` is a text
-of that closed set, as an HTTP method of section 5 is, judged by the host.
+`derive`; an empty `key_id`; a value past its field's bound.
+
+**`key_use` is a text the host judges.** The field is a text of at most 8 bytes,
+one of the closed set above, judged by the host when the invocation starts, as
+an HTTP request's `method` is (section 5): any other text is refused and nothing
+is generated. It is no enum, because the build refuses a host-run record with an
+enum field (SCE Accepted Subset §2.12, `typed_invoke::validate`); it becomes the
+enum of the same four names, refused where it is written, in step 4 of
+docs/adr/0109's order of work, which admits an enum field in a typed request on
+the Rust and C++ lanes. It is named `key_use`, not `use`, so that every target
+language can spell it as a field (`use` is a keyword of Rust).
 
 **One use.** A generated key has the one use it was generated for (key
 separation, NIST SP 800-57 Part 1): a `sign` key signs and exports (section 10),
