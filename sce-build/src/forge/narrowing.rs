@@ -370,6 +370,12 @@ impl Statement for Action {
         match self.action_type.as_str() {
             // A `<sce:render>` replaces its location whole (docs/adr/0087).
             "assign" | "sce_append" | "sce_clear" | "sce_render" => into.write(&self.location),
+            // A put and a remove write their map, and their outcome where they
+            // name one (docs/adr/0108, D3 and D4).
+            "sce_put" | "sce_remove" => {
+                into.write(&self.location);
+                into.write(&self.outcome);
+            }
             // A lift writes its refusal on every run, and its location on a
             // text that is read (docs/adr/0087, section 2.1): both may change.
             "sce_lift" => {
@@ -1392,6 +1398,21 @@ mod tests {
         assert_eq!(held.after(&Writes::of(&nested)), facts(&["sid"]));
         // A log writes nothing.
         assert_eq!(held.after(&Writes::of(&action("log", "", ""))), held);
+        // A put and a remove write their target, and their outcome where they
+        // name one (docs/adr/0108, D4).
+        let put = Action {
+            action_type: "sce_put".to_string(),
+            location: "rec".to_string(),
+            outcome: "sid".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(held.after(&Writes::of(&put)), Facts::none());
+        let remove = Action {
+            action_type: "sce_remove".to_string(),
+            location: "rec".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(held.after(&Writes::of(&remove)), facts(&["sid"]));
     }
 
     #[test]
