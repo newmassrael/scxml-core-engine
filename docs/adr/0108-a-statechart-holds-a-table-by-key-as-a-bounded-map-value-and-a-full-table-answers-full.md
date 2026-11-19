@@ -5,8 +5,10 @@
   moving a protocol stack's hand-written logic into SCE documents. The consumer reviewed it against its own tables
   the same day; its review corrected what a reached limit does (D4), and moved remove to constant time, keyed the
   index's hash per map (D8), kept reads and loops from copying, and admitted writes in place where nothing can fail
-  (D6), and keyed a 128-bit identifier as two integers (D1). It accepted the record so amended. Nothing of the
-  construct has landed; "Order of work" lists the steps.
+  (D6), and keyed a 128-bit identifier as two integers (D1). It accepted the record so amended. Amended the same day
+  (D6, item 2): an algorithm with an `inout` slot may return a value, taken by the call's `location`, because the
+  consumer's first rule over a table (a peer's latest generation, its duplicates refused) answers what it did.
+  "Order of work" marks the steps that have landed.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0108" line in the landing that moves it):
   - `sce-build/src/forge/value_type.rs`'s grammar (docs/adr/0086, section 1): two constructors, `map<K, V>[B]` and
@@ -206,8 +208,15 @@ not copy to reach it.
    A statechart calls an algorithm with an `inout` slot by a statement, `<sce:call expr="Expire(faces, now)"/>`,
    never in an expression, because an expression has no effect. The `inout` argument is the name of a map variable
    of the same type. It is not the map a `<foreach>` around the call walks, and no map is named twice in one call.
-   Each of these is refused as `scxml/static-datamodel-rule`. The call has no value; an algorithm with an `inout`
-   slot returns nothing.
+   Each of these is refused as `scxml/static-datamodel-rule`. An algorithm with an `inout` slot may also return a
+   value, which is how a rule over a table says what it did: a peer's generation is `Taken`, a `Duplicate` of the
+   last one, or `NoRoom` when the table is full, a union the caller branches on. The call stays a statement, and
+   its `location` takes what it returns, `<sce:call expr="TakeGeneration(resets, peer, generation)"
+   location="took"/>`, by the rule an `<assign>` of that algorithm's value follows: a number into a variable it fits,
+   a record or a union whole into a variable of the same document. A call with no `location` drops the value, and a
+   `location` on an algorithm that returns nothing is refused as `scxml/static-datamodel-rule`. The writes to the
+   `inout` map and the store into `location` happen together when the call returns, and nothing between them can
+   fail, because the algorithm cannot.
 3. **A loop copies only a map its body writes.** `<foreach>` walks the map as it was when the loop began (D5).
    When nothing in the body writes that map at any depth (no `<sce:put>`, `<sce:remove>`, `<sce:clear>` or
    `<assign>` naming it, and no `<sce:call>` with it as an `inout` argument), the walk and the map are the same, and
@@ -335,8 +344,8 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
 
 ## Order of work
 
-1. This record, reviewed against the consumer's tables, accepted.
-2. The grammar: `map` and `set` in `value_type.rs`, the key judgment, the positions of D7. Tests:
+1. This record, reviewed against the consumer's tables, accepted. (Landed 2026-11-19.)
+2. (Landed 2026-11-19.) The grammar: `map` and `set` in `value_type.rs`, the key judgment, the positions of D7. Tests:
    `a_map_key_is_a_type_with_exact_equality`, `a_map_is_refused_in_a_wire_position`.
 3. The `sce-static` checker: the statements, reads and loop of D3–D5, the standard outcome enums in
    `stdlib/collection`, the codes of D11 in the appendix.
@@ -352,8 +361,10 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
 7. Algorithms: map slots as views, `inout` slots, locals and returns, `<sce:foreach in>` with `key`, `<sce:call>` in a
    statechart, on the Interpreter, Rust and C11, held by the numerical reference
    (`tests/forge/conformance/numerical_reference.json`). A test holds the copies of D6: a read-only slot and a loop
-   whose body does not write the map copy nothing in the generated Rust and C11. §2.15's bounded-collection
-   paragraph is rewritten (D9).
+   whose body does not write the map copy nothing in the generated Rust and C11. A scenario runs an algorithm that
+   keeps each peer's latest generation in an `inout` map keyed by a two-`uint64` record and returns a union of
+   `Taken`, `Duplicate` (the last generation) and `NoRoom`, taken by `<sce:call location>`, through a full table,
+   on the Interpreter, Rust and C11. §2.15's bounded-collection paragraph is rewritten (D9).
 8. C++, Kotlin, Go, Python, Swift, one landing each, each removing its `generate/unsupported-feature`.
 
 ## Open questions
