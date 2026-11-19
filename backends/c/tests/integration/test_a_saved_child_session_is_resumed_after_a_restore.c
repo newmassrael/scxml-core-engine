@@ -265,20 +265,25 @@ static void a_machine_that_left_the_invoking_state_saves_no_invocation(void) {
 
 static void an_event_saved_in_the_childs_queue_is_taken_by_the_resumed_child(void) {
     // `a` reached the child's own queue and the child had not taken it when the tree was saved: it
-    // is in the child's `external`, and the resumed child takes it, then ends on `b`.
+    // is in the child's `external`, and the resumed child takes it, then ends on `b`. The child's
+    // section is the one whose `external` follows its empty `hostinvokestarts`, as format 4 writes it.
     static machine_t sm;
     static char shared[TEXT_CAP];
     static char text[TEXT_CAP];
     shared_text(false, shared, sizeof(shared));
-    CHECK(changed(shared,
-                  "\"history\":{},\"pending\":[],\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[],"
-                  "\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]",
-                  "\"history\":{},\"pending\":[],\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[],"
-                  "\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[{\"name\":\"a\",\"data\":\"\","
-                  "\"type\":\"external\",\"sendid\":\"\",\"origin\":null,\"sender\":null,\"invokeid\":\"\","
-                  "\"hostinvoketoken\":null}]",
-                  text, sizeof(text)),
-          "the child's queue was changed");
+    if (!changed(shared,
+                 "\"history\":{},\"pending\":[],\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[],"
+                 "\"hostinvokestarts\":{},\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]",
+                 "\"history\":{},\"pending\":[],\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[],"
+                 "\"hostinvokestarts\":{},\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[{\"name\":\"a\","
+                 "\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":null,\"sender\":null,"
+                 "\"invokeid\":\"\",\"hostinvoketoken\":null}]",
+                 text, sizeof(text))) {
+        // Restoring a text that was never written would be refused for that, not for what the
+        // child holds.
+        CHECK(false, "the child's queue was changed");
+        return;
+    }
     restores(&sm, text);
     static_invoke_step(&sm);
     send_to(&sm, "b");
