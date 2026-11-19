@@ -1149,15 +1149,17 @@ if(TARGET httplib::httplib)
 endif()
 
 # The reference host's COSE operations (docs/adr/0107, D7), its random bytes,
-# keyed digests and keys (docs/adr/0109, D5 to D7) and its credentials (D3), in
-# a build that found libsodium (cmake/SCEHostCose.cmake): their own tests, and
-# through the SCE_HOST_COSE the target states, the scenarios of
-# static_host_cose, whose machine is generated below.
+# keyed digests and keys (docs/adr/0109, D5 to D7), its credentials (D3) and
+# the sealed record of a server's store (D8), in a build that found libsodium
+# (cmake/SCEHostCose.cmake): their own tests, and through the SCE_HOST_COSE the
+# target states, the scenarios of static_host_cose, whose machine is generated
+# below.
 if(TARGET sce_host_cose)
     target_sources(standard_host_scenario_test PRIVATE
         integration/AStandardHostCoseTest.cpp
         integration/AStandardHostCredentialsTest.cpp
         integration/AStandardHostKeysTest.cpp
+        integration/ASealedRecordTest.cpp
     )
 endif()
 
