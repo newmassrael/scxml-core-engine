@@ -5973,10 +5973,11 @@ as a list does, and its entries are in the order their keys were first put
 (in an expression or a host action's argument) is
 `expression/unsupported-construct`, and so is a whole-map `<assign>` from
 anything but another map variable whose type it fits, which copies it whole.
-**No lane generates a map yet** (docs/adr/0108, D10): `check` judges a
-document that declares one, and every backend's `generate` and the Interpreter's
-lowering refuse it as `generate/unsupported-feature`, naming the type and that
-record, until the step that lands the lane.
+**The Interpreter runs a map; no generated backend generates one yet**
+(docs/adr/0108, D10): `check` judges a document that declares one, the
+Interpreter's lowering holds it (below), and every backend's `generate` refuses
+it as `generate/unsupported-feature`, naming the type and that record, until the
+step that lands the lane.
 
 **Reading a map.** `len(m)` is the number of entries, a `uint32` as a list's
 length is; `has(m, k)` is `true` when `k` is one of its keys; `m[k]` is the
@@ -6049,6 +6050,42 @@ body that writes the map writes the machine's map and not the walk.
 and loop above, and
 `sce-build/tests/a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane.rs`
 holds what is accepted and each refusal.
+
+**The Interpreter's map.** `sce-codegen lower` holds a map or a set as the
+array of its entries in the order their keys were first put, each `[key,
+value]` of a map and the key itself of a set: the form a saved state writes it
+in (docs/adr/0108, D8), and the form a scenario states it in. The Interpreter's
+data model carries a value across its script boundary as plain data, so an array
+is what it keeps whole, as it keeps a list; a JavaScript `Map` would arrive empty.
+Two keys are one key exactly when their canonical texts are one text (the
+library's `keyText`): an integer is written by its digits whatever its width, a
+`bool`, an enum's variant, a text and a byte string each by a tag and a body
+whose end the body says (a text and a byte string by their length before their
+units, so `[0x01]` and `[0x01, 0x00]` are two keys, and a separator inside a
+text is no separator), and a record by its fields' texts in the order its schema
+declares them. A read finds its key through a JavaScript `Map` from that text to the
+entry's position, which the library keeps beside each array and never in it.
+As a list is, the array is never changed in place: a `<sce:put>` and a
+`<sce:remove>` that name no outcome are an `<assign>` of the whole map, a full
+map's put failing as the assignment does (`error.execution`, the block ended), and
+one that names an outcome is a `<script>` that writes the map and the outcome
+together from the one call that computed both; `<sce:clear>` assigns the empty
+array, and a map taken whole into another is the array itself. `m[k]` is the
+library's `mapGet`, which fails a key that is absent as an index outside a list
+fails, and `has(m, k)` its `mapHas`. A `<foreach>` over a map is the
+Interpreter's own over the array as it stood when the loop began, its item bound
+to each entry and read in the body as the entry's value, `sce:key` as its key,
+and the attribute taken off the lowered loop. The scenarios
+`static_map.json` (reads, a remove with and without an outcome, `<sce:clear>`, a
+key that is absent), `static_map_full.json` (`full` as a value, and
+`error.execution` for the same put with no outcome), `static_map_record.json` (a
+record value, its fields, and a copy of it taken whole), `static_map_composite_key.json`
+(a key of two `uint64` halves, kept apart when they are swapped),
+`static_set.json` and `static_map_order.json` (a key put again keeps its place, a
+key removed and put again goes last, and a walk meets the entries in that order)
+run on the Interpreter. The generated backends refuse their machines by name and
+replay none of them yet: the Rust scenario table and the C++ suite list them as
+not yet lowered, and the other drivers name no scenario they do not replay.
 
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports
 (`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge
