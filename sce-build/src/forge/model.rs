@@ -5978,24 +5978,25 @@ impl AlgorithmModel {
             .find(|(_, ty)| ty.map_key().is_some())
     }
 
-    /// Whether the algorithm builds a map or a set local and is lent no map and
-    /// returns none, so that nothing it is handed carries a seed for the
-    /// local's keys (docs/adr/0108, D8): its caller hands it one, as a host
-    /// hands a machine the seed of its maps on a lane with no entropy of its
-    /// own.
-    pub fn takes_map_seed(&self) -> bool {
-        let lent = self
-            .signature
+    /// Whether a map the algorithm is lent or returns carries a seed its own
+    /// maps' seeds are derived from (docs/adr/0108, D8): the seed of the
+    /// caller's map, or of the destination it builds its map return in.
+    pub fn holds_map_seed(&self) -> bool {
+        self.signature
             .params
             .iter()
-            .any(|p| p.sce_type.map_key().is_some());
-        let returned = self
-            .signature
-            .return_type
-            .as_ref()
-            .is_some_and(|ty| ty.map_key().is_some());
-        let builds = self
-            .body_bindings()
+            .any(|p| p.sce_type.map_key().is_some())
+            || self
+                .signature
+                .return_type
+                .as_ref()
+                .is_some_and(|ty| ty.map_key().is_some())
+    }
+
+    /// Whether the body builds a map or a set local, which is keyed under a
+    /// seed of its own, as the copy a walk of it takes is (docs/adr/0108, D8).
+    pub fn builds_map(&self) -> bool {
+        self.body_bindings()
             .into_iter()
             .any(|binding| match binding {
                 AlgorithmBinding::Local { sce_type, .. } => sce_type.map_key().is_some(),
@@ -6003,8 +6004,23 @@ impl AlgorithmModel {
                 | AlgorithmBinding::ForeachKey { .. }
                 | AlgorithmBinding::RecordLocal { .. }
                 | AlgorithmBinding::UnionLocal { .. } => false,
-            });
-        builds && !lent && !returned
+            })
+    }
+
+    /// Whether the algorithm takes the seed its own maps are keyed under from
+    /// its caller (docs/adr/0108, D8): nothing it is lent or returns carries
+    /// one ([`Self::holds_map_seed`]), and it builds a map
+    /// ([`Self::builds_map`]) or calls an algorithm that takes one, which
+    /// `calls_one_that_takes` answers from its callees' own answers and is asked
+    /// only where the rest does not decide. Over the algorithms a call reaches
+    /// this is a fixed point, which
+    /// [`crate::forge::static_imports::takes_map_seed`] reaches by answering
+    /// each callee before its caller; a caller hands such an algorithm a seed
+    /// derived from its own, and a machine one drawn from the seed its maps are
+    /// started under, as a host hands a machine the seed of its maps on a lane
+    /// with no entropy of its own.
+    pub fn takes_map_seed(&self, calls_one_that_takes: impl FnOnce() -> bool) -> bool {
+        !self.holds_map_seed() && (self.builds_map() || calls_one_that_takes())
     }
 
     /// Whether the algorithm holds a union anywhere: a parameter, a local, a

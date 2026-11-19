@@ -6304,18 +6304,19 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
 {# The argument every entry but `_init_with_simulated_actions` gives the shared
    body for the opt-in: none. Empty for a machine that takes no opt-in. #}
 {% set simulated_refused = ', false' if takes_simulated_host else '' %}
-{# docs/adr/0108, D8: a machine that holds a map or a set, or starts a child that
-   takes a seed, has no source of randomness of its own, so every construction of
-   it takes the seed its maps hash their keys under as its last argument, and
-   hands it to the construction they share, which keeps it, starts each map under
-   a seed drawn from it in declaration order (`sce_map_seed_derive`), and hands
-   each child it starts one derived from it (`sce_map_seed_of_child`). Kept in step
-   with the same `set`s in `state_machine.h.jinja2` and `saved.c.jinja2`. #}
+{# docs/adr/0108, D8: a machine that holds a map or a set, calls an algorithm that
+   takes its caller's seed, or starts a child that takes a seed, has no source of
+   randomness of its own, so every construction of it takes the seed its maps hash
+   their keys under as its last argument, and hands it to the construction they
+   share, which keeps it, starts each map under a seed drawn from it in declaration
+   order (`sce_map_seed_derive`), hands it to each such call, and hands each child
+   it starts one derived from it (`sce_map_seed_of_child`). Kept in step with the
+   same `set`s in `state_machine.h.jinja2` and `saved.c.jinja2`. #}
 {% set ns_maps = namespace(any=false, holds=false) %}
 {% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set ns_maps.holds = true %}{% endif %}{% endfor %}
 {% for invoke_info in model.invokes | scxml %}{% if invoke_info.child_takes_map_seed %}{% set ns_maps.any = true %}{% endif %}{% endfor %}
 {% for invoke_info in model.invokes | hybrid %}{% for candidate in invoke_info.candidates %}{% if candidate.child_takes_map_seed %}{% set ns_maps.any = true %}{% endif %}{% endfor %}{% endfor %}
-{% if ns_maps.holds %}{% set ns_maps.any = true %}{% endif %}
+{% if ns_maps.holds or static_seeds_algorithms %}{% set ns_maps.any = true %}{% endif %}
 {% set map_seed_param = ', sce_map_seed_t map_seed' if ns_maps.any else '' %}
 {% set map_seed_arg = ', map_seed' if ns_maps.any else '' %}
 {# The construction half of `_init`, shared with `_init_at`.

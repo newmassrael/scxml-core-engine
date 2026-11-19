@@ -153,9 +153,12 @@ pub struct StaticCallee {
     /// It declares `may-fail` (SCE_FORGE.md §3.4.1); a statechart does not
     /// receive a failure, so its expressions may not call it.
     pub may_fail: bool,
-    /// It builds a map local and is lent no map and returns none, so each call
-    /// hands it the seed of that local's keys, drawn from the machine's
-    /// (docs/adr/0108, D8, [`crate::forge::model::AlgorithmModel::takes_map_seed`]).
+    /// It takes the seed its own maps are keyed under from its caller: it is
+    /// lent no map and returns none, and builds one or calls an algorithm that
+    /// takes one, a fixed point over the algorithms its calls reach
+    /// (docs/adr/0108, D8, [`crate::forge::static_imports::takes_map_seed`]).
+    /// Each call hands it the seed the machine keeps for it
+    /// ([`crate::forge::static_lowering::StaticTarget::algorithm_seed`]).
     pub takes_map_seed: bool,
     /// The `<sce:import>` element's row, for a refusal of the import itself.
     pub line: Option<u32>,
@@ -386,25 +389,21 @@ pub struct StaticValueSignature {
 /// `scratch` on C11.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MapStorage {
-    /// Whether the algorithm holds a map local, or walks a copy of one: the
-    /// struct the algorithm's own unit declares of them, which its caller
-    /// holds whole.
+    /// Whether the algorithm holds a map local, walks a copy of one, or calls
+    /// an algorithm that takes its caller's seed and so holds maps of its own:
+    /// the struct the algorithm's own unit declares of them, the callee's
+    /// within it, which its caller holds whole.
     pub locals: bool,
     /// Each copy of a map the caller lends or takes back that a writing walk
     /// walks, in the order the body states the walks: storage of at least that
     /// map's bound, which only the caller knows.
     pub copies: Vec<MapCopy>,
-    /// Whether the algorithm takes the seed its own locals are keyed under from
-    /// its caller (docs/adr/0108, D8): it holds a map local and is lent no map
-    /// and returns none whose seed one could be derived from, so the caller
-    /// hands the seed its own maps were started under. Never a fixed one.
-    pub seeded: bool,
 }
 
 impl MapStorage {
-    /// Whether the call takes no storage for maps and no seed.
+    /// Whether the call takes no storage for maps.
     pub fn is_empty(&self) -> bool {
-        !self.locals && self.copies.is_empty() && !self.seeded
+        !self.locals && self.copies.is_empty()
     }
 }
 
