@@ -79,12 +79,14 @@ import Testing
 }
 
 @Suite struct InboundTests {
-    private func envelopeBytes(source: String = "ecu", id: Int, sequence: UInt64?) throws -> [UInt8] {
+    private func envelopeBytes(
+        source: String = "ecu", id: Int, sequence: UInt64?, pattern: PatternKind = .fireForget
+    ) throws -> [UInt8] {
         var envelope = Envelope()
         envelope.id = envelopeID(id)
         envelope.source = source
         envelope.event_type = "a"
-        envelope.pattern = .fireForget
+        envelope.pattern = pattern
         envelope.sequence_no = sequence
         return try encodeEnvelope(envelope)
     }
@@ -131,6 +133,72 @@ import Testing
             inbound.admit(link: "ecu", envelopeBytes(id: 3, sequence: 5), delivery: delivery, nowMs: 0))
         #expect(late.released.isEmpty)
         #expect(late.signals.isEmpty)
+    }
+
+    /// SCE_MESH.md section 10.6.4: a reply and a field notification are not in their sender's
+    /// sequence. Unnumbered on an ordered binding, each is released at once, past a gap the stream is
+    /// waiting on, and the duplicate window still drops a second copy. Red if the receiver asks them
+    /// for a number: each is then refused as `unstamped`.
+    @Test func anUnnumberedReplyOrFieldNotificationPassesAnOrderedBinding() throws {
+        let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
+        let delivery = Delivery(dedup: true, ordered: true)
+        let anchored = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 1, sequence: 1), delivery: delivery, nowMs: 0))
+        #expect(anchored.released.map(\.sequence_no) == [1])
+        let held = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 3, sequence: 3), delivery: delivery, nowMs: 0))
+        #expect(held.released.isEmpty)
+        for (id, pattern) in [(10, PatternKind.rpcReply), (11, PatternKind.fieldNotify)] {
+            let bytes = try envelopeBytes(id: id, sequence: nil, pattern: pattern)
+            let passed = try admitted(inbound.admit(link: "ecu", bytes, delivery: delivery, nowMs: 0))
+            #expect(passed.released.map(\.pattern) == [pattern], "\(pattern) is released at once")
+            let again = try admitted(inbound.admit(link: "ecu", bytes, delivery: delivery, nowMs: 0))
+            #expect(again.released.isEmpty, "a second copy of \(pattern) is a duplicate")
+        }
+        // The stream still waits for 2, and 3 follows it.
+        let filled = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 2, sequence: 2), delivery: delivery, nowMs: 0))
+        #expect(filled.released.map(\.sequence_no) == [2, 3])
+    }
+
+    /// SCE_MESH.md section 10.6.4: a reply its sender numbered anyway is passed as one that carries no
+    /// number. It neither anchors the stream nor is held behind a gap, and its number is never waited
+    /// for, so no gap times out. Red if a numbered reply is ordered: the first one would anchor the
+    /// stream at 9 and the envelope numbered 1 would be dropped as a straggler.
+    @Test func aNumberedReplyTakesNoPlaceInTheStream() throws {
+        let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
+        let delivery = Delivery(dedup: false, ordered: true)
+        let first = try admitted(
+            inbound.admit(
+                link: "ecu", envelopeBytes(id: 9, sequence: 9, pattern: .rpcReply), delivery: delivery, nowMs: 0))
+        #expect(first.released.map(\.pattern) == [.rpcReply])
+        for sequence: UInt64 in [1, 2] {
+            let step = try admitted(
+                inbound.admit(
+                    link: "ecu", envelopeBytes(id: Int(sequence), sequence: sequence), delivery: delivery,
+                    nowMs: 10))
+            #expect(step.released.map(\.sequence_no) == [Optional(sequence)])
+        }
+        let between = try admitted(
+            inbound.admit(
+                link: "ecu", envelopeBytes(id: 20, sequence: 3, pattern: .rpcReply), delivery: delivery, nowMs: 20))
+        #expect(between.released.count == 1)
+        let third = try admitted(
+            inbound.admit(link: "ecu", envelopeBytes(id: 3, sequence: 3), delivery: delivery, nowMs: 30))
+        #expect(third.released.map(\.sequence_no) == [3])
+        let later = try admitted(inbound.tick(nowMs: 10_000))
+        #expect(later.released.isEmpty && later.signals.isEmpty, "no gap times out: \(later.signals)")
+    }
+
+    /// Every other pattern keeps its place: an unnumbered one on an ordered binding is refused.
+    @Test func anUnnumberedSendOnAnOrderedBindingIsStillRefused() throws {
+        let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
+        let refusal = inbound.admit(
+            link: "ecu", try envelopeBytes(id: 1, sequence: nil), delivery: Delivery(dedup: false, ordered: true),
+            nowMs: 0)
+        guard case .refused(.unstamped) = refusal else {
+            throw Unexpected(description: "expected an unstamped refusal, got \(refusal)")
+        }
     }
 
     @Test func aSequenceAtTheMaximumIsRefusedByTheRule() throws {

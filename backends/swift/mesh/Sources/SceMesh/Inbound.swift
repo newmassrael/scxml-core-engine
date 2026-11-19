@@ -28,6 +28,20 @@ public struct Delivery: Equatable, Sendable {
     }
 }
 
+/// Whether an envelope of `pattern` is in its sender's sequence on a binding that orders
+/// (§mesh-10.6.3, §mesh-10.6.4): stamped by the sender from the binding's counter, and released by the
+/// receiver in that order. The one answer the send half and the receive half both ask, so a number is
+/// taken exactly by the envelopes a receiver waits for.
+///
+/// A reply (`rpcReply`) and a field notification (`fieldNotify`) find what they answer by its id, not
+/// by their place in the stream: they take no number, and the receiver passes them past its ordering
+/// buffer (still through the duplicate window), whether or not their sender numbered them. A binding
+/// with durable receipt numbers and orders every envelope (SCE_MESH.md section 10.11); this core
+/// carries none. The Rust core's `sequenced`.
+func sequenced(_ pattern: PatternKind) -> Bool {
+    pattern != .rpcReply && pattern != .fieldNotify
+}
+
 /// What one call released, in the order the engine must see it, and what it signalled.
 public struct Outcome {
     public var released: [Envelope] = []
@@ -39,8 +53,9 @@ public enum AdmitError: Equatable, Sendable {
     /// The bytes are not an envelope the standard document accepts.
     case malformed
 
-    /// The binding is ordered and the envelope carries no `sequence_no` (§mesh-10.6.3). Refused
-    /// before the dedup window sees its id, so a refused envelope does not take a window slot.
+    /// The binding is ordered, the envelope is one it orders (`sequenced`), and it carries no
+    /// `sequence_no` (§mesh-10.6.3). Refused before the dedup window sees its id, so a refused
+    /// envelope does not take a window slot.
     case unstamped
 
     /// A rule refused its input: a sequence at the `UInt64` maximum, or a clock that cannot be
@@ -120,23 +135,28 @@ public final class Inbound {
             return .refused(.malformed)
         }
         let sequence = envelope.sequence_no
-        if delivery.ordered && sequence == nil {
+        // §mesh-10.6.4: a reply or a field notification passes the ordering buffer, numbered or not;
+        // every other envelope of an ordered binding is placed by its number.
+        let ordered = delivery.ordered && sequenced(envelope.pattern)
+        if ordered && sequence == nil {
             return .refused(.unstamped)
         }
         do {
             return .admitted(
-                try admitDecoded(link: link, envelope, sequence: sequence, delivery: delivery, nowMs: nowMs))
+                try admitDecoded(
+                    link: link, envelope, sequence: sequence, dedup: delivery.dedup, ordered: ordered,
+                    nowMs: nowMs))
         } catch {
             return .refused(.rule(ruleFailure(error)))
         }
     }
 
     private func admitDecoded(
-        link: String, _ envelope: Envelope, sequence: UInt64?, delivery: Delivery, nowMs: Int64
+        link: String, _ envelope: Envelope, sequence: UInt64?, dedup: Bool, ordered: Bool, nowMs: Int64
     ) throws -> Outcome {
         var out = Outcome()
         let sender = senderFor(link)
-        if delivery.dedup {
+        if dedup {
             let id = envelopeID(envelope.id)
             if DedupHolds.dedupHolds(sender.window, id) {
                 return out
@@ -147,7 +167,7 @@ public final class Inbound {
                 out.signals.append(.dedupWindowOverflow(source: link, windowSize: dedupWindow))
             }
         }
-        guard delivery.ordered, let sequence else {
+        guard ordered, let sequence else {
             out.released.append(envelope)
             return out
         }

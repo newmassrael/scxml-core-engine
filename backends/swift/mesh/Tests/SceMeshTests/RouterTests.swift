@@ -584,6 +584,85 @@ func sendRequest(_ target: String, _ event: String, _ data: String, sendID: Stri
         #expect(envelope.invoke_id == nil)
     }
 
+    // SCE_MESH.md section 10.6: a reply on an ordered binding
+
+    /// `ecu` asking `hmi` over an ordered binding: every envelope it orders stamped, nothing held for
+    /// readiness.
+    private func orderedRequester() -> Router {
+        let ecu = Router(machine: "ecu", dedupWindow: 8, gapTimeoutMs: 50)
+        var base = ordered
+        base.buffer = nil
+        base.responders = ["hmi"]
+        ecu.addPeer("hmi", config: base)
+        return ecu
+    }
+
+    /// `hmi` answering `ecu` over the same ordered binding.
+    private func orderedResponder() -> Router {
+        let hmi = Router(machine: "hmi", dedupWindow: 8, gapTimeoutMs: 50)
+        var base = ordered
+        base.buffer = nil
+        base.responders = ["ecu"]
+        base.replyEvents = ["service.response.force"]
+        hmi.addPeer("ecu", config: base)
+        return hmi
+    }
+
+    /// SCE_MESH.md section 10.6.4: a reply is not in its sender's sequence, so it is written with no
+    /// `sequence_no` and the counter does not move: the sends around it are numbered 1 and 2. Red if
+    /// the send half stamps every envelope: the reply takes 2 and the next send 3, a number the
+    /// receiver waits for and never gets.
+    @Test func aReplyOnAnOrderedBindingTakesNoNumber() throws {
+        let hmi = orderedResponder()
+        let before = try sentToEcu(
+            hmi.send(sendRequest("#ecu", "status.changed", ""), id: envelopeID(2), nowMs: 0))
+        let answered = try sentToEcu(
+            hmi.send(answer("service.response.force", invokeID: wireText), id: envelopeID(5), nowMs: 0))
+        let after = try sentToEcu(
+            hmi.send(sendRequest("#ecu", "status.changed", ""), id: envelopeID(3), nowMs: 0))
+        #expect(try decodeEnvelope(answered).pattern == .rpcReply)
+        let numbers = try [before, answered, after].map { try decodeEnvelope($0).sequence_no }
+        #expect(numbers == [1, nil, 2])
+    }
+
+    /// SCE_MESH.md section 10.6.4: a reply with no `sequence_no`, as the C++ router's server answers,
+    /// completes its request on an ordered binding. Red if the receive half asks a reply for a number:
+    /// it is then refused as `missingSequence` (section 16.7, row 11) and the request waits for ever.
+    @Test func anUnnumberedReplyCompletesItsRequestOnAnOrderedBinding() throws {
+        let ecu = orderedRequester()
+        _ = try started(ecu, deadlineMs: nil)
+        #expect(
+            try done(ecu.receive(peer: "hmi", bytes: reply(5, nil, nil, #"{"force":12}"#), nowMs: 20))
+                == [.complete(invokeID: "ask", token: 7, data: #"{"force":12}"#, source: "hmi")])
+    }
+
+    /// The whole ordered round trip: a reply sent between two sends leaves no gap in the stream, so the
+    /// send after it is delivered at once and no `orderingGap` (section 16.7, row 12) is raised once the
+    /// gap timeout has passed. Red if the reply took a number: the send after it waits for that number.
+    @Test func aReplyBetweenTwoSendsLeavesNoGap() throws {
+        let ecu = orderedRequester()
+        let hmi = orderedResponder()
+        #expect(
+            try events(done(hmi.receive(peer: "ecu", bytes: started(ecu, deadlineMs: nil), nowMs: 0)))
+                == ["service.request.force"])
+        let first = try sentToEcu(
+            hmi.send(sendRequest("#ecu", "status.changed", ""), id: envelopeID(2), nowMs: 10))
+        let answered = try sentToEcu(
+            hmi.send(answer("service.response.force", invokeID: wireText), id: envelopeID(5), nowMs: 10))
+        let second = try sentToEcu(
+            hmi.send(sendRequest("#ecu", "status.done", ""), id: envelopeID(3), nowMs: 10))
+
+        #expect(try events(done(ecu.receive(peer: "hmi", bytes: first, nowMs: 20))) == ["status.changed"])
+        #expect(
+            try done(ecu.receive(peer: "hmi", bytes: answered, nowMs: 20))
+                == [.complete(invokeID: "ask", token: 7, data: #"{"force":12}"#, source: "hmi")])
+        #expect(
+            try events(done(ecu.receive(peer: "hmi", bytes: second, nowMs: 20))) == ["status.done"],
+            "the send after the reply waits for no number")
+        let later = try done(ecu.tick(nowMs: 10_000))
+        #expect(later.isEmpty, "no gap times out: \(later)")
+    }
+
     /// §mesh-16.7 row 5: the link a request waits on is lost; a reply or a deadline afterwards ends
     /// nothing.
     @Test func aLostLinkIsRow5ForEachRequestWaitingOnIt() throws {

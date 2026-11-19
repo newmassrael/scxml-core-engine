@@ -26,7 +26,8 @@ public struct PeerConfig: Equatable, Sendable {
     public var retry: RetryPolicy?
 
     /// Whether envelopes TO this peer carry a `sequence_no`: `ordering: required` on a transport that
-    /// does not order (§mesh-10.6.3).
+    /// does not order (§mesh-10.6.3). Only the envelopes the receiver orders take one (`sequenced`); a
+    /// reply goes unnumbered.
     public var stampSequence: Bool
 
     /// How envelopes FROM this peer are delivered (§mesh-10.5, §mesh-10.6).
@@ -414,15 +415,19 @@ public final class Router {
     }
 
     /// Write `envelope` for `peerName` and hand it to that peer's send half: what `send` and `invoke`
-    /// share once they know what to say. Nil when it could not be written.
+    /// share once they know what to say, so a request and a send to one peer draw from one counter.
+    /// Nil when it could not be written.
     private func transmit(_ peerName: String, _ peer: BoundPeer, _ envelope: Envelope, nowMs: Int64) -> [Effect]? {
         var envelope = envelope
-        envelope.sequence_no = peer.config.stampSequence ? peer.nextSequence : nil
+        // §mesh-10.6.3: the binding's next number, when it stamps and the envelope is one the receiver
+        // orders (`sequenced`: a reply takes none).
+        let stamps = peer.config.stampSequence && sequenced(envelope.pattern)
+        envelope.sequence_no = stamps ? peer.nextSequence : nil
         guard let bytes = encodeToBytes({ sink in try envelope.encode(into: &sink) }) else {
             return nil
         }
         // §mesh-10.6.3: the counter advances once per envelope written, and has no wrap guard.
-        if peer.config.stampSequence {
+        if stamps {
             peer.nextSequence &+= 1
         }
         return dispatch(peerName, peer, bytes, nowMs: nowMs)
