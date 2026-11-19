@@ -534,7 +534,8 @@ kotlin_tree_for_language() {
         # (tools/codegen/trees/kotlin-integration.toml,
         # kotlin-static-datamodel.toml) and written here for this language the
         # way the W3C tree is, so every directory of `com/sce/integration` and
-        # every unit package beside the W3C machines comes from a manifest. A
+        # every unit package of `:sce-kotlin-tests`'s `com/sce/generated`
+        # comes from a manifest. A
         # generation whose manifest names its engine keeps it in every variant:
         # its document is written for that engine, and its test hands the
         # machine one that reads it.
