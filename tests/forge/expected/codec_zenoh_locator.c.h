@@ -13,18 +13,19 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 
 #define CODEC_ZENOH_LOCATOR_MIN_BYTES 0
 #define CODEC_ZENOH_LOCATOR_MAX_BYTES 264
 
 typedef struct {
-    uint64_t locator_len;
     /* RFC §synth-5-B sce:type="string" payload (sce:max-size="255").
      * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
      * but the host-language type signals UTF-8 text storage; the C
      * string is NOT NUL-terminated — payloads of exactly `max_size`
      * bytes are valid wire input. */
     char    locator[255];
+    size_t  locator_len;
 } codec_zenoh_locator_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -45,17 +46,16 @@ static inline sce_forge_codec_status_t codec_zenoh_locator_decode(sce_forge_curs
      * Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
      * dedicated helpers; every other field flows through
      * `present_if_decode_stmt`. */
-    uint64_t locator_len;
+    uint64_t _d_locator_len;
     {
-        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &locator_len);
+        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_d_locator_len);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-    out->locator_len = locator_len;
     {
-        if (out->locator_len > 255) {
+        if (_d_locator_len > 255) {
             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
         }
-        size_t _n = (size_t)out->locator_len;
+        size_t _n = (size_t)_d_locator_len;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
@@ -66,31 +66,106 @@ static inline sce_forge_codec_status_t codec_zenoh_locator_decode(sce_forge_curs
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The `locator` element of codec_zenoh_locator_t: a text of 0 to 255 bytes of UTF-8, viewed where it
+ * is held, which outlives the view. A view is made by codec_zenoh_locator_locator_text_make, which
+ * refuses one outside the bound, so every view holds it (docs/adr/0081 §2)
+ * and the encode over a source writes it whole, refusing nothing of it. */
+typedef struct {
+    const char *data;
+    size_t len;
+} codec_zenoh_locator_locator_text_t;
+
+/* Make `*out` a view of the `len` bytes of UTF-8 at `data`: SCE_FORGE_CODEC_OK, or
+ * the refusal of a text outside its bound, `*out` then as it was. */
+static inline sce_forge_codec_status_t codec_zenoh_locator_locator_text_make(codec_zenoh_locator_locator_text_t *out, const char *data, size_t len) {
+    if (!sce_forge_length_within_bound(len, 255)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    if (!sce_forge_is_valid_utf8((const uint8_t *)data, len)) {
+        return SCE_FORGE_CODEC_INVALID_UTF8;
+    }
+    out->data = data;
+    out->len = len;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The elements a value of codec_zenoh_locator_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_zenoh_locator_t is a source by the table
+ * codec_zenoh_locator_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    codec_zenoh_locator_locator_text_t (*locator)(const void *ctx);
+} codec_zenoh_locator_source_t;
+
+/* A source of codec_zenoh_locator_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_zenoh_locator_source_t *table;
+    const void *ctx;
+} codec_zenoh_locator_source_ref_t;
+
+/* A source of codec_zenoh_locator_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_locator_source_ref_optional, codec_zenoh_locator_source_ref_t)
+
+/* The `locator` of the codec_zenoh_locator_t at `ctx`. */
+static inline codec_zenoh_locator_locator_text_t codec_zenoh_locator_value_locator(const void *ctx) {
+    const codec_zenoh_locator_t *self = (const codec_zenoh_locator_t *)ctx;
+    codec_zenoh_locator_locator_text_t view;
+    view.data = self->locator;
+    view.len = self->locator_len;
+    return view;
+}
+
+/* The table that presents a value of codec_zenoh_locator_t as a source of it, its
+ * context a `const codec_zenoh_locator_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_zenoh_locator_source_t *codec_zenoh_locator_value_source(void) {
+    static const codec_zenoh_locator_source_t table = {
+        codec_zenoh_locator_value_locator,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_zenoh_locator_encode_source(const codec_zenoh_locator_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const codec_zenoh_locator_locator_text_t _e_locator = src->locator(ctx);
+    const uint64_t _d_locator_len = (uint64_t)(_e_locator.len);
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(_d_locator_len)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t *)_e_locator.data, _e_locator.len));
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Whether `self` is a value of codec_zenoh_locator_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_zenoh_locator_check_value(const codec_zenoh_locator_t *self) {
+    if (!sce_forge_length_within_bound(self->locator_len, 255)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    if (!sce_forge_is_valid_utf8((const uint8_t *)self->locator, self->locator_len)) {
+        return SCE_FORGE_CODEC_INVALID_UTF8;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_LOCATOR_MAX_BYTES bytes and use
  * `codec_zenoh_locator_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_zenoh_locator_encode(const codec_zenoh_locator_t *self, sce_forge_writer_t *w) {
-    /* A byte string, text, list or chain above the bound of the array that
-     * holds it is refused before the first byte is written: the array cannot
-     * hold that many, and a frame of fewer is not the value given. */
-    if (!sce_forge_length_within_bound(self->locator_len, 255)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
-    }
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->locator_len)));
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->locator, self->locator_len));
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_zenoh_locator_check_value(self));
+    return codec_zenoh_locator_encode_source(codec_zenoh_locator_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`

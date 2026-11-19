@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 #include "codec_zenoh_put.h"
 #include "codec_zenoh_del.h"
 
@@ -97,31 +98,157 @@ static inline sce_forge_codec_status_t codec_zenoh_push_body_decode(sce_forge_cu
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The arm of the variant a source of codec_zenoh_push_body_t presents (docs/adr/0081
+ * §2): which arm it is, the tag the catch-all holds, and the arm's body,
+ * a source of the arm's codec in the member `kind` names. */
+typedef struct {
+    codec_zenoh_push_body_body_kind_t kind;
+    uint8_t default_tag;  /* the catch-all's */
+    union {
+        codec_zenoh_put_source_ref_t codec_zenoh_put;
+        codec_zenoh_del_source_ref_t codec_zenoh_del;
+        codec_zenoh_put_source_ref_t default_body;
+    } arm;
+} codec_zenoh_push_body_body_ref_t;
+
+/* The elements a value of codec_zenoh_push_body_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_zenoh_push_body_t is a source by the table
+ * codec_zenoh_push_body_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*header)(const void *ctx);
+    codec_zenoh_push_body_body_ref_t (*body)(const void *ctx);
+} codec_zenoh_push_body_source_t;
+
+/* A source of codec_zenoh_push_body_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_zenoh_push_body_source_t *table;
+    const void *ctx;
+} codec_zenoh_push_body_source_ref_t;
+
+/* A source of codec_zenoh_push_body_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_push_body_source_ref_optional, codec_zenoh_push_body_source_ref_t)
+
+/* The `header` of the codec_zenoh_push_body_t at `ctx`. */
+static inline uint8_t codec_zenoh_push_body_value_header(const void *ctx) {
+    return ((const codec_zenoh_push_body_t *)ctx)->header;
+}
+
+/* The arm of the variant of the codec_zenoh_push_body_t at `ctx`: its kind, the tag the
+ * catch-all holds, and its body as a source of the arm's codec. */
+static inline codec_zenoh_push_body_body_ref_t codec_zenoh_push_body_value_body(const void *ctx) {
+    const codec_zenoh_push_body_t *self = (const codec_zenoh_push_body_t *)ctx;
+    codec_zenoh_push_body_body_ref_t ref;
+    memset(&ref, 0, sizeof ref);
+    ref.kind = self->body.kind;
+    ref.default_tag = self->body.default_tag;
+    switch (self->body.kind) {
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_PUT:
+            ref.arm.codec_zenoh_put.table = codec_zenoh_put_value_source();
+            ref.arm.codec_zenoh_put.ctx = &self->body.arm.codec_zenoh_put;
+            break;
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_DEL:
+            ref.arm.codec_zenoh_del.table = codec_zenoh_del_value_source();
+            ref.arm.codec_zenoh_del.ctx = &self->body.arm.codec_zenoh_del;
+            break;
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_DEFAULT:
+            ref.arm.default_body.table = codec_zenoh_put_value_source();
+            ref.arm.default_body.ctx = &self->body.arm.default_body;
+            break;
+        default:
+            break;
+    }
+    return ref;
+}
+
+/* The table that presents a value of codec_zenoh_push_body_t as a source of it, its
+ * context a `const codec_zenoh_push_body_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_zenoh_push_body_source_t *codec_zenoh_push_body_value_source(void) {
+    static const codec_zenoh_push_body_source_t table = {
+        codec_zenoh_push_body_value_header,
+        codec_zenoh_push_body_value_body,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_zenoh_push_body_encode_source(const codec_zenoh_push_body_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint8_t _e_header = src->header(ctx);
+    const codec_zenoh_push_body_body_ref_t _e_body = src->body(ctx);
+    uint64_t _t_body = 0;
+    switch (_e_body.kind) {
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_PUT:
+            _t_body = 0x1ull;
+            break;
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_DEL:
+            _t_body = 0x2ull;
+            break;
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_DEFAULT:
+            _t_body = (uint64_t)_e_body.default_tag;
+            break;
+        default:
+            break;
+    }
+    uint64_t _f_header = (uint64_t)_e_header;
+    _f_header = (_f_header & ~0x1Full) | (_t_body & 0x1Full);
+    const uint8_t _c_header = (uint8_t)_f_header;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_header));
+    switch (_e_body.kind) {
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_PUT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_put_encode_source(_e_body.arm.codec_zenoh_put.table, _e_body.arm.codec_zenoh_put.ctx, w));
+            break;
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_DEL:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_del_encode_source(_e_body.arm.codec_zenoh_del.table, _e_body.arm.codec_zenoh_del.ctx, w));
+            break;
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_put_encode_source(_e_body.arm.default_body.table, _e_body.arm.default_body.ctx, w));
+            break;
+        default:
+            break;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Whether `self` is a value of codec_zenoh_push_body_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_zenoh_push_body_check_value(const codec_zenoh_push_body_t *self) {
+    switch (self->body.kind) {
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_PUT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_put_check_value(&self->body.arm.codec_zenoh_put));
+            break;
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_DEL:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_del_check_value(&self->body.arm.codec_zenoh_del));
+            break;
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_put_check_value(&self->body.arm.default_body));
+            break;
+        default:
+            break;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_PUSH_BODY_MAX_BYTES bytes and use
  * `codec_zenoh_push_body_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_zenoh_push_body_encode(const codec_zenoh_push_body_t *self, sce_forge_writer_t *w) {
-    /* Encode fixed prefix (tag field bytes are part of the prefix).
-     * The tag value is read from the struct field, NOT derived from
-     * the body discriminant — keeping author-set tag / body in sync
-     * is the caller's responsibility (v1 keeps the layout simple). */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    /* Append the active arm body's encoded bytes via the same writer. */
-    switch (self->body.kind) {
-        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_PUT:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_put_encode(&self->body.arm.codec_zenoh_put, w));
-            break;
-        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_DEL:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_del_encode(&self->body.arm.codec_zenoh_del, w));
-            break;
-        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_DEFAULT:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_put_encode(&self->body.arm.default_body, w));
-            break;
-    }
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_zenoh_push_body_check_value(self));
+    return codec_zenoh_push_body_encode_source(codec_zenoh_push_body_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`

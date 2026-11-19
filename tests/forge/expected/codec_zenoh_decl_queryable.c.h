@@ -18,14 +18,22 @@
 #define CODEC_ZENOH_DECL_QUERYABLE_MIN_BYTES 3
 #define CODEC_ZENOH_DECL_QUERYABLE_MAX_BYTES 163
 
+/* The `z` group of codec_zenoh_decl_queryable_t where `Z` holds: the members present then
+ * (docs/adr/0065 §6 R4). */
+typedef struct {
+    uint8_t ext_type;
+    uint64_t ext_value;
+} codec_zenoh_decl_queryable_z_t;
+
+/* The `z` group of codec_zenoh_decl_queryable_t, absent where the gates allow no arm. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_decl_queryable_z_optional, codec_zenoh_decl_queryable_z_t)
+
+
 typedef struct {
     uint32_t id;
     /* RFC §synth-5-B embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
     codec_zenoh_wireexpr_t wireexpr;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint8_t ext_type;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint64_t ext_value;
+    codec_zenoh_decl_queryable_z_optional_t z;
 } codec_zenoh_decl_queryable_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -66,25 +74,126 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
         sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_wireexpr_decode(cursor, &out->wireexpr, n), &_over);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
+    uint8_t _d_ext_type = 0;
     if ((z & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->ext_type = sce_optional_uint8_some((uint8_t)(raw[0]));
+        _d_ext_type = (uint8_t)(raw[0]);
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->ext_type = sce_optional_uint8_none();
     }
+    uint64_t _d_ext_value = 0;
     if ((z & 0x01) != 0) {
         uint64_t _v;
     {
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->ext_value = sce_optional_uint64_some(_v);
-    } else {
-        out->ext_value = sce_optional_uint64_none();
+        _d_ext_value = _v;
+    }
+    /* The `z` group the gates the decode read select (docs/adr/0065
+     * §6 R4). */
+    memset(&out->z, 0, sizeof out->z);
+    if ((z != 0)) {
+        out->z.present = true;
+        out->z.value.ext_type = _d_ext_type;
+        out->z.value.ext_value = _d_ext_value;
     }
     if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The elements a value of codec_zenoh_decl_queryable_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_zenoh_decl_queryable_t is a source by the table
+ * codec_zenoh_decl_queryable_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint32_t (*id)(const void *ctx);
+    codec_zenoh_wireexpr_source_ref_t (*wireexpr)(const void *ctx);
+    codec_zenoh_decl_queryable_z_optional_t (*z)(const void *ctx);
+} codec_zenoh_decl_queryable_source_t;
+
+/* A source of codec_zenoh_decl_queryable_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_zenoh_decl_queryable_source_t *table;
+    const void *ctx;
+} codec_zenoh_decl_queryable_source_ref_t;
+
+/* A source of codec_zenoh_decl_queryable_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_decl_queryable_source_ref_optional, codec_zenoh_decl_queryable_source_ref_t)
+
+/* The `id` of the codec_zenoh_decl_queryable_t at `ctx`. */
+static inline uint32_t codec_zenoh_decl_queryable_value_id(const void *ctx) {
+    return ((const codec_zenoh_decl_queryable_t *)ctx)->id;
+}
+
+/* The `wireexpr` of the codec_zenoh_decl_queryable_t at `ctx`. */
+static inline codec_zenoh_wireexpr_source_ref_t codec_zenoh_decl_queryable_value_wireexpr(const void *ctx) {
+    const codec_zenoh_decl_queryable_t *self = (const codec_zenoh_decl_queryable_t *)ctx;
+    codec_zenoh_wireexpr_source_ref_t body;
+    body.table = codec_zenoh_wireexpr_value_source();
+    body.ctx = &self->wireexpr;
+    return body;
+}
+
+/* The `z` group of the codec_zenoh_decl_queryable_t at `ctx`. */
+static inline codec_zenoh_decl_queryable_z_optional_t codec_zenoh_decl_queryable_value_z(const void *ctx) {
+    return ((const codec_zenoh_decl_queryable_t *)ctx)->z;
+}
+
+/* The table that presents a value of codec_zenoh_decl_queryable_t as a source of it, its
+ * context a `const codec_zenoh_decl_queryable_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_zenoh_decl_queryable_source_t *codec_zenoh_decl_queryable_value_source(void) {
+    static const codec_zenoh_decl_queryable_source_t table = {
+        codec_zenoh_decl_queryable_value_id,
+        codec_zenoh_decl_queryable_value_wireexpr,
+        codec_zenoh_decl_queryable_value_z,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode_source(const codec_zenoh_decl_queryable_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint32_t _e_id = src->id(ctx);
+    const codec_zenoh_wireexpr_source_ref_t _e_wireexpr = src->wireexpr(ctx);
+    const codec_zenoh_decl_queryable_z_optional_t _e_z = src->z(ctx);
+    const sce_optional_uint8_t _e_ext_type = (_e_z.present ? sce_optional_uint8_some(_e_z.value.ext_type) : sce_optional_uint8_none());
+    const sce_optional_uint64_t _e_ext_value = (_e_z.present ? sce_optional_uint64_some(_e_z.value.ext_value) : sce_optional_uint64_none());
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(_e_id)));
+    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode_source(_e_wireexpr.table, _e_wireexpr.ctx, w));
+    if (_e_ext_type.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _e_ext_type.value));
+    }
+    if (_e_ext_value.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(_e_ext_value.value)));
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The flag input `N` a source of codec_zenoh_decl_queryable_t says, which its encode is
+ * not handed (docs/adr/0065 §6 R4a). */
+static inline uint8_t codec_zenoh_decl_queryable_input_n(const codec_zenoh_decl_queryable_source_t *src, const void *ctx) {
+    return codec_zenoh_wireexpr_input_n(src->wireexpr(ctx).table, src->wireexpr(ctx).ctx);
+}
+
+/* The flag input `Z` a source of codec_zenoh_decl_queryable_t says, which its encode is
+ * not handed (docs/adr/0065 §6 R4a). */
+static inline uint8_t codec_zenoh_decl_queryable_input_z(const codec_zenoh_decl_queryable_source_t *src, const void *ctx) {
+    return (uint8_t)((src->z(ctx).present) ? 1u : 0u);
+}
+
+/* Whether `self` is a value of codec_zenoh_decl_queryable_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_check_value(const codec_zenoh_decl_queryable_t *self) {
+    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_check_value(&self->wireexpr));
     return SCE_FORGE_CODEC_OK;
 }
 
@@ -93,35 +202,13 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_DECL_QUERYABLE_MAX_BYTES bytes and use
  * `codec_zenoh_decl_queryable_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
-static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode(const codec_zenoh_decl_queryable_t *self, sce_forge_writer_t *w, uint8_t n, uint8_t z) {
-    /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
-    (void)n;
-    (void)z;
-    if ((z & 0x01) != 0) {
-        if (!self->ext_type.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->ext_type.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    if ((z & 0x01) != 0) {
-        if (!self->ext_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->ext_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->id)));
-    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode(&self->wireexpr, w, n));
-    if (self->ext_type.present) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->ext_type.value));
-    }
-    if (self->ext_value.present) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->ext_value.value)));
-    }
-    return SCE_FORGE_CODEC_OK;
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
+static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode(const codec_zenoh_decl_queryable_t *self, sce_forge_writer_t *w) {
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_zenoh_decl_queryable_check_value(self));
+    return codec_zenoh_decl_queryable_encode_source(codec_zenoh_decl_queryable_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
@@ -131,9 +218,9 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode(const c
  * was insufficient for this codec's wire bytes. Worst-case bound is
  * `CODEC_ZENOH_DECL_QUERYABLE_MAX_BYTES` — callers sizing `buf` accordingly never
  * see overflow. */
-static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode_to_buf(const codec_zenoh_decl_queryable_t *self, uint8_t *buf, size_t cap, size_t *out_len, uint8_t n, uint8_t z) {
+static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode_to_buf(const codec_zenoh_decl_queryable_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
     sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
-    sce_forge_codec_status_t _st = codec_zenoh_decl_queryable_encode(self, &_w, n, z);
+    sce_forge_codec_status_t _st = codec_zenoh_decl_queryable_encode(self, &_w);
     *out_len = _w.pos;
     return _st;
 }

@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 #include "codec_zenoh_ext_unit.h"
 #include "codec_zenoh_ext_zint.h"
 #include "codec_zenoh_value_zbuf.h"
@@ -115,36 +116,222 @@ static inline sce_forge_codec_status_t codec_zenoh_value_entry_decode(sce_forge_
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The arm of the variant a source of codec_zenoh_value_entry_t presents (docs/adr/0081
+ * §2): which arm it is, the tag the catch-all holds, and the arm's body,
+ * a source of the arm's codec in the member `kind` names. */
+typedef struct {
+    codec_zenoh_value_entry_body_kind_t kind;
+    uint8_t default_tag;  /* the catch-all's */
+    union {
+        codec_zenoh_ext_unit_source_ref_t codec_zenoh_ext_unit;
+        codec_zenoh_ext_zint_source_ref_t codec_zenoh_ext_zint;
+        codec_zenoh_value_zbuf_source_ref_t codec_zenoh_value_zbuf;
+        codec_zenoh_ext_unit_source_ref_t default_body;
+    } arm;
+} codec_zenoh_value_entry_body_ref_t;
+
+/* The elements a value of codec_zenoh_value_entry_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_zenoh_value_entry_t is a source by the table
+ * codec_zenoh_value_entry_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*header)(const void *ctx);
+    codec_zenoh_value_entry_body_ref_t (*body)(const void *ctx);
+} codec_zenoh_value_entry_source_t;
+
+/* A source of codec_zenoh_value_entry_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_zenoh_value_entry_source_t *table;
+    const void *ctx;
+} codec_zenoh_value_entry_source_ref_t;
+
+/* A source of codec_zenoh_value_entry_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_value_entry_source_ref_optional, codec_zenoh_value_entry_source_ref_t)
+
+/* The `header` of the codec_zenoh_value_entry_t at `ctx`. */
+static inline uint8_t codec_zenoh_value_entry_value_header(const void *ctx) {
+    return ((const codec_zenoh_value_entry_t *)ctx)->header;
+}
+
+/* The arm of the variant of the codec_zenoh_value_entry_t at `ctx`: its kind, the tag the
+ * catch-all holds, and its body as a source of the arm's codec. */
+static inline codec_zenoh_value_entry_body_ref_t codec_zenoh_value_entry_value_body(const void *ctx) {
+    const codec_zenoh_value_entry_t *self = (const codec_zenoh_value_entry_t *)ctx;
+    codec_zenoh_value_entry_body_ref_t ref;
+    memset(&ref, 0, sizeof ref);
+    ref.kind = self->body.kind;
+    ref.default_tag = self->body.default_tag;
+    switch (self->body.kind) {
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_UNIT:
+            ref.arm.codec_zenoh_ext_unit.table = codec_zenoh_ext_unit_value_source();
+            ref.arm.codec_zenoh_ext_unit.ctx = &self->body.arm.codec_zenoh_ext_unit;
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_ZINT:
+            ref.arm.codec_zenoh_ext_zint.table = codec_zenoh_ext_zint_value_source();
+            ref.arm.codec_zenoh_ext_zint.ctx = &self->body.arm.codec_zenoh_ext_zint;
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_VALUE_ZBUF:
+            ref.arm.codec_zenoh_value_zbuf.table = codec_zenoh_value_zbuf_value_source();
+            ref.arm.codec_zenoh_value_zbuf.ctx = &self->body.arm.codec_zenoh_value_zbuf;
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_DEFAULT:
+            ref.arm.default_body.table = codec_zenoh_ext_unit_value_source();
+            ref.arm.default_body.ctx = &self->body.arm.default_body;
+            break;
+        default:
+            break;
+    }
+    return ref;
+}
+
+/* The table that presents a value of codec_zenoh_value_entry_t as a source of it, its
+ * context a `const codec_zenoh_value_entry_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_zenoh_value_entry_source_t *codec_zenoh_value_entry_value_source(void) {
+    static const codec_zenoh_value_entry_source_t table = {
+        codec_zenoh_value_entry_value_header,
+        codec_zenoh_value_entry_value_body,
+    };
+    return &table;
+}
+
+/* The flag input `after_shm` the arm `arm` presents says (docs/adr/0065 §6
+ * R4d), through the arm's codec's own function of it; nothing where
+ * the arm does not read it (R4e). */
+static inline sce_optional_uint8_t codec_zenoh_value_entry_arm_input_after_shm(codec_zenoh_value_entry_body_ref_t arm) {
+    switch (arm.kind) {
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_VALUE_ZBUF:
+            return sce_optional_uint8_some(codec_zenoh_value_zbuf_input_after_shm(arm.arm.codec_zenoh_value_zbuf.table, arm.arm.codec_zenoh_value_zbuf.ctx));
+        default:
+            break;
+    }
+    return sce_optional_uint8_none();
+}
+
+/* One-bit flags of codec_zenoh_value_entry_t a parent may set in place of the ones a value
+ * presents, such as the flag a chain whose entries are codec_zenoh_value_entry_t ends them
+ * on, which the chain derives from where each entry stands. A flag absent
+ * here is the value's own. */
+typedef struct {
+    /* The `M` flag of `header`, where a parent sets it. */
+    sce_optional_bool_t header_m;
+    /* The `Z` flag of `header`, where a parent sets it. */
+    sce_optional_bool_t header_z;
+} codec_zenoh_value_entry_overrides_t;
+
+/* The overrides that set no flag. */
+static inline codec_zenoh_value_entry_overrides_t codec_zenoh_value_entry_overrides_none(void) {
+    codec_zenoh_value_entry_overrides_t none;
+    none.header_m = sce_optional_bool_none();
+    none.header_z = sce_optional_bool_none();
+    return none;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_zenoh_value_entry_encode_source_overriding(const codec_zenoh_value_entry_source_t *src, const void *ctx, sce_forge_writer_t *w, codec_zenoh_value_entry_overrides_t overrides) {
+    const uint8_t _e_header = src->header(ctx);
+    const codec_zenoh_value_entry_body_ref_t _e_body = src->body(ctx);
+    uint64_t _t_body = 0;
+    switch (_e_body.kind) {
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_UNIT:
+            _t_body = 0x0ull;
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_ZINT:
+            _t_body = 0x1ull;
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_VALUE_ZBUF:
+            _t_body = 0x2ull;
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_DEFAULT:
+            _t_body = (uint64_t)_e_body.default_tag;
+            break;
+        default:
+            break;
+    }
+    uint64_t _f_header = (uint64_t)_e_header;
+    _f_header = (_f_header & ~0x60ull) | ((_t_body & 0x3ull) << 5);
+    if (overrides.header_m.present) {
+        _f_header = (_f_header & ~0x10ull) | ((uint64_t)overrides.header_m.value << 4);
+    }
+    if (overrides.header_z.present) {
+        _f_header = (_f_header & ~0x80ull) | ((uint64_t)overrides.header_z.value << 7);
+    }
+    const uint8_t _c_header = (uint8_t)_f_header;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_header));
+    switch (_e_body.kind) {
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_UNIT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_unit_encode_source(_e_body.arm.codec_zenoh_ext_unit.table, _e_body.arm.codec_zenoh_ext_unit.ctx, w));
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_ZINT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_zint_encode_source(_e_body.arm.codec_zenoh_ext_zint.table, _e_body.arm.codec_zenoh_ext_zint.ctx, w));
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_VALUE_ZBUF:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_value_zbuf_encode_source(_e_body.arm.codec_zenoh_value_zbuf.table, _e_body.arm.codec_zenoh_value_zbuf.ctx, w));
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_unit_encode_source(_e_body.arm.default_body.table, _e_body.arm.default_body.ctx, w));
+            break;
+        default:
+            break;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* codec_zenoh_value_entry_encode_source_overriding with no flag set in place of the
+ * value's: the encode every caller but a parent that sets one calls. */
+static inline sce_forge_codec_status_t codec_zenoh_value_entry_encode_source(const codec_zenoh_value_entry_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    return codec_zenoh_value_entry_encode_source_overriding(src, ctx, w, codec_zenoh_value_entry_overrides_none());
+}
+
+/* The flag input `after_shm` a source of codec_zenoh_value_entry_t says, which its encode is
+ * not handed (docs/adr/0065 §6 R4a),
+ * and an absent value where the value says nothing of it. */
+static inline sce_optional_uint8_t codec_zenoh_value_entry_input_after_shm(const codec_zenoh_value_entry_source_t *src, const void *ctx) {
+    return codec_zenoh_value_entry_arm_input_after_shm(src->body(ctx));
+}
+
+/* Whether `self` is a value of codec_zenoh_value_entry_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_zenoh_value_entry_check_value(const codec_zenoh_value_entry_t *self) {
+    switch (self->body.kind) {
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_UNIT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_unit_check_value(&self->body.arm.codec_zenoh_ext_unit));
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_ZINT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_zint_check_value(&self->body.arm.codec_zenoh_ext_zint));
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_VALUE_ZBUF:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_value_zbuf_check_value(&self->body.arm.codec_zenoh_value_zbuf));
+            break;
+        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_unit_check_value(&self->body.arm.default_body));
+            break;
+        default:
+            break;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_VALUE_ENTRY_MAX_BYTES bytes and use
  * `codec_zenoh_value_entry_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
-static inline sce_forge_codec_status_t codec_zenoh_value_entry_encode(const codec_zenoh_value_entry_t *self, sce_forge_writer_t *w, uint8_t after_shm) {
-    /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
-    (void)after_shm;
-    /* Encode fixed prefix (tag field bytes are part of the prefix).
-     * The tag value is read from the struct field, NOT derived from
-     * the body discriminant — keeping author-set tag / body in sync
-     * is the caller's responsibility (v1 keeps the layout simple). */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    /* Append the active arm body's encoded bytes via the same writer. */
-    switch (self->body.kind) {
-        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_UNIT:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_unit_encode(&self->body.arm.codec_zenoh_ext_unit, w));
-            break;
-        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_ZINT:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_zint_encode(&self->body.arm.codec_zenoh_ext_zint, w));
-            break;
-        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_CODEC_ZENOH_VALUE_ZBUF:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_value_zbuf_encode(&self->body.arm.codec_zenoh_value_zbuf, w, after_shm));
-            break;
-        case CODEC_ZENOH_VALUE_ENTRY_BODY_KIND_DEFAULT:
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_unit_encode(&self->body.arm.default_body, w));
-            break;
-    }
-    return SCE_FORGE_CODEC_OK;
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
+static inline sce_forge_codec_status_t codec_zenoh_value_entry_encode(const codec_zenoh_value_entry_t *self, sce_forge_writer_t *w) {
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_zenoh_value_entry_check_value(self));
+    return codec_zenoh_value_entry_encode_source(codec_zenoh_value_entry_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
@@ -154,9 +341,9 @@ static inline sce_forge_codec_status_t codec_zenoh_value_entry_encode(const code
  * was insufficient for this codec's wire bytes. Worst-case bound is
  * `CODEC_ZENOH_VALUE_ENTRY_MAX_BYTES` — callers sizing `buf` accordingly never
  * see overflow. */
-static inline sce_forge_codec_status_t codec_zenoh_value_entry_encode_to_buf(const codec_zenoh_value_entry_t *self, uint8_t *buf, size_t cap, size_t *out_len, uint8_t after_shm) {
+static inline sce_forge_codec_status_t codec_zenoh_value_entry_encode_to_buf(const codec_zenoh_value_entry_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
     sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
-    sce_forge_codec_status_t _st = codec_zenoh_value_entry_encode(self, &_w, after_shm);
+    sce_forge_codec_status_t _st = codec_zenoh_value_entry_encode(self, &_w);
     *out_len = _w.pos;
     return _st;
 }
