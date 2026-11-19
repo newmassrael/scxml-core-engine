@@ -363,6 +363,30 @@ inline bool disjoint(const Headers &protectedHeaders, const Headers &unprotected
     return true;
 }
 
+// COSE_Key (RFC 9052, section 7; RFC 9053, section 7.2).
+
+/// The parameters of a COSE_Key this host writes, and the values of an Ed25519 public key's.
+inline constexpr int64_t KEY_KTY = 1;
+inline constexpr int64_t KEY_KID = 2;
+inline constexpr int64_t KEY_CRV = -1;
+inline constexpr int64_t KEY_X = -2;
+inline constexpr int64_t KTY_OKP = 1;
+inline constexpr int64_t CRV_ED25519 = 6;
+
+/// The COSE_Key of an Ed25519 public key: `{1: 1, 2: kid, -1: 6, -2: x}`, key type OKP, its key id, curve
+/// Ed25519 and the public key, its labels in the bytewise order of their encodings.
+inline Bytes coseKeyEd25519(const Bytes &kid, const Bytes &publicKey) {
+    Bytes kty;
+    Cbor::integer(kty, KTY_OKP);
+    Bytes kidValue;
+    Cbor::byteString(kidValue, kid);
+    Bytes crv;
+    Cbor::integer(crv, CRV_ED25519);
+    Bytes x;
+    Cbor::byteString(x, publicKey);
+    return Cbor::integerMap({{KEY_KTY, kty}, {KEY_KID, kidValue}, {KEY_CRV, crv}, {KEY_X, x}});
+}
+
 // COSE_Sign1 (RFC 9052, section 4.2).
 
 /// The protected header of a COSE_Sign1 this host makes, as the bytes it carries: `alg` EdDSA and `kid`.

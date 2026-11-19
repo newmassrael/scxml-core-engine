@@ -183,16 +183,44 @@ inline std::string answerText(const json &answer) {
 
 /// The request fields a scenario writes as numbers; every other is text.
 inline bool integerField(const std::string &name) {
-    return name == "at_ms" || name == "max_tokens" || name == "temperature_milli";
+    return name == "at_ms" || name == "length" || name == "max_tokens" || name == "temperature_milli";
 }
 
+#if defined(SCE_HOST_COSE)
+/// The primitives on libsodium, but for a random source that gives the bytes a scenario's `random` directive
+/// names before the operating system's: a draw takes them in order, and once they are spent draws the rest
+/// from the system, as the Rust reference host's `ScriptedRandom` does.
+class ScriptedRandomCrypto : public host::SodiumCoseCrypto {
+public:
+    /// Give `bytes` next, in place of what was queued before and not drawn.
+    void queue(const std::vector<uint8_t> &bytes) {
+        queued_.assign(bytes.begin(), bytes.end());
+    }
+
+    std::optional<std::vector<uint8_t>> random(size_t size) override {
+        const size_t taken = std::min(size, queued_.size());
+        std::vector<uint8_t> out(queued_.begin(), queued_.begin() + static_cast<std::ptrdiff_t>(taken));
+        queued_.erase(queued_.begin(), queued_.begin() + static_cast<std::ptrdiff_t>(taken));
+        const auto rest = host::SodiumCoseCrypto::random(size - taken);
+        if (!rest) {
+            return std::nullopt;
+        }
+        out.insert(out.end(), rest->begin(), rest->end());
+        return out;
+    }
+
+private:
+    std::vector<uint8_t> queued_;
+};
+#endif
+
 /// The reference host, over a clock, a transport and a model provider a scenario sets, and in a build
-/// that has them, the COSE operations on libsodium with the keys a scenario sets.
+/// that has them, the COSE operations on libsodium with the keys and the random bytes a scenario sets.
 struct Rig {
     host::ScriptedClock clock;
     ScriptTransport transport;
 #if defined(SCE_HOST_COSE)
-    host::SodiumCoseCrypto crypto;
+    ScriptedRandomCrypto crypto;
     host::CoseFeature cose{crypto};
 #endif
     host::ReferenceHost host{clock, transport};
@@ -205,14 +233,15 @@ struct Rig {
 #endif
     }
 
-    /// Apply a `cose_keys` directive to the COSE operations: it replaces the host's three tables, a table
+    /// Apply a `cose_keys` directive to the COSE operations: it replaces the host's four tables, a table
     /// it does not name with none, `sign` (an Ed25519 seed in hex by its key id), `aead` (a
-    /// ChaCha20/Poly1305 key in hex by its key id) and `trust` (the ids of the directive's signing keys a
-    /// trust set trusts, by the set's name). The keys derived before are kept.
+    /// ChaCha20/Poly1305 key in hex by its key id), `mac` (an HMAC-SHA-256 key of any length in hex by its
+    /// key id) and `trust` (the ids of the directive's signing keys a trust set trusts, by the set's name).
+    /// The keys generated and derived before are kept.
     void coseKeys(const json &d) {
 #if defined(SCE_HOST_COSE)
         for (const auto &[member, ignored] : d.items()) {
-            if (member != "sign" && member != "aead" && member != "trust") {
+            if (member != "sign" && member != "aead" && member != "mac" && member != "trust") {
                 ADD_FAILURE() << "`" << member << "` is not a table of `cose_keys`";
             }
         }
@@ -232,11 +261,24 @@ struct Rig {
             << "a signing key of `cose_keys` is not a 32-byte seed under an id a request can name";
         EXPECT_TRUE(cose.setSealingKeys(keys("aead")))
             << "a sealing key of `cose_keys` is not a 32-byte key under an id a request can name";
+        EXPECT_TRUE(cose.setMacKeys(keys("mac"))) << "a MAC key of `cose_keys` is not under an id a request can name";
         cose.setTrustSets(d.contains("trust") ? d.at("trust").get<std::map<std::string, std::vector<std::string>>>()
                                               : std::map<std::string, std::vector<std::string>>{});
 #else
         ADD_FAILURE() << "`cose_keys` sets the keys of the COSE operations, which this build does not serve: "
                       << "it found no libsodium (cmake/SCEHostCose.cmake); " << d.dump();
+#endif
+    }
+
+    /// Apply a `random` directive: the bytes, in hex, the host's random source gives next.
+    void randomBytes(const json &d) {
+#if defined(SCE_HOST_COSE)
+        const auto bytes = bytesOfHex(d.get<std::string>());
+        EXPECT_TRUE(bytes.has_value()) << "the random bytes are not written as hex";
+        crypto.queue(bytes.value_or(std::vector<uint8_t>{}));
+#else
+        ADD_FAILURE() << "`random` sets the random source of the COSE operations, which this build does not "
+                      << "serve: it found no libsodium (cmake/SCEHostCose.cmake); " << d.dump();
 #endif
     }
 
@@ -279,6 +321,8 @@ struct Rig {
                 scriptModel(value);
             } else if (name == "cose_keys") {
                 coseKeys(value);
+            } else if (name == "random") {
+                randomBytes(value);
             } else {
                 ADD_FAILURE() << "`" << name << "` is not a host directive";
             }

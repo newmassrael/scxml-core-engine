@@ -24,8 +24,9 @@
 namespace SCE::StandardHost {
 
 /// The COSE primitives on libsodium: Ed25519 (`crypto_sign_ed25519`), ChaCha20/Poly1305 in its IETF form
-/// with a 96-bit nonce (`crypto_aead_chacha20poly1305_ietf`), HMAC-SHA-256 (`crypto_auth_hmacsha256`) and
-/// the operating system's random source (`randombytes_buf`).
+/// with a 96-bit nonce (`crypto_aead_chacha20poly1305_ietf`), HMAC-SHA-256 (`crypto_auth_hmacsha256`),
+/// SHA-256 (`crypto_hash_sha256`), the operating system's random source (`randombytes_buf`), the comparison
+/// of a secret in constant time (`sodium_memcmp`) and the wiping of key material (`sodium_memzero`).
 class SodiumCoseCrypto : public CoseCrypto {
 public:
     SodiumCoseCrypto() : ready_(sodium_init() >= 0) {}
@@ -122,12 +123,33 @@ public:
         return mac;
     }
 
+    std::optional<Cose::Bytes> sha256(const Cose::Bytes &data) override {
+        Cose::Bytes digest(crypto_hash_sha256_BYTES);
+        if (crypto_hash_sha256(digest.data(), in(data), data.size()) != 0) {
+            return std::nullopt;
+        }
+        return digest;
+    }
+
     std::optional<Cose::Bytes> random(size_t size) override {
         Cose::Bytes out(size);
         if (size != 0) {
             randombytes_buf(out.data(), size);
         }
         return out;
+    }
+
+    bool sameSecret(const Cose::Bytes &a, const Cose::Bytes &b) override {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        return a.empty() || sodium_memcmp(a.data(), b.data(), a.size()) == 0;
+    }
+
+    void wipe(Cose::Bytes &bytes) override {
+        if (!bytes.empty()) {
+            sodium_memzero(bytes.data(), bytes.size());
+        }
     }
 
 private:

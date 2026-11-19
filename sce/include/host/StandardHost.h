@@ -691,8 +691,9 @@ public:
     virtual bool accepts(const std::string &operation, const Params &params, std::string &why) const = 0;
     /// The failure `code` of `operation`: its result record with every field at its zero.
     virtual Outcome failure(const std::string &operation, const std::string &code) const = 0;
-    /// Run `operation` for invocation `id`, whose request it accepted.
-    virtual Outcome run(const std::string &operation, const std::string &id, const Params &params) = 0;
+    /// Run `operation` for `invocation`, whose request it accepted. The invocation's identity is what an
+    /// operation that answers a repeat with its first result keeps that result under (section 1).
+    virtual Outcome run(const std::string &operation, const Invocation &invocation, const Params &params) = 0;
 };
 
 /// The standard host features' semantics, over a clock and a transport.
@@ -808,7 +809,7 @@ public:
                 return std::nullopt;
             }
             starts_.push_back({operation, id, params, invocation.sessionId, invocation.start});
-            return startFeature(*feature, operation, id, params);
+            return startFeature(*feature, operation, invocation, params);
         }
         starts_.push_back({operation, id, params, invocation.sessionId, invocation.start});
         const bool keepsFirst = operation == "sce-host-kv-put-if";
@@ -922,7 +923,9 @@ private:
     }
 
     /// Start `operation` of `feature` as the host starts its own: judged, then an injected failure, then run.
-    Outcome startFeature(Feature &feature, const std::string &operation, const std::string &id, const Params &params) {
+    Outcome startFeature(Feature &feature, const std::string &operation, const Invocation &invocation,
+                         const Params &params) {
+        const std::string &id = invocation.id;
         std::string why;
         if (!feature.accepts(operation, params, why)) {
             SCE_LOG_INFO("{} {}: refused, {}", operation, id, why);
@@ -932,7 +935,7 @@ private:
             SCE_LOG_INFO("{} {}: fails {}, injected", operation, id, fault->second);
             return feature.failure(operation, fault->second);
         }
-        return feature.run(operation, id, params);
+        return feature.run(operation, invocation, params);
     }
 
     Outcome clockNow() {

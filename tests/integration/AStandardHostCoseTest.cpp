@@ -434,8 +434,9 @@ TEST(AStandardHostCose, ASealedPlaintextOpensUnderItsKeyAndExternalDataOnly) {
         << "each sealing draws its own nonce";
 }
 
-/// A derivation takes exactly one input, answers the next `derived:<n>`, and keeps HKDF-SHA-256's 32 bytes
-/// as a sealing key; it derives from a secret, a sealing key or a derived key, and from nothing else.
+/// A derivation takes exactly one input, answers the id computed from what derived it (docs/adr/0109, D7),
+/// the same id for the same derivation, and keeps HKDF-SHA-256's 32 bytes as a sealing key; it derives from
+/// a secret, a sealing key or a derived key, and from nothing else.
 TEST(AStandardHostCose, AKeyIsDerivedFromExactlyOneInputAndSealsAfterwards) {
     host::SodiumCoseCrypto crypto;
     CoseRig rig(crypto);
@@ -443,21 +444,32 @@ TEST(AStandardHostCose, AKeyIsDerivedFromExactlyOneInputAndSealsAfterwards) {
         return rig.start(host::KEY_DERIVE,
                          {{"secret", secret}, {"input_key_id", input}, {"salt", "salt"}, {"info", "info"}});
     };
+    const auto derivedId = [&derive](const std::string &secret, const std::string &input) {
+        const host::Outcome outcome = derive(secret, input);
+        const json fields = json::parse(outcome.data);
+        EXPECT_EQ(fields.at("error"), "") << outcome.data;
+        return fields.at("key_id").get<std::string>();
+    };
     EXPECT_EQ(derive("s", "box").kind, host::Outcome::Kind::Refuse) << "both inputs";
     EXPECT_EQ(derive("", "").kind, host::Outcome::Kind::Refuse) << "neither input";
-    EXPECT_EQ(derive("", "box").data, R"({"error":"","key_id":"derived:1"})");
-    EXPECT_EQ(derive("\x01\x02", "").data, R"({"error":"","key_id":"derived:2"})");
-    EXPECT_EQ(derive("", "derived:2").data, R"({"error":"","key_id":"derived:3"})");
+    const std::string fromBox = derivedId("", "box");
+    EXPECT_EQ(fromBox.rfind(host::DERIVED_KEY_PREFIX, 0), 0u) << fromBox;
+    EXPECT_EQ(fromBox.size(), std::string(host::DERIVED_KEY_PREFIX).size() + 32) << fromBox;
+    EXPECT_EQ(derivedId("", "box"), fromBox) << "the same derivation is the same key";
+    const std::string fromSecret = derivedId("\x01\x02", "");
+    const std::string fromDerived = derivedId("", fromSecret);
+    EXPECT_NE(fromSecret, fromBox);
+    EXPECT_NE(fromDerived, fromSecret);
     const std::string unknown = R"({"error":"unknown_key","key_id":""})";
-    EXPECT_EQ(derive("", "derived:4").data, unknown);
-    EXPECT_EQ(derive("", "derived:0").data, unknown);
-    EXPECT_EQ(derive("", "derived:01").data, unknown);
+    EXPECT_EQ(derive("", "derived:00000000000000000000000000000000").data, unknown);
     EXPECT_EQ(derive("", "device").data, unknown) << "a signing key is not keying material";
-    EXPECT_EQ(rig.feature.derived(), (std::vector<std::string>{"derived:1", "derived:2", "derived:3"}));
+    std::vector<std::string> kept{fromBox, fromSecret, fromDerived};
+    std::sort(kept.begin(), kept.end());
+    EXPECT_EQ(rig.feature.keyRingIds(), kept) << "one key for one derivation";
 
     const Bytes plaintext = ascii("sealed");
-    const json made = rig.done(host::COSE_ENCRYPT0,
-                               {{"key_id", "derived:2"}, {"plaintext", latin1(plaintext)}, {"external_aad", ""}});
+    const json made =
+        rig.done(host::COSE_ENCRYPT0, {{"key_id", fromSecret}, {"plaintext", latin1(plaintext)}, {"external_aad", ""}});
     const std::string sealedText = made.at("cose").get<std::string>();
     const auto object = cose::readEncrypt0(bytesOfLatin1(sealedText));
     ASSERT_TRUE(object.has_value());
@@ -466,14 +478,16 @@ TEST(AStandardHostCose, AKeyIsDerivedFromExactlyOneInputAndSealsAfterwards) {
     EXPECT_EQ(answered(crypto.aeadOpen(*okm, object->unprotectedHeaders.iv.value_or(Bytes{}), object->ciphertext,
                                        cose::encStructure(object->protectedHeader, {}))),
               plaintext)
-        << "derived:2 is HKDF-SHA-256 of its secret, salt and info";
+        << "the key derived from the secret is HKDF-SHA-256 of its secret, salt and info";
     const auto openWith = [&rig, &sealedText](const std::string &keyId) {
         return rig.done(host::COSE_DECRYPT0, {{"key_id", keyId}, {"cose", sealedText}, {"external_aad", ""}});
     };
-    EXPECT_EQ(openWith("derived:2").at("plaintext"), latin1(plaintext));
-    EXPECT_EQ(openWith("derived:3").at("opened"), false);
+    EXPECT_EQ(openWith(fromSecret).at("plaintext"), latin1(plaintext));
+    EXPECT_EQ(openWith(fromDerived).at("opened"), false);
 
     EXPECT_FALSE(rig.feature.setSealingKeys({{"derived:9", hex(kAeadKey)}})) << "the prefix of derived keys";
+    EXPECT_FALSE(rig.feature.setSigningKeys({{"generated:9", hex(kEd25519Seed)}})) << "the prefix of generated keys";
+    EXPECT_FALSE(rig.feature.setMacKeys({{"derived:mac", Bytes{0x01}}})) << "a MAC key under the key ring's prefix";
     EXPECT_FALSE(rig.feature.setSealingKeys({{"short", Bytes(16, uint8_t{0x01})}}));
     EXPECT_FALSE(rig.feature.setSigningKeys({{"", hex(kEd25519Seed)}}));
     EXPECT_EQ(rig.done(host::COSE_ENCRYPT0, {{"key_id", "box"}, {"plaintext", ""}, {"external_aad", ""}}).at("error"),
