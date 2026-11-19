@@ -19,11 +19,11 @@ fun algorithmCrc16(data: ByteArray): UShort {
     for (sceRaw_b in data) {
         val b: UByte = sceRaw_b.toUByte()
         var hi: UShort = b.toUShort()
-        crc = (crc.toInt() xor (hi.toInt() shl 8)).toUShort()
+        crc = (crc.toInt() xor (((hi.toInt() shl 8).toUShort()).toInt())).toUShort()
         var i: UByte = 0.toUByte()
         while (i < 8.toUByte()) {
             if ((crc.toInt() and 0x8000).toUShort() != 0.toUShort()) {
-                crc = (crc.toInt() shl 1 xor 0x1021).toUShort()
+                crc = (((crc.toInt() shl 1).toUShort()).toInt() xor 0x1021).toUShort()
             } else {
                 crc = (crc.toInt() shl 1).toUShort()
             }

@@ -21,13 +21,13 @@ inline uint16_t algorithm_crc16(SCE::Forge::Span<const std::uint8_t> data) {
     uint16_t crc = 0xFFFF;
     for (uint8_t b : data) {
         uint16_t hi = b;
-        crc = crc ^ hi << 8;
+        crc = crc ^ static_cast<std::uint16_t>(hi << 8);
         uint8_t i = 0;
         while (i < 8) {
             if ((crc & 0x8000) != 0) {
-                crc = crc << 1 ^ 0x1021;
+                crc = static_cast<std::uint16_t>(crc << 1) ^ 0x1021;
             } else {
-                crc = crc << 1;
+                crc = static_cast<std::uint16_t>(crc << 1);
             }
             i = i + 1;
         }

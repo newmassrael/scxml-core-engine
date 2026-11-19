@@ -22,7 +22,7 @@ static inline uint16_t algorithm_crc16_table(sce_forge_bytes_view_t data) {
     for (size_t __b_i = 0; __b_i < data.len; ++__b_i) {
         uint8_t b = data.data[__b_i];
         uint16_t idx = (crc >> 8 ^ b) & 0xFF;
-        crc = crc << 8 ^ CRC16_TABLE[idx];
+        crc = (uint16_t)(crc << 8) ^ CRC16_TABLE[idx];
     }
     return crc;
 }

@@ -20,13 +20,13 @@ static inline uint16_t algorithm_crc16(sce_forge_bytes_view_t data) {
     for (size_t __b_i = 0; __b_i < data.len; ++__b_i) {
         uint8_t b = data.data[__b_i];
         uint16_t hi = b;
-        crc = crc ^ hi << 8;
+        crc = crc ^ (uint16_t)(hi << 8);
         uint8_t i = 0;
         while (i < 8) {
             if ((crc & 0x8000) != 0) {
-                crc = crc << 1 ^ 0x1021;
+                crc = (uint16_t)(crc << 1) ^ 0x1021;
             } else {
-                crc = crc << 1;
+                crc = (uint16_t)(crc << 1);
             }
             i = i + 1;
         }

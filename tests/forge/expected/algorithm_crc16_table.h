@@ -24,7 +24,7 @@ inline uint16_t algorithm_crc16_table(SCE::Forge::Span<const std::uint8_t> data)
     uint16_t crc = 0xFFFF;
     for (uint8_t b : data) {
         uint16_t idx = (crc >> 8 ^ b) & 0xFF;
-        crc = crc << 8 ^ CRC16_TABLE[idx];
+        crc = static_cast<std::uint16_t>(crc << 8) ^ CRC16_TABLE[idx];
     }
     return crc;
 }

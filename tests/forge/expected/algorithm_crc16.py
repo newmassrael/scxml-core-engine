@@ -16,12 +16,12 @@ def algorithm_crc16(data: bytes) -> int:
     crc: int = 0xFFFF
     for b in data:
         hi: int = b
-        crc = crc ^ (hi << 8) & 0xFFFF
+        crc = crc ^ ((hi << 8) & 0xFFFF)
         i: int = 0
         while i < 8:
             if crc & 0x8000 != 0:
-                crc = (crc << 1) & 0xFFFF ^ 0x1021
+                crc = ((crc << 1) & 0xFFFF) ^ 0x1021
             else:
-                crc = (crc << 1) & 0xFFFF
-            i = (i + 1) & 0xFF
+                crc = ((crc << 1) & 0xFFFF)
+            i = ((i + 1) & 0xFF)
     return crc

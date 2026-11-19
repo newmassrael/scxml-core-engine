@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
+// source-hash: 02083fb2ced62dbb0117350f8be853bf2c1b2016a107a44991ae11967d11a600
 // source: ./
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -2606,6 +2606,64 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let returned = AlgorithmLcgTable.algorithmLcgTable(arg0)
         let expected = try oracleInteger(testCase.member("expected"), as: UInt32.self)
         #expect(returned == expected, "algorithm_lcg_table")
+    }}
+
+// MARK: - algorithm: algorithm_literal_shift
+
+@Test func algorithmLiteralShiftMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_literal_shift") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt64.self)
+        let arg1 = try oracleInteger(args[1], as: UInt8.self)
+        let arg2 = try oracleInteger(args[2], as: UInt8.self)
+        let returned = AlgorithmLiteralShift.algorithmLiteralShift(arg0, arg1, arg2)
+        let expected = try oracleInteger(testCase.member("expected"), as: UInt64.self)
+        #expect(returned == expected, "algorithm_literal_shift")
+    }}
+
+// MARK: - algorithm: algorithm_literal_arith
+
+@Test func algorithmLiteralArithMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_literal_arith") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt64.self)
+        let arg1 = try oracleInteger(args[1], as: UInt8.self)
+        let arg2 = try oracleInteger(args[2], as: UInt8.self)
+        let outcome = Result { try AlgorithmLiteralArith.algorithmLiteralArith(arg0, arg1, arg2) }
+        if case .text(let fails)? = testCase.member("fails") {
+            switch outcome {
+            case .failure(let error as AlgorithmError):
+                #expect(error.contractName == fails, "algorithm_literal_arith")
+            case .failure(let error):
+                Issue.record("algorithm_literal_arith: the case expects the failure \(fails), got \(error)")
+            case .success(let value):
+                Issue.record("algorithm_literal_arith: the case expects a failure, got \(value)")
+            }
+            continue
+        }
+        guard case .success(let returned) = outcome else {
+            Issue.record("algorithm_literal_arith: the case expects a value, got \(outcome)")
+            continue
+        }
+        let expected = try oracleInteger(testCase.member("expected"), as: UInt64.self)
+        #expect(returned == expected, "algorithm_literal_arith")
+    }}
+
+// MARK: - algorithm: algorithm_narrow_shift
+
+@Test func algorithmNarrowShiftMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_narrow_shift") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt8.self)
+        let arg1 = try oracleInteger(args[1], as: Int16.self)
+        let arg2 = try oracleInteger(args[2], as: UInt8.self)
+        let arg3 = try oracleInteger(args[3], as: UInt8.self)
+        let returned = AlgorithmNarrowShift.algorithmNarrowShift(arg0, arg1, arg2, arg3)
+        let expected = try oracleInteger(testCase.member("expected"), as: Int64.self)
+        #expect(returned == expected, "algorithm_narrow_shift")
     }}
 
 // MARK: - algorithm: algorithm_checked_call
