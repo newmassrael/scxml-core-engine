@@ -774,7 +774,9 @@ fn the_cpp_router_routes_a_causal_binding_over_custom_tcp() {
     for expected in [
         "#include \"mesh/CausalRoute.h\"",
         "SCE::Mesh::CausalRoute causal_server_{",
-        "SCE::Mesh::CausalGroup{\"people\", 0u, { \"phone/client\", \"cloud/server\" }}",
+        // As clang-format 19 writes it: every generated C++ file passes
+        // through the pinned formatter.
+        "SCE::Mesh::CausalGroup{\"people\", 0u, {\"phone/client\", \"cloud/server\"}}",
         "return offerCausal(\"#server\", causal_server_,",
         "if (env.source == \"server\") {",
         "if (takeCausal(env, session_idx)) {",
