@@ -9,7 +9,8 @@
 //!
 //! * The semantics, which are this module and [`client`] and [`server`]: the path, the framing
 //!   (a CBOR sequence of envelopes), the mailbox and its acknowledgement, the hold, readiness, the
-//!   status codes and the authenticators. They are the same in every language.
+//!   status codes, the authenticators and the message signatures ([`signature`]). They are the
+//!   same in every language, and so every adapter gets them.
 //! * The port, [`HttpsTransport`]: one exchange at the level of HTTP semantics, a POST with its
 //!   headers and body and a bound on the wait, answered with a response or a failure of a named
 //!   kind. The client reaches the network through it and through nothing else.
@@ -31,6 +32,7 @@ pub mod client;
 pub mod conformance;
 pub mod rate;
 pub mod server;
+pub mod signature;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
