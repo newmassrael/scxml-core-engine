@@ -166,7 +166,13 @@ needs =["cargo", "cmake", "ninja", "g++", "node", "git", "go", "java", "python3"
 # a build machine without it, five runs in a row, while the same tree passed on the others.
 # Installed on the two build machines that lacked it the same day, by the owner's decision,
 # before this line declared it, so every build machine satisfies it.
-packages = ["libssl-dev", "openjdk-17-jdk-headless", "curl", "binutils", "libc6-dev", "libcurl4-openssl-dev", "libedit2", "libncurses-dev", "libpython3-dev", "libsqlite3-0", "libsqlite3-dev", "libxml2-dev", "libz3-dev", "pkg-config", "tzdata", "unzip", "zlib1g-dev"]
+#
+# `libsodium-dev`: the C++ reference host's COSE operations and key ring (docs/adr/0107 D7,
+# docs/adr/0109 D5-D7) build on libsodium, found not vendored (`cmake/Findsodium.cmake`).
+# Measured 2026-11-19: no build machine had it, so `SCE_HOST_COSE=AUTO` left the C++ COSE host
+# out of every Linux build and `=ON` stopped at configure; it had been held only on Windows.
+# Installed on every build machine the same day, by the owner's decision, before this line.
+packages = ["libssl-dev", "openjdk-17-jdk-headless", "curl", "binutils", "libc6-dev", "libcurl4-openssl-dev", "libedit2", "libncurses-dev", "libpython3-dev", "libsodium-dev", "libsqlite3-0", "libsqlite3-dev", "libxml2-dev", "libz3-dev", "pkg-config", "tzdata", "unzip", "zlib1g-dev"]
 
 # The C++ tree is the constraint on disk: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.
