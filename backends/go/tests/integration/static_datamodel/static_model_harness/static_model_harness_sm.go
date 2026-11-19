@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee
+// source-hash: 5fcf5adebd6aa6a3a6bbbaef6230bcde2a9178f55f0b8edd67c8953cc161f668
+// source: static_model_harness.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -283,7 +284,7 @@ func (e StaticModelHarnessEvent) String() string {
 
 // StaticModelHarnessSourceHash is the digest of the source set this machine
 // was generated from: the `source-hash` of the file's own header, as a value.
-const StaticModelHarnessSourceHash = "c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee"
+const StaticModelHarnessSourceHash = "5fcf5adebd6aa6a3a6bbbaef6230bcde2a9178f55f0b8edd67c8953cc161f668"
 
 // StaticModelHarnessTransition is one transition of this machine, as constant
 // data. Nothing in the machine reads it: a host that draws the machine, or
