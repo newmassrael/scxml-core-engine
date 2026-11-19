@@ -13,7 +13,13 @@
 //!   `Host` header and the TLS server name are the URL's host, so the server
 //!   and its certificate are those of the name. Each request is judged anew.
 //! * **What it follows.** Nothing: a `3xx` is answered as it came, with its
-//!   `location`, and no proxy is read from the environment or used.
+//!   `location`.
+//! * **Through a proxy.** None is read from the environment. A proxy the
+//!   deployment configures ([`NetworkSettings::proxy`]) is reached as itself:
+//!   its own address is not judged, the target still is, and every exchange is
+//!   tunnelled with `CONNECT` to the address the policy admitted, for `http` as
+//!   for `https`, so the proxy never resolves the name. The proxy's credentials
+//!   travel in the `CONNECT` alone and never reach the target.
 //! * **How long it waits.** A connection, a TLS handshake, the response's head
 //!   and the whole exchange each have a bound ([`Timeouts`]); one that passes
 //!   fails `network`.
@@ -44,7 +50,7 @@ use sce_rust_host_features::destination::{Destination, DestinationPolicy, Scheme
 use sce_rust_host_features::{
     HttpRequest, HttpResponse, Transport, TransportFailure, HTTP_BODY_MAX_BYTES,
 };
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 /// The fields that frame or route a message, which the transport writes or
@@ -104,6 +110,9 @@ pub struct NetworkSettings {
     /// operating system believes: a deployment's private authority. Refused on
     /// Android, where the platform's store is the only one the verifier reads.
     pub extra_authorities: Vec<Vec<u8>>,
+    /// The proxy every exchange is tunnelled through; `None` to connect
+    /// directly.
+    pub proxy: Option<Proxy>,
 }
 
 impl Default for NetworkSettings {
@@ -113,9 +122,26 @@ impl Default for NetworkSettings {
             max_response_bytes: HTTP_BODY_MAX_BYTES,
             max_header_bytes: 65536,
             extra_authorities: Vec::new(),
+            proxy: None,
         }
     }
 }
+
+/// An HTTP proxy every exchange is tunnelled through with `CONNECT`
+/// (docs/adr/0109, D4). It is the deployment's, reached as itself: the policy
+/// judges the target and not the proxy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Proxy {
+    /// The proxy's host: a name, or an address literal without brackets.
+    pub host: String,
+    pub port: u16,
+    /// The value of `Proxy-Authorization` each `CONNECT` carries
+    /// (`Basic dXNlcjpwYXNz`), sent to the proxy and to nothing else.
+    pub authorization: Option<String>,
+}
+
+/// The most bytes of a proxy's answer to `CONNECT` read.
+const TUNNEL_ANSWER_MOST: usize = 8192;
 
 /// Why a transport could not be built.
 #[derive(Debug)]
@@ -195,7 +221,10 @@ impl NetworkTransport {
         destination: Destination,
         outgoing: Outgoing,
     ) -> Result<HttpResponse, TransportFailure> {
-        let tcp = self.connect(&destination).await?;
+        let tcp = match &self.settings.proxy {
+            None => self.connect(&destination).await?,
+            Some(proxy) => self.tunnel_through(proxy, &destination).await?,
+        };
         match destination.scheme {
             Scheme::Http => self.exchange_on(tcp, outgoing).await,
             Scheme::Https => {
@@ -220,6 +249,34 @@ impl NetworkTransport {
                 tokio::time::timeout(self.settings.timeouts.connect, TcpStream::connect(*address))
                     .await;
             if let Ok(Ok(tcp)) = attempt {
+                let _ = tcp.set_nodelay(true);
+                return Ok(tcp);
+            }
+        }
+        Err(TransportFailure::Network)
+    }
+
+    /// A tunnel through `proxy` to the first of the admitted addresses it
+    /// opens one to. The `CONNECT` names the address, never the host, so the
+    /// proxy reaches what the policy checked.
+    async fn tunnel_through(
+        &self,
+        proxy: &Proxy,
+        destination: &Destination,
+    ) -> Result<TcpStream, TransportFailure> {
+        for address in &destination.addresses {
+            let attempt = tokio::time::timeout(self.settings.timeouts.connect, async {
+                let mut tcp = TcpStream::connect((proxy.host.as_str(), proxy.port)).await?;
+                let opened = tunnel(
+                    &mut tcp,
+                    &address.to_string(),
+                    proxy.authorization.as_deref(),
+                )
+                .await?;
+                Ok::<_, std::io::Error>((tcp, opened))
+            })
+            .await;
+            if let Ok(Ok((tcp, true))) = attempt {
                 let _ = tcp.set_nodelay(true);
                 return Ok(tcp);
             }
@@ -346,6 +403,36 @@ fn outgoing(
     builder
         .body(Full::new(Bytes::from(request.body.clone())))
         .map_err(|_| TransportFailure::Network)
+}
+
+/// Ask the proxy `tcp` is connected to for a tunnel to `target` (`address:port`,
+/// an IPv6 address in brackets), with `authorization` as `Proxy-Authorization`;
+/// whether it opened one, which only a `2xx` answer is. The answer's head is
+/// read a byte at a time, so nothing after it (the first bytes of the target)
+/// is read here.
+async fn tunnel(
+    tcp: &mut TcpStream,
+    target: &str,
+    authorization: Option<&str>,
+) -> std::io::Result<bool> {
+    let mut head = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n");
+    if let Some(authorization) = authorization {
+        head.push_str(&format!("Proxy-Authorization: {authorization}\r\n"));
+    }
+    head.push_str("\r\n");
+    tcp.write_all(head.as_bytes()).await?;
+    let mut answer = Vec::new();
+    while !answer.ends_with(b"\r\n\r\n") {
+        if answer.len() >= TUNNEL_ANSWER_MOST {
+            return Ok(false);
+        }
+        answer.push(tcp.read_u8().await?);
+    }
+    let status_line = answer.split(|b| *b == b'\r').next().unwrap_or_default();
+    let mut words = status_line.split(|b| *b == b' ');
+    let version = words.next().unwrap_or_default();
+    let code = words.next().unwrap_or_default();
+    Ok(version.starts_with(b"HTTP/1.") && code.len() == 3 && code.first() == Some(&b'2'))
 }
 
 /// The client's TLS: the platform's verifier with `extra` beside it, offering
