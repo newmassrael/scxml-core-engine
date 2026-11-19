@@ -1166,7 +1166,7 @@ element of its `<datamodel>` keyed by `sce:key`:
 |---|---|
 | `sce:codec-format` | The format the document is written in, on its root: `2`, the only one read (below). |
 | `sce:key` | The entry's map key, `0`–`23` — a key whose CBOR head is one byte. Unique within the codec. |
-| `sce:type` | Any type of the one type grammar (docs/adr/0101, section 1; docs/adr/0086 section 1 with docs/adr/0092's `union:<alias>`), at any depth, every bound in the type: a text with no bound, at any depth, is refused (`validation/attribute-rule-violated`). Rust prints an entry of every type (docs/adr/0101, Landing order step 4a, below). The other backends print an unsigned integer (`uint8`–`uint64`), `bool`, `string[N]` (a CBOR text string), `bytes[N]` (a byte string), `enum:<alias>` (the integer of its declared number, major type 1 below zero, checked against the enum's declared values) and a bounded list of records `list<record:R>[N]` (below), or `optional<T>` over one of them; an entry of any other type is read and judged, and each of them refuses its codec by name (`generate/unsupported-feature`, naming the entry and the type) until its printer lowers it (docs/adr/0101, section 5.4). A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
+| `sce:type` | Any type of the one type grammar (docs/adr/0101, section 1; docs/adr/0086 section 1 with docs/adr/0092's `union:<alias>`), at any depth, every bound in the type: a text with no bound, at any depth, is refused (`validation/attribute-rule-violated`). Rust and C++ print an entry of every type (docs/adr/0101, Landing order steps 4a and 4b, below). The other backends print an unsigned integer (`uint8`–`uint64`), `bool`, `string[N]` (a CBOR text string), `bytes[N]` (a byte string), `enum:<alias>` (the integer of its declared number, major type 1 below zero, checked against the enum's declared values) and a bounded list of records `list<record:R>[N]` (below), or `optional<T>` over one of them; an entry of any other type is read and judged, and each of them refuses its codec by name (`generate/unsupported-feature`, naming the entry and the type) until its printer lowers it (docs/adr/0101, section 5.4). A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
 | `sce:length` | On a `bytes` or `optional<bytes>` entry that writes no bracket: the exact length, which is also its bound (`bytes[L]`); any other length is refused on decode and on encode. Beside a bracket it is `validation/incompatible-attributes`. |
 | `sce:max-size` | On a top-level `string` or `bytes`: the legacy spelling of the bracket on its type (docs/adr/0101, section 1.3), read as that bracket with the `sce:limit` beside it and reported as `validation/bound-attribute-superseded`; `sce-codegen bound-spelling` moves it into the type. Not with `sce:length`, nor beside a bracket. |
 
@@ -1256,17 +1256,27 @@ has no value by default, and so no `new` and no `Default`. The corpus's
 printer to its cases, its variant encodings and its rejects
 (`backends/rust/forge-conformance/tests/forge_cbor_composed.rs`).
 
-C++ prints a map whose records hold only booleans, unsigned integers and texts
-from its plan (docs/adr/0081 step 4): the value presents the list as
-`::SCE::Forge::List<<Schema>Payload, N>`, a view within its count, holds it in
-`Bounded<std::vector<<Schema>Payload>, N>`, and reads and writes a record by the
-static members of the codec's `Records` struct. A list past its bound has no
-view (`make` refuses it), so the encode refuses nothing for its count. A record's
-text is held by the schema's C++ unit in the `OwnedText<N>` of its bound
-(docs/adr/0086, section 7.4), so its write refuses nothing either. A record with
-a byte string field is held by the schema's C++ unit in a `std::vector` with no
-bound, so a map that holds a list of it keeps the template's struct below, and
-its encode refuses a field past its bound.
+C++ prints every entry from the codec's plan as Rust does (docs/adr/0101,
+Landing order step 4b): a signed integer as `int8_t`–`int64_t` and a float as
+`float` or `double`, each read within its type and presented by value; a list, a
+record and a union held in the type a schema unit holds it in (section 5.3) and
+lent by `const` reference: a list as `::SCE::Forge::OwnedList<T, N>` of its
+element's type, an absent element of `list<optional<T>>` a `std::optional`
+written as `null`, a record as its schema's `<Schema>Payload` and a union as the
+struct of its union's unit, inside a `std::optional` where the entry may be
+absent. A text or a byte string entry keeps its view within its bound (`Text<N>`,
+`Bytes<N>`). Each record and union document the codec reaches is read, written
+and, where a value of it can be refused, checked by one static function of the
+codec's `Composites` struct named for the document (`decode_record_<document>`,
+`encode_union_<document>`, `check_record_<document>`), shared wherever it is met;
+the header of each document the codec imports includes those of the documents it
+names. A value inside a list is held in the bounded types of a composition
+(docs/adr/0086, section 7.4), and a record's text in the `OwnedText<N>` of its
+bound, so the encode refuses only a list below its lower count and a byte string
+a record's field holds in its unit's `std::vector` past its bound, each before
+the first byte. The corpus's `codec_cbor_composed` holds the printer to its
+cases, its variant encodings and its rejects
+(`backends/cpp/forge-runtime/tests/conformance/cbor_composed_generated_test.cpp`).
 
 A backend whose language's list, string and byte array carry no bound generates
 the list in its own list of the schema's payload, read and written by functions
@@ -1276,9 +1286,6 @@ lower count, and a text or byte string of a record past its bound, with
 reference's types hold those upper bounds, so they are no refusal the codec
 declares; a lower count is, on every backend alike:
 
-- C++, a map whose records hold a text or a byte string:
-  `std::vector<<Schema>Payload>`, the functions private static members of the
-  codec's struct; a refused read answers its `CodecError`, as every C++ decode's.
 - Kotlin: `List<<Schema>Payload>`, the functions private members of the codec's
   companion object.
 - Swift: `[<Schema>Payload]`, the functions private static members of the codec's
