@@ -5629,6 +5629,28 @@ set_tests_properties(c11_unit_forge_optional PROPERTIES
     LABELS "unit;c11"
 )
 
+# ─── Forge map unit test ────────────────────────────────────────────
+#
+# A map and a set (docs/adr/0108, D8) as `sce/forge/map.h` holds them: SipHash-1-3
+# held to the reference vectors, keys equal by their canonical bytes, the order a
+# map's keys were first put kept through any sequence of puts, removes and clears,
+# a remove that moves no entry, a full map that answers `full` unchanged, and keys
+# chosen to collide under one seed spread under another. Header-only code.
+add_executable(sce_c_forge_map_unit_test unit/forge_map_test.c)
+target_link_libraries(sce_c_forge_map_unit_test PRIVATE sce_c_runtime)
+target_include_directories(sce_c_forge_map_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
+set_target_properties(sce_c_forge_map_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_forge_map COMMAND sce_c_forge_map_unit_test)
+set_tests_properties(c11_unit_forge_map PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
 # ─── Duration unit test ─────────────────────────────────────────────
 #
 # The runtime's one `<send>` delay reader, measured against
