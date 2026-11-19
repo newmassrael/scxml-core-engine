@@ -281,8 +281,8 @@ fn a_record_key_is_judged_through_its_fields() {
 }
 
 /// docs/adr/0108, D3 and D10: a statechart's variable that is itself a map or
-/// a set is checked (each lane refuses it where it generates,
-/// `a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane`), and
+/// a set is checked (each lane that lowers none refuses it where it generates,
+/// `a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_lower_it`), and
 /// one held inside another type is refused by name, the type and the record
 /// that lands it named; and, as a list does, a map starts empty and takes no
 /// `expr`.
