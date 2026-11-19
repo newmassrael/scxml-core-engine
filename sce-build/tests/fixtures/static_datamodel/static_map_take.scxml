@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/adr/0108, D6 item 2): a table of each peer's
+  latest generation, written in place by the algorithm that keeps it, which a
+  <sce:call> calls as a statement and whose answer it takes by its location.
+
+  `generation.next` moves the generation a peer is seen at one on. `peer.seen`
+  hands `algorithm_take_generation.scxml` the table, the peer (its payload,
+  taken whole as the key) and the generation: the algorithm puts the
+  generation into `resets` in place and answers `taken`, or answers that the
+  table already holds that generation or a later one (`duplicate`, carrying
+  the last), or that the full table has no room for a new peer (`no_room`).
+  The statechart branches on the union's tag, as a union read by its tag is
+  (docs/adr/0092, section 6.1, and docs/adr/0099): `taken` and `refused`
+  count the generations taken and the peers refused, and `last_duplicate`
+  is the last generation a duplicate carried. The table holds two peers, so
+  a third is refused.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="watching" datamodel="sce-static" name="static_map_take">
+  <sce:import kind="event-schema" src="schema_map_peer.scxml" as="Peer"/>
+  <sce:import kind="enum" src="enum_take_kind.scxml" as="TakeKind"/>
+  <sce:import kind="event-schema" src="schema_take_duplicate.scxml" as="Duplicate"/>
+  <sce:import kind="union" src="union_take_result.scxml" as="TakeResult"/>
+  <sce:import kind="algorithm" src="algorithm_take_generation.scxml" as="TakeGeneration"/>
+  <datamodel>
+    <data id="resets" sce:type="map&lt;record:Peer, uint64&gt;[2]" sce:direction="out"/>
+    <data id="generation" sce:type="uint64" expr="1" sce:direction="out"/>
+    <data id="took" sce:type="union:TakeResult" sce:direction="out">
+      <sce:set name="kind" expr="TakeKind.taken"/>
+    </data>
+    <data id="taken" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="last_duplicate" sce:type="uint64" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="watching">
+    <transition event="generation.next" type="internal">
+      <assign location="generation" expr="generation + 1"/>
+    </transition>
+    <transition event="peer.seen" type="internal">
+      <sce:call expr="TakeGeneration(resets, _event.data, generation)" location="took"/>
+      <if cond="took.kind === TakeKind.taken">
+        <assign location="taken" expr="taken + 1"/>
+      <elseif cond="took.kind === TakeKind.duplicate"/>
+        <assign location="last_duplicate" expr="took.last"/>
+      <else/>
+        <assign location="refused" expr="refused + 1"/>
+      </if>
+    </transition>
+  </state>
+</scxml>

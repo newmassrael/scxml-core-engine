@@ -1242,8 +1242,25 @@ fn crossing_records(slot: &StaticSlot) -> Vec<&str> {
             .iter()
             .filter_map(|case| case.record.as_deref())
             .collect(),
-        StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => Vec::new(),
+        // A map is lent whole and crosses no field (docs/adr/0108, D6 item 4).
+        StaticSlot::Scalar(_)
+        | StaticSlot::ScalarList(_)
+        | StaticSlot::Optional(_)
+        | StaticSlot::Map(_) => Vec::new(),
     }
+}
+
+/// What a refusal of a `<sce:call>` names (docs/adr/0108, D6 item 2): the
+/// statement, a call of an algorithm that writes a map in place, which no lane
+/// lowers until the step that lowers a map slot
+/// ([`crate::forge::value_type::MAP_CALL_LANDING`]). One wording for the walk
+/// of every target, the Interpreter's among them.
+pub(crate) fn sce_call_unlowered(action: &Action) -> String {
+    format!(
+        "<sce:call expr=\"{}\">, a call of an algorithm that writes a map in place ({}),",
+        action.expr.trim(),
+        crate::forge::value_type::MAP_CALL_LANDING
+    )
 }
 
 /// Each declared variant of `model` as the two sides of a crossing spell it in `lang`,
@@ -5036,6 +5053,13 @@ impl StaticTarget for RustTarget {
                     slot: StaticSlot::Scalar(_) | StaticSlot::Optional(_),
                     ..
                 } => return None,
+                // A map is lent whole, which no adapter writes yet: a call of an
+                // algorithm that takes one is refused before any adapter is
+                // asked for ([`lower`], docs/adr/0108, D6 items 1 and 4).
+                AdapterParam::State {
+                    slot: StaticSlot::Map(_),
+                    ..
+                } => return None,
             }
         }
         let (returned_type, converted) = match value.ret.as_ref()? {
@@ -5087,6 +5111,8 @@ impl StaticTarget for RustTarget {
                     from_algorithm(alias, "r")?
                 ),
             ),
+            // A map is a parameter only, never what a call answers.
+            StaticSlot::Map(_) => return None,
         };
         // A list the algorithm returns is written into a destination the adapter
         // holds (docs/adr/0082), and read from there as a returned value is.
@@ -7866,6 +7892,30 @@ pub fn lower(
     if let Some(construct) = target.unsupported(model, &scope) {
         return Err(GenerateError::unsupported(format!(
             "{construct} has no {lang} lowering yet"
+        )));
+    }
+    // A map or a set is lent to an algorithm whole, the map itself where the
+    // algorithm writes it in place, and never copied (docs/adr/0108, D6 items 1,
+    // 2 and 4). No lane lowers the loan yet, so a call of an algorithm that
+    // takes one is refused by name on every lane, before any adapter is asked
+    // for the slot.
+    let lent_map = scope.callees.iter().find_map(|callee| {
+        callee.value.as_ref()?.params.iter().find_map(|slot| {
+            if let StaticSlot::Map(map) = slot {
+                Some((callee, map))
+            } else {
+                None
+            }
+        })
+    });
+    if let Some((callee, map)) = lent_map {
+        return Err(GenerateError::unsupported(format!(
+            "`{}(…)`: an imported algorithm that takes the {} {} has no {lang} lowering of \
+             the call yet ({})",
+            callee.alias,
+            if map.inout { "inout" } else { "read-only" },
+            map.ty.as_attr(),
+            crate::forge::value_type::MAP_CALL_LANDING
         )));
     }
     // A call that hands an algorithm a record or a list, or takes one back, needs
@@ -11563,6 +11613,9 @@ impl CppTarget {
                 // A test component's statements are calls on its runtime context
                 // (docs/SCE_TEST_PROFILE.md §12.3).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
+                // A call of an algorithm that writes a map in place
+                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                "sce_call" => return Some(sce_call_unlowered(action)),
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -12023,6 +12076,8 @@ impl StaticTarget for CppTarget {
                 StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => {
                     from.to_string()
                 }
+                // A map is a parameter only, never what a call answers.
+                StaticSlot::Map(_) => return None,
                 // The machine's own struct, built case by case from the one the
                 // union's unit declares, which the algorithm gave back
                 // (docs/adr/0092, section 6.1 item 7).
@@ -13276,6 +13331,9 @@ impl GoTarget<'_> {
                 // context (docs/SCE_TEST_PROFILE.md §12.3,
                 // [`StaticTarget::test_statement`]).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
+                // A call of an algorithm that writes a map in place
+                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                "sce_call" => return Some(sce_call_unlowered(action)),
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -15021,6 +15079,9 @@ impl PythonTarget {
                 // context (docs/SCE_TEST_PROFILE.md §12.3,
                 // [`StaticTarget::test_statement`]).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
+                // A call of an algorithm that writes a map in place
+                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                "sce_call" => return Some(sce_call_unlowered(action)),
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -17127,6 +17188,9 @@ impl CTarget {
                 // context (docs/SCE_TEST_PROFILE.md §12.3,
                 // [`StaticTarget::test_statement`]).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
+                // A call of an algorithm that writes a map in place
+                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                "sce_call" => return Some(sce_call_unlowered(action)),
                 // The pairs of a `<send>`'s `<param>`s are written as the JSON
                 // object of the event's data from the machine's own fields, as a
                 // `<donedata>`'s are, and for a processor the host serves also
@@ -20389,6 +20453,9 @@ impl SwiftTarget {
                 // A test component's statements are calls on its runtime context
                 // (docs/SCE_TEST_PROFILE.md §12.3, [`StaticTarget::test_statement`]).
                 "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
+                // A call of an algorithm that writes a map in place
+                // (docs/adr/0108, D6 item 2), which no lane lowers yet.
+                "sce_call" => return Some(sce_call_unlowered(action)),
                 "send" => {
                     if let Some(what) = Self::unlowered_send(action) {
                         return Some(what);
@@ -23342,6 +23409,17 @@ fn lower_action(
                 target.clear(name)
             };
             rewrites.note_element(action.spellings.get("target"), &action.native_code);
+        }
+        // docs/adr/0108, D6 item 2: a call of an algorithm that writes a map in
+        // place, which no target lowers until the step that lends a map
+        // ([`sce_call_unlowered`]). A document that calls one is refused before
+        // this walk, where the algorithm it calls is ([`lower`]); this arm is
+        // what a target reaches with no such callee in scope.
+        "sce_call" => {
+            return Err(GenerateError::unsupported(format!(
+                "{} has no {lang} lowering yet",
+                sce_call_unlowered(action)
+            )));
         }
         // docs/adr/0108, D3 and D4: an entry of a map or a set put or removed at
         // its key, and what the statement did written where `outcome` names. A

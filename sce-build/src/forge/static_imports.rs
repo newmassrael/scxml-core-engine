@@ -24,7 +24,7 @@ use crate::forge::model::{
     AlgorithmModel, AlgorithmSignature, AlgorithmValueType, CodecModel, EntryType, EnumRef,
     ForgeDocument, ForgeField, ForgeImport, ForgeKind, OutOfBounds, ParsedForge, SceType,
 };
-use crate::forge::type_ctx::{CalleeKind, StaticCallee, StaticSlot, StaticValueSignature};
+use crate::forge::type_ctx::{CalleeKind, MapSlot, StaticCallee, StaticSlot, StaticValueSignature};
 use crate::forge::types::{CallReading, RecordId};
 use crate::model::{Datamodel, SCXMLModel};
 use crate::scxml_semantic::ScxmlSemanticError;
@@ -409,12 +409,7 @@ fn crossing_union(
     own_unions: &HashMap<String, String>,
 ) -> Result<crate::forge::type_ctx::UnionSlot, String> {
     let unreadable = || format!("its union `{alias}` is a document this call cannot resolve");
-    let import = imports
-        .iter()
-        .find(|i| i.alias == alias && i.kind == ForgeKind::Union)
-        .ok_or_else(unreadable)?;
-    let source = crate::forge::import_source::ImportSource::read(base_dir, import)
-        .map_err(|_| unreadable())?;
+    let source = union_source(imports, base_dir, alias).ok_or_else(unreadable)?;
     let parsed = source.parse().ok().flatten().ok_or_else(unreadable)?;
     let ForgeDocument::Union(union) = &parsed.document else {
         return Err(unreadable());
@@ -459,6 +454,98 @@ fn crossing_union(
         tag: union.tag.clone(),
         cases,
     })
+}
+
+/// What names the key and the value of a map or a set an algorithm is lent
+/// (docs/adr/0108, D6 item 4) as the statechart that lends it names them: the
+/// algorithm's own imports (`imports`, written relative to `base`), and the
+/// statechart's imports of records (`own`) and unions (`own_unions`) by
+/// document, and of enums by `enum_alias`. `what` says where the algorithm
+/// holds the map, for a refusal.
+struct LentNames<'a> {
+    what: &'a str,
+    imports: &'a [ForgeImport],
+    base: &'a Path,
+    own: &'a HashMap<RecordId, String>,
+    own_unions: &'a HashMap<String, String>,
+    enum_alias: &'a dyn Fn(&str) -> Result<SceType, String>,
+}
+
+impl LentNames<'_> {
+    /// `ty`, a type the algorithm writes in its own names, in the statechart's:
+    /// a record, a union and an enum by the alias the statechart imports the
+    /// same document under, at any depth, and every other type as it is. A map
+    /// is lent whole, so a record in it is the one its document declares on
+    /// both sides and crosses no field, and is held to no rule of what a call
+    /// copies ([`crossing_record`]); a document the statechart does not import
+    /// holds no variable of its own to lend, and is refused naming it.
+    fn type_of(&self, ty: &AlgorithmValueType) -> Result<AlgorithmValueType, String> {
+        let inner = |part: &AlgorithmValueType| self.type_of(part).map(Box::new);
+        Ok(match ty {
+            AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
+                AlgorithmValueType::Scalar((self.enum_alias)(&reference.alias)?)
+            }
+            AlgorithmValueType::Scalar(_)
+            | AlgorithmValueType::Text { .. }
+            | AlgorithmValueType::Bytes { .. } => ty.clone(),
+            AlgorithmValueType::Record { alias } => AlgorithmValueType::Record {
+                alias: record_identity(self.imports, self.base, alias)
+                    .and_then(|id| self.own.get(&id).cloned())
+                    .ok_or_else(|| {
+                        format!(
+                            "its {} holds a record of the schema `{alias}` stands for, and the \
+                             statechart does not import that document as an event-schema",
+                            self.what
+                        )
+                    })?,
+            },
+            AlgorithmValueType::Union { alias } => AlgorithmValueType::Union {
+                alias: union_source(self.imports, self.base, alias)
+                    .and_then(|source| {
+                        self.own_unions
+                            .get(&crate::forge::stdlib::identity(&source.path))
+                            .cloned()
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "its {} holds a union of the document `{alias}` stands for, and the \
+                             statechart does not import that document as a union",
+                            self.what
+                        )
+                    })?,
+            },
+            AlgorithmValueType::Optional { elem } => {
+                AlgorithmValueType::Optional { elem: inner(elem)? }
+            }
+            AlgorithmValueType::List { elem, max } => AlgorithmValueType::List {
+                elem: inner(elem)?,
+                max: max.clone(),
+            },
+            AlgorithmValueType::Map { key, value, max } => AlgorithmValueType::Map {
+                key: inner(key)?,
+                value: inner(value)?,
+                max: max.clone(),
+            },
+            AlgorithmValueType::Set { key, max } => AlgorithmValueType::Set {
+                key: inner(key)?,
+                max: max.clone(),
+            },
+        })
+    }
+}
+
+/// The source of the union document `imports` (written relative to `base_dir`)
+/// names `alias`, or `None` when no union import carries the alias or its file
+/// cannot be read.
+fn union_source(
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    alias: &str,
+) -> Option<crate::forge::import_source::ImportSource> {
+    let import = imports
+        .iter()
+        .find(|i| i.alias == alias && i.kind == ForgeKind::Union)?;
+    crate::forge::import_source::ImportSource::read(base_dir, import).ok()
 }
 
 /// Each enum `model` imports, by the alias it imports it under: what an enum a
@@ -640,10 +727,36 @@ fn value_signature(
             },
         }
     };
+    // A map or a set parameter is lent whole, the map itself where the
+    // algorithm writes it in place, and never copied (docs/adr/0108, D6 items 1,
+    // 2 and 4): its key and value name the statechart's own imports of the same
+    // documents, by identity, whatever their records hold, since nothing of it
+    // crosses field by field. A map returned is not yet a value a statechart
+    // takes, and stays refused by `slot` above.
     let params = signature
         .params
         .iter()
-        .map(|p| slot(&format!("parameter `{}`", p.name), &p.sce_type))
+        .map(|p| {
+            let name = format!("parameter `{}`", p.name);
+            match &p.sce_type {
+                AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => {
+                    let enum_alias = |alias: &str| enum_slot(&name, alias);
+                    let lent = LentNames {
+                        what: &name,
+                        imports: callee_imports,
+                        base: callee_base,
+                        own,
+                        own_unions,
+                        enum_alias: &enum_alias,
+                    };
+                    Ok(StaticSlot::Map(MapSlot {
+                        ty: lent.type_of(&p.sce_type)?,
+                        inout: p.written_in_place(),
+                    }))
+                }
+                ty => slot(&name, ty),
+            }
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let ret = signature
         .return_type

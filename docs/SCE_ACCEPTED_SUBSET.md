@@ -6332,12 +6332,47 @@ prove (`algorithm/undeclared-integer-failure`). A map return declares `may-fail`
 wherever it is read, and no backend lowers an algorithm's map yet ("Order of
 work", step 7): each refuses such an algorithm as
 `generate/unsupported-feature`, naming the slot and that record, before any
-statement of its body is lowered, and a statechart hands no algorithm a map yet,
-refused where the import is read. `sce-build/tests/fixtures/static_datamodel/algorithm_take_generation.scxml`
+statement of its body is lowered, and a statechart lends one a map by name, as
+the next paragraph says. `sce-build/tests/fixtures/static_datamodel/algorithm_take_generation.scxml`
 keeps each peer's latest generation in an `inout` map keyed by a record of two
 `uint64` halves and answers a union of `taken`, `duplicate` (the last generation)
 and `no_room`, and
 `sce-build/tests/a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_lower_it.rs`
+holds what is accepted and each refusal.
+
+**Calling an algorithm that writes a map in place: `<sce:call>`.** A statechart
+lends an algorithm a map or set variable by its name, whole: the parameter is a
+view of it, or, where the algorithm declares it `inout`, the map itself
+(docs/adr/0108, D6 items 1, 2 and 4). An algorithm that writes a map in place is
+called by a statement, never in an expression, since an expression has no effect:
+
+```xml
+<sce:call expr="TakeGeneration(resets, _event.data, generation)" location="took"/>
+<sce:call expr="Forget(resets)"/>
+```
+
+`expr` is one call, written whole, of an algorithm the document imports that
+writes a map in place. Each argument it writes in place is the name of a map or
+set variable whose key and value are the parameter's types, whatever bound the
+variable states; it is not the map a `<foreach>` around the call walks, and no
+map is named twice in one call. `location`, when written, takes what the
+algorithm returns by the rule an `<assign>` of that value follows (a number into
+a variable it fits, a record or a union whole into a variable of the same
+document); a call with no `location` drops the value, and a `location` on an
+algorithm that returns nothing is refused. A call of such an algorithm in any
+expression (an `<assign>`'s value, a condition, a `<param>`) is refused. Each of
+these is `scxml/static-datamodel-rule`, and what the `<assign>` rule refuses is
+refused in its words. The writes to the map and the store into `location`
+happen together when the call returns, and nothing between them can fail, so the
+statement raises nothing. The grammar declares one `<sce:call>` for this
+statement and for an algorithm body's `<sce:call target args>`, and each reader
+refuses the other's attributes. No lane lowers the call, or a map slot, yet
+("Order of work", step 7): each refuses the document as
+`generate/unsupported-feature`, naming that record.
+`sce-build/tests/fixtures/static_datamodel/static_map_take.scxml` hands
+`algorithm_take_generation.scxml` its table and branches on the union it
+answers, and
+`sce-build/tests/a_call_that_writes_a_map_in_place_is_a_statement_the_checker_judges.rs`
 holds what is accepted and each refusal.
 
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports

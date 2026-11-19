@@ -1583,6 +1583,10 @@ fn unsupported_action(action: &Action) -> Option<String> {
         // A put and a remove are replaced by the `<assign>` or the `<script>` that
         // writes the map (docs/adr/0108, D3 and D4): `JsTarget::map_write`.
         "sce_put" | "sce_remove" => None,
+        // A call of an algorithm that writes a map in place (docs/adr/0108, D6
+        // item 2), which the Interpreter's lowering of an algorithm's map slot
+        // has to land first.
+        "sce_call" => Some(crate::forge::static_lowering::sce_call_unlowered(action)),
         // A lift is lowered to a `<script>` that calls the library's reader of a
         // text (docs/adr/0087, section 2.1).
         "sce_lift" => None,
