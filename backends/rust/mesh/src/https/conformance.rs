@@ -284,6 +284,9 @@ impl Bench {
         let server = HttpsServer::new(
             ServerSettings {
                 max_hold: Duration::from_secs(2),
+                // The kit judges an adapter, which may retry as fast as its proxy lets it; the
+                // edge's rates are the server's own tests' to judge (docs/adr/0109, D2).
+                rates: crate::peers::EdgeRates::NONE,
                 ..ServerSettings::default()
             },
             Authenticator::Bearer(Arc::new(|name: &str, token: &str| {

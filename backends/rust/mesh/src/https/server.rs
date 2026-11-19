@@ -55,13 +55,14 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
 
+use super::rate::{client_address, is_trusted, retry_seconds, Cidr, Edge, Verdict};
 use super::{
     decode_install_secret, draw_epoch, install_digest, is_epoch, is_path_segment, split_sequence,
     LinkEvent, ACK_HEADER, BEARER_SCHEME, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER, HOLD_HEADER,
     INSTALL_SCHEME, PATH_ROOT, VERSION,
 };
 use crate::endpoint::{Transport, TransportFailure};
-use crate::peers::{HttpsAuthenticator, Machine, PeerLink};
+use crate::peers::{EdgeRate, EdgeRates, HttpsAuthenticator, Machine, PeerLink};
 
 /// The bounds a server keeps: deploy.yaml's keys of the accepting side, and two of the host's own
 /// for shedding load.
@@ -99,8 +100,15 @@ pub struct ServerSettings {
     /// The most connections open at once; one more is closed at accept.
     pub max_connections: usize,
     /// The most connections open at once from one address (an IPv4 address, an IPv6 /64); one
-    /// more is closed at accept.
+    /// more is closed at accept. A trusted proxy's connections, which carry many clients, are
+    /// counted only toward `max_connections`.
     pub max_connections_per_address: usize,
+    /// deploy.yaml's `rate:`: the edge's limiters (docs/adr/0109, D2). An exchange past one is
+    /// answered `429` with `Retry-After`, the limiter's wait rounded up to a second.
+    pub rates: EdgeRates,
+    /// deploy.yaml's `trusted_proxies`: a connection from an address in one of these blocks has
+    /// its client's address read from `Forwarded` (RFC 7239) (docs/adr/0109, D2).
+    pub trusted_proxies: Vec<Cidr>,
 }
 
 /// deploy.yaml's `max_clients` when the binding sets none (docs/adr/0109, D1).
@@ -126,7 +134,21 @@ impl Default for ServerSettings {
             body_timeout: Duration::from_secs(30),
             max_connections: 20_000,
             max_connections_per_address: 64,
+            rates: EdgeRates::DEFAULT,
+            trusted_proxies: Vec::new(),
         }
+    }
+}
+
+/// Of two settings of one limiter, the one that admits less: the longer interval and the smaller
+/// burst, and a limiter that is on wherever either is.
+fn stricter(a: Option<EdgeRate>, b: Option<EdgeRate>) -> Option<EdgeRate> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(EdgeRate {
+            interval_ms: a.interval_ms.max(b.interval_ms),
+            burst: a.burst.min(b.burst),
+        }),
+        (one, None) | (None, one) => one,
     }
 }
 
@@ -158,7 +180,8 @@ impl Listening {
                 mailbox,
                 max_clients,
                 max_response_bytes,
-                ..
+                rate,
+                trusted_proxies,
             } = peer.link
             else {
                 continue;
@@ -173,6 +196,12 @@ impl Listening {
                 mailbox: mailbox as usize,
                 max_clients: max_clients as usize,
                 max_response_bytes: usize::try_from(max_response_bytes).unwrap_or(usize::MAX),
+                rates: rate,
+                // The build checked every block.
+                trusted_proxies: trusted_proxies
+                    .iter()
+                    .filter_map(|block| Cidr::parse(block))
+                    .collect(),
                 ..ServerSettings::default()
             };
             if let Some(held) = found.as_mut() {
@@ -187,6 +216,18 @@ impl Listening {
                 settings.max_clients = settings.max_clients.min(declared.max_clients);
                 settings.max_response_bytes =
                     settings.max_response_bytes.min(declared.max_response_bytes);
+                let (held_rates, declared_rates) = (settings.rates, declared.rates);
+                settings.rates = EdgeRates {
+                    address: stricter(held_rates.address, declared_rates.address),
+                    client: stricter(held_rates.client, declared_rates.client),
+                    failed_auth: stricter(held_rates.failed_auth, declared_rates.failed_auth),
+                    new_names: stricter(held_rates.new_names, declared_rates.new_names),
+                    max_tracked: held_rates.max_tracked.min(declared_rates.max_tracked),
+                };
+                // A proxy is trusted on the address only when every binding there trusts it.
+                settings
+                    .trusted_proxies
+                    .retain(|block| declared.trusted_proxies.contains(block));
                 held.peers.push(peer.name);
             } else {
                 found = Some(Listening {
@@ -476,6 +517,22 @@ struct Shared {
     durable_reported: Notify,
     /// The connections open, and how many come from each address ([`address_key`]).
     connections: Mutex<Connections>,
+    /// The edge's limiters (docs/adr/0109, D2), and the moment their clock counts from.
+    edge: Mutex<Edge>,
+    started: Instant,
+}
+
+impl Shared {
+    /// Milliseconds since the server started: the clock the edge's limiters read.
+    fn now_ms(&self) -> i64 {
+        i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX)
+    }
+
+    /// Ask the edge `judge` at the server's clock.
+    fn edge<T>(&self, judge: impl FnOnce(&mut Edge, i64) -> T) -> T {
+        let now = self.now_ms();
+        judge(&mut self.edge.lock().expect(HELD), now)
+    }
 }
 
 /// The connections a server holds open (docs/adr/0109, D1).
@@ -506,7 +563,8 @@ pub fn address_key(address: IpAddr) -> IpAddr {
 /// A connection counted open, released when it closes.
 struct Open {
     shared: Arc<Shared>,
-    address: IpAddr,
+    /// The address it is counted under, `None` for a trusted proxy's.
+    address: Option<IpAddr>,
 }
 
 impl Open {
@@ -514,19 +572,26 @@ impl Open {
     /// `max_connections_per_address` from its address ([`address_key`]).
     fn admit(shared: &Arc<Shared>, address: IpAddr) -> Option<Open> {
         let settings = &shared.settings;
-        let address = address_key(address);
+        // A trusted proxy carries many clients on its connections: it is held to the server's
+        // bound alone.
+        let counted =
+            (!is_trusted(&settings.trusted_proxies, address)).then(|| address_key(address));
         let mut connections = shared.connections.lock().expect(HELD);
-        let from_address = connections.by_address.get(&address).copied().unwrap_or(0);
+        let from_address = counted
+            .and_then(|key| connections.by_address.get(&key).copied())
+            .unwrap_or(0);
         if connections.open >= settings.max_connections
-            || from_address >= settings.max_connections_per_address
+            || (counted.is_some() && from_address >= settings.max_connections_per_address)
         {
             return None;
         }
         connections.open += 1;
-        connections.by_address.insert(address, from_address + 1);
+        if let Some(key) = counted {
+            connections.by_address.insert(key, from_address + 1);
+        }
         Some(Open {
             shared: Arc::clone(shared),
-            address,
+            address: counted,
         })
     }
 }
@@ -535,7 +600,10 @@ impl Drop for Open {
     fn drop(&mut self) {
         let mut connections = self.shared.connections.lock().expect(HELD);
         connections.open = connections.open.saturating_sub(1);
-        if let Entry::Occupied(mut count) = connections.by_address.entry(self.address) {
+        let Some(address) = self.address else {
+            return;
+        };
+        if let Entry::Occupied(mut count) = connections.by_address.entry(address) {
             *count.get_mut() -= 1;
             if *count.get() == 0 {
                 count.remove();
@@ -569,6 +637,7 @@ impl HttpsServer {
             max_clients: settings.max_clients,
             clients: Mutex::new(HashMap::new()),
         });
+        let settings_rates = settings.rates;
         Ok(HttpsServer {
             shared: Arc::new(Shared {
                 settings,
@@ -581,6 +650,8 @@ impl HttpsServer {
                 durable_through: AtomicU64::new(0),
                 durable_reported: Notify::new(),
                 connections: Mutex::new(Connections::default()),
+                edge: Mutex::new(Edge::new(&settings_rates)),
+                started: Instant::now(),
             }),
         })
     }
@@ -662,9 +733,11 @@ impl HttpsServer {
                             .peer_certificates()
                             .and_then(|chain| chain.first())
                             .map(|certificate| certificate.as_ref().to_vec());
-                        server.serve_connection(stream, certificate).await;
+                        server
+                            .serve_accepted(stream, certificate, remote.ip())
+                            .await;
                     }
-                    None => server.serve_connection(stream, None).await,
+                    None => server.serve_accepted(stream, None, remote.ip()).await,
                 }
             });
         };
@@ -677,7 +750,28 @@ impl HttpsServer {
     /// that takes longer than `header_timeout` closes the connection (docs/adr/0109, D1). A host
     /// that accepts itself runs [`watch_absence`](Self::watch_absence) beside it, and bounds its
     /// connections and handshakes as [`serve`](Self::serve) does.
+    ///
+    /// The connection's remote address is not known here, so its exchanges are held to no
+    /// limiter of the address (docs/adr/0109, D2); a host that accepts itself and knows it calls
+    /// [`serve_accepted`](Self::serve_accepted).
     pub async fn serve_connection<S>(&self, stream: S, certificate: Option<Vec<u8>>)
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        self.serve_from(stream, certificate, None).await;
+    }
+
+    /// [`serve_connection`](Self::serve_connection) for a connection from `remote`: its
+    /// exchanges are held to the edge's limits of the address (docs/adr/0109, D2), read from
+    /// `Forwarded` when `remote` is a trusted proxy.
+    pub async fn serve_accepted<S>(&self, stream: S, certificate: Option<Vec<u8>>, remote: IpAddr)
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        self.serve_from(stream, certificate, Some(remote)).await;
+    }
+
+    async fn serve_from<S>(&self, stream: S, certificate: Option<Vec<u8>>, remote: Option<IpAddr>)
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -686,7 +780,7 @@ impl HttpsServer {
         let service = hyper::service::service_fn(move |request| {
             let shared = Arc::clone(&shared);
             let certificate = certificate.clone();
-            async move { Ok::<_, Infallible>(exchange(shared, request, certificate).await) }
+            async move { Ok::<_, Infallible>(exchange(shared, request, certificate, remote).await) }
         });
         let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
         builder
@@ -814,11 +908,12 @@ fn answer(status: StatusCode) -> Response<Full<Bytes>> {
     response
 }
 
-/// Load shed (§mesh-22.4): `429` or `503` with the `Retry-After` the client waits at least before
-/// it sends what the request carried again.
+/// Load shed (§mesh-22.4): `status`, a `429` or `503`, with `Retry-After` asking for `wait`,
+/// rounded up to a whole second, which the client waits at least before it sends what the request
+/// carried again.
 fn shed(status: StatusCode, wait: Duration) -> Response<Full<Bytes>> {
     let mut response = answer(status);
-    let seconds = wait.as_secs().max(1).to_string();
+    let seconds = retry_seconds(wait).to_string();
     if let Ok(value) = HeaderValue::from_str(&seconds) {
         response.headers_mut().insert("Retry-After", value);
     }
@@ -881,7 +976,12 @@ fn credential<'a>(request: &'a Request<Incoming>, scheme: &str) -> Option<&'a st
 /// with the installation digest still to pin.
 enum Admission {
     Refused,
-    Admitted { pin: Option<[u8; 32]> },
+    /// Admitted; `pin` is the installation digest still to pin, and `new` says the name is
+    /// pinned to none yet.
+    Admitted {
+        pin: Option<[u8; 32]>,
+        new: bool,
+    },
 }
 
 fn admit(
@@ -894,7 +994,10 @@ fn admit(
     // bearer token, an installation secret checked against its pin, or a client certificate.
     match authenticator {
         Authenticator::Bearer(check) => match credential(request, BEARER_SCHEME) {
-            Some(token) if check(name, token) => Admission::Admitted { pin: None },
+            Some(token) if check(name, token) => Admission::Admitted {
+                pin: None,
+                new: false,
+            },
             _ => Admission::Refused,
         },
         Authenticator::Install(pins) => {
@@ -905,11 +1008,17 @@ fn admit(
             let digest = install_digest(&secret);
             match pins.pinned(name) {
                 Some(held) if !same_digest(&held, &digest) => Admission::Refused,
-                _ => Admission::Admitted { pin: Some(digest) },
+                held => Admission::Admitted {
+                    pin: Some(digest),
+                    new: held.is_none(),
+                },
             }
         }
         Authenticator::Mtls(check) => match certificate {
-            Some(certificate) if check(name, certificate) => Admission::Admitted { pin: None },
+            Some(certificate) if check(name, certificate) => Admission::Admitted {
+                pin: None,
+                new: false,
+            },
             _ => Admission::Refused,
         },
     }
@@ -922,9 +1031,28 @@ async fn exchange(
     shared: Arc<Shared>,
     request: Request<Incoming>,
     certificate: Option<Arc<Vec<u8>>>,
+    remote: Option<IpAddr>,
 ) -> Response<Full<Bytes>> {
-    // §mesh-22.4: the refusals below (`405`, `404`, `503`, `401`, `400`, `413`, `429`, `415`)
+    // §mesh-22.4: the refusals below (`429`, `405`, `404`, `503`, `401`, `400`, `413`, `415`)
     // are each answered before the request's envelopes reach the core.
+    //
+    // docs/adr/0109, D2: every exchange is held to the rate of its remote address, read from
+    // `Forwarded` only on a connection from a trusted proxy, before anything else is read of it.
+    let address = remote.map(|peer| {
+        let forwarded = request
+            .headers()
+            .get_all("forwarded")
+            .iter()
+            .filter_map(|value| value.to_str().ok());
+        address_key(client_address(
+            peer,
+            forwarded,
+            &shared.settings.trusted_proxies,
+        ))
+    });
+    if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.exchange(address, now)) {
+        return shed(StatusCode::TOO_MANY_REQUESTS, wait);
+    }
     if request.method() != Method::POST {
         let mut response = answer(StatusCode::METHOD_NOT_ALLOWED);
         response
@@ -945,15 +1073,35 @@ async fn exchange(
         return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
     }
     let _counted = Counted(&shared.exchanges);
-    let pin = match admit(
+    // docs/adr/0109, D2: while the failed authentications of the name or of the address are past
+    // their rate, the authenticator is not run, so a guess costs the guesser the rate and the
+    // server no check.
+    if let Verdict::Refused { wait } =
+        shared.edge(|edge, now| edge.may_authenticate(&name, address, now))
+    {
+        return shed(StatusCode::TOO_MANY_REQUESTS, wait);
+    }
+    let (pin, new) = match admit(
         &shared.authenticator,
         &name,
         &request,
         certificate.as_deref().map(Vec::as_slice),
     ) {
-        Admission::Refused => return unauthorized(&shared.authenticator),
-        Admission::Admitted { pin } => pin,
+        Admission::Refused => {
+            shared.edge(|edge, now| edge.failed(&name, address, now));
+            return unauthorized(&shared.authenticator);
+        }
+        Admission::Admitted { pin, new } => (pin, new),
     };
+    if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.client(&name, now)) {
+        return shed(StatusCode::TOO_MANY_REQUESTS, wait);
+    }
+    // A name pinned for the first time is held to the rate at which its address pins new names.
+    if new {
+        if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.new_name(address, now)) {
+            return shed(StatusCode::TOO_MANY_REQUESTS, wait);
+        }
+    }
     let (Some(ack), Some(hold_ms), Some(acked_in)) = (
         number_header(&request, ACK_HEADER),
         number_header(&request, HOLD_HEADER),
@@ -1024,6 +1172,7 @@ async fn exchange(
     if let Some(digest) = pin {
         if let Authenticator::Install(pins) = &shared.authenticator {
             if !pins.pin(&name, digest) {
+                shared.edge(|edge, now| edge.failed(&name, address, now));
                 return unauthorized(&shared.authenticator);
             }
         }
@@ -1504,13 +1653,6 @@ mod tests {
         bound: impl Fn(&str) -> bool + Send + Sync + 'static,
         host: impl ServerHost,
     ) -> Serving {
-        use super::super::adapter::{AdapterSettings, HyperTransport, ProxyPolicy};
-
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("a runtime");
         let bound = Arc::new(bound);
         let checked = Arc::clone(&bound);
         let server = HttpsServer::new(
@@ -1522,6 +1664,18 @@ mod tests {
             host,
         )
         .expect("a server");
+        listening(server)
+    }
+
+    /// `server` on a loopback port, the runtime it runs on, and the reference adapter.
+    fn listening(server: HttpsServer) -> Serving {
+        use super::super::adapter::{AdapterSettings, HyperTransport, ProxyPolicy};
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("a runtime");
         let listener = runtime
             .block_on(TcpListener::bind("127.0.0.1:0"))
             .expect("a loopback port");
@@ -1711,6 +1865,9 @@ mod tests {
         } = serving_with(
             ServerSettings {
                 absence: Duration::from_millis(100),
+                // Ten thousand exchanges from one address as fast as the loopback carries them:
+                // what is judged here is what they leave behind, not their rate.
+                rates: EdgeRates::NONE,
                 ..ServerSettings::default()
             },
             |name: &str| name.starts_with('n'),
@@ -1874,5 +2031,146 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(served, Some(200), "the address is served again");
+    }
+
+    /// docs/adr/0109, D2: a `401` storm from one address stops reaching the authenticator once
+    /// its failures are past their rate: each exchange after is answered `429` with
+    /// `Retry-After`, the authenticator is not run for it, and an established client is still
+    /// served. Red if the server runs the authenticator before asking the failure limiters.
+    #[test]
+    fn a_storm_of_failed_authentications_stops_reaching_the_authenticator() {
+        use super::super::HttpsTransport;
+
+        let checked = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&checked);
+        let server = HttpsServer::new(
+            ServerSettings {
+                rates: EdgeRates {
+                    failed_auth: Some(EdgeRate {
+                        interval_ms: 60_000,
+                        burst: 3,
+                    }),
+                    ..EdgeRates::NONE
+                },
+                ..ServerSettings::default()
+            },
+            Authenticator::Bearer(Arc::new(move |name: &str, token: &str| {
+                counted.fetch_add(1, Ordering::SeqCst);
+                name == "phone" && token == "t"
+            })),
+            |_: &str| true,
+            |_: Vec<LinkEvent>| {},
+        )
+        .expect("a server");
+        let Serving {
+            _runtime,
+            address,
+            port,
+            ..
+        } = listening(server);
+        let guess = |name: &str| {
+            let mut request = request_as(name, address, Vec::new());
+            for header in &mut request.headers {
+                if header.0 == "Authorization" {
+                    header.1 = "Bearer guess".to_string();
+                }
+            }
+            port.exchange(request).expect("a response")
+        };
+        for _ in 0..3 {
+            assert_eq!(guess("victim").status, 401);
+        }
+        assert_eq!(checked.load(Ordering::SeqCst), 3);
+        for _ in 0..20 {
+            let refused = guess("victim");
+            assert_eq!(refused.status, 429);
+            let wait: u64 = refused
+                .header("Retry-After")
+                .and_then(|value| value.parse().ok())
+                .expect("a wait in seconds");
+            assert!((1..=60).contains(&wait), "{wait}");
+        }
+        assert_eq!(
+            checked.load(Ordering::SeqCst),
+            3,
+            "no guess past the rate reached the authenticator"
+        );
+        assert_eq!(
+            guess("phone").status,
+            429,
+            "every name from the guessing address waits"
+        );
+    }
+
+    /// docs/adr/0109, D2: every exchange from one address is held to the address's rate, and one
+    /// past it is answered `429` with the limiter's wait rounded up to a second. Red if the
+    /// address limiter is not asked.
+    #[test]
+    fn exchanges_past_the_rate_of_their_address_are_answered_429() {
+        use super::super::HttpsTransport;
+
+        let Serving {
+            _runtime,
+            address,
+            port,
+            ..
+        } = serving_with(
+            ServerSettings {
+                rates: EdgeRates {
+                    address: Some(EdgeRate {
+                        interval_ms: 60_000,
+                        burst: 2,
+                    }),
+                    ..EdgeRates::NONE
+                },
+                ..ServerSettings::default()
+            },
+            |name: &str| name == "phone",
+            |_: Vec<LinkEvent>| {},
+        );
+        for _ in 0..2 {
+            let answered = port
+                .exchange(request_to(address, Vec::new()))
+                .expect("a response");
+            assert_eq!(answered.status, 200);
+        }
+        let refused = port
+            .exchange(request_to(address, Vec::new()))
+            .expect("a response");
+        assert_eq!(refused.status, 429);
+        let wait: u64 = refused
+            .header("Retry-After")
+            .and_then(|value| value.parse().ok())
+            .expect("a wait in seconds");
+        assert!((59..=60).contains(&wait), "{wait}");
+    }
+
+    /// docs/adr/0109, D2: the server's bounds of one address merge the bindings there by taking
+    /// the stricter of each limiter, and trusting only the proxies every binding trusts.
+    #[test]
+    fn an_address_takes_the_stricter_rates_of_its_bindings() {
+        assert_eq!(
+            stricter(
+                Some(EdgeRate {
+                    interval_ms: 10,
+                    burst: 200
+                }),
+                Some(EdgeRate {
+                    interval_ms: 50,
+                    burst: 300
+                })
+            ),
+            Some(EdgeRate {
+                interval_ms: 50,
+                burst: 200
+            })
+        );
+        let on = Some(EdgeRate {
+            interval_ms: 1,
+            burst: 1,
+        });
+        assert_eq!(stricter(on, None), on);
+        assert_eq!(stricter(None, on), on);
+        assert_eq!(stricter(None, None), None);
     }
 }

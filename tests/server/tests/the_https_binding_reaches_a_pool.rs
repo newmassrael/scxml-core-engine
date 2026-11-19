@@ -36,6 +36,7 @@ use sce_rust_mesh::https::{Credential, HttpsFailure, HttpsRequest, HttpsResponse
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::link::{deliver, LinkEvent};
 use sce_rust_mesh::outbound::RetryPolicy;
+use sce_rust_mesh::peers::EdgeRates;
 use sce_rust_mesh::pool::{Fate, Pool, PoolConfig};
 use sce_rust_mesh::reconnect::Backoff;
 use sce_rust_mesh::router::{PeerConfig, Router};
@@ -218,6 +219,9 @@ impl Served {
         let server = HttpsServer::new(
             ServerSettings {
                 max_hold: Duration::from_secs(2),
+                // As the binding it serves declares (ledger::HTTPS): this scenario judges what the
+                // server keeps, and tests/the_https_edge_limits_rate.rs judges the edge's rates.
+                rates: EdgeRates::NONE,
                 ..ServerSettings::default()
             },
             Authenticator::Bearer(Arc::new(|name: &str, token: &str| {
