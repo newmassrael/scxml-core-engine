@@ -6,3 +6,9 @@ commit = "c7792bb43cf66674b468223f1e765e1514ba2fb3"
 base = "fbf5bbc2b18d4156b6ff1ee212701f7e4f49b802"
 machine = "mf977c53d872e"
 at = 1795079072
+
+[return]
+reason = "conflict"
+detail = "backends/rust/mesh/src/https/server.rs sce-build/src/mesh/topology.rs"
+report = "mb2af4e1c456c:0000000268-86a6a455cb58/attempt-1.log"
+at = 1795079479
