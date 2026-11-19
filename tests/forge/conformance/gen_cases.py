@@ -375,6 +375,47 @@ def lcg_table(n: int):
     return ("ok", x)
 
 
+# ── A literal takes the type its context gives it (SCE_FORGE.md 3.4, 3.4.1) ──
+#
+# A literal that meets no declared operand (the left operand of a shift, an
+# operation of literals alone) is a uint64 in these documents, the type of the
+# place it lands in. Python's integers have no width, so each operation is made
+# exactly and reduced to 64 bits where the document's operation wraps (`~`), or
+# held to uint64 where it is checked; the count, below 64, says only how far.
+
+
+def literal_shift(prev: int, m: int, op: int):
+    """algorithm_literal_shift: op 0 |, 1 ^, 2 & ~ of bit m; 3 ~ of bit m; 4
+    prev | (2^32 - 1) >> m; 5 prev | 2^40; any other op prev."""
+    mask = 2**64 - 1
+    bit = 1 << m
+    answers = {
+        0: prev | bit,
+        1: prev ^ bit,
+        2: prev & ~bit & mask,
+        3: ~bit & mask,
+        4: prev | ((2**32 - 1) >> m),
+        5: prev | (1 << 40),
+    }
+    return ("ok", answers.get(op, prev))
+
+
+def literal_arith(prev: int, m: int, op: int):
+    """algorithm_literal_arith, may-fail: op 0 prev + 2^32; 1 the low m bits of
+    prev; 2 prev - 2^m; 3 3 * 2^m; any other op prev. A result outside uint64
+    fails 'overflow'."""
+    exact = {
+        0: prev + 65536 * 65536,
+        1: prev & ((1 << m) - 1),
+        2: prev - (1 << m),
+        3: (1 << m) * 3,
+    }
+    value = exact.get(op, prev)
+    if not fits(value, 0, 2**64 - 1):
+        return ("fails", "overflow")
+    return ("ok", value)
+
+
 # ── The civil calendar (sce:std/time) ─────────────────────────────────────
 #
 # The proleptic Gregorian calendar, the way Python's own library does it, so
@@ -910,6 +951,53 @@ def tick_args(rng: SplitMix64):
 
 def lcg_args(rng: SplitMix64):
     return [rng.between(0, U8_MAX)]
+
+
+#: The counts where a shift of a literal in a narrower width goes wrong: the
+#: edges of 8, 16 and 32 bits, and the top bit of 64. A count is held below 64,
+#: since one past the width is not specified.
+LITERAL_COUNTS = [0, 1, 7, 8, 15, 16, 30, 31, 32, 33, 40, 62, 63]
+LITERAL_PREVS = [0, 1, 2**31, 2**32 - 1, 2**32, 2**53 - 1, 2**63, 2**64 - 2, 2**64 - 1]
+
+
+def literal_width_args(ops: int, edges):
+    """Arguments for `algorithm_literal_shift` or `algorithm_literal_arith`:
+    a count from the edges or any below 64, an op the document defines (now and
+    then one it does not), and a `prev` from the edges, a safe integer, any
+    uint64, or one `edges(m, op, rng)` aims at the op's own failure."""
+
+    def generate(rng: SplitMix64):
+        m = rng.pick(LITERAL_COUNTS) if rng.below(2) else rng.between(0, 63)
+        op = rng.between(0, ops - 1) if rng.below(10) else rng.pick([ops, 9, U8_MAX])
+        kind = rng.below(10)
+        aimed = edges(m, op, rng) if kind < 3 else None
+        if aimed is not None:
+            prev = aimed
+        elif kind < 6:
+            prev = rng.pick(LITERAL_PREVS)
+        elif kind < 8:
+            prev = rng.between(0, 2**53 - 1)
+        else:
+            prev = rng.between(0, 2**64 - 1)
+        return [prev, m, op]
+
+    return generate
+
+
+def literal_shift_edges(m: int, op: int, rng: SplitMix64):
+    """A `prev` with bit m set, or with every bit set: what a set, a toggle and a
+    clear of that bit move."""
+    return rng.pick([1 << m, 2**64 - 1, (1 << m) - 1])
+
+
+def literal_arith_edges(m: int, op: int, rng: SplitMix64):
+    """A `prev` a few either side of where op 0 or op 2 starts to fail: 2^64 -
+    2^32 for the sum, 2^m for the difference."""
+    if op == 0:
+        return 2**64 - 2**32 + rng.between(-2, 2) - 1
+    if op == 2:
+        return max(0, (1 << m) + rng.between(-2, 2))
+    return None
 
 
 YEAR_EDGES = sorted(
@@ -4502,6 +4590,18 @@ FIXTURES = {
     "algorithm_tick_elapsed": (lambda args: tick_elapsed(*args), tick_args, 300, 0xE110_006B),
     "algorithm_tick_until_due": (lambda args: tick_until_due(*args), tick_args, 300, 0xE110_006C),
     "algorithm_lcg_table": (lambda args: lcg_table(*args), lcg_args, 100, 0xE110_006D),
+    "algorithm_literal_shift": (
+        lambda args: literal_shift(*args),
+        literal_width_args(6, literal_shift_edges),
+        300,
+        0xE110_0071,
+    ),
+    "algorithm_literal_arith": (
+        lambda args: literal_arith(*args),
+        literal_width_args(4, literal_arith_edges),
+        300,
+        0xE110_0072,
+    ),
     "resolve_date": (lambda args: resolve_date(*args), resolve_date_args, 400, 0xE110_006E),
     "resolve_date_at": (lambda args: resolve_date_at(*args), resolve_date_at_args, 200, 0xE110_0070),
 }

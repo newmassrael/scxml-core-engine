@@ -1290,6 +1290,36 @@
       }
     },
     {
+      "name": "algorithm_literal_shift",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_literal_shift",
+      "args": [
+        "u64",
+        "u8",
+        "u8"
+      ],
+      "output": {
+        "type": "u64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_literal_arith",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_literal_arith",
+      "args": [
+        "u64",
+        "u8",
+        "u8"
+      ],
+      "output": {
+        "type": "u64",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "algorithm_checked_call",
       "kind": "algorithm",
       "ref_section": "pure_functions",

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4, "Typing convention", and §3.4.1: an integer operation
+  none of whose operands has a declared type takes the type of the place it
+  lands in or of the operand it meets, here uint64, and is checked at that
+  width in a body that declares may-fail, one operation per `op`:
+
+    op 0  prev + 65536 * 65536   a product of literals alone, 2^32
+    op 1  prev & ((1 << m) - 1)  the low m bits: a shifted literal less one
+    op 2  prev - (1 << m)        fails when prev is below 2^m
+    op 3  (1 << m) * 3           fails from m = 63
+    any other op: prev
+
+  Until the rule, `65536 * 65536` was a 32-bit product in C, C++ and Kotlin,
+  which overflowed, and the shift of op 1 to 3 took the count's uint8. A
+  count is held below 64: a count past the width is not specified.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="prev" type="uint64"/>
+    <sce:param name="m" type="uint8"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="uint64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="uint64" init="prev"/>
+    <sce:if cond="op === 0">
+      <sce:assign target="r" expr="prev + 65536 * 65536"/>
+    </sce:if>
+    <sce:if cond="op === 1">
+      <sce:assign target="r" expr="prev &amp; ((1 &lt;&lt; m) - 1)"/>
+    </sce:if>
+    <sce:if cond="op === 2">
+      <sce:assign target="r" expr="prev - (1 &lt;&lt; m)"/>
+    </sce:if>
+    <sce:if cond="op === 3">
+      <sce:assign target="r" expr="(1 &lt;&lt; m) * 3"/>
+    </sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>

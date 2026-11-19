@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.1, "The width of a shift": a literal that meets no
+  declared operand takes the type of the place it lands in, here uint64,
+  in a body that does not declare may-fail (a bitwise operation never
+  fails), one operation per `op`:
+
+    op 0  prev | (1 << m)            a bit set
+    op 1  prev ^ (1 << m)            a bit toggled
+    op 2  prev & ~(1 << m)           a bit cleared
+    op 3  ~(1 << m)                  every bit but one, stored as it is
+    op 4  prev | (4294967295 >> m)   a literal past int32 shifted right
+    op 5  prev | (1 << 40)           a shift of literals alone
+    any other op: prev
+
+  The count `m` is a uint8 and does not type the shift. Until the rule,
+  each backend shifted the literal in a width of its own: a 32-bit integer
+  in Rust, C, C++ and Kotlin, from which `m = 31` set the wrong bits and
+  `m = 32` panicked in a Rust debug build, and the count's uint8 in Python
+  and the Interpreter, which lost the bit from `m = 8`. A count is held
+  below 64 here: a count past the width is not specified.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="prev" type="uint64"/>
+    <sce:param name="m" type="uint8"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="uint64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="uint64" init="prev"/>
+    <sce:if cond="op === 0">
+      <sce:assign target="r" expr="prev | (1 &lt;&lt; m)"/>
+    </sce:if>
+    <sce:if cond="op === 1">
+      <sce:assign target="r" expr="prev ^ (1 &lt;&lt; m)"/>
+    </sce:if>
+    <sce:if cond="op === 2">
+      <sce:assign target="r" expr="prev &amp; ~(1 &lt;&lt; m)"/>
+    </sce:if>
+    <sce:if cond="op === 3">
+      <sce:assign target="r" expr="~(1 &lt;&lt; m)"/>
+    </sce:if>
+    <sce:if cond="op === 4">
+      <sce:assign target="r" expr="prev | (4294967295 &gt;&gt; m)"/>
+    </sce:if>
+    <sce:if cond="op === 5">
+      <sce:assign target="r" expr="prev | (1 &lt;&lt; 40)"/>
+    </sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>
