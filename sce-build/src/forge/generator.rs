@@ -49660,7 +49660,35 @@ fn render_algorithm(
     // function emit doesn't store BC instances as members (they ride
     // through positional ref params), so the template consumes
     // `all_imports` for the include block and ignores `imports`.
-    let (has_imports, all_imports_val, stateful_imports_val) = build_template_imports(imports);
+    //
+    // A Rust algorithm `use`s an enum's module only where its text names the
+    // module: an enum the document names only as the tag of a union local it
+    // builds is spelled nowhere, since the local is built as the case of the
+    // union's own unit, which names its tag's enum itself
+    // ([`algorithm_union_case`]), and the `use` would be an unused import,
+    // which `-D warnings` refuses.
+    let spelled_text = [
+        ctx.get("params_str")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
+        ctx.get("return_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
+        body.as_str(),
+        consts_prelude.as_str(),
+    ]
+    .concat();
+    let used_imports: Vec<ImportContext> = imports
+        .iter()
+        .filter(|imp| {
+            lang != Language::Rust
+                || imp.kind != "enum"
+                || spelled_text.contains(&format!("{}::", imp.namespace))
+        })
+        .cloned()
+        .collect();
+    let (has_imports, all_imports_val, stateful_imports_val) =
+        build_template_imports(&used_imports);
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert(
         "imports".into(),
