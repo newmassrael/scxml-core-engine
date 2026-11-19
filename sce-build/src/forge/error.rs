@@ -6372,10 +6372,10 @@ fn unread_sce_summary(unread: &[crate::read_ledger::Unread]) -> String {
 
 /// The lanes of [`GenerateError::CodegenStandardHostTypeNotServed`] by their
 /// wire names, in the table's order.
-fn lane_names(lanes: &[crate::generator::Language]) -> String {
+fn lane_names(lanes: &[crate::forge::standard_host::HostLane]) -> String {
     lanes
         .iter()
-        .map(|lane| crate::forge::codegen_matrix::language_wire_name(*lane))
+        .map(|lane| lane.wire_name())
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -6698,9 +6698,11 @@ pub enum GenerateError {
 
     /// A machine runs an `<invoke>` of a standard host type
     /// (docs/SCE_HOST_FEATURES.md) whose entry in the table of standard types
-    /// does not list the lane the machine is generated for among the lanes
-    /// whose reference host serves it (docs/adr/0107, D8). Generating it would
-    /// write a machine whose request no host of that lane answers. Producer:
+    /// does not list the lane the machine is written for among the lanes
+    /// whose reference host serves it (docs/adr/0107, D8): a backend's
+    /// generated machine, or the document lowered for the Interpreter.
+    /// Writing it would give the lane a machine whose request no host of that
+    /// lane answers. Producer:
     /// [`crate::forge::standard_host::refuse_unserved`], asked where a machine
     /// is written for a lane. `invoke_type` and `served_by` are the table's
     /// own, `served_by` in its order; `at` is the `<invoke>`. Borrowed from
@@ -6710,14 +6712,14 @@ pub enum GenerateError {
     #[error(
         "<invoke id=\"{invoke_id}\"> runs the standard host type '{invoke_type}', which the \
          {} lane does not serve: it is served on {}",
-        crate::forge::codegen_matrix::language_wire_name(*.language),
+        crate::forge::standard_host::HostLane::wire_name(*.lane),
         lane_names(.served_by)
     )]
     CodegenStandardHostTypeNotServed {
         invoke_id: String,
         invoke_type: &'static str,
-        language: crate::generator::Language,
-        served_by: &'static [crate::generator::Language],
+        lane: crate::forge::standard_host::HostLane,
+        served_by: &'static [crate::forge::standard_host::HostLane],
         at: Option<SourceLocation>,
     },
 

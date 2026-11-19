@@ -2117,11 +2117,15 @@ pub fn emit_model_artifacts(
     // docs/adr/0107, D8: a standard host type is served on the lanes its
     // entry names, and a machine that runs one is refused for any other lane,
     // on the `<invoke>` that runs it. Here because every route that writes a
-    // machine for a lane comes through here (`generate`, `check`, the
+    // backend's machine comes through here (`generate`, `check`, the
     // document set and each child a document carries), and the parse that
-    // holds the type to its records does not know the lane.
-    forge::standard_host::refuse_unserved(model, language)
-        .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
+    // holds the type to its records does not know the lane. The Interpreter's
+    // lane is asked where a document is lowered for it (`static_js`).
+    forge::standard_host::refuse_unserved(
+        model,
+        forge::standard_host::HostLane::Generated(language),
+    )
+    .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
     // docs/SCE_TEST_PROFILE.md §11.9: a `test-component` is read and checked
     // on every backend, and a backend generates one only once the profile's
     // runtime lands there (`codegen_matrix::TEST_COMPONENT_BACKENDS`); every
@@ -12320,12 +12324,12 @@ mod tests {
     /// refusal carries is the row it reaches the wire with.
     #[test]
     fn a_standard_type_a_lane_does_not_serve_is_refused_on_its_invoke() {
-        use forge::standard_host::{refuse_unserved_in, StandardHostType};
+        use forge::standard_host::{refuse_unserved_in, HostLane, StandardHostType};
         const PARTLY_SERVED: &[StandardHostType] = &[StandardHostType {
             invoke_type: "x-probe-op",
             request: None,
             result: "probe_result",
-            served_by: &[generator::Language::Rust],
+            served_by: &[HostLane::Generated(generator::Language::Rust)],
         }];
         let model = parser::SCXMLParser::new()
             .parse_string(
@@ -12337,7 +12341,8 @@ mod tests {
                 "probe",
             )
             .expect("the probe parses");
-        let refused = refuse_unserved_in(&model, generator::Language::Kotlin, PARTLY_SERVED)
+        let kotlin = HostLane::Generated(generator::Language::Kotlin);
+        let refused = refuse_unserved_in(&model, kotlin, PARTLY_SERVED)
             .expect_err("kotlin does not serve x-probe-op");
         let located = locate_codegen_error(refused, "probe.scxml", &model);
         assert_eq!(

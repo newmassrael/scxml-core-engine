@@ -1456,7 +1456,9 @@ impl StaticTarget for JsTarget {
 /// and D7). Their requests hand no child a variable it bounds, so the bounded
 /// `namelist` refusal below is a child session's alone.
 ///
-/// The one host-run type refused is a model's generation
+/// A standard host type the Interpreter's host does not serve is refused before
+/// this walk, by the table of standard types ([`lower_parsed`]). Of the types it
+/// serves, the one refused here is a model's generation
 /// (`sce-host-model-generate`, docs/adr/0087, section 7.1): its request's
 /// `answer_schema` is written by the build from `sce:answer`, and the schema it
 /// names is resolved in the machine's table of answer schemas, and the lowered
@@ -2086,6 +2088,17 @@ fn lower_parsed(
     base_dir: Option<&Path>,
 ) -> Result<String, Located<ForgeError>> {
     let refuse = |error: GenerateError| Located::in_file(ForgeError::from(error), label);
+    // docs/adr/0107, D8: the Interpreter is a lane of the table of standard host
+    // types, and a lowering is its build, so a machine that runs a type its
+    // reference host does not serve is refused here, on the `<invoke>` that runs
+    // it, under any data model, as a backend's build refuses it where its machine
+    // is written. Asked of every document of a set and of each child lowered where
+    // it stands, since each is lowered through here.
+    crate::forge::standard_host::refuse_unserved(
+        model,
+        crate::forge::standard_host::HostLane::Interpreter,
+    )
+    .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
     if model.datamodel != Datamodel::SceStatic {
         return install_doors(text, model).map_err(refuse);
     }

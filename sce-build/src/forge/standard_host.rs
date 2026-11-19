@@ -23,8 +23,9 @@
 //! - **It is served on the lanes the table names** ([`refuse_unserved`],
 //!   docs/adr/0107, D8): a build for a lane whose reference host does not
 //!   serve the type refuses a machine that runs it, naming the lanes that do.
-//!   That every lane serves every type stays the goal; it is not a
-//!   precondition of adding one.
+//!   A lane is a backend `-l` names or the Interpreter ([`HostLane`]), whose
+//!   build is the document `sce-codegen lower` writes. That every lane serves
+//!   every type stays the goal; it is not a precondition of adding one.
 
 use std::path::Path;
 
@@ -33,6 +34,50 @@ use crate::forge::model::ForgeKind;
 use crate::generator::Language;
 use crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
 use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
+
+/// A lane a standard host operation is served on: a row of the table of
+/// reference hosts and drivers (docs/SCE_HOST_FEATURES.md, section 8). Each
+/// generated backend is one, its machine written by `generate` for the
+/// backend `-l` names; the Interpreter is one more, its machine the document
+/// `sce-codegen lower` writes and its host the C++ reference host registered
+/// on the `StateMachine`. A build for either refuses a machine that runs an
+/// operation the lane's reference host does not serve (docs/adr/0107, D8).
+///
+/// The Interpreter's lane is its own and not the C++ one: the operations the
+/// C++ host serves only once the embedding adds a feature to it (the COSE
+/// operations, on libsodium) are served on the generated C++ machine, whose
+/// driver adds it, and not on the Interpreter, whose driver does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostLane {
+    /// The machine a backend generates.
+    Generated(Language),
+    /// The document lowered for the Interpreter
+    /// ([`crate::forge::static_js::lower_file_set`]).
+    Interpreter,
+}
+
+impl HostLane {
+    /// Every lane, in the order an entry of the table names its lanes and a
+    /// refusal reads them: the backends in the order of [`Language::ALL`],
+    /// then the Interpreter.
+    pub fn all() -> impl Iterator<Item = HostLane> {
+        Language::ALL
+            .iter()
+            .map(|&language| HostLane::Generated(language))
+            .chain(std::iter::once(HostLane::Interpreter))
+    }
+
+    /// The name a refusal gives the lane: a backend's wire name, as `-l`
+    /// spells it, or `interpreter`.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            HostLane::Generated(language) => {
+                crate::forge::codegen_matrix::language_wire_name(language)
+            }
+            HostLane::Interpreter => "interpreter",
+        }
+    }
+}
 
 /// One standard host operation: the `<invoke type>` that names it, the
 /// library documents of its records, by their name under `sce:std/host/`
@@ -47,30 +92,35 @@ pub struct StandardHostType {
     pub result: &'static str,
     /// The lanes whose reference host serves the operation
     /// (docs/SCE_HOST_FEATURES.md, section 8), in the order of
-    /// [`Language::ALL`]. A build for a lane not listed refuses a machine that
+    /// [`HostLane::all`]. A build for a lane not listed refuses a machine that
     /// runs the operation ([`refuse_unserved`]). A lane joins the list in the
     /// change that lands its reference host's support for the operation and
     /// its driver's scenarios.
-    pub served_by: &'static [Language],
+    pub served_by: &'static [HostLane],
 }
 
 /// The lanes whose reference host serves every operation of the clock, the
 /// key-value store, notifications, HTTP and generated text
 /// (docs/SCE_HOST_FEATURES.md, sections 2 to 6): every lane today, each with
-/// the reference host and driver section 8 lists. Written out rather than
-/// taken from [`Language::ALL`], so that a backend added to [`Language`] is
-/// refused these operations until its reference host serves them: a lane
-/// joins this list in the change that lands that host and its scenarios, and
-/// in no other change. An operation added later names its own lanes
-/// (docs/adr/0107, D8).
-pub const EVERY_REFERENCE_HOST: &[Language] = &[
-    Language::Rust,
-    Language::Cpp,
-    Language::Kotlin,
-    Language::Go,
-    Language::Python,
-    Language::C11,
-    Language::Swift,
+/// the reference host and driver section 8 lists, the Interpreter's included.
+/// Written out rather than taken from [`HostLane::all`], so that a backend
+/// added to [`Language`] is refused these operations until its reference host
+/// serves them: a lane joins this list in the change that lands that host and
+/// its scenarios, and in no other change. An operation added later names its
+/// own lanes (docs/adr/0107, D8).
+///
+/// The Interpreter's host serves a model's generation too; the lowering
+/// refuses that operation for a reason of its own, that the lowered document
+/// carries no answer schema (docs/adr/0087, section 7.1).
+pub const EVERY_REFERENCE_HOST: &[HostLane] = &[
+    HostLane::Generated(Language::Rust),
+    HostLane::Generated(Language::Cpp),
+    HostLane::Generated(Language::Kotlin),
+    HostLane::Generated(Language::Go),
+    HostLane::Generated(Language::Python),
+    HostLane::Generated(Language::C11),
+    HostLane::Generated(Language::Swift),
+    HostLane::Interpreter,
 ];
 
 /// The lanes whose reference host serves signing and sealing
@@ -78,7 +128,10 @@ pub const EVERY_REFERENCE_HOST: &[Language] = &[
 /// RustCrypto crates and C++ on libsodium. Every other lane is a later step of
 /// docs/adr/0107, which adds the lane here in the change that lands its host and
 /// its driver's replay of the scenario.
-pub const COSE_REFERENCE_HOSTS: &[Language] = &[Language::Rust, Language::Cpp];
+pub const COSE_REFERENCE_HOSTS: &[HostLane] = &[
+    HostLane::Generated(Language::Rust),
+    HostLane::Generated(Language::Cpp),
+];
 
 /// The directory of the standard library the records live in.
 const LIBRARY_DIRECTORY: &str = "sce:std/host/";
@@ -247,36 +300,36 @@ pub fn types_used_by(model: &SCXMLModel) -> Vec<String> {
     used
 }
 
-/// The entry of `table` that names `invoke_type` and does not list `language`
+/// The entry of `table` that names `invoke_type` and does not list `lane`
 /// among the lanes that serve it, if there is one: the decision
 /// [`refuse_unserved`] takes for each `<invoke>`, against the table it is
 /// given. A type `table` does not name is no standard type, and is `None`.
 pub fn unserved<'t>(
     invoke_type: &str,
-    language: Language,
+    lane: HostLane,
     table: &'t [StandardHostType],
 ) -> Option<&'t StandardHostType> {
     table
         .iter()
         .find(|standard| standard.invoke_type == invoke_type)
-        .filter(|standard| !standard.served_by.contains(&language))
+        .filter(|standard| !standard.served_by.contains(&lane))
 }
 
 /// [`refuse_unserved`] against `table`: the first `<invoke>` of `model`, in
-/// document order, of a type `table` says `language` does not serve is refused
+/// document order, of a type `table` says `lane` does not serve is refused
 /// as `codegen/standard-host-type-not-served`, naming the invoke, its type,
 /// the lane and the lanes that serve it.
 pub fn refuse_unserved_in(
     model: &SCXMLModel,
-    language: Language,
+    lane: HostLane,
     table: &[StandardHostType],
 ) -> Result<(), GenerateError> {
     for info in host_invokes(model) {
-        if let Some(standard) = unserved(&info.invoke_type, language, table) {
+        if let Some(standard) = unserved(&info.invoke_type, lane, table) {
             return Err(GenerateError::CodegenStandardHostTypeNotServed {
                 invoke_id: info.base.invoke_id.clone(),
                 invoke_type: standard.invoke_type,
-                language,
+                lane,
                 served_by: standard.served_by,
                 at: info.base.source_location.clone(),
             });
@@ -285,13 +338,15 @@ pub fn refuse_unserved_in(
     Ok(())
 }
 
-/// Refuse `model` for `language` when it runs an `<invoke>` of a standard type
+/// Refuse `model` for `lane` when it runs an `<invoke>` of a standard type
 /// whose entry in [`TYPES`] does not list that lane (docs/adr/0107, D8). Asked
-/// where a machine is written for a lane
-/// ([`crate::emit_model_artifacts`]), since the parse that runs [`validate`]
-/// does not know the lane.
-pub fn refuse_unserved(model: &SCXMLModel, language: Language) -> Result<(), GenerateError> {
-    refuse_unserved_in(model, language, TYPES)
+/// where a machine is written for a lane: for a backend where its artifacts
+/// are emitted ([`crate::emit_model_artifacts`]), for the Interpreter where
+/// each document of a set is lowered
+/// ([`crate::forge::static_js::lower_file_set`]); the parse that runs
+/// [`validate`] does not know the lane.
+pub fn refuse_unserved(model: &SCXMLModel, lane: HostLane) -> Result<(), GenerateError> {
+    refuse_unserved_in(model, lane, TYPES)
 }
 
 /// Hold every `<invoke>` of a standard type to the interface the library gives
@@ -441,8 +496,17 @@ mod tests {
         invoke_type: "x-probe-op",
         request: None,
         result: "probe_result",
-        served_by: &[Language::Rust, Language::Cpp],
+        served_by: &[
+            HostLane::Generated(Language::Rust),
+            HostLane::Generated(Language::Cpp),
+        ],
     }];
+
+    /// The lanes of [`PARTLY_SERVED`]'s operation and of signing and sealing.
+    const RUST_AND_CPP: [HostLane; 2] = [
+        HostLane::Generated(Language::Rust),
+        HostLane::Generated(Language::Cpp),
+    ];
 
     /// A machine that runs a type the table does not name, then the table's
     /// operation, on rows 3 and 4.
@@ -462,21 +526,25 @@ mod tests {
 
     #[test]
     fn a_lane_the_table_does_not_list_is_unserved() {
-        let entry = unserved("x-probe-op", Language::Go, PARTLY_SERVED)
+        let go = HostLane::Generated(Language::Go);
+        let entry = unserved("x-probe-op", go, PARTLY_SERVED)
             .expect("go is not among the lanes that serve the operation");
         assert_eq!(entry.invoke_type, "x-probe-op");
-        assert!(unserved("x-probe-op", Language::Rust, PARTLY_SERVED).is_none());
-        assert!(unserved("x-probe-op", Language::Cpp, PARTLY_SERVED).is_none());
+        assert!(unserved("x-probe-op", HostLane::Interpreter, PARTLY_SERVED).is_some());
+        for lane in RUST_AND_CPP {
+            assert!(unserved("x-probe-op", lane, PARTLY_SERVED).is_none());
+        }
         assert!(
-            unserved("x-other", Language::Go, PARTLY_SERVED).is_none(),
+            unserved("x-other", go, PARTLY_SERVED).is_none(),
             "a type the table does not name is no standard type, and is never refused here"
         );
     }
 
     #[test]
     fn a_machine_that_runs_an_unserved_type_is_refused_naming_the_lanes_that_serve_it() {
-        let refused = refuse_unserved_in(&machine(), Language::Go, PARTLY_SERVED)
-            .expect_err("go does not serve x-probe-op, and the machine was not refused");
+        let refused =
+            refuse_unserved_in(&machine(), HostLane::Generated(Language::Go), PARTLY_SERVED)
+                .expect_err("go does not serve x-probe-op, and the machine was not refused");
         assert_eq!(
             refused.to_string(),
             "<invoke id=\"op\"> runs the standard host type 'x-probe-op', which the go lane \
@@ -485,7 +553,7 @@ mod tests {
         let GenerateError::CodegenStandardHostTypeNotServed {
             invoke_id,
             invoke_type,
-            language,
+            lane,
             served_by,
             at,
         } = refused
@@ -494,8 +562,8 @@ mod tests {
         };
         assert_eq!(invoke_id, "op");
         assert_eq!(invoke_type, "x-probe-op");
-        assert_eq!(language, Language::Go);
-        assert_eq!(served_by, &[Language::Rust, Language::Cpp][..]);
+        assert_eq!(lane, HostLane::Generated(Language::Go));
+        assert_eq!(served_by, &RUST_AND_CPP[..]);
         assert_eq!(
             at.and_then(|at| at.line),
             Some(4),
@@ -503,9 +571,40 @@ mod tests {
         );
     }
 
+    /// The Interpreter is a lane of the table as a backend is, and a lowering
+    /// for it is refused by the name `interpreter`.
+    #[test]
+    fn a_machine_lowered_for_the_interpreter_is_refused_a_type_it_does_not_serve() {
+        let refused = refuse_unserved_in(&machine(), HostLane::Interpreter, PARTLY_SERVED)
+            .expect_err("the Interpreter does not serve x-probe-op, and was not refused");
+        assert_eq!(
+            refused.to_string(),
+            "<invoke id=\"op\"> runs the standard host type 'x-probe-op', which the \
+             interpreter lane does not serve: it is served on rust, cpp"
+        );
+    }
+
+    #[test]
+    fn every_lane_is_named_once_backends_first_then_the_interpreter() {
+        let names: Vec<&str> = HostLane::all().map(HostLane::wire_name).collect();
+        assert_eq!(
+            names,
+            [
+                "rust",
+                "cpp",
+                "kotlin",
+                "go",
+                "python",
+                "c11",
+                "swift",
+                "interpreter"
+            ]
+        );
+    }
+
     #[test]
     fn a_machine_is_generated_for_a_lane_that_serves_what_it_runs() {
-        for lane in [Language::Rust, Language::Cpp] {
+        for lane in RUST_AND_CPP {
             assert!(
                 refuse_unserved_in(&machine(), lane, PARTLY_SERVED).is_ok(),
                 "{lane:?} serves x-probe-op and was refused"
@@ -524,7 +623,7 @@ mod tests {
             .iter()
             .filter(|standard| standard.served_by == EVERY_REFERENCE_HOST)
         {
-            for &lane in Language::ALL {
+            for lane in HostLane::all() {
                 assert!(
                     unserved(standard.invoke_type, lane, TYPES).is_none(),
                     "{} is not served on {lane:?}",
@@ -534,7 +633,7 @@ mod tests {
             }
         }
         assert!(
-            judged >= 12 * Language::ALL.len(),
+            judged >= 12 * HostLane::all().count(),
             "judged {judged} pairs of an operation and a lane: a test that read none would pass"
         );
     }
@@ -559,9 +658,9 @@ mod tests {
             ]
         );
         for standard in cose {
-            for &lane in Language::ALL {
+            for lane in HostLane::all() {
                 let refused = unserved(standard.invoke_type, lane, TYPES);
-                if matches!(lane, Language::Rust | Language::Cpp) {
+                if RUST_AND_CPP.contains(&lane) {
                     assert!(
                         refused.is_none(),
                         "{} is refused on {lane:?}",
@@ -570,7 +669,7 @@ mod tests {
                 } else {
                     assert_eq!(
                         refused.map(|entry| entry.served_by),
-                        Some(&[Language::Rust, Language::Cpp][..]),
+                        Some(&RUST_AND_CPP[..]),
                         "{} is served on {lane:?}",
                         standard.invoke_type
                     );
@@ -580,7 +679,7 @@ mod tests {
     }
 
     /// Each entry lists at least one lane, each once, in the order of
-    /// [`Language::ALL`], which is the order a refusal names them in.
+    /// [`HostLane::all`], which is the order a refusal names them in.
     #[test]
     fn each_operation_names_its_lanes_once_in_the_order_of_every_lane() {
         for standard in TYPES.iter().chain(PARTLY_SERVED) {
@@ -593,10 +692,9 @@ mod tests {
                 .served_by
                 .iter()
                 .map(|lane| {
-                    Language::ALL
-                        .iter()
-                        .position(|every| every == lane)
-                        .expect("a lane of Language::ALL")
+                    HostLane::all()
+                        .position(|every| every == *lane)
+                        .expect("a lane of HostLane::all")
                 })
                 .collect();
             assert!(

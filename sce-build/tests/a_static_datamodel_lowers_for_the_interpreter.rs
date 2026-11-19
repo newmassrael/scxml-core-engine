@@ -7,8 +7,9 @@
 //
 // What is held here is the lowering's own contract, with no engine to run it:
 // a document is either lowered to something the Interpreter can read, or
-// refused with `generate/unsupported-feature` naming the construct — never
-// passed through half lowered. Whether the lowered document then BEHAVES as
+// refused with `generate/unsupported-feature` naming the construct, or with
+// `codegen/standard-host-type-not-served` naming a standard host type the
+// Interpreter's host does not serve — never passed through half lowered. Whether the lowered document then BEHAVES as
 // the generated backends do is the C++ suite's question
 // (`tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`,
 // which replays the scenarios the AOT backends replay).
@@ -58,6 +59,7 @@ fn scxml_element<'a, 'input>(
 fn every_fixture_is_lowered_or_refused_by_name() {
     let mut lowered = Vec::new();
     let mut refused = Vec::new();
+    let mut unserved = Vec::new();
     for path in static_statecharts() {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         // The set, not the document: a hybrid `<invoke>` starts a document of
@@ -99,6 +101,14 @@ fn every_fixture_is_lowered_or_refused_by_name() {
             }
             Err(refusal) => {
                 let text = format!("{refusal:?}");
+                // A machine that runs a standard host type the Interpreter's
+                // host does not serve is refused as a backend that does not
+                // serve it refuses it (docs/adr/0107, D8), and is no construct
+                // the lowering lacks.
+                if text.contains("CodegenStandardHostTypeNotServed") {
+                    unserved.push(name);
+                    continue;
+                }
                 assert!(
                     text.contains("UnsupportedFeature"),
                     "{name}: a document it cannot lower is refused as an unsupported feature, \
@@ -223,6 +233,14 @@ fn every_fixture_is_lowered_or_refused_by_name() {
             r#"<sce:action name="start_keepalive" effect="duty" released-by="stop_keepalive"/>"#
         ),
         "the effect and the release are carried as written: {duty}"
+    );
+    // Signing and sealing are served on the generated Rust and C++ lanes and not
+    // on the Interpreter's (docs/adr/0107, D7 and D8), so their machine is the
+    // one refused as a type the lane does not serve.
+    assert_eq!(
+        unserved,
+        ["static_host_cose"],
+        "the machines refused a standard host type the Interpreter does not serve"
     );
     // What is refused says which construct, so an author knows what to change.
     for (name, text) in &refused {
@@ -660,6 +678,46 @@ fn the_reference_harness_is_refused_by_the_name_of_its_generation() {
             && text.contains("sce-host-model-generate")
             && text.contains("`generate`"),
         "the refusal names the harness's generation and its state: {text}"
+    );
+}
+
+/// The Interpreter is a lane of the table of standard host types, and its host
+/// serves no COSE operation (docs/adr/0107, D7 and D8): the lowering refuses the
+/// machine that signs and seals on its first `<invoke>` of one, under the code a
+/// backend that does not serve the type refuses it with, naming the type, the
+/// `interpreter` lane and the lanes that serve it, from files and from memory
+/// alike.
+#[test]
+fn a_standard_host_type_the_interpreter_does_not_serve_is_refused_by_name() {
+    use sce_build::forge::diagnostic::ToDiagnostics;
+    let path = fixtures().join("static_host_cose.scxml");
+    let refusal = lower_file_set(path.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let diagnostic = &refusal.to_diagnostics()[0];
+    assert_eq!(
+        diagnostic.code.as_str(),
+        "codegen/standard-host-type-not-served"
+    );
+    assert_eq!(
+        diagnostic.message,
+        "<invoke id=\"sign\"> runs the standard host type 'sce-host-cose-sign1', which the \
+         interpreter lane does not serve: it is served on rust, cpp"
+    );
+    assert!(
+        refusal.location.line.is_some_and(|line| line > 1),
+        "the refusal is placed on the <invoke>, not on the document: {refusal:?}"
+    );
+
+    let mut held = std::collections::BTreeMap::new();
+    for name in ["static_host_cose.scxml", "schema_cose_held.scxml"] {
+        held.insert(
+            name.to_string(),
+            std::fs::read_to_string(fixtures().join(name)).expect("a fixture"),
+        );
+    }
+    let from_memory = lower_documents("static_host_cose.scxml", &held).expect_err("a refusal");
+    assert_eq!(
+        from_memory.to_diagnostics()[0].code.as_str(),
+        "codegen/standard-host-type-not-served"
     );
 }
 

@@ -12369,7 +12369,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
         GenerateError::CodegenStandardHostTypeNotServed {
             invoke_id,
             invoke_type,
-            language,
+            lane,
             served_by: _,
             at: _,
         } => DiagnosticPayload {
@@ -12381,7 +12381,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             key_fragments: vec![
                 invoke_id.clone(),
                 invoke_type.to_string(),
-                crate::forge::codegen_matrix::language_wire_name(*language).to_string(),
+                lane.wire_name().to_string(),
             ],
         },
         GenerateError::QueueStorageRuntimeMissing {
@@ -16990,10 +16990,16 @@ mod tests {
                 GenerateError::CodegenStandardHostTypeNotServed {
                     invoke_id: "op".into(),
                     invoke_type: "x-probe-op",
-                    language: crate::generator::Language::Go,
+                    lane: crate::forge::standard_host::HostLane::Generated(
+                        crate::generator::Language::Go,
+                    ),
                     served_by: &[
-                        crate::generator::Language::Rust,
-                        crate::generator::Language::Cpp,
+                        crate::forge::standard_host::HostLane::Generated(
+                            crate::generator::Language::Rust,
+                        ),
+                        crate::forge::standard_host::HostLane::Generated(
+                            crate::generator::Language::Cpp,
+                        ),
                     ],
                     at: None,
                 }
