@@ -5,9 +5,9 @@
 name = "sce-rust-host-http"
 version.workspace = true
 edition.workspace = true
-# The reference host it carries exchanges for (`sce-rust-host-features`) declares 1.85, and every
-# dependency below declares 1.71 or less.
-rust-version = "1.85"
+# The reference host it carries exchanges for (`sce-rust-host-features`) declares 1.87, and every
+# other dependency below declares 1.71 or less.
+rust-version = "1.87"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
