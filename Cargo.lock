@@ -4063,6 +4063,7 @@ dependencies = [
  "libc",
  "sce-rust-crypto",
  "sce-rust-runtime",
+ "sce-rust-session-store",
  "serde_json",
  "zeroize",
 ]

@@ -12,10 +12,11 @@
 //!
 //! Time comes from a [`ClockSource`], the network from a [`Transport`] and
 //! random bytes from a [`RandomSource`], all the embedding's to supply; the
-//! keys of signing and sealing it configures as [`CoseKeys`], and the keys the
+//! keys of signing and sealing it configures as [`CoseKeys`], the keys the
 //! host generates and derives are kept by a [`Keyring`] over a key store it
-//! may supply: the host's semantics are fixed and what it reads is not, which
-//! is what lets a scenario judge it.
+//! may supply, and the bearer tokens it issues are kept, as their digests, in a
+//! [`CredentialStore`] it may supply: the host's semantics are fixed and what
+//! it reads is not, which is what lets a scenario judge it.
 //!
 //! A transport that reaches the network for a server checks where each request
 //! goes against a [`destination::DestinationPolicy`] (docs/adr/0109, D4): the
@@ -23,6 +24,7 @@
 
 mod clock;
 pub mod cose;
+pub mod credentials;
 pub mod destination;
 mod http;
 pub mod keys;
@@ -32,6 +34,7 @@ mod notify;
 mod serve;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 pub use clock::{ClockSource, Reading, ScriptedClock, SystemClock, Zone};
 pub use cose::{CoseKeys, NonceSource, ReservedKeyId, SystemNonces, TrustedKey};
@@ -43,6 +46,7 @@ pub use model::{
 pub use sce_rust_crypto::keyring::Keyring;
 pub use sce_rust_crypto::random::{RandomSource, ScriptedRandom, SystemRandom};
 pub use sce_rust_runtime::AnswerSchema;
+pub use sce_rust_session_store::{CredentialStore, MemoryCredentials};
 pub use serve::{serve, Shared};
 
 /// The operation that generates a text (docs/SCE_HOST_FEATURES.md, section 6).
@@ -89,7 +93,7 @@ impl Invocation {
 
 /// Every operation type of the standard host features, in the order the
 /// specification lists them.
-pub const TYPES: [&str; 24] = [
+pub const TYPES: [&str; 26] = [
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
@@ -114,6 +118,8 @@ pub const TYPES: [&str; 24] = [
     keys::KEY_GENERATE,
     keys::KEY_PUBLIC,
     keys::KEY_RETIRE,
+    credentials::CREDENTIAL_ISSUE,
+    credentials::CREDENTIAL_REVOKE,
 ];
 
 /// What a host answers a start with.
@@ -168,6 +174,10 @@ pub struct ReferenceHost<T: Transport> {
     /// Where each seal's nonce comes from when the embedding gave a source of
     /// its own; none draws it from `random`.
     pub(crate) nonces: Option<Box<dyn NonceSource + Send>>,
+    /// The pins and the bearer tokens the host keeps, each as its digest: in
+    /// memory until the embedding gives another (docs/SCE_HOST_FEATURES.md,
+    /// section 14).
+    pub(crate) credentials: Arc<dyn CredentialStore>,
     /// The first result of each put-if, by the identity of its invocation:
     /// what a repeat of that identity is answered with (docs/adr/0107, D4).
     pub(crate) first_results: BTreeMap<Invocation, Outcome>,
@@ -206,8 +216,17 @@ impl<T: Transport> ReferenceHost<T> {
             keyring: Keyring::in_memory(),
             random: Box::new(SystemRandom),
             nonces: None,
+            credentials: Arc::new(MemoryCredentials::new()),
             first_results: BTreeMap::new(),
         }
+    }
+
+    /// Keep the tokens the host issues, and revoke tokens and pins, in `store`
+    /// from here on: the credential store the program opened, which its `https`
+    /// server's authenticator reads too (docs/SCE_HOST_FEATURES.md section 14).
+    /// What the store held before is no longer the host's.
+    pub fn set_credentials(&mut self, store: Arc<dyn CredentialStore>) {
+        self.credentials = store;
     }
 
     /// Sign, seal, tag and verify with `keys` from here on, in place of the
@@ -386,6 +405,9 @@ impl<T: Transport> ReferenceHost<T> {
                 cose::refuses(signing_or_sealing, params)
             }
             of_keys if keys::OPERATIONS.contains(&of_keys) => keys::refuses(of_keys, params),
+            of_credentials if credentials::OPERATIONS.contains(&of_credentials) => {
+                credentials::refuses(of_credentials, params)
+            }
             _ => false,
         };
         if refused {
@@ -432,6 +454,9 @@ impl<T: Transport> ReferenceHost<T> {
             }
             of_keys if keys::OPERATIONS.contains(&of_keys) => {
                 keys::perform(self, of_keys, invocation, params)
+            }
+            of_credentials if credentials::OPERATIONS.contains(&of_credentials) => {
+                credentials::perform(self, of_credentials, invocation, params)
             }
             _ => unreachable!("the type was checked against TYPES"),
         }
@@ -493,6 +518,8 @@ pub(crate) fn failure(operation: &str, code: &str) -> Outcome {
         keys::MAC_VERIFY => serde_json::json!({ "valid": false }),
         keys::KEY_PUBLIC => serde_json::json!({ "cose_key": "" }),
         keys::KEY_RETIRE => serde_json::json!({ "retired": false }),
+        credentials::CREDENTIAL_ISSUE => serde_json::json!({ "token": "" }),
+        credentials::CREDENTIAL_REVOKE => serde_json::json!({ "revoked": 0 }),
         other => unreachable!("`{other}` is not a standard host operation"),
     };
     let Outcome::Done(text) = record(zero) else {

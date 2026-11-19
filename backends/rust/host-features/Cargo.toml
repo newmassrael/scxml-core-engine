@@ -27,6 +27,11 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # (docs/SCE_HOST_FEATURES.md, sections 10 to 13): the one implementation of
 # them every Rust host of SCE calls (docs/adr/0109, D5 to D7).
 sce-rust-crypto = { path = "../crypto" }
+# The credential store the host keeps the tokens it issues in, and revokes
+# tokens and pins from (docs/SCE_HOST_FEATURES.md, section 14; docs/adr/0109,
+# D3): the contract and its memory implementation, without the SQLite store,
+# which the program that hosts the machine chooses and links.
+sce-rust-session-store = { path = "../session-store", default-features = false }
 # The keys the embedding configures are held in memory that is wiped when they
 # are replaced or dropped.
 zeroize = "1"
