@@ -1968,14 +1968,19 @@ void a_negative_value_of_a_signed_carrier_is_written_as_the_integer_it_is() {
 
 namespace RecordListLeast = ::SCE::Generated::CodecCborRecordListLeast;
 using LeastValue = RecordListLeast::CodecCborRecordListLeast;
-using LeastSeen = decltype(std::declval<const LeastValue &>().seen());
-using LeastContext = decltype(std::declval<const LeastValue &>().context())::value_type;
+// A list is lent in the type a schema unit holds it in (docs/adr/0101, section
+// 5.3), the runtime's `OwnedList` of its bound, so a source presents one by
+// reference and the value is made of a copy.
+using LeastSeen = std::decay_t<decltype(std::declval<const LeastValue &>().seen())>;
+using LeastContext = std::decay_t<decltype(std::declval<const LeastValue &>().context())>::value_type;
 using CausalEntry = ::SCE::Generated::CborCausalEntry::CborCausalEntryPayload;
 
-// The view of a list holds the most records it holds and not its lower count, as
-// Rust's `BoundedList` does: a value of fewer is one the encode refuses.
-static_assert(LeastSeen::most == 2 && LeastSeen::least == 0, "`seen` is viewed within its bound alone");
-static_assert(LeastContext::most == 3 && LeastContext::least == 0, "`context` is viewed within its bound alone");
+static_assert(std::is_same<decltype(std::declval<const LeastValue &>().seen()), const LeastSeen &>::value,
+              "a list is lent, not copied");
+// The list holds the most records it holds and not its lower count, as Rust's
+// `BoundedList` does: a value of fewer is one the encode refuses.
+static_assert(LeastSeen::most == 2 && LeastSeen::least == 0, "`seen` is held within its bound alone");
+static_assert(LeastContext::most == 3 && LeastContext::least == 0, "`context` is held within its bound alone");
 
 CausalEntry causal_entry(const std::string &author, std::uint64_t seq) {
     CausalEntry entry;
@@ -1990,7 +1995,7 @@ void a_list_of_fewer_records_than_its_lower_count_is_refused_before_the_first_by
     const auto seen = LeastSeen::make(one);
     const auto no_seen = LeastSeen::make(none);
     const auto no_context = LeastContext::make(none);
-    CHECK(seen && no_seen && no_context, "a list of fewer records than its lower count is a value of its view");
+    CHECK(seen && no_seen && no_context, "a list of fewer records than its lower count is a value of its type");
     if (!seen || !no_seen || !no_context) {
         return;
     }
@@ -2021,8 +2026,8 @@ void a_list_of_fewer_records_than_its_lower_count_is_refused_before_the_first_by
 
 namespace RecordListBytes = ::SCE::Generated::CodecCborRecordListBytes;
 using BytesValue = RecordListBytes::CodecCborRecordListBytes;
-using BytesLatest = decltype(std::declval<const BytesValue &>().latest());
-using BytesPending = decltype(std::declval<const BytesValue &>().pending())::value_type;
+using BytesLatest = std::decay_t<decltype(std::declval<const BytesValue &>().latest())>;
+using BytesPending = std::decay_t<decltype(std::declval<const BytesValue &>().pending())>::value_type;
 using DigestEntry = ::SCE::Generated::CborDigestEntry::CborDigestEntryPayload;
 
 DigestEntry digest_entry(std::vector<std::uint8_t> digest, std::uint64_t seq) {
@@ -2041,7 +2046,7 @@ void a_record_byte_string_past_its_bound_is_refused_before_the_first_byte() {
     const auto latest_past = BytesLatest::make(past);
     const auto pending_past = BytesPending::make(past);
     CHECK(latest && latest_past && pending_past,
-          "a list within its count is a value of its view, whatever its records hold");
+          "a list within its count is a value of its type, whatever its records hold");
     if (!latest || !latest_past || !pending_past) {
         return;
     }

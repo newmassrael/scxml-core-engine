@@ -108,12 +108,13 @@ RpcStatus toRuntime(gen::RpcStatus::RpcStatus v) {
 }
 
 // A causal route's vector (key 20) is a list of the record
-// sce:std/mesh/causal_entry.scxml declares, which the generated value presents
-// as a view of that schema's own payload type within the list's bound of 64,
-// made by its `make`, which refuses a longer one. CausalEntry is the runtime's
-// spelling of the same three fields.
+// sce:std/mesh/causal_entry.scxml declares, which the generated value holds
+// and lends in the list a schema unit holds it in (docs/adr/0101, section
+// 5.3): an `OwnedList` of that schema's own payload type within the list's
+// bound of 64, made by its `make`, which refuses a longer one. CausalEntry is
+// the runtime's spelling of the same three fields.
 using GenCausalEntry = gen::CausalEntry::CausalEntryPayload;
-using CausalVector = decltype(std::declval<const GenEnvelope &>().causal_vector())::value_type;
+using CausalVector = std::decay_t<decltype(std::declval<const GenEnvelope &>().causal_vector())>::value_type;
 
 std::vector<GenCausalEntry> causalToGenerated(const std::vector<CausalEntry> &v) {
     std::vector<GenCausalEntry> out;
@@ -165,17 +166,12 @@ std::optional<GenEnvelope> toGenerated(const MeshEnvelope &env) {
         !boundedOptional(env.routing_id, boundedId, routingId)) {
         return std::nullopt;
     }
-    // The vector's records in the generated payload type, which the view of
-    // them reads until the value is made and copies them.
-    std::vector<GenCausalEntry> causalRecords;
+    // The vector's records in the generated payload type, held in the list
+    // the value is made of, which copies it.
     std::optional<CausalVector> causalVector;
     if (!boundedOptional(
             env.causal_vector,
-            [&causalRecords](const std::vector<CausalEntry> &v) {
-                causalRecords = causalToGenerated(v);
-                return CausalVector::make(causalRecords);
-            },
-            causalVector)) {
+            [](const std::vector<CausalEntry> &v) { return CausalVector::make(causalToGenerated(v)); }, causalVector)) {
         return std::nullopt;
     }
     // qos (key 13) is reserved and never written: no transport consumes it,

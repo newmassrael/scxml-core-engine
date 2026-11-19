@@ -24,6 +24,10 @@ use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
 /// The refusal every check of the printed C++ encode returns.
 const REFUSED: &str = "return ::SCE::Forge::CodecError::CborOutOfRange;";
 
+/// The call of the check of a record or a union document the encode makes,
+/// whose refusal it returns as it is (docs/adr/0101, section 5.1).
+const CHECKED: &str = "if (auto _e = Composites::check_";
+
 /// The map head the printed C++ encode writes first: every check is before it.
 const MAP_HEAD: &str = "if (auto _e = cbor::write_map_head(w, _count); _e) return _e;";
 
@@ -89,7 +93,8 @@ fn wire_of<'c>(stem: &str, code: &'c str) -> &'c str {
 }
 
 /// Each of `expected` is in `code`, and its encode refuses `refusals` times,
-/// each before the map head; its value answers its bytes as an optional.
+/// each before the map head, by a refusal of its own or by the check of a
+/// record's document; its value answers its bytes as an optional.
 fn refuses_before_the_first_byte(stem: &str, code: &str, expected: &[&str], refusals: usize) {
     for expected in expected {
         assert!(
@@ -98,11 +103,19 @@ fn refuses_before_the_first_byte(stem: &str, code: &str, expected: &[&str], refu
         );
     }
     let wire = wire_of(stem, code);
-    assert_eq!(wire.matches(REFUSED).count(), refusals, "{stem}:\n{code}");
+    assert_eq!(
+        wire.matches(REFUSED).count() + wire.matches(CHECKED).count(),
+        refusals,
+        "{stem}:\n{code}"
+    );
     let head = wire
         .find(MAP_HEAD)
         .unwrap_or_else(|| panic!("{stem}: no map head:\n{code}"));
-    let last = wire.rfind(REFUSED).expect("a refusal");
+    let last = [wire.rfind(REFUSED), wire.rfind(CHECKED)]
+        .into_iter()
+        .flatten()
+        .max()
+        .expect("a refusal");
     assert!(
         last < head,
         "{stem}: a refusal is checked after the map head is written:\n{code}"
@@ -153,11 +166,13 @@ fn a_list_of_fewer_records_than_its_lower_count_is_refused_on_cpp_as_on_rust() {
     let stem = "codec_cbor_record_list_least";
     let code = printed_cpp(stem);
     let payload = "SCE::Generated::CborCausalEntry::CborCausalEntryPayload";
-    // The view holds the most a list holds and not its lower count, as Rust's
+    // The list holds the most it holds and not its lower count, as Rust's
     // `BoundedList` does, so the value can hold fewer and the encode refuses it.
-    let seen = format!("[[nodiscard]] ::SCE::Forge::List<{payload}, 2> seen() const noexcept");
+    let seen =
+        format!("[[nodiscard]] const ::SCE::Forge::OwnedList<{payload}, 2>& seen() const noexcept");
     let context = format!(
-        "[[nodiscard]] std::optional<::SCE::Forge::List<{payload}, 3>> context() const noexcept"
+        "[[nodiscard]] const std::optional<::SCE::Forge::OwnedList<{payload}, 3>>& context() const \
+         noexcept"
     );
     refuses_before_the_first_byte(
         stem,
@@ -168,8 +183,8 @@ fn a_list_of_fewer_records_than_its_lower_count_is_refused_on_cpp_as_on_rust() {
             "            const auto& v = _e_seen;\n            if (v.size() < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
             "        if (_e_context) {\n            const auto& v = *_e_context;\n            if (v.size() < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
             // The decode refuses a frame of fewer records before any is read.
-            "if (*_len > 2 || *_len < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
-            "if (*_len > 3 || *_len < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (*_len0 > 2 || *_len0 < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (*_len0 > 3 || *_len0 < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
         ],
         2,
     );
@@ -187,7 +202,11 @@ fn a_list_of_fewer_records_than_its_lower_count_is_refused_on_cpp_as_on_rust() {
 fn a_record_byte_string_past_its_bound_is_refused_on_cpp_as_on_rust() {
     let stem = "codec_cbor_record_list_bytes";
     let code = printed_cpp(stem);
-    let each_record = "for (const auto& _record : v) {\n                if (_record.digest.size() > 4) return ::SCE::Forge::CodecError::CborOutOfRange;\n            }";
+    // Each record of either list is held to the one check of its document
+    // (docs/adr/0101, section 5.1), which each list calls before the map head
+    // and whose refusal it returns.
+    let each_record = "for (const auto& _item0 : v) {\n                \
+                       if (auto _e = Composites::check_record_cbor_digest_entry(_item0); _e) return _e;\n            }";
     refuses_before_the_first_byte(
         stem,
         &code,
@@ -196,12 +215,22 @@ fn a_record_byte_string_past_its_bound_is_refused_on_cpp_as_on_rust() {
             format!("        if (_e_pending) {{\n            const auto& v = *_e_pending;\n            {each_record}").as_str(),
             // The record holds the byte string in the schema's vector, read
             // within its bound (a read answers `Decoded`, its refusal kind
-            // handed back as it is) and written as it is.
+            // handed back as it is), written as it is, and held to its bound
+            // by its document's check.
             "        std::optional<std::vector<uint8_t>> held_digest;\n",
-            "auto read = cbor::read_bytes(c, 4);\n                if (!read) return read.error();\n                held_digest = std::move(*read);",
+            "auto _r0 = cbor::read_bytes(c, 4);\n                if (!_r0) return _r0.error();\n                held_digest = std::move(*_r0);",
             "if (auto _e = cbor::write_bytes(w, record.digest); _e) return _e;",
+            "static std::optional<::SCE::Forge::CodecError> check_record_cbor_digest_entry(\
+             const SCE::Generated::CborDigestEntry::CborDigestEntryPayload& record) noexcept {\n        \
+             if (record.digest.size() > 4) return ::SCE::Forge::CodecError::CborOutOfRange;\n        \
+             return std::nullopt;\n",
         ],
         2,
+    );
+    assert_eq!(
+        code.matches("if (record.digest.size() > 4)").count(),
+        1,
+        "{stem}: a record of `cbor_digest_entry` is checked in one place:\n{code}"
     );
     // Rust holds every record of either list to the one check of its
     // document (docs/adr/0101, section 5.1), which each list calls.

@@ -74,13 +74,14 @@ pub fn lowers_record_list(lang: Language) -> bool {
 /// ([`unlowered_part`]), and every record of a list whose field is of any other
 /// type ([`record_list_unlowered`]). One arm per backend, so a backend's landing
 /// flips its own line (docs/adr/0101, section 5.4). Rust, the reference, prints
-/// every shape from the plan (Landing order step 4a).
+/// every shape from the plan (Landing order step 4a), and so does C++ (step
+/// 4b).
 #[allow(clippy::match_like_matches_macro)]
 pub fn lowers_every_entry_type(lang: Language) -> bool {
     match lang {
         Language::Rust => true,
         Language::Kotlin => false,
-        Language::Cpp => false,
+        Language::Cpp => true,
         Language::Go => false,
         Language::Python => false,
         Language::C11 => false,
@@ -433,23 +434,6 @@ pub(crate) fn record_field(ty: &ValueType) -> Option<(&'static str, Option<u32>)
         | ValueType::Map { .. }
         | ValueType::Set { .. } => None,
     }
-}
-
-/// The byte-string fields of `record`, a record a CBOR list holds, each with
-/// its bound, in the schema's order: the fields the record's unit holds in the
-/// language's own vector, which carries no bound (a text it holds in the
-/// bounded `SceString`). The encode holds each to its bound, so a record past
-/// it has no encoding, which the totality analysis names at the list's entry
-/// ([`crate::forge::codec_totality`]).
-pub(crate) fn record_unbounded_bytes(record: &CborRecord) -> Vec<(&str, u32)> {
-    record
-        .fields
-        .iter()
-        .filter_map(|f| match f.shape {
-            CborShape::Bytes { max, .. } => Some((f.id.as_str(), max)),
-            _ => None,
-        })
-        .collect()
 }
 
 /// What an entry is on the wire, as the templates branch on it: a leaf by the
@@ -958,18 +942,20 @@ fn render_cpp(
     let m = plan.model;
     let l = LangCtx::new(Language::Cpp, imports);
     // The header's context: the namespace, the guard, the imports a record's
-    // payload type is brought into scope by, and the refusal of an entry whose
-    // enum resolved no carrier, which every backend makes. Each entry's type
-    // is the one its value is presented as: a `std::vector` of the schema's
-    // payload for a list of records.
-    let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
-        Some(present) => l.type_name(present).into_owned(),
-        None => format!("std::vector<{}>", record_type_of(&l, imports, e)),
+    // payload type and a union's type are brought into scope by, and the
+    // refusal of an entry whose enum resolved no carrier, which every backend
+    // makes. The printer spells every entry's type, so the template reads none
+    // of them: a leaf's is the language's, and a list's, a record's and a
+    // union's is the printer's alone.
+    let mut ctx = common_context(&l, m, imports, |e| {
+        e.leaf_type()
+            .map(|present| l.type_name(present).into_owned())
+            .unwrap_or_default()
     })?;
-    // docs/adr/0081 step 4: the map is printed from its plan, its entries
-    // presented through accessors and encoded over any source, a list of
-    // records within its bound as a view of the schema's payload; one whose
-    // plan the C++ printer does not lower was refused before it was rendered.
+    // docs/adr/0081 step 4, docs/adr/0101 Landing order step 4b: the map is
+    // printed from its plan, its entries presented through accessors and
+    // encoded over any source, a list, a record and a union lent in the type a
+    // schema unit holds it in.
     ctx.insert(
         "cpp_source".into(),
         crate::forge::generator::cpp_cbor_printed(plan, imports).into(),
