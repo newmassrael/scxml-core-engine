@@ -274,6 +274,11 @@ pub struct StaticLowering {
     /// invocation, which the reason a deadline the machine cannot read quotes;
     /// `None` for a machine none of whose invocations carries one.
     pub deadline_text: Option<u64>,
+    /// Whether the machine calls an algorithm that builds a map local with no
+    /// map to draw its seed from, which it hands the seed it drew for its
+    /// algorithms where it was built (docs/adr/0108, D8,
+    /// [`StaticTarget::algorithm_seed`]): what a target keeps that seed for.
+    pub seeds_algorithms: bool,
 }
 
 /// One element of the document, as the walk lowered it: which element, by an
@@ -2081,6 +2086,17 @@ pub trait StaticTarget {
     /// it after the call. `None` for a target with no such lowering, which
     /// refuses the statement by name.
     fn in_place_call(&self, _call: &InPlaceCall<'_>) -> Option<String> {
+        None
+    }
+    /// The seed a call of an algorithm that builds a map local with no map to
+    /// draw its seed from is handed, as its last argument (docs/adr/0108, D8,
+    /// [`crate::forge::model::AlgorithmModel::takes_map_seed`]): one the
+    /// machine drew from the seed of its own maps where it was built, which
+    /// the machine keeps when it makes such a call
+    /// ([`StaticLowering::seeds_algorithms`]). `None` for a target that hands
+    /// none, on which a machine that lends maps and makes such a call is
+    /// refused by name.
+    fn algorithm_seed(&self) -> Option<String> {
         None
     }
     /// The line that brings the generated unit of the event-schema document
@@ -4773,15 +4789,27 @@ fn rust_map_type(key: &str, value: Option<&str>, bound: &str) -> String {
 /// holds a variable of the same parts in, a record and a value of an enum in
 /// the type its unit declares ([`StaticTarget::map_unit`]), which is the type
 /// the algorithm's slot names, and every other part in the type a variable of
-/// its type is held in. `None` for a part no map holds.
+/// its type is held in. A text or a byte string the slot states no bound of is
+/// held to the variable's, a bound the adapter takes as the map's
+/// (`K<index>` for the key's, `V<index>` for the value's), pushed onto
+/// `bounds`. `None` for a part no map holds.
 fn rust_lent_map_type(
     target: &RustTarget,
     spec: &AdapterSpec<'_>,
     ty: &crate::forge::model::AlgorithmValueType,
-    bound: &str,
+    (bound, index): (&str, usize),
+    bounds: &mut Vec<String>,
 ) -> Option<String> {
     use crate::forge::model::AlgorithmValueType;
-    let part = |part: &AlgorithmValueType| -> Option<String> {
+    let mut held_to = |max: &Option<crate::forge::value_type::Bound>, side: &str| match max {
+        Some(max) => max.max.to_string(),
+        None => {
+            let name = format!("{side}{index}");
+            bounds.push(format!("const {name}: usize"));
+            name
+        }
+    };
+    let mut part = |part: &AlgorithmValueType, side: &str| -> Option<String> {
         Some(match part {
             AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
                 let model = spec.enums.get(&reference.alias)?;
@@ -4797,12 +4825,16 @@ fn rust_lent_map_type(
                 target.map_unit(spec.machine, part)?.ty
             }
             AlgorithmValueType::Scalar(scalar) => target.scalar_type(scalar),
-            AlgorithmValueType::Text { max } => {
-                crate::forge::composed_lowering::rust_text_type(max.as_ref()?.max)
-            }
-            AlgorithmValueType::Bytes { max } => {
-                crate::forge::composed_lowering::rust_bytes_type(max.as_ref()?.max)
-            }
+            AlgorithmValueType::Text { max } => format!(
+                "{}::SceString<{}>",
+                crate::forge::composed_lowering::RUST_PORTABLE,
+                held_to(max, side)
+            ),
+            AlgorithmValueType::Bytes { max } => format!(
+                "{}::SceBytes<{}>",
+                crate::forge::composed_lowering::RUST_PORTABLE,
+                held_to(max, side)
+            ),
             AlgorithmValueType::Optional { .. }
             | AlgorithmValueType::Union { .. }
             | AlgorithmValueType::List { .. }
@@ -4812,9 +4844,11 @@ fn rust_lent_map_type(
     };
     match ty {
         AlgorithmValueType::Map { key, value, .. } => {
-            Some(rust_map_type(&part(key)?, Some(&part(value)?), bound))
+            let key = part(key, "K")?;
+            let value = part(value, "V")?;
+            Some(rust_map_type(&key, Some(&value), bound))
         }
-        AlgorithmValueType::Set { key, .. } => Some(rust_map_type(&part(key)?, None, bound)),
+        AlgorithmValueType::Set { key, .. } => Some(rust_map_type(&part(key, "K")?, None, bound)),
         AlgorithmValueType::Scalar(_)
         | AlgorithmValueType::Text { .. }
         | AlgorithmValueType::Bytes { .. }
@@ -4962,6 +4996,12 @@ const RUST_TEST_RUNTIME: &str = "::sce_rust_runtime::test";
 /// without it (`rust/state_machine.rs.jinja2`), and in which every map
 /// variable's initial value draws its own ([`StaticTarget::map_empty`]).
 const RUST_MAP_SEEDS: &str = "sce_map_seeds";
+
+/// The field a Rust machine keeps the seed it hands each call of an algorithm
+/// that builds a map local with no map to draw its seed from (docs/adr/0108,
+/// D8, [`StaticTarget::algorithm_seed`]): drawn from [`RUST_MAP_SEEDS`] where
+/// the machine is built, after its own maps' (`rust/state_machine.rs.jinja2`).
+const RUST_ALGORITHM_SEED: &str = "sce_algorithm_seed";
 
 /// What a Rust map's `put` answers (docs/adr/0108, D3 and D4): the runtime's
 /// enum, and the declared name of each of its variants, in its order, which
@@ -5118,6 +5158,11 @@ impl StaticTarget for RustTarget {
     }
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
+    }
+    // The seed the machine drew for its algorithms where it was built
+    // (`rust/state_machine.rs.jinja2`), a copy handed to each call.
+    fn algorithm_seed(&self) -> Option<String> {
+        Some(format!("self.{RUST_ALGORITHM_SEED}"))
     }
     // docs/adr/0108, D6 item 2: the algorithm writes each map it is lent where
     // the variable holds it, through the `&mut` its argument is
@@ -5395,13 +5440,21 @@ impl StaticTarget for RustTarget {
                     ..
                 } => {
                     let bound = format!("N{index}");
-                    let ty = rust_lent_map_type(self, spec, &map.ty, &bound)?;
+                    bounds.push(format!("const {bound}: usize"));
+                    let ty = rust_lent_map_type(self, spec, &map.ty, (&bound, index), &mut bounds)?;
                     let access = if map.inout { "&mut " } else { "&" };
                     declarations.push(format!("{name}: {access}{ty}"));
-                    bounds.push(format!("const {bound}: usize"));
                     arguments.push(name);
                 }
             }
+        }
+        // An algorithm that builds a map local with no map to draw its seed
+        // from takes the machine's, after its declared parameters and before
+        // the destination of a list it returns (docs/adr/0108, D8), handed to
+        // the adapter as the call's last argument ([`Self::algorithm_seed`]).
+        if spec.callee.takes_map_seed {
+            declarations.push("sce_seed: ::sce_rust_runtime::MapSeed".to_string());
+            arguments.push("sce_seed".to_string());
         }
         let bounds = if bounds.is_empty() {
             String::new()
@@ -6954,6 +7007,21 @@ fn lowering_ctx<'a>(
     let mut ctx = scope.ctx(paths, enums);
     target.hand_call_storage(scope, machine, &mut ctx);
     ctx.map_units = map_units.clone();
+    // docs/adr/0108, D8: each call of an algorithm that takes its caller's
+    // seed, by its alias and by each name a rewrite gives a call of it, is
+    // handed the one the machine keeps for its algorithms.
+    if let Some(seed) = target.algorithm_seed() {
+        for callee in scope.callees.iter().filter(|c| c.takes_map_seed) {
+            ctx.seeded_calls.insert(callee.alias.as_str(), seed.clone());
+            for made in scope
+                .state_calls()
+                .iter()
+                .filter(|made| made.alias == callee.alias)
+            {
+                ctx.seeded_calls.insert(made.name.as_str(), seed.clone());
+            }
+        }
+    }
     ctx
 }
 
@@ -8404,6 +8472,21 @@ pub fn lower(
     // for a map slot; each lane's entry asks it first ([`lent_map_unlowered`]).
     if !target.lends_maps() {
         lent_map_unlowered(&scope, lang)?;
+    }
+    // docs/adr/0108, D8: an algorithm that builds a map local with no map to
+    // draw its seed from takes its caller's, which a target that lends maps
+    // hands it from the machine's own; one that does not hand it yet refuses
+    // the document by the callee's name.
+    let seeds_algorithms = scope.callees.iter().any(|c| c.takes_map_seed);
+    if seeds_algorithms && target.lends_maps() && target.algorithm_seed().is_none() {
+        if let Some(callee) = scope.callees.iter().find(|c| c.takes_map_seed) {
+            return Err(GenerateError::unsupported(format!(
+                "`{}(…)`: an algorithm that builds a map local with no map to draw its seed \
+                 from takes the seed of the machine that calls it, which {lang} does not hand \
+                 one yet (docs/adr/0108, D8)",
+                callee.alias
+            )));
+        }
     }
     // A call that hands an algorithm a record or a list, or takes one back, needs
     // the target's adapter for it; a target without one refuses the document by
@@ -9902,6 +9985,7 @@ pub fn lower(
         elements: rewrites.elements.into_inner(),
         keyed_loops: rewrites.keyed_loops.into_inner(),
         logs_a_value: rewrites.logs_a_value.get(),
+        seeds_algorithms: seeds_algorithms && target.algorithm_seed().is_some(),
     })
 }
 

@@ -3760,6 +3760,9 @@ fn render_rust(
         // docs/adr/0109, D12: the values the deployment supplies, which the
         // machine is built from; none for a machine that declares none.
         deployment => minijinja::Value::from_serialize(&static_lowering.deployment),
+        // docs/adr/0108, D8: the machine keeps a seed for the algorithms it
+        // calls that build a map local with no map to draw one from.
+        static_seeds_algorithms => static_lowering.seeds_algorithms,
         // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
         // reaches its runtime through, which the component the runtime drives
         // registers and delivers the snapshot by.

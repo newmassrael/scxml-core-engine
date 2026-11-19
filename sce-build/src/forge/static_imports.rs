@@ -957,6 +957,7 @@ pub(crate) fn resolve(
             ret_bound: returned_length(&algorithm.signature),
             host_only,
             may_fail: signature.may_fail,
+            takes_map_seed: algorithm.takes_map_seed(),
             // A list of numbers returned by an algorithm that takes a value of an enum
             // is taken through the adapter that maps the enum, by the signature above,
             // and not as the scalars-only list it would otherwise be.
@@ -1224,6 +1225,8 @@ fn function_callee(
         ret_bound: None,
         host_only: None,
         may_fail,
+        // Only an algorithm builds a map local, and this is not one.
+        takes_map_seed: false,
         line: import.line,
         list_return: None,
         list_refusal: None,

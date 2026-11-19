@@ -153,6 +153,10 @@ pub struct StaticCallee {
     /// It declares `may-fail` (SCE_FORGE.md §3.4.1); a statechart does not
     /// receive a failure, so its expressions may not call it.
     pub may_fail: bool,
+    /// It builds a map local and is lent no map and returns none, so each call
+    /// hands it the seed of that local's keys, drawn from the machine's
+    /// (docs/adr/0108, D8, [`crate::forge::model::AlgorithmModel::takes_map_seed`]).
+    pub takes_map_seed: bool,
     /// The `<sce:import>` element's row, for a refusal of the import itself.
     pub line: Option<u32>,
     /// What it returns when that is a list of numbers or bools and it takes

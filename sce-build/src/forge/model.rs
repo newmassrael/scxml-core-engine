@@ -5978,6 +5978,35 @@ impl AlgorithmModel {
             .find(|(_, ty)| ty.map_key().is_some())
     }
 
+    /// Whether the algorithm builds a map or a set local and is lent no map and
+    /// returns none, so that nothing it is handed carries a seed for the
+    /// local's keys (docs/adr/0108, D8): its caller hands it one, as a host
+    /// hands a machine the seed of its maps on a lane with no entropy of its
+    /// own.
+    pub fn takes_map_seed(&self) -> bool {
+        let lent = self
+            .signature
+            .params
+            .iter()
+            .any(|p| p.sce_type.map_key().is_some());
+        let returned = self
+            .signature
+            .return_type
+            .as_ref()
+            .is_some_and(|ty| ty.map_key().is_some());
+        let builds = self
+            .body_bindings()
+            .into_iter()
+            .any(|binding| match binding {
+                AlgorithmBinding::Local { sce_type, .. } => sce_type.map_key().is_some(),
+                AlgorithmBinding::ForeachItem { .. }
+                | AlgorithmBinding::ForeachKey { .. }
+                | AlgorithmBinding::RecordLocal { .. }
+                | AlgorithmBinding::UnionLocal { .. } => false,
+            });
+        builds && !lent && !returned
+    }
+
     /// Whether the algorithm holds a union anywhere: a parameter, a local, a
     /// list of them or its return (docs/adr/0092, Landing order step 5;
     /// docs/adr/0099, "Still open" item 2).
