@@ -1779,6 +1779,10 @@ inputs = [
 outputs = [
     "backends/rust/mesh/src/generated/*",
     "backends/rust/mesh/src/generated.rs",
+    # The standard GCRA the https server's edge limits run (docs/adr/0109 D2), generated
+    # from `stdlib/rate` into a tree of its own beside the Mesh documents' tree.
+    "backends/rust/mesh/src/generated_rate/*",
+    "backends/rust/mesh/src/generated_rate.rs",
     "backends/rust/mesh/examples/generated/*",
 ]
 
