@@ -29,7 +29,9 @@ use crate::LATEST_MOMENT;
 
 /// What gives the functions of this module their store.
 pub trait CredentialHarness {
-    type Store: CredentialStore;
+    /// A credential store, named with the two contracts it is made of, whose methods the functions
+    /// of this module call.
+    type Store: CredentialStore + PinStore + TokenStore;
 
     /// Another handle on the one store this harness holds: it sees everything every other handle
     /// wrote. For a store in a database, a connection of its own, as a second process would have.
