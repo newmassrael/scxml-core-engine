@@ -27,7 +27,7 @@
 //! reaches, named for that document and shared wherever it is met.
 
 use super::super::*;
-use crate::forge::cbor_codec;
+use crate::forge::cbor_codec::{self, CborComposite as Composite};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{CborEnum, CborItem, CborPlan, CborRecord, CborShape, CborUnion};
 use crate::forge::model::CborEntry;
@@ -475,21 +475,10 @@ fn write_stmts(shape: &CborShape, access: &Access, depth: usize) -> Vec<String> 
 /// encoding (docs/adr/0101, section 3.5): a list below its lower count at any
 /// depth, and a byte string a record's field holds in the language's own
 /// vector past its bound. The one reading the plan's totality makes of the
-/// shape ([`crate::forge::codec_totality`]), so the two name the same entries.
+/// shape ([`crate::forge::codec_totality::cbor_value_refuses`]), so the two
+/// name the same entries.
 fn can_refuse(shape: &CborShape, held: Held) -> bool {
-    match shape {
-        CborShape::List { elem, min, .. } => *min > 0 || can_refuse(elem, Held::Composed),
-        CborShape::Nullable(elem) => can_refuse(elem, held),
-        CborShape::Bytes { .. } => held == Held::Field,
-        CborShape::Record(record) => record_can_refuse(record),
-        CborShape::Union(union) => union_can_refuse(union),
-        CborShape::Int { .. }
-        | CborShape::Float { .. }
-        | CborShape::Bool
-        | CborShape::Text { .. }
-        | CborShape::Enum(_)
-        | CborShape::Unresolved { .. } => false,
-    }
+    crate::forge::codec_totality::cbor_value_refuses(shape, held == Held::Field)
 }
 
 fn record_can_refuse(record: &CborRecord) -> bool {
@@ -587,57 +576,6 @@ fn check_stmts(
     }
 }
 
-/// A record or a union document the codec reaches, met first at a place of
-/// one of its entries.
-enum Composite<'p> {
-    Record(&'p CborRecord),
-    Union(&'p CborUnion),
-}
-
-impl Composite<'_> {
-    /// The name of the document it is.
-    fn name(&self) -> &str {
-        match self {
-            Composite::Record(record) => &record.name,
-            Composite::Union(union) => &union.name,
-        }
-    }
-}
-
-/// Each record and union document a value of `shape` reaches, once by its
-/// document's name, appended to `out` in the order a walk of the shape meets
-/// them, each before what it holds.
-fn reach<'p>(shape: &'p CborShape, out: &mut Vec<Composite<'p>>) {
-    match shape {
-        CborShape::Record(record) => reach_record(record, out),
-        CborShape::Union(union) => {
-            if out.iter().all(|met| met.name() != union.name) {
-                out.push(Composite::Union(union));
-                for record in union.cases.iter().filter_map(|case| case.record.as_ref()) {
-                    reach_record(record, out);
-                }
-            }
-        }
-        CborShape::List { elem, .. } | CborShape::Nullable(elem) => reach(elem, out),
-        CborShape::Int { .. }
-        | CborShape::Float { .. }
-        | CborShape::Bool
-        | CborShape::Text { .. }
-        | CborShape::Bytes { .. }
-        | CborShape::Enum(_)
-        | CborShape::Unresolved { .. } => {}
-    }
-}
-
-fn reach_record<'p>(record: &'p CborRecord, out: &mut Vec<Composite<'p>>) {
-    if out.iter().all(|met| met.name() != record.name) {
-        out.push(Composite::Record(record));
-        for field in &record.fields {
-            reach(&field.shape, out);
-        }
-    }
-}
-
 /// Append the module of the document `name` to `out`, once.
 fn add_module(name: &str, out: &mut Vec<String>) {
     let module = module_of(name);
@@ -691,12 +629,8 @@ pub(crate) fn reached_modules(plan: &CborPlan<'_>) -> Vec<String> {
 /// each record and union document the entries of `plan` reach, as the text of
 /// the module's functions (docs/adr/0101, section 5.1).
 pub(crate) fn composites(plan: &CborPlan<'_>) -> String {
-    let mut reached = Vec::new();
-    for item in &plan.entries {
-        reach(&item.value, &mut reached);
-    }
     let mut out = String::new();
-    for composite in &reached {
+    for composite in &cbor_codec::reached_composites(plan) {
         out.push('\n');
         out.push_str(&match composite {
             Composite::Record(record) => record_fns(record),
@@ -1453,7 +1387,7 @@ mod tests {
         ];
         let mut reached = Vec::new();
         for shape in &shapes {
-            reach(shape, &mut reached);
+            cbor_codec::reach_composites(shape, &mut reached);
         }
         let names: Vec<&str> = reached.iter().map(Composite::name).collect();
         assert_eq!(names, ["card_payment", "order_payment", "voucher_payment"]);
