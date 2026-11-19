@@ -16,11 +16,14 @@ use std::path::{Path, PathBuf};
 /// of the committed `static_datamodel` trees, the test profile's and the
 /// unions', the integration fixtures, the W3C resources and the template
 /// parity fixtures. Between them they hold every kind of reference a closure
-/// follows, which the sweep asserts it met.
-const SWEPT: [&str; 6] = [
+/// follows, which the sweep asserts it met. Every XInclude statechart among
+/// them is refused on purpose (a diagnostic fixture), so `input_closure`
+/// holds the one whose fragment is spliced.
+const SWEPT: [&str; 7] = [
     "sce-build/tests/fixtures/static_datamodel",
     "sce-build/tests/fixtures/test_profile",
     "sce-build/tests/fixtures/union",
+    "sce-build/tests/fixtures/input_closure",
     "integration_resources",
     "resources",
     "tests/w3c_template_parity/fixtures",

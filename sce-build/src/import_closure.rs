@@ -824,7 +824,10 @@ mod tests {
         write(
             dir.path(),
             "frag.xml",
-            "<state xmlns=\"http://www.w3.org/2005/07/scxml\" id=\"included\"/>\n",
+            // An included root is replaced by its children, so it carries one:
+            // a root with none is refused (docs/SCE_ACCEPTED_SUBSET.md).
+            "<state xmlns=\"http://www.w3.org/2005/07/scxml\" id=\"container\">\
+             <state id=\"included\"/></state>\n",
         );
         let machine = write(
             dir.path(),

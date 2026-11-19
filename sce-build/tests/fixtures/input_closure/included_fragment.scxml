@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A statechart that splices a fragment with <xi:include>, for the input
+     closure sweep (sce-build/tests/every_file_a_generation_reads_is_in_its_closure.rs).
+     The parse records reading fragment.xml, so the sweep holds that read
+     inside the document's closure (ADR 0094). Every other XInclude statechart
+     the sweep reads is refused on purpose, so this one is the sweep's include. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:xi="http://www.w3.org/2001/XInclude"
+       version="1.0" initial="waiting" name="included_fragment">
+  <state id="waiting">
+    <xi:include href="fragment.xml"/>
+  </state>
+  <final id="done"/>
+</scxml>
