@@ -3581,6 +3581,24 @@ fn render_rust(
     // expression reads are ones that channel must carry.
     let static_lowering =
         crate::forge::static_lowering::lower_rust(&mut model_lowered, &machine_name)?;
+    // docs/adr/0109, D12: the values a deployment supplies are read from the
+    // JSON of its configuration by the runtime's payload reader, which a
+    // `no_std` build does not carry; such a machine is refused by name rather
+    // than built with no way to read what it is built from.
+    if options.no_std {
+        if let Some(deployment) = &static_lowering.deployment {
+            let first = deployment
+                .values
+                .first()
+                .map(|value| value.id.as_str())
+                .unwrap_or_default();
+            return Err(GenerateError::unsupported(format!(
+                "<data id=\"{first}\" sce:from=\"deployment\">: a no_std Rust machine has no \
+                 reader of the JSON its deployment's configuration is written in \
+                 (docs/adr/0109, D12)"
+            )));
+        }
+    }
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events
         .iter()
@@ -3721,6 +3739,9 @@ fn render_rust(
         static_enums => minijinja::Value::from_serialize(&static_lowering.enums),
         static_unions => minijinja::Value::from_serialize(&static_lowering.unions),
         static_saved_shape => &static_lowering.saved_shape,
+        // docs/adr/0109, D12: the values the deployment supplies, which the
+        // machine is built from; none for a machine that declares none.
+        deployment => minijinja::Value::from_serialize(&static_lowering.deployment),
         // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
         // reaches its runtime through, which the component the runtime drives
         // registers and delivers the snapshot by.
@@ -3925,6 +3946,9 @@ fn render_cpp(
         static_imports => &static_lowering.imports,
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_lowering.saved_shape,
+        // docs/adr/0109, D12: the values the deployment supplies, which the
+        // machine is built from; none for a machine that declares none.
+        deployment => minijinja::Value::from_serialize(&static_lowering.deployment),
         // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
         // reaches its runtime through, which the component the runtime drives
         // registers and delivers the snapshot by.

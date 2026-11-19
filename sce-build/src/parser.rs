@@ -979,6 +979,78 @@ fn enforce_static_datamodel(
                     (!written.is_empty()).then(|| written.to_string()),
                 ));
             }
+            // docs/adr/0109, D12: a value the deployment supplies. The
+            // deployment is the one source a `<data>` names; the value has no
+            // initial value of the document's, so it takes no expr, no
+            // `<sce:set>` and no in-line content, and it holds the deployment's
+            // value from the start on. Its type is bounded as any variable's.
+            let from_deployment = match attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "from")
+            {
+                None => false,
+                Some(written) if written.trim() == crate::model::DEPLOYMENT_SOURCE => true,
+                Some(written) => {
+                    return Err(refused(
+                        format!("sce:from=\"{written}\""),
+                        "sce:from names where a variable's value comes from, and the one \
+                             source it names is `deployment`: the value the machine's \
+                             deployment supplies",
+                        &node,
+                        Some(written.to_string()),
+                    ))
+                }
+            };
+            if from_deployment && test_component {
+                return Err(refused(
+                    format!("<data id=\"{id}\" sce:from=\"deployment\">"),
+                    "a test component is started by the test system, which gives it the \
+                     suite's module parameters and no deployment's values: declare the value \
+                     a module parameter",
+                    &node,
+                    Some(name.to_string()),
+                ));
+            }
+            if from_deployment {
+                // The host gave the value; publishing it would hand the host
+                // back what it gave, and nothing reads a deployment value
+                // back.
+                if let Some(written) =
+                    attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "direction")
+                        .filter(|written| written.trim() == "out")
+                {
+                    return Err(refused(
+                        format!("sce:direction=\"{written}\""),
+                        "a value the deployment supplies is the host's input to the machine, \
+                         not the machine's output: it is not published",
+                        &node,
+                        Some(written.to_string()),
+                    ));
+                }
+                if let Some(written) = attribute_as_written(&node, "expr") {
+                    return Err(refused(
+                        format!("expr=\"{written}\""),
+                        "a value the deployment supplies has no initial value of the \
+                         document's: the deployment gives it before the machine starts, so it \
+                         takes no expr",
+                        &node,
+                        (!written.is_empty()).then(|| written.to_string()),
+                    ));
+                }
+                let builds = node.children().any(|n| {
+                    n.is_element()
+                        && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+                        && n.tag_name().name() == "set"
+                });
+                if builds || !character_data(&node).trim().is_empty() {
+                    return Err(refused(
+                        format!("<data id=\"{id}\" sce:from=\"deployment\"> with content"),
+                        "a value the deployment supplies has no initial value of the \
+                         document's: the deployment gives it whole, so it takes no <sce:set> \
+                         and no in-line content",
+                        &node,
+                        Some(name.to_string()),
+                    ));
+                }
+            }
             // The type as the one type grammar reads it (docs/adr/0086). A text
             // that is no type is the variable's reader's to refuse, by name; the
             // rules below are of the shapes it can be.
@@ -1220,7 +1292,12 @@ fn enforce_static_datamodel(
             let module_parameter = test_component
                 && crate::sce_attr::read(&node, "module-parameter")
                     .is_some_and(|flag| matches!(flag.trim(), "true" | "1"));
-            if !module_parameter && node.attribute("expr").is_none_or(|e| e.trim().is_empty()) {
+            // A value the deployment supplies is the other: its value is the
+            // deployment's (docs/adr/0109, D12).
+            if !module_parameter
+                && !from_deployment
+                && node.attribute("expr").is_none_or(|e| e.trim().is_empty())
+            {
                 return Err(refused(
                     format!("<data id=\"{id}\">"),
                     "every <data> declares its initial value with expr",
@@ -3812,10 +3889,20 @@ impl SCXMLParser {
         // A `union:<alias>` variable is built the same way: one `<sce:set>` for
         // the tag and one for each field of its case (docs/adr/0092, section
         // 6.1 item 5), judged where the union's document is read.
-        let built_whole = value_type.as_ref().is_some_and(|ty| {
-            ty.record_alias().is_some()
-                || matches!(ty, crate::forge::model::AlgorithmValueType::Union { .. })
-        });
+        // docs/adr/0109, D12: `enforce_static_datamodel` has already refused a
+        // source other than the deployment, and an initial value beside it;
+        // under any other data model the attribute is read by nothing and
+        // refused as unread.
+        let from_deployment = model.datamodel == Datamodel::SceStatic
+            && crate::sce_attr::read(data, "from")
+                .is_some_and(|text| text.trim() == crate::model::DEPLOYMENT_SOURCE);
+        // A value the deployment supplies is not built here: the deployment
+        // gives it whole.
+        let built_whole = !from_deployment
+            && value_type.as_ref().is_some_and(|ty| {
+                ty.record_alias().is_some()
+                    || matches!(ty, crate::forge::model::AlgorithmValueType::Union { .. })
+            });
         let record_fields = if built_whole {
             crate::forge::parser::read_record_fields(data, source_name, element)?
         } else {
@@ -3880,6 +3967,7 @@ impl SCXMLParser {
             value_type_spelling: AttributeSpelling::of(data, Some(SCE_NAMESPACE), "type"),
             record_fields,
             direction,
+            from_deployment,
             // The analyzer names readers, once it knows which variables
             // have one (`reader_names::assign`).
             reader: None,

@@ -103,6 +103,7 @@
         "validation/union-tag-collision",
         "validation/map-key-type",
         "validation/map-in-wire-position",
+        "validation/deployment-value-assigned",
         "validation/encoded-size-overflow",
         "test-profile/datamodel",
         "test-profile/matcher-type",

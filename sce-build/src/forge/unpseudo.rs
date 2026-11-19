@@ -3165,7 +3165,7 @@ fn split_type_word(text: &str) -> (&str, &str) {
     (text, "")
 }
 
-/// `data <id>[: <type>] [sce-type <t>] [capacity <n>] [direction <d>] [src <s>] [= <expr>] [content <c>]`,
+/// `data <id>[: <type>] [sce-type <t>] [capacity <n>] [direction <d>] [from deployment] [src <s>] [= <expr>] [content <c>]`,
 /// and for a record variable one nested `<field> = <expr>` line per field —
 /// the lines an algorithm's record local nests.
 fn parse_variable(
@@ -3207,6 +3207,7 @@ fn parse_variable(
         value_type_spelling: None,
         record_fields: Vec::new(),
         direction: None,
+        from_deployment: false,
         // Named by the analyzer, which a rendering has not been through.
         reader: None,
         req: Vec::new(),
@@ -3282,6 +3283,22 @@ fn parse_variable(
                     why: format!("`{d}` is not a direction"),
                 })?,
             );
+        tail = more;
+    }
+    // docs/adr/0109, D12: the deployment supplies the value, the one source a
+    // `<data sce:from>` names.
+    if let Some(after) = tail.strip_prefix("from ") {
+        let (source, more) = match after.split_once(' ') {
+            Some((s, m)) => (s, m),
+            None => (after, ""),
+        };
+        if source != "deployment" {
+            return Err(ParseError {
+                line: line.number,
+                why: format!("`{source}` is not where a value comes from: `deployment` is"),
+            });
+        }
+        v.from_deployment = true;
         tail = more;
     }
     if let Some(after) = tail.strip_prefix("src ") {

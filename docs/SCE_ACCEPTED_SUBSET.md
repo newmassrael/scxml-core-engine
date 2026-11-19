@@ -6380,6 +6380,45 @@ build's, is the buffer, the constant and the read, so `--limit` moves all three.
 `a_statechart_reads_a_bound_by_its_name_and_a_host_reads_its_constant` and its
 neighbours in the same test hold this on the six backends.
 
+**A value the deployment supplies: `sce:from="deployment"`** (docs/adr/0109, D12).
+`<data id="limits" sce:type="record:ServerLimits" sce:from="deployment"/>` declares a
+top-level variable whose value the machine's deployment gives it before it starts: a
+value of any type a payload schema states (docs/adr/0087, section 1), a record, a list,
+a union, an enum, an optional value or a scalar, every bound written in its type. A map
+or a set, which has no wire form yet, is refused as any map variable is, and a type
+with no payload schema (an open enum among them) is refused by name
+(`scxml/static-datamodel-rule`). The deployment is the one source `sce:from` names; the
+declaration takes no `expr`, no `<sce:set>` and no in-line content, since the document
+gives it no initial value, and no `sce:direction="out"`, since it is the host's input
+and not the machine's output; a test component, which the test system starts with the
+suite's module parameters, declares none (`scxml/static-datamodel-rule` for each).
+Under any other data model the attribute is read by nothing and refused as unread. The
+machine reads the value, in a guard, an expression and an initial value of a variable
+declared after it, and never writes it: an `<assign>`, an `<sce:append>`, an
+`<sce:clear>`, an `<sce:render>` or an `<sce:lift>` whose place is the value or inside
+it, a `<send>`'s or an `<invoke>`'s `idlocation` naming it, and a `<foreach>` whose item
+or index names it are refused at the element as `validation/deployment-value-assigned`,
+the place as written its `actual`. A child session is started by its parent, which has
+no deployment value to give it, so an `<invoke>` of a child that declares one is
+refused at the invoke (`scxml/static-datamodel-rule`). The value is part of the
+machine's interface and not of its state: no saved state holds it, it is no line of the
+saved-state shape (docs/adr/0109, Open question 3), and a restored machine is built from
+the deployment's current value, so a changed configuration takes effect at the next
+start. Rust and C++ build the machine from it (docs/adr/0109, D0): each declares
+`<Machine>Deployment`, one member per value, whose `read` reads the JSON object of the
+configuration (§2.8, `config:` and `config_file:`) by the lift's reader, each member by
+the reader a delivery's field of its type is read by, a member the machine does not
+declare stepped over, and answers the lift's refusal (its code, its strict RFC 6901
+pointer, its bound) of the first place that is no value of its type. Every constructor
+of the machine takes the `Deployment` (Rust `new(deployment)`,
+`new_with_session_id(id, deployment)`; C++ `explicit <Machine>(const
+<Machine>Deployment&)`), so a machine is never built on a value no deployment gave, and
+a configuration that does not read leaves the host the refusal and no machine. Kotlin,
+Go, Python, Swift, C11 and the Interpreter's lowering refuse the `<data>` by name
+(`generate/unsupported-feature`), as does a `--no-std` Rust build, which carries no JSON
+reader. `sce-build/tests/a_machine_reads_the_values_its_deployment_supplies.rs` holds
+the rules, and `a_deployment_value_is_no_line_of_the_saved_shape` the shape.
+
 **State an algorithm takes and gives back.** A rule that works on what a statechart
 keeps is written once, as an algorithm, and every backend runs the same one:
 `AddEntry(entries, _event.data.id, _event.data.amount)` hands the algorithm the
@@ -10483,7 +10522,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (551 codes)
+## Appendix — `DiagnosticCode` index (552 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10581,6 +10620,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/union-tag-collision` | Validation |
 | `validation/map-key-type` | Validation |
 | `validation/map-in-wire-position` | Validation |
+| `validation/deployment-value-assigned` | Validation |
 | `validation/encoded-size-overflow` | Validation |
 | `test-profile/datamodel` | Validation |
 | `test-profile/matcher-type` | Validation |

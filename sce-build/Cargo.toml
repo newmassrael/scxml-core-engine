@@ -1970,6 +1970,14 @@ name = "a_lift_reads_a_text_into_a_record_or_keeps_why_not"
 path = "tests/a_lift_reads_a_text_into_a_record_or_keeps_why_not.rs"
 required-features = ["cli"]
 
+# A value the deployment supplies (docs/adr/0109, D12): its declaration's rules, every
+# write of it refused, and every backend but Rust and C++ refusing it by name. It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_machine_reads_the_values_its_deployment_supplies"
+path = "tests/a_machine_reads_the_values_its_deployment_supplies.rs"
+required-features = ["cli"]
+
 # A schema unit declares its payload's JSON Schema and GBNF grammar on every backend, as
 # `payload-schema` prints them (docs/adr/0087, section 1). It runs `sce-codegen`, so it
 # carries the `cli` gate.

@@ -238,6 +238,13 @@ pub fn check(
                 continue;
             }
         }
+        // A value the deployment supplies has no initial value of the
+        // document's to judge (docs/adr/0109, D12): its type is judged as the
+        // one its reader reads.
+        if var.from_deployment {
+            judge.deployment_value(var)?;
+            continue;
+        }
         if let Some(alias) = var
             .value_type
             .as_ref()
@@ -3017,6 +3024,120 @@ impl<'a> Judge<'a> {
         Ok(true)
     }
 
+    /// A value the deployment supplies (docs/adr/0109, D12), read when the
+    /// machine starts from the JSON its deployment's configuration is written
+    /// in, by the reader of its type: so its type states every bound, and is
+    /// one a payload schema states (docs/adr/0087, section 1), which is what
+    /// the deployment's value is checked by where the deployment is read. A
+    /// map or a set, which has no wire form, was refused before this.
+    fn deployment_value(&self, var: &Variable) -> Result<(), Located<ForgeError>> {
+        let spelling = var.value_type_spelling.as_ref();
+        let (line, col) = (spelling.map(|s| s.row()), spelling.map(|s| s.col()));
+        let written = var
+            .value_type
+            .as_ref()
+            .map(|t| t.as_attr())
+            .unwrap_or_default();
+        let refuse = |rule: String| {
+            self.rule_at(
+                format!("<data id=\"{}\" sce:from=\"deployment\">", var.id),
+                &rule,
+                line,
+                col,
+                "",
+                &written,
+            )
+        };
+        let Some(ty) = var.value_type.clone().and_then(|t| t.bounded().ok()) else {
+            return Err(refuse(
+                "a value the deployment supplies states every bound of its type, which its \
+                 reader holds the deployment's value to"
+                    .to_string(),
+            ));
+        };
+        let mut defs = crate::forge::value_type::SchemaDefs::default();
+        crate::forge::value_type::json_schema_of(&ty, &self.type_scope, &mut defs)
+            .map(|_| ())
+            .map_err(|why| {
+                refuse(format!(
+                    "a value the deployment supplies is read from JSON by the reader of its \
+                     type and checked by the type's payload schema, and `{written}` has none: \
+                     {why}"
+                ))
+            })
+    }
+
+    /// docs/adr/0109, D12: the refusal of a statement that writes `location`,
+    /// the attribute `attr` of `element`, written at `line` and `col`, where it
+    /// names a value the deployment supplies or a place inside one, which the
+    /// machine reads and never writes. `None` for a location rooted at any
+    /// other name.
+    fn deployment_value_written(
+        &self,
+        element: &str,
+        attr: &str,
+        location: &str,
+        line: Option<u32>,
+        col: Option<u32>,
+    ) -> Option<Located<ForgeError>> {
+        let location = location.trim();
+        let root = location.split(['.', '[']).next().unwrap_or("").trim();
+        let value = self
+            .scope
+            .variables
+            .iter()
+            .find(|v| v.from_deployment && !root.is_empty() && v.id == root)?;
+        Some(Located::new(
+            crate::forge::error::ValidationError::DeploymentValueAssigned {
+                element: element.to_string(),
+                attr: attr.to_string(),
+                location: location.to_string(),
+                value: value.id.clone(),
+            }
+            .into(),
+            self.diag_label,
+            line,
+            col,
+        ))
+    }
+
+    /// Each place `action` writes itself, as the attribute that names it,
+    /// held to [`Self::deployment_value_written`]: what an `<assign>`, an
+    /// `<sce:append>`, an `<sce:clear>`, an `<sce:render>` and an
+    /// `<sce:lift>` replace, the id a `<send>` writes, and the item and index
+    /// a `<foreach>` binds.
+    fn deployment_values_unwritten(&self, action: &Action) -> Result<(), Located<ForgeError>> {
+        let places: Vec<(&str, &str, &str)> = match action.action_type.as_str() {
+            "assign" => vec![("<assign>", "location", action.location.as_str())],
+            "sce_append" => vec![("<sce:append>", "target", action.location.as_str())],
+            "sce_clear" => vec![("<sce:clear>", "target", action.location.as_str())],
+            "sce_render" => vec![("<sce:render>", "location", action.location.as_str())],
+            "sce_lift" => vec![
+                ("<sce:lift>", "location", action.location.as_str()),
+                ("<sce:lift>", "refusal", action.lift_refusal.as_str()),
+            ],
+            "send" => vec![("<send>", "idlocation", action.idlocation.as_str())],
+            "foreach" => vec![
+                ("<foreach>", "item", action.item.as_str()),
+                ("<foreach>", "index", action.index.as_str()),
+            ],
+            _ => Vec::new(),
+        };
+        for (element, attr, location) in places {
+            let spelling = action.spellings.get(attr);
+            if let Some(refusal) = self.deployment_value_written(
+                element,
+                attr,
+                location,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+            ) {
+                return Err(refusal);
+            }
+        }
+        Ok(())
+    }
+
     /// A `union:<alias>` variable (docs/adr/0092, section 6.1 item 5, and its
     /// amendment of 2026-11-07): a sum type has no default value, so the
     /// variable is built at its declaration, from one `<sce:set>` naming the
@@ -3927,6 +4048,13 @@ impl<'a> Judge<'a> {
                  host-run invocation or a Mesh request is started under the id the build \
                  wrote, so write `id` where the document must name it",
             ));
+        }
+        // docs/adr/0109, D12: the id is written, and a value the deployment
+        // supplies is never written.
+        if let Some(refusal) =
+            self.deployment_value_written("<invoke>", "idlocation", &base.idlocation, line, col)
+        {
+            return Err(refusal);
         }
         let Some(variable) = self.idlocation_variable(&base.idlocation) else {
             return Err(refuse(IDLOCATION_NAMES_A_STRING_VARIABLE));
@@ -5104,6 +5232,9 @@ impl<'a> Judge<'a> {
         action: &Action,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
+        // docs/adr/0109, D12: a value the deployment supplies is read and
+        // never written, whatever statement would write it.
+        self.deployment_values_unwritten(action)?;
         let kind = action.action_type.as_str();
         match kind {
             "assign" => {
@@ -6202,6 +6333,44 @@ impl<'a> Judge<'a> {
         // with the request they hand, below.
         if !base.idlocation.is_empty() {
             self.invoke_idlocation(invoke, state, line, col)?;
+        }
+        // docs/adr/0109, D12: a value the deployment supplies is read when the
+        // host starts the machine, from the configuration of the machine the
+        // deployment names; a child session is started by its parent, which
+        // has no such value to give it.
+        let children: Vec<&[Variable]> = match invoke {
+            Invoke::Scxml(info) => info
+                .common
+                .child_static_variables
+                .iter()
+                .map(Vec::as_slice)
+                .collect(),
+            Invoke::Hybrid(info) => info
+                .candidates
+                .iter()
+                .filter_map(|candidate| candidate.child_static_variables.as_deref())
+                .collect(),
+            _ => Vec::new(),
+        };
+        if let Some(value) = children
+            .into_iter()
+            .flatten()
+            .find(|variable| variable.from_deployment)
+        {
+            return Err(self.rule_at(
+                format!("<invoke id=\"{}\">", base.invoke_id),
+                &format!(
+                    "the child declares `{}`, a value its deployment supplies, and a child \
+                     session is started by its parent, which has no deployment value to give \
+                     it: hand the value as a <param> to a variable of the child's own, or \
+                     start the machine from the host",
+                    value.id
+                ),
+                line,
+                col,
+                state,
+                &value.id,
+            ));
         }
         // A hybrid invoke names its child by an expression evaluated when it
         // starts, among the documents it declares.
