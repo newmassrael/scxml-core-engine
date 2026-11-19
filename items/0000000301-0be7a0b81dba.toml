@@ -6,3 +6,9 @@ commit = "024db9f8a5633da87c44ae6a8f91ddb51e07a74b"
 base = "6a8e5d1dd06a903efd470ad077607977be88f370"
 machine = "mf977c53d872e"
 at = 1795129457
+
+[land]
+candidate = "57bfee48789a6f81911bb66b075c4d63dd9e8181"
+base = "22583bbf4b2ea17ee3b817badae4179e1c205d81"
+with = [301]
+at = 1795132576
