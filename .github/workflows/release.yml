@@ -66,7 +66,12 @@ jobs:
       uses: ./.github/actions/install-rust
 
     - name: Build the generator of the commit
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      # Only the debug binary is built, so a release binary a cache restored
+      # would be found first: drop it, as every workflow that builds this way does.
+      run: |
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Read the declaration
       run: python3 scripts/release.py --check --tag "$GITHUB_REF_NAME"
