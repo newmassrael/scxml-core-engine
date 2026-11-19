@@ -1573,6 +1573,14 @@ pub struct TypeCtx<'a> {
     /// ⚠ `None` everywhere but a transition of a C11 statechart whose payload
     /// is of the schema of a record a map is keyed by.
     pub payload_key_feed: Option<String>,
+    /// Each map an algorithm is lent by the address of its storage rather than
+    /// in a type of its bound, by name, with the C type it holds its values in:
+    /// a C11 algorithm's map parameter, which views a map of any bound, the
+    /// caller's (docs/adr/0108, D6 items 1 and 4), so a read at a key of it
+    /// names the type of the value it reads, which no type of the map says.
+    ///
+    /// ⚠ Empty everywhere but the body of a C11 algorithm that takes a map.
+    pub lent_map_values: HashMap<String, String>,
     /// Each record and each enum a map of the statechart holds as its key or
     /// its value in the type the entry's own unit declares (docs/adr/0108, D6
     /// item 4), with that type and the functions an entry crosses by
@@ -1721,6 +1729,7 @@ impl<'a> TypeCtx<'a> {
             place_items: std::collections::HashSet::new(),
             unit_unions: HashMap::new(),
             payload_key_feed: None,
+            lent_map_values: HashMap::new(),
             map_units: MapUnits::default(),
             unit_held_names: std::collections::HashSet::new(),
         }

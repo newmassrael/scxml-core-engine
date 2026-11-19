@@ -2690,15 +2690,18 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     # The two schemas the map machines below hold records of are here too: a map holds
     # a record key or value in the type the record's unit declares (docs/adr/0108, D6
-    # item 4), whose header the machine's includes.
+    # item 4), whose header the machine's includes. So are the algorithm a map machine
+    # lends its table to and the enum, the record and the union it answers in
+    # (`static_map_take`, D6 item 2).
     set(_STATE_ALGORITHM_HEADERS "")
     foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids
                           ledger_larger ledger_has ids_above
                           schema_item enum_item_status item_status_set item_status_count item_status_of
                           schema_goal goal_earliest goal_until goal_undated goal_day_sum
                           schema_item_pick item_pick_first
-                          schema_map_face schema_map_peer)
-        if(_STATE_HEADER MATCHES "^(schema|enum)_")
+                          schema_map_face schema_map_peer
+                          enum_take_kind schema_take_duplicate union_take_result take_generation)
+        if(_STATE_HEADER MATCHES "^(schema|enum|union)_")
             set(_STATE_SOURCE
                 "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_HEADER}.scxml")
         else()
@@ -2710,6 +2713,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         sce_c_integration_generation(_STATE_${_STATE_HEADER} "${_STATE_SOURCE}")
         list(APPEND _STATE_ALGORITHM_HEADERS ${_STATE_${_STATE_HEADER}_HEADERS})
     endforeach()
+    # The standard enum that algorithm writes its put's outcome into, named by the
+    # generator as the standard library's documents are.
+    sce_c_integration_generation(_STATE_PUT_OUTCOME "sce:std/collection/put_outcome.scxml")
+    list(APPEND _STATE_ALGORITHM_HEADERS ${_STATE_PUT_OUTCOME_HEADERS})
     # A record is a struct of its schema's fields, declared in the machine's own
     # header; the schema is the document the machine imports it from.
     foreach(_STATIC_RECORD_MACHINE static_record_fields static_record_list static_record_list_index)
@@ -3005,6 +3012,16 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_map_order.scxml"
     )
+    # A map machine lends its table to an algorithm that writes it in place, by a
+    # `<sce:call>` that takes the union the algorithm answers (docs/adr/0108, D6 item 2).
+    # The algorithm's header, and the headers of what it names, are generated beside
+    # it (`_STATE_ALGORITHM_HEADERS`).
+    sce_generate_static_integration_c_test(static_map_take
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_map_take.scxml"
+        STAGE_ALSO schema_map_peer.scxml enum_take_kind.scxml schema_take_duplicate.scxml
+                   union_take_result.scxml algorithm_take_generation.scxml
+    )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
@@ -3295,6 +3312,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_map_full_SOURCES}
         ${INTEGRATION_C_TEST_static_map_record_SOURCES}
         ${INTEGRATION_C_TEST_static_map_order_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_take_SOURCES}
         ${INTEGRATION_C_TEST_static_map_composite_key_SOURCES}
         ${INTEGRATION_C_TEST_static_set_SOURCES}
     )

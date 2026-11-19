@@ -477,6 +477,73 @@ fn no_c11_frame_grows_with_a_map_bound() {
     );
 }
 
+/// No frame of an algorithm a C11 machine lends its map to grows with the map's
+/// bound either (docs/adr/0108, D4 "Storage" and D6 items 1, 2 and 4): the
+/// algorithm is lent the address of the machine's own storage and holds no map
+/// of its own, and each of its statements and reads holds one entry at most in
+/// its frame. The statechart that hands an algorithm its table of each peer's
+/// latest generation to write in place (`static_map_take.scxml`), its table
+/// bounded by one name, is built with every import at that bound and at 64 times
+/// it: the algorithm's function is laid out in both, and every function has the
+/// frame it had.
+#[test]
+fn no_c11_frame_grows_with_the_bound_of_a_map_an_algorithm_is_lent() {
+    let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
+    let dir = tempdir().expect("tempdir");
+    for name in [
+        "schema_map_peer.scxml",
+        "enum_take_kind.scxml",
+        "schema_take_duplicate.scxml",
+        "union_take_result.scxml",
+        "algorithm_take_generation.scxml",
+    ] {
+        std::fs::copy(fixtures.join(name), dir.path().join(name)).expect("copy an import");
+    }
+    let bound = "map&lt;record:Peer, uint64&gt;[2]";
+    let named = "map&lt;record:Peer, uint64&gt;[peer_max=2]";
+    let document =
+        std::fs::read_to_string(fixtures.join("static_map_take.scxml")).expect("the statechart");
+    assert_eq!(document.matches(bound).count(), 1, "`{bound}` stands once");
+    let path = dir.path().join("static_map_take.scxml");
+    std::fs::write(&path, document.replacen(bound, named, 1)).expect("write the statechart");
+    const SMALL: u32 = 2;
+    const LARGE: u32 = SMALL * 64;
+    let small = c11_frames(dir.path(), &path, &[("peer_max", SMALL)]);
+    let large: BTreeMap<(String, String), String> =
+        c11_frames(dir.path(), &path, &[("peer_max", LARGE)])
+            .into_iter()
+            .map(|((file, function), frame)| ((file, at_bound(&function, LARGE, SMALL)), frame))
+            .collect();
+    // A comparison that never met the algorithm would pass.
+    assert!(
+        small
+            .keys()
+            .any(|(_, function)| function == "take_generation"),
+        "the algorithm's frame was not read: {:?}",
+        small.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        small.keys().collect::<Vec<_>>(),
+        large.keys().collect::<Vec<_>>(),
+        "the two builds lay out the same functions"
+    );
+    let grown: Vec<String> = small
+        .iter()
+        .filter(|(function, frame)| large.get(*function) != Some(*frame))
+        .map(|((file, function), frame)| {
+            format!(
+                "{file} {function}: {frame} -> {}",
+                large[&(file.clone(), function.clone())]
+            )
+        })
+        .collect();
+    assert!(
+        grown.is_empty(),
+        "frames that grow with the bound of a map an algorithm is lent:\n{}",
+        grown.join("\n")
+    );
+}
+
 #[test]
 fn what_is_not_a_limit_is_refused_with_its_reason() {
     for (given, says) in [

@@ -696,10 +696,23 @@ static inline const void *sce_map_lookup_take(sce_forge_algorithm_failure_t *fai
     return found.value;
 }
 
+/* The value `found` holds, for a read whose key the build proved present (an algorithm that
+ * does not declare `may-fail` reads a map at a key only where `has` holds it, docs/adr/0108,
+ * D6 item 2): no failure is recorded, since none can happen. */
+static inline const void *sce_map_lookup_found(sce_map_found_t found) {
+    return found.value;
+}
+
 /* The value a read at a key gives, typed as the map holds its values: `found`, the
  * pointer `sce_map_lookup_take` answered, read as a value of the map `map` names. C code
  * only, and `map` is read for its type alone. */
 #define SCE_MAP_VALUE_OF(map, found) (*(const __typeof__((map).slots[0].value) *)(found))
+
+/* The value a read at a key gives, read as a value of the type `V`: what a map is read as
+ * where it is reached through the address of its storage, which names no type of its bound
+ * (an algorithm's map parameter, which views the map of any bound its caller lends, its values
+ * held in the type the algorithm names, docs/adr/0108, D6 items 1 and 4). C code only. */
+#define SCE_MAP_VALUE_AS(V, found) (*(const V *)(found))
 
 /* Put the key at `key`, of `key_size` bytes, with the value at `value`, of `value_size`:
  * a key that is present keeps its place and takes the value, and one that is absent goes
