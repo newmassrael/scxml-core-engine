@@ -6168,8 +6168,21 @@ list past its bound is refused. The snapshot lends the map whole, a
 `SCE_MAP_DECLARE` declares for its key, its value and its bound, and a set in
 the one `SCE_SET_DECLARE` declares, each named by its parts and its bound as a
 list is (`sce_static_map_uint32_int32_3_t`), so two variables of one shape hold
-one type; each key and value is held in the type a variable of its type is held
-in. The algorithm is Rust's (docs/adr/0108, D8): `N` entry slots with a free list,
+one type, whichever machine of a program declares it. A record key or value is
+held in the type its schema's unit declares, `<Schema>Payload_t`, the type an
+algorithm's slot holds it in (docs/adr/0108, D6 item 4), and the machine's
+header includes that unit's header whether or not the machine calls an
+algorithm; an enum's is its document's type, which the machine's alias names;
+every other key and value is held in the type a variable of its type is held
+in. A record crosses one entry at a time: `<sce:put>` builds the unit's record
+field by field from the record it is given, as a call's record argument is
+built; the value at a key read whole, and the item or the key of a walk read
+whole, is the machine's own record built from the unit's by a function of the
+machine's (`<machine>_record_<alias>_of_unit`), as a call's record answer is;
+and a field of either (`m[k].f`, `item.f`) is read where the map holds it. A
+record key the machine holds in its own record is looked up by that record's
+feed, which writes the bytes the unit's does. The algorithm is Rust's
+(docs/adr/0108, D8): `N` entry slots with a free list,
 a doubly linked order through them, and an open-addressing index of exactly
 twice the bound with tombstones, so no put or remove moves an entry; the map is
 the machine's own storage, the bound reserved (D4, "Storage"), and nothing is
@@ -6210,8 +6223,10 @@ host's `_saved_check_t` for `_judge`, so it finds a key held twice in one pass. 
 record key or value is read at the revision its schema was saved at: the saved
 shape names the map a holder of the record at each part of its entries that is
 one. A host reads a published map through the type's
-view: its slots, the position of its first entry and how many it holds, each
-entry naming the one after it.
+view `{entries, first, len}`: the array of its slots, the position of its first
+entry (0 for none) and how many it holds, the entry at position `p` being
+`entries[p - 1]` and its `links.next` the position of the entry after it, each
+key and value of the type the map holds it in.
 
 **An algorithm's map slot.** An algorithm takes a `map<K, T>` or `set<K>` slot,
 a parameter that is a view of its argument and states no bound

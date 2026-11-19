@@ -289,7 +289,9 @@ with a key twice, is refused as a saved list with too many elements is.
 the map type's view `{entries, first, len}`. `entries` points to the map's array of entry slots, `first` is the
 position of its first entry (0 for an empty map) and `len` how many entries it holds. The entry at position `p` is
 `entries[p - 1]`, and its `links.next` is the position of the entry after it in D2's order (0 after the last), so a
-host walks the links from `first` and never the array in slot order.
+host walks the links from `first` and never the array in slot order. Each slot's `key` and `value` is of the type
+D6, item 4, holds it in: a record's and an enum's the type its unit declares, the rest the type a variable of its
+type is held in.
 
 ### D9. The bounded-collection kind is unchanged, and §2.15's refusal names a different reopening
 
