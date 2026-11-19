@@ -19,7 +19,7 @@ use sce_rust_host_features::cose::{
 };
 use sce_rust_host_features::{
     CoseKeys, HttpRequest, HttpResponse, Invocation, NonceSource, Outcome, Params, ReferenceHost,
-    ReservedKeyId, ScriptedClock, Transport, TransportFailure, TrustedKey,
+    ReservedKeyId, ScriptedClock, ScriptedRandom, Transport, TransportFailure, TrustedKey,
 };
 
 struct Unreachable;
@@ -448,12 +448,37 @@ fn a_seal_whose_source_gives_no_nonce_fails_unavailable() {
     );
 }
 
-#[test]
-fn a_derivation_takes_the_next_number_and_a_refused_or_failed_one_takes_none() {
+/// The naming key of `tests/host_features/keys_cross_language.json`, which a
+/// host's key store draws at its first derivation (docs/SCE_HOST_FEATURES.md,
+/// section 13).
+const NAMING_KEY: [u8; 32] = [
+    0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f,
+    0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f,
+];
+
+/// [`host`], whose random source gives [`NAMING_KEY`] first.
+fn naming_host() -> ReferenceHost<Unreachable> {
     let mut host = host();
+    let mut random = ScriptedRandom::new();
+    random.set(&NAMING_KEY);
+    host.set_random_source(Box::new(random));
+    host
+}
+
+/// docs/adr/0109, D7: a derived key is named by what derived it, computed apart
+/// from the host under the naming key, so a derivation repeated is one id; a
+/// refused or failed derivation answers no id.
+#[test]
+fn a_derivation_is_named_by_what_derived_it_and_a_refused_one_names_nothing() {
+    let mut host = naming_host();
     assert_eq!(
         done(derive(&mut host, "shared secret", ""))["key_id"],
-        "derived:1"
+        "derived:16b0743d00d252ab19da164af038f377"
+    );
+    assert_eq!(
+        done(derive(&mut host, "shared secret", ""))["key_id"],
+        "derived:16b0743d00d252ab19da164af038f377",
+        "the same derivation again is the same key"
     );
     assert!(
         refused(derive(&mut host, "shared secret", "sec-256")),
@@ -465,31 +490,34 @@ fn a_derivation_takes_the_next_number_and_a_refused_or_failed_one_takes_none() {
         "unknown_key"
     );
     assert_eq!(
+        done(derive(&mut host, "", "11"))["error"],
+        "unknown_key",
+        "a signing key is no input of a derivation"
+    );
+    assert_eq!(
         done(derive(&mut host, "", "sec-256"))["key_id"],
-        "derived:2"
+        "derived:0b172f4b43a157787f32da671f48855e"
     );
 }
 
 #[test]
 fn a_seal_opens_with_a_key_derived_alike_and_not_with_another() {
     let mut host = host();
-    assert_eq!(
-        done(derive(&mut host, "shared secret", ""))["key_id"],
-        "derived:1"
-    );
-    assert_eq!(
-        done(derive(&mut host, "shared secret", ""))["key_id"],
-        "derived:2"
-    );
-    assert_eq!(
-        done(derive(&mut host, "", "derived:1"))["key_id"],
-        "derived:3"
-    );
+    let first = done(derive(&mut host, "shared secret", ""))["key_id"]
+        .as_str()
+        .expect("an id")
+        .to_string();
+    let other = done(derive(&mut host, "", &first))["key_id"]
+        .as_str()
+        .expect("an id")
+        .to_string();
+    assert!(first.starts_with("derived:") && first.len() == "derived:".len() + 32);
+    assert_ne!(first, other, "a key derived from the derived key");
     let sealed = done(host.start(
         "sce-host-cose-encrypt0",
         &invocation("seal"),
         &params(&[
-            ("key_id", "derived:1"),
+            ("key_id", &first),
             ("plaintext", "sealed"),
             ("external_aad", ""),
         ]),
@@ -504,11 +532,11 @@ fn a_seal_opens_with_a_key_derived_alike_and_not_with_another() {
         ))
     };
     assert_eq!(
-        open(&mut host, "derived:2"),
+        open(&mut host, &first),
         serde_json::json!({ "error": "", "opened": true, "plaintext": "sealed" })
     );
     assert_eq!(
-        open(&mut host, "derived:3"),
+        open(&mut host, &other),
         serde_json::json!({ "error": "", "opened": false, "plaintext": "" })
     );
 }
@@ -516,10 +544,10 @@ fn a_seal_opens_with_a_key_derived_alike_and_not_with_another() {
 #[test]
 fn a_new_configuration_keeps_the_derived_keys_and_refuses_their_ids() {
     let mut host = host();
-    assert_eq!(
-        done(derive(&mut host, "shared secret", ""))["key_id"],
-        "derived:1"
-    );
+    let derived = done(derive(&mut host, "shared secret", ""))["key_id"]
+        .as_str()
+        .expect("an id")
+        .to_string();
     let mut reserved = CoseKeys::default();
     reserved
         .symmetric
@@ -527,6 +555,22 @@ fn a_new_configuration_keeps_the_derived_keys_and_refuses_their_ids() {
     assert_eq!(
         host.set_cose_keys(reserved),
         Err(ReservedKeyId("derived:7".to_string()))
+    );
+    let mut reserved = CoseKeys::default();
+    reserved
+        .signing
+        .insert("generated:7".to_string(), key(SEED_11));
+    assert_eq!(
+        host.set_cose_keys(reserved),
+        Err(ReservedKeyId("generated:7".to_string())),
+        "a signing key under the namespace of generated keys"
+    );
+    let mut reserved = CoseKeys::default();
+    reserved.mac.insert("derived:mac".to_string(), vec![1, 2]);
+    assert_eq!(
+        host.set_cose_keys(reserved),
+        Err(ReservedKeyId("derived:mac".to_string())),
+        "a MAC key under the namespace of derived keys"
     );
     host.set_cose_keys(CoseKeys::default())
         .expect("an empty configuration");
@@ -544,7 +588,7 @@ fn a_new_configuration_keeps_the_derived_keys_and_refuses_their_ids() {
             "sce-host-cose-encrypt0",
             &invocation("seal"),
             &params(&[
-                ("key_id", "derived:1"),
+                ("key_id", &derived),
                 ("plaintext", ""),
                 ("external_aad", "")
             ]),
