@@ -1412,12 +1412,16 @@ fn parse_refused(document: &str, part: &str) -> sce_build::forge::error::ForgeEr
 /// put, its `has` and its read at a key are read and judged where the document
 /// is read: the parameter is written in place, the put names its outcome, and
 /// the body's judges, run before any backend renders it, prove the read at the
-/// peer's key inside the map where `has` holds it. No backend lowers an
-/// algorithm's map yet ("Order of work", step 7), so each refuses the
-/// algorithm by name, naming the record that lands it, rather than by any
-/// judge of its body.
+/// peer's key inside the map where `has` holds it. The Interpreter's lowering
+/// holds an algorithm's map ("Order of work", step 7, D10): the `inout` table
+/// arrives in the holder its caller lends, is read out of it into a local of
+/// its name, a put into it is held to the holder's bound, and the table is
+/// left in the holder however the function returns. Every generated backend
+/// that lowers no algorithm's map yet
+/// (`codegen_matrix::ALGORITHM_MAP_BACKENDS`) refuses the algorithm by name,
+/// naming the record that lands it, rather than by any judge of its body.
 #[test]
-fn an_algorithm_holds_an_inout_map_and_every_backend_refuses_it_by_name() {
+fn an_algorithm_holds_an_inout_map_the_interpreter_lowers_and_every_other_backend_refuses() {
     let m = parse_algorithm(&take_generation()).expect("the algorithm is read");
     let resets = &m.signature.params[0];
     assert!(resets.inout && resets.written_in_place(), "{resets:?}");
@@ -1431,7 +1435,30 @@ fn an_algorithm_holds_an_inout_map_and_every_backend_refuses_it_by_name() {
     }
     let path = dir.path().join("algorithm_take_generation.scxml");
     std::fs::write(&path, take_generation()).expect("write the algorithm");
-    for &language in sce_build::generator::Language::ALL {
+    let lowered =
+        sce_build::forge::static_js::lower_algorithm_document(path.to_str().expect("a utf-8 path"))
+            .unwrap_or_else(|e| panic!("the Interpreter lowers the algorithm: {e:?}"));
+    assert_eq!(lowered.symbol, "take_generation");
+    for part in [
+        "SceStatic.algorithms.take_generation = function (__lent0, peer, generation) { var \
+         resets = __lent0.map; try { ",
+        "SceStatic.mapHas(resets, ",
+        "SceStatic.mapPut(resets, ",
+        ", __lent0.capacity, peer, generation); resets = __wrote.map; stored = __wrote.outcome; }",
+        " } finally { __lent0.map = resets; } }",
+    ] {
+        assert!(
+            lowered.install.contains(part),
+            "the installed algorithm holds `{part}`:\n{}",
+            lowered.install
+        );
+    }
+    let unlowered = sce_build::generator::Language::ALL
+        .iter()
+        .filter(|language| {
+            !sce_build::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS.contains(language)
+        });
+    for &language in unlowered {
         let lane = language.canonical_name();
         let out_dir = tempfile::tempdir().expect("an output directory");
         let out_dir = out_dir.path().to_str().expect("a utf-8 path").to_string();
