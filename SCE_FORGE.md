@@ -1166,7 +1166,7 @@ element of its `<datamodel>` keyed by `sce:key`:
 |---|---|
 | `sce:codec-format` | The format the document is written in, on its root: `2`, the only one read (below). |
 | `sce:key` | The entry's map key, `0`–`23` — a key whose CBOR head is one byte. Unique within the codec. |
-| `sce:type` | Any type of the one type grammar (docs/adr/0101, section 1; docs/adr/0086 section 1 with docs/adr/0092's `union:<alias>`), at any depth, every bound in the type: a text with no bound, at any depth, is refused (`validation/attribute-rule-violated`). The backends print an unsigned integer (`uint8`–`uint64`), `bool`, `string[N]` (a CBOR text string), `bytes[N]` (a byte string), `enum:<alias>` (the integer of its declared number, major type 1 below zero, checked against the enum's declared values) and a bounded list of records `list<record:R>[N]` (below), or `optional<T>` over one of them; an entry of any other type is read and judged, and every backend refuses its codec by name (`generate/unsupported-feature`, naming the entry and the type) until its printer lowers it (docs/adr/0101, section 5.4). A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
+| `sce:type` | Any type of the one type grammar (docs/adr/0101, section 1; docs/adr/0086 section 1 with docs/adr/0092's `union:<alias>`), at any depth, every bound in the type: a text with no bound, at any depth, is refused (`validation/attribute-rule-violated`). Rust prints an entry of every type (docs/adr/0101, Landing order step 4a, below). The other backends print an unsigned integer (`uint8`–`uint64`), `bool`, `string[N]` (a CBOR text string), `bytes[N]` (a byte string), `enum:<alias>` (the integer of its declared number, major type 1 below zero, checked against the enum's declared values) and a bounded list of records `list<record:R>[N]` (below), or `optional<T>` over one of them; an entry of any other type is read and judged, and each of them refuses its codec by name (`generate/unsupported-feature`, naming the entry and the type) until its printer lowers it (docs/adr/0101, section 5.4). A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
 | `sce:length` | On a `bytes` or `optional<bytes>` entry that writes no bracket: the exact length, which is also its bound (`bytes[L]`); any other length is refused on decode and on encode. Beside a bracket it is `validation/incompatible-attributes`. |
 | `sce:max-size` | On a top-level `string` or `bytes`: the legacy spelling of the bracket on its type (docs/adr/0101, section 1.3), read as that bracket with the `sce:limit` beside it and reported as `validation/bound-attribute-superseded`; `sce-codegen bound-spelling` moves it into the type. Not with `sce:length`, nor beside a bracket. |
 
@@ -1209,11 +1209,12 @@ each entry's type (`CborPlan`, docs/adr/0101 §5.1), and every backend prints
 it as planned. A decode refuses an array past `N` items or below the lower count, an
 item that is no map, a key of a record given twice and a field absent, each as
 `CborOutOfRange`, `CborWrongType`, `CborDuplicateKey` or `CborRequiredKeyMissing`, and skips a key
-of a record its schema does not declare. A record a list holds is a map of
-unsigned integers, `bool`s, texts and byte strings, each bounded by its type; a
-record with a field of any other type, a record of no field, and one whose schema
-no import resolves are refused by name (`generate/unsupported-feature`) before
-any language renders. The size the build counts for the entry is
+of a record its schema does not declare. A record of no field, and one whose
+schema no import resolves, are refused by name (`generate/unsupported-feature`)
+before any language renders. A backend that does not print every type writes a
+record a list holds as a map of unsigned integers, `bool`s, texts and byte
+strings, each bounded by its type, and refuses one with a field of any other
+type by name, the field named. The size the build counts for the entry is
 `C(list<record:R>[N])` of the size calculus (docs/adr/0086, section 2.1): the
 array's head and `N` times the record's largest map. A list with a lower count
 makes the encode refusable (a value of fewer records), so its codec declares
@@ -1236,6 +1237,24 @@ Rust generates the list: each in `BoundedList<<schema>::<Schema>Payload, N>`
 list past its bound cannot be made and the encode refuses nothing for its count.
 The source interface lends the list by reference, and the owned mirror holds it as
 the view does.
+
+Rust prints every entry from the codec's plan (docs/adr/0101, Landing order step
+4a): a signed integer as `i8`–`i64` and a float as `f32` or `f64`, each read
+within its type; a list as `BoundedList<T, N>` of its element's type, an absent
+element of `list<optional<T>>` written as `null`; a record as its schema's
+payload type and a union as the type of its union's unit (section 5.3). Each
+record and union document the codec reaches is read, written and, where a value
+of it can be refused, checked by one function of the codec's module named for
+the document (`decode_record_<document>`, `encode_union_<document>`,
+`check_record_<document>`), shared wherever it is met, and the module brings in
+every document those functions name (`use super::<document>;`). A value inside
+a list is held in the bounded types of a composition (docs/adr/0086, section
+7.1), so the encode refuses only a list below its lower count and a byte string
+a record's field holds past its bound. A map that requires a record or a union
+has no value by default, and so no `new` and no `Default`. The corpus's
+`codec_cbor_composed` (`tests/forge/conformance/codec_cbor_composed/`) holds the
+printer to its cases, its variant encodings and its rejects
+(`backends/rust/forge-conformance/tests/forge_cbor_composed.rs`).
 
 C++ prints a map whose records hold only booleans, unsigned integers and texts
 from its plan (docs/adr/0081 step 4): the value presents the list as
