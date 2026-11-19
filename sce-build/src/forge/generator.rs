@@ -33506,8 +33506,9 @@ pub fn generate_swift_with_imports(
             swift_validator_unlowered(imports).map(|c| swift_validator_refusal(m, &c))
         }
         // The unit of an entry codec of a list, read where the import is resolved, through
-        // the lists it holds in turn.
-        ForgeDocument::Codec(m) => swift_codec::unlowered(m, &|alias| {
+        // the lists it holds in turn. A CBOR map and a content-line component are refused in
+        // their encoding's one shared sentence, which the conformance schedule reads too.
+        ForgeDocument::Codec(m) => swift_codec::document_refusal(m, &|alias| {
             imports
                 .iter()
                 .find(|import| import.alias == alias)
@@ -33519,8 +33520,7 @@ pub fn generate_swift_with_imports(
                             .and_then(|_| swift_codec::dispatch_outside_an_embed(m, alias))
                     })
                 })
-        })
-        .map(|construct| swift_codec::refusal(m, &construct)),
+        }),
         // A timer is a period, a fire event and two optional hooks over the runtime's
         // clock, none of which depends on a type Swift has yet to spell.
         ForgeDocument::Timer(_) => None,

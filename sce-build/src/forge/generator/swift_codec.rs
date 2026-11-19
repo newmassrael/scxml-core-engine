@@ -196,41 +196,52 @@ pub(super) fn unlowered(
         .or_else(|| flags_unlowered(m))
 }
 
-/// What of the `sce:encoding="cbor"` codec `m` the Swift codec does not lower yet; `None` for one it
-/// does.
+/// What of the `sce:encoding="cbor"` codec `m` is Swift's own to refuse; `None` for one it writes as
+/// far as Swift alone decides.
 ///
 /// It is a struct with one property per entry, so an entry may not be named for a member the struct
-/// has. An entry that is an enumeration is read as its carrier and converted by the enum's own
-/// `fromUnderlying`, which for an open enum is total ([`crate::forge::cbor_codec`]). A list of records
-/// is written where `cbor_codec::lowers_record_list` says, which `cbor_codec::refusal` answers before
-/// this is asked. An entry of a type docs/adr/0085 Landing order step 3a did not lower
-/// (`cbor_codec::unlowered_part`) is named with its type, as `cbor_codec::refusal` names it.
+/// has. Every other rule is the shared one (`cbor_codec::refusal`), which asks this last: an entry
+/// of a type the printer does not lower yet (docs/adr/0101, section 5.4) and a list of records
+/// where `cbor_codec::lowers_record_list` says none is written are refused there, in its one
+/// sentence, and not judged a second time here. An entry that is an enumeration is read as its
+/// carrier and converted by the enum's own `fromUnderlying`, which for an open enum is total.
 pub(super) fn cbor_unlowered(m: &CodecModel) -> Option<String> {
-    for e in &m.cbor_entries {
-        if MEMBERS.contains(&e.id.as_str()) {
-            return Some(format!(
+    m.cbor_entries
+        .iter()
+        .find(|e| MEMBERS.contains(&e.id.as_str()))
+        .map(|e| {
+            format!(
                 "the CBOR entry '{}', named for a member of the struct",
                 e.id
-            ));
-        }
-        if crate::forge::cbor_codec::unlowered_part(e).is_some() {
-            return Some(format!(
-                "the CBOR entry '{}' of type `{}`",
-                e.id, e.sce_type
-            ));
-        }
+            )
+        })
+}
+
+/// The sentence `generate` refuses the codec `m` with on Swift, or `None` for a codec it writes.
+///
+/// A CBOR map's is the one sentence `cbor_codec::refusal` gives, which the conformance schedule
+/// reads too and which asks what is Swift's own last ([`cbor_unlowered`]); a content-line
+/// component's is `content_line_codec::refusal`'s, or the construct of its own Swift refuses; a
+/// positional codec's names the construct [`unlowered`] finds. Each is the whole sentence, never
+/// wrapped a second time.
+pub(super) fn document_refusal(
+    m: &CodecModel,
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    match m.encoding {
+        CodecEncoding::Cbor => crate::forge::cbor_codec::refusal(Language::Swift, m),
+        CodecEncoding::ContentLine => crate::forge::content_line_codec::refusal(Language::Swift, m)
+            .or_else(|| content_line_unlowered(m).map(|construct| refusal(m, &construct))),
+        CodecEncoding::Positional => unlowered(m, element).map(|construct| refusal(m, &construct)),
     }
-    None
 }
 
 /// What of the content-line codec `m` (SCE_FORGE.md section 4.6.4) the Swift codec does not lower yet:
 /// an entry, or a parameter of one, named for a member of the struct, which the struct would declare
 /// twice. The line grammar and the shapes of an entry are the runtime's and the template's, and are the
-/// same on every backend that lowers one ([`crate::forge::content_line_codec::lowers`]).
+/// same on every backend that lowers one ([`crate::forge::content_line_codec::lowers`]), whose shared
+/// refusal [`document_refusal`] asks first, in its own sentence.
 pub(super) fn content_line_unlowered(m: &CodecModel) -> Option<String> {
-    if let Some(why) = crate::forge::content_line_codec::refusal(Language::Swift, m) {
-        return Some(why);
-    }
     let model = m.content_line.as_ref()?;
     model
         .entries
