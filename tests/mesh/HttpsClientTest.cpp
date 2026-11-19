@@ -619,7 +619,7 @@ TEST(HttpsClient, ASendNoAnswerConfirmedIsSendFailedWithoutAPolicy) {
     EXPECT_EQ(seen.faultsOf(ReasonCode::SendFailed), 1u);
     for (const auto &f : seen.faults_) {
         if (f.reason == ReasonCode::SendFailed) {
-            EXPECT_EQ(f.envelope_id, std::optional<std::array<std::uint8_t, 16>>(env.id));
+            EXPECT_EQ(f.envelope_id, (std::optional<std::array<std::uint8_t, 16>>(env.id)));
             EXPECT_EQ(f.transport, std::optional<std::string>("https"));
             ASSERT_TRUE(f.transport_error.has_value());
             EXPECT_NE(f.transport_error->find("connect"), std::string::npos);
