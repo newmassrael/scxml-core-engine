@@ -43,7 +43,7 @@ from typing import Any, Optional
 
 import _sce_codegen
 from sce_forge_runtime.broadcast_log import BroadcastLog, Empty, Lagged
-from sce_forge_runtime.codec import LengthOutOfRange, NeedMoreBytes, PresentIfMismatch
+from sce_forge_runtime.codec import LengthOutOfRange, NeedMoreBytes
 
 REPO_ROOT = _sce_codegen.REPO_ROOT
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
@@ -344,9 +344,10 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
     not carry (ADR 0062 section 4, "Caller inputs are part of the element").
 
     The log stores each in the entry beside the bytes, so a reader decodes an entry
-    under what it was published under and not under whatever it happens to hold. A
-    flag is taken by ``publish`` and returned by the item; a tag is read off the
-    element. Two sets: a codec with one flag input that gates a field, and a variant
+    under what it was published under and not under whatever it happens to hold. The
+    flag is said by the element's value (ADR 0065 section 6, R4a), so ``publish``
+    reads it off the element and the item returns it; a tag is read off the element.
+    Two sets: a codec with one flag input that gates a field, and a variant
     whose wire form has no tag, so the tag that selects the arm on decode is the
     element's own.
     """
@@ -435,8 +436,8 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
         module = self.flagged
         log = module.new_broadcast_log_conformance_flagged()
         publisher = log.publisher()
-        module.publish(publisher, self.make_event(1, 0x0203), self.flags(True))
-        module.publish(publisher, self.make_event(2, None), self.flags(False))
+        module.publish(publisher, self.make_event(1, 0x0203))
+        module.publish(publisher, self.make_event(2, None))
 
         reader = log.reader_oldest()
         words = [0] * module.WORDS
@@ -471,10 +472,11 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
 
         # The same element shape, published under each answer of the flag: the value is
         # on the wire under True and absent under False, so the two frames are three
-        # bytes and one, and neither can be decoded under the other's flag.
+        # bytes and one, and neither can be decoded under the other's flag. The value
+        # says the flag, so ``publish`` takes none (ADR 0065 section 6, R4a).
         sent = [(self.make_event(1, 0x0203), True), (self.make_event(2, None), False)]
-        for n, (element, has_value) in enumerate(sent):
-            self.assertEqual(n, module.publish(publisher, element, self.flags(has_value)))
+        for n, (element, _) in enumerate(sent):
+            self.assertEqual(n, module.publish(publisher, element))
         for n, (element, has_value) in enumerate(sent):
             self.assertEqual(
                 self.flagged_item(n, element, has_value),
@@ -489,8 +491,8 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
         publisher = log.publisher()
         early = log.reader_oldest()
         late = log.reader_oldest()
-        module.publish(publisher, self.make_event(5, 500), self.flags(True))
-        module.publish(publisher, self.make_event(6, None), self.flags(False))
+        module.publish(publisher, self.make_event(5, 500))
+        module.publish(publisher, self.make_event(6, None))
         for reader in (early, late):
             self.assertEqual(self.flagged_item(0, self.make_event(5, 500), True), module.read(log, reader))
             self.assertEqual(self.flagged_item(1, self.make_event(6, None), False), module.read(log, reader))
@@ -503,38 +505,39 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
         # Five entries into a log that retains three: the window is [2, 5). The flag
         # alternates, so a flag that stayed with the wrong slot would show.
         sent = [(self.make_event(n + 1, 100 + n if n % 2 == 0 else None), n % 2 == 0) for n in range(5)]
-        for element, has_value in sent:
-            module.publish(publisher, element, self.flags(has_value))
+        for element, _ in sent:
+            module.publish(publisher, element)
         self.assertEqual(Lagged(2), module.read(log, slow))
         for n in range(2, 5):
             element, has_value = sent[n]
             self.assertEqual(self.flagged_item(n, element, has_value), module.read(log, slow))
         self.assertEqual(Empty(), module.read(log, slow))
 
-    def test_a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published(self) -> None:
-        # The codec checks a flag input against the field it gates before it writes a
-        # byte (`PresentIfMismatch`, as the Rust codec does). The log stores what the
-        # codec accepted and judges nothing of its own, so a contradiction never reaches
-        # an entry: nothing is published and no sequence number is taken.
+    def test_an_entry_is_stored_under_the_flag_its_element_says(self) -> None:
+        # The flag is read off the element, so the log cannot hold an entry whose bytes
+        # and flag disagree: there is no flag to give that could (ADR 0065 section 6,
+        # R4a). Each element comes back under the flag its value says, and the context
+        # word holds that flag.
         module = self.flagged
         log = module.new_broadcast_log_conformance_flagged()
         publisher = log.publisher()
         reader = log.reader_oldest()
 
-        # The value is there and the flag says it is not.
-        with self.assertRaises(PresentIfMismatch):
+        # `publish` takes no flag, and the log has no type of flags a caller gives.
+        with self.assertRaises(TypeError):
             module.publish(publisher, self.make_event(7, 1), self.flags(False))
-        self.assertEqual(0, log.head(), "a refused flag publishes nothing")
+        self.assertEqual(0, log.head(), "a call that gives a flag publishes nothing")
+        self.assertFalse(hasattr(module, "BroadcastLogConformanceFlaggedGivenFlags"))
 
-        # The value is absent and the flag says it is there.
-        with self.assertRaises(PresentIfMismatch):
-            module.publish(publisher, self.make_event(8, None), self.flags(True))
-        self.assertEqual(0, log.head(), "a refused flag publishes nothing")
+        raw = log.reader_oldest()
+        words = [0] * module.WORDS
+        for seq, (value, has_value) in enumerate([(1, True), (None, False)]):
+            element = self.make_event(7, value)
+            self.assertEqual(seq, module.publish(publisher, element))
+            self.assertEqual(self.flagged_item(seq, element, has_value), module.read(log, reader))
+            log.read(raw, words)
+            self.assertEqual(int(has_value), words[1], f"entry {seq} stores the flag its value says")
         self.assertEqual(Empty(), module.read(log, reader))
-
-        # An element and a flag that agree are published as the first entry.
-        self.assertEqual(0, module.publish(publisher, self.make_event(7, 1), self.flags(True)))
-        self.assertEqual(self.flagged_item(0, self.make_event(7, 1), True), module.read(log, reader))
 
     # The tag of a variant that has none of its own.
 

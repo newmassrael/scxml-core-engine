@@ -4650,6 +4650,14 @@ pub struct ForgeCompileOptions {
     /// off the element. Populated on a Swift compile only; `None` elsewhere.
     pub element_type_swift_printed: Option<std::collections::HashSet<String>>,
 
+    /// docs/adr/0081 step 4: the element-type candidates the Python backend
+    /// prints from their encode plan (`python_codec_printed_file`), by the
+    /// snake element name. Such an element's encode takes no flag input its
+    /// value says (docs/adr/0065 §6 R4a), so a broadcast log over it reads that
+    /// flag off the element. Populated on a Python compile only; `None`
+    /// elsewhere.
+    pub element_type_python_printed: Option<std::collections::HashSet<String>>,
+
     /// docs/adr/0081 step 4: the element-type candidates the Kotlin backend
     /// prints from their encode plan, by the snake element name of
     /// [`Self::element_type_field_schemas`]. Such an element holds each byte
@@ -5723,6 +5731,10 @@ fn compile_document_set(
     // 5). Decided by the same predicate the codec emit uses, on a Swift
     // compile only.
     let mut element_type_swift_printed: HashSet<String> = HashSet::new();
+    // Those the Python backend prints from their plan, which a log over such an
+    // element reads each flag input its value says off, as on a Swift compile
+    // (docs/adr/0081 step 4).
+    let mut element_type_python_printed: HashSet<String> = HashSet::new();
     // Likewise on a Kotlin compile: a reader of such an element reads each
     // byte string and text through the value class of its bound.
     let mut element_type_kotlin_printed: HashSet<String> = HashSet::new();
@@ -5904,6 +5916,11 @@ fn compile_document_set(
                         && swift_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
                     {
                         element_type_swift_printed.insert(filters::to_snake_case(key.clone()));
+                    }
+                    if language == generator::Language::Python
+                        && python_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
+                    {
+                        element_type_python_printed.insert(filters::to_snake_case(key.clone()));
                     }
                     if language == generator::Language::Kotlin
                         && kotlin_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
@@ -6481,6 +6498,7 @@ fn compile_document_set(
         || !element_type_field_schemas.is_empty()
         || !element_type_cpp_printed.is_empty()
         || !element_type_swift_printed.is_empty()
+        || !element_type_python_printed.is_empty()
         || !element_type_kotlin_printed.is_empty()
         || !element_type_go_printed.is_empty()
         || !element_type_owned_mirrors.is_empty()
@@ -6510,6 +6528,9 @@ fn compile_document_set(
         }
         if !element_type_swift_printed.is_empty() {
             overridden.element_type_swift_printed = Some(element_type_swift_printed);
+        }
+        if !element_type_python_printed.is_empty() {
+            overridden.element_type_python_printed = Some(element_type_python_printed);
         }
         if !element_type_kotlin_printed.is_empty() {
             overridden.element_type_kotlin_printed = Some(element_type_kotlin_printed);

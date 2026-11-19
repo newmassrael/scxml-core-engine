@@ -29784,11 +29784,12 @@ struct BroadcastLogRenderInputs {
 ///   relative to the first context word, so the slot index is `1 + word`;
 ///   `said` is whether the element's value says it, ADR 0065 §6 R4a, and the
 ///   language's encode of the element reads it off the value,
-///   `encode_reads_said`: the Rust encode always does, a C++ or a Swift one once
-///   the element is printed from its plan (docs/adr/0081 §6), and every other
-///   encode takes each flag from its caller; `partly` is whether, so read, the
-///   value says it in some of its values only, R4e, so that the caller still
-///   gives it for the others and the encode does not take it);
+///   `encode_reads_said`: the Rust encode always does, a C++, a Python or a
+///   Swift one once the element is printed from its plan (docs/adr/0081 §6),
+///   and every other encode takes each flag from its caller; `partly` is
+///   whether, so read, the value says it in some of its values only, R4e, so
+///   that the caller still gives it for the others and the encode does not
+///   take it);
 /// * `said_flags` and `given_flags`: whether some flag input is said, and
 ///   whether some is not; `derives_flags`: whether some is said, in every value
 ///   or in some, so that `publish` reads it off the element;
@@ -30199,7 +30200,10 @@ fn render_broadcast_log_cpp(
 /// length word and the bytes ([`broadcast_log_context_value`], over 64-bit
 /// words), taken by `publish` and returned in the item (ADR 0062 section 4).
 /// An element with no caller input has no context word and the module it always
-/// had.
+/// had. A flag input the value of a printed element says (docs/adr/0065 §6 R4a)
+/// is not taken: the element's encode does not take it, so `publish` reads it
+/// off the element through the element module's `input_<name>`, imported under
+/// the generator's alias ([`python_module_alias`]), and stores it as it says it.
 fn render_broadcast_log_python(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::BroadcastLogModel,
@@ -30215,6 +30219,13 @@ fn render_broadcast_log_python(
     })?;
     let element_pascal = filters::to_pascal_case(m.element_type.clone());
     let element_snake = filters::to_snake_case(m.element_type.clone());
+    // A printed element's encode reads the flags its value says off the value
+    // (docs/adr/0081 §6), so `publish` derives those and hands the codec the rest.
+    let element_printed = options
+        .element_type_python_printed
+        .as_ref()
+        .is_some_and(|printed| printed.contains(&element_snake));
+    let element_module = python_module_alias(&element_snake);
     let ctx = minijinja::context! {
         pascal => filters::to_pascal_case(m.name.clone()),
         snake => filters::to_snake_case(m.name.clone()),
@@ -30222,13 +30233,18 @@ fn render_broadcast_log_python(
         // Python uses relative-package imports (`from .<snake> import
         // <Pascal>`), the shape the codec import resolver and the queue emit.
         element_import_stmt => format!("from .{element_snake} import {element_pascal}"),
+        // The element's module itself, whose `input_<name>` reads a flag its
+        // value says, under the alias a printed module brings in a codec whose
+        // `input_<name>` it reads.
+        element_module_import_stmt => format!("from . import {element_snake} as {element_module}"),
+        element_module => element_module,
         element_pascal => element_pascal,
         retention => inputs.retention,
         max_bytes => inputs.max_bytes,
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "sce_forge_runtime.broadcast_log",
-        context => broadcast_log_context_value(&inputs.element, 64, false),
+        context => broadcast_log_context_value(&inputs.element, 64, element_printed),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(

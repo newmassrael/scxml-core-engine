@@ -24,7 +24,7 @@
 #
 # Operations (from `{{ runtime_dep }}`, typed here over the element):
 {% if context.present %}
-#   publish(publisher, element{% if context.flags %}, flags{% endif %}) -> int         the entry's sequence number
+#   publish(publisher, element{% if context.flags and context.given_flags %}, {% if context.derives_flags %}given{% else %}flags{% endif %}{% endif %}) -> int         the entry's sequence number
 {% else %}
 #   publish(publisher, element) -> int         the entry's sequence number
 {% endif %}
@@ -36,7 +36,15 @@
 # bytes, so every reader decodes an entry under what it was published under (ADR 0062
 # section 4).
 {% if context.flags %}
-# `publish` takes the flags and an item returns them.
+{% if context.given_flags %}
+# `publish` takes the flags{% if context.derives_flags %} the element's value does not say in every value{% endif %} and an item returns them{% if context.derives_flags %} all{% endif %}.
+{% else %}
+# An item returns the flags.
+{% endif %}
+{% endif %}
+{% if context.said_flags %}
+# A flag input the element's value says is not taken: `publish` reads it off the
+# element, as its encode does (ADR 0065 section 6, R4a).
 {% endif %}
 {% if context.has_tag %}
 # The tag is not given: it is a function of the element, which `publish` reads off it
@@ -57,6 +65,9 @@ from sce_forge_runtime import broadcast_log as runtime
 from sce_forge_runtime import codec as runtime_codec
 
 {{ element_import_stmt }}
+{% if context.derives_flags %}
+{{ element_module_import_stmt }}
+{% endif %}
 
 # The entries a reader may rely on (`<sce:retention>`): the last `RETENTION`
 # published.
@@ -112,6 +123,19 @@ class {{ pascal }}Flags:
 {% endfor %}
 
 
+{% if context.derives_flags and context.given_flags %}
+@dataclass(frozen=True)
+class {{ pascal }}GivenFlags:
+    """The flag inputs ``publish`` takes from its caller: those the element's value
+    does not say in every value, each used where the value says nothing of it. The
+    log reads the others off the element (ADR 0065 section 6, R4a, R4e)."""
+
+{% for flag in context.flags if not flag.said %}
+    {{ flag.snake }}: bool = False
+{% endfor %}
+
+
+{% endif %}
 {% endif %}
 @dataclass(frozen=True)
 class {{ pascal }}Item:
@@ -141,7 +165,7 @@ class {{ pascal }}Item:
 
 
 {% if context.present %}
-def publish(publisher: runtime.Publisher, element: {{ element_pascal }}{% if context.flags %}, flags: {{ pascal }}Flags{% endif %}) -> int:
+def publish(publisher: runtime.Publisher, element: {{ element_pascal }}{% if context.flags and context.given_flags %}, {% if context.derives_flags %}given: {{ pascal }}GivenFlags{% else %}flags: {{ pascal }}Flags{% endif %}{% endif %}) -> int:
 {% else %}
 def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
 {% endif %}
@@ -159,11 +183,21 @@ def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
 {% if context.present %}
 {% if context.flags %}
 
+{% if context.derives_flags %}
+    The flag inputs the element's codec takes from its caller are stored in the
+    entry's context words, so that every reader decodes the entry under what it
+    was published under. A flag the element's value says is read off ``element``
+    and stored as it says it, so no entry is stored under a flag its bytes
+    disagree with{% if context.given_flags %}. ``given`` holds the others, encoded under here; the log
+    does not check that they agree with ``element``, the publisher gives what it
+    knows, as every caller of this codec does{% endif %}.
+{% else %}
     ``flags`` are what the element's codec takes from its caller as flag inputs.
     They are encoded under here and stored in the entry's context words, so that
     every reader decodes the entry under what it was published under. The log
     does not check that the flags agree with ``element``; the publisher gives what
     it knows, as every caller of this codec does.
+{% endif %}
 {% endif %}
 {% if context.has_tag %}
 
@@ -175,9 +209,29 @@ def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
 {% endif %}
 {% endif %}
     """
+{% if context.derives_flags %}
+    # A flag the element's value says is read off it by the input's own function,
+    # which the element's module declares (docs/adr/0065 §6 R4a); one it says in
+    # some of its values only is what it says where it says it, and what the
+    # caller gives where it says nothing (``None``, R4e).
+{% for flag in context.flags if flag.partly %}
+    said_{{ flag.snake }} = {{ element_module }}.input_{{ flag.snake }}(element)
+{% endfor %}
+    flags = {{ pascal }}Flags(
+{% for flag in context.flags %}
+{% if flag.said %}
+        {{ flag.snake }}={{ element_module }}.input_{{ flag.snake }}(element) != 0,
+{% elif flag.partly %}
+        {{ flag.snake }}=given.{{ flag.snake }} if said_{{ flag.snake }} is None else said_{{ flag.snake }} != 0,
+{% else %}
+        {{ flag.snake }}=given.{{ flag.snake }},
+{% endif %}
+{% endfor %}
+    )
+{% endif %}
     buffer = bytearray(MAX_ENCODED_BYTES)
     sink = runtime_codec.MemoryviewSink(memoryview(buffer))
-    element.encode(sink{% for flag in context.flags %}, int(flags.{{ flag.snake }}){% endfor %})
+    element.encode(sink{% for flag in context.flags if not (flag.said or flag.partly) %}, int(flags.{{ flag.snake }}){% endfor %})
     length = sink.position()
     padded = bytes(buffer[:length]).ljust(8 * (WORDS - {{ context.payload_start }}), b"\x00")
     entry = [length]

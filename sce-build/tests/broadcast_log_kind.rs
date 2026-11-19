@@ -5015,11 +5015,14 @@ fn a_cbor_text_entry_is_held_by_python_because_its_decoded_value_owns_its_bytes(
 
 #[test]
 fn python_stores_the_flag_inputs_an_element_asks_its_caller_for() {
-    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
-    // `decode`. The log stores it in a context word of the entry, takes it on `publish`
-    // as a bool, and gives it back with the item, so that every reader decodes the entry
-    // under what it was published under. The element is a `uint8` and an optional
-    // `uint8`: 2 bytes, an entry of 1 length word, 1 context word and 1 word of bytes.
+    // The codec `event_record` takes the flag input `S` from its caller on `decode`, and
+    // its value says it (ADR 0065 §6 R4a), which the encode Python prints from its plan
+    // reads off the value (docs/adr/0081 §6). The log stores it in a context word of the
+    // entry, reads it off the element on `publish` through the element module's
+    // `input_s` instead of taking it, and gives it back with the item, so that every
+    // reader decodes the entry under what it was published under. The element is a
+    // `uint8` and an optional `uint8`: 2 bytes, an entry of 1 length word, 1 context word
+    // and 1 word of bytes.
     let xml = blocking_ring();
     let codec = flag_input_codec();
     let code = generated_python_log(
@@ -5035,11 +5038,13 @@ fn python_stores_the_flag_inputs_an_element_asks_its_caller_for() {
             "MAX_ENCODED_BYTES: Final[int] = 2",
             "CONTEXT_WORDS: Final[int] = 1",
             "WORDS: Final[int] = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) // 8",
+            "from .event_record import EventRecord\nfrom . import event_record as sce_event_record\n",
             "class EventRingFlags:",
             "s: bool = False",
             "flags: EventRingFlags\n",
-            "def publish(publisher: runtime.Publisher, element: EventRecord, flags: EventRingFlags) -> int:",
-            "element.encode(sink, int(flags.s))",
+            "def publish(publisher: runtime.Publisher, element: EventRecord) -> int:",
+            "    flags = EventRingFlags(\n        s=sce_event_record.input_s(element) != 0,\n    )\n",
+            "element.encode(sink)\n",
             r#"padded = bytes(buffer[:length]).ljust(8 * (WORDS - 2), b"\x00")"#,
             "entry.extend([0] * CONTEXT_WORDS)",
             "entry[1 + 0] |= int(flags.s) << 0",
@@ -5050,12 +5055,126 @@ fn python_stores_the_flag_inputs_an_element_asks_its_caller_for() {
         ],
     );
     assert!(
+        !code.contains("flags: EventRingFlags) -> int:") && !code.contains("GivenFlags"),
+        "`publish` takes no flag the element says:\n{code}"
+    );
+    assert!(
         !code.contains("tag: int"),
         "the element has no tag:\n{code}"
     );
     assert!(
         !code.contains("ValueError"),
         "a flag is a bool and has no range to refuse:\n{code}"
+    );
+}
+
+/// The options of a single compile of `event_ring` over an element with `facts`, which
+/// the Python backend prints from its plan.
+fn python_printed_options(facts: BroadcastLogElementFacts) -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        element_type_python_printed: Some(std::collections::HashSet::from([
+            "event_record".to_string()
+        ])),
+        ..resolution_options(None, 4, facts)
+    }
+}
+
+#[test]
+fn python_takes_every_flag_of_an_element_it_does_not_print() {
+    // Only a printed element's encode reads a flag its value says off the value
+    // (docs/adr/0081 §6): over an element the Python backend does not print, `publish`
+    // still takes `S` from its caller and hands it to the encode.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string()],
+        said_flag_inputs: vec!["S".to_string()],
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_python(&blocking_ring(), &resolution_options(None, 4, facts))
+        .expect("a log over an element that is not printed is generated");
+    assert_holds(
+        &code,
+        &[
+            "def publish(publisher: runtime.Publisher, element: EventRecord, flags: EventRingFlags) -> int:",
+            "element.encode(sink, int(flags.s))",
+        ],
+    );
+    assert!(
+        !code.contains("sce_event_record") && !code.contains("GivenFlags"),
+        "nothing is read off an element that is not printed:\n{code}"
+    );
+}
+
+#[test]
+fn python_stores_a_flag_the_element_says_in_some_values_as_said_and_else_as_given() {
+    // An element printed from its plan whose value says `S` in some of its values only (ADR
+    // 0065 §6 R4e) answers `None` from `input_s` where it says nothing: the log stores what
+    // the value says where it says it, and what the caller gives where it does not, and the
+    // printed encode takes no `S`. A `None` read as clear would store a flag the caller
+    // never gave.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string()],
+        partly_said_flag_inputs: vec!["S".to_string()],
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_python(&blocking_ring(), &python_printed_options(facts))
+        .expect("a log over an element that says a flag in some values is generated");
+    assert_holds(
+        &code,
+        &[
+            "from . import event_record as sce_event_record\n",
+            "class EventRingGivenFlags:",
+            "def publish(publisher: runtime.Publisher, element: EventRecord, given: EventRingGivenFlags) -> int:",
+            "    said_s = sce_event_record.input_s(element)\n",
+            "        s=given.s if said_s is None else said_s != 0,\n",
+            "element.encode(sink)\n",
+        ],
+    );
+    assert!(
+        !code.contains("sce_event_record.input_s(element) != 0"),
+        "a value that says nothing of the flag does not set it:\n{code}"
+    );
+}
+
+#[test]
+fn python_derives_each_flag_of_several_on_a_line_of_its_own() {
+    // `S` is said by every value of the element, `T` by some (ADR 0065 §6 R4e) and `U` by
+    // none, so `publish` reads `S` off the element, `T` off it where it says it and else
+    // from the caller, and takes `U` from the caller. The caller gives `T` and `U` in
+    // `EventRingGivenFlags`, and the encode is handed `U` alone.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string(), "U".to_string()],
+        said_flag_inputs: vec!["S".to_string()],
+        partly_said_flag_inputs: vec!["T".to_string()],
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_python(&blocking_ring(), &python_printed_options(facts))
+        .expect("a log over an element that says some of its flags is generated");
+    assert_holds(
+        &code,
+        &[
+            concat!(
+                "class EventRingGivenFlags:\n",
+                "    \"\"\"The flag inputs ``publish`` takes from its caller: those the element's value\n",
+                "    does not say in every value, each used where the value says nothing of it. The\n",
+                "    log reads the others off the element (ADR 0065 section 6, R4a, R4e).\"\"\"\n",
+                "\n",
+                "    t: bool = False\n",
+                "    u: bool = False\n",
+            ),
+            concat!(
+                "    said_t = sce_event_record.input_t(element)\n",
+                "    flags = EventRingFlags(\n",
+                "        s=sce_event_record.input_s(element) != 0,\n",
+                "        t=given.t if said_t is None else said_t != 0,\n",
+                "        u=given.u,\n",
+                "    )\n",
+            ),
+            "element.encode(sink, int(flags.u))\n",
+            "entry[1 + 0] |= int(flags.s) << 0",
+            "entry[1 + 0] |= int(flags.t) << 1",
+            "entry[1 + 0] |= int(flags.u) << 2",
+            "int(flags.s), int(flags.t), int(flags.u))",
+        ],
     );
 }
 

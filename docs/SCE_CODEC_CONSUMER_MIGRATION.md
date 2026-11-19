@@ -2010,6 +2010,11 @@ undeclarations among them.
   parent that holds such a codec writes the flag it binds from it; a template parent hands it nothing.
 - An encode that holds a body or a list whose entries say an input it also hands them raises `PresentIfMismatch`
   where they disagree, before the first byte.
+- A broadcast log over such an element reads the flag off the element on `publish` and stores it, so no entry is
+  stored under a flag its bytes disagree with: `publish(publisher, element)` where it was
+  `publish(publisher, element, flags)`. A log whose element also takes a flag its value does not say in every value
+  takes those as `<Log>GivenFlags` (`publish(publisher, element, given)`). The item a read returns still holds every
+  flag in `<Log>Flags`. The fix was landed after this section; the logs before it raised `TypeError` on `publish`.
 
 ## A printed Python codec holds a gate group as one field (ADR 0081 step 4)
 
