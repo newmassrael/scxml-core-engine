@@ -15,8 +15,9 @@
 //! nothing; a call of such an algorithm inside any expression; and the
 //! attributes of the other reader's `<sce:call>`, in a statechart and in an
 //! algorithm's body. The `location` takes what the call returns by the rule an
-//! `<assign>` of that value follows. No lane lowers the call yet ("Order of
-//! work", step 7), so each refuses the document by name.
+//! `<assign>` of that value follows. The Interpreter's lowering lends the map
+//! ("Order of work", step 7), and every generated lane that lowers no
+//! algorithm's map yet refuses the document by name.
 //!
 //! Each refusal is the well-formed document with one thing changed, so the
 //! refusal is the change's and nothing else's.
@@ -378,14 +379,21 @@ fn a_loop_over_a_map_lent_to_be_read_walks_it_without_a_copy() {
     assert!(writes.reaches("b"), "the map written in place is written");
 }
 
-/// docs/adr/0108, "Order of work", step 7: no lane lowers a call that lends an
-/// algorithm a map yet. `generate` refuses the statechart on every generated
-/// lane, and the Interpreter's lowering refuses it, as an unsupported feature,
-/// by the one refusal each lane asks first, naming the callee, the map slot it
-/// takes and that step, before the lane reads the map the statechart holds or
-/// lowers the algorithm it imports.
+/// docs/adr/0108, "Order of work", step 7: a lane lends an algorithm a map in
+/// the step that lowers an algorithm's map on it. The Interpreter's lowering,
+/// the first (D10), lowers the statechart: the `<sce:call>` becomes a
+/// `<script>` that lends the table in a holder carrying the variable's bound,
+/// makes the call, and writes the table and then `took` once the call has
+/// returned, and the algorithm reads the table out of the holder, holds its
+/// put to that bound and leaves the table it wrote there however it returns.
+/// `generate` refuses the statechart, as an unsupported feature, on every
+/// generated lane that lowers no algorithm's map yet
+/// (`codegen_matrix::ALGORITHM_MAP_BACKENDS`), by the one refusal each such
+/// lane asks first, naming the callee, the map slot it takes and that step,
+/// before the lane reads the map the statechart holds or lowers the algorithm
+/// it imports.
 #[test]
-fn every_lane_refuses_the_call_by_name() {
+fn the_interpreter_lends_the_map_and_every_other_lane_refuses_the_call_by_name() {
     let path = fixtures().join(STATECHART);
     let named = |out: &str, lane: &str| {
         out.contains("`TakeGeneration(")
@@ -394,7 +402,12 @@ fn every_lane_refuses_the_call_by_name() {
                 "has no {lane} lowering of the call yet (docs/adr/0108, Order of work, step 7)"
             ))
     };
-    for &language in sce_build::generator::Language::ALL {
+    let unlowered = sce_build::generator::Language::ALL
+        .iter()
+        .filter(|language| {
+            !sce_build::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS.contains(language)
+        });
+    for &language in unlowered {
         let lane = language.canonical_name();
         let out_dir = tempfile::tempdir().expect("an output directory");
         let out_dir = out_dir.path().to_str().expect("a utf-8 path").to_string();
@@ -409,12 +422,28 @@ fn every_lane_refuses_the_call_by_name() {
             "{lane}:\n{out}"
         );
     }
-    let refusal =
+    let lowered =
         sce_build::forge::static_js::lower_file(path.to_str().expect("a utf-8 path"), Vec::new())
-            .expect_err("the Interpreter lowers no call that lends a map yet");
-    let text = format!("{refusal:?}");
+            .unwrap_or_else(|e| panic!("the Interpreter lowers the call: {e:?}"));
+    for part in [
+        // The statement: the table lent in a holder of its bound, under the
+        // placeholder its argument took, and written back, then the answer
+        // stored, once the call has returned.
+        "take_generation($sceLent.__st0, ",
+        "resets = $sceLent.__st0.map; took = $sceCalled; })({__st0: {map: resets, capacity: 2}});",
+        // The algorithm: the table read out of the holder, a put held to the
+        // holder's bound, and the table left in the holder however it returns.
+        "function (__lent0, peer, generation) { var resets = __lent0.map; try { ",
+        "__lent0.capacity, peer, generation); resets = __wrote.map; stored = __wrote.outcome; }",
+        " } finally { __lent0.map = resets; } }",
+    ] {
+        assert!(
+            lowered.contains(part),
+            "the lowered statechart holds `{part}`:\n{lowered}"
+        );
+    }
     assert!(
-        text.contains("UnsupportedFeature") && named(&text, "ecmascript"),
-        "the Interpreter refuses the call by name: {text}"
+        !lowered.contains("<sce:call expr="),
+        "the <sce:call> is replaced whole:\n{lowered}"
     );
 }
