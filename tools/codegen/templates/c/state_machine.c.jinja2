@@ -1061,7 +1061,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
 {% if 'error.communication' in model.events %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-            {{ reason("send_http_not_delivered") }},
+            ERROR_REASON_TARGET_UNREACHABLE, {{ reason("send_http_not_delivered") }},
             request->send_id);
 {% endif %}
         return;
@@ -1106,7 +1106,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
 {% if 'error.communication' in model.events %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-            {{ reason("send_http_not_delivered") }},
+            ERROR_REASON_TARGET_UNREACHABLE, {{ reason("send_http_not_delivered") }},
             request->send_id);
 {% endif %}
         return;
