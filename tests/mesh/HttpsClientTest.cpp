@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -81,6 +82,9 @@ private:
     int stores_ = 0;
 };
 
+/// How Observed::order_ names a restart.
+constexpr const char *kRestarted = "(restarted)";
+
 /// What the client told the router, observed by a test.
 class Observed {
 public:
@@ -88,7 +92,14 @@ public:
         Https::ClientEvents e;
         e.receive = [this](MeshEnvelope env) {
             std::lock_guard<std::mutex> lock(mutex_);
+            order_.push_back(env.type);
             received_.push_back(std::move(env));
+            changed_.notify_all();
+        };
+        e.restarted = [this] {
+            std::lock_guard<std::mutex> lock(mutex_);
+            order_.push_back(kRestarted);
+            ++restarted_;
             changed_.notify_all();
         };
         e.ready = [this] {
@@ -127,6 +138,10 @@ public:
     // Read under the lock by the predicates above, and by a test after it
     // stopped the client.
     std::vector<MeshEnvelope> received_;
+    /// What reached the router in order: each envelope's type, and
+    /// kRestarted for each restart.
+    std::vector<std::string> order_;
+    int restarted_ = 0;
     int ready_ = 0;
     std::vector<CommunicationError> not_ready_;
     std::vector<CommunicationError> faults_;
@@ -346,10 +361,12 @@ TEST(HttpsClient, AResponseLostAfterTheServerActedIsCarriedAgainAndDeliveredOnce
     ASSERT_EQ(seen.received_.size(), 2u);
     EXPECT_EQ(seen.received_[0].type, "service.response.once");
     EXPECT_EQ(seen.received_[1].type, "service.response.next");
-    // The lost response is section 16.7 row 1, once, for its one edge.
+    // The lost response is section 16.7 row 1, once, for its one edge, and
+    // the same mailbox carried what it held: no restart.
     ASSERT_EQ(seen.not_ready_.size(), 1u);
     EXPECT_EQ(seen.not_ready_[0].reason, ReasonCode::TransportUnavailable);
     EXPECT_EQ(seen.not_ready_[0].target, std::optional<std::string>("#cloud"));
+    EXPECT_EQ(seen.restarted_, 0);
 }
 
 TEST(HttpsClient, ANewIncarnationStartsTheAcknowledgementOverAndDeliversOnce) {
@@ -387,6 +404,124 @@ TEST(HttpsClient, ANewIncarnationStartsTheAcknowledgementOverAndDeliversOnce) {
     EXPECT_EQ(client.epoch(), mailbox.epoch());
     EXPECT_EQ(client.acknowledged(), 2u);
     EXPECT_TRUE(seen.faults_.empty());
+}
+
+// SCE_MESH.md section 22.4: the router is told the server restarted once,
+// when the new incarnation replaces the one the client knew, and before what
+// the new mailbox sends, so it asks again before a reply could find nothing
+// waiting. The first incarnation the client learns replaces none. Red if
+// takeIn tells no restart, or tells it for the first incarnation.
+TEST(HttpsClient, ANewIncarnationThatReplacesAKnownOneIsToldOnceBeforeItsEnvelopes) {
+    Kit::Mailbox mailbox(Kit::MailboxOptions{"phone", "token", 2000ms, 1u << 20});
+    Kit::LoopbackTransport transport(mailbox);
+    MemoryCredentials credentials("token");
+    Observed seen;
+    Https::Client client(config(), Https::ClientHost{&transport, &credentials}, seen.events());
+    ASSERT_TRUE(client.start());
+    mailbox.post(envelope("service.response.before", 1));
+    ASSERT_TRUE(seen.waitFor([&] { return seen.received_.size() == 1; }));
+
+    mailbox.restart();
+    mailbox.post(envelope("service.response.after", 2));
+    ASSERT_TRUE(seen.waitFor([&] { return seen.received_.size() == 2; }));
+    mailbox.post(envelope("service.response.next", 3));
+    ASSERT_TRUE(seen.waitFor([&] { return seen.received_.size() == 3; }));
+    client.stop();
+    EXPECT_EQ(seen.restarted_, 1);
+    const std::vector<std::string> order = {"service.response.before", kRestarted, "service.response.after",
+                                            "service.response.next"};
+    EXPECT_EQ(seen.order_, order);
+}
+
+// A response of the incarnation the request was sent in, taken in after the
+// other exchange's response named a newer one, is a late answer and not a
+// second restart. Red if every incarnation other than the client's is told
+// as a restart.
+TEST(HttpsClient, ALateResponseInTheRequestsOwnIncarnationIsNoRestart) {
+    const std::string earlier = "0123456789abcdef0123456789abcdef";
+    const std::string later = "fedcba9876543210fedcba9876543210";
+    Scripted transport;
+    Https::Client *running = nullptr;
+    std::atomic<int> polls{0};
+    // The first poll learns `earlier`; the second names `later`, once the
+    // send below went out acknowledging in `earlier`.
+    transport.onPoll = [&](const HttpsRequest &) {
+        const int n = polls.fetch_add(1);
+        if (n == 0) {
+            return HttpsExchange::response(200, {{"Sce-Mesh-Epoch", earlier}}, {});
+        }
+        if (n == 1) {
+            for (int i = 0; i < 400 && transport.bodies().empty(); ++i) {
+                std::this_thread::sleep_for(5ms);
+            }
+        } else {
+            std::this_thread::sleep_for(10ms);
+        }
+        return HttpsExchange::response(200, {{"Sce-Mesh-Epoch", later}}, {});
+    };
+    // The send is answered in `earlier`, after the client took `later` in.
+    transport.onSend = [&](const HttpsRequest &, int) {
+        for (int i = 0; i < 400 && (running == nullptr || running->epoch() != later); ++i) {
+            std::this_thread::sleep_for(5ms);
+        }
+        return HttpsExchange::response(200, {{"Sce-Mesh-Epoch", earlier}}, {});
+    };
+    MemoryCredentials credentials("token");
+    Observed seen;
+    Https::Client client(config(), Https::ClientHost{&transport, &credentials}, seen.events());
+    running = &client;
+    ASSERT_TRUE(client.start());
+    // Read without the observer's lock: the client holds its own while it
+    // tells the observer what it took in.
+    for (int i = 0; i < 400 && client.epoch() != earlier; ++i) {
+        std::this_thread::sleep_for(5ms);
+    }
+    ASSERT_EQ(client.epoch(), earlier);
+    ASSERT_TRUE(client.send(envelope("service.request.a", 8)));
+    ASSERT_TRUE(seen.waitFor([&] { return seen.restarted_ == 1; }));
+    // Long enough for the send's late answer to be taken in.
+    std::this_thread::sleep_for(300ms);
+    client.stop();
+    EXPECT_EQ(seen.restarted_, 1);
+    EXPECT_EQ(client.epoch(), later);
+}
+
+// ── What a router keeps to ask again ──
+
+MeshEnvelope requestTagged(std::uint8_t tag) {
+    return envelope("service.request.a", tag);
+}
+
+// The requests a router keeps are those that still wait, in the order they
+// left, each once; one that no longer waits is let go when another is kept
+// or the waiting ones are read. Red if a request is kept twice when it is
+// sent again, or if one that was answered is sent again.
+TEST(HttpsWaitingRequests, KeepsWhatStillWaitsInOrderAndOnce) {
+    Https::WaitingRequests kept;
+    std::vector<std::uint8_t> answered;
+    const Https::WaitingRequests::Waits waits = [&answered](const MeshEnvelope &env) {
+        return std::find(answered.begin(), answered.end(), env.id[0]) == answered.end();
+    };
+    kept.record(requestTagged(1), waits);
+    kept.record(requestTagged(2), waits);
+    kept.record(requestTagged(1), waits);  // the first, sent again
+    kept.record(requestTagged(3), waits);
+    EXPECT_EQ(kept.size(), 3u);
+
+    answered.push_back(2);
+    const auto waiting = kept.stillWaiting(waits);
+    ASSERT_EQ(waiting.size(), 2u);
+    EXPECT_EQ(waiting[0].id[0], 1);
+    EXPECT_EQ(waiting[1].id[0], 3);
+    EXPECT_EQ(kept.size(), 2u);
+
+    answered.push_back(1);
+    kept.record(requestTagged(4), waits);
+    EXPECT_EQ(kept.size(), 2u);
+    const auto left = kept.stillWaiting(waits);
+    ASSERT_EQ(left.size(), 2u);
+    EXPECT_EQ(left[0].id[0], 3);
+    EXPECT_EQ(left[1].id[0], 4);
 }
 
 TEST(HttpsClient, ASendIsCarriedInARequestBodyAndTakenIn) {

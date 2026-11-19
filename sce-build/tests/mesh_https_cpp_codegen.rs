@@ -76,13 +76,41 @@ impl Drop for Fixture {
     }
 }
 
+/// The brake of [`BRAKE_SCXML`], asking with `<invoke type="sce:mesh-rpc">`
+/// rather than a `<send>`.
+const BRAKE_INVOKE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" name="brake" initial="idle">
+  <state id="idle">
+    <transition event="start" target="waiting"/>
+  </state>
+  <state id="waiting">
+    <invoke type="sce:mesh-rpc" src="#motor">
+      <param name="_mesh_event" expr="'service.request.compute_force'"/>
+    </invoke>
+    <transition event="done.invoke" target="idle"/>
+    <transition event="error.invoke" target="idle"/>
+  </state>
+</scxml>
+"##;
+
 /// Generate brake's C++ router with `#motor` bound by `binding` (YAML lines
 /// at the binding's indentation) and `machine_extra` (YAML lines at the
 /// machine's indentation, possibly empty).
 fn generate(tag: &str, binding: &str, machine_extra: &str) -> Result<String, MeshError> {
+    generate_brake(tag, BRAKE_SCXML, binding, machine_extra)
+}
+
+/// [`generate`] for the brake `brake_scxml`.
+fn generate_brake(
+    tag: &str,
+    brake_scxml: &str,
+    binding: &str,
+    machine_extra: &str,
+) -> Result<String, MeshError> {
     let fx = Fixture::new(tag);
     fx.write("motor.scxml", MOTOR_SCXML);
-    fx.write("brake.scxml", BRAKE_SCXML);
+    fx.write("brake.scxml", brake_scxml);
     let deploy_path = fx.write(
         "deploy.yaml",
         &format!(
@@ -106,7 +134,7 @@ topology:
     );
     let mut parser = sce_build::parser::SCXMLParser::new();
     let mut model = parser
-        .parse_string(BRAKE_SCXML, "brake")
+        .parse_string(brake_scxml, "brake")
         .expect("parse brake");
     sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .map(|result| result.output.files[0].1.clone())
@@ -208,6 +236,49 @@ fn what_the_client_receives_names_its_binding_as_its_source() {
         "a plain binding is not exempted: {}",
         &body[..end]
     );
+}
+
+/// SCE_MESH.md section 22.4: a failed exchange loses no request, and a new
+/// incarnation of the server's mailbox asks again. Each request is kept as
+/// it leaves for the binding, the client's `restarted` sends again each one
+/// that still waits, and a `<send>` request waits while its reply event is
+/// pending. Red if no `restarted` is wired, or if a request is not kept as it
+/// leaves.
+#[test]
+fn a_new_incarnation_sends_each_waiting_request_again() {
+    let code = generate("restart", DIALING, "").expect("a dialing https binding generates");
+
+    assert!(code.contains("SCE::Mesh::Https::WaitingRequests motor_waiting_;"));
+    assert!(
+        code.contains("motor_waiting_.record("),
+        "a request is kept as it leaves for the binding"
+    );
+    assert!(code.contains("https_events.restarted = [this]() {"));
+    assert!(code.contains("motor_waiting_.stillWaiting("));
+    assert!(
+        code.contains("(void)route_send(\"#motor\", request);"),
+        "what still waits is sent again by the binding's own route"
+    );
+    assert!(code.contains("bool httpsRequestWaits(const SCE::Mesh::MeshEnvelope& request) const {"));
+    assert!(
+        code.contains(
+            "return pending_rpcs_.find(CorrelationKey{*request.correlation_id}) != pending_rpcs_.end();"
+        ),
+        "a `<send>` request waits while its reply event is pending"
+    );
+}
+
+/// The same for `<invoke type="sce:mesh-rpc">`: the request waits while its
+/// correlation entry is live.
+#[test]
+fn a_mesh_rpc_invoke_waits_while_its_correlation_entry_is_live() {
+    let code = generate_brake("restart-invoke", BRAKE_INVOKE_SCXML, DIALING, "")
+        .expect("an https binding with a mesh-rpc invoke generates");
+
+    assert!(code
+        .contains("if (request.invoke_id && invoke_correlation_.contains(*request.invoke_id)) {"));
+    assert!(code.contains("motor_waiting_.record("));
+    assert!(code.contains("https_events.restarted = [this]() {"));
 }
 
 #[test]

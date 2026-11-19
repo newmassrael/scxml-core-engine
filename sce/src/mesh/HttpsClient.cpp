@@ -658,13 +658,23 @@ void Client::takeIn(const HttpsExchange &answer, const Mark &sent) {
     // window drops what arrived before; or a mailbox that numbers anew (a
     // server that started again with it empty), in which the acknowledgement
     // starts over at 0.
+    //
+    // A new incarnation that replaces one the client knew says the mailbox
+    // that held what the server sent this machine, a reply among it, is gone
+    // (SCE_MESH.md section 22.4): the router is told before this response's
+    // envelopes, and sends again each request still waiting on the peer. The
+    // first incarnation the client learns replaces none.
     bool current = true;
     if (*epochText != epoch_) {
         if (!sent.epoch.empty() && *epochText == sent.epoch) {
             current = false;
         } else {
+            const bool replaced = !epoch_.empty();
             epoch_ = *epochText;
             acknowledged_.store(0, std::memory_order_release);
+            if (replaced && events_.restarted) {
+                events_.restarted();
+            }
         }
     }
     if (answer.body.empty()) {

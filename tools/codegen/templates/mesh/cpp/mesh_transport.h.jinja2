@@ -1616,6 +1616,10 @@ struct TransportRouter {
     // that must not run before the router is whole. `unique_ptr` because a
     // client is not movable (it owns its threads).
     std::unique_ptr<SCE::Mesh::Https::Client> {{ target.target_snake }}_https_;
+    // SCE_MESH.md section 22.4: each request sent to {{ target.target }}, as it
+    // left, so that a server that started again without its reply is asked
+    // again.
+    SCE::Mesh::Https::WaitingRequests {{ target.target_snake }}_waiting_;
 {% endif %}
 {% endfor %}
 
@@ -4834,6 +4838,19 @@ struct TransportRouter {
             https_events.fault = [this](SCE::Mesh::CommunicationError err) {
                 raiseCommunicationError(std::move(err));
             };
+            // SCE_MESH.md section 22.4: a failed exchange (notReady above)
+            // loses nothing, the server keeping the reply in the mailbox, so
+            // every request stays waiting through it. A new incarnation is a
+            // mailbox that lost what it held: each request still waiting on
+            // {{ target.target }} is sent again as it left, under its own ids,
+            // and the server's duplicate window (section 10.5) answers a copy
+            // of one it took with the reply the first copy produced.
+            https_events.restarted = [this]() {
+                for (const auto& request : {{ target.target_snake }}_waiting_.stillWaiting(
+                         [this](const SCE::Mesh::MeshEnvelope& kept) { return httpsRequestWaits(kept); })) {
+                    (void)route_send("{{ target.target }}", request);
+                }
+            };
             {{ target.target_snake }}_https_ = std::make_unique<SCE::Mesh::Https::Client>(
                 std::move(https_config), https_host_, std::move(https_events));
             if (!{{ target.target_snake }}_https_->start()) {
@@ -5292,6 +5309,12 @@ struct TransportRouter {
             }
             return send_to_{{ target.target_snake }}(*dds_endpoint, env);
 {% elif target.state.kind == "https" %}
+            // SCE_MESH.md section 22.4: a request is kept as it leaves, for
+            // the server to be asked again should it start without the reply.
+            if (env.pattern == SCE::Mesh::PatternKind::RpcRequest) {
+                {{ target.target_snake }}_waiting_.record(
+                    env, [this](const SCE::Mesh::MeshEnvelope& request) { return httpsRequestWaits(request); });
+            }
 {% if machine_outbound_buffer %}
             // SCE_MESH.md section 10.10: held until the client's first
             // exchange answered `200`, then released to its outbox.
@@ -5457,6 +5480,24 @@ struct TransportRouter {
     }
 {% endif %}
 {% if "https" in transport_types %}
+    /// Whether the request `request` still waits for its reply (SCE_MESH.md
+    /// section 22.4): an `<invoke type="sce:mesh-rpc">` while its correlation
+    /// entry is live, a `<send>` request while its reply event is. A reply, a
+    /// deadline or a cancel retires the entry, and with it the request's
+    /// place among those an https binding sends again.
+    bool httpsRequestWaits(const SCE::Mesh::MeshEnvelope& request) const {
+{% if has_mesh_rpc.v %}
+        if (request.invoke_id && invoke_correlation_.contains(*request.invoke_id)) {
+            return true;
+        }
+{% endif %}
+        if (request.correlation_id) {
+            std::lock_guard<std::mutex> lock(correlation_mutex_);
+            return pending_rpcs_.find(CorrelationKey{*request.correlation_id}) != pending_rpcs_.end();
+        }
+        return false;
+    }
+
     /// Inbound entry point for every https client on this router: each
     /// envelope of the mailbox the server keeps for this machine, once, in
     /// mailbox order (docs/adr/0107, D2). Runs on a client thread.

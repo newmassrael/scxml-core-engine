@@ -44,7 +44,15 @@
 //     ready (SCE_MESH.md section 10.10);
 //   * `notReady`: an exchange that failed at the transport, or a poll that was
 //     refused, while the client was ready or had not yet been either: section
-//     16.7 row 1, once per edge;
+//     16.7 row 1, once per edge. It loses nothing: the server keeps the
+//     mailbox, a reply to a request the router waits on among it, so the
+//     router keeps every request waiting (SCE_MESH.md section 22.4);
+//   * `restarted`: a response of a new incarnation that replaces the one the
+//     client knew, before that response's envelopes: the mailbox the client
+//     knew, and any reply it held, is gone, so the router sends each request
+//     still waiting on the peer again (section 22.4, WaitingRequests below).
+//     Not the first incarnation the client learns, and not a late response
+//     in the incarnation its own request was sent in;
 //   * `fault`: section 16.7 row 2 for an envelope a send could not carry, row
 //     3 for one its retry policy gave up on, row 4 for a mailbox envelope that
 //     does not decode, row 9 for an envelope the outbox has no room for, and
@@ -57,6 +65,7 @@
 #include "mesh/MeshEnvelope.h"
 #include "mesh/transports/HttpsTransport.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -65,6 +74,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -178,6 +188,75 @@ struct ClientEvents {
     std::function<void()> ready;
     std::function<void(CommunicationError)> notReady;
     std::function<void(CommunicationError)> fault;
+    /// Runs while the client holds the response it is taking in, so the
+    /// router's requests are sent again before that response's envelopes
+    /// reach it; it may queue envelopes on this client (send, offer).
+    std::function<void()> restarted;
+};
+
+/// The requests a router sent over one `https` binding, each as it was handed
+/// on to the client (its ids and its sequence stamp as they left), kept so
+/// that a server that started again without the reply is asked again
+/// (SCE_MESH.md section 22.4, "A new incarnation asks again"). Whether a
+/// request still waits is the router's to say, from the table that correlates
+/// its reply; one that no longer waits is let go whenever a request is
+/// recorded or the waiting ones are read, so the table holds about what
+/// waits. Thread-safe; `waits` is called with no lock of this table held.
+class WaitingRequests {
+public:
+    using Waits = std::function<bool(const MeshEnvelope &)>;
+
+    /// Keep `request`, which is leaving now, unless a request of the same
+    /// envelope id is kept already (one sent again is that request).
+    void record(const MeshEnvelope &request, const Waits &waits) {
+        (void)stillWaiting(waits);
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto &kept : requests_) {
+            if (kept->id == request.id) {
+                return;
+            }
+        }
+        requests_.push_back(std::make_shared<const MeshEnvelope>(request));
+    }
+
+    /// The requests that still wait, in the order they left; the others are
+    /// let go.
+    std::vector<MeshEnvelope> stillWaiting(const Waits &waits) {
+        std::vector<std::shared_ptr<const MeshEnvelope>> snapshot;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            snapshot = requests_;
+        }
+        std::vector<MeshEnvelope> waiting;
+        std::vector<std::shared_ptr<const MeshEnvelope>> answered;
+        for (const auto &kept : snapshot) {
+            if (waits(*kept)) {
+                waiting.push_back(*kept);
+            } else {
+                answered.push_back(kept);
+            }
+        }
+        if (!answered.empty()) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            requests_.erase(std::remove_if(requests_.begin(), requests_.end(),
+                                           [&answered](const std::shared_ptr<const MeshEnvelope> &kept) {
+                                               return std::find(answered.begin(), answered.end(), kept) !=
+                                                      answered.end();
+                                           }),
+                            requests_.end());
+        }
+        return waiting;
+    }
+
+    /// How many requests are kept, waiting or not yet let go.
+    std::size_t size() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return requests_.size();
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::vector<std::shared_ptr<const MeshEnvelope>> requests_;
 };
 
 /// The host's part of a router with `https` bindings: the adapter it chose
