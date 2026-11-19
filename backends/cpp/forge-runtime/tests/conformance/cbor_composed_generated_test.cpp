@@ -177,7 +177,7 @@ Code code(const Json &v) {
     if (!text.empty() && text[0] >= '0' && text[0] <= '9') {
         return CodeUnit::from_underlying(static_cast<std::uint16_t>(std::stoul(text)));
     }
-    for (std::uint32_t n = 0; n <= std::numeric_limits<std::uint16_t>::max(); ++n) {
+    for (std::uint32_t n = 0; n <= static_cast<std::uint32_t>(std::numeric_limits<std::uint16_t>::max()); ++n) {
         const Code c = CodeUnit::from_underlying(static_cast<std::uint16_t>(n));
         const char *named = CodeUnit::declared_name(c);
         if (named != nullptr && text == named) {
