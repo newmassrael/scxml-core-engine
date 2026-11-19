@@ -6355,8 +6355,12 @@ neighbours in the same test hold this on the six backends.
 `<data id="limits" sce:type="record:ServerLimits" sce:from="deployment"/>` declares a
 top-level variable whose value the machine's deployment gives it before it starts: a
 value of any type a payload schema states (docs/adr/0087, section 1), a record, a list,
-a union, an enum, an optional value or a scalar, every bound written in its type. A map
-or a set, which has no wire form yet (docs/adr/0108, D7), has its key judged as any map
+a union, an enum, an optional value or a scalar, every bound written in its type. It is
+held in the type a delivery's field of its type is held in and read as one is
+(docs/adr/0086, section 6.1: its length, and a `<foreach>` that walks it as the place
+it is), so a list of it holds any element a payload's list holds, a text among them
+(`list<string[32]>[4]`), where a list variable of the machine's own holds a number, a
+`bool` or a record. A map or a set, which has no wire form yet (docs/adr/0108, D7), has its key judged as any map
 variable's is and is then refused, as is any other type with no payload schema (an open
 enum among them), by name (`scxml/static-datamodel-rule`). The deployment is the one source `sce:from` names; the
 declaration takes no `expr`, no `<sce:set>` and no in-line content, since the document

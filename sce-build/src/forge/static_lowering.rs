@@ -7704,9 +7704,15 @@ pub fn lower(
         })
         .collect();
     // The list variables, each with its element and bound — what an
-    // `<sce:append>` and a `<foreach>` are rewritten against.
+    // `<sce:append>` and a `<foreach>` are rewritten against. A list the
+    // deployment supplies is none of them (docs/adr/0109, D12): it is held in
+    // the type the walks over a composed value give it ([`deployment_value`])
+    // and never written, so a `<foreach>` over it walks it as the place it is
+    // ([`walked_place`]), as one over a delivery's list does, whatever its
+    // element.
     let list_vars: ListVars = variables
         .iter()
+        .filter(|v| !v.from_deployment)
         .filter_map(|v| {
             let elem = v.value_type.as_ref()?.list_elem()?.clone();
             Some((v.id.clone(), (elem, v.capacity()?)))
