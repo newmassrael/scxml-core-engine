@@ -178,32 +178,7 @@ macro_rules! scenarios {
 /// (`generate/unsupported-feature`), so there is no module a row could build it
 /// from. The step that lowers the construct on Rust generates the machine, takes
 /// the entry off and adds the row.
-pub const NOT_YET_LOWERED: &[(&str, &str)] = &[
-    (
-        "static_map",
-        "a map variable: the Interpreter holds one first, and Rust from docs/adr/0108 step 5",
-    ),
-    (
-        "static_map_composite_key",
-        "a map keyed by a record: Rust holds a map from docs/adr/0108 step 5",
-    ),
-    (
-        "static_map_full",
-        "a full map's outcome: Rust holds a map from docs/adr/0108 step 5",
-    ),
-    (
-        "static_map_order",
-        "the order of a map's entries: Rust holds a map from docs/adr/0108 step 5",
-    ),
-    (
-        "static_map_record",
-        "a map of records: Rust holds a map from docs/adr/0108 step 5",
-    ),
-    (
-        "static_set",
-        "a set variable: Rust holds a set from docs/adr/0108 step 5",
-    ),
-];
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[];
 
 scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
@@ -260,6 +235,11 @@ scenarios! {
     "static_invoke_tree" => static_invoke_tree_sm::{StaticInvokeTreePolicy, StaticInvokeTreePersist} @ Manual;
     "static_lift" => static_lift_sm::{StaticLiftPolicy, StaticLiftPersist};
     "static_lift_list" => static_lift_list_sm::{StaticLiftListPolicy, StaticLiftListPersist};
+    "static_map" => static_map_sm::{StaticMapPolicy, StaticMapPersist};
+    "static_map_composite_key" => static_map_composite_key_sm::{StaticMapCompositeKeyPolicy, StaticMapCompositeKeyPersist};
+    "static_map_full" => static_map_full_sm::{StaticMapFullPolicy, StaticMapFullPersist};
+    "static_map_order" => static_map_order_sm::{StaticMapOrderPolicy, StaticMapOrderPersist};
+    "static_map_record" => static_map_record_sm::{StaticMapRecordPolicy, StaticMapRecordPersist};
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_call" => static_list_call_sm::{StaticListCallPolicy, StaticListCallPersist};
@@ -294,6 +274,7 @@ scenarios! {
     "static_send_params" => static_send_params_sm::{StaticSendParamsPolicy, StaticSendParamsPersist};
     "static_send_target" => static_send_target_sm::{StaticSendTargetPolicy, StaticSendTargetPersist};
     "static_send_type" => static_send_type_sm::{StaticSendTypePolicy, StaticSendTypePersist};
+    "static_set" => static_set_sm::{StaticSetPolicy, StaticSetPersist};
     "static_state_algorithm" => static_state_algorithm_sm::{StaticStateAlgorithmPolicy, StaticStateAlgorithmPersist};
     "static_state_algorithm_enum" => static_state_algorithm_enum_sm::{StaticStateAlgorithmEnumPolicy, StaticStateAlgorithmEnumPersist};
     "static_state_algorithm_optional" => static_state_algorithm_optional_sm::{StaticStateAlgorithmOptionalPolicy, StaticStateAlgorithmOptionalPersist};
