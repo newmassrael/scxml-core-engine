@@ -8634,8 +8634,8 @@
           },
           "required": [
             "map",
-            "value",
-            "max"
+            "max",
+            "value"
           ],
           "type": "object"
         },
@@ -8651,8 +8651,8 @@
             }
           },
           "required": [
-            "set",
-            "max"
+            "max",
+            "set"
           ],
           "type": "object"
         }
