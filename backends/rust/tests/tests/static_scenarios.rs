@@ -122,6 +122,9 @@ use sce_rust_tests::integration::static_datamodel::static_map_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_map_sm::{
     StaticMapPersist, StaticMapPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_map_take_sm::{
+    StaticMapTakePersist, StaticMapTakePolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_optional_record_sm::{
     StaticOptionalRecordPersist, StaticOptionalRecordPolicy,
 };
@@ -722,6 +725,20 @@ fn static_map_order_walks_the_entries_in_the_order_they_were_put() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_order.json"
+        ),
+    );
+}
+
+// A table lent to an algorithm that writes each peer's latest generation into
+// it in place and answers a union, taken by `<sce:call location>`, through a
+// full table (docs/adr/0108, D6 items 2 and 4).
+#[test]
+fn static_map_take_lends_its_table_to_an_algorithm_that_writes_it_in_place() {
+    replay(
+        Engine::new(StaticMapTakePolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_take.json"
         ),
     );
 }
