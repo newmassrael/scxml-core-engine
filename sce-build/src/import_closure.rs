@@ -841,7 +841,11 @@ mod tests {
             .flat_map(|unit| unit.reads.iter().cloned())
             .collect();
         let frag = fs::canonicalize(dir.path().join("frag.xml")).expect("frag resolves");
-        assert_eq!(reads, [frag.clone()], "the unit names the fragment it read");
+        assert_eq!(
+            reads,
+            std::slice::from_ref(&frag),
+            "the unit names the fragment it read"
+        );
         assert!(
             reads_of(&machine).contains(&frag),
             "and the closure walk lists it beside the documents"

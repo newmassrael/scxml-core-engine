@@ -614,7 +614,7 @@ impl Anchor {
         let dirs: Vec<PathBuf> = seeds
             .iter()
             .filter(|seed| !crate::forge::stdlib::names_standard(seed))
-            .map(|seed| real_parent(*seed))
+            .map(|seed| real_parent(seed))
             .collect();
         if let ([seed], [dir], Some(root)) = (seeds, dirs.as_slice(), input_root) {
             let root = canonical_key(root);
