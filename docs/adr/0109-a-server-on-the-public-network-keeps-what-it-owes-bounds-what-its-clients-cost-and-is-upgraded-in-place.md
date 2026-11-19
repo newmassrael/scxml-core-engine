@@ -1,6 +1,6 @@
 # ADR 0109 — A server on the public network keeps what it owes, bounds what its clients cost, and is upgraded in place
 
-- Status: Proposed (2026-11-19). Written under the owner's standing rule of 2026-10-26 and 2026-10-27 (the most
+- Status: Accepted (2026-11-19, by the owner: "start", with its open questions as recommended). Written under the owner's standing rule of 2026-10-26 and 2026-10-27 (the most
   long-term correct structure, textbook in its foundations, cost ignored; decided, not asked), from a comparison of
   the parts ADR 0107 built with a mature server API whose clients run on machines their operators control, and from
   requests of a downstream project. Every decision is a general facility of SCE; none of it is the logic of any one
