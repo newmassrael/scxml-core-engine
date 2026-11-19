@@ -125,7 +125,8 @@ fn every_committed_scenario_names_only_what_its_machine_has() {
             .parse_file(&document)
             .unwrap_or_else(|e| panic!("{document} parses: {e}"));
         let stem = name.rsplit('/').next().unwrap_or(name);
-        for problem in machine_problems(&scenario, &MachineFacts::of(&model, stem)) {
+        let facts = MachineFacts::of(&model, stem).unwrap_or_else(|e| panic!("{document}: {e}"));
+        for problem in machine_problems(&scenario, &facts) {
             wrong.push(format!(
                 "{} {} [{}]: {}",
                 path.display(),

@@ -13853,7 +13853,16 @@ fn cmd_replay_scenario(
             .file_stem()
             .and_then(|stem| stem.to_str())
             .unwrap_or_default();
-        MachineFacts::of(&model, stem)
+        // A type the judge cannot read is the judge's failure, not a finding of
+        // the scenario: no `null` under it could be held to anything.
+        MachineFacts::of(&model, stem).unwrap_or_else(|e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: document.to_string(),
+                what: "machine",
+                kind: "type-unread",
+                detail: e.to_string(),
+            })
+        })
     });
     let mut found = problems(scenario);
     if let Some(facts) = &facts {

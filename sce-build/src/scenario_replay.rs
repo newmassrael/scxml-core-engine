@@ -746,6 +746,64 @@ pub enum Holds {
 /// What a union's tag holds: a value of its enum, never absent.
 static TAG: Holds = Holds::Present;
 
+/// A type whose place [`Holds`] cannot read: an alias the scope the type is
+/// read in does not hold. The parser reads every import of a document it reads
+/// from its files, so an alias is missing only where what the judge was handed
+/// is defective: a model read with no files beside it, or a record that holds
+/// itself through its documents. It is reported: read as a record of no field,
+/// it would refuse every `null` under it in the scenario's name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnreadType {
+    /// What the alias was to name: `record` or `union`.
+    pub kind: &'static str,
+    /// The alias, as the document that writes the type spells it.
+    pub alias: String,
+}
+
+impl UnreadType {
+    fn record(alias: &str) -> Self {
+        Self {
+            kind: "record",
+            alias: alias.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for UnreadType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "`{kind}:{alias}` names no {kind} of the scope it is read in",
+            kind = self.kind,
+            alias = self.alias
+        )
+    }
+}
+
+/// A machine whose facts cannot be read ([`MachineFacts::of`]): the place of
+/// its document that holds a type [`Holds`] cannot read, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnreadFacts {
+    /// The machine's name, as a scenario gives it.
+    pub machine: String,
+    /// The place in words: a variable, or the payload of an event.
+    pub place: String,
+    /// The alias that place's type names and its scope does not hold.
+    pub unread: UnreadType,
+}
+
+impl std::fmt::Display for UnreadFacts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the replay judge cannot read what {} of `{}` holds: {}",
+            self.place, self.machine, self.unread
+        )
+    }
+}
+
+impl std::error::Error for UnreadFacts {}
+
 impl Holds {
     /// `optional<T>` over a scalar.
     pub fn optional() -> Self {
@@ -754,46 +812,58 @@ impl Holds {
 
     /// What a value of `ty` holds, read in `scope` at every depth: each record
     /// and union by the document its alias names there, its fields read in
-    /// that document's own scope. An alias the scope does not hold names no
-    /// field, so nothing in it admits `null`.
+    /// that document's own scope. An alias the scope does not hold is
+    /// [`UnreadType`]: read as a record of no field, it would refuse every
+    /// `null` under it in the scenario's name.
     pub fn of_type(
         ty: &crate::forge::value_type::ValueType,
         scope: &crate::forge::value_type::TypeScope,
-    ) -> Self {
+    ) -> Result<Self, UnreadType> {
         use crate::forge::value_type::ValueType;
-        match ty {
+        Ok(match ty {
             ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
                 Self::Present
             }
-            ValueType::Optional { elem } => Self::Optional(Box::new(Self::of_type(elem, scope))),
-            ValueType::List { elem, .. } => Self::List(Box::new(Self::of_type(elem, scope))),
-            ValueType::Record { alias } => match scope.records.get(alias) {
-                Some(record) => Self::of_fields(&record.fields, &record.scope),
-                None => Self::Record(BTreeMap::new()),
-            },
+            ValueType::Optional { elem } => Self::Optional(Box::new(Self::of_type(elem, scope)?)),
+            ValueType::List { elem, .. } => Self::List(Box::new(Self::of_type(elem, scope)?)),
+            ValueType::Record { alias } => {
+                let record = scope
+                    .records
+                    .get(alias)
+                    .ok_or_else(|| UnreadType::record(alias))?;
+                Self::of_fields(&record.fields, &record.scope)?
+            }
             // docs/adr/0092, section 4: the tag, then the record of the case
             // it names, each case's record read in the union's own scope.
-            ValueType::Union { alias } => match scope.unions.get(alias) {
-                Some(union) => Self::Union {
+            ValueType::Union { alias } => {
+                let union = scope.unions.get(alias).ok_or_else(|| UnreadType {
+                    kind: "union",
+                    alias: alias.clone(),
+                })?;
+                let cases = union
+                    .cases
+                    .iter()
+                    .map(|case| -> Result<(String, Self), UnreadType> {
+                        // A case that holds no record is one of no field.
+                        let holds = match case.record.as_deref() {
+                            None => Self::Record(BTreeMap::new()),
+                            Some(held) => {
+                                let record = union
+                                    .scope
+                                    .records
+                                    .get(held)
+                                    .ok_or_else(|| UnreadType::record(held))?;
+                                Self::of_fields(&record.fields, &record.scope)?
+                            }
+                        };
+                        Ok((case.variant.name.clone(), holds))
+                    })
+                    .collect::<Result<BTreeMap<String, Self>, UnreadType>>()?;
+                Self::Union {
                     tag: union.tag.clone(),
-                    cases: union
-                        .cases
-                        .iter()
-                        .map(|case| {
-                            let record = case
-                                .record
-                                .as_deref()
-                                .and_then(|record| union.scope.records.get(record));
-                            let holds = match record {
-                                Some(record) => Self::of_fields(&record.fields, &record.scope),
-                                None => Self::Record(BTreeMap::new()),
-                            };
-                            (case.variant.name.clone(), holds)
-                        })
-                        .collect(),
-                },
-                None => Self::Record(BTreeMap::new()),
-            },
+                    cases,
+                }
+            }
             // A map or a set is stated as the array of its entries (docs/adr/0108,
             // D8), each `[key, value]` of a map and the key itself of a set, and
             // no payload holds one (D7). A map's key and value are a number, a
@@ -801,7 +871,7 @@ impl Holds {
             // admits `null` nowhere in its entries, an optional field of a record
             // value among them, which no scenario of a map states yet.
             ValueType::Map { .. } | ValueType::Set { .. } => Self::Present,
-        }
+        })
     }
 
     /// The record whose fields are `fields`, each read in `scope`
@@ -809,13 +879,15 @@ impl Holds {
     fn of_fields(
         fields: &[(String, crate::forge::value_type::ValueType)],
         scope: &crate::forge::value_type::TypeScope,
-    ) -> Self {
-        Self::Record(
+    ) -> Result<Self, UnreadType> {
+        Ok(Self::Record(
             fields
                 .iter()
-                .map(|(id, ty)| (id.clone(), Self::of_type(ty, scope)))
-                .collect(),
-        )
+                .map(|(id, ty)| -> Result<(String, Self), UnreadType> {
+                    Ok((id.clone(), Self::of_type(ty, scope)?))
+                })
+                .collect::<Result<BTreeMap<String, Self>, UnreadType>>()?,
+        ))
     }
 
     /// What a variable declared `ty` holds, a record by the schema `records`
@@ -827,15 +899,15 @@ impl Holds {
         ty: Option<&crate::forge::model::AlgorithmValueType>,
         records: &BTreeMap<String, crate::forge::model::EntrySchema>,
         scope: &crate::forge::value_type::TypeScope,
-    ) -> Self {
+    ) -> Result<Self, UnreadType> {
         use crate::forge::model::AlgorithmValueType;
         // A record of entries by its schema; one that holds a list or a record,
         // which an optional variable holds (docs/adr/0087, Landing order item
-        // 8), by walking its type in the statechart's scope. A record of an
-        // alias the document does not import has no field to admit `null` in;
-        // the parser refuses such a document before this.
+        // 8), by walking its type in the statechart's scope. An alias neither
+        // holds is [`UnreadType`]: the parser refuses a document that names a
+        // record it does not import before this.
         let record = |alias: &str| match records.get(alias) {
-            Some(schema) => Self::of_schema(schema),
+            Some(schema) => Ok(Self::of_schema(schema)),
             None => Self::of_type(
                 &crate::forge::value_type::ValueType::Record {
                     alias: alias.to_string(),
@@ -851,7 +923,7 @@ impl Holds {
                 scope,
             )
         };
-        match ty {
+        Ok(match ty {
             None
             | Some(
                 AlgorithmValueType::Scalar(_)
@@ -859,27 +931,27 @@ impl Holds {
                 | AlgorithmValueType::Bytes { .. },
             ) => Self::Present,
             Some(AlgorithmValueType::List { elem, .. }) => match elem.record_alias() {
-                Some(alias) => Self::List(Box::new(record(alias))),
+                Some(alias) => Self::List(Box::new(record(alias)?)),
                 None => Self::Present,
             },
-            Some(AlgorithmValueType::Record { alias }) => record(alias),
+            Some(AlgorithmValueType::Record { alias }) => record(alias)?,
             // docs/adr/0092, section 6.1 item 7: read by its type, the tag
             // first and then the record of the case it names.
-            Some(AlgorithmValueType::Union { alias }) => union(alias),
+            Some(AlgorithmValueType::Union { alias }) => union(alias)?,
             // No statechart holds a map yet (docs/adr/0108, D10): a document
             // that declares one is refused by name before a scenario is
             // replayed.
             Some(AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. }) => Self::Present,
             Some(AlgorithmValueType::Optional { elem }) => {
                 Self::Optional(Box::new(match &**elem {
-                    AlgorithmValueType::Union { alias } => union(alias),
+                    AlgorithmValueType::Union { alias } => union(alias)?,
                     other => match other.record_alias() {
-                        Some(alias) => record(alias),
+                        Some(alias) => record(alias)?,
                         None => Self::Present,
                     },
                 }))
             }
-        }
+        })
     }
 
     /// The record `schema` declares: a field of `optional<T>` holds `null`, and
@@ -1011,8 +1083,15 @@ pub struct MachineFacts {
 }
 
 impl MachineFacts {
-    /// The facts of `model`, a statechart read from a document whose stem is `name`.
-    pub fn of(model: &crate::model::SCXMLModel, name: &str) -> Self {
+    /// The facts of `model`, a statechart read from a document whose stem is
+    /// `name`; [`UnreadFacts`] for a variable or a payload whose type names an
+    /// alias its scope does not hold.
+    pub fn of(model: &crate::model::SCXMLModel, name: &str) -> Result<Self, UnreadFacts> {
+        let unread_at = |place: String, unread: UnreadType| UnreadFacts {
+            machine: name.to_string(),
+            place,
+            unread,
+        };
         // The records of entries a variable names; one that holds a composition
         // is read from the statechart's scope ([`Holds::of_variable`]).
         let records = model.entry_records();
@@ -1021,13 +1100,12 @@ impl MachineFacts {
             .variables
             .iter()
             .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
-            .map(|v| {
-                (
-                    v.id.clone(),
-                    Holds::of_variable(v.value_type.as_ref(), &records, &scope),
-                )
+            .map(|v| -> Result<(String, Holds), UnreadFacts> {
+                let holds = Holds::of_variable(v.value_type.as_ref(), &records, &scope)
+                    .map_err(|unread| unread_at(format!("the variable `{}`", v.id), unread))?;
+                Ok((v.id.clone(), holds))
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         // The payload of each event whose schema is a record of entries, and of
         // each whose schema holds a composition (docs/adr/0086, docs/adr/0092),
         // read by its type at every depth, a union by its tag.
@@ -1037,14 +1115,18 @@ impl MachineFacts {
             .map(|(event, schema)| (event.clone(), Holds::of_schema(schema)))
             .collect();
         for (alias, schema) in &model.imported_records {
+            if payloads.contains_key(&schema.event_name) {
+                continue;
+            }
             if let Some(record) = scope.records.get(alias) {
-                payloads
-                    .entry(schema.event_name.clone())
-                    .or_insert_with(|| Holds::of_fields(&record.fields, &record.scope));
+                let holds = Holds::of_fields(&record.fields, &record.scope).map_err(|unread| {
+                    unread_at(format!("the payload of `{}`", schema.event_name), unread)
+                })?;
+                payloads.insert(schema.event_name.clone(), holds);
             }
         }
         let donedata = done_data(model, &variables);
-        Self {
+        Ok(Self {
             name: name.to_string(),
             states: model.states.keys().cloned().collect(),
             variables,
@@ -1079,7 +1161,7 @@ impl MachineFacts {
                     (action, held)
                 })
                 .collect(),
-        }
+        })
     }
 
     /// Whether an event of this name is one the machine takes, as a generated
@@ -1989,7 +2071,8 @@ mod tests {
             ),
         );
         let declared: AlgorithmValueType = WrittenType::read("optional<record:Plan>").unwrap();
-        let plan = Holds::of_variable(Some(&declared), &BTreeMap::new(), &scope);
+        let plan = Holds::of_variable(Some(&declared), &BTreeMap::new(), &scope)
+            .expect("every alias the plan names is in its scope");
         assert!(plan.admits_null(), "the variable starts absent");
         let item = plan
             .field("items")
@@ -2055,7 +2138,7 @@ mod tests {
                 scope: inner,
             },
         );
-        let shape = Holds::of_type(&ty("union:Shape"), &scope);
+        let shape = Holds::of_type(&ty("union:Shape"), &scope).expect("the shape is in scope");
         let machine = MachineFacts {
             name: "m".to_string(),
             variables: [
@@ -2070,7 +2153,8 @@ mod tests {
                 Holds::Record(
                     [(
                         "many".to_string(),
-                        Holds::of_type(&ty("list<union:Shape>[3]"), &scope),
+                        Holds::of_type(&ty("list<union:Shape>[3]"), &scope)
+                            .expect("the shape is in scope"),
                     )]
                     .into(),
                 ),
@@ -2111,6 +2195,73 @@ mod tests {
                 "/steps/0/expect/variables/built/text",
                 "/steps/0/expect/variables/kept/extra",
             ]
+        );
+    }
+
+    /// An alias the scope a type is read in does not hold is reported by
+    /// name, a record's and a union's alike, and a union's case whose record
+    /// its own scope does not hold too; read as a record of no field, it would
+    /// refuse every `null` under it in the scenario's name.
+    #[test]
+    fn an_alias_the_scope_does_not_hold_is_reported_not_read_as_no_field() {
+        use crate::forge::model::AlgorithmValueType;
+        use crate::forge::value_type::{
+            ScopedCase, ScopedUnion, ScopedVariant, TypeScope, ValueType, WrittenType,
+        };
+        let ty = |text: &str| -> ValueType { WrittenType::read(text).unwrap().bounded().unwrap() };
+        let empty = TypeScope::default();
+        assert_eq!(
+            Holds::of_type(&ty("list<record:Item>[3]"), &empty),
+            Err(UnreadType {
+                kind: "record",
+                alias: "Item".to_string()
+            })
+        );
+        assert_eq!(
+            Holds::of_type(&ty("list<union:Shape>[3]"), &empty),
+            Err(UnreadType {
+                kind: "union",
+                alias: "Shape".to_string()
+            })
+        );
+        let declared: AlgorithmValueType = WrittenType::read("optional<record:Plan>").unwrap();
+        assert_eq!(
+            Holds::of_variable(Some(&declared), &BTreeMap::new(), &empty),
+            Err(UnreadType {
+                kind: "record",
+                alias: "Plan".to_string()
+            })
+        );
+        let case = |variant: &str, value: i128, held: Option<&str>| ScopedCase {
+            variant: ScopedVariant {
+                name: variant.to_string(),
+                value,
+            },
+            record: held.map(str::to_string),
+        };
+        let mut scope = TypeScope::default();
+        scope.unions.insert(
+            "Shape".into(),
+            ScopedUnion {
+                identity: "/here/shape.scxml".into(),
+                name: "shape".into(),
+                tag: "kind".into(),
+                tag_enum: "Kind".into(),
+                cases: vec![case("dot", 0, None), case("circle", 1, Some("Radius"))],
+                scope: TypeScope::default(),
+            },
+        );
+        let unread = Holds::of_type(&ty("union:Shape"), &scope).unwrap_err();
+        assert_eq!(
+            unread,
+            UnreadType {
+                kind: "record",
+                alias: "Radius".to_string()
+            }
+        );
+        assert_eq!(
+            unread.to_string(),
+            "`record:Radius` names no record of the scope it is read in"
         );
     }
 }
