@@ -156,7 +156,7 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
                     .require(RefusalKind::CborOutOfRange, &item.entry.id);
                 lines.extend(check_stmts(shape, &access, Held::Composed, 0, &refusal));
             }
-            lines.extend(write_stmts(shape, &access, Held::Composed, 0));
+            lines.extend(write_stmts(shape, &access, 0));
             lines.join("\n")
         }
     }
@@ -421,8 +421,11 @@ fn int_write(bits: u32, signed: bool, value: &str) -> String {
 
 /// The statements that write the value of `shape` `access` reaches, in its one
 /// form (docs/adr/0101, section 2.1), into the sink `w`. They refuse nothing:
-/// what a value can break is checked before ([`check_stmts`]).
-fn write_stmts(shape: &CborShape, access: &Access, held: Held, depth: usize) -> Vec<String> {
+/// what a value can break is checked before ([`check_stmts`]). A write does not
+/// ask where a value stands ([`Held`]): a byte string in the language's own
+/// vector and one in a bounded byte string are each written as the slice they
+/// lend.
+fn write_stmts(shape: &CborShape, access: &Access, depth: usize) -> Vec<String> {
     let line = match shape {
         CborShape::Int { bits, signed } => int_write(*bits, *signed, &access.value()),
         CborShape::Float { bits: 32 } => {
@@ -447,7 +450,7 @@ fn write_stmts(shape: &CborShape, access: &Access, held: Held, depth: usize) -> 
         CborShape::List { elem, .. } => {
             let item = bound_name("item", depth);
             let slice = access.call("as_slice");
-            let inner = write_stmts(elem, &Access::Ref(item.clone()), Held::Composed, depth + 1);
+            let inner = write_stmts(elem, &Access::Ref(item.clone()), depth + 1);
             format!(
                 "cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize({slice}.len()))?;\n\
                  for {item} in {slice} {{\n{}}}",
@@ -456,7 +459,7 @@ fn write_stmts(shape: &CborShape, access: &Access, held: Held, depth: usize) -> 
         }
         CborShape::Nullable(elem) => {
             let present = bound_name("present", depth);
-            let inner = write_stmts(elem, &Access::Ref(present.clone()), held, depth + 1);
+            let inner = write_stmts(elem, &Access::Ref(present.clone()), depth + 1);
             format!(
                 "match {} {{\n    Some({present}) => {{\n{}    }}\n    None => cbor::write_null(w)?,\n}}",
                 access.reference(),
@@ -798,7 +801,6 @@ fn record_fns(record: &CborRecord) -> String {
             inner.extend(write_stmts(
                 &field.shape,
                 &Access::Ref("value".to_string()),
-                Held::Field,
                 0,
             ));
             body.push(format!(
@@ -811,7 +813,6 @@ fn record_fns(record: &CborRecord) -> String {
             body.extend(write_stmts(
                 &field.shape,
                 &Access::Place(format!("record.{}", names.member)),
-                Held::Field,
                 0,
             ));
         }
@@ -1256,6 +1257,11 @@ mod tests {
             exact: false,
         };
         assert_eq!(rust_type(&bytes, Held::Field), "Vec<u8>");
+        // Either is written as the slice it lends.
+        assert_eq!(
+            write_stmts(&bytes, &Access::Place("record.blob".to_string()), 0),
+            ["cbor::write_bytes(w, record.blob.as_slice())?;"]
+        );
         assert_eq!(
             composed_type(&list(bytes, 2, 0)),
             "::sce_forge_runtime::codec::BoundedList<::sce_forge_runtime::codec::SceBytes<4>, 2>"
@@ -1289,20 +1295,15 @@ mod tests {
         let place = Access::Place("record.n".to_string());
         let reference = Access::Ref("item".to_string());
         assert_eq!(
-            write_stmts(&int(16, true), &place, Held::Field, 0),
+            write_stmts(&int(16, true), &place, 0),
             ["cbor::write_int(w, i64::from(record.n))?;"]
         );
         assert_eq!(
-            write_stmts(&int(64, false), &reference, Held::Composed, 0),
+            write_stmts(&int(64, false), &reference, 0),
             ["cbor::write_uint(w, *item)?;"]
         );
         assert_eq!(
-            write_stmts(
-                &CborShape::Float { bits: 32 },
-                &reference,
-                Held::Composed,
-                0
-            ),
+            write_stmts(&CborShape::Float { bits: 32 }, &reference, 0),
             ["cbor::write_float(w, f64::from(*item))?;"]
         );
         // An enum is the integer of its declared number, the variant it names
@@ -1313,7 +1314,7 @@ mod tests {
              u64::from(u8::MAX))? as u8).ok_or(CodecError::UndeclaredEnumValue)?"
         );
         assert_eq!(
-            write_stmts(&color(), &place, Held::Field, 0),
+            write_stmts(&color(), &place, 0),
             ["cbor::write_uint(w, u64::from(record.n.to_underlying()))?;"]
         );
     }
@@ -1331,8 +1332,7 @@ mod tests {
         ] {
             assert!(read.contains(expected), "missing `{expected}`:\n{read}");
         }
-        let write =
-            write_stmts(&shape, &Access::Ref("v".to_string()), Held::Composed, 0).join("\n");
+        let write = write_stmts(&shape, &Access::Ref("v".to_string()), 0).join("\n");
         for expected in [
             "cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(v.as_slice().len()))?;",
             "for item in v.as_slice() {",
@@ -1346,10 +1346,8 @@ mod tests {
         // A list in a list reads and writes its own, named apart.
         let nested = list(list(int(8, false), 2, 0), 2, 0);
         assert!(decode(&nested, "c").contains("let len1 = cbor::read_array_len(c)?;"));
-        assert!(
-            write_stmts(&nested, &Access::Ref("v".to_string()), Held::Composed, 0)[0]
-                .contains("for item1 in item.as_slice() {")
-        );
+        assert!(write_stmts(&nested, &Access::Ref("v".to_string()), 0)[0]
+            .contains("for item1 in item.as_slice() {"));
     }
 
     #[test]
