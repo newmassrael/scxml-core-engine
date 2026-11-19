@@ -16,11 +16,11 @@
 #include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 
 #define CODEC_ZENOH_EXT_ZBUF_MIN_BYTES 0
-#define CODEC_ZENOH_EXT_ZBUF_MAX_BYTES 41
+#define CODEC_ZENOH_EXT_ZBUF_MAX_BYTES 265
 
 typedef struct {
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="32") */
-    uint8_t value[32];
+    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="256") */
+    uint8_t value[256];
     size_t  value_len;
 } codec_zenoh_ext_zbuf_t;
 
@@ -60,7 +60,7 @@ static inline sce_forge_codec_status_t codec_zenoh_ext_zbuf_decode(sce_forge_cur
         size_t _n = (size_t)_d_value_len;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->value_len = sce_forge_codec_hold(out->value, 32U, raw, _n, &_over);
+        out->value_len = sce_forge_codec_hold(out->value, 256U, raw, _n, &_over);
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
@@ -143,7 +143,7 @@ static inline sce_forge_codec_status_t codec_zenoh_ext_zbuf_encode_source(const 
  * text no UTF-8 holds, in it or in a body or an entry it holds
  * (docs/adr/0081 §2). */
 static inline sce_forge_codec_status_t codec_zenoh_ext_zbuf_check_value(const codec_zenoh_ext_zbuf_t *self) {
-    if (!sce_forge_length_within_bound(self->value_len, 32)) {
+    if (!sce_forge_length_within_bound(self->value_len, 256)) {
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     return SCE_FORGE_CODEC_OK;
