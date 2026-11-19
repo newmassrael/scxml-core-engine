@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a9c299ab96f6e6c2a694137962a3f363e82399bf22fbd9f4aa0018913d55ad58
+// source-hash: 02a1f302f8985c8979205027eb5b236990d7a79fc8e74a6197aa1d9c5b50cead
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_host_cose.scxml:33 :: _machine"]
-// SCE-MAP: static_host_cose.scxml:33 :: _machine
+#![doc = "SCE-MAP: static_host_cose.scxml:40 :: _machine"]
+// SCE-MAP: static_host_cose.scxml:40 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -103,6 +103,12 @@ pub enum StaticHostCoseState {
     Sealing = 3,
     Opening = 4,
     Deriving = 5,
+    Drawing = 6,
+    Tagging = 7,
+    Checking = 8,
+    Generating = 9,
+    Exporting = 10,
+    Retiring = 11,
 }
 
 // ======================================================================
@@ -118,18 +124,30 @@ pub enum StaticHostCoseEvent {
     CoseHeldOpen = 0,
     DoneInvoke = 1,
     DoneInvokeDerive = 2,
-    DoneInvokeOpen = 3,
-    DoneInvokeSeal = 4,
-    DoneInvokeSign = 5,
-    DoneInvokeVerify = 6,
-    ErrorExecution = 7,
-    HostCoseDecrypt0Request = 8,
-    HostCoseEncrypt0Request = 9,
-    HostCoseSign1Request = 10,
-    HostCoseVerify1Request = 11,
-    HostKeyDeriveRequest = 12,
+    DoneInvokeDraw = 3,
+    DoneInvokeKeyGenerate = 4,
+    DoneInvokeKeyPublic = 5,
+    DoneInvokeKeyRetire = 6,
+    DoneInvokeMac = 7,
+    DoneInvokeMacVerify = 8,
+    DoneInvokeOpen = 9,
+    DoneInvokeSeal = 10,
+    DoneInvokeSign = 11,
+    DoneInvokeVerify = 12,
+    ErrorExecution = 13,
+    HostCoseDecrypt0Request = 14,
+    HostCoseEncrypt0Request = 15,
+    HostCoseSign1Request = 16,
+    HostCoseVerify1Request = 17,
+    HostKeyDeriveRequest = 18,
+    HostKeyGenerateRequest = 19,
+    HostKeyPublicRequest = 20,
+    HostKeyRetireRequest = 21,
+    HostMacRequest = 22,
+    HostMacVerifyRequest = 23,
+    HostRandomBytesRequest = 24,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null = 13,
+    Null = 25,
 }
 
 // ======================================================================
@@ -190,6 +208,18 @@ pub const STATIC_HOST_COSE_TABLES: ::sce_rust_runtime::DocumentTables<'static> =
             StateRow::new(None, StateKind::Atomic, StateId(4), None),
             // 5: deriving
             StateRow::new(None, StateKind::Atomic, StateId(5), None),
+            // 6: drawing
+            StateRow::new(None, StateKind::Atomic, StateId(6), None),
+            // 7: tagging
+            StateRow::new(None, StateKind::Atomic, StateId(7), None),
+            // 8: checking
+            StateRow::new(None, StateKind::Atomic, StateId(8), None),
+            // 9: generating
+            StateRow::new(None, StateKind::Atomic, StateId(9), None),
+            // 10: exporting
+            StateRow::new(None, StateKind::Atomic, StateId(10), None),
+            // 11: retiring
+            StateRow::new(None, StateKind::Atomic, StateId(11), None),
         ],
         histories: &[],
         transitions: &[
@@ -205,44 +235,92 @@ pub const STATIC_HOST_COSE_TABLES: ::sce_rust_runtime::DocumentTables<'static> =
             TransitionRow::new(Some(StateId(0)), Target::state(StateId(4)), false, true),
             // 5: idle, transition 5
             TransitionRow::new(Some(StateId(0)), Target::state(StateId(5)), false, true),
-            // 6: signing, transition 0
+            // 6: idle, transition 6
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(6)), false, true),
+            // 7: idle, transition 7
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(7)), false, true),
+            // 8: idle, transition 8
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(8)), false, true),
+            // 9: idle, transition 9
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(9)), false, true),
+            // 10: idle, transition 10
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(10)), false, true),
+            // 11: idle, transition 11
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(11)), false, true),
+            // 12: signing, transition 0
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(0)), false, true),
-            // 7: signing, transition 1
+            // 13: signing, transition 1
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(0)), false, true),
-            // 8: signing, transition 2
+            // 14: signing, transition 2
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(0)), false, true),
-            // 9: verifying, transition 0
+            // 15: verifying, transition 0
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(0)), false, true),
-            // 10: verifying, transition 1
+            // 16: verifying, transition 1
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(0)), false, true),
-            // 11: verifying, transition 2
+            // 17: verifying, transition 2
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(0)), false, true),
-            // 12: sealing, transition 0
+            // 18: sealing, transition 0
             TransitionRow::new(Some(StateId(3)), Target::state(StateId(0)), false, true),
-            // 13: sealing, transition 1
+            // 19: sealing, transition 1
             TransitionRow::new(Some(StateId(3)), Target::state(StateId(0)), false, true),
-            // 14: sealing, transition 2
+            // 20: sealing, transition 2
             TransitionRow::new(Some(StateId(3)), Target::state(StateId(0)), false, true),
-            // 15: opening, transition 0
+            // 21: opening, transition 0
             TransitionRow::new(Some(StateId(4)), Target::state(StateId(0)), false, true),
-            // 16: opening, transition 1
+            // 22: opening, transition 1
             TransitionRow::new(Some(StateId(4)), Target::state(StateId(0)), false, true),
-            // 17: opening, transition 2
+            // 23: opening, transition 2
             TransitionRow::new(Some(StateId(4)), Target::state(StateId(0)), false, true),
-            // 18: deriving, transition 0
+            // 24: deriving, transition 0
             TransitionRow::new(Some(StateId(5)), Target::state(StateId(0)), false, true),
-            // 19: deriving, transition 1
+            // 25: deriving, transition 1
             TransitionRow::new(Some(StateId(5)), Target::state(StateId(0)), false, true),
-            // 20: deriving, transition 2
+            // 26: deriving, transition 2
             TransitionRow::new(Some(StateId(5)), Target::state(StateId(0)), false, true),
-            // 21: the document's initial transition
+            // 27: drawing, transition 0
+            TransitionRow::new(Some(StateId(6)), Target::state(StateId(0)), false, true),
+            // 28: drawing, transition 1
+            TransitionRow::new(Some(StateId(6)), Target::state(StateId(0)), false, true),
+            // 29: drawing, transition 2
+            TransitionRow::new(Some(StateId(6)), Target::state(StateId(0)), false, true),
+            // 30: tagging, transition 0
+            TransitionRow::new(Some(StateId(7)), Target::state(StateId(0)), false, true),
+            // 31: tagging, transition 1
+            TransitionRow::new(Some(StateId(7)), Target::state(StateId(0)), false, true),
+            // 32: tagging, transition 2
+            TransitionRow::new(Some(StateId(7)), Target::state(StateId(0)), false, true),
+            // 33: checking, transition 0
+            TransitionRow::new(Some(StateId(8)), Target::state(StateId(0)), false, true),
+            // 34: checking, transition 1
+            TransitionRow::new(Some(StateId(8)), Target::state(StateId(0)), false, true),
+            // 35: checking, transition 2
+            TransitionRow::new(Some(StateId(8)), Target::state(StateId(0)), false, true),
+            // 36: generating, transition 0
+            TransitionRow::new(Some(StateId(9)), Target::state(StateId(0)), false, true),
+            // 37: generating, transition 1
+            TransitionRow::new(Some(StateId(9)), Target::state(StateId(0)), false, true),
+            // 38: generating, transition 2
+            TransitionRow::new(Some(StateId(9)), Target::state(StateId(0)), false, true),
+            // 39: exporting, transition 0
+            TransitionRow::new(Some(StateId(10)), Target::state(StateId(0)), false, true),
+            // 40: exporting, transition 1
+            TransitionRow::new(Some(StateId(10)), Target::state(StateId(0)), false, true),
+            // 41: exporting, transition 2
+            TransitionRow::new(Some(StateId(10)), Target::state(StateId(0)), false, true),
+            // 42: retiring, transition 0
+            TransitionRow::new(Some(StateId(11)), Target::state(StateId(0)), false, true),
+            // 43: retiring, transition 1
+            TransitionRow::new(Some(StateId(11)), Target::state(StateId(0)), false, true),
+            // 44: retiring, transition 2
+            TransitionRow::new(Some(StateId(11)), Target::state(StateId(0)), false, true),
+            // 45: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(21),
+        initial: TransitionId(45),
         default_state: ::sce_rust_runtime::StateId(StaticHostCoseState::Idle as u16),
-        null_event: ::sce_rust_runtime::EventId(13),
-        error_events: &[::sce_rust_runtime::EventId(7)],
+        null_event: ::sce_rust_runtime::EventId(25),
+        error_events: &[::sce_rust_runtime::EventId(13)],
         history: None,
         parallel: None,
     }
@@ -271,6 +349,12 @@ impl StaticHostCoseEvent {
         StaticHostCoseEvent::HostCoseSign1Request,
         StaticHostCoseEvent::HostCoseVerify1Request,
         StaticHostCoseEvent::HostKeyDeriveRequest,
+        StaticHostCoseEvent::HostKeyGenerateRequest,
+        StaticHostCoseEvent::HostKeyPublicRequest,
+        StaticHostCoseEvent::HostKeyRetireRequest,
+        StaticHostCoseEvent::HostMacRequest,
+        StaticHostCoseEvent::HostMacVerifyRequest,
+        StaticHostCoseEvent::HostRandomBytesRequest,
     ];
 }
 
@@ -285,6 +369,42 @@ pub struct StaticHostCoseCoseHeldOpenPayload {
 pub struct StaticHostCoseDoneInvokeDerivePayload {
     pub error: ::sce_rust_runtime::SceString,
     pub key_id: ::sce_rust_runtime::SceString,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseDoneInvokeDrawPayload {
+    pub error: ::sce_rust_runtime::SceString,
+    pub bytes: ::sce_rust_runtime::SceBytes<256>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseDoneInvokeKeyGeneratePayload {
+    pub error: ::sce_rust_runtime::SceString,
+    pub key_id: ::sce_rust_runtime::SceString,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseDoneInvokeKeyPublicPayload {
+    pub error: ::sce_rust_runtime::SceString,
+    pub cose_key: ::sce_rust_runtime::SceBytes<128>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseDoneInvokeKeyRetirePayload {
+    pub error: ::sce_rust_runtime::SceString,
+    pub retired: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseDoneInvokeMacPayload {
+    pub error: ::sce_rust_runtime::SceString,
+    pub tag: ::sce_rust_runtime::SceBytes<32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseDoneInvokeMacVerifyPayload {
+    pub error: ::sce_rust_runtime::SceString,
+    pub valid: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -350,6 +470,40 @@ pub struct StaticHostCoseHostKeyDeriveRequestPayload {
     pub info: ::sce_rust_runtime::SceBytes<256>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseHostKeyGenerateRequestPayload {
+    pub key_use: ::sce_rust_runtime::SceString,
+    pub label: ::sce_rust_runtime::SceString,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseHostKeyPublicRequestPayload {
+    pub key_id: ::sce_rust_runtime::SceString,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseHostKeyRetireRequestPayload {
+    pub key_id: ::sce_rust_runtime::SceString,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseHostMacRequestPayload {
+    pub key_id: ::sce_rust_runtime::SceString,
+    pub message: ::sce_rust_runtime::SceBytes<4096>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseHostMacVerifyRequestPayload {
+    pub key_id: ::sce_rust_runtime::SceString,
+    pub message: ::sce_rust_runtime::SceBytes<4096>,
+    pub tag: ::sce_rust_runtime::SceBytes<32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseHostRandomBytesRequestPayload {
+    pub length: u16,
+}
+
 /// NL→IR Item C1 Path A: typed `_event.data` payload sum for the EventSchema-imported events whose transition guards lowered natively.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum StaticHostCosePayload {
@@ -358,6 +512,12 @@ pub enum StaticHostCosePayload {
     None,
     CoseHeldOpen(StaticHostCoseCoseHeldOpenPayload),
     DoneInvokeDerive(StaticHostCoseDoneInvokeDerivePayload),
+    DoneInvokeDraw(StaticHostCoseDoneInvokeDrawPayload),
+    DoneInvokeKeyGenerate(StaticHostCoseDoneInvokeKeyGeneratePayload),
+    DoneInvokeKeyPublic(StaticHostCoseDoneInvokeKeyPublicPayload),
+    DoneInvokeKeyRetire(StaticHostCoseDoneInvokeKeyRetirePayload),
+    DoneInvokeMac(StaticHostCoseDoneInvokeMacPayload),
+    DoneInvokeMacVerify(StaticHostCoseDoneInvokeMacVerifyPayload),
     DoneInvokeOpen(StaticHostCoseDoneInvokeOpenPayload),
     DoneInvokeSeal(StaticHostCoseDoneInvokeSealPayload),
     DoneInvokeSign(StaticHostCoseDoneInvokeSignPayload),
@@ -367,6 +527,12 @@ pub enum StaticHostCosePayload {
     HostCoseSign1Request(StaticHostCoseHostCoseSign1RequestPayload),
     HostCoseVerify1Request(StaticHostCoseHostCoseVerify1RequestPayload),
     HostKeyDeriveRequest(StaticHostCoseHostKeyDeriveRequestPayload),
+    HostKeyGenerateRequest(StaticHostCoseHostKeyGenerateRequestPayload),
+    HostKeyPublicRequest(StaticHostCoseHostKeyPublicRequestPayload),
+    HostKeyRetireRequest(StaticHostCoseHostKeyRetireRequestPayload),
+    HostMacRequest(StaticHostCoseHostMacRequestPayload),
+    HostMacVerifyRequest(StaticHostCoseHostMacVerifyRequestPayload),
+    HostRandomBytesRequest(StaticHostCoseHostRandomBytesRequestPayload),
 }
 
 /// NL→IR Item C1 Path A: per-event typed `_event.data` inject seam.
@@ -406,6 +572,36 @@ pub trait StaticHostCoseInject {
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_host_key_derive_request(&mut self, payload: StaticHostCoseHostKeyDeriveRequestPayload);
+    /// Typed `_event.data` inject for `host.key.generate.request`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_host_key_generate_request(
+        &mut self,
+        payload: StaticHostCoseHostKeyGenerateRequestPayload,
+    );
+    /// Typed `_event.data` inject for `host.key.public.request`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_host_key_public_request(&mut self, payload: StaticHostCoseHostKeyPublicRequestPayload);
+    /// Typed `_event.data` inject for `host.key.retire.request`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_host_key_retire_request(&mut self, payload: StaticHostCoseHostKeyRetireRequestPayload);
+    /// Typed `_event.data` inject for `host.mac.request`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_host_mac_request(&mut self, payload: StaticHostCoseHostMacRequestPayload);
+    /// Typed `_event.data` inject for `host.mac.verify.request`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_host_mac_verify_request(&mut self, payload: StaticHostCoseHostMacVerifyRequestPayload);
+    /// Typed `_event.data` inject for `host.random.bytes.request`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_host_random_bytes_request(
+        &mut self,
+        payload: StaticHostCoseHostRandomBytesRequestPayload,
+    );
 }
 
 impl StaticHostCoseInject for ::sce_rust_runtime::Engine<StaticHostCosePolicy> {
@@ -526,6 +722,108 @@ impl StaticHostCoseInject for ::sce_rust_runtime::Engine<StaticHostCosePolicy> {
             &data,
         );
     }
+    fn raise_host_key_generate_request(
+        &mut self,
+        payload: StaticHostCoseHostKeyGenerateRequestPayload,
+    ) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"key_use\":{}, \"label\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&payload.key_use),
+            ::sce_rust_runtime::event_payload::quote(&payload.label)
+        ));
+        self.raise_external_typed_with_data(
+            StaticHostCoseEvent::HostKeyGenerateRequest,
+            StaticHostCosePayload::HostKeyGenerateRequest(payload),
+            &data,
+        );
+    }
+    fn raise_host_key_public_request(
+        &mut self,
+        payload: StaticHostCoseHostKeyPublicRequestPayload,
+    ) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"key_id\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&payload.key_id)
+        ));
+        self.raise_external_typed_with_data(
+            StaticHostCoseEvent::HostKeyPublicRequest,
+            StaticHostCosePayload::HostKeyPublicRequest(payload),
+            &data,
+        );
+    }
+    fn raise_host_key_retire_request(
+        &mut self,
+        payload: StaticHostCoseHostKeyRetireRequestPayload,
+    ) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"key_id\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&payload.key_id)
+        ));
+        self.raise_external_typed_with_data(
+            StaticHostCoseEvent::HostKeyRetireRequest,
+            StaticHostCosePayload::HostKeyRetireRequest(payload),
+            &data,
+        );
+    }
+    fn raise_host_mac_request(&mut self, payload: StaticHostCoseHostMacRequestPayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"key_id\":{}, \"message\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&payload.key_id),
+            ::sce_rust_runtime::event_payload::quote(
+                &::sce_rust_runtime::event_payload::bytes_as_payload_text(&payload.message)
+            )
+        ));
+        self.raise_external_typed_with_data(
+            StaticHostCoseEvent::HostMacRequest,
+            StaticHostCosePayload::HostMacRequest(payload),
+            &data,
+        );
+    }
+    fn raise_host_mac_verify_request(
+        &mut self,
+        payload: StaticHostCoseHostMacVerifyRequestPayload,
+    ) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"key_id\":{}, \"message\":{}, \"tag\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&payload.key_id),
+            ::sce_rust_runtime::event_payload::quote(
+                &::sce_rust_runtime::event_payload::bytes_as_payload_text(&payload.message)
+            ),
+            ::sce_rust_runtime::event_payload::quote(
+                &::sce_rust_runtime::event_payload::bytes_as_payload_text(&payload.tag)
+            )
+        ));
+        self.raise_external_typed_with_data(
+            StaticHostCoseEvent::HostMacVerifyRequest,
+            StaticHostCosePayload::HostMacVerifyRequest(payload),
+            &data,
+        );
+    }
+    fn raise_host_random_bytes_request(
+        &mut self,
+        payload: StaticHostCoseHostRandomBytesRequestPayload,
+    ) {
+        let data =
+            ::sce_rust_runtime::payload_wire(format_args!("{{\"length\":{}}}", payload.length));
+        self.raise_external_typed_with_data(
+            StaticHostCoseEvent::HostRandomBytesRequest,
+            StaticHostCosePayload::HostRandomBytesRequest(payload),
+            &data,
+        );
+    }
+}
+
+// ── SCE Accepted Subset §2.15: the enum and record types the sce-static variables hold ──
+/// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
+#[allow(dead_code)]
+pub struct StaticHostCoseLimits;
+
+#[allow(dead_code)]
+impl StaticHostCoseLimits {
+    /// The bound `sce:limit="mac_message"` names, as this build resolved it.
+    pub const MAC_MESSAGE: u32 = 4096;
+    /// The bound `sce:limit="random_bytes"` names, as this build resolved it.
+    pub const RANDOM_BYTES: u32 = 256;
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
@@ -544,6 +842,12 @@ pub struct StaticHostCoseData {
     pub opened: bool,
     pub plaintext: ::sce_rust_runtime::portable::SceBytes<4352>,
     pub derived: ::sce_rust_runtime::portable::SceString<64>,
+    pub drawn: ::sce_rust_runtime::portable::SceBytes<256>,
+    pub tag: ::sce_rust_runtime::portable::SceBytes<32>,
+    pub tag_valid: bool,
+    pub generated: ::sce_rust_runtime::portable::SceString<64>,
+    pub cose_key: ::sce_rust_runtime::portable::SceBytes<128>,
+    pub retired: bool,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -582,6 +886,12 @@ impl StaticHostCoseObserve for Engine<StaticHostCosePolicy> {
                 opened: policy.opened,
                 plaintext: policy.plaintext.clone(),
                 derived: policy.derived.clone(),
+                drawn: policy.drawn.clone(),
+                tag: policy.tag.clone(),
+                tag_valid: policy.tag_valid,
+                generated: policy.generated.clone(),
+                cose_key: policy.cose_key.clone(),
+                retired: policy.retired,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -692,10 +1002,10 @@ impl StaticHostCosePersist for Engine<StaticHostCosePolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "6d41d172ae116710e220286802a6ca23d36410f635b7bda3cbbf9112e4a1eb3b",
-            revised: "b02e4bb9d44d5f25e3304ad451bac79f282accd24aef31f0f42e5f5984575a48",
-            format2_first: "6d41d172ae116710e220286802a6ca23d36410f635b7bda3cbbf9112e4a1eb3b",
-            format2_revised: "b02e4bb9d44d5f25e3304ad451bac79f282accd24aef31f0f42e5f5984575a48",
+            first: "91b68440d293ec4f28a9cfb0e570fb43618c00393eaf750c663897f32e02c000",
+            revised: "3792b191693f257e35b8de5f7c92c2729fa8b03665a6e0a6a77581c94459b313",
+            format2_first: "91b68440d293ec4f28a9cfb0e570fb43618c00393eaf750c663897f32e02c000",
+            format2_revised: "3792b191693f257e35b8de5f7c92c2729fa8b03665a6e0a6a77581c94459b313",
             records: &[],
             enums: &[],
             features: None,
@@ -782,6 +1092,38 @@ impl StaticHostCosePersist for Engine<StaticHostCosePolicy> {
                     ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.info),
                 ),
                 (
+                    "draw_length".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.draw_length),
+                ),
+                (
+                    "tag_key".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.tag_key),
+                ),
+                (
+                    "tag_message".to_string(),
+                    ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.tag_message),
+                ),
+                (
+                    "tag_given".to_string(),
+                    ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.tag_given),
+                ),
+                (
+                    "key_use".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.key_use),
+                ),
+                (
+                    "key_label".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.key_label),
+                ),
+                (
+                    "export_key".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.export_key),
+                ),
+                (
+                    "retire_key".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.retire_key),
+                ),
+                (
                     "outcome".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.outcome),
                 ),
@@ -816,6 +1158,30 @@ impl StaticHostCosePersist for Engine<StaticHostCosePolicy> {
                 (
                     "derived".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.derived),
+                ),
+                (
+                    "drawn".to_string(),
+                    ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.drawn),
+                ),
+                (
+                    "tag".to_string(),
+                    ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.tag),
+                ),
+                (
+                    "tag_valid".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.tag_valid),
+                ),
+                (
+                    "generated".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.generated),
+                ),
+                (
+                    "cose_key".to_string(),
+                    ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.cose_key),
+                ),
+                (
+                    "retired".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.retired),
                 ),
             ],
             // What each history recorded is the engine's (docs/adr/0064).
@@ -907,6 +1273,45 @@ impl StaticHostCosePersist for Engine<StaticHostCosePolicy> {
             ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("salt")?, "salt")?;
         let _: ::sce_rust_runtime::portable::SceBytes<256> =
             ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("info")?, "info")?;
+        let _: u16 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("draw_length")?,
+            "draw_length",
+        )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("tag_key")?,
+                "tag_key",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceBytes<4096> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(
+                saved.variable("tag_message")?,
+                "tag_message",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceBytes<32> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(
+                saved.variable("tag_given")?,
+                "tag_given",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("key_use")?,
+                "key_use",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("key_label")?,
+                "key_label",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("export_key")?,
+                "export_key",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("retire_key")?,
+                "retire_key",
+            )?;
         let _: ::sce_rust_runtime::portable::SceString<24> =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("outcome")?,
@@ -947,6 +1352,28 @@ impl StaticHostCosePersist for Engine<StaticHostCosePolicy> {
                 saved.variable("derived")?,
                 "derived",
             )?;
+        let _: ::sce_rust_runtime::portable::SceBytes<256> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("drawn")?, "drawn")?;
+        let _: ::sce_rust_runtime::portable::SceBytes<32> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("tag")?, "tag")?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("tag_valid")?,
+            "tag_valid",
+        )?;
+        let _: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("generated")?,
+                "generated",
+            )?;
+        let _: ::sce_rust_runtime::portable::SceBytes<128> =
+            ::sce_rust_runtime::saved_state::bounded_bytes(
+                saved.variable("cose_key")?,
+                "cose_key",
+            )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("retired")?,
+            "retired",
+        )?;
         ::sce_rust_runtime::saved_state::judge::<StaticHostCosePolicy>(saved)
     }
 
@@ -1025,6 +1452,38 @@ impl StaticHostCosePersist for Engine<StaticHostCosePolicy> {
             ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("salt")?, "salt")?;
         policy.info =
             ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("info")?, "info")?;
+        policy.draw_length = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("draw_length")?,
+            "draw_length",
+        )?;
+        policy.tag_key = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("tag_key")?,
+            "tag_key",
+        )?;
+        policy.tag_message = ::sce_rust_runtime::saved_state::bounded_bytes(
+            saved.variable("tag_message")?,
+            "tag_message",
+        )?;
+        policy.tag_given = ::sce_rust_runtime::saved_state::bounded_bytes(
+            saved.variable("tag_given")?,
+            "tag_given",
+        )?;
+        policy.key_use = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("key_use")?,
+            "key_use",
+        )?;
+        policy.key_label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("key_label")?,
+            "key_label",
+        )?;
+        policy.export_key = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("export_key")?,
+            "export_key",
+        )?;
+        policy.retire_key = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("retire_key")?,
+            "retire_key",
+        )?;
         policy.outcome = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("outcome")?,
             "outcome",
@@ -1058,6 +1517,25 @@ impl StaticHostCosePersist for Engine<StaticHostCosePolicy> {
         policy.derived = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("derived")?,
             "derived",
+        )?;
+        policy.drawn =
+            ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("drawn")?, "drawn")?;
+        policy.tag = ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("tag")?, "tag")?;
+        policy.tag_valid = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("tag_valid")?,
+            "tag_valid",
+        )?;
+        policy.generated = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("generated")?,
+            "generated",
+        )?;
+        policy.cose_key = ::sce_rust_runtime::saved_state::bounded_bytes(
+            saved.variable("cose_key")?,
+            "cose_key",
+        )?;
+        policy.retired = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("retired")?,
+            "retired",
         )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
@@ -1153,6 +1631,100 @@ pub struct StaticHostCoseDeriveResult {
     pub key_id: ::sce_rust_runtime::SceString,
 }
 
+/// `sce:request`: the record the host is asked to start `<invoke id="draw">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseDrawRequest {
+    pub length: u16,
+}
+
+/// `sce:result`: the record the host completes `<invoke id="draw">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseDrawResult {
+    pub error: ::sce_rust_runtime::SceString,
+    pub bytes: ::sce_rust_runtime::SceBytes<256>,
+}
+
+/// `sce:request`: the record the host is asked to start `<invoke id="mac">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseMacRequest {
+    pub key_id: ::sce_rust_runtime::SceString,
+    pub message: ::sce_rust_runtime::SceBytes<4096>,
+}
+
+/// `sce:result`: the record the host completes `<invoke id="mac">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseMacResult {
+    pub error: ::sce_rust_runtime::SceString,
+    pub tag: ::sce_rust_runtime::SceBytes<32>,
+}
+
+/// `sce:request`: the record the host is asked to start `<invoke id="mac_verify">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseMacVerifyRequest {
+    pub key_id: ::sce_rust_runtime::SceString,
+    pub message: ::sce_rust_runtime::SceBytes<4096>,
+    pub tag: ::sce_rust_runtime::SceBytes<32>,
+}
+
+/// `sce:result`: the record the host completes `<invoke id="mac_verify">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseMacVerifyResult {
+    pub error: ::sce_rust_runtime::SceString,
+    pub valid: bool,
+}
+
+/// `sce:request`: the record the host is asked to start `<invoke id="key_generate">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseKeyGenerateRequest {
+    pub key_use: ::sce_rust_runtime::SceString,
+    pub label: ::sce_rust_runtime::SceString,
+}
+
+/// `sce:result`: the record the host completes `<invoke id="key_generate">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseKeyGenerateResult {
+    pub error: ::sce_rust_runtime::SceString,
+    pub key_id: ::sce_rust_runtime::SceString,
+}
+
+/// `sce:request`: the record the host is asked to start `<invoke id="key_public">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseKeyPublicRequest {
+    pub key_id: ::sce_rust_runtime::SceString,
+}
+
+/// `sce:result`: the record the host completes `<invoke id="key_public">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseKeyPublicResult {
+    pub error: ::sce_rust_runtime::SceString,
+    pub cose_key: ::sce_rust_runtime::SceBytes<128>,
+}
+
+/// `sce:request`: the record the host is asked to start `<invoke id="key_retire">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseKeyRetireRequest {
+    pub key_id: ::sce_rust_runtime::SceString,
+}
+
+/// `sce:result`: the record the host completes `<invoke id="key_retire">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostCoseKeyRetireResult {
+    pub error: ::sce_rust_runtime::SceString,
+    pub retired: bool,
+}
+
 impl StaticHostCoseOpenResult {
     /// The JSON `done.invoke.open` carries this record as.
     pub fn wire(&self) -> ::sce_rust_runtime::SceString {
@@ -1215,6 +1787,78 @@ impl StaticHostCoseDeriveResult {
             "{{\"error\":{}, \"key_id\":{}}}",
             ::sce_rust_runtime::event_payload::quote(&self.error),
             ::sce_rust_runtime::event_payload::quote(&self.key_id)
+        ))
+    }
+}
+
+impl StaticHostCoseKeyGenerateResult {
+    /// The JSON `done.invoke.key_generate` carries this record as.
+    pub fn wire(&self) -> ::sce_rust_runtime::SceString {
+        ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"error\":{}, \"key_id\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&self.error),
+            ::sce_rust_runtime::event_payload::quote(&self.key_id)
+        ))
+    }
+}
+
+impl StaticHostCoseKeyPublicResult {
+    /// The JSON `done.invoke.key_public` carries this record as.
+    pub fn wire(&self) -> ::sce_rust_runtime::SceString {
+        ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"error\":{}, \"cose_key\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&self.error),
+            ::sce_rust_runtime::event_payload::quote(
+                &::sce_rust_runtime::event_payload::bytes_as_payload_text(&self.cose_key)
+            )
+        ))
+    }
+}
+
+impl StaticHostCoseKeyRetireResult {
+    /// The JSON `done.invoke.key_retire` carries this record as.
+    pub fn wire(&self) -> ::sce_rust_runtime::SceString {
+        ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"error\":{}, \"retired\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&self.error),
+            self.retired
+        ))
+    }
+}
+
+impl StaticHostCoseMacResult {
+    /// The JSON `done.invoke.mac` carries this record as.
+    pub fn wire(&self) -> ::sce_rust_runtime::SceString {
+        ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"error\":{}, \"tag\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&self.error),
+            ::sce_rust_runtime::event_payload::quote(
+                &::sce_rust_runtime::event_payload::bytes_as_payload_text(&self.tag)
+            )
+        ))
+    }
+}
+
+impl StaticHostCoseMacVerifyResult {
+    /// The JSON `done.invoke.mac_verify` carries this record as.
+    pub fn wire(&self) -> ::sce_rust_runtime::SceString {
+        ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"error\":{}, \"valid\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&self.error),
+            self.valid
+        ))
+    }
+}
+
+impl StaticHostCoseDrawResult {
+    /// The JSON `done.invoke.draw` carries this record as.
+    pub fn wire(&self) -> ::sce_rust_runtime::SceString {
+        ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"error\":{}, \"bytes\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&self.error),
+            ::sce_rust_runtime::event_payload::quote(
+                &::sce_rust_runtime::event_payload::bytes_as_payload_text(&self.bytes)
+            )
         ))
     }
 }
@@ -1304,6 +1948,108 @@ pub trait StaticHostCoseSceHostKeyDeriveInvoker: Send + 'static {
     fn cancel_derive(&mut self, token: u64);
 }
 
+/// The host side of this document's typed `<invoke type="sce-host-key-generate">`s
+/// (SCE Accepted Subset §2.12). Register it with
+/// `register_sce_host_key_generate_invoker`.
+pub trait StaticHostCoseSceHostKeyGenerateInvoker: Send + 'static {
+    /// §scxml-6.4: begin `<invoke id="key_generate">`. `token` names this start;
+    /// a host that finishes later hands it back to `complete_key_generate` (or
+    /// `complete_host_invoke`). `Some` completes the invocation now.
+    fn start_key_generate(
+        &mut self,
+        request: StaticHostCoseKeyGenerateRequest,
+        token: u64,
+    ) -> Option<StaticHostCoseKeyGenerateResult>;
+    /// §scxml-6.4: `<invoke id="key_generate">`'s state exited while the start
+    /// `token` names was still running. Stop it.
+    fn cancel_key_generate(&mut self, token: u64);
+}
+
+/// The host side of this document's typed `<invoke type="sce-host-key-public">`s
+/// (SCE Accepted Subset §2.12). Register it with
+/// `register_sce_host_key_public_invoker`.
+pub trait StaticHostCoseSceHostKeyPublicInvoker: Send + 'static {
+    /// §scxml-6.4: begin `<invoke id="key_public">`. `token` names this start;
+    /// a host that finishes later hands it back to `complete_key_public` (or
+    /// `complete_host_invoke`). `Some` completes the invocation now.
+    fn start_key_public(
+        &mut self,
+        request: StaticHostCoseKeyPublicRequest,
+        token: u64,
+    ) -> Option<StaticHostCoseKeyPublicResult>;
+    /// §scxml-6.4: `<invoke id="key_public">`'s state exited while the start
+    /// `token` names was still running. Stop it.
+    fn cancel_key_public(&mut self, token: u64);
+}
+
+/// The host side of this document's typed `<invoke type="sce-host-key-retire">`s
+/// (SCE Accepted Subset §2.12). Register it with
+/// `register_sce_host_key_retire_invoker`.
+pub trait StaticHostCoseSceHostKeyRetireInvoker: Send + 'static {
+    /// §scxml-6.4: begin `<invoke id="key_retire">`. `token` names this start;
+    /// a host that finishes later hands it back to `complete_key_retire` (or
+    /// `complete_host_invoke`). `Some` completes the invocation now.
+    fn start_key_retire(
+        &mut self,
+        request: StaticHostCoseKeyRetireRequest,
+        token: u64,
+    ) -> Option<StaticHostCoseKeyRetireResult>;
+    /// §scxml-6.4: `<invoke id="key_retire">`'s state exited while the start
+    /// `token` names was still running. Stop it.
+    fn cancel_key_retire(&mut self, token: u64);
+}
+
+/// The host side of this document's typed `<invoke type="sce-host-mac">`s
+/// (SCE Accepted Subset §2.12). Register it with
+/// `register_sce_host_mac_invoker`.
+pub trait StaticHostCoseSceHostMacInvoker: Send + 'static {
+    /// §scxml-6.4: begin `<invoke id="mac">`. `token` names this start;
+    /// a host that finishes later hands it back to `complete_mac` (or
+    /// `complete_host_invoke`). `Some` completes the invocation now.
+    fn start_mac(
+        &mut self,
+        request: StaticHostCoseMacRequest,
+        token: u64,
+    ) -> Option<StaticHostCoseMacResult>;
+    /// §scxml-6.4: `<invoke id="mac">`'s state exited while the start
+    /// `token` names was still running. Stop it.
+    fn cancel_mac(&mut self, token: u64);
+}
+
+/// The host side of this document's typed `<invoke type="sce-host-mac-verify">`s
+/// (SCE Accepted Subset §2.12). Register it with
+/// `register_sce_host_mac_verify_invoker`.
+pub trait StaticHostCoseSceHostMacVerifyInvoker: Send + 'static {
+    /// §scxml-6.4: begin `<invoke id="mac_verify">`. `token` names this start;
+    /// a host that finishes later hands it back to `complete_mac_verify` (or
+    /// `complete_host_invoke`). `Some` completes the invocation now.
+    fn start_mac_verify(
+        &mut self,
+        request: StaticHostCoseMacVerifyRequest,
+        token: u64,
+    ) -> Option<StaticHostCoseMacVerifyResult>;
+    /// §scxml-6.4: `<invoke id="mac_verify">`'s state exited while the start
+    /// `token` names was still running. Stop it.
+    fn cancel_mac_verify(&mut self, token: u64);
+}
+
+/// The host side of this document's typed `<invoke type="sce-host-random-bytes">`s
+/// (SCE Accepted Subset §2.12). Register it with
+/// `register_sce_host_random_bytes_invoker`.
+pub trait StaticHostCoseSceHostRandomBytesInvoker: Send + 'static {
+    /// §scxml-6.4: begin `<invoke id="draw">`. `token` names this start;
+    /// a host that finishes later hands it back to `complete_draw` (or
+    /// `complete_host_invoke`). `Some` completes the invocation now.
+    fn start_draw(
+        &mut self,
+        request: StaticHostCoseDrawRequest,
+        token: u64,
+    ) -> Option<StaticHostCoseDrawResult>;
+    /// §scxml-6.4: `<invoke id="draw">`'s state exited while the start
+    /// `token` names was still running. Stop it.
+    fn cancel_draw(&mut self, token: u64);
+}
+
 /// Registration and typed completion for this document's typed host-run
 /// invokes. Bring into scope with `use …::StaticHostCoseHostInvokers;`.
 pub trait StaticHostCoseHostInvokers {
@@ -1347,6 +2093,58 @@ pub trait StaticHostCoseHostInvokers {
     fn register_sce_host_key_derive_invoker<I>(&mut self, invoker: I)
     where
         I: StaticHostCoseSceHostKeyDeriveInvoker;
+    /// Complete `<invoke id="key_generate">`'s start `token` with its record —
+    /// `complete_host_invoke` with the record's JSON, so a stale or unknown
+    /// token is refused the same way (`false`).
+    fn complete_key_generate(
+        &mut self,
+        token: u64,
+        result: StaticHostCoseKeyGenerateResult,
+    ) -> bool;
+    /// Register `invoker` as the handler for `type="sce-host-key-generate"`.
+    fn register_sce_host_key_generate_invoker<I>(&mut self, invoker: I)
+    where
+        I: StaticHostCoseSceHostKeyGenerateInvoker;
+    /// Complete `<invoke id="key_public">`'s start `token` with its record —
+    /// `complete_host_invoke` with the record's JSON, so a stale or unknown
+    /// token is refused the same way (`false`).
+    fn complete_key_public(&mut self, token: u64, result: StaticHostCoseKeyPublicResult) -> bool;
+    /// Register `invoker` as the handler for `type="sce-host-key-public"`.
+    fn register_sce_host_key_public_invoker<I>(&mut self, invoker: I)
+    where
+        I: StaticHostCoseSceHostKeyPublicInvoker;
+    /// Complete `<invoke id="key_retire">`'s start `token` with its record —
+    /// `complete_host_invoke` with the record's JSON, so a stale or unknown
+    /// token is refused the same way (`false`).
+    fn complete_key_retire(&mut self, token: u64, result: StaticHostCoseKeyRetireResult) -> bool;
+    /// Register `invoker` as the handler for `type="sce-host-key-retire"`.
+    fn register_sce_host_key_retire_invoker<I>(&mut self, invoker: I)
+    where
+        I: StaticHostCoseSceHostKeyRetireInvoker;
+    /// Complete `<invoke id="mac">`'s start `token` with its record —
+    /// `complete_host_invoke` with the record's JSON, so a stale or unknown
+    /// token is refused the same way (`false`).
+    fn complete_mac(&mut self, token: u64, result: StaticHostCoseMacResult) -> bool;
+    /// Register `invoker` as the handler for `type="sce-host-mac"`.
+    fn register_sce_host_mac_invoker<I>(&mut self, invoker: I)
+    where
+        I: StaticHostCoseSceHostMacInvoker;
+    /// Complete `<invoke id="mac_verify">`'s start `token` with its record —
+    /// `complete_host_invoke` with the record's JSON, so a stale or unknown
+    /// token is refused the same way (`false`).
+    fn complete_mac_verify(&mut self, token: u64, result: StaticHostCoseMacVerifyResult) -> bool;
+    /// Register `invoker` as the handler for `type="sce-host-mac-verify"`.
+    fn register_sce_host_mac_verify_invoker<I>(&mut self, invoker: I)
+    where
+        I: StaticHostCoseSceHostMacVerifyInvoker;
+    /// Complete `<invoke id="draw">`'s start `token` with its record —
+    /// `complete_host_invoke` with the record's JSON, so a stale or unknown
+    /// token is refused the same way (`false`).
+    fn complete_draw(&mut self, token: u64, result: StaticHostCoseDrawResult) -> bool;
+    /// Register `invoker` as the handler for `type="sce-host-random-bytes"`.
+    fn register_sce_host_random_bytes_invoker<I>(&mut self, invoker: I)
+    where
+        I: StaticHostCoseSceHostRandomBytesInvoker;
 }
 
 impl StaticHostCoseHostInvokers for ::sce_rust_runtime::Engine<StaticHostCosePolicy> {
@@ -1543,6 +2341,223 @@ impl StaticHostCoseHostInvokers for ::sce_rust_runtime::Engine<StaticHostCosePol
             }
         });
     }
+    fn complete_key_generate(
+        &mut self,
+        token: u64,
+        result: StaticHostCoseKeyGenerateResult,
+    ) -> bool {
+        self.complete_host_invoke(
+            "sce-host-key-generate",
+            "key_generate",
+            token,
+            &result.wire(),
+        )
+    }
+    fn register_sce_host_key_generate_invoker<I>(&mut self, mut invoker: I)
+    where
+        I: StaticHostCoseSceHostKeyGenerateInvoker,
+    {
+        self.register_invoker("sce-host-key-generate", move |event| match event {
+            ::sce_rust_runtime::HostInvokeEvent::Start(request) => match request.invoke_id.as_str()
+            {
+                "key_generate" => {
+                    let typed = StaticHostCoseKeyGenerateRequest {
+                        key_use: ::sce_rust_runtime::request_field(&request, "key_use"),
+                        label: ::sce_rust_runtime::request_field(&request, "label"),
+                    };
+                    invoker
+                        .start_key_generate(typed, request.token)
+                        .map(|result| ::sce_rust_runtime::HostInvokeResponse {
+                            done_data: Some(StaticHostCoseKeyGenerateResult::wire(&result)),
+                            ..::sce_rust_runtime::HostInvokeResponse::default()
+                        })
+                }
+                _ => None,
+            },
+            ::sce_rust_runtime::HostInvokeEvent::Cancel(cancel) => {
+                match cancel.invoke_id.as_str() {
+                    "key_generate" => {
+                        invoker.cancel_key_generate(cancel.token);
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        });
+    }
+    fn complete_key_public(&mut self, token: u64, result: StaticHostCoseKeyPublicResult) -> bool {
+        self.complete_host_invoke("sce-host-key-public", "key_public", token, &result.wire())
+    }
+    fn register_sce_host_key_public_invoker<I>(&mut self, mut invoker: I)
+    where
+        I: StaticHostCoseSceHostKeyPublicInvoker,
+    {
+        self.register_invoker("sce-host-key-public", move |event| match event {
+            ::sce_rust_runtime::HostInvokeEvent::Start(request) => match request.invoke_id.as_str()
+            {
+                "key_public" => {
+                    let typed = StaticHostCoseKeyPublicRequest {
+                        key_id: ::sce_rust_runtime::request_field(&request, "key_id"),
+                    };
+                    invoker
+                        .start_key_public(typed, request.token)
+                        .map(|result| ::sce_rust_runtime::HostInvokeResponse {
+                            done_data: Some(StaticHostCoseKeyPublicResult::wire(&result)),
+                            ..::sce_rust_runtime::HostInvokeResponse::default()
+                        })
+                }
+                _ => None,
+            },
+            ::sce_rust_runtime::HostInvokeEvent::Cancel(cancel) => {
+                match cancel.invoke_id.as_str() {
+                    "key_public" => {
+                        invoker.cancel_key_public(cancel.token);
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        });
+    }
+    fn complete_key_retire(&mut self, token: u64, result: StaticHostCoseKeyRetireResult) -> bool {
+        self.complete_host_invoke("sce-host-key-retire", "key_retire", token, &result.wire())
+    }
+    fn register_sce_host_key_retire_invoker<I>(&mut self, mut invoker: I)
+    where
+        I: StaticHostCoseSceHostKeyRetireInvoker,
+    {
+        self.register_invoker("sce-host-key-retire", move |event| match event {
+            ::sce_rust_runtime::HostInvokeEvent::Start(request) => match request.invoke_id.as_str()
+            {
+                "key_retire" => {
+                    let typed = StaticHostCoseKeyRetireRequest {
+                        key_id: ::sce_rust_runtime::request_field(&request, "key_id"),
+                    };
+                    invoker
+                        .start_key_retire(typed, request.token)
+                        .map(|result| ::sce_rust_runtime::HostInvokeResponse {
+                            done_data: Some(StaticHostCoseKeyRetireResult::wire(&result)),
+                            ..::sce_rust_runtime::HostInvokeResponse::default()
+                        })
+                }
+                _ => None,
+            },
+            ::sce_rust_runtime::HostInvokeEvent::Cancel(cancel) => {
+                match cancel.invoke_id.as_str() {
+                    "key_retire" => {
+                        invoker.cancel_key_retire(cancel.token);
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        });
+    }
+    fn complete_mac(&mut self, token: u64, result: StaticHostCoseMacResult) -> bool {
+        self.complete_host_invoke("sce-host-mac", "mac", token, &result.wire())
+    }
+    fn register_sce_host_mac_invoker<I>(&mut self, mut invoker: I)
+    where
+        I: StaticHostCoseSceHostMacInvoker,
+    {
+        self.register_invoker("sce-host-mac", move |event| match event {
+            ::sce_rust_runtime::HostInvokeEvent::Start(request) => match request.invoke_id.as_str()
+            {
+                "mac" => {
+                    let typed = StaticHostCoseMacRequest {
+                        key_id: ::sce_rust_runtime::request_field(&request, "key_id"),
+                        message: ::sce_rust_runtime::request_bytes_field(&request, "message"),
+                    };
+                    invoker.start_mac(typed, request.token).map(|result| {
+                        ::sce_rust_runtime::HostInvokeResponse {
+                            done_data: Some(StaticHostCoseMacResult::wire(&result)),
+                            ..::sce_rust_runtime::HostInvokeResponse::default()
+                        }
+                    })
+                }
+                _ => None,
+            },
+            ::sce_rust_runtime::HostInvokeEvent::Cancel(cancel) => {
+                match cancel.invoke_id.as_str() {
+                    "mac" => {
+                        invoker.cancel_mac(cancel.token);
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        });
+    }
+    fn complete_mac_verify(&mut self, token: u64, result: StaticHostCoseMacVerifyResult) -> bool {
+        self.complete_host_invoke("sce-host-mac-verify", "mac_verify", token, &result.wire())
+    }
+    fn register_sce_host_mac_verify_invoker<I>(&mut self, mut invoker: I)
+    where
+        I: StaticHostCoseSceHostMacVerifyInvoker,
+    {
+        self.register_invoker("sce-host-mac-verify", move |event| match event {
+            ::sce_rust_runtime::HostInvokeEvent::Start(request) => match request.invoke_id.as_str()
+            {
+                "mac_verify" => {
+                    let typed = StaticHostCoseMacVerifyRequest {
+                        key_id: ::sce_rust_runtime::request_field(&request, "key_id"),
+                        message: ::sce_rust_runtime::request_bytes_field(&request, "message"),
+                        tag: ::sce_rust_runtime::request_bytes_field(&request, "tag"),
+                    };
+                    invoker
+                        .start_mac_verify(typed, request.token)
+                        .map(|result| ::sce_rust_runtime::HostInvokeResponse {
+                            done_data: Some(StaticHostCoseMacVerifyResult::wire(&result)),
+                            ..::sce_rust_runtime::HostInvokeResponse::default()
+                        })
+                }
+                _ => None,
+            },
+            ::sce_rust_runtime::HostInvokeEvent::Cancel(cancel) => {
+                match cancel.invoke_id.as_str() {
+                    "mac_verify" => {
+                        invoker.cancel_mac_verify(cancel.token);
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        });
+    }
+    fn complete_draw(&mut self, token: u64, result: StaticHostCoseDrawResult) -> bool {
+        self.complete_host_invoke("sce-host-random-bytes", "draw", token, &result.wire())
+    }
+    fn register_sce_host_random_bytes_invoker<I>(&mut self, mut invoker: I)
+    where
+        I: StaticHostCoseSceHostRandomBytesInvoker,
+    {
+        self.register_invoker("sce-host-random-bytes", move |event| match event {
+            ::sce_rust_runtime::HostInvokeEvent::Start(request) => match request.invoke_id.as_str()
+            {
+                "draw" => {
+                    let typed = StaticHostCoseDrawRequest {
+                        length: ::sce_rust_runtime::request_field(&request, "length"),
+                    };
+                    invoker.start_draw(typed, request.token).map(|result| {
+                        ::sce_rust_runtime::HostInvokeResponse {
+                            done_data: Some(StaticHostCoseDrawResult::wire(&result)),
+                            ..::sce_rust_runtime::HostInvokeResponse::default()
+                        }
+                    })
+                }
+                _ => None,
+            },
+            ::sce_rust_runtime::HostInvokeEvent::Cancel(cancel) => {
+                match cancel.invoke_id.as_str() {
+                    "draw" => {
+                        invoker.cancel_draw(cancel.token);
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        });
+    }
 }
 
 /// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -1555,11 +2570,20 @@ pub struct StaticHostCoseInvokeParams {
     pub seal_key: Option<::sce_rust_runtime::portable::SceString<64>>,
     pub open_key: Option<::sce_rust_runtime::portable::SceString<64>>,
     pub input_key: Option<::sce_rust_runtime::portable::SceString<64>>,
+    pub draw_length: Option<u16>,
+    pub tag_key: Option<::sce_rust_runtime::portable::SceString<64>>,
+    pub key_use: Option<::sce_rust_runtime::portable::SceString<8>>,
+    pub key_label: Option<::sce_rust_runtime::portable::SceString<64>>,
+    pub export_key: Option<::sce_rust_runtime::portable::SceString<64>>,
+    pub retire_key: Option<::sce_rust_runtime::portable::SceString<64>>,
     pub outcome: Option<::sce_rust_runtime::portable::SceString<24>>,
     pub valid: Option<bool>,
     pub signer: Option<::sce_rust_runtime::portable::SceString<64>>,
     pub opened: Option<bool>,
     pub derived: Option<::sce_rust_runtime::portable::SceString<64>>,
+    pub tag_valid: Option<bool>,
+    pub generated: Option<::sce_rust_runtime::portable::SceString<64>>,
+    pub retired: Option<bool>,
 }
 
 // ======================================================================
@@ -1603,6 +2627,22 @@ pub struct StaticHostCosePolicy {
     salt: ::sce_rust_runtime::portable::SceBytes<64>,
     /// W3C SCXML 5.2: the `info` datamodel variable.
     info: ::sce_rust_runtime::portable::SceBytes<256>,
+    /// W3C SCXML 5.2: the `draw_length` datamodel variable.
+    draw_length: u16,
+    /// W3C SCXML 5.2: the `tag_key` datamodel variable.
+    tag_key: ::sce_rust_runtime::portable::SceString<64>,
+    /// W3C SCXML 5.2: the `tag_message` datamodel variable.
+    tag_message: ::sce_rust_runtime::portable::SceBytes<4096>,
+    /// W3C SCXML 5.2: the `tag_given` datamodel variable.
+    tag_given: ::sce_rust_runtime::portable::SceBytes<32>,
+    /// W3C SCXML 5.2: the `key_use` datamodel variable.
+    key_use: ::sce_rust_runtime::portable::SceString<8>,
+    /// W3C SCXML 5.2: the `key_label` datamodel variable.
+    key_label: ::sce_rust_runtime::portable::SceString<64>,
+    /// W3C SCXML 5.2: the `export_key` datamodel variable.
+    export_key: ::sce_rust_runtime::portable::SceString<64>,
+    /// W3C SCXML 5.2: the `retire_key` datamodel variable.
+    retire_key: ::sce_rust_runtime::portable::SceString<64>,
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
     outcome: ::sce_rust_runtime::portable::SceString<24>,
     /// W3C SCXML 5.2: the `signed_object` datamodel variable, published (`sce:direction="out"`).
@@ -1621,6 +2661,18 @@ pub struct StaticHostCosePolicy {
     plaintext: ::sce_rust_runtime::portable::SceBytes<4352>,
     /// W3C SCXML 5.2: the `derived` datamodel variable, published (`sce:direction="out"`).
     derived: ::sce_rust_runtime::portable::SceString<64>,
+    /// W3C SCXML 5.2: the `drawn` datamodel variable, published (`sce:direction="out"`).
+    drawn: ::sce_rust_runtime::portable::SceBytes<256>,
+    /// W3C SCXML 5.2: the `tag` datamodel variable, published (`sce:direction="out"`).
+    tag: ::sce_rust_runtime::portable::SceBytes<32>,
+    /// W3C SCXML 5.2: the `tag_valid` datamodel variable, published (`sce:direction="out"`).
+    tag_valid: bool,
+    /// W3C SCXML 5.2: the `generated` datamodel variable, published (`sce:direction="out"`).
+    generated: ::sce_rust_runtime::portable::SceString<64>,
+    /// W3C SCXML 5.2: the `cose_key` datamodel variable, published (`sce:direction="out"`).
+    cose_key: ::sce_rust_runtime::portable::SceBytes<128>,
+    /// W3C SCXML 5.2: the `retired` datamodel variable, published (`sce:direction="out"`).
+    retired: bool,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -1684,6 +2736,21 @@ impl StaticHostCosePolicy {
             ::sce_rust_runtime::portable::sce_bytes!(64, b"");
         let info: ::sce_rust_runtime::portable::SceBytes<256> =
             ::sce_rust_runtime::portable::sce_bytes!(256, b"");
+        let draw_length: u16 = 0;
+        let tag_key: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
+        let tag_message: ::sce_rust_runtime::portable::SceBytes<4096> =
+            ::sce_rust_runtime::portable::sce_bytes!(4096, b"");
+        let tag_given: ::sce_rust_runtime::portable::SceBytes<32> =
+            ::sce_rust_runtime::portable::sce_bytes!(32, b"");
+        let key_use: ::sce_rust_runtime::portable::SceString<8> =
+            ::sce_rust_runtime::portable::sce_text!(8, "");
+        let key_label: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
+        let export_key: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
+        let retire_key: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
         let outcome: ::sce_rust_runtime::portable::SceString<24> =
             ::sce_rust_runtime::portable::sce_text!(24, "");
         let signed_object: ::sce_rust_runtime::portable::SceBytes<4352> =
@@ -1700,6 +2767,16 @@ impl StaticHostCosePolicy {
             ::sce_rust_runtime::portable::sce_bytes!(4352, b"");
         let derived: ::sce_rust_runtime::portable::SceString<64> =
             ::sce_rust_runtime::portable::sce_text!(64, "");
+        let drawn: ::sce_rust_runtime::portable::SceBytes<256> =
+            ::sce_rust_runtime::portable::sce_bytes!(256, b"");
+        let tag: ::sce_rust_runtime::portable::SceBytes<32> =
+            ::sce_rust_runtime::portable::sce_bytes!(32, b"");
+        let tag_valid: bool = false;
+        let generated: ::sce_rust_runtime::portable::SceString<64> =
+            ::sce_rust_runtime::portable::sce_text!(64, "");
+        let cose_key: ::sce_rust_runtime::portable::SceBytes<128> =
+            ::sce_rust_runtime::portable::sce_bytes!(128, b"");
+        let retired: bool = false;
 
         Self {
             pending_payload: StaticHostCosePayload::default(),
@@ -1719,6 +2796,14 @@ impl StaticHostCosePolicy {
             input_key,
             salt,
             info,
+            draw_length,
+            tag_key,
+            tag_message,
+            tag_given,
+            key_use,
+            key_label,
+            export_key,
+            retire_key,
             outcome,
             signed_object,
             valid,
@@ -1728,6 +2813,12 @@ impl StaticHostCosePolicy {
             opened,
             plaintext,
             derived,
+            drawn,
+            tag,
+            tag_valid,
+            generated,
+            cose_key,
+            retired,
             session_id: Some(session_id),
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
@@ -1836,6 +2927,34 @@ impl StaticHostCosePolicy {
             ::sce_rust_runtime::portable::sce_bytes!(64, b"");
         let info: ::sce_rust_runtime::portable::SceBytes<256> =
             ::sce_rust_runtime::portable::sce_bytes!(256, b"");
+        let draw_length: u16 = match handed.draw_length {
+            Some(value) => value,
+            None => 0,
+        };
+        let tag_key: ::sce_rust_runtime::portable::SceString<64> = match handed.tag_key {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+        let tag_message: ::sce_rust_runtime::portable::SceBytes<4096> =
+            ::sce_rust_runtime::portable::sce_bytes!(4096, b"");
+        let tag_given: ::sce_rust_runtime::portable::SceBytes<32> =
+            ::sce_rust_runtime::portable::sce_bytes!(32, b"");
+        let key_use: ::sce_rust_runtime::portable::SceString<8> = match handed.key_use {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(8, ""),
+        };
+        let key_label: ::sce_rust_runtime::portable::SceString<64> = match handed.key_label {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+        let export_key: ::sce_rust_runtime::portable::SceString<64> = match handed.export_key {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+        let retire_key: ::sce_rust_runtime::portable::SceString<64> = match handed.retire_key {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
         let outcome: ::sce_rust_runtime::portable::SceString<24> = match handed.outcome {
             Some(value) => value,
             None => ::sce_rust_runtime::portable::sce_text!(24, ""),
@@ -1864,6 +2983,24 @@ impl StaticHostCosePolicy {
             Some(value) => value,
             None => ::sce_rust_runtime::portable::sce_text!(64, ""),
         };
+        let drawn: ::sce_rust_runtime::portable::SceBytes<256> =
+            ::sce_rust_runtime::portable::sce_bytes!(256, b"");
+        let tag: ::sce_rust_runtime::portable::SceBytes<32> =
+            ::sce_rust_runtime::portable::sce_bytes!(32, b"");
+        let tag_valid: bool = match handed.tag_valid {
+            Some(value) => value,
+            None => false,
+        };
+        let generated: ::sce_rust_runtime::portable::SceString<64> = match handed.generated {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+        let cose_key: ::sce_rust_runtime::portable::SceBytes<128> =
+            ::sce_rust_runtime::portable::sce_bytes!(128, b"");
+        let retired: bool = match handed.retired {
+            Some(value) => value,
+            None => false,
+        };
 
         self.sign_key = sign_key;
         self.sign_payload = sign_payload;
@@ -1881,6 +3018,14 @@ impl StaticHostCosePolicy {
         self.input_key = input_key;
         self.salt = salt;
         self.info = info;
+        self.draw_length = draw_length;
+        self.tag_key = tag_key;
+        self.tag_message = tag_message;
+        self.tag_given = tag_given;
+        self.key_use = key_use;
+        self.key_label = key_label;
+        self.export_key = export_key;
+        self.retire_key = retire_key;
         self.outcome = outcome;
         self.signed_object = signed_object;
         self.valid = valid;
@@ -1890,6 +3035,12 @@ impl StaticHostCosePolicy {
         self.opened = opened;
         self.plaintext = plaintext;
         self.derived = derived;
+        self.drawn = drawn;
+        self.tag = tag;
+        self.tag_valid = tag_valid;
+        self.generated = generated;
+        self.cose_key = cose_key;
+        self.retired = retired;
     }
 
     /// W3C SCXML 5.2: what the published `outcome` datamodel variable
@@ -1946,6 +3097,42 @@ impl StaticHostCosePolicy {
         &self.derived
     }
 
+    /// W3C SCXML 5.2: what the published `drawn` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn drawn(&self) -> &[u8] {
+        &self.drawn
+    }
+
+    /// W3C SCXML 5.2: what the published `tag` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn tag(&self) -> &[u8] {
+        &self.tag
+    }
+
+    /// W3C SCXML 5.2: what the published `tag_valid` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn tag_valid(&self) -> bool {
+        self.tag_valid
+    }
+
+    /// W3C SCXML 5.2: what the published `generated` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn generated(&self) -> &str {
+        &self.generated
+    }
+
+    /// W3C SCXML 5.2: what the published `cose_key` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn cose_key(&self) -> &[u8] {
+        &self.cose_key
+    }
+
+    /// W3C SCXML 5.2: what the published `retired` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn retired(&self) -> bool {
+        self.retired
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -1963,6 +3150,127 @@ impl StaticHostCosePolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
+            if pending.document_id == "mac_verify" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
+                // SCE Accepted Subset 2.12: `sce:request` makes the params a
+                // record, so each value is held to its field here, where the
+                // invocation starts; one that does not fit starts nothing.
+                #[allow(unused_mut)]
+                let mut request_refused = false;
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.tag_key.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("key_id".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("key_id".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'key_id' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key_id'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(::sce_rust_runtime::event_payload::bytes_as_payload_text(&self.tag_message[..])))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("message".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("message".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'message' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='message'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(::sce_rust_runtime::event_payload::bytes_as_payload_text(&self.tag_given[..])))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("tag".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("tag".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'tag' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='tag'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if request_refused {
+                    continue;
+                }
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "sce-host-mac-verify".to_string(),
+                    invoke_id: "mac_verify".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
+                    // docs/adr/0045: the engine names the session that starts it.
+                    session_id: String::new(),
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StaticHostCoseEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
             if pending.document_id == "derive" {
                 // §scxml-6.4.1: the host declared this `type`, so start the
                 // invocation rather than refusing it. The id handed over is
@@ -2101,6 +3409,284 @@ impl StaticHostCosePolicy {
                 }
                 continue;
             }
+            if pending.document_id == "draw" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
+                // SCE Accepted Subset 2.12: `sce:request` makes the params a
+                // record, so each value is held to its field here, where the
+                // invocation starts; one that does not fit starts nothing.
+                #[allow(unused_mut)]
+                let mut request_refused = false;
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(self.draw_length)))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("length".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("length".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'length' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='length'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if request_refused {
+                    continue;
+                }
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "sce-host-random-bytes".to_string(),
+                    invoke_id: "draw".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
+                    // docs/adr/0045: the engine names the session that starts it.
+                    session_id: String::new(),
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StaticHostCoseEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
+            if pending.document_id == "key_public" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
+                // SCE Accepted Subset 2.12: `sce:request` makes the params a
+                // record, so each value is held to its field here, where the
+                // invocation starts; one that does not fit starts nothing.
+                #[allow(unused_mut)]
+                let mut request_refused = false;
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.export_key.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("key_id".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("key_id".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'key_id' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key_id'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if request_refused {
+                    continue;
+                }
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "sce-host-key-public".to_string(),
+                    invoke_id: "key_public".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
+                    // docs/adr/0045: the engine names the session that starts it.
+                    session_id: String::new(),
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StaticHostCoseEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
+            if pending.document_id == "key_generate" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
+                // SCE Accepted Subset 2.12: `sce:request` makes the params a
+                // record, so each value is held to its field here, where the
+                // invocation starts; one that does not fit starts nothing.
+                #[allow(unused_mut)]
+                let mut request_refused = false;
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.key_use.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("key_use".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("key_use".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'key_use' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key_use'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.key_label.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("label".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("label".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'label' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='label'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if request_refused {
+                    continue;
+                }
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "sce-host-key-generate".to_string(),
+                    invoke_id: "key_generate".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
+                    // docs/adr/0045: the engine names the session that starts it.
+                    session_id: String::new(),
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StaticHostCoseEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
             if pending.document_id == "open" {
                 // §scxml-6.4.1: the host declared this `type`, so start the
                 // invocation rather than refusing it. The id handed over is
@@ -2188,6 +3774,93 @@ impl StaticHostCosePolicy {
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "sce-host-cose-decrypt0".to_string(),
                     invoke_id: "open".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
+                    // docs/adr/0045: the engine names the session that starts it.
+                    session_id: String::new(),
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StaticHostCoseEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
+            if pending.document_id == "key_retire" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
+                // SCE Accepted Subset 2.12: `sce:request` makes the params a
+                // record, so each value is held to its field here, where the
+                // invocation starts; one that does not fit starts nothing.
+                #[allow(unused_mut)]
+                let mut request_refused = false;
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.retire_key.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("key_id".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("key_id".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'key_id' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key_id'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if request_refused {
+                    continue;
+                }
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "sce-host-key-retire".to_string(),
+                    invoke_id: "key_retire".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
                     event_data: if host_invoke_payload.is_empty() {
@@ -2464,6 +4137,110 @@ impl StaticHostCosePolicy {
                 }
                 continue;
             }
+            if pending.document_id == "mac" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
+                // SCE Accepted Subset 2.12: `sce:request` makes the params a
+                // record, so each value is held to its field here, where the
+                // invocation starts; one that does not fit starts nothing.
+                #[allow(unused_mut)]
+                let mut request_refused = false;
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.tag_key.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("key_id".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("key_id".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'key_id' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key_id'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(::sce_rust_runtime::event_payload::bytes_as_payload_text(&self.tag_message[..])))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("message".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("message".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'message' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='message'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if request_refused {
+                    continue;
+                }
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "sce-host-mac".to_string(),
+                    invoke_id: "mac".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
+                    // docs/adr/0045: the engine names the session that starts it.
+                    session_id: String::new(),
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StaticHostCoseEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
             if pending.document_id == "verify" {
                 // §scxml-6.4.1: the host declared this `type`, so start the
                 // invocation rather than refusing it. The id handed over is
@@ -2639,7 +4416,7 @@ impl StatePolicy for StaticHostCosePolicy {
     // itself during a macrostep, so its no_std depth is the bound the
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
-    // No depth is proven, so it is the external queue's: the state `deriving`
+    // No depth is proven, so it is the external queue's: the state `checking`
     // holds an <invoke>, which raises its errors when it starts, after the
     // macrostep, and whose <finalize> runs before the event it forwards.
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -2680,12 +4457,24 @@ impl StatePolicy for StaticHostCosePolicy {
         StaticHostCoseState::Sealing,
         StaticHostCoseState::Opening,
         StaticHostCoseState::Deriving,
+        StaticHostCoseState::Drawing,
+        StaticHostCoseState::Tagging,
+        StaticHostCoseState::Checking,
+        StaticHostCoseState::Generating,
+        StaticHostCoseState::Exporting,
+        StaticHostCoseState::Retiring,
     ];
     const HISTORIES: &'static [Self::History] = &[];
     const EVENTS: &'static [Self::Event] = &[
         StaticHostCoseEvent::CoseHeldOpen,
         StaticHostCoseEvent::DoneInvoke,
         StaticHostCoseEvent::DoneInvokeDerive,
+        StaticHostCoseEvent::DoneInvokeDraw,
+        StaticHostCoseEvent::DoneInvokeKeyGenerate,
+        StaticHostCoseEvent::DoneInvokeKeyPublic,
+        StaticHostCoseEvent::DoneInvokeKeyRetire,
+        StaticHostCoseEvent::DoneInvokeMac,
+        StaticHostCoseEvent::DoneInvokeMacVerify,
         StaticHostCoseEvent::DoneInvokeOpen,
         StaticHostCoseEvent::DoneInvokeSeal,
         StaticHostCoseEvent::DoneInvokeSign,
@@ -2696,6 +4485,12 @@ impl StatePolicy for StaticHostCosePolicy {
         StaticHostCoseEvent::HostCoseSign1Request,
         StaticHostCoseEvent::HostCoseVerify1Request,
         StaticHostCoseEvent::HostKeyDeriveRequest,
+        StaticHostCoseEvent::HostKeyGenerateRequest,
+        StaticHostCoseEvent::HostKeyPublicRequest,
+        StaticHostCoseEvent::HostKeyRetireRequest,
+        StaticHostCoseEvent::HostMacRequest,
+        StaticHostCoseEvent::HostMacVerifyRequest,
+        StaticHostCoseEvent::HostRandomBytesRequest,
         StaticHostCoseEvent::Null,
     ];
 
@@ -2715,7 +4510,7 @@ impl StatePolicy for StaticHostCosePolicy {
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
     // this document's size and no larger, in both profiles. Every set of states
-    // the runtime keeps is a bit vector of this document's 6 state(s); a
+    // the runtime keeps is a bit vector of this document's 12 state(s); a
     // configuration holds 1 state(s) at most, the capacity of the
     // `Configuration` a host reads; a selection enables 1 transition(s) at most, one from each atomic state
     // of one configuration; a microstep owes 0 history default(s) at most;
@@ -2727,10 +4522,10 @@ impl StatePolicy for StaticHostCosePolicy {
     // run store, the configuration and what each of the 0 `<history>`
     // element(s) recorded, one such set each, is the engine's.
     type Workspace =
-        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(6) }, 1, 5, 0>;
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(12) }, 1, 5, 0>;
     type RunStore = ::sce_rust_runtime::RunStore<
-        { ::sce_rust_runtime::state_words(6) },
-        { ::sce_rust_runtime::record_words(6, 0) },
+        { ::sce_rust_runtime::state_words(12) },
+        { ::sce_rust_runtime::record_words(12, 0) },
         0,
     >;
     type Configuration = StaticHostCoseConfiguration;
@@ -2776,6 +4571,12 @@ impl StatePolicy for StaticHostCosePolicy {
             StaticHostCoseEvent::CoseHeldOpen => "cose.held.open",
             StaticHostCoseEvent::DoneInvoke => "done.invoke",
             StaticHostCoseEvent::DoneInvokeDerive => "done.invoke.derive",
+            StaticHostCoseEvent::DoneInvokeDraw => "done.invoke.draw",
+            StaticHostCoseEvent::DoneInvokeKeyGenerate => "done.invoke.key_generate",
+            StaticHostCoseEvent::DoneInvokeKeyPublic => "done.invoke.key_public",
+            StaticHostCoseEvent::DoneInvokeKeyRetire => "done.invoke.key_retire",
+            StaticHostCoseEvent::DoneInvokeMac => "done.invoke.mac",
+            StaticHostCoseEvent::DoneInvokeMacVerify => "done.invoke.mac_verify",
             StaticHostCoseEvent::DoneInvokeOpen => "done.invoke.open",
             StaticHostCoseEvent::DoneInvokeSeal => "done.invoke.seal",
             StaticHostCoseEvent::DoneInvokeSign => "done.invoke.sign",
@@ -2786,6 +4587,12 @@ impl StatePolicy for StaticHostCosePolicy {
             StaticHostCoseEvent::HostCoseSign1Request => "host.cose.sign1.request",
             StaticHostCoseEvent::HostCoseVerify1Request => "host.cose.verify1.request",
             StaticHostCoseEvent::HostKeyDeriveRequest => "host.key.derive.request",
+            StaticHostCoseEvent::HostKeyGenerateRequest => "host.key.generate.request",
+            StaticHostCoseEvent::HostKeyPublicRequest => "host.key.public.request",
+            StaticHostCoseEvent::HostKeyRetireRequest => "host.key.retire.request",
+            StaticHostCoseEvent::HostMacRequest => "host.mac.request",
+            StaticHostCoseEvent::HostMacVerifyRequest => "host.mac.verify.request",
+            StaticHostCoseEvent::HostRandomBytesRequest => "host.random.bytes.request",
             StaticHostCoseEvent::Null => "",
         }
     }
@@ -2795,6 +4602,12 @@ impl StatePolicy for StaticHostCosePolicy {
             "cose.held.open" => Some(StaticHostCoseEvent::CoseHeldOpen),
             "done.invoke" => Some(StaticHostCoseEvent::DoneInvoke),
             "done.invoke.derive" => Some(StaticHostCoseEvent::DoneInvokeDerive),
+            "done.invoke.draw" => Some(StaticHostCoseEvent::DoneInvokeDraw),
+            "done.invoke.key_generate" => Some(StaticHostCoseEvent::DoneInvokeKeyGenerate),
+            "done.invoke.key_public" => Some(StaticHostCoseEvent::DoneInvokeKeyPublic),
+            "done.invoke.key_retire" => Some(StaticHostCoseEvent::DoneInvokeKeyRetire),
+            "done.invoke.mac" => Some(StaticHostCoseEvent::DoneInvokeMac),
+            "done.invoke.mac_verify" => Some(StaticHostCoseEvent::DoneInvokeMacVerify),
             "done.invoke.open" => Some(StaticHostCoseEvent::DoneInvokeOpen),
             "done.invoke.seal" => Some(StaticHostCoseEvent::DoneInvokeSeal),
             "done.invoke.sign" => Some(StaticHostCoseEvent::DoneInvokeSign),
@@ -2805,21 +4618,45 @@ impl StatePolicy for StaticHostCosePolicy {
             "host.cose.sign1.request" => Some(StaticHostCoseEvent::HostCoseSign1Request),
             "host.cose.verify1.request" => Some(StaticHostCoseEvent::HostCoseVerify1Request),
             "host.key.derive.request" => Some(StaticHostCoseEvent::HostKeyDeriveRequest),
+            "host.key.generate.request" => Some(StaticHostCoseEvent::HostKeyGenerateRequest),
+            "host.key.public.request" => Some(StaticHostCoseEvent::HostKeyPublicRequest),
+            "host.key.retire.request" => Some(StaticHostCoseEvent::HostKeyRetireRequest),
+            "host.mac.request" => Some(StaticHostCoseEvent::HostMacRequest),
+            "host.mac.verify.request" => Some(StaticHostCoseEvent::HostMacVerifyRequest),
+            "host.random.bytes.request" => Some(StaticHostCoseEvent::HostRandomBytesRequest),
             _ => None,
         }
     }
 
     // §scxml-6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `Engine::complete_host_invoke`.
-    const HOST_INVOKE_IDS: &'static [&'static str] = &["sign", "verify", "seal", "open", "derive"];
+    const HOST_INVOKE_IDS: &'static [&'static str] = &[
+        "sign",
+        "verify",
+        "seal",
+        "open",
+        "derive",
+        "draw",
+        "mac",
+        "mac_verify",
+        "key_generate",
+        "key_public",
+        "key_retire",
+    ];
 
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
+            StaticHostCoseState::Checking => "checking",
             StaticHostCoseState::Deriving => "deriving",
+            StaticHostCoseState::Drawing => "drawing",
+            StaticHostCoseState::Exporting => "exporting",
+            StaticHostCoseState::Generating => "generating",
             StaticHostCoseState::Idle => "idle",
             StaticHostCoseState::Opening => "opening",
+            StaticHostCoseState::Retiring => "retiring",
             StaticHostCoseState::Sealing => "sealing",
             StaticHostCoseState::Signing => "signing",
+            StaticHostCoseState::Tagging => "tagging",
             StaticHostCoseState::Verifying => "verifying",
         }
     }
@@ -2829,11 +4666,17 @@ impl StatePolicy for StaticHostCosePolicy {
     // recorded configuration back into the slice `enter_at` takes.
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
+            "checking" => Some(StaticHostCoseState::Checking),
             "deriving" => Some(StaticHostCoseState::Deriving),
+            "drawing" => Some(StaticHostCoseState::Drawing),
+            "exporting" => Some(StaticHostCoseState::Exporting),
+            "generating" => Some(StaticHostCoseState::Generating),
             "idle" => Some(StaticHostCoseState::Idle),
             "opening" => Some(StaticHostCoseState::Opening),
+            "retiring" => Some(StaticHostCoseState::Retiring),
             "sealing" => Some(StaticHostCoseState::Sealing),
             "signing" => Some(StaticHostCoseState::Signing),
+            "tagging" => Some(StaticHostCoseState::Tagging),
             "verifying" => Some(StaticHostCoseState::Verifying),
             _ => None,
         }
@@ -2883,6 +4726,58 @@ impl StatePolicy for StaticHostCosePolicy {
                     StaticHostCoseDoneInvokeDerivePayload {
                         error: fields.text("error", 24)?,
                         key_id: fields.text("key_id", 64)?,
+                    },
+                );
+            }
+            StaticHostCoseEvent::DoneInvokeDraw => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StaticHostCosePayload::DoneInvokeDraw(StaticHostCoseDoneInvokeDrawPayload {
+                        error: fields.text("error", 24)?,
+                        bytes: fields.bytes("bytes")?,
+                    });
+            }
+            StaticHostCoseEvent::DoneInvokeKeyGenerate => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::DoneInvokeKeyGenerate(
+                    StaticHostCoseDoneInvokeKeyGeneratePayload {
+                        error: fields.text("error", 24)?,
+                        key_id: fields.text("key_id", 64)?,
+                    },
+                );
+            }
+            StaticHostCoseEvent::DoneInvokeKeyPublic => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::DoneInvokeKeyPublic(
+                    StaticHostCoseDoneInvokeKeyPublicPayload {
+                        error: fields.text("error", 24)?,
+                        cose_key: fields.bytes("cose_key")?,
+                    },
+                );
+            }
+            StaticHostCoseEvent::DoneInvokeKeyRetire => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::DoneInvokeKeyRetire(
+                    StaticHostCoseDoneInvokeKeyRetirePayload {
+                        error: fields.text("error", 24)?,
+                        retired: fields.truth("retired")?,
+                    },
+                );
+            }
+            StaticHostCoseEvent::DoneInvokeMac => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StaticHostCosePayload::DoneInvokeMac(StaticHostCoseDoneInvokeMacPayload {
+                        error: fields.text("error", 24)?,
+                        tag: fields.bytes("tag")?,
+                    });
+            }
+            StaticHostCoseEvent::DoneInvokeMacVerify => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::DoneInvokeMacVerify(
+                    StaticHostCoseDoneInvokeMacVerifyPayload {
+                        error: fields.text("error", 24)?,
+                        valid: fields.truth("valid")?,
                     },
                 );
             }
@@ -2973,6 +4868,57 @@ impl StatePolicy for StaticHostCosePolicy {
                     },
                 );
             }
+            StaticHostCoseEvent::HostKeyGenerateRequest => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::HostKeyGenerateRequest(
+                    StaticHostCoseHostKeyGenerateRequestPayload {
+                        key_use: fields.text("key_use", 8)?,
+                        label: fields.text("label", 64)?,
+                    },
+                );
+            }
+            StaticHostCoseEvent::HostKeyPublicRequest => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::HostKeyPublicRequest(
+                    StaticHostCoseHostKeyPublicRequestPayload {
+                        key_id: fields.text("key_id", 64)?,
+                    },
+                );
+            }
+            StaticHostCoseEvent::HostKeyRetireRequest => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::HostKeyRetireRequest(
+                    StaticHostCoseHostKeyRetireRequestPayload {
+                        key_id: fields.text("key_id", 64)?,
+                    },
+                );
+            }
+            StaticHostCoseEvent::HostMacRequest => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StaticHostCosePayload::HostMacRequest(StaticHostCoseHostMacRequestPayload {
+                        key_id: fields.text("key_id", 64)?,
+                        message: fields.bytes("message")?,
+                    });
+            }
+            StaticHostCoseEvent::HostMacVerifyRequest => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::HostMacVerifyRequest(
+                    StaticHostCoseHostMacVerifyRequestPayload {
+                        key_id: fields.text("key_id", 64)?,
+                        message: fields.bytes("message")?,
+                        tag: fields.bytes("tag")?,
+                    },
+                );
+            }
+            StaticHostCoseEvent::HostRandomBytesRequest => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostCosePayload::HostRandomBytesRequest(
+                    StaticHostCoseHostRandomBytesRequestPayload {
+                        length: fields.unsigned::<u16>("length")?,
+                    },
+                );
+            }
             _ => {}
         }
         Ok(())
@@ -2983,8 +4929,8 @@ impl StatePolicy for StaticHostCosePolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_host_cose.scxml:33 :: _machine"]
-    // SCE-MAP: static_host_cose.scxml:33 :: _machine
+    #[doc = "SCE-MAP: static_host_cose.scxml:40 :: _machine"]
+    // SCE-MAP: static_host_cose.scxml:40 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -2992,8 +4938,29 @@ impl StatePolicy for StaticHostCosePolicy {
         is_default_entry: bool,
     ) {
         match state {
+            StaticHostCoseState::Checking => {
+                // SCE-MAP: static_host_cose.scxml:292 :: checking :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.mac_verify", "checking", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StaticHostCoseState::Checking,
+                            document_id: "mac_verify",
+                        },
+                    );
+                }
+            }
             StaticHostCoseState::Deriving => {
-                // SCE-MAP: static_host_cose.scxml:185 :: deriving :: _state_body
+                // SCE-MAP: static_host_cose.scxml:240 :: deriving :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -3013,8 +4980,73 @@ impl StatePolicy for StaticHostCosePolicy {
                     );
                 }
             }
+            StaticHostCoseState::Drawing => {
+                // SCE-MAP: static_host_cose.scxml:259 :: drawing :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.draw", "drawing", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StaticHostCoseState::Drawing,
+                            document_id: "draw",
+                        },
+                    );
+                }
+            }
+            StaticHostCoseState::Exporting => {
+                // SCE-MAP: static_host_cose.scxml:327 :: exporting :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.key_public", "exporting", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StaticHostCoseState::Exporting,
+                            document_id: "key_public",
+                        },
+                    );
+                }
+            }
+            StaticHostCoseState::Generating => {
+                // SCE-MAP: static_host_cose.scxml:310 :: generating :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id = format!(
+                        "{}.{}.key_generate",
+                        "generating", self as *const _ as usize
+                    );
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StaticHostCoseState::Generating,
+                            document_id: "key_generate",
+                        },
+                    );
+                }
+            }
             StaticHostCoseState::Opening => {
-                // SCE-MAP: static_host_cose.scxml:166 :: opening :: _state_body
+                // SCE-MAP: static_host_cose.scxml:221 :: opening :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -3034,8 +5066,29 @@ impl StatePolicy for StaticHostCosePolicy {
                     );
                 }
             }
+            StaticHostCoseState::Retiring => {
+                // SCE-MAP: static_host_cose.scxml:343 :: retiring :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.key_retire", "retiring", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StaticHostCoseState::Retiring,
+                            document_id: "key_retire",
+                        },
+                    );
+                }
+            }
             StaticHostCoseState::Sealing => {
-                // SCE-MAP: static_host_cose.scxml:148 :: sealing :: _state_body
+                // SCE-MAP: static_host_cose.scxml:203 :: sealing :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -3056,7 +5109,7 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             StaticHostCoseState::Signing => {
-                // SCE-MAP: static_host_cose.scxml:110 :: signing :: _state_body
+                // SCE-MAP: static_host_cose.scxml:165 :: signing :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -3076,8 +5129,29 @@ impl StatePolicy for StaticHostCosePolicy {
                     );
                 }
             }
+            StaticHostCoseState::Tagging => {
+                // SCE-MAP: static_host_cose.scxml:275 :: tagging :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.mac", "tagging", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StaticHostCoseState::Tagging,
+                            document_id: "mac",
+                        },
+                    );
+                }
+            }
             StaticHostCoseState::Verifying => {
-                // SCE-MAP: static_host_cose.scxml:128 :: verifying :: _state_body
+                // SCE-MAP: static_host_cose.scxml:183 :: verifying :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -3108,8 +5182,8 @@ impl StatePolicy for StaticHostCosePolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_host_cose.scxml:33 :: _machine"]
-    // SCE-MAP: static_host_cose.scxml:33 :: _machine
+    #[doc = "SCE-MAP: static_host_cose.scxml:40 :: _machine"]
+    // SCE-MAP: static_host_cose.scxml:40 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -3126,6 +5200,20 @@ impl StatePolicy for StaticHostCosePolicy {
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on
         // state exit — after the onexit above, per §scxml-D-exitStates.
         match state {
+            StaticHostCoseState::Checking => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StaticHostCoseState::Checking,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("sce-host-mac-verify", "mac_verify");
+            }
             StaticHostCoseState::Deriving => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
                 // Covers §scxml-6.4.1 entries: an invoke whose state exits
@@ -3140,6 +5228,48 @@ impl StatePolicy for StaticHostCosePolicy {
                 // the emitted chain does not need its own bookkeeping.
                 engine.cancel_host_invoke("sce-host-key-derive", "derive");
             }
+            StaticHostCoseState::Drawing => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StaticHostCoseState::Drawing,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("sce-host-random-bytes", "draw");
+            }
+            StaticHostCoseState::Exporting => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StaticHostCoseState::Exporting,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("sce-host-key-public", "key_public");
+            }
+            StaticHostCoseState::Generating => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StaticHostCoseState::Generating,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("sce-host-key-generate", "key_generate");
+            }
             StaticHostCoseState::Opening => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
                 // Covers §scxml-6.4.1 entries: an invoke whose state exits
@@ -3153,6 +5283,20 @@ impl StatePolicy for StaticHostCosePolicy {
                 // this one ever started and stays silent when it did not, so
                 // the emitted chain does not need its own bookkeeping.
                 engine.cancel_host_invoke("sce-host-cose-decrypt0", "open");
+            }
+            StaticHostCoseState::Retiring => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StaticHostCoseState::Retiring,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("sce-host-key-retire", "key_retire");
             }
             StaticHostCoseState::Sealing => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
@@ -3182,6 +5326,20 @@ impl StatePolicy for StaticHostCosePolicy {
                 // the emitted chain does not need its own bookkeeping.
                 engine.cancel_host_invoke("sce-host-cose-sign1", "sign");
             }
+            StaticHostCoseState::Tagging => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StaticHostCoseState::Tagging,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("sce-host-mac", "mac");
+            }
             StaticHostCoseState::Verifying => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
                 // Covers §scxml-6.4.1 entries: an invoke whose state exits
@@ -3205,8 +5363,8 @@ impl StatePolicy for StaticHostCosePolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_host_cose.scxml:33 :: _machine"]
-    // SCE-MAP: static_host_cose.scxml:33 :: _machine
+    #[doc = "SCE-MAP: static_host_cose.scxml:40 :: _machine"]
+    // SCE-MAP: static_host_cose.scxml:40 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -3214,24 +5372,112 @@ impl StatePolicy for StaticHostCosePolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
+            StaticHostCoseState::Checking => {
+                if event == StaticHostCoseEvent::DoneInvokeMacVerify {
+                    if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeMacVerify(ev) if ev.error == "")
+                    {
+                        // checking, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(33));
+                    }
+                }
+                if event == StaticHostCoseEvent::DoneInvokeMacVerify {
+                    {
+                        // checking, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(34));
+                    }
+                }
+                if event == StaticHostCoseEvent::ErrorExecution {
+                    {
+                        // checking, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(35));
+                    }
+                }
+                None
+            }
             StaticHostCoseState::Deriving => {
                 if event == StaticHostCoseEvent::DoneInvokeDerive {
                     if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeDerive(ev) if ev.error == "")
                     {
                         // deriving, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(18));
+                        return Some(::sce_rust_runtime::TransitionId(24));
                     }
                 }
                 if event == StaticHostCoseEvent::DoneInvokeDerive {
                     {
                         // deriving, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(19));
+                        return Some(::sce_rust_runtime::TransitionId(25));
                     }
                 }
                 if event == StaticHostCoseEvent::ErrorExecution {
                     {
                         // deriving, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(20));
+                        return Some(::sce_rust_runtime::TransitionId(26));
+                    }
+                }
+                None
+            }
+            StaticHostCoseState::Drawing => {
+                if event == StaticHostCoseEvent::DoneInvokeDraw {
+                    if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeDraw(ev) if ev.error == "")
+                    {
+                        // drawing, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(27));
+                    }
+                }
+                if event == StaticHostCoseEvent::DoneInvokeDraw {
+                    {
+                        // drawing, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(28));
+                    }
+                }
+                if event == StaticHostCoseEvent::ErrorExecution {
+                    {
+                        // drawing, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(29));
+                    }
+                }
+                None
+            }
+            StaticHostCoseState::Exporting => {
+                if event == StaticHostCoseEvent::DoneInvokeKeyPublic {
+                    if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeKeyPublic(ev) if ev.error == "")
+                    {
+                        // exporting, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(39));
+                    }
+                }
+                if event == StaticHostCoseEvent::DoneInvokeKeyPublic {
+                    {
+                        // exporting, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(40));
+                    }
+                }
+                if event == StaticHostCoseEvent::ErrorExecution {
+                    {
+                        // exporting, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(41));
+                    }
+                }
+                None
+            }
+            StaticHostCoseState::Generating => {
+                if event == StaticHostCoseEvent::DoneInvokeKeyGenerate {
+                    if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeKeyGenerate(ev) if ev.error == "")
+                    {
+                        // generating, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(36));
+                    }
+                }
+                if event == StaticHostCoseEvent::DoneInvokeKeyGenerate {
+                    {
+                        // generating, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(37));
+                    }
+                }
+                if event == StaticHostCoseEvent::ErrorExecution {
+                    {
+                        // generating, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(38));
                     }
                 }
                 None
@@ -3273,6 +5519,42 @@ impl StatePolicy for StaticHostCosePolicy {
                         return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
+                if event == StaticHostCoseEvent::HostRandomBytesRequest {
+                    {
+                        // idle, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
+                    }
+                }
+                if event == StaticHostCoseEvent::HostMacRequest {
+                    {
+                        // idle, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
+                    }
+                }
+                if event == StaticHostCoseEvent::HostMacVerifyRequest {
+                    {
+                        // idle, transition 8
+                        return Some(::sce_rust_runtime::TransitionId(8));
+                    }
+                }
+                if event == StaticHostCoseEvent::HostKeyGenerateRequest {
+                    {
+                        // idle, transition 9
+                        return Some(::sce_rust_runtime::TransitionId(9));
+                    }
+                }
+                if event == StaticHostCoseEvent::HostKeyPublicRequest {
+                    {
+                        // idle, transition 10
+                        return Some(::sce_rust_runtime::TransitionId(10));
+                    }
+                }
+                if event == StaticHostCoseEvent::HostKeyRetireRequest {
+                    {
+                        // idle, transition 11
+                        return Some(::sce_rust_runtime::TransitionId(11));
+                    }
+                }
                 None
             }
             StaticHostCoseState::Opening => {
@@ -3280,19 +5562,41 @@ impl StatePolicy for StaticHostCosePolicy {
                     if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeOpen(ev) if ev.error == "")
                     {
                         // opening, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(15));
+                        return Some(::sce_rust_runtime::TransitionId(21));
                     }
                 }
                 if event == StaticHostCoseEvent::DoneInvokeOpen {
                     {
                         // opening, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(16));
+                        return Some(::sce_rust_runtime::TransitionId(22));
                     }
                 }
                 if event == StaticHostCoseEvent::ErrorExecution {
                     {
                         // opening, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(17));
+                        return Some(::sce_rust_runtime::TransitionId(23));
+                    }
+                }
+                None
+            }
+            StaticHostCoseState::Retiring => {
+                if event == StaticHostCoseEvent::DoneInvokeKeyRetire {
+                    if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeKeyRetire(ev) if ev.error == "")
+                    {
+                        // retiring, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(42));
+                    }
+                }
+                if event == StaticHostCoseEvent::DoneInvokeKeyRetire {
+                    {
+                        // retiring, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(43));
+                    }
+                }
+                if event == StaticHostCoseEvent::ErrorExecution {
+                    {
+                        // retiring, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(44));
                     }
                 }
                 None
@@ -3302,19 +5606,19 @@ impl StatePolicy for StaticHostCosePolicy {
                     if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeSeal(ev) if ev.error == "")
                     {
                         // sealing, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(12));
+                        return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
                 if event == StaticHostCoseEvent::DoneInvokeSeal {
                     {
                         // sealing, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(13));
+                        return Some(::sce_rust_runtime::TransitionId(19));
                     }
                 }
                 if event == StaticHostCoseEvent::ErrorExecution {
                     {
                         // sealing, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(14));
+                        return Some(::sce_rust_runtime::TransitionId(20));
                     }
                 }
                 None
@@ -3324,19 +5628,41 @@ impl StatePolicy for StaticHostCosePolicy {
                     if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeSign(ev) if ev.error == "")
                     {
                         // signing, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(6));
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 if event == StaticHostCoseEvent::DoneInvokeSign {
                     {
                         // signing, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(7));
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 if event == StaticHostCoseEvent::ErrorExecution {
                     {
                         // signing, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(8));
+                        return Some(::sce_rust_runtime::TransitionId(14));
+                    }
+                }
+                None
+            }
+            StaticHostCoseState::Tagging => {
+                if event == StaticHostCoseEvent::DoneInvokeMac {
+                    if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeMac(ev) if ev.error == "")
+                    {
+                        // tagging, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(30));
+                    }
+                }
+                if event == StaticHostCoseEvent::DoneInvokeMac {
+                    {
+                        // tagging, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(31));
+                    }
+                }
+                if event == StaticHostCoseEvent::ErrorExecution {
+                    {
+                        // tagging, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(32));
                     }
                 }
                 None
@@ -3346,19 +5672,19 @@ impl StatePolicy for StaticHostCosePolicy {
                     if matches!(&self.pending_payload, StaticHostCosePayload::DoneInvokeVerify(ev) if ev.error == "")
                     {
                         // verifying, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(9));
+                        return Some(::sce_rust_runtime::TransitionId(15));
                     }
                 }
                 if event == StaticHostCoseEvent::DoneInvokeVerify {
                     {
                         // verifying, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(10));
+                        return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
                 if event == StaticHostCoseEvent::ErrorExecution {
                     {
                         // verifying, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(11));
+                        return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
                 None
@@ -3370,17 +5696,104 @@ impl StatePolicy for StaticHostCosePolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_host_cose.scxml:33 :: _machine"]
-    // SCE-MAP: static_host_cose.scxml:33 :: _machine
+    #[doc = "SCE-MAP: static_host_cose.scxml:40 :: _machine"]
+    // SCE-MAP: static_host_cose.scxml:40 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         match transition.0 {
+            // checking, transition 0
+            33 => {
+                // SCE-MAP: static_host_cose.scxml:298 :: checking :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeMacVerify(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="tag_valid">
+                    self.tag_valid = ev.valid;
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // checking, transition 1
+            34 => {
+                // SCE-MAP: static_host_cose.scxml:302 :: checking :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeMacVerify(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // checking, transition 2
+            35 => {
+                // SCE-MAP: static_host_cose.scxml:305 :: checking :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
             // deriving, transition 0
-            18 => {
-                // SCE-MAP: static_host_cose.scxml:192 :: deriving :: _transition_0
+            24 => {
+                // SCE-MAP: static_host_cose.scxml:247 :: deriving :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeDerive(ev) => ev.clone(),
@@ -3426,8 +5839,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // deriving, transition 1
-            19 => {
-                // SCE-MAP: static_host_cose.scxml:196 :: deriving :: _transition_1
+            25 => {
+                // SCE-MAP: static_host_cose.scxml:251 :: deriving :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeDerive(ev) => ev.clone(),
@@ -3456,8 +5869,316 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // deriving, transition 2
-            20 => {
-                // SCE-MAP: static_host_cose.scxml:199 :: deriving :: _transition_2
+            26 => {
+                // SCE-MAP: static_host_cose.scxml:254 :: deriving :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // drawing, transition 0
+            27 => {
+                // SCE-MAP: static_host_cose.scxml:263 :: drawing :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeDraw(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="drawn">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.drawn = ::sce_rust_runtime::portable::SceBytes::<256>::from_slice(
+                                &&ev.bytes[..],
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='drawn'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // drawing, transition 1
+            28 => {
+                // SCE-MAP: static_host_cose.scxml:267 :: drawing :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeDraw(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // drawing, transition 2
+            29 => {
+                // SCE-MAP: static_host_cose.scxml:270 :: drawing :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // exporting, transition 0
+            39 => {
+                // SCE-MAP: static_host_cose.scxml:331 :: exporting :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeKeyPublic(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="cose_key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.cose_key =
+                                ::sce_rust_runtime::portable::SceBytes::<128>::from_slice(
+                                    &&ev.cose_key[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='cose_key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // exporting, transition 1
+            40 => {
+                // SCE-MAP: static_host_cose.scxml:335 :: exporting :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeKeyPublic(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // exporting, transition 2
+            41 => {
+                // SCE-MAP: static_host_cose.scxml:338 :: exporting :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // generating, transition 0
+            36 => {
+                // SCE-MAP: static_host_cose.scxml:315 :: generating :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeKeyGenerate(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="generated">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.generated =
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.key_id[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='generated'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // generating, transition 1
+            37 => {
+                // SCE-MAP: static_host_cose.scxml:319 :: generating :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeKeyGenerate(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // generating, transition 2
+            38 => {
+                // SCE-MAP: static_host_cose.scxml:322 :: generating :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -3483,7 +6204,7 @@ impl StatePolicy for StaticHostCosePolicy {
             }
             // idle, transition 0
             0 => {
-                // SCE-MAP: static_host_cose.scxml:77 :: idle :: _transition_0
+                // SCE-MAP: static_host_cose.scxml:110 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::HostCoseSign1Request(ev) => ev.clone(),
@@ -3551,7 +6272,7 @@ impl StatePolicy for StaticHostCosePolicy {
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: static_host_cose.scxml:82 :: idle :: _transition_1
+                // SCE-MAP: static_host_cose.scxml:115 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::HostCoseVerify1Request(ev) => ev.clone(),
@@ -3619,7 +6340,7 @@ impl StatePolicy for StaticHostCosePolicy {
             }
             // idle, transition 2
             2 => {
-                // SCE-MAP: static_host_cose.scxml:87 :: idle :: _transition_2
+                // SCE-MAP: static_host_cose.scxml:120 :: idle :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::HostCoseEncrypt0Request(ev) => ev.clone(),
@@ -3687,7 +6408,7 @@ impl StatePolicy for StaticHostCosePolicy {
             }
             // idle, transition 3
             3 => {
-                // SCE-MAP: static_host_cose.scxml:92 :: idle :: _transition_3
+                // SCE-MAP: static_host_cose.scxml:125 :: idle :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::HostCoseDecrypt0Request(ev) => ev.clone(),
@@ -3755,7 +6476,7 @@ impl StatePolicy for StaticHostCosePolicy {
             }
             // idle, transition 4
             4 => {
-                // SCE-MAP: static_host_cose.scxml:97 :: idle :: _transition_4
+                // SCE-MAP: static_host_cose.scxml:130 :: idle :: _transition_4
                 // W3C SCXML 3.13: Transition 4 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::CoseHeldOpen(ev) => ev.clone(),
@@ -3823,7 +6544,7 @@ impl StatePolicy for StaticHostCosePolicy {
             }
             // idle, transition 5
             5 => {
-                // SCE-MAP: static_host_cose.scxml:102 :: idle :: _transition_5
+                // SCE-MAP: static_host_cose.scxml:135 :: idle :: _transition_5
                 // W3C SCXML 3.13: Transition 5 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::HostKeyDeriveRequest(ev) => ev.clone(),
@@ -3906,9 +6627,248 @@ impl StatePolicy for StaticHostCosePolicy {
                     }
                 }
             }
+            // idle, transition 6
+            6 => {
+                // SCE-MAP: static_host_cose.scxml:141 :: idle :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::HostRandomBytesRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="draw_length">
+                    self.draw_length = ev.length;
+                }
+            }
+            // idle, transition 7
+            7 => {
+                // SCE-MAP: static_host_cose.scxml:144 :: idle :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::HostMacRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="tag_key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.tag_key =
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.key_id[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='tag_key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="tag_message">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.tag_message =
+                                ::sce_rust_runtime::portable::SceBytes::<4096>::from_slice(
+                                    &&ev.message[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='tag_message'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 8
+            8 => {
+                // SCE-MAP: static_host_cose.scxml:148 :: idle :: _transition_8
+                // W3C SCXML 3.13: Transition 8 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::HostMacVerifyRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="tag_key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.tag_key =
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.key_id[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='tag_key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="tag_message">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.tag_message =
+                                ::sce_rust_runtime::portable::SceBytes::<4096>::from_slice(
+                                    &&ev.message[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='tag_message'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="tag_given">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.tag_given =
+                                ::sce_rust_runtime::portable::SceBytes::<32>::from_slice(
+                                    &&ev.tag[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='tag_given'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 9
+            9 => {
+                // SCE-MAP: static_host_cose.scxml:153 :: idle :: _transition_9
+                // W3C SCXML 3.13: Transition 9 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::HostKeyGenerateRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="key_use">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.key_use = ::sce_rust_runtime::portable::SceString::<8>::from_text(
+                                &&ev.key_use[..],
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='key_use'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="key_label">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.key_label =
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.label[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='key_label'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 10
+            10 => {
+                // SCE-MAP: static_host_cose.scxml:157 :: idle :: _transition_10
+                // W3C SCXML 3.13: Transition 10 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::HostKeyPublicRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="export_key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.export_key =
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.key_id[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='export_key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 11
+            11 => {
+                // SCE-MAP: static_host_cose.scxml:160 :: idle :: _transition_11
+                // W3C SCXML 3.13: Transition 11 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::HostKeyRetireRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="retire_key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.retire_key =
+                                ::sce_rust_runtime::portable::SceString::<64>::from_text(
+                                    &&ev.key_id[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='retire_key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
             // opening, transition 0
-            15 => {
-                // SCE-MAP: static_host_cose.scxml:172 :: opening :: _transition_0
+            21 => {
+                // SCE-MAP: static_host_cose.scxml:227 :: opening :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeOpen(ev) => ev.clone(),
@@ -3957,8 +6917,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // opening, transition 1
-            16 => {
-                // SCE-MAP: static_host_cose.scxml:177 :: opening :: _transition_1
+            22 => {
+                // SCE-MAP: static_host_cose.scxml:232 :: opening :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeOpen(ev) => ev.clone(),
@@ -3987,8 +6947,95 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // opening, transition 2
-            17 => {
-                // SCE-MAP: static_host_cose.scxml:180 :: opening :: _transition_2
+            23 => {
+                // SCE-MAP: static_host_cose.scxml:235 :: opening :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // retiring, transition 0
+            42 => {
+                // SCE-MAP: static_host_cose.scxml:347 :: retiring :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeKeyRetire(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="retired">
+                    self.retired = ev.retired;
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // retiring, transition 1
+            43 => {
+                // SCE-MAP: static_host_cose.scxml:351 :: retiring :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeKeyRetire(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // retiring, transition 2
+            44 => {
+                // SCE-MAP: static_host_cose.scxml:354 :: retiring :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -4013,8 +7060,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // sealing, transition 0
-            12 => {
-                // SCE-MAP: static_host_cose.scxml:154 :: sealing :: _transition_0
+            18 => {
+                // SCE-MAP: static_host_cose.scxml:209 :: sealing :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeSeal(ev) => ev.clone(),
@@ -4060,8 +7107,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // sealing, transition 1
-            13 => {
-                // SCE-MAP: static_host_cose.scxml:158 :: sealing :: _transition_1
+            19 => {
+                // SCE-MAP: static_host_cose.scxml:213 :: sealing :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeSeal(ev) => ev.clone(),
@@ -4090,8 +7137,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // sealing, transition 2
-            14 => {
-                // SCE-MAP: static_host_cose.scxml:161 :: sealing :: _transition_2
+            20 => {
+                // SCE-MAP: static_host_cose.scxml:216 :: sealing :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -4116,8 +7163,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // signing, transition 0
-            6 => {
-                // SCE-MAP: static_host_cose.scxml:116 :: signing :: _transition_0
+            12 => {
+                // SCE-MAP: static_host_cose.scxml:171 :: signing :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeSign(ev) => ev.clone(),
@@ -4163,8 +7210,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // signing, transition 1
-            7 => {
-                // SCE-MAP: static_host_cose.scxml:120 :: signing :: _transition_1
+            13 => {
+                // SCE-MAP: static_host_cose.scxml:175 :: signing :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeSign(ev) => ev.clone(),
@@ -4193,8 +7240,110 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // signing, transition 2
-            8 => {
-                // SCE-MAP: static_host_cose.scxml:123 :: signing :: _transition_2
+            14 => {
+                // SCE-MAP: static_host_cose.scxml:178 :: signing :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // tagging, transition 0
+            30 => {
+                // SCE-MAP: static_host_cose.scxml:280 :: tagging :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeMac(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="tag">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.tag = ::sce_rust_runtime::portable::SceBytes::<32>::from_slice(
+                                &&ev.tag[..],
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='tag'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // tagging, transition 1
+            31 => {
+                // SCE-MAP: static_host_cose.scxml:284 :: tagging :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostCosePayload::DoneInvokeMac(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostCoseEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // tagging, transition 2
+            32 => {
+                // SCE-MAP: static_host_cose.scxml:287 :: tagging :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -4219,8 +7368,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // verifying, transition 0
-            9 => {
-                // SCE-MAP: static_host_cose.scxml:134 :: verifying :: _transition_0
+            15 => {
+                // SCE-MAP: static_host_cose.scxml:189 :: verifying :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeVerify(ev) => ev.clone(),
@@ -4287,8 +7436,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // verifying, transition 1
-            10 => {
-                // SCE-MAP: static_host_cose.scxml:140 :: verifying :: _transition_1
+            16 => {
+                // SCE-MAP: static_host_cose.scxml:195 :: verifying :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostCosePayload::DoneInvokeVerify(ev) => ev.clone(),
@@ -4317,8 +7466,8 @@ impl StatePolicy for StaticHostCosePolicy {
                 }
             }
             // verifying, transition 2
-            11 => {
-                // SCE-MAP: static_host_cose.scxml:143 :: verifying :: _transition_2
+            17 => {
+                // SCE-MAP: static_host_cose.scxml:198 :: verifying :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -4362,6 +7511,12 @@ impl StatePolicy for StaticHostCosePolicy {
             ("sce-host-cose-encrypt0", "seal") => Some(StaticHostCoseState::Sealing),
             ("sce-host-cose-decrypt0", "open") => Some(StaticHostCoseState::Opening),
             ("sce-host-key-derive", "derive") => Some(StaticHostCoseState::Deriving),
+            ("sce-host-random-bytes", "draw") => Some(StaticHostCoseState::Drawing),
+            ("sce-host-mac", "mac") => Some(StaticHostCoseState::Tagging),
+            ("sce-host-mac-verify", "mac_verify") => Some(StaticHostCoseState::Checking),
+            ("sce-host-key-generate", "key_generate") => Some(StaticHostCoseState::Generating),
+            ("sce-host-key-public", "key_public") => Some(StaticHostCoseState::Exporting),
+            ("sce-host-key-retire", "key_retire") => Some(StaticHostCoseState::Retiring),
             _ => None,
         }
     }

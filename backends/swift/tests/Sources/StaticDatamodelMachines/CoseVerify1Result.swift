@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b3510532fa9e2d9145ede123e693bc13594853251b078c52721953cdafb3c78e
+// source-hash: 84316cd62ded95c431d6e6a91cda76565f65491ed180cf702fb630a2c90862b7
 // SCE-MAP: cose_verify1_result.scxml:11 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -37,7 +37,7 @@ public enum CoseVerify1Result {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_verify1_result:1\",\"x-sce-source-hash\":\"b3510532fa9e2d9145ede123e693bc13594853251b078c52721953cdafb3c78e\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"valid\":{\"type\":\"boolean\"},\"key_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"payload\":{\"type\":\"string\",\"maxLength\":4096,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"error\",\"valid\",\"key_id\",\"payload\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_verify1_result:1\",\"x-sce-source-hash\":\"84316cd62ded95c431d6e6a91cda76565f65491ed180cf702fb630a2c90862b7\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"valid\":{\"type\":\"boolean\"},\"key_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"payload\":{\"type\":\"string\",\"maxLength\":4096,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"error\",\"valid\",\"key_id\",\"payload\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built
