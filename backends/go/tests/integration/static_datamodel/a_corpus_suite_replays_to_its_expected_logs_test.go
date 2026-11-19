@@ -5,7 +5,7 @@
 // replays, through the suite's runner (testprofile.RunRunner, the program of §4
 // run in place), to its expected log, byte for byte. The suites are the ones
 // sce-codegen writes into a package each beside this file (regen:
-// `scripts/regen_static_datamodel_go.sh`); runtime_suite's own traces are
+// `scripts/materialize.sh go-static-datamodel`); runtime_suite's own traces are
 // replayed by a_test_suite_runs_through_its_runner_test.go, beside the rest of
 // what that suite is held to.
 //

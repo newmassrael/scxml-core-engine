@@ -12,7 +12,7 @@
 //
 // Fixture: tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml
 //
-// Regeneration: scripts/regen_static_datamodel_swift.sh
+// Regeneration: scripts/materialize.sh swift-static-datamodel
 
 import SceRuntime
 import Testing

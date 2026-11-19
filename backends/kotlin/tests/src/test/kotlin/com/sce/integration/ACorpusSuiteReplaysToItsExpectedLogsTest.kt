@@ -5,7 +5,7 @@
 // replays, through the suite's runner ([runRunner], the program of §4 run in
 // place), to its expected log, byte for byte. The suites are the ones
 // sce-codegen writes into `src/main/kotlin/com/sce/generated/` (regen:
-// `scripts/regen_static_datamodel_kotlin.sh`); runtime_suite's own traces are
+// `scripts/materialize.sh kotlin-static-datamodel`); runtime_suite's own traces are
 // replayed by ATestSuiteRunsThroughItsRunnerTest.kt, beside the rest of what
 // that suite is held to.
 //
