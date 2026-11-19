@@ -292,14 +292,15 @@ const IMPLEMENTED: &[Implemented] = &[
             "sce-build/src/forge/generator/cpp_source/cbor.rs",
             "sce-build/src/forge/generator/kotlin_source/cbor.rs",
             "sce-build/src/forge/generator/python_source/cbor.rs",
+            "sce-build/src/forge/generator/rust_source/cbor.rs",
         ],
         why: "SCE generates the encode of a record as the CBOR that document \
-              defines: the C++, Kotlin and Python printers each emit a map \
+              defines: the C++, Kotlin, Python and Rust printers each emit a map \
               head counting the entries present, then each entry in \
               ascending key order, every head in its shortest form. The doc \
               comment each writes above the emitted encode names the \
               section that fixes that form, and it is a string literal of \
-              the printer, which is why it is read as code. Three files and \
+              the printer, which is why it is read as code. Four files and \
               not the generator directory: the other printers name the \
               document only in their own comments, which the rule leaves \
               alone. The name appears because SCE produces the encoding, \
