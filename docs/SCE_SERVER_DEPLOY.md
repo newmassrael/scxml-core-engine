@@ -8,7 +8,8 @@ to tell a session that is stuck from one that is idle. Every key name and defaul
 from SCE_MESH.md, and each says where.
 
 Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
-decisions D1 and D2: what a client may cost the server (section 2).
+decisions D1 and D2: what a client may cost the server (section 2); D8: the store sealed at rest, its keys and what an
+SQL read of it shows (sections 3, 8 and 9).
 
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
@@ -22,6 +23,7 @@ says of "the program" is what such a program must do.
 | The session store contract, with lease and fence | `sce-rust-session-store` (`backends/rust/session-store/src/lib.rs`) | ADR 0107, D6 |
 | The reference session store | `SqliteStore`, feature `sqlite` of `sce-rust-session-store` | ADR 0107, D6 |
 | The credential store: installation pins and bearer tokens, each as its digest | `CredentialStore` of `sce-rust-session-store`, durable in `SqliteStore`; the `bearer` check `StoredTokens` of `sce-rust-crypto` | ADR 0109, D3; SCE_MESH.md section 22.5 |
+| A store sealed at rest: every value a sealed record, every key an entry, the keys rotated | `Sealed<S>` of `sce_rust_crypto::sealed` over any of the stores above; its keys `SealingKeys` | ADR 0109, D8; `docs/SCE_SEALED_RECORD.md` |
 | The checkpoint of a session | `sce_rust_mesh::checkpoint`, schema `schemas/sce-mesh-checkpoint.v1.schema.json` | SCE_MESH.md section 10.11 |
 | The `https` server | `sce_rust_mesh::https::server::HttpsServer`, feature `https` | SCE_MESH.md section 22 |
 | The `https` client, Rust | `sce_rust_mesh::https::client::HttpsClient` over `HyperTransport` | SCE_MESH.md sections 22.6 and 22.8 |
@@ -48,7 +50,8 @@ Not built, and a server must not count on them:
 | The generated machine and its peer table (`sce-codegen generate --deploy`, `--lang rust`) | `Pool::new` | SCE_MESH.md section 19, "Peer table" |
 | How a session's machine is started and restored (`SessionFactory`, `SessionMachine`) | `Pool::new` | `pool.rs` |
 | Its name as the holder of leases, the lease's length and its renewal period (`PoolConfig`: `owner`, `lease_ttl_ms`, `renew_every_ms`) | `Pool::new` | section 4 |
-| The session store, opened on a file | `Pool::new` | section 3 |
+| The session store, opened on a file, sealed under the keys of its key ring | `Pool::new` | section 3 |
+| The key-encryption key (`KeyEncryptionKey::from_file` or `from_variable`), held apart from the store | the key ring the sealing keys are read from, and the host's | sections 3 and 8 |
 | The authenticator's check (`StoredTokens` or a `BearerCheck`, a `PinStore`, or `CertificateCheck`), and the credential store it and the machine's host share | `HttpsServer::new`, `ReferenceHost::set_credentials` | section 5 |
 | The server's certificate chain and key, and for `mtls` the client authorities | `server_tls` | section 5 |
 | The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, sleeping until `Pool::next_wake_ms` between them, and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation |
@@ -196,23 +199,49 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   system, never a network one. Beside `<file>` SQLite keeps `<file>-wal` and `<file>-shm`; all three are the store.
 - **Waiting for a lock.** A call that finds the database locked by another connection's write waits 5 s
   (`SqliteStore::BUSY_TIMEOUT`, or the bound given to `open_with_busy_timeout`) before it fails.
-- **Its layout.** The database's `user_version` names the layout, `3` today. A file of layout `1` or `2` is brought
-  to `3` when it is opened, in one transaction, its sessions, leases and keys kept. A file of a layout this build
-  does not know, or one that holds tables the store did not make, is refused. A later build that changes the layout
-  makes a rollback to an earlier build refuse the file.
-- **Not encrypted.** A session's row is its checkpoint as plain `sce-mesh-checkpoint` JSON, and the saved state in it
-  holds the document's values in the clear. SCE_MESH.md section 10.11 asks the host to store a checkpoint encrypted at
-  rest; with the reference store that is the encryption of the volume the file is on, or a `SessionStore` of the
-  program's own that encrypts before it writes.
+- **Its layout.** The database's `user_version` names the layout, `4` today. A file of layout `1`, `2` or `3` is
+  brought to `4` when it is opened, in one transaction, its sessions, leases, keys and credentials kept. A file of a
+  layout this build does not know, or one that holds tables the store did not make, is refused. A later build that
+  changes the layout makes a rollback to an earlier build refuse the file.
+- **Sealed at rest** (ADR 0109, D8; `docs/SCE_SEALED_RECORD.md`). SCE_MESH.md section 10.11 asks the host to store a
+  checkpoint encrypted at rest, since the saved state in it holds the document's values in the clear. The program
+  opens the store sealed: `Sealed::new(SqliteStore::open(path)?, keys)`, where `keys` is
+  `SealingKeys::from_keyring(&keyring, now_ms, &mut SystemRandom)` over a key ring on the same file
+  (`Keyring::new(Box::new(SqliteStore::open(path)?), Box::new(kek))`, `kek` the key-encryption key of section 8).
+  Every value the sealed store writes is a record of XChaCha20-Poly1305 under a sealing key, bound to its store and
+  its row, and every key (a session's key, a client's name, a key's id, a token's digest) is kept as its **entry**,
+  the HMAC-SHA-256 of the key under the store's index key. The sealed store is the one handed to `Pool::new`, to the
+  server's authenticator and to the host (`ReferenceHost::set_credentials`, and its key ring's store): it is a
+  `SessionStore`, a `CredentialStore` and a `KeyStore`, as the file is. A store opened without the sealing keys reads
+  every row as a record it cannot open; a record moved to another row, changed by a byte, or read under another key
+  is refused (`Failure`), and the pool answers that session's requests as it answers a store that failed.
+- **What the file shows.** Every value is a record, and every key an entry; in the clear are what the store compares
+  or sets: a session's version, earliest due and lease (owner, fence, expiry), a token's revocation, and a key's use,
+  algorithm, creation and state. The index key (`index:sealed`) and the sealing keys (`sealing:<hex>`) are rows of
+  the `keys` table wrapped under the key-encryption key, the one thing the sealed store keeps as it is given.
+- **Rotation.** `SealingKeys::rotate(&keyring, now_ms, &mut SystemRandom)` makes a new sealing key and retires the
+  one before, which still opens what it sealed. Give each process the keys read again (`Sealed::set_keys`, or a
+  restart), then run the re-seal passes: `Sealed::reseal_sessions(owner, lease_ttl_ms, now_ms)`, which takes each
+  session's lease under the name `owner` and writes it again from the version it read, leaving one another process
+  holds; `Sealed::reseal_credentials()`; and `Sealed::reseal_keys()`, never beside a rotation of the key-encryption key.
+  Each answers `Resealed`: rows written again, rows `left` (run the pass again later), rows `refused` (they do not
+  open: changed on the medium, or sealed under a key the process was not given). Once a pass answers no row left and
+  none refused, the retired key opens nothing and may be destroyed. The index key is never rotated.
+- **What sealing does not give.** Freshness against someone who can write the medium: a row replaced by an earlier
+  sealing of the same row opens, and a token's revocation, kept in the clear, can be set back by hand. The lease's
+  fence and the version stop a process that is wrong, not a medium written by hand; keep the file where only the
+  server's account writes it.
 
-The tables (`LAYOUT_1` to `LAYOUT_3` in `sqlite.rs`): `sessions` (`session`, `state`, `version`, `earliest_due`),
+The tables (`LAYOUT_1` to `LAYOUT_4` in `sqlite.rs`): `sessions` (`session`, `state`, `version`, `earliest_due`),
 `leases` (`session`, `owner`, `fence`, `expires_ms`), and `numbers`, the one counter versions and fences are drawn
 from; and the keys a host generates and derives (`KeyStore`, docs/SCE_HOST_FEATURES.md section 13): `keys` (`id`,
 `key_use`, `algorithm`, `wrapped`, `label`, `created_ms`, `state`), each key's material wrapped under a
 key-encryption key the file never holds, `key_generations` (which key each generation made) and `key_naming` (the
 wrapped naming key of derived keys); and the credentials of section 5 (`CredentialStore`): `credential_pins` (`name`,
-`digest`) and `credential_tokens` (`digest`, `name`, `issued_ms`, `expires_ms`, `revoked`), each digest the SHA-256
-of a secret the file never holds. Every moment is milliseconds since the Unix epoch.
+`digest`) and `credential_tokens` (`digest`, `name`, `issued_ms`, `expires_ms`, `revoked`, `sealed`), each digest the
+SHA-256 of a secret the file never holds. Under a sealed store, `session`, `id`, `generation`, `key` and `name` hold
+entries, `state`, `wrapped`, a pin's `digest` and a token's `sealed` hold records, a token's `digest` holds the keyed
+digest of its digest and its moments are 0. Every moment is milliseconds since the Unix epoch.
 
 ## 4. What a restart does
 
@@ -258,8 +287,9 @@ Every binding names one of three authenticators (SCE_MESH.md section 22.5; `Auth
 
 - **The credential store** (ADR 0109, D3). `SqliteStore`, opened on the session store's file (section 3), is a
   `CredentialStore`: the pins of `install` and the tokens of `bearer`, each kept as the SHA-256 of its secret, never
-  the secret, in the file's layout 3. The program opens the store once and hands the same `Arc<SqliteStore>` to the
-  server's authenticator (`Authenticator::Install(store.clone())`, or `Authenticator::stored_tokens`) and to the
+  the secret, in the file's layouts 3 and 4; under the sealed store of section 3 a name is kept as its entry and a pin
+  or a token as a sealed record. The program opens the store once and hands the same `Arc` (of the sealed store) to
+  the server's authenticator (`Authenticator::Install(store.clone())`, or `Authenticator::stored_tokens`) and to the
   reference host of its machine (`ReferenceHost::set_credentials`), so a token the machine issued is the one the
   server takes and a revocation the machine made is the one the server reads. `MemoryCredentials` keeps them in
   memory, for a test or a server whose names do not outlive it. A store that cannot be read answers the exchange
@@ -346,12 +376,18 @@ inspecting proxy is a machine that does not trust the proxy's authority, and `Pr
 | The session store: `<file>`, with its `-wal` and `-shm` | every session, its replies and its timers | a consistent copy while the server runs, by SQLite's own backup (the `sqlite3` shell's `.backup`, or `VACUUM INTO` on SQLite 3.27 or later); a plain file copy only while no process has the store open. The store has no backup command of its own. |
 | The server's TLS key and certificate chain | the clients' trust in the server | as the program keeps them |
 | The client authorities of `mtls`, and the material a `BearerCheck` of the program's own verifies with | who may claim a name | as the program keeps them; the pins and tokens of the credential store are in the session store's file, backed up with it |
-| The key-encryption key of the key ring | the issuing key of tokens, and the keys a host generated and derived | apart from the store, which holds none of them in the clear |
+| The key-encryption key of the key ring | the sealing keys and the index key of a sealed store (section 3), the issuing key of tokens, and the keys a host generated and derived: without it a copy of the store opens nothing, and with it beside the copy the copy is in the clear | apart from the store and from its backups, which hold every key it protects wrapped and none of them in the clear: in the program's secret store or a key management service, with a copy kept where a loss of the server's machine does not reach it |
 | The COSE keys the host is configured with: signing seeds, sealing keys, trust sets (`docs/SCE_HOST_FEATURES.md` section 10) | what the machine signs and opens | as the program keeps them; never in the store, since a checkpoint holds no key (SCE_MESH.md section 10.11) |
 | deploy.yaml, the documents, and the build of the program | what the store's checkpoints are a state of | with the release |
 
 Nothing else of a server outlives its process: its mailboxes, `MemoryCredentials`, and the keys a host keeps in a key
 ring in memory are in memory (section 4).
+
+A store sealed at rest (section 3) keeps its sealing keys and its index key in its own `keys` table, so a backup of
+the file carries the keys its rows were sealed under, wrapped, whatever was rotated since: what restores it is that
+file and the key-encryption key it was wrapped under, never one without the other. A rotation of the key-encryption
+key rewraps the live store's keys and no backup's, so keep each key-encryption key as long as a backup wrapped under
+it may be restored.
 
 Restoring a copy of the store moves every session back to the moment of the copy. Stop every process that uses the
 store first, and start them after: a process left running holds leases and fences from the newer store, and the copy's
@@ -367,9 +403,16 @@ What the program can read:
 - `Pool::take_errors()`: what went wrong that only the host can act on, in order (`PoolError` in `pool.rs`).
 - `Pool::next_wake_ms()`: the earliest moment the pool has work, and so the moment the clock loop must call it again.
 - The store, read only. In WAL mode a reader does not stop the server's writes: `SELECT session, earliest_due FROM
-  sessions WHERE earliest_due <= <now>`, `SELECT session, owner, fence, expires_ms FROM leases`. A session's `state`
-  is its checkpoint; its `clean` member says whether it was saved idle. Never write the tables by hand: a write outside
-  the contract is outside its versions and fences.
+  sessions WHERE earliest_due <= <now>`, `SELECT session, owner, fence, expires_ms FROM leases`. Never write the
+  tables by hand: a write outside the contract is outside its versions and fences.
+- Under a store sealed at rest (section 3) those reads show **entries**, not keys: the `session` column of both
+  tables holds the 64 hexadecimal digits of the key's HMAC-SHA-256 under the index key, and `state` a record no SQL
+  read opens. To find the row of a key, ask the program's sealed store for its entry, `Sealed::digest_of(key)`, and
+  select by it (`WHERE session = '<entry>'`); to read a session's checkpoint, read it through the sealed store
+  (`checkpoint::load(&sealed, key)`), never from the column. An entry listed due names its key through
+  `SessionStore::key_of(entry)`, which opens the row. A row that does not open is told as a `PoolError::Store` naming
+  the refusal.
+- Without a sealed store, a session's `state` is its checkpoint; its `clean` member says whether it was saved idle.
 
 A session is **idle**, as it should be, when it is not in memory, holds no lease row, its checkpoint is `clean`, and
 its `earliest_due` is empty or in the future. A session **waits**, as it may, when it is in memory past `idle_ms`

@@ -3183,3 +3183,26 @@ the chains that hand an entry whether the entry before it was of a kind (`codec_
   the list is empty. The flag the list's import binds the input to (`head.W`) is derived from it, and the bit the
   struct holds there is written over. A decode sets the start from the frame.
 
+## A server's stores are sealed at rest, and a session store lists a session by its entry (ADR 0109 D8)
+
+Landing: the commits that add this section. No generated tree changes; a consumer that writes a store of its own,
+wraps one, or reads the store's file changes that code.
+
+- `SessionStore` gains three methods. `indexed_after(after, limit)` lists the sessions a store holds, a page at a
+  time, by their entries in byte order, and has no default: a store of the consumer's own implements it (a store
+  that keeps keys as they are answers its keys). `indexed(key)` and `key_of(entry)` have defaults that keep keys as
+  they are; a store that wraps another forwards all three, as `Sealed` does. `Due::key` is the entry a store lists
+  the session under, and a host that wakes what came due loads it by `store.key_of(&due.key)`, as `Pool::due` and
+  `checkpoint::wake_due` now do.
+- `PinStore` keeps any bytes: `pinned(name)` answers `Result<Option<Vec<u8>>, Failure>`, `pin(name, &pin)` takes
+  `&[u8]` and answers `Vec<u8>`, and a store implements `pins()` (every pin as a `PinRow`) and
+  `repin(name, held, pin)` (a replacement made from the bytes it read). A caller that compared the answer with a
+  `[u8; 32]` digest compares it with `same_secret(&held, &digest)` unchanged.
+- `TokenRow` has a field `sealed: Vec<u8>`, empty in a row its issuer writes (`sealed: Vec::new()`), and
+  `TokenStore` gains `reseal(digest, held, sealed)`. `SqliteStore`'s layout is 4, and a file of layout 3 is brought
+  to it when opened; a build before this one refuses a file of layout 4.
+- To seal a store, open it as `Sealed::new(store, SealingKeys::from_keyring(&keyring, now_ms, &mut random)?)` of
+  `sce_rust_crypto::sealed` and hand the sealed store where the store was handed (`docs/SCE_SERVER_DEPLOY.md`
+  section 3). An SQL read of a sealed file shows entries in place of keys; `Sealed::digest_of(key)` names the entry of
+  a key.
+

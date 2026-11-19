@@ -640,7 +640,8 @@ These are not built, and nothing here stands in for them:
   saves every session it holds as a clean checkpoint. The keys of section 13 and
   the credentials of section 14, the `install` authenticator's pins among them
   (SCE_MESH.md section 22.5), are kept in the session store's file
-  (`SqliteStore` is a `KeyStore` and a `CredentialStore` too, layout 3).
+  (`SqliteStore` is a `KeyStore` and a `CredentialStore` too, layout 4), which a
+  server keeps sealed at rest (`Sealed`, docs/SCE_SEALED_RECORD.md).
 - **A durable key-value store.** The reference stores of section 3 are in memory
   on every lane, and so is the table of first results by which each answers a
   put-if repeated under one identity (section 8): a host that stops forgets
@@ -985,7 +986,7 @@ a debugger prints of the host's types. The Rust host keeps its key ring
 (`sce_rust_crypto::keyring::Keyring`) in a key store
 (`sce_rust_session_store::KeyStore`): in memory unless the embedding gives
 another with `ReferenceHost::set_keyring`; the reference durable store is the
-session store's SQLite file (`SqliteStore`, layout 3). Each key's material is
+session store's SQLite file (`SqliteStore`, layout 4). Each key's material is
 kept wrapped under a key-encryption key the store never holds, bound to the
 key's id and use, so a file read without that key holds no key and a row's
 material moved to another row does not unwrap. The program supplies the
@@ -1073,7 +1074,7 @@ the host that holds the store does (section 12).
 (`sce_rust_session_store::CredentialStore`): in memory (`MemoryCredentials`)
 unless the embedding gives another with `ReferenceHost::set_credentials`; the
 reference durable store is the session store's SQLite file (`SqliteStore`,
-layout 3), which the server's authenticator is given too. The C++ host keeps its
+layout 4), which the server's authenticator is given too. The C++ host keeps its
 tokens in memory, for its own life (`CredentialFeature`, host/CredentialHost.h).
 A token's text is written in time that does not depend on its bytes (`base64ct`
 in Rust, libsodium's `sodium_bin2base64` in C++), since a token is a secret.
