@@ -203,9 +203,17 @@ fn a_record_byte_string_past_its_bound_is_refused_on_cpp_as_on_rust() {
         ],
         2,
     );
+    // Rust holds every record of either list to the one check of its
+    // document (docs/adr/0101, section 5.1), which each list calls.
     let rust = generated(stem, Language::Rust);
     assert_eq!(
         rust.matches("if record.digest.len() > 4 {").count(),
+        1,
+        "the Rust encode checks a record of `cbor_digest_entry` in one place:\n{rust}"
+    );
+    assert_eq!(
+        rust.matches("check_record_cbor_digest_entry(item)?;")
+            .count(),
         2,
         "the Rust encode refuses a record of either list:\n{rust}"
     );

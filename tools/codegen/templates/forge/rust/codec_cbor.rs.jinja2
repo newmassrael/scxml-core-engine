@@ -4,9 +4,14 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/forge_rust_storage.jinja2' as storage %}
 {#- The read of one entry's value, as the expression bound to it. Every CBOR
-    item is the runtime's (`sce_forge_runtime::cbor`); this spells none. #}
+    item is the runtime's (`sce_forge_runtime::cbor`); this spells none. A
+    signed integer, a float, a list, a record and a union are read by the
+    expression the printer writes from the plan's shape (`decode_expr`,
+    docs/adr/0101 section 5.1). #}
 {% macro decode_value(e) -%}
-{%- if e.kind == "bool" -%}
+{%- if e.decode_expr is defined -%}
+{{ e.decode_expr }}
+{%- elif e.kind == "bool" -%}
 cbor::read_bool(&mut c)?
 {%- elif e.kind == "text" -%}
 cbor::read_text(&mut c, {% if e.max_size is not none %}Some({{ e.max_size }}){% else %}None{% endif %})?
@@ -25,56 +30,10 @@ cbor::read_bytes_exact(&mut c, {{ e.length }})?
 {%- elif e.kind == "enum" -%}
 {{ e.enum_from_underlying }}(cbor::read_uint(&mut c)?.try_into().map_err(|_| CodecError::CborOutOfRange)?)
                         .ok_or(CodecError::UndeclaredEnumValue)?
-{%- elif e.kind == "record_list" -%}
-{
-                        // A definite-length array within the list's counts,
-                        // each item one record's map.
-                        let len = cbor::read_array_len(&mut c)?;
-                        if len > {{ e.list_max }}{% if e.list_min > 0 %} || len < {{ e.list_min }}{% endif %} {
-                            return Err(CodecError::CborOutOfRange);
-                        }
-                        let mut list: {{ e.value_type }} = ::sce_forge_runtime::codec::BoundedList::new();
-                        for _ in 0..len {
-                            list.push({{ e.record_decode_fn }}(&mut c)?)?;
-                        }
-                        list
-                    }
 {%- elif e.value_type == "u64" -%}
 cbor::read_uint(&mut c)?
 {%- else -%}
 cbor::read_uint_upto(&mut c, u64::from({{ e.value_type }}::MAX))? as {{ e.value_type }}
-{%- endif -%}
-{%- endmacro %}
-{#- The read of one field of a record a list holds, from the cursor `c` the
-    record's read is handed, into the type the record's unit holds it in: a
-    text in the bounded text, read within its bound and copied in, and a byte
-    string, read within its bound, in the language's own vector. #}
-{% macro decode_record_field(f) -%}
-{%- if f.kind == "bool" -%}
-cbor::read_bool(c)?
-{%- elif f.kind == "text" -%}
-::sce_forge_runtime::codec::SceString::<{{ f.max }}>::from_text(cbor::read_text(c, Some({{ f.max }}))?)?
-{%- elif f.kind == "bytes" -%}
-cbor::read_bytes(c, Some({{ f.max }}))?.to_vec()
-{%- elif f.value_type == "u64" -%}
-cbor::read_uint(c)?
-{%- else -%}
-cbor::read_uint_upto(c, u64::from({{ f.value_type }}::MAX))? as {{ f.value_type }}
-{%- endif -%}
-{%- endmacro %}
-{#- The write of one field of `record`, after its key. A byte string past its
-    bound was refused before the list was written. #}
-{% macro encode_record_field(f) -%}
-{%- if f.kind == "bool" -%}
-cbor::write_bool(w, record.{{ f.name }})?;
-{%- elif f.kind == "text" -%}
-cbor::write_text(w, record.{{ f.name }}.as_str())?;
-{%- elif f.kind == "bytes" -%}
-cbor::write_bytes(w, &record.{{ f.name }})?;
-{%- elif f.value_type == "u64" -%}
-cbor::write_uint(w, record.{{ f.name }})?;
-{%- else -%}
-cbor::write_uint(w, u64::from(record.{{ f.name }}))?;
 {%- endif -%}
 {%- endmacro %}
 {#- The value of one entry as the map holds it: a string or byte string held
@@ -104,58 +63,18 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
-{% if all_imports %}
+{% if all_imports or reached_uses %}
 
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}
+{#- The documents the entries name below their own level that the codec does
+    not import itself, each a sibling module. #}
+{% for line in reached_uses %}
+{{ line }}
+{% endfor %}
 {% endif %}
-{% for r in cbor_records %}
-
-/// Read one record of the event schema `{{ r.schema }}` (`record:{{ r.alias }}`)
-/// from `c`, as a list of this map holds it (docs/adr/0085, Landing order step
-/// 3a), into the payload type the schema's own unit declares: one CBOR map of
-/// every field, each under its id as text (docs/adr/0086, section 9.2). Its keys
-/// in any order, a key the schema does not declare skipped whole, a key given
-/// twice and a field missing refused, and a text or byte string past its bound
-/// refused.
-fn {{ r.decode_fn }}(c: &mut SceCursor<'_>) -> Result<{{ r.type_name }}, CodecError> {
-    let count = cbor::read_map_len(c)?;
-{% for f in r.fields %}
-    let mut held_{{ f.name }}: Option<{{ f.value_type }}> = None;
-{% endfor %}
-    for _ in 0..count {
-        match cbor::read_text(c, None)? {
-{% for f in r.fields %}
-            {{ f.key_literal }} => {
-                // A key given twice is not one map entry.
-                if held_{{ f.name }}.is_some() {
-                    return Err(CodecError::CborDuplicateKey);
-                }
-                held_{{ f.name }} = Some({{ decode_record_field(f) }});
-            }
-{% endfor %}
-            _ => cbor::skip(c)?,
-        }
-    }
-    Ok({{ r.type_name }} {
-{% for f in r.fields %}
-        {{ f.name }}: held_{{ f.name }}.ok_or(CodecError::CborRequiredKeyMissing)?,
-{% endfor %}
-    })
-}
-
-/// Write one record of `{{ r.schema }}` as one map of every field, the keys in
-/// the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
-fn {{ r.encode_fn }}<S: SceSink + ?Sized>(w: &mut S, record: &{{ r.type_name }}) -> Result<(), S::Error> {
-    cbor::write_map_head(w, {{ r.field_count }})?;
-{% for f in r.fields_by_key %}
-    cbor::write_text(w, {{ f.key_literal }})?;
-    {{ encode_record_field(f) }}
-{% endfor %}
-    Ok(())
-}
-{% endfor %}
+{{ rust_composites }}
 
 /// One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order
 /// and skips one this codec does not declare; encode writes the entries
@@ -178,6 +97,7 @@ pub type {{ struct_name }}Wire{{ lifetime }} = {{ struct_name }}{{ lifetime }};
 
 #[allow(dead_code)]
 impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
+{% if derives_default %}
     /// An instance with every entry at its type's [`Default`] and every
     /// optional entry absent — the infallible constructor every codec
     /// offers, as a positional one does.
@@ -185,6 +105,11 @@ impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
         Self::default()
     }
 
+{% else %}
+    // No `new`: a required record or union has no value by default, so a
+    // value of this map is made with every required entry stated.
+
+{% endif %}
     /// Decode one map from `cursor`. On success the cursor advances past it;
     /// on any refusal the cursor is left untouched.
     pub fn decode(cursor: &mut SceCursor<{{ cursor_lifetime }}>) -> Result<Self, CodecError> {
@@ -351,9 +276,9 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
     pub fn as_borrowed(&self) -> {{ struct_name }}<'_> {
         {{ struct_name }} {
 {% for e in entries %}
-{% if e.kind == "record_list" %}
-            // A list of records is held by value in both forms, so the view
-            // takes a copy of it.
+{% if e.kind == "composed" %}
+            // A list, a record and a union are held by value in both forms, so
+            // the view takes a copy of it.
             {{ e.name }}: self.{{ e.name }}.clone(),
 {% else %}
             {{ e.name }}: <Self as {{ struct_name }}Source>::{{ e.name }}(self),

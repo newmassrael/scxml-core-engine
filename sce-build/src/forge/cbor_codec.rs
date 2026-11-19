@@ -71,12 +71,14 @@ pub fn lowers_record_list(lang: Language) -> bool {
 /// ([`refusal`]) and the conformance schedule read, so a fixture is run exactly
 /// where it generates. A backend that does not prints the shapes of
 /// docs/adr/0085 Landing order step 3a and refuses every other by name
-/// ([`unlowered_part`]). One arm per backend, so a backend's landing flips its
-/// own line (docs/adr/0101, section 5.4).
+/// ([`unlowered_part`]), and every record of a list whose field is of any other
+/// type ([`record_list_unlowered`]). One arm per backend, so a backend's landing
+/// flips its own line (docs/adr/0101, section 5.4). Rust, the reference, prints
+/// every shape from the plan (Landing order step 4a).
 #[allow(clippy::match_like_matches_macro)]
 pub fn lowers_every_entry_type(lang: Language) -> bool {
     match lang {
-        Language::Rust => false,
+        Language::Rust => true,
         Language::Kotlin => false,
         Language::Cpp => false,
         Language::Go => false,
@@ -118,15 +120,22 @@ pub fn unlowered_part(e: &CborEntry) -> Option<&ValueType> {
 pub(crate) fn unlowered_forms(plan: &CborPlan<'_>) -> Vec<String> {
     plan.entries
         .iter()
-        .filter_map(|item| {
-            let composition = Composition::of(unlowered_part(item.entry)?);
-            Some(format!(
-                "CBOR entry '{}' holds `{}`, a type of the language whose {} the printer does \
-                 not lower in a CBOR codec yet",
-                item.entry.id, composition.place, composition.constructor
-            ))
-        })
+        .filter_map(|item| unlowered_clause(item.entry))
         .collect()
+}
+
+/// The clause the entry `e` of a type the printers of docs/adr/0085 Landing
+/// order step 3a do not lower ([`unlowered_part`]) is named by, or `None` for
+/// an entry they print: one sentence for a printer's list of the forms it does
+/// not print ([`unlowered_forms`]) and for the codec's refusal ([`refusal`]),
+/// so each holds the other's words.
+fn unlowered_clause(e: &CborEntry) -> Option<String> {
+    let composition = Composition::of(unlowered_part(e)?);
+    Some(format!(
+        "CBOR entry '{}' holds `{}`, a type of the language whose {} the printer does not \
+         lower in a CBOR codec yet",
+        e.id, composition.place, composition.constructor
+    ))
 }
 
 /// The list of records a CBOR codec's entry holds (docs/adr/0085, Landing
@@ -184,17 +193,8 @@ pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
         ));
     }
     if !lowers_every_entry_type(lang) {
-        if let Some((e, part)) = m
-            .cbor_entries
-            .iter()
-            .find_map(|e| unlowered_part(e).map(|part| (e, part)))
-        {
-            let composition = Composition::of(part);
-            return Some(format!(
-                "codec '{}': CBOR entry '{}' holds `{}`, a type of the language whose {} has no \
-                 {lang:?} lowering in a CBOR codec yet",
-                m.name, e.id, composition.place, composition.constructor
-            ));
+        if let Some(clause) = m.cbor_entries.iter().find_map(unlowered_clause) {
+            return Some(format!("codec '{}': {clause}", m.name));
         }
     }
     if !lowers_record_list(lang) {
@@ -234,6 +234,20 @@ pub fn render(
             m.source_location.clone(),
         )));
     }
+    // A printer of docs/adr/0085 Landing order step 3a writes a record of a
+    // list as a map of unsigned integers, bools, texts and byte strings; a
+    // record with a field of any other type is refused by name where it does
+    // not print every shape (docs/adr/0101, section 5.4). The records are read
+    // in the codec's imports, which the model alone does not hold.
+    if !lowers_every_entry_type(lang) {
+        let scope = crate::forge::generator::import_type_scope(imports);
+        if let Some(why) = record_list_unlowered(m, &scope) {
+            return Err(ForgeError::from(GenerateError::unsupported_at(
+                format!("codec '{}': {why}", m.name),
+                m.source_location.clone(),
+            )));
+        }
+    }
     // Every order a template writes in is the plan's (docs/adr/0101, section
     // 5.1): the entries by key and each record's fields by key.
     let plan = CborPlan::of(m, imports);
@@ -248,14 +262,61 @@ pub fn render(
     }
 }
 
-/// Why the records the lists of `m` hold are not written as a CBOR codec
-/// writes them, or `None` when they are, `scope` naming the records the
-/// codec's imports resolve. A record a list holds is a map of every field of
-/// its schema (docs/adr/0086, section 9.2), and a codec writes a field that is
-/// an unsigned integer, a `bool`, a text or a byte string, each bounded by its
-/// type ([`record_field`]). A record whose event schema no import resolves, one
-/// of no field, and one with a field of any other type are refused by name,
-/// the field named; the grammar takes them, and no codec lowers them here.
+/// Why a value an entry of `m` holds, at any depth, has no type a backend
+/// holds it in, its types read in `scope`, or `None` where every one has: an
+/// enum, a record or a union the codec's imports do not resolve, and a record
+/// of no field, for which its schema's unit declares no type (docs/adr/0101,
+/// section 5.3). Refused by name, alike for every language, before any
+/// renders.
+pub(crate) fn unheld_value(m: &CodecModel, scope: &TypeScope) -> Option<String> {
+    m.cbor_entries.iter().find_map(|e| {
+        unheld(&CborShape::of(e.present_type(), scope))
+            .map(|why| format!("CBOR entry '{}' {why}", e.id))
+    })
+}
+
+/// [`unheld_value`] of one value of `shape`.
+fn unheld(shape: &CborShape) -> Option<String> {
+    match shape {
+        CborShape::Unresolved { what } => Some(format!(
+            "names `{what}`, which the codec's imports do not resolve"
+        )),
+        CborShape::Record(record) => unheld_record(record),
+        CborShape::Union(union) => union
+            .cases
+            .iter()
+            .filter_map(|case| case.record.as_ref())
+            .find_map(unheld_record),
+        CborShape::List { elem, .. } | CborShape::Nullable(elem) => unheld(elem),
+        CborShape::Int { .. }
+        | CborShape::Float { .. }
+        | CborShape::Bool
+        | CborShape::Text { .. }
+        | CborShape::Bytes { .. }
+        | CborShape::Enum(_) => None,
+    }
+}
+
+/// [`unheld_value`] of a record.
+fn unheld_record(record: &CborRecord) -> Option<String> {
+    if record.fields.is_empty() {
+        return Some(format!(
+            "holds a record of `{}`, which declares no field",
+            record.name
+        ));
+    }
+    record.fields.iter().find_map(|field| unheld(&field.shape))
+}
+
+/// Why the records the lists of `m` hold are not written as a printer of
+/// docs/adr/0085 Landing order step 3a writes them, or `None` when they are,
+/// `scope` naming the records the codec's imports resolve. Such a printer
+/// writes a record a list holds as a map of every field of its schema
+/// (docs/adr/0086, section 9.2), each field an unsigned integer, a `bool`, a
+/// text or a byte string, bounded by its type ([`record_field`]). A record
+/// whose event schema no import resolves, one of no field, and one with a field
+/// of any other type are refused by name, the field named, by a backend that
+/// does not print every shape ([`lowers_every_entry_type`]).
 pub(crate) fn record_list_unlowered(m: &CodecModel, scope: &TypeScope) -> Option<String> {
     for e in &m.cbor_entries {
         let Some(list) = record_list(e) else {
@@ -326,30 +387,25 @@ pub(crate) fn record_unbounded_bytes(record: &CborRecord) -> Vec<(&str, u32)> {
         .collect()
 }
 
-/// What an entry the printers lower is on the wire, as the templates branch on
-/// it: a leaf by the kind of its value, and a list of records as
-/// `record_list`; `None` for an entry of a type they do not print
-/// ([`unlowered_part`]), which has no wire kind of theirs.
-pub(crate) fn lowered_kind(entry: &CborEntry) -> Option<&'static str> {
-    if unlowered_part(entry).is_some() {
-        return None;
-    }
-    Some(match entry.leaf_type() {
-        None => "record_list",
+/// What an entry is on the wire, as the templates branch on it: a leaf by the
+/// kind of its value (`bool`, `text`, `bytes`, `bytes_exact`, `enum`, `uint`,
+/// and `int` and `float`, which only a printer of every shape meets), a list
+/// of records as `record_list`, and any other list, a record and a union as
+/// `composed`, which only a printer of every shape meets: a codec that holds
+/// one is refused by name where the printer does not lower it ([`refusal`]).
+pub(crate) fn kind(entry: &CborEntry) -> &'static str {
+    match entry.leaf_type() {
+        None if record_list(entry).is_some() => "record_list",
+        None => "composed",
         Some(SceType::Bool) => "bool",
         Some(SceType::String) => "text",
         Some(SceType::Bytes) if entry.length.is_some() => "bytes_exact",
         Some(SceType::Bytes) => "bytes",
         Some(SceType::Enum(_)) => "enum",
+        Some(t) if t.is_float() => "float",
+        Some(t) if t.is_signed() => "int",
         Some(_) => "uint",
-    })
-}
-
-/// [`lowered_kind`], asked where the entry is printed: a codec that holds an
-/// entry of any other type was refused by name before it renders
-/// ([`refusal`]).
-pub(crate) fn kind(entry: &CborEntry) -> &'static str {
-    lowered_kind(entry).expect("a codec of an entry no printer lowers is refused before it renders")
+    }
 }
 
 /// The type a present value of the leaf entry `e` is, asked where `e` is known
@@ -425,7 +481,7 @@ pub(crate) const RUST_RUNTIME_CODEC: &str = "::sce_forge_runtime::codec";
 /// byte string (docs/adr/0101, section 1.3), and `sce:length` as both the most
 /// and the fewest for an exact byte string. `None` for any other entry.
 pub(crate) fn rust_bound_args(e: &CborEntry) -> Option<String> {
-    match lowered_kind(e)? {
+    match kind(e) {
         "text" | "bytes" => e.size_bound().map(|max| max.to_string()),
         "bytes_exact" => e.length.map(|n| format!("{n}, {n}")),
         _ => None,
@@ -433,9 +489,9 @@ pub(crate) fn rust_bound_args(e: &CborEntry) -> Option<String> {
 }
 
 /// The Rust type of the present value of `e` borrowed for `lifetime`: a `Text`
-/// or `Bytes` of its bounds ([`rust_bound_args`]), a list of records as the
-/// map holds it ([`rust_record_list_type`]), and any other entry as the
-/// language names it. The one spelling the decoded map and its source
+/// or `Bytes` of its bounds ([`rust_bound_args`]), a list, a record or a union
+/// as the map holds it ([`rust_composed_value_type`]), and any other entry as
+/// the language names it. The one spelling the decoded map and its source
 /// interface share.
 pub(crate) fn rust_view_value_type(
     l: &LangCtx,
@@ -444,7 +500,7 @@ pub(crate) fn rust_view_value_type(
     lifetime: &str,
 ) -> String {
     let Some(present) = e.leaf_type() else {
-        return rust_record_list_type(imports, e);
+        return rust_composed_value_type(imports, e);
     };
     let text = matches!(present, SceType::String);
     match (present, rust_bound_args(e)) {
@@ -513,20 +569,17 @@ pub(crate) fn record_codec_fns(lang: Language, codec: &str, alias: &str) -> (Str
     }
 }
 
-/// The Rust type the map holds the list of records of `e` in: the language's
-/// list of its bound (`BoundedList<R, N>`, docs/adr/0086 section 7.4) over the
-/// record's payload type ([`record_payload_type`]), whose every constructor
-/// refuses past the bound on every profile, so the list the map holds is within
-/// it and its encode refuses nothing for its count. Empty for a leaf entry,
-/// which no caller asks.
-pub(crate) fn rust_record_list_type(imports: &[ImportContext], e: &CborEntry) -> String {
-    record_list(e).map_or_else(String::new, |list| {
-        format!(
-            "{RUST_RUNTIME_CODEC}::BoundedList<{}, {}>",
-            record_payload_type(Language::Rust, imports, list.record),
-            list.max
-        )
-    })
+/// The Rust type the map holds the present value of `e`, a list, a record or a
+/// union, in: the type a schema unit holds it in (docs/adr/0101, section 5.3),
+/// a list the language's list of its bound (`BoundedList<T, N>`,
+/// docs/adr/0086 section 7.4), whose every constructor refuses past the bound
+/// on every profile, so the list the map holds is within it and its encode
+/// refuses nothing for its count; a record the payload type of its event
+/// schema's unit, and a union the type of its union's unit. Its types are read
+/// in the codec's imports.
+pub(crate) fn rust_composed_value_type(imports: &[ImportContext], e: &CborEntry) -> String {
+    let scope = crate::forge::generator::import_type_scope(imports);
+    crate::forge::generator::rust_cbor_composed_type(&CborShape::of(e.present_type(), &scope))
 }
 
 /// The type the Rust owned mirror holds the present value of `e` as: a string in
@@ -535,8 +588,8 @@ pub(crate) fn rust_record_list_type(imports: &[ImportContext], e: &CborEntry) ->
 ///
 /// The container is held inside a `Bounded` of the entry's bounds, as a
 /// positional codec's is (docs/adr/0077 §3), so the mirror's source read lends
-/// it with its bounds and checks nothing. A list of records owns what it holds,
-/// so the mirror holds it as the view does.
+/// it with its bounds and checks nothing. A list, a record and a union own
+/// what they hold, so the mirror holds each as the view does.
 pub(crate) fn rust_owned_value_type(
     l: &LangCtx,
     m: &CodecModel,
@@ -544,7 +597,7 @@ pub(crate) fn rust_owned_value_type(
     e: &CborEntry,
 ) -> String {
     let kind = match e.leaf_type() {
-        None => return rust_record_list_type(imports, e),
+        None => return rust_composed_value_type(imports, e),
         Some(SceType::String) => "Str",
         Some(SceType::Bytes) => "Bytes",
         Some(other) => return l.type_name(other).into_owned(),
@@ -1061,7 +1114,7 @@ pub(crate) fn max_encoded_bytes(
 /// types read in `env` (docs/adr/0101, section 4.4): the entry and its type as
 /// the grammar spells it. `None` where every entry has a size, or where one
 /// names a record or union `env` does not resolve, which is refused by its
-/// own name ([`record_list_unlowered`]).
+/// own name ([`unheld_value`]).
 pub fn entry_past_encoded_size(m: &CodecModel, env: &dyn TypeEnv) -> Option<(String, String)> {
     m.cbor_entries.iter().find_map(|e| {
         matches!(
@@ -1233,24 +1286,45 @@ fn rust_context(
         .iter()
         .any(|e| matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes)));
     let mut ctx = common_context(l, m, imports, |e| rust_view_value_type(l, imports, e, "'a"))?;
-    // Each field of a record as the record's own unit holds it
-    // (`render_event_schema`): a text in the bounded text and a byte string in
-    // the language's own vector, which the encode holds to its bound.
-    insert_cbor_records(l, plan, imports, &mut ctx, &|ty| match ty {
-        ValueType::Text { max } => format!("{RUST_RUNTIME_CODEC}::SceString<{}>", max.max),
-        ValueType::Bytes { .. } => "Vec<u8>".to_string(),
-        ValueType::Scalar(t) => l.type_name(t).into_owned(),
-        ValueType::Optional { .. }
-        | ValueType::Record { .. }
-        | ValueType::Union { .. }
-        | ValueType::List { .. }
-        | ValueType::Map { .. }
-        | ValueType::Set { .. } => String::new(),
-    })?;
+    // Each record and union document the entries reach, at any depth, read,
+    // written and, where a value of it can be refused, checked by functions of
+    // the module's own, named for the document and shared wherever it is met
+    // (docs/adr/0101, section 5.1). The plan says every order they write in.
+    ctx.insert(
+        "rust_composites".into(),
+        crate::forge::generator::rust_cbor_composites(plan).into(),
+    );
+    // The documents those functions name that the codec does not import
+    // itself (an enum a record holds, a union's records), each a sibling
+    // module, brought in by the line an import of it writes.
+    let imported: Vec<&str> = imports.iter().map(|i| i.include_stmt.as_str()).collect();
+    let reached: Vec<String> = crate::forge::generator::rust_cbor_reached_modules(plan)
+        .into_iter()
+        .map(|module| format!("use super::{module};"))
+        .filter(|line| !imported.contains(&line.as_str()))
+        .collect();
+    ctx.insert("reached_uses".into(), reached.into());
     // docs/adr/0065: whether the encode can refuse a value, which decides what
     // `encode` and `encode_to_vec` return.
     ctx.insert("encode_may_fail".into(), (!plan.totality.is_total()).into());
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for (entry, item) in entries.iter_mut().zip(&plan.entries) {
+            // A signed integer, a float, a list, a record and a union are read
+            // by the expression the plan's shape prints: a list, a record and a
+            // union into the type a schema unit holds it in (section 5.3).
+            match kind(item.entry) {
+                "int" | "float" => {
+                    entry["decode_expr"] =
+                        crate::forge::generator::rust_cbor_decode(&item.value, "&mut c").into();
+                }
+                "record_list" | "composed" => {
+                    entry["kind"] = "composed".into();
+                    entry["decode_expr"] =
+                        crate::forge::generator::rust_cbor_decode(&item.value, "&mut c").into();
+                }
+                _ => {}
+            }
+        }
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
             entry["field_type"] = if entry["required"].as_bool() == Some(true) {
@@ -1277,14 +1351,21 @@ fn rust_context(
         "cursor_lifetime".into(),
         if borrows { "'a" } else { "'_" }.into(),
     );
+    // A value made by `new` holds every required entry at its type's default,
+    // which a record's payload type and a union's type do not declare: a map
+    // that requires one has no such value, and no `new`.
+    let defaults = plan.entries.iter().all(|item| {
+        !item.required || !matches!(item.value, CborShape::Record(_) | CborShape::Union(_))
+    });
+    ctx.insert("derives_default".into(), defaults.into());
+    let derives = crate::rust_derive_policy::RustDeriveCategory::CodecStruct;
     ctx.insert(
         "codec_struct_derives_attr".into(),
-        format!(
-            "#[derive(Default, {})]",
-            crate::rust_derive_policy::RustDeriveCategory::CodecStruct
-                .derives()
-                .join(", ")
-        )
+        if defaults {
+            format!("#[derive(Default, {})]", derives.derives().join(", "))
+        } else {
+            derives.derives_attr()
+        }
         .into(),
     );
     // The owned mirror: only a map that borrows and can name a capacity for each
@@ -1383,9 +1464,10 @@ fn insert_cbor_records(
 /// form is, the bound of a text or a byte string, and the largest number an
 /// unsigned integer holds.
 ///
-/// A compile refuses a record no import resolves, and one with a field no codec
-/// writes, before any language renders ([`record_list_unlowered`]); the refusal
-/// here is that one, for a caller that renders the module directly.
+/// A compile refuses a record no import resolves before any language renders
+/// ([`unheld_value`]), and [`render`] one with a field these printers do not
+/// write ([`record_list_unlowered`]); the refusal here is that one, for a
+/// caller that renders the module directly.
 fn record_contexts(
     l: &LangCtx,
     plan: &CborPlan<'_>,

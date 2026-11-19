@@ -42,10 +42,15 @@ const IMPORTS: &str = r#"  <sce:import kind="enum" src="paint_color.scxml" as="C
 /// A CBOR codec in codec format 2 with the import lines `imports` and the
 /// entries `entries`, verbatim.
 fn document(imports: &str, entries: &str) -> String {
+    document_stating("", imports, entries)
+}
+
+/// [`document`], its root carrying `root_attrs` after its name.
+fn document_stating(root_attrs: &str, imports: &str, entries: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="probe_any" version="1.0">
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="probe_any"{root_attrs} version="1.0">
 {imports}
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
@@ -329,8 +334,9 @@ fn a_content_line_entry_still_refuses_every_composition() {
 
 #[test]
 fn every_backend_refuses_by_name_an_entry_its_printer_does_not_lower() {
-    // docs/adr/0101, section 5.4: no backend prints these yet, so each refuses
-    // the codec naming the entry and the type, and no generated file changes.
+    // docs/adr/0101, section 5.4: a backend that does not print these yet
+    // refuses the codec naming the entry and the type, and no generated file
+    // changes; Rust, the reference, prints them (Landing order step 4a).
     for ty in [
         "int8",
         "float64",
@@ -339,7 +345,11 @@ fn every_backend_refuses_by_name_an_entry_its_printer_does_not_lower() {
     ] {
         let text = document("", &one_entry(ty));
         for &lang in Language::ALL {
-            assert!(!cbor_codec::lowers_every_entry_type(lang), "{lang:?}");
+            if cbor_codec::lowers_every_entry_type(lang) {
+                compile_forge_with_imports(&text, label(), lang, &imports_dir(), &options())
+                    .unwrap_or_else(|e| panic!("{lang:?} prints an entry of `{ty}`: {}", e.error));
+                continue;
+            }
             let refused =
                 compile_forge_with_imports(&text, label(), lang, &imports_dir(), &options())
                     .err()
@@ -355,6 +365,168 @@ fn every_backend_refuses_by_name_an_entry_its_printer_does_not_lower() {
                 "{lang:?}: {why}"
             );
         }
+    }
+}
+
+/// The Rust module of a codec of the corpus's imports whose one entry `v` is
+/// typed `ty`, stating that its encode may fail where `may_fail`.
+fn rust_of(ty: &str, may_fail: bool) -> String {
+    let stated = if may_fail {
+        r#" sce:encode-may-fail="true""#
+    } else {
+        ""
+    };
+    let text = document_stating(stated, IMPORTS, &one_entry(ty));
+    compile_forge_with_imports(&text, label(), Language::Rust, &imports_dir(), &options())
+        .map(|output| {
+            output
+                .files
+                .into_iter()
+                .map(|(_, code)| code)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_else(|e| panic!("Rust prints an entry of `{ty}`: {}", e.error))
+}
+
+#[test]
+fn rust_prints_an_entry_of_every_type_of_the_language() {
+    // docs/adr/0101, Landing order step 4a: each shape of section 5.1, read and
+    // written in its one form of section 2.1. `may_fail` where a value of the
+    // type can have no encoding: a list below its lower count, a record's byte
+    // string past its bound (the `voucher` case of `Payment`).
+    let cases: &[(&str, bool, &[&str])] = &[
+        (
+            "int8",
+            false,
+            &[
+                "cbor::read_int_within(&mut c, i64::from(i8::MIN), i64::from(i8::MAX))? as i8",
+                "cbor::write_int(w, i64::from(v))?;",
+            ],
+        ),
+        (
+            "int64",
+            false,
+            &[
+                "cbor::read_int_within(&mut c, i64::MIN, i64::MAX)?",
+                "cbor::write_int(w, v)?;",
+            ],
+        ),
+        (
+            "float32",
+            false,
+            &[
+                "cbor::read_float32(&mut c)?",
+                "cbor::write_float(w, f64::from(v))?;",
+            ],
+        ),
+        (
+            "optional<float64>",
+            false,
+            &["cbor::read_float(&mut c)?", "cbor::write_float(w, v)?;"],
+        ),
+        (
+            "list<optional<uint16>>[3]",
+            false,
+            &[
+                "pub v: ::sce_forge_runtime::codec::BoundedList<Option<u16>, 3>,",
+                "if cbor::take_null(&mut c)? {",
+                "None => cbor::write_null(w)?,",
+            ],
+        ),
+        (
+            "list<list<uint8>[2]>[2]",
+            false,
+            &[
+                "let len1 = cbor::read_array_len(&mut c)?;",
+                "for item1 in item.as_slice() {",
+            ],
+        ),
+        (
+            "list<bool>[1..2]",
+            true,
+            &["if !(1..=2).contains(&len) {", "if len < 1 {"],
+        ),
+        (
+            "record:Customer",
+            false,
+            &[
+                "pub v: order_customer::OrderCustomerPayload,",
+                "fn decode_record_order_customer(c: &mut SceCursor<'_>) -> Result<order_customer::OrderCustomerPayload, CodecError> {",
+                "encode_record_order_customer(w, v)?;",
+            ],
+        ),
+        (
+            "list<record:Line>[4]",
+            false,
+            &[
+                "paint_color::PaintColor::from_underlying(cbor::read_uint_upto(c, u64::from(u8::MAX))? as u8).ok_or(CodecError::UndeclaredEnumValue)?",
+                "cbor::write_uint(w, u64::from(record.color.to_underlying()))?;",
+            ],
+        ),
+        (
+            "union:Payment",
+            true,
+            &[
+                // The case records the union names, which the codec does not
+                // import itself.
+                "use super::card_payment;",
+                "use super::voucher_payment;",
+                "match cbor::read_variant(c, &[\"card\", \"cash\", \"voucher\"])? {",
+                "cbor::read_empty_case(c)?;",
+                "cbor::write_variant(w, \"cash\")?;",
+                "if record.voucher_code.len() > 4 {",
+                "check_union_order_payment(v)?;",
+            ],
+        ),
+        (
+            "optional<union:Payment>",
+            true,
+            &["pub v: Option<order_payment::OrderPayment>,"],
+        ),
+    ];
+    for &(ty, may_fail, expected) in cases {
+        let rust = rust_of(ty, may_fail);
+        for expected in expected {
+            assert!(
+                rust.contains(expected),
+                "{ty}: missing `{expected}`:\n{rust}"
+            );
+        }
+    }
+    // A map that requires a record or a union has no value by default.
+    assert!(!rust_of("record:Customer", false).contains("pub fn new() -> Self"));
+    assert!(rust_of("optional<record:Customer>", false).contains("pub fn new() -> Self"));
+}
+
+#[test]
+fn a_record_of_no_field_is_refused_at_any_depth_alike_for_every_language() {
+    // docs/adr/0101, section 5.3: a record is held in its schema's payload
+    // type, and a schema of no field declares none, so a codec that holds one
+    // at any depth is refused by name before any language renders, whether or
+    // not the backend prints every shape.
+    let dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/event_schema_payload_free");
+    let text = document(
+        r#"  <sce:import kind="event-schema" src="job_requested.scxml" as="Requested"/>"#,
+        &one_entry("list<optional<record:Requested>>[2]"),
+    );
+    for &lang in Language::ALL {
+        let refused = compile_forge_with_imports(&text, label(), lang, &dir, &options())
+            .err()
+            .unwrap_or_else(|| panic!("{lang:?} refuses a record of no field"));
+        assert_eq!(
+            code_of(&refused.error),
+            "generate/unsupported-feature",
+            "{lang:?}"
+        );
+        let why = refused.error.to_string();
+        assert!(
+            why.contains(
+                "CBOR entry 'v' holds a record of `job_requested`, which declares no field"
+            ),
+            "{lang:?}: {why}"
+        );
     }
 }
 

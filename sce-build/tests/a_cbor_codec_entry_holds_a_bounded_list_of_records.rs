@@ -237,15 +237,16 @@ fn the_rust_map_holds_each_list_in_the_bounded_list_of_the_schemas_payload() {
         "let len = cbor::read_array_len(&mut c)?;",
         "if len > 2 {",
         "if len > 3 {",
-        "list.push(decode_record_causal_entry(&mut c)?)?;",
-        // The record is read and written by functions private to the module.
-        "fn decode_record_causal_entry(c: &mut SceCursor<'_>) -> Result<cbor_causal_entry::CborCausalEntryPayload, CodecError> {",
+        "list.push(decode_record_cbor_causal_entry(&mut c)?)?;",
+        // The record is read and written by functions private to the module,
+        // named for the schema's document (docs/adr/0101, section 5.1).
+        "fn decode_record_cbor_causal_entry(c: &mut SceCursor<'_>) -> Result<cbor_causal_entry::CborCausalEntryPayload, CodecError> {",
         "Ok(cbor_causal_entry::CborCausalEntryPayload {",
         "::sce_forge_runtime::codec::SceString::<16>::from_text(cbor::read_text(c, Some(16))?)?",
         // The write is the array head and each record's map.
-        "let len = v.as_slice().len();",
-        "cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(len))?;",
-        "encode_record_causal_entry(w, record)?;",
+        "cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(v.as_slice().len()))?;",
+        "for item in v.as_slice() {",
+        "encode_record_cbor_causal_entry(w, item)?;",
     ] {
         assert!(rust.contains(expected), "missing `{expected}`:\n{rust}");
     }
@@ -259,7 +260,7 @@ fn the_rust_map_holds_each_list_in_the_bounded_list_of_the_schemas_payload() {
 fn a_record_writes_its_keys_in_the_order_their_encodings_sort() {
     let rust = rust_of(&fixture_text(), CODEC);
     let write = rust
-        .split("fn encode_record_causal_entry")
+        .split("fn encode_record_cbor_causal_entry")
         .nth(1)
         .expect("the record has an encode");
     let seq = write
@@ -635,16 +636,37 @@ fn the_python_map_holds_each_list_in_a_list_of_the_schemas_payload() {
 }
 
 #[test]
-fn a_record_with_a_field_no_codec_writes_is_refused_by_name() {
+fn a_record_with_a_field_of_another_type_is_refused_by_name_where_it_is_not_lowered() {
+    // docs/adr/0101, section 5.4: a backend whose printer writes the records
+    // of docs/adr/0085 Landing order step 3a alone refuses the codec, naming
+    // the field; Rust prints every shape, and writes the field as its type.
     let text = document(
         "",
         r#"  <sce:import kind="event-schema" src="cbor_signed_entry.scxml" as="SignedEntry"/>"#,
         r#"    <data id="n" sce:type="list&lt;record:SignedEntry&gt;[2]" sce:key="0" sce:direction="out"/>"#,
     );
-    let why = generated(&text, "probe_list", Language::Rust)
-        .err()
-        .unwrap_or_else(|| panic!("a record with an int32 field generated"));
-    assert!(why.contains("whose field `delta` is `int32`"), "{why}");
+    for &lang in Language::ALL {
+        match generated(&text, "probe_list", lang) {
+            Ok(code) => {
+                assert!(cbor_codec::lowers_every_entry_type(lang), "{lang:?}");
+                assert!(
+                    code.contains("cbor::write_int(w, i64::from(record.delta))?;"),
+                    "{lang:?}:\n{code}"
+                );
+            }
+            Err(why) => {
+                assert!(
+                    !cbor_codec::lowers_every_entry_type(lang),
+                    "{lang:?}: {why}"
+                );
+                assert!(
+                    why.contains("whose field `delta` is `int32`"),
+                    "{lang:?}: {why}"
+                );
+            }
+        }
+    }
+    assert!(cbor_codec::lowers_every_entry_type(Language::Rust));
 }
 
 #[test]
@@ -665,7 +687,7 @@ fn a_lower_count_is_read_and_its_write_refuses_fewer_records() {
         &document(r#" sce:encode-may-fail="true""#, CAUSAL_IMPORT, entries),
         "probe_list",
     );
-    assert!(rust.contains("if len > 2 || len < 1 {"), "{rust}");
+    assert!(rust.contains("if !(1..=2).contains(&len) {"), "{rust}");
     // The write refuses a value of fewer records than the lower count.
     assert!(rust.contains("if len < 1 {"), "{rust}");
 }
@@ -705,9 +727,13 @@ fn a_record_byte_string_is_held_to_its_bound_by_the_encode() {
         "probe_list",
     );
     for expected in [
+        // The check of the record, which each record of the list is held to
+        // before the map is written.
+        "fn check_record_cbor_digest_entry(record: &cbor_digest_entry::CborDigestEntryPayload) -> Result<(), CodecError> {",
         "if record.digest.len() > 4 {",
+        "check_record_cbor_digest_entry(item)?;",
         "cbor::read_bytes(c, Some(4))?.to_vec()",
-        "cbor::write_bytes(w, &record.digest)?;",
+        "cbor::write_bytes(w, record.digest.as_slice())?;",
     ] {
         assert!(rust.contains(expected), "missing `{expected}`:\n{rust}");
     }

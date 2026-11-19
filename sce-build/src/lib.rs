@@ -5199,12 +5199,13 @@ pub fn compile_forge_from_parsed(
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
         forge::codec_totality::check(m, &import_ctx)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
-        // A record a CBOR entry's list holds is written as a map of its fields
-        // (docs/adr/0085, Landing order step 3a): a record whose schema did not
-        // resolve, or that holds a field no codec writes, is refused here, by
-        // name and alike for every language.
+        // A value a CBOR entry holds is held in the type its unit declares
+        // (docs/adr/0101, section 5.3): an enum, a record or a union whose
+        // document did not resolve, and a record of no field, are refused here,
+        // by name and alike for every language. What a backend does not print
+        // yet is its own refusal (`cbor_codec::refusal`, section 5.4).
         let record_scope = forge::generator::import_type_scope(&import_ctx);
-        if let Some(why) = forge::cbor_codec::record_list_unlowered(m, &record_scope) {
+        if let Some(why) = forge::cbor_codec::unheld_value(m, &record_scope) {
             return Err(Located::in_file(
                 forge::error::ForgeError::from(forge::error::GenerateError::unsupported_at(
                     format!("codec '{}': {why}", m.name),

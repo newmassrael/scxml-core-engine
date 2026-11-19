@@ -1660,7 +1660,7 @@ pub enum CborShape {
     /// itself, a text or a byte string with no bound, or a map or a set,
     /// which has no CBOR wire form. The compile refuses each before any
     /// printer reads the plan (the import check,
-    /// [`crate::forge::cbor_codec::record_list_unlowered`], docs/adr/0101
+    /// [`crate::forge::cbor_codec::unheld_value`], docs/adr/0101
     /// section 1.3, docs/adr/0108 D7 for a codec entry that holds a map);
     /// the plan names what it met.
     Unresolved {
@@ -1696,6 +1696,11 @@ impl CborShape {
 pub struct CborEnum {
     /// The alias that names the enum where it stands.
     pub alias: String,
+    /// The name of its document (its `<scxml name>`), which its unit is named
+    /// by on every backend: what a value of the enum is named by where the
+    /// alias of the document that names it is not in scope, as in a record of
+    /// another document.
+    pub name: String,
     /// The integer type its numbers are (`sce:underlying-type`).
     pub carrier: SceType,
     /// Whether a number no variant declares is refused
@@ -1842,6 +1847,7 @@ fn scalar_shape(t: &SceType, env: &dyn TypeEnv) -> CborShape {
         SceType::Enum(reference) => match env.enum_type(&reference.alias) {
             Some(enumeration) => CborShape::Enum(CborEnum {
                 alias: reference.alias.clone(),
+                name: enumeration.name.clone(),
                 carrier: enumeration.underlying.clone(),
                 closed: enumeration.strict,
             }),
@@ -2351,6 +2357,7 @@ mod tests {
             shape("enum:Color"),
             CborShape::Enum(CborEnum {
                 alias: "Color".to_string(),
+                name: "paint_color".to_string(),
                 carrier: SceType::Uint8,
                 closed: true,
             })

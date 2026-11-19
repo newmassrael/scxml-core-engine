@@ -96,6 +96,16 @@ pub(crate) use python_source::content_line::source_case as python_content_line_s
 pub(crate) use rust_source::cbor::source_case as rust_cbor_source_case;
 pub(crate) use rust_source::content_line::source_case as rust_content_line_source_case;
 
+/// What the Rust printer spells of a CBOR entry's value below the entry's own
+/// level (docs/adr/0101, section 5.1), which the codec's module is rendered
+/// from: the type it is held in, its read, the reads, writes and checks of
+/// each record and union document the codec reaches, and the modules those
+/// name.
+pub(crate) use rust_source::cbor::{
+    composed_type as rust_cbor_composed_type, composites as rust_cbor_composites,
+    decode as rust_cbor_decode, reached_modules as rust_cbor_reached_modules,
+};
+
 /// A byte case of the Swift conformance harness, its source a value the printed codec's
 /// initializer makes (docs/adr/0081 §5). See [`swift_codec::source_case::source_case`].
 pub(crate) use swift_codec::source_case::{
