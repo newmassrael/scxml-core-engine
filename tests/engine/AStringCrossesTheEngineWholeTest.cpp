@@ -9,9 +9,20 @@
 // cut short without a word. Where a boundary cannot carry a 0x00 the value is
 // refused, never cut short (docs/SCE_ACCEPTED_SUBSET.md, the byte string as a
 // <param>); this one can, so it carries every value with its length.
+//
+// The Lua engine is held to the same four crossings below, named as the engine
+// it is (the seam tests' reason: through the provider, the engine a build did not
+// select would be compiled by every build and run by none). A Lua string holds
+// any byte and knows its length, and was read and made as a C string all the
+// same.
 
 #include "scripting/JSEngine.h"
+#include "scripting/ScriptSource.h"
 #include <gtest/gtest.h>
+
+#ifdef SCE_ENABLE_LUA
+#include "scripting/LuaEngine.h"
+#endif
 #include <memory>
 #include <string>
 #include <utility>
@@ -120,6 +131,97 @@ TEST_F(AStringCrossesTheEngineWholeTest, ANativeMethodIsHandedAndAnswersATextWho
     EXPECT_TRUE(holds("host.echo('a\\u0000b') === 'x\\u0000y'")) << "the answer was cut short";
     EXPECT_EQ(std::string("a\0b", 3), handed) << "the argument was cut short";
 }
+
+#ifdef SCE_ENABLE_LUA
+
+/// The four crossings above, on the Lua engine. Each case is handed to it as Lua
+/// already (`ScriptSource::lua`), so what is measured is the engine's boundary and
+/// not the frontend that lowers ECMAScript to it.
+class AStringCrossesTheLuaEngineWholeTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        engine_ = &LuaEngine::instance();
+        ASSERT_TRUE(engine_->createSession(sessionId_, "")) << "no session to run in";
+    }
+
+    void TearDown() override {
+        if (engine_) {
+            engine_->destroySession(sessionId_);
+        }
+    }
+
+    /// What the Lua expression `lua` evaluates to, as it leaves the engine.
+    ScriptResult evaluated(const std::string &lua) {
+        auto result = engine_->evaluateExpression(sessionId_, ScriptSource::lua(lua, lua)).get();
+        EXPECT_TRUE(result.isSuccess()) << lua << ": " << result.getErrorMessage();
+        return result;
+    }
+
+    /// The text the Lua expression `lua` evaluates to; empty with a failure when
+    /// it evaluates to no text.
+    std::string textOf(const std::string &lua) {
+        const auto result = evaluated(lua);
+        const auto *text = std::get_if<std::string>(&result.getInternalValue());
+        EXPECT_NE(text, nullptr) << lua << " is no text";
+        return text ? *text : std::string();
+    }
+
+    /// Whether the Lua expression `lua` evaluates to `true`.
+    bool holds(const std::string &lua) {
+        const auto result = evaluated(lua);
+        const auto *answer = std::get_if<bool>(&result.getInternalValue());
+        return answer != nullptr && *answer;
+    }
+
+    LuaEngine *engine_ = nullptr;
+    const std::string sessionId_ = "a_string_crosses_the_lua_engine_whole";
+};
+
+TEST_F(AStringCrossesTheLuaEngineWholeTest, ATextHoldingAZeroByteLeavesTheEngineWhole) {
+    EXPECT_EQ(std::string("a\0b", 3), textOf(R"lua("a\0b")lua"));
+    EXPECT_EQ(std::string("\xc3\xbf\0\xc2\x80", 5), textOf(R"lua("\xc3\xbf\0\xc2\x80")lua"));
+}
+
+TEST_F(AStringCrossesTheLuaEngineWholeTest, ATextHoldingAZeroByteEntersTheEngineWhole) {
+    ASSERT_TRUE(engine_->setVariable(sessionId_, "held", ScriptValue(std::string("a\0b", 3))).get().isSuccess());
+    EXPECT_TRUE(holds("#held == 3 and held:byte(1) == 97 and held:byte(2) == 0 and held:byte(3) == 98"));
+    EXPECT_EQ(std::string("a\0b", 3), textOf("held"));
+}
+
+TEST_F(AStringCrossesTheLuaEngineWholeTest, ARecordCrossesTheEngineWithEveryTextWhole) {
+    const auto read = evaluated(R"lua({frame = "a\0b", ["k\0y"] = 1})lua");
+    const auto *record = std::get_if<std::shared_ptr<ScriptObject>>(&read.getInternalValue());
+    ASSERT_NE(record, nullptr);
+    ASSERT_TRUE(*record);
+    const auto frame = (*record)->properties.find("frame");
+    ASSERT_NE(frame, (*record)->properties.end());
+    const auto *text = std::get_if<std::string>(&frame->second);
+    ASSERT_NE(text, nullptr) << "the field is no text";
+    EXPECT_EQ(std::string("a\0b", 3), *text);
+    EXPECT_NE((*record)->properties.find(std::string("k\0y", 3)), (*record)->properties.end())
+        << "the key that holds a 0x00 was cut short";
+
+    ASSERT_TRUE(engine_->setVariable(sessionId_, "record", read.getInternalValue()).get().isSuccess());
+    EXPECT_TRUE(holds(R"lua(record.frame == "a\0b" and record["k\0y"] == 1)lua"));
+}
+
+TEST_F(AStringCrossesTheLuaEngineWholeTest, ANativeMethodIsHandedAndAnswersATextWhole) {
+    std::string handed;
+    const std::vector<std::pair<std::string, IScriptEngine::NativeMethod>> methods = {
+        {"echo", [&handed](const std::vector<ScriptValue> &args) -> ScriptValue {
+             if (!args.empty()) {
+                 if (const auto *text = std::get_if<std::string>(&args[0])) {
+                     handed = *text;
+                 }
+             }
+             return ScriptValue(std::string("x\0y", 3));
+         }}};
+    ASSERT_TRUE(engine_->bindNativeObject(sessionId_, "host", methods));
+    EXPECT_TRUE(holds(R"lua(host.echo("a\0b") == "x\0y")lua")) << "the answer was cut short";
+    EXPECT_EQ(std::string("a\0b", 3), handed) << "the argument was cut short";
+}
+
+#endif  // SCE_ENABLE_LUA
 
 }  // namespace Tests
 }  // namespace SCE

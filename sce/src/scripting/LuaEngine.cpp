@@ -41,6 +41,18 @@ char UNDEFINED_SENTINEL_TAG;
 // Type alias for global function callbacks registered via registerGlobalFunction()
 using GlobalFuncCallback = std::function<ScriptValue(const std::vector<ScriptValue> &)>;
 
+// The string at `index`, whole. A Lua string holds any byte, a 0x00 among them,
+// and knows its length: read as a C string it would end at its first 0x00, so a
+// text or a byte string that holds one is taken by its length on every value
+// path out of this engine, as `lua_pushlstring` puts one in. The value at
+// `index` is a string or a number (`lua_isstring`), which `lua_tolstring`
+// converts in place as `lua_tostring` does.
+std::string luaText(lua_State *L, int index) {
+    size_t length = 0;
+    const char *text = lua_tolstring(L, index, &length);
+    return text != nullptr ? std::string(text, length) : std::string();
+}
+
 // Lua __gc metamethod: destroys GlobalFuncCallback stored as full userdata
 int globalFuncGC(lua_State *L) {
     auto *fn = static_cast<GlobalFuncCallback *>(lua_touserdata(L, 1));
@@ -61,7 +73,7 @@ int globalFuncCall(lua_State *Ls) {
         } else if (lua_isnumber(Ls, i)) {
             args.emplace_back(lua_tonumber(Ls, i));
         } else if (lua_isstring(Ls, i)) {
-            args.emplace_back(std::string(lua_tostring(Ls, i)));
+            args.emplace_back(luaText(Ls, i));
         } else if (lua_isboolean(Ls, i)) {
             args.emplace_back(static_cast<bool>(lua_toboolean(Ls, i)));
         } else {
@@ -79,7 +91,7 @@ int globalFuncCall(lua_State *Ls) {
             } else if constexpr (std::is_same_v<T, double>) {
                 lua_pushnumber(Ls, val);
             } else if constexpr (std::is_same_v<T, std::string>) {
-                lua_pushstring(Ls, val.c_str());
+                lua_pushlstring(Ls, val.data(), val.size());
             } else {
                 lua_pushnil(Ls);
             }
@@ -1414,7 +1426,7 @@ std::future<SetCurrentEventResult> LuaEngine::setCurrentEvent(const std::string 
             } else {
                 // §scxml-B-2 (test 562): Space-normalize plain text content
                 std::string normalized = normalizeWhitespace(eventData);
-                lua_pushstring(L, normalized.c_str());
+                lua_pushlstring(L, normalized.data(), normalized.size());
                 lua_setfield(L, -2, "data");
                 // Which of the two third-rung readings this is — the clause
                 // treats them alike and a host does not. See
@@ -1507,7 +1519,7 @@ bool LuaEngine::bindNativeObject(const std::string &sessionId, const std::string
                         }
                         break;
                     case LUA_TSTRING:
-                        args.emplace_back(std::string(lua_tostring(Ls, i)));
+                        args.emplace_back(luaText(Ls, i));
                         break;
                     default:
                         args.emplace_back(ScriptUndefined{});
@@ -1529,7 +1541,7 @@ bool LuaEngine::bindNativeObject(const std::string &sessionId, const std::string
                         } else if constexpr (std::is_same_v<VT, double>) {
                             lua_pushnumber(Ls, val);
                         } else if constexpr (std::is_same_v<VT, std::string>) {
-                            lua_pushstring(Ls, val.c_str());
+                            lua_pushlstring(Ls, val.data(), val.size());
                         } else {
                             lua_pushnil(Ls);
                         }
@@ -1582,7 +1594,8 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
             } else if constexpr (std::is_same_v<T, double>) {
                 lua_pushnumber(L, val);
             } else if constexpr (std::is_same_v<T, std::string>) {
-                lua_pushstring(L, val.c_str());
+                // By its length, as `luaText` reads one: a 0x00 is a byte of it.
+                lua_pushlstring(L, val.data(), val.size());
             } else if constexpr (std::is_same_v<T, std::shared_ptr<ScriptArray>>) {
                 lua_newtable(L);
                 if (val) {
@@ -1600,8 +1613,12 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
                 lua_newtable(L);
                 if (val) {
                     for (auto &[key, objVal] : val->properties) {
+                        // The key by its length too, as `lua_setfield` would
+                        // by `strlen`: the same field for every key without a
+                        // 0x00. The table is new and has no metatable.
+                        lua_pushlstring(L, key.data(), key.size());
                         pushScriptValue(L, objVal);
-                        lua_setfield(L, -2, key.c_str());
+                        lua_rawset(L, -3);
                     }
                 }
             }
@@ -1621,7 +1638,7 @@ ScriptValue LuaEngine::luaToScriptValue(lua_State *L, int index) {
         }
         return lua_tonumber(L, index);
     case LUA_TSTRING:
-        return std::string(lua_tostring(L, index));
+        return luaText(L, index);
     case LUA_TTABLE: {
         const int top = lua_gettop(L);
         int absIndex = index < 0 ? top + index + 1 : index;
@@ -1656,7 +1673,7 @@ ScriptValue LuaEngine::luaToScriptValue(lua_State *L, int index) {
             lua_pushnil(L);
             while (lua_next(L, absIndex) != 0) {
                 if (lua_isstring(L, -2)) {
-                    std::string key = lua_tostring(L, -2);
+                    std::string key = luaText(L, -2);
                     obj->properties[key] = luaToScriptValue(L, -1);
                 }
                 lua_pop(L, 1);
