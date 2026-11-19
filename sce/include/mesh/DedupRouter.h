@@ -32,11 +32,18 @@
 // see `observeWithSignal`).
 //
 // Scope (what this class is NOT):
-//   * No sender eviction. The per-source map grows to the cardinality
-//     of distinct senders the receiver has ever observed. Current
-//     mesh topologies pin sender identity to the machine roster in
-//     deploy.yaml (bounded, small), so this is acceptable; game-scale
-//     fan-in would need an eviction policy layered on top.
+//   * No sender eviction, and a bound on the senders instead. An
+//     envelope's `source` is only what its writer wrote, so a router
+//     that keyed a window by every source it saw would let any writer
+//     grow its map without end (SCE_MESH.md section 10.5). The router
+//     keeps windows for at most `maxSenders` sources, the number its
+//     constructor is given: the generated router passes the machines
+//     its deployment declares and the peers it binds, which bound every
+//     source a sender of that deployment writes. A source past the
+//     bound makes no window and its envelope is refused
+//     (`DedupResult::SenderRefused`). Where the transport names the
+//     link (the https binding), the generated router already refuses a
+//     source its link does not name before this class sees it.
 //   * No cross-session replay defence. An envelope that arrives more
 //     than `Capacity` events after its first delivery will pass the
 //     filter.
@@ -101,10 +108,15 @@ namespace SCE::Mesh {
 /// `NovelWithEviction`: the runtime has no oracle for "leaked duplicate
 /// older than the window", so eviction at full capacity is the closest
 /// observable proxy for "sustained rate exceeds window capacity".
+///
+/// `SenderRefused` is the router's, never a window's: the source has no
+/// window and the router already keeps its `maxSenders`, so no window is
+/// made and the envelope is dropped (SCE_MESH.md section 10.5).
 enum class DedupResult {
     Duplicate,
     Novel,
     NovelWithEviction,
+    SenderRefused,
 };
 
 /// Ring-buffer window of recently-observed envelope ids for a single
@@ -195,11 +207,23 @@ public:
     /// capacity in the §mesh-16.7 row 7 payload.
     static constexpr std::size_t kCapacity = Capacity;
 
+    /// A router that keeps a window for at most `maxSenders` sources
+    /// (SCE_MESH.md section 10.5); at least one.
+    explicit DedupRouterT(std::size_t maxSenders) : max_senders_(maxSenders == 0 ? 1 : maxSenders) {}
+
     /// Returns true iff the envelope should proceed to the engine.
     /// Returns false iff the (source, id) pair was already observed
-    /// within the window and the envelope should be dropped.
+    /// within the window, or the source has no window and the router
+    /// keeps its bound of senders, and the envelope should be dropped.
     [[nodiscard]] bool admit(const std::string &source, const Id &id) {
-        return admitWithSignal(source, id) != DedupResult::Duplicate;
+        const DedupResult result = admitWithSignal(source, id);
+        return result == DedupResult::Novel || result == DedupResult::NovelWithEviction;
+    }
+
+    /// How many sources the router keeps a window for.
+    [[nodiscard]] std::size_t senders() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return windows_.size();
     }
 
     /// Rich variant — surfaces the §mesh-16.7 row 7 DEDUP_WINDOW_OVERFLOW
@@ -210,14 +234,21 @@ public:
     ///     NovelWithEviction.
     [[nodiscard]] DedupResult admitWithSignal(const std::string &source, const Id &id) {
         std::lock_guard<std::mutex> lock(mutex_);
-        // `operator[]` value-initializes the window on first insert,
-        // i.e. an all-zero ring with head_ = 0 — any non-zero UUID is
-        // novel on first observation, which is the intended behavior.
+        const auto found = windows_.find(source);
+        if (found != windows_.end()) {
+            return found->second.observeWithSignal(id);
+        }
+        if (windows_.size() >= max_senders_) {
+            return DedupResult::SenderRefused;
+        }
+        // A new window is value-initialized, an all-zero ring with
+        // head_ = 0: any UUID is novel on first observation.
         return windows_[source].observeWithSignal(id);
     }
 
 private:
     std::mutex mutex_;
+    std::size_t max_senders_;
     std::unordered_map<std::string, Window> windows_;
 };
 

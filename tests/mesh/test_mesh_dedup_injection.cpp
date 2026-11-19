@@ -32,6 +32,7 @@
 
 #include <cstdio>
 #include <exception>
+#include <string>
 
 namespace {
 
@@ -81,6 +82,26 @@ int run_test() {
     // not collide even when the ids happen to match.
     env.source = "telemetry";
     MESH_TEST_REQUIRE(router.admitInbound(env, 0), "per-sender window must isolate identical ids across sources");
+
+    // ── 5. Claimed sources past the bound make no window ─────────
+    // SCE_MESH.md section 10.5: a source is only what an envelope says.
+    // The router keeps windows for at most the deployment's machines
+    // (brake, motor) and brake's peers (motor): three. motor and
+    // telemetry hold two, so of ten thousand claimed sources one more is
+    // admitted and every other is dropped before the engine; motor is
+    // still served.
+    for (int n = 0; n < 10000; ++n) {
+        env.id = SCE::uuid::v7();
+        env.source = "claimed-" + std::to_string(n);
+        (void)router.admitInbound(env, 0);
+    }
+    {
+        std::lock_guard<std::mutex> lk(sender.received_.m);
+        MESH_TEST_REQUIRE(sender.received_.events.size() == 4, "only the source within the bound reaches the engine");
+    }
+    env.id = SCE::uuid::v7();
+    env.source = "motor";
+    MESH_TEST_REQUIRE(router.admitInbound(env, 0), "a source with a window is still served");
 
     std::printf("SCE Mesh dedup injection regression: PASS\n");
     return 0;
