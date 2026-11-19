@@ -963,6 +963,38 @@ pub fn links_of<'a>(copies: &[&'a str]) -> Vec<(&'a str, &'a str)> {
     links
 }
 
+// ── A plain route ─────────────────────────────────────────────────────────────
+//
+// The route with no causal layer below the list, which the tests of the layer hold it
+// against. A host core takes an envelope only from the link of the machine it names
+// (SCE_MESH.md section 10.9, invariant 10): only a causal group is read by one name for many
+// senders. So on a plain route each copy publishes what it sends to `#people` to every other
+// copy, and each reads what another sent by that copy's own name, as a machine reads a Zenoh
+// inbox by its sender's key (section 20.1).
+
+/// `router`, the router of the copy `who` bound to `#people`, also bound to every other of
+/// `copies` by its name: the binding it reads that copy's sends by on a plain route.
+pub fn reading_each_other(mut router: Router, who: &str, copies: &[&str]) -> Router {
+    for other in copies.iter().filter(|other| **other != who) {
+        router.add_peer(other, peer(&[], false));
+    }
+    router
+}
+
+/// Make `#people` a topic of every one of `copies` ([`World::topic`]), each linked to every
+/// other already: what a copy sends to it reaches each other copy over their link, which reads
+/// it by the sender's name ([`reading_each_other`]).
+pub fn publish_plainly(world: &mut World, copies: &[&str]) {
+    for who in copies {
+        let others: Vec<&str> = copies
+            .iter()
+            .copied()
+            .filter(|other| other != who)
+            .collect();
+        world.topic(who, PEOPLE, &others);
+    }
+}
+
 /// Every change of a shared list a copy sent on the network, once each, in the order it was
 /// first sent: the data of each `record_list.change`, read off the envelopes the network
 /// recorded rather than off any copy. A change the layer sent again in a repair, or a link

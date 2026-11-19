@@ -360,12 +360,16 @@ fn a_change_lost_on_a_plain_route_is_never_found() {
     for who in COPIES {
         let mut router = Router::new(who, 256, 5_000).expect("a window the core can hold");
         router.add_peer(PEOPLE, peer(&[PEOPLE], false));
-        world.add(who, TodoPeer::new(), router);
+        world.add(
+            who,
+            TodoPeer::new(),
+            reading_each_other(router, who, &COPIES),
+        );
     }
     for (a, b) in links_of(&COPIES) {
         world.link(a, b, 20);
     }
-    world.group(PEOPLE, &COPIES);
+    publish_plainly(&mut world, &COPIES);
     for who in COPIES {
         world.raise(
             who,

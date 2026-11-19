@@ -42,9 +42,9 @@ use sce_rust_world::{Fate, Host, MeshEndpoint, Outcome, World};
 use serde_json::{json, Value};
 
 use super::{
-    assert_layers_rest, at_rest, group_world_of, links_of, record_copy, record_node_of,
-    record_variables_of, records_of, replica_of, whole, Field, RecordList, COPIES, LAYER_ROOM,
-    PEOPLE, TRIO, VECTOR_EVERY_MS,
+    assert_layers_rest, at_rest, group_world_of, links_of, publish_plainly, reading_each_other,
+    record_copy, record_node_of, record_variables_of, records_of, replica_of, whole, Field,
+    RecordList, COPIES, LAYER_ROOM, PEOPLE, TRIO, VECTOR_EVERY_MS,
 };
 
 /// The route a copy that keeps a journal offers its changes and reports its outcomes on.
@@ -315,12 +315,13 @@ impl Hosted {
             Route::Plain => {
                 let mut world = World::new(seed);
                 for who in COPIES {
-                    world.add(who, RecordList::new(), record_copy(who));
+                    let router = reading_each_other(record_copy(who), who, &COPIES);
+                    world.add(who, RecordList::new(), router);
                 }
                 for (a, b) in links_of(&COPIES) {
                     world.link(a, b, LATENCY_MS);
                 }
-                world.group(PEOPLE, &COPIES);
+                publish_plainly(&mut world, &COPIES);
                 world
             }
         };
@@ -458,10 +459,16 @@ impl Hosted {
         panic!("{who} put no change on the network");
     }
 
-    /// Give `to` the change `made` as its link would, and let it take it.
+    /// Give `to` the change `made` as its link would, and let it take it: by the group on a
+    /// causal route, and by the copy that made it on a plain one ([`publish_plainly`]).
     pub fn give(&mut self, made: &Made, to: &str) {
+        let via = if self.causal {
+            PEOPLE
+        } else {
+            made.from.as_str()
+        };
         self.world
-            .deliver_again(&made.from, to, PEOPLE, made.bytes.clone());
+            .deliver_again(&made.from, to, via, made.bytes.clone());
         self.step();
     }
 

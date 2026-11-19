@@ -87,6 +87,24 @@ pub struct PeerConfig {
     pub causal: Option<CausalGroup>,
 }
 
+impl PeerConfig {
+    /// Whether the link of this binding names the machine that sent what arrives on it, so
+    /// that an envelope whose `source` names another machine is refused
+    /// ([`RouterError::SourceNotLink`], SCE_MESH.md section 10.9, invariant 10).
+    ///
+    /// Every transport a host core serves joins this machine to one peer per link and tells
+    /// the core that peer's name, which the host authenticated: `wss` by the path the client
+    /// dialed (section 18.1), `zenoh_inbox` by the last chunk of the key it was put under
+    /// (section 20.1), `https` by the path and the authenticator (section 22.1). So does
+    /// every binding but a causal route, which is a group and not a link to one machine: a
+    /// member's change reaches a copy through any member or relay as its author wrote it
+    /// (§mesh-10.12), and its author is the replica its tag names (section 10.9, invariant
+    /// 9), not the link it came in on.
+    pub fn link_names_sender(&self) -> bool {
+        self.causal.is_none()
+    }
+}
+
 /// One thing the host must do.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
@@ -1161,6 +1179,9 @@ impl Router {
     /// effects. A hold that is full or a sequence at the `u64` maximum is a
     /// limit of this receiver, which no row names and distribution may not
     /// invent one for (§mesh-16.7, "Scope of synthesis"), so it is returned.
+    /// So is an envelope that names another sender than the machine `peer`'s
+    /// link names ([`RouterError::SourceNotLink`]): what the link delivered is
+    /// the host's to judge, and nothing the router keeps by sender sees it.
     pub fn receive(
         &mut self,
         peer: &str,
@@ -1182,14 +1203,30 @@ impl Router {
                 signal,
             }])
         };
+        let decoded = Envelope::decode(&mut SceCursor::new(&bytes)).ok();
+        // SCE_MESH.md section 10.9, invariant 10: the link names the machine
+        // at its other end, and `source` is only what the envelope says. One
+        // that names another machine is refused before anything kept by
+        // sender sees it (the duplicate window and its reply cache, the
+        // ordering hold, a durable stream, a request's correlation) and
+        // before the machine is told, so no link speaks for a machine it is
+        // not.
+        if let Some(source) = decoded
+            .as_ref()
+            .filter(|envelope| config.link_names_sender() && envelope.source != peer)
+            .map(|envelope| envelope.source.to_string())
+        {
+            return Err(RouterError::SourceNotLink {
+                peer: peer.to_string(),
+                source,
+            });
+        }
         // §mesh-14.6: a reply is checked against its request's responder set
         // on arrival, while the binding it came in on is still known — an
         // ordered binding may hold it and release it on a later tick. One
         // from outside the set is refused before the dedup window or the
         // ordering hold sees it, so it takes no slot in either.
-        let head = Envelope::decode(&mut SceCursor::new(&bytes))
-            .ok()
-            .map(|envelope| (envelope.pattern, envelope.sequence_no));
+        let head = decoded.map(|envelope| (envelope.pattern, envelope.sequence_no));
         // SCE_MESH.md section 10.11: an acknowledgement releases what this
         // machine held for `peer` up to its mark, and reaches no engine. One
         // without a mark acknowledges nothing.
@@ -1560,6 +1597,12 @@ pub enum RouterError {
     NotMeshTarget(String),
     /// The host named a peer it never bound with [`Router::add_peer`].
     UnknownPeer(String),
+    /// An envelope arrived on the link of `peer` naming another machine, `source`, as its
+    /// sender, and was dropped: the link names the machine the host authenticated at its other
+    /// end, and an envelope's `source` is only what its writer wrote (SCE_MESH.md section
+    /// 10.9, invariant 10). Nothing the router keeps by sender saw it, and the machine was not
+    /// told. Never raised on a causal route ([`PeerConfig::link_names_sender`]).
+    SourceNotLink { peer: String, source: String },
     /// A standard rule refused its input: a sequence at the `u64` maximum,
     /// or a clock reading that cannot be subtracted.
     Rule(AlgorithmError),
@@ -2298,9 +2341,20 @@ mod tests {
     }
 
     fn reply(id: u8, status: Option<RpcStatus>, message: Option<&str>, data: &str) -> Vec<u8> {
+        reply_by("hmi", id, status, message, data)
+    }
+
+    /// [`reply`], written by `source`.
+    fn reply_by(
+        source: &str,
+        id: u8,
+        status: Option<RpcStatus>,
+        message: Option<&str>,
+        data: &str,
+    ) -> Vec<u8> {
         Envelope {
             id: (&[id; 16]).into(),
-            source: within("hmi").unwrap(),
+            source: within(source).unwrap(),
             event_type: within("service.response.force").unwrap(),
             pattern: PatternKind::RpcReply,
             datacontenttype: payload_codec(data),
@@ -2404,17 +2458,45 @@ mod tests {
         let mut ecu = requester(None);
         started(&mut ecu, None);
         assert_eq!(
-            ecu.receive("mallory", reply(2, Some(RpcStatus::Ok), None, "1"), 20)
-                .unwrap(),
+            ecu.receive(
+                "mallory",
+                reply_by("mallory", 2, Some(RpcStatus::Ok), None, "1"),
+                20
+            )
+            .unwrap(),
             alloc::vec![Effect::Raise {
                 peer: Some("mallory".to_string()),
                 signal: Signal::RpcReplyFromUndeclaredPeer {
-                    // The envelope's word, reported as written; what refused
-                    // it was the binding it came in on.
-                    source: "hmi".to_string(),
+                    // What refused it was the binding it came in on, whose
+                    // machine the envelope names.
+                    source: "mallory".to_string(),
                     invoke_id: "09090909-0909-0909-0909-090909090909".to_string(),
                 },
             }]
+        );
+        assert!(matches!(
+            ecu.receive("hmi", reply(3, Some(RpcStatus::Ok), None, "2"), 21)
+                .unwrap()
+                .as_slice(),
+            [Effect::Complete { data, .. }] if data == "2"
+        ));
+    }
+
+    /// SCE_MESH.md section 10.9, invariant 10, before §mesh-14.6 is asked: a reply that
+    /// arrives on mallory's link naming hmi, the declared responder, is
+    /// refused to the host, ends nothing and raises nothing, and the request
+    /// is still answered by hmi. Red if the router takes the envelope's
+    /// `source` over its link: the reply is then row 14 under hmi's name.
+    #[test]
+    fn a_reply_naming_the_responder_on_another_link_is_refused_to_the_host() {
+        let mut ecu = requester(None);
+        started(&mut ecu, None);
+        assert_eq!(
+            ecu.receive("mallory", reply(2, Some(RpcStatus::Ok), None, "1"), 20),
+            Err(RouterError::SourceNotLink {
+                peer: "mallory".to_string(),
+                source: "hmi".to_string(),
+            })
         );
         assert!(matches!(
             ecu.receive("hmi", reply(3, Some(RpcStatus::Ok), None, "2"), 21)
@@ -2684,6 +2766,108 @@ mod tests {
         );
     }
 
+    // ── SCE_MESH.md section 10.9, invariant 10: the link names the sender ──
+
+    /// An HTTPS server, `cloud`, that keeps the mailboxes of two clients,
+    /// `alice` and `bob`, each the name its exchange path and its
+    /// authenticator prove (SCE_MESH.md sections 22.1 and 22.5), and answers
+    /// `service.request.force` with `service.response.force`.
+    fn https_server() -> Router {
+        let mut cloud = Router::new("cloud", 8, 50).unwrap();
+        let accepting = PeerConfig {
+            transport: "https",
+            buffer: None,
+            reply_events: &["service.response.force"],
+            ..UNORDERED
+        };
+        cloud.add_peer(
+            "alice",
+            PeerConfig {
+                responders: &["alice"],
+                ..accepting
+            },
+        );
+        cloud.add_peer(
+            "bob",
+            PeerConfig {
+                responders: &["bob"],
+                ..accepting
+            },
+        );
+        cloud
+    }
+
+    /// The request `service.request.force` with the wire invokeid
+    /// [`WIRE`], written as `source` wrote it.
+    fn force_request_by(source: &str) -> Vec<u8> {
+        Envelope {
+            id: (&[0xB0; 16]).into(),
+            source: within(source).unwrap(),
+            event_type: within("service.request.force").unwrap(),
+            pattern: PatternKind::RpcRequest,
+            datacontenttype: PayloadCodec::Json,
+            data: within(r#"{"n":3}"#.as_bytes()).unwrap(),
+            invoke_id: Some((&WIRE).into()),
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+    }
+
+    /// An authenticated client that writes another client's name as its
+    /// `source` is refused to the host, and takes nothing of that client's:
+    /// not the id in its duplicate window, so the other's own request is
+    /// delivered, and not the reply its cache keeps, so a repeat drew no reply
+    /// onto the forger's link. Red if the router takes `source` over the
+    /// link: alice's copy is then delivered as bob's, bob's own is dropped as
+    /// a duplicate, and alice's repeat is answered with bob's reply.
+    #[test]
+    fn a_client_that_names_another_as_its_source_is_refused_and_takes_nothing_of_its() {
+        let mut cloud = https_server();
+        let forged = force_request_by("bob");
+        let refused = Err(RouterError::SourceNotLink {
+            peer: "alice".to_string(),
+            source: "bob".to_string(),
+        });
+        assert_eq!(cloud.receive("alice", forged.clone(), 0), refused);
+
+        // The same bytes on bob's link are bob's: his window did not hold the id.
+        assert_eq!(
+            cloud.receive("bob", forged.clone(), 1).unwrap(),
+            alloc::vec![Effect::Deliver {
+                event: "service.request.force".to_string(),
+                data: r#"{"n":3}"#.to_string(),
+                source: "bob".to_string(),
+                send_id: None,
+                invoke_id: Some(WIRE_TEXT.to_string()),
+            }]
+        );
+        let answered = cloud
+            .send(
+                &HostSendRequest {
+                    invoke_id: WIRE_TEXT.to_string(),
+                    ..request("#bob", "service.response.force", r#"{"force":12}"#)
+                },
+                [5; 16],
+                2,
+            )
+            .unwrap();
+        let [Effect::Transmit { peer, bytes: reply }] = answered.as_slice() else {
+            panic!("expected the reply to bob, got {answered:?}");
+        };
+        assert_eq!(peer, "bob");
+
+        // A repeat on alice's link draws nothing from bob's reply cache; a
+        // repeat on bob's is answered with what he was answered.
+        assert_eq!(cloud.receive("alice", forged.clone(), 3), refused);
+        assert_eq!(
+            cloud.receive("bob", forged, 4).unwrap(),
+            alloc::vec![Effect::Transmit {
+                peer: "bob".to_string(),
+                bytes: reply.clone(),
+            }]
+        );
+    }
+
     /// §mesh-16.7 row 5: the link a request waits on is lost. The request is
     /// forgotten and named; a reply or a deadline that comes afterwards ends
     /// nothing.
@@ -2812,6 +2996,34 @@ mod tests {
             .receive("people", released[0].clone(), 0)
             .unwrap()
             .is_empty());
+    }
+
+    /// A causal route is a group, not a link to one machine: a member's
+    /// change reaches a copy through any member or relay as its author wrote
+    /// it (§mesh-10.12), so the binding `people` names no sender, and the
+    /// change of `phone_list` is delivered under its author's name.
+    /// Red if the router holds a causal route to its link's name: the change
+    /// is then refused as a source the link does not name.
+    #[test]
+    fn a_causal_route_delivers_a_change_under_its_authors_name_from_any_link() {
+        assert!(!PEOPLE.link_names_sender());
+        assert!(UNORDERED.link_names_sender());
+        let mut phone = Router::new("phone_list", 8, 50).unwrap();
+        phone.add_peer("people", PEOPLE);
+        phone
+            .start_causal("people", Start::NewIncarnation(Replica([1; 16])), 64, 100)
+            .expect("a causal peer starts");
+        let mut laptop = copy(2);
+        let dot = accepted(phone.send(&request("#people", "edit", r#"{"n":1}"#), [9; 16], 0));
+        let released = sent(phone.committed("people", dot, 0));
+        let delivered = laptop.receive("people", released[0].clone(), 0).unwrap();
+        assert!(
+            matches!(
+                delivered.as_slice(),
+                [Effect::Deliver { event, source, .. }] if event == "edit" && source == "phone_list"
+            ),
+            "{delivered:?}"
+        );
     }
 
     /// A causal peer the host has not started is the host's error, and so is

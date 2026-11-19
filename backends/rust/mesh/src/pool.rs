@@ -2568,6 +2568,40 @@ mod tests {
         ));
     }
 
+    /// A keyed pool takes no client for another (SCE_MESH.md sections 10.9, invariant 10, and
+    /// 22.1): `other`, writing the client's name as its source, reaches the session its key
+    /// names and is refused there, before the session's machine or the client's duplicate
+    /// window sees it; the client's own copy is then taken in and answered once. Red if the
+    /// router takes `source` over the link: the forgery then joins the room as the client and
+    /// its reply goes to `other`, and the client's own request is dropped as a duplicate.
+    #[test]
+    fn a_keyed_pool_takes_no_client_for_another() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire) = pool("p1", &store, &clock, &probe);
+        let key = pool
+            .receive("other", join("r1", 1))
+            .expect("placed in the session its key names");
+        pool.run(&key);
+        assert!(wire.take().is_empty(), "nothing answers the forgery");
+        let errors = pool.take_errors();
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [PoolError::Endpoint {
+                    key,
+                    error: RouterError::SourceNotLink { peer, source },
+                }] if key == "r1" && peer == "other" && source == "client"
+            ),
+            "{errors:?}"
+        );
+
+        deliver(&pool, join("r1", 1));
+        let replies = wire.take();
+        assert_eq!(replies.len(), 1, "{replies:?}");
+        assert_eq!(replies[0].wire_id, Some(id(0x22, 1)));
+        assert_eq!(stored_members(&store, "r1"), 1, "the client joined once");
+    }
+
     /// A session whose machine finished is removed from the store and from
     /// memory, and the next request for its key starts a new one.
     #[test]

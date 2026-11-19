@@ -1065,6 +1065,39 @@ mod tests {
         assert_eq!(hub.transport.sent.pop().unwrap().0, "other");
     }
 
+    /// An envelope a link delivers in another machine's name is told to the host and to no
+    /// engine, and leaves that machine's stream as it was (SCE_MESH.md section 10.9, invariant
+    /// 10): ecu's envelope, played again on hud's link, is refused, and ecu's own copy is then
+    /// delivered once, with ecu's origin. Red if the router takes `source` over the link: the
+    /// copy on hud's link is then delivered as ecu's, and ecu's own is dropped as a duplicate.
+    #[test]
+    fn an_envelope_on_another_machines_link_reaches_the_host_and_not_the_machine() {
+        let mut ecu = endpoint("ecu", "hmi", None);
+        ecu.send(&send("go", "s-1"));
+        let (_, bytes) = ecu.transport.sent.pop().unwrap();
+
+        let mut hmi = endpoint("hmi", "ecu", None);
+        hmi.add_peer("hud", config("hud", None));
+        hmi.receive("hud", bytes.clone());
+        assert_eq!(
+            hmi.take_host_errors(),
+            vec![RouterError::SourceNotLink {
+                peer: "hud".to_string(),
+                source: "ecu".to_string(),
+            }]
+        );
+        assert!(hmi.take_calls().is_empty(), "no engine is told");
+
+        hmi.receive("ecu", bytes);
+        let events = raised(&mut hmi);
+        let [event] = events.as_slice() else {
+            panic!("expected ecu's event once, got {events:?}");
+        };
+        assert_eq!(event.name, "go");
+        assert_eq!(event.metadata.origin_address(), "mesh://ecu");
+        assert!(hmi.take_host_errors().is_empty());
+    }
+
     /// An endpoint is quiet only while it holds nothing a later call acts on: a request
     /// waiting for its answer, a send waiting out its backoff and a send buffered for a peer
     /// that is not ready each keep it from being quiet, and each, once it ends, lets it be.
