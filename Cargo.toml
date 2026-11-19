@@ -24,6 +24,7 @@ members = [
     "backends/rust/mesh",
     "backends/rust/scenarios",
     "backends/rust/host-features",
+    "backends/rust/crypto",
     "backends/rust/world",
     "backends/rust/trust",
     "backends/rust/relay",

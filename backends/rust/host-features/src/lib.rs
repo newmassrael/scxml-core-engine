@@ -10,14 +10,17 @@
 //! no engine, so the same object serves a generated machine through [`serve`],
 //! a test, or another embedding.
 //!
-//! Time comes from a [`ClockSource`] and the network from a [`Transport`], both
-//! the embedding's to supply, and the keys of signing and sealing from a
-//! [`CoseKeys`] it configures: the host's semantics are fixed and what it reads
-//! is not, which is what lets a scenario judge it.
+//! Time comes from a [`ClockSource`], the network from a [`Transport`] and
+//! random bytes from a [`RandomSource`], all the embedding's to supply; the
+//! keys of signing and sealing it configures as [`CoseKeys`], and the keys the
+//! host generates and derives are kept by a [`Keyring`] over a key store it
+//! may supply: the host's semantics are fixed and what it reads is not, which
+//! is what lets a scenario judge it.
 
 mod clock;
 pub mod cose;
 mod http;
+pub mod keys;
 mod kv;
 mod model;
 mod notify;
@@ -32,11 +35,21 @@ pub use model::{
     ExhaustiveProvider, GenerateRequest, Generation, ModelProvider, OutcomeClass, ScriptedAnswer,
     ScriptedProvider, ANSWER_MAX_BYTES, TEMPERATURE_MAX_MILLI,
 };
+pub use sce_rust_crypto::keyring::Keyring;
+pub use sce_rust_crypto::random::{RandomSource, ScriptedRandom, SystemRandom};
 pub use sce_rust_runtime::AnswerSchema;
 pub use serve::{serve, Shared};
 
 /// The operation that generates a text (docs/SCE_HOST_FEATURES.md, section 6).
 pub const MODEL_GENERATE: &str = "sce-host-model-generate";
+
+/// The most bytes `sce-host-random-bytes` draws, the bound of its result's
+/// `bytes` (`random_bytes` of the result record).
+pub const RANDOM_BYTES_MAX: usize = 256;
+
+/// The bound of a keyed digest's `message`, in bytes (`mac_message` of the
+/// request records).
+pub const MAC_MESSAGE_MAX: usize = 4096;
 
 /// The request of an operation as the engine hands it to a host: each
 /// `<param>` by name, as text. A 64-bit integer is its decimal digits.
@@ -71,7 +84,7 @@ impl Invocation {
 
 /// Every operation type of the standard host features, in the order the
 /// specification lists them.
-pub const TYPES: [&str; 18] = [
+pub const TYPES: [&str; 24] = [
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
@@ -90,6 +103,12 @@ pub const TYPES: [&str; 18] = [
     cose::ENCRYPT0,
     cose::DECRYPT0,
     cose::KEY_DERIVE,
+    keys::RANDOM_BYTES,
+    keys::MAC,
+    keys::MAC_VERIFY,
+    keys::KEY_GENERATE,
+    keys::KEY_PUBLIC,
+    keys::KEY_RETIRE,
 ];
 
 /// What a host answers a start with.
@@ -132,11 +151,18 @@ pub struct ReferenceHost<T: Transport> {
     /// The machine's table of answer schemas, which a generation's
     /// `answer_schema` is resolved through.
     pub(crate) answer_schemas: Vec<AnswerSchema>,
-    /// The keys of signing and sealing: those configured, and those derived.
+    /// The keys of signing, sealing and tagging the embedding configured.
     pub(crate) cose: cose::Keys,
-    /// Where each seal's nonce comes from: the operating system until the
-    /// embedding gives another.
-    pub(crate) nonces: Box<dyn NonceSource + Send>,
+    /// The keys the host generated and derived, in the key store it was given:
+    /// in memory until the embedding gives another.
+    pub(crate) keyring: Keyring,
+    /// Where random bytes, a generated key and its id, the naming key of
+    /// derived keys and each seal's nonce come from: the operating system
+    /// until the embedding gives another.
+    pub(crate) random: Box<dyn RandomSource + Send>,
+    /// Where each seal's nonce comes from when the embedding gave a source of
+    /// its own; none draws it from `random`.
+    pub(crate) nonces: Option<Box<dyn NonceSource + Send>>,
     /// The first result of each put-if, by the identity of its invocation:
     /// what a repeat of that identity is answered with (docs/adr/0107, D4).
     pub(crate) first_results: BTreeMap<Invocation, Outcome>,
@@ -172,24 +198,44 @@ impl<T: Transport> ReferenceHost<T> {
             provider: Box::new(ScriptedProvider::default()),
             answer_schemas: Vec::new(),
             cose: cose::Keys::default(),
-            nonces: Box::new(SystemNonces),
+            keyring: Keyring::in_memory(),
+            random: Box::new(SystemRandom),
+            nonces: None,
             first_results: BTreeMap::new(),
         }
     }
 
-    /// Sign, seal and verify with `keys` from here on, in place of the keys
-    /// configured before. The keys the host derived are kept, under the ids it
-    /// gave them; a symmetric key configured under an id of theirs is refused.
+    /// Sign, seal, tag and verify with `keys` from here on, in place of the
+    /// keys configured before. The keys the host generated and derived are
+    /// kept, under the ids it gave them; a key configured under an id of their
+    /// namespace (`generated:`, `derived:`) is refused.
     pub fn set_cose_keys(&mut self, keys: CoseKeys) -> Result<(), ReservedKeyId> {
         self.cose.configure(keys)
     }
 
+    /// Keep the keys the host generates and derives in `keyring` from here on:
+    /// a key store the program opened, with the key-encryption key it holds
+    /// (docs/SCE_HOST_FEATURES.md section 13). The keys of the key ring held
+    /// before are no longer the host's.
+    pub fn set_keyring(&mut self, keyring: Keyring) {
+        self.keyring = keyring;
+    }
+
+    /// Draw random bytes, keys, key ids, the naming key of derived keys and,
+    /// unless a nonce source was given, the nonce of each seal from `source`
+    /// from here on, in place of the operating system's random source. A
+    /// source that is not random gives known keys and nonces: it is for a test
+    /// that holds the host to its bytes.
+    pub fn set_random_source(&mut self, source: Box<dyn RandomSource + Send>) {
+        self.random = source;
+    }
+
     /// Draw the nonce of each seal from `source` from here on, in place of the
-    /// operating system's random source. A source that gives one nonce twice
-    /// under one key gives both plaintexts away: one that is not random is for
-    /// a test that holds a seal to its bytes.
+    /// host's random source. A source that gives one nonce twice under one key
+    /// gives both plaintexts away: one that is not random is for a test that
+    /// holds a seal to its bytes.
     pub fn set_nonce_source(&mut self, source: Box<dyn NonceSource + Send>) {
-        self.nonces = source;
+        self.nonces = Some(source);
     }
 
     /// Generate texts with `provider` from here on.
@@ -307,7 +353,7 @@ impl<T: Transport> ReferenceHost<T> {
                 return Some(first.clone());
             }
         }
-        let outcome = self.perform(operation, id, params);
+        let outcome = self.perform(operation, invocation, params);
         if keeps_first && matches!(outcome, Outcome::Done(_)) {
             self.first_results
                 .insert(invocation.clone(), outcome.clone());
@@ -317,7 +363,8 @@ impl<T: Transport> ReferenceHost<T> {
 
     /// The operation itself, as [`Self::start`] describes it, for a start that is
     /// not a repeat.
-    fn perform(&mut self, operation: &str, id: &str, params: &Params) -> Outcome {
+    fn perform(&mut self, operation: &str, invocation: &Invocation, params: &Params) -> Outcome {
+        let id = invocation.id.as_str();
         let argument = |name: &str| params.get(name).map(String::as_str).unwrap_or("");
         let refused = match operation {
             "sce-host-kv-get" | "sce-host-kv-delete" => !kv::valid_key(argument("key")),
@@ -333,6 +380,7 @@ impl<T: Transport> ReferenceHost<T> {
             signing_or_sealing if cose::OPERATIONS.contains(&signing_or_sealing) => {
                 cose::refuses(signing_or_sealing, params)
             }
+            of_keys if keys::OPERATIONS.contains(&of_keys) => keys::refuses(of_keys, params),
             _ => false,
         };
         if refused {
@@ -376,6 +424,9 @@ impl<T: Transport> ReferenceHost<T> {
             MODEL_GENERATE => model::generate(self, id, params),
             signing_or_sealing if cose::OPERATIONS.contains(&signing_or_sealing) => {
                 cose::perform(self, signing_or_sealing, params)
+            }
+            of_keys if keys::OPERATIONS.contains(&of_keys) => {
+                keys::perform(self, of_keys, invocation, params)
             }
             _ => unreachable!("the type was checked against TYPES"),
         }
@@ -431,7 +482,12 @@ pub(crate) fn failure(operation: &str, code: &str) -> Outcome {
         cose::SIGN1 | cose::ENCRYPT0 => serde_json::json!({ "cose": "" }),
         cose::VERIFY1 => serde_json::json!({ "valid": false, "key_id": "", "payload": "" }),
         cose::DECRYPT0 => serde_json::json!({ "opened": false, "plaintext": "" }),
-        cose::KEY_DERIVE => serde_json::json!({ "key_id": "" }),
+        cose::KEY_DERIVE | keys::KEY_GENERATE => serde_json::json!({ "key_id": "" }),
+        keys::RANDOM_BYTES => serde_json::json!({ "bytes": "" }),
+        keys::MAC => serde_json::json!({ "tag": "" }),
+        keys::MAC_VERIFY => serde_json::json!({ "valid": false }),
+        keys::KEY_PUBLIC => serde_json::json!({ "cose_key": "" }),
+        keys::KEY_RETIRE => serde_json::json!({ "retired": false }),
         other => unreachable!("`{other}` is not a standard host operation"),
     };
     let Outcome::Done(text) = record(zero) else {

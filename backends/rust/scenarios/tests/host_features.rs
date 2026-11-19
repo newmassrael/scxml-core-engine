@@ -19,7 +19,8 @@ use std::sync::{Arc, Mutex};
 use sce_rust_host_features::{
     cose, serve, AnswerSchema, ClockSource, CoseKeys, ExhaustiveProvider, HttpRequest,
     HttpResponse, Invocation, OutcomeClass, Params, Reading, ReferenceHost, ScriptedAnswer,
-    ScriptedClock, ScriptedProvider, Shared, Transport, TransportFailure, TrustedKey, Zone,
+    ScriptedClock, ScriptedProvider, ScriptedRandom, Shared, Transport, TransportFailure,
+    TrustedKey, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, HostInvokeEvent, SceClock, StatePolicy, TransitionTaken};
@@ -155,18 +156,42 @@ fn script_model(provider: &mut ScriptedProvider, directive: &Value) {
 
 /// A key a `cose_keys` directive writes: 32 bytes in hexadecimal.
 fn key_of(hex: &Value) -> [u8; 32] {
-    let hex = hex.as_str().expect("a key is hexadecimal text");
-    let bytes: Vec<u8> = (0..hex.len() / 2)
+    bytes_of_hex(hex).try_into().expect("a key is 32 bytes")
+}
+
+/// The bytes a directive writes in hexadecimal.
+fn bytes_of_hex(hex: &Value) -> Vec<u8> {
+    let hex = hex.as_str().expect("hexadecimal text");
+    assert_eq!(hex.len() % 2, 0, "{hex} is not hex");
+    (0..hex.len() / 2)
         .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).expect("hex"))
-        .collect();
-    bytes.try_into().expect("a key is 32 bytes")
+        .collect()
 }
 
 /// The keys a `cose_keys` directive gives the host: `sign` (key id to an Ed25519
-/// seed), `aead` (key id to a ChaCha20/Poly1305 key) and `trust` (a set's name to
-/// the ids of the signing keys whose public keys it holds), a table it does not
-/// name empty.
+/// seed), `aead` (key id to a ChaCha20/Poly1305 key), `mac` (key id to an
+/// HMAC-SHA-256 key of any length) and `trust` (a set's name to the ids of the
+/// signing keys whose public keys it holds), a table it does not name empty.
 fn cose_keys(directive: &Value) -> CoseKeys {
+    for member in directive
+        .as_object()
+        .expect("cose_keys is an object")
+        .keys()
+    {
+        assert!(
+            ["sign", "aead", "mac", "trust"].contains(&member.as_str()),
+            "`{member}` is not a table of `cose_keys`"
+        );
+    }
+    let mac = directive
+        .get("mac")
+        .and_then(Value::as_object)
+        .map(|keys| {
+            keys.iter()
+                .map(|(id, hex)| (id.clone(), bytes_of_hex(hex)))
+                .collect()
+        })
+        .unwrap_or_default();
     let table = |name: &str| -> Vec<(String, [u8; 32])> {
         directive
             .get(name)
@@ -207,19 +232,23 @@ fn cose_keys(directive: &Value) -> CoseKeys {
         .unwrap_or_default();
     CoseKeys {
         symmetric: table("aead").into_iter().collect(),
+        mac,
         trust,
         signing,
     }
 }
 
 /// The request fields a scenario writes as numbers; every other is text.
-const INTEGER_FIELDS: [&str; 3] = ["at_ms", "max_tokens", "temperature_milli"];
+const INTEGER_FIELDS: [&str; 4] = ["at_ms", "length", "max_tokens", "temperature_milli"];
 
 struct Rig {
     host: Shared<Scripted>,
     clock: Clock,
     script: Arc<Mutex<Script>>,
     model: Arc<Mutex<ScriptedProvider>>,
+    /// The host's random source: the bytes a `random` directive queues, then
+    /// the operating system's.
+    random: Arc<Mutex<ScriptedRandom>>,
 }
 
 impl Rig {
@@ -275,7 +304,12 @@ impl Rig {
                 "model" => script_model(&mut self.model.lock().expect("the provider"), value),
                 "cose_keys" => host
                     .set_cose_keys(cose_keys(value))
-                    .expect("a scenario configures no id of a derived key"),
+                    .expect("a scenario configures no id of a generated or derived key"),
+                "random" => self
+                    .random
+                    .lock()
+                    .expect("the random source")
+                    .set(&bytes_of_hex(value)),
                 other => panic!("`{other}` is not a host directive"),
             }
         }
@@ -392,12 +426,14 @@ fn replay_scenario<P: StatePolicy>(
     let clock: Clock = Arc::new(Mutex::new(ScriptedClock::new()));
     let script = Arc::new(Mutex::new(Script::default()));
     let model = Arc::new(Mutex::new(ScriptedProvider::default()));
+    let random = Arc::new(Mutex::new(ScriptedRandom::new()));
     let mut reference = ReferenceHost::new(
         Box::new(Arc::clone(&clock)) as Box<dyn ClockSource + Send>,
         Scripted(Arc::clone(&script)),
     );
     reference.set_answer_schemas(answer_schemas);
     reference.set_model_provider(Box::new(Arc::clone(&model)));
+    reference.set_random_source(Box::new(Arc::clone(&random)));
     let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
     serve(&mut engine, &host);
     let rig = Rig {
@@ -405,6 +441,7 @@ fn replay_scenario<P: StatePolicy>(
         clock,
         script,
         model,
+        random,
     };
     engine.set_clock(SceClock::Manual(0));
     engine.initialize().expect("the machine starts");

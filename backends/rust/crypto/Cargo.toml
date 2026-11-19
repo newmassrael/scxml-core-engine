@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-crypto"
+version.workspace = true
+edition.workspace = true
+# The key store contract it keeps keys in is `sce-rust-session-store`'s, which declares 1.87.
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The cryptography a host of SCE holds for its machines, in one place: COSE signing and sealing, keyed digests, a constant-time comparison, random bytes, and a key store's keys wrapped under a key-encryption key"
+publish = false
+
+# One crate for the primitives every Rust host of SCE uses (ADR 0109, D5 to D7 and D9): the
+# reference host of the standard host features calls them for its operations, and the Mesh
+# binding's message signatures will call the same ones, so that a signature, a comparison of a
+# secret or a key's lifecycle has one implementation. Nothing here knows an engine.
+
+[dependencies]
+# The RustCrypto crates `sce-rust-trust` links, with the features it takes, so one build of each
+# serves both.
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+hkdf = "0.12"
+hmac = "0.12"
+sha2.workspace = true
+# The one comparison of a secret (ADR 0109, D3 and D6): time that does not depend on where two
+# byte strings differ.
+subtle = "2.6"
+# Key material is wiped when it leaves memory (NIST SP 800-57 Part 1, ADR 0109 D7).
+zeroize = "1"
+# The operating system's random source, which a host draws its random bytes, its keys and its
+# nonces from unless it is given another.
+getrandom = "0.2"
+# The CBOR heads a COSE object is written and read with: the ones the codecs write, so an object's
+# deterministic encoding is the codecs' own.
+sce-forge-runtime = { path = "../forge-runtime", features = ["alloc"] }
+# The key store contract (`KeyStore`) and its memory implementation; no SQLite is linked here.
+sce-rust-session-store = { path = "../session-store", default-features = false }
+
+[dev-dependencies]
+# The SQLite key store, which the key ring is held to across a reopened file.
+sce-rust-session-store = { path = "../session-store" }
+# The vectors the Rust and C++ hosts share (`tests/host_features/keys_cross_language.json`).
+serde_json = "1"
+
+[lints]
+workspace = true

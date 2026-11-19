@@ -1,0 +1,144 @@
+{
+  "about": [
+    "What the Rust and the C++ reference hosts agree on for keys and keyed digests, byte for byte",
+    "(docs/SCE_HOST_FEATURES.md, sections 11 to 13; docs/adr/0109, D6 and D7). Every hexadecimal value is the",
+    "bytes it spells.",
+    "",
+    "`naming_key` is the naming key each host's key store draws at its first derivation, which each test gives",
+    "its host's random source before it derives. `derived` lists derivations: from `secret` when it is not",
+    "empty, else from the sealing key `input_key_id` names (the key `sealing_keys` gives), with `salt` and",
+    "`info`; each must answer `key_id`, `derived:` and the first 16 bytes in hexadecimal of the HMAC-SHA-256",
+    "under the naming key of the deterministic CBOR array [input, salt, info], the input the text of the input",
+    "key's id or the byte string of the SHA-256 of the secret; and the key it keeps must be `key`, the 32 bytes",
+    "HKDF-SHA-256 gives.",
+    "",
+    "`generated` lists generations: each host's random source gives `random`, the id's 16 bytes then the",
+    "key's 32, and the generation must answer `key_id`. For a `sign` key, `sce-host-key-public` must answer",
+    "`cose_key`, the COSE_Key (RFC 9052 section 7) {1: 1, 2: kid, -1: 6, -2: x} of its Ed25519 public key, and",
+    "`sce-host-cose-sign1` of `payload` under its id must answer `cose`, which verifies under a trust set",
+    "made of `cose_key` in the other host. For a `mac` key, `sce-host-mac` of `message` must answer `tag`.",
+    "`cose_keys` gives the COSE_Key each configured signing key of cose_cross_language.json exports.",
+    "",
+    "`mac` holds RFC 4231's test cases 1 to 4, 6 and 7 for HMAC-SHA-256 (case 5 truncates its tag, which",
+    "this operation does not); each host tags `message` under a configured MAC key of `key` and must answer",
+    "`tag`, and verifies it.",
+    "",
+    "The values were computed by an implementation that shares nothing with either host (the Python",
+    "`cryptography` package over OpenSSL and the standard library's `hmac`, with a CBOR writer of its own),",
+    "which first reproduced the objects of cose_cross_language.json."
+  ],
+  "naming_key": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+  "sealing_keys": [
+    {
+      "id": "box",
+      "key": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+    }
+  ],
+  "derived": [
+    {
+      "name": "a secret with a salt",
+      "input_key_id": "",
+      "secret": "73686172656420736563726574",
+      "salt": "73616c74",
+      "info": "636f7365206b6579",
+      "key_id": "derived:16b0743d00d252ab19da164af038f377",
+      "key": "93de5e7321fa79ea06bc0299e725db80b6bcb975a6ad29d8b29c2c5821366dc1"
+    },
+    {
+      "name": "a key with no salt",
+      "input_key_id": "box",
+      "secret": "",
+      "salt": "",
+      "info": "636f7365206b6579",
+      "key_id": "derived:2052c9c95b0b8f3f6c61b146fc549148",
+      "key": "236be32e0d76aba50577af6ab88cfc6620747cf2d8203665895c2a2b2da25835"
+    },
+    {
+      "name": "the same key with a salt",
+      "input_key_id": "box",
+      "secret": "",
+      "salt": "73616c74",
+      "info": "636f7365206b6579",
+      "key_id": "derived:52aaf7e94a9438022247e534cfa5c703",
+      "key": "05670dedb2c5a2a07b33c626f5af3948ebe1782602930872d11f98adb47ce01a"
+    },
+    {
+      "name": "the same secret with other info",
+      "input_key_id": "",
+      "secret": "73686172656420736563726574",
+      "salt": "73616c74",
+      "info": "6f74686572",
+      "key_id": "derived:1182b55069f643363403a55daa646b2b",
+      "key": "065f61e59ba1a9be38bfc511719fb951fa4c5f69435ee51dc08392c59f962e59"
+    }
+  ],
+  "generated": [
+    {
+      "name": "a signing key",
+      "key_use": "sign",
+      "random": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+      "key_id": "generated:000102030405060708090a0b0c0d0e0f",
+      "cose_key": "a4010102582a67656e6572617465643a303030313032303330343035303630373038303930613062306330643065306620062158207776e870b93354f2a0b24c23f2a36cc4e80e223218c1b97926fdd018396a2b9b",
+      "payload": "7369676e656420627920612067656e657261746564206b6579",
+      "cose": "d2845830a2012704582a67656e6572617465643a3030303130323033303430353036303730383039306130623063306430653066a058197369676e656420627920612067656e657261746564206b65795840962645397998229a88ae0f529e7c73cea1dec4dbbc3b1c8d6146563020897e749671b93570ef2006d7bbc0a1b7953d99b5157cb5336da4b46c3957e435626502"
+    },
+    {
+      "name": "a MAC key",
+      "key_use": "mac",
+      "random": "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "key_id": "generated:303132333435363738393a3b3c3d3e3f",
+      "message": "74616767656420627920612067656e657261746564206b6579",
+      "tag": "81295127952cac672d702df35ce8c18b6263778a31f01859af7c9a24a876e4c8"
+    }
+  ],
+  "cose_keys": [
+    {
+      "key_id": "device-a",
+      "seed": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "cose_key": "a4010102486465766963652d61200621582079b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664"
+    },
+    {
+      "key_id": "device-b",
+      "seed": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "cose_key": "a4010102486465766963652d6220062158204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c4"
+    }
+  ],
+  "mac": [
+    {
+      "name": "RFC 4231 test case 1",
+      "key": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "message": "4869205468657265",
+      "tag": "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+    },
+    {
+      "name": "RFC 4231 test case 2",
+      "key": "4a656665",
+      "message": "7768617420646f2079612077616e7420666f72206e6f7468696e673f",
+      "tag": "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+    },
+    {
+      "name": "RFC 4231 test case 3",
+      "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "message": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "tag": "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"
+    },
+    {
+      "name": "RFC 4231 test case 4",
+      "key": "0102030405060708090a0b0c0d0e0f10111213141516171819",
+      "message": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "tag": "82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b"
+    },
+    {
+      "name": "RFC 4231 test case 6",
+      "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "message": "54657374205573696e67204c6172676572205468616e20426c6f636b2d53697a65204b6579202d2048617368204b6579204669727374",
+      "tag": "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
+    },
+    {
+      "name": "RFC 4231 test case 7",
+      "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "message": "5468697320697320612074657374207573696e672061206c6172676572207468616e20626c6f636b2d73697a65206b657920616e642061206c6172676572207468616e20626c6f636b2d73697a6520646174612e20546865206b6579206e6565647320746f20626520686173686564206265666f7265206265696e6720757365642062792074686520484d414320616c676f726974686d2e",
+      "tag": "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2"
+    }
+  ]
+}
