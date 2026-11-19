@@ -128,9 +128,11 @@ fn a_list_of_records_is_read_by_the_one_type_grammar() {
 
 #[test]
 fn a_list_of_anything_but_a_record_is_read_and_refused_by_name_where_it_is_generated() {
-    // docs/adr/0101, section 1: a list of integers is a value of the language,
-    // and the printers of docs/adr/0085 step 3a do not lower it yet (section
-    // 5.4), so every backend refuses the codec naming the entry and the list.
+    // docs/adr/0101, section 1: a list of integers is a value of the language.
+    // A backend that prints every entry type (Rust, Landing order step 4a)
+    // generates it; every other one prints only the shapes of docs/adr/0085
+    // step 3a, and refuses the codec by name (section 5.4), the entry and the
+    // list named in the one clause every refusal of the kind says.
     let text = document(
         "",
         CAUSAL_IMPORT,
@@ -138,14 +140,34 @@ fn a_list_of_anything_but_a_record_is_read_and_refused_by_name_where_it_is_gener
     );
     let m = codec(&text);
     assert!(cbor_codec::record_list(&m.cbor_entries[0]).is_none());
+    let clause = "codec 'probe_list': CBOR entry 'n' holds `list<uint8>[4]`, a type of the \
+                  language whose list the printer does not lower in a CBOR codec yet";
+    let mut refused = 0;
     for &lang in Language::ALL {
-        let why = generated(&text, "probe_list", lang)
-            .expect_err("no backend lowers a list of integers in a CBOR codec yet");
-        assert!(
-            why.contains("CBOR entry 'n'") && why.contains("`list<uint8>[4]`"),
-            "{lang:?}: {why}"
-        );
+        match generated(&text, "probe_list", lang) {
+            Ok(code) => {
+                assert!(
+                    cbor_codec::lowers_every_entry_type(lang),
+                    "{lang:?} generated a list of integers it does not lower"
+                );
+                assert!(
+                    code.contains("pub n: ::sce_forge_runtime::codec::BoundedList<u8, 4>,"),
+                    "{lang:?}:\n{code}"
+                );
+            }
+            Err(why) => {
+                assert!(
+                    !cbor_codec::lowers_every_entry_type(lang),
+                    "{lang:?} lowers every entry type and refused: {why}"
+                );
+                assert!(why.contains(clause), "{lang:?}: {why}");
+                refused += 1;
+            }
+        }
     }
+    assert!(cbor_codec::lowers_every_entry_type(Language::Rust));
+    // Every backend but the reference still refuses it.
+    assert_eq!(refused, Language::ALL.len() - 1);
 }
 
 #[test]
