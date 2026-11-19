@@ -29,6 +29,9 @@
 //! * The owned form is re-encoded exactly as the view is, through the codec's
 //!   source interface: it implements `{Name}Source`, `as_borrowed` reads through it,
 //!   and `encode` is `encode_source`.
+//! * A list, a record or a union an entry holds is held by value in both forms, so
+//!   `as_borrowed` takes it as the mirror holds it: a copy of a record of plain data,
+//!   whose payload derives `Copy`, and a clone of any other.
 //! * A string or byte string that states no bound is no CBOR entry: it is refused
 //!   at its type (docs/adr/0101, section 1.3), so every map that borrows has a
 //!   mirror `Inline` holds; a map of scalars borrows nothing and has none: one
@@ -415,4 +418,65 @@ fn the_option_only_appends_the_projection_to_a_map_with_a_mirror() {
             assert_eq!(on, off, "{entries}");
         }
     }
+}
+
+/// The Rust module of the conformance corpus's map of an entry of every
+/// constructor of the language, generated with the enums, records and union it
+/// imports from beside it, as the conformance crate generates it.
+fn composed_module() -> String {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/forge/conformance/codec_cbor_composed");
+    let text = std::fs::read_to_string(dir.join("codec_cbor_composed.scxml"))
+        .expect("the composed codec of the corpus is read");
+    let options = ForgeCompileOptions {
+        views: true,
+        ..ForgeCompileOptions::default()
+    };
+    let output = compile_forge_with_imports(
+        &text,
+        DocumentLabel::symmetric("codec_cbor_composed"),
+        Language::Rust,
+        &dir,
+        &options,
+    )
+    .unwrap_or_else(|e| panic!("rust generates the composed codec: {e:?}"));
+    output
+        .files
+        .into_iter()
+        .find(|(name, _)| name == "codec_cbor_composed.rs")
+        .map(|(_, code)| code)
+        .expect("the codec's module")
+}
+
+#[test]
+fn the_re_borrow_copies_a_record_of_plain_data_and_clones_any_other_composition() {
+    let code = composed_module();
+    let start = code
+        .find("pub fn as_borrowed(&self) -> CodecCborComposed<'_> {")
+        .expect("the mirror re-borrows");
+    let end = start
+        + code[start..]
+            .find("pub fn transcode_in")
+            .expect("the move between profiles follows the re-borrow");
+    let re_borrow = &code[start..end];
+    assert_holds(
+        re_borrow,
+        &[
+            // `spare` is an optional `record:Point` of two `int16`, whose payload
+            // derives `Copy`: a clone of it is what `clippy::clone_on_copy`
+            // refuses.
+            "            spare: self.spare,\n",
+            // `reading` holds a list and a text, `choice` and `maybe` are a
+            // union and `octets` a list of numbers: none of their types is
+            // `Copy`.
+            "            reading: self.reading.clone(),\n",
+            "            choice: self.choice.clone(),\n",
+            "            maybe: self.maybe.clone(),\n",
+            "            octets: self.octets.clone(),\n",
+        ],
+    );
+    assert!(
+        !re_borrow.contains("self.spare.clone()"),
+        "a `Copy` record is cloned:\n{re_borrow}"
+    );
 }

@@ -242,6 +242,14 @@ impl RustDeriveCategory {
     pub fn derives_attr(self) -> String {
         render_derives_attr(self.derives(), &[])
     }
+
+    /// Whether a type of this category derives `Copy`: what a printer that
+    /// takes a value of it out of a place asks, so it copies a `Copy` value
+    /// and clones only one that is not, by the derives the type is declared
+    /// with and no rule of its own.
+    pub fn is_copy(self) -> bool {
+        self.derives().contains(&"Copy")
+    }
 }
 
 /// Build a `#[derive(...)]` attribute line from a category's default
@@ -309,6 +317,17 @@ mod tests {
                 .collect::<Vec<_>>(),
             payload
         );
+    }
+
+    #[test]
+    fn a_category_is_copy_exactly_where_it_derives_copy() {
+        // The plain payload and every forge enum are copied; a payload that
+        // may own a buffer and a union's sum are cloned.
+        assert!(RustDeriveCategory::EventSchemaPlainPayload.is_copy());
+        assert!(RustDeriveCategory::ForgeEnum.is_copy());
+        assert!(RustDeriveCategory::ForgeDeclaredEnum.is_copy());
+        assert!(!RustDeriveCategory::EventSchemaPayload.is_copy());
+        assert!(!RustDeriveCategory::UnionSum.is_copy());
     }
 
     #[test]

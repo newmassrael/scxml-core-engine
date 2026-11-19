@@ -31,6 +31,7 @@ use crate::forge::cbor_codec::{self, CborComposite as Composite};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{CborEnum, CborItem, CborPlan, CborRecord, CborShape, CborUnion};
 use crate::forge::model::CborEntry;
+use crate::rust_derive_policy::RustDeriveCategory;
 
 /// What the interface of one codec is made from.
 pub(in super::super) struct Input<'a> {
@@ -269,6 +270,27 @@ fn continued(text: &str, columns: usize) -> String {
 /// unit, the language's list of its bound and `Option`.
 pub(crate) fn composed_type(shape: &CborShape) -> String {
     rust_type(shape, Held::Composed)
+}
+
+/// Whether the type [`composed_type`] names for a value of `shape` is `Copy`,
+/// so a printer that takes a value out of a place copies it and clones only a
+/// value that is not: a number and a `bool`; an enum, a record's payload and a
+/// union's type where the derives each is declared with hold `Copy`, asked of
+/// the one decision of each; and a value that may be absent where its element
+/// is. The runtime's bounded text and bounded list, which a byte string is one
+/// of, are `Clone` only.
+pub(crate) fn composed_is_copy(shape: &CborShape) -> bool {
+    match shape {
+        CborShape::Int { .. } | CborShape::Float { .. } | CborShape::Bool => true,
+        CborShape::Enum(enumeration) => rust_enum_derives(enumeration.closed).is_copy(),
+        CborShape::Record(record) => {
+            rust_event_schema_payload_derives(record.fields.iter().map(|field| &field.ty)).is_copy()
+        }
+        CborShape::Union(_) => RustDeriveCategory::UnionSum.is_copy(),
+        CborShape::Nullable(elem) => composed_is_copy(elem),
+        CborShape::Text { .. } | CborShape::Bytes { .. } | CborShape::List { .. } => false,
+        CborShape::Unresolved { what } => unresolved(what),
+    }
 }
 
 fn rust_type(shape: &CborShape, held: Held) -> String {
@@ -1373,6 +1395,53 @@ mod tests {
         ] {
             assert!(code.contains(expected), "missing `{expected}`:\n{code}");
         }
+    }
+
+    #[test]
+    fn a_value_is_copy_where_the_type_it_is_held_in_derives_copy() {
+        // A record of numbers, of either presence, is plain data: its payload
+        // derives `Copy`, and so does an absent-or-present one of it.
+        let point = record(
+            "cbor_point",
+            vec![
+                field("x", "int16", int(16, true)),
+                field("y", "optional<int16>", int(16, true)),
+            ],
+        );
+        assert!(composed_is_copy(&CborShape::Record(point.clone())));
+        assert!(composed_is_copy(&CborShape::Nullable(Box::new(
+            CborShape::Record(point.clone())
+        ))));
+        assert!(composed_is_copy(&color()));
+        assert!(composed_is_copy(&CborShape::Float { bits: 64 }));
+        assert!(composed_is_copy(&CborShape::Bool));
+        // A record that holds a text, or another record, is a composition.
+        let line = record(
+            "order_line",
+            vec![
+                field("sku", "string[16]", CborShape::Text { max: 16 }),
+                field("color", "enum:Color", color()),
+            ],
+        );
+        assert!(!composed_is_copy(&CborShape::Record(line)));
+        let at = record(
+            "cbor_at",
+            vec![field(
+                "at",
+                "record:Point",
+                CborShape::Record(point.clone()),
+            )],
+        );
+        assert!(!composed_is_copy(&CborShape::Record(at)));
+        // A list, even of numbers, a union, a text and a byte string are not.
+        assert!(!composed_is_copy(&list(int(8, false), 4, 0)));
+        assert!(!composed_is_copy(&list(CborShape::Record(point), 2, 0)));
+        assert!(!composed_is_copy(&CborShape::Union(payment())));
+        assert!(!composed_is_copy(&CborShape::Text { max: 8 }));
+        assert!(!composed_is_copy(&CborShape::Bytes {
+            max: 4,
+            exact: false
+        }));
     }
 
     #[test]

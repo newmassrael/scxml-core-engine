@@ -276,7 +276,11 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
     pub fn as_borrowed(&self) -> {{ struct_name }}<'_> {
         {{ struct_name }} {
 {% for e in entries %}
-{% if e.kind == "composed" %}
+{% if e.kind == "composed" and e.copied %}
+            // A record of plain data is held by value in both forms, and its
+            // type is `Copy`, so the view copies it.
+            {{ e.name }}: self.{{ e.name }},
+{% elif e.kind == "composed" %}
             // A list, a record and a union are held by value in both forms, so
             // the view takes a copy of it.
             {{ e.name }}: self.{{ e.name }}.clone(),

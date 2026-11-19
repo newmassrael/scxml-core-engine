@@ -98,12 +98,13 @@ pub(crate) use rust_source::content_line::source_case as rust_content_line_sourc
 
 /// What the Rust printer spells of a CBOR entry's value below the entry's own
 /// level (docs/adr/0101, section 5.1), which the codec's module is rendered
-/// from: the type it is held in, its read, the reads, writes and checks of
-/// each record and union document the codec reaches, and the modules those
-/// name.
+/// from: the type it is held in and whether that type is `Copy`, its read, the
+/// reads, writes and checks of each record and union document the codec
+/// reaches, and the modules those name.
 pub(crate) use rust_source::cbor::{
-    composed_type as rust_cbor_composed_type, composites as rust_cbor_composites,
-    decode as rust_cbor_decode, reached_modules as rust_cbor_reached_modules,
+    composed_is_copy as rust_cbor_composed_is_copy, composed_type as rust_cbor_composed_type,
+    composites as rust_cbor_composites, decode as rust_cbor_decode,
+    reached_modules as rust_cbor_reached_modules,
 };
 
 /// A byte case of the Swift conformance harness, its source a value the printed codec's
@@ -3498,13 +3499,7 @@ fn render_enum(
     l.insert_imports(&mut ctx, imports);
 
     if matches!(l.lang, crate::generator::Language::Rust) {
-        // The open set is a value-carrying newtype whose default is written
-        // out; the closed set derives its default (see the category).
-        let category = if m.strict_variants {
-            crate::rust_derive_policy::RustDeriveCategory::ForgeDeclaredEnum
-        } else {
-            crate::rust_derive_policy::RustDeriveCategory::ForgeEnum
-        };
+        let category = rust_enum_derives(m.strict_variants);
         ctx.insert(
             "forge_enum_derives_attr".into(),
             category.derives_attr().into(),
@@ -3739,6 +3734,41 @@ pub(crate) fn event_schema_payload_type(
         // A file of the module that imports it, so the type is named as it is
         // declared.
         Language::Swift => format!("{pascal}Payload"),
+    }
+}
+
+/// The derives of the Rust payload struct of an event schema whose fields are of
+/// the types `fields`. Plain data, every field a fixed-width number, a `bool` or
+/// an enum, or an optional one of these, is `Copy` as well (the record rule's
+/// schema, SCE_FORGE.md §4.12); a field that is a text, a byte string, a list, a
+/// record or a union makes it a composition, which is not. The one decision, read
+/// by the struct's declaration and by every printer that copies a value of it.
+pub(crate) fn rust_event_schema_payload_derives<'f>(
+    fields: impl IntoIterator<Item = &'f crate::forge::value_type::ValueType>,
+) -> crate::rust_derive_policy::RustDeriveCategory {
+    use crate::rust_derive_policy::RustDeriveCategory;
+    let plain = fields.into_iter().all(|ty| {
+        ty.entry().is_ok_and(|(entry, _)| {
+            let present = entry.present_type();
+            AlgorithmValueType::list_elem_admitted(present) || matches!(present, SceType::Enum(_))
+        })
+    });
+    if plain {
+        RustDeriveCategory::EventSchemaPlainPayload
+    } else {
+        RustDeriveCategory::EventSchemaPayload
+    }
+}
+
+/// The derives of the Rust type of an enum document: the closed set
+/// (`sce:strict-variants`) derives its default, while the open set is a
+/// value-carrying newtype whose default is written out (see the categories).
+pub(crate) fn rust_enum_derives(closed: bool) -> crate::rust_derive_policy::RustDeriveCategory {
+    use crate::rust_derive_policy::RustDeriveCategory;
+    if closed {
+        RustDeriveCategory::ForgeDeclaredEnum
+    } else {
+        RustDeriveCategory::ForgeEnum
     }
 }
 
@@ -4752,22 +4782,8 @@ fn render_event_schema(
     l.insert_imports(&mut ctx, imports);
 
     if matches!(l.lang, crate::generator::Language::Rust) {
-        use crate::rust_derive_policy::RustDeriveCategory;
-        // Plain data — every field fixed-width, `bool` or an enum — is
-        // `Copy` as well (the record rule's schema, SCE_FORGE.md §4.12). A
-        // composition holds a list, a record or a value of one, and is not.
-        let plain = entries.iter().all(|entry| {
-            entry.as_ref().is_some_and(|f| {
-                crate::forge::model::AlgorithmValueType::list_elem_admitted(
-                    f.sce_type.present_type(),
-                ) || matches!(f.sce_type.present_type(), SceType::Enum(_))
-            })
-        });
-        let category = if plain {
-            RustDeriveCategory::EventSchemaPlainPayload
-        } else {
-            RustDeriveCategory::EventSchemaPayload
-        };
+        // Plain data is `Copy` as well; a composition is not.
+        let category = rust_event_schema_payload_derives(m.fields.iter().map(|f| &f.sce_type));
         ctx.insert(
             "event_schema_payload_derives_attr".into(),
             category.derives_attr().into(),
@@ -48577,6 +48593,54 @@ fn to_rust_variant(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::forge::model::{ForgeKind, SceType};
+
+    /// A Rust event-schema payload is `Copy` exactly where every field is a
+    /// number, a `bool` or an enum, present or optional: the decision its
+    /// declaration and a CBOR codec's copy of it both read.
+    #[test]
+    fn a_payload_of_plain_fields_is_copy_and_a_composition_is_not() {
+        use crate::forge::value_type::{ValueType, WrittenType};
+        use crate::rust_derive_policy::RustDeriveCategory;
+        let of = |types: &[&str]| -> RustDeriveCategory {
+            let types: Vec<ValueType> = types
+                .iter()
+                .map(|text| {
+                    WrittenType::read(text)
+                        .and_then(WrittenType::bounded)
+                        .unwrap_or_else(|why| panic!("`{text}` is a type: {why:?}"))
+                })
+                .collect();
+            rust_event_schema_payload_derives(&types)
+        };
+        assert_eq!(
+            of(&["int16", "optional<uint8>", "bool", "float64", "enum:Color"]),
+            RustDeriveCategory::EventSchemaPlainPayload
+        );
+        assert_eq!(
+            of(&["optional<enum:Color>"]),
+            RustDeriveCategory::EventSchemaPlainPayload
+        );
+        for composed in [
+            "string[8]",
+            "optional<bytes[4]>",
+            "list<uint8>[4]",
+            "record:Point",
+            "union:Choice",
+        ] {
+            assert_eq!(
+                of(&["int16", composed]),
+                RustDeriveCategory::EventSchemaPayload,
+                "{composed}"
+            );
+        }
+        assert!(rust_enum_derives(true).is_copy());
+        assert!(rust_enum_derives(false).is_copy());
+        assert_eq!(
+            rust_enum_derives(true),
+            RustDeriveCategory::ForgeDeclaredEnum
+        );
+        assert_eq!(rust_enum_derives(false), RustDeriveCategory::ForgeEnum);
+    }
 
     /// A list a group holds is decoded into a local before the group is made
     /// of it, starting from what its statement fills: a gated one from none,

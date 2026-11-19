@@ -1372,6 +1372,10 @@ fn rust_context(
                     entry["kind"] = "composed".into();
                     entry["decode_expr"] =
                         crate::forge::generator::rust_cbor_decode(&item.value, "&mut c").into();
+                    // Whether the type it is held in is `Copy`, which the
+                    // mirror's `as_borrowed` copies rather than clones.
+                    entry["copied"] =
+                        crate::forge::generator::rust_cbor_composed_is_copy(&item.value).into();
                 }
                 _ => {}
             }
