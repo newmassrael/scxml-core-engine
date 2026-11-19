@@ -650,7 +650,7 @@ sce_add_static_scenario_suite(
     SCENARIOS ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios
     FIXTURES ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel
     NOT_YET_LOWERED static_map static_map_full static_map_record static_map_composite_key static_set
-                    static_map_order
+                    static_map_order static_map_take
 )
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which
