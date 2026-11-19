@@ -13,6 +13,11 @@
 //! rules see only `{seq, arrived_at}`, because an envelope is not a value a
 //! list of records can carry.
 //!
+//! A sender is the link an envelope arrived on, which its host authenticated
+//! (SCE_MESH.md section 10.9, invariant 10), never the `source` the envelope
+//! writes: the windows are as many as the links the caller admits from, and
+//! no envelope can make one for a name of its own choosing (section 10.5).
+//!
 //! The semantics are those of the C++ `OrderingBuffer` and `DedupRouter`
 //! (sce/include/mesh/), so a Rust receiver and a C++ one deliver the same
 //! stream the same way.
@@ -214,7 +219,8 @@ impl Sender {
     }
 }
 
-/// The receive half of a router: every sender's window and held envelopes.
+/// The receive half of a router: every sender's window and held envelopes,
+/// one sender per link.
 pub struct Inbound {
     dedup_window: u32,
     gap_timeout_ms: i64,
@@ -242,8 +248,13 @@ impl Inbound {
         })
     }
 
-    /// Admit the envelope `bytes` from a binding asking `delivery`, at
-    /// `now_ms` on the host's monotonic clock.
+    /// Admit the envelope `bytes` that arrived on the link of `link`, from a
+    /// binding asking `delivery`, at `now_ms` on the host's monotonic clock.
+    ///
+    /// The window and the ordering state the envelope is judged by are
+    /// `link`'s, whatever `source` it writes (SCE_MESH.md section 10.5): a
+    /// caller passes only a link it admitted, so the senders this half keeps
+    /// are as many as those links.
     ///
     /// SCE_MESH.md §mesh-10.6.4: an ordered envelope below its sender's
     /// expected sequence is dropped, one above it is held, and the one it
@@ -251,11 +262,18 @@ impl Inbound {
     /// follows on.
     pub fn admit(
         &mut self,
+        link: &str,
         bytes: Vec<u8>,
         delivery: Delivery,
         now_ms: i64,
     ) -> Result<Outcome, AdmitError> {
-        self.admit_from(bytes, delivery, None, now_ms)
+        self.admit_from(link, bytes, delivery, None, now_ms)
+    }
+
+    /// How many senders this half keeps state for: one per link it admitted
+    /// an envelope from and has not forgotten.
+    pub fn senders(&self) -> usize {
+        self.senders.len()
     }
 
     /// [`Self::admit`], for a stream that is durable when `durable_from` is
@@ -265,12 +283,13 @@ impl Inbound {
     /// sender and will be sent again, and none of its gaps times out.
     pub(crate) fn admit_from(
         &mut self,
+        link: &str,
         bytes: Vec<u8>,
         delivery: Delivery,
         durable_from: Option<u64>,
         now_ms: i64,
     ) -> Result<Outcome, AdmitError> {
-        let (source, raw_id, sequence, request) = {
+        let (raw_id, sequence, request) = {
             let envelope =
                 Envelope::decode(&mut SceCursor::new(&bytes)).map_err(AdmitError::Malformed)?;
             // A request a reply can answer: one that carries the wire id the
@@ -279,18 +298,14 @@ impl Inbound {
                 .then_some(envelope.invoke_id)
                 .flatten()
                 .map(<[u8; 16]>::from);
-            (
-                envelope.source.to_string(),
-                <[u8; 16]>::from(envelope.id),
-                envelope.sequence_no,
-                request,
-            )
+            (<[u8; 16]>::from(envelope.id), envelope.sequence_no, request)
         };
         let id = envelope_id(&raw_id);
         if delivery.ordered && sequence.is_none() {
             return Err(AdmitError::Unstamped);
         }
 
+        let source = link.to_string();
         let mut out = Outcome::default();
         let sender = self
             .senders
@@ -664,7 +679,7 @@ mod tests {
     fn an_unordered_envelope_is_released_as_it_arrives() {
         let mut inbound = core();
         let bytes = wire("ecu", 1, None);
-        let out = inbound.admit(bytes.clone(), PLAIN, 0).unwrap();
+        let out = inbound.admit("ecu", bytes.clone(), PLAIN, 0).unwrap();
         assert_eq!(out.released.len(), 1);
         assert_eq!(out.released[0].bytes(), bytes.as_slice());
         assert_eq!(out.released[0].envelope().source, "ecu");
@@ -675,20 +690,20 @@ mod tests {
         let mut inbound = core();
         assert_eq!(
             inbound
-                .admit(wire("a", 1, None), DEDUP, 0)
+                .admit("a", wire("a", 1, None), DEDUP, 0)
                 .unwrap()
                 .released
                 .len(),
             1
         );
         assert!(inbound
-            .admit(wire("a", 1, None), DEDUP, 0)
+            .admit("a", wire("a", 1, None), DEDUP, 0)
             .unwrap()
             .released
             .is_empty());
         assert_eq!(
             inbound
-                .admit(wire("b", 1, None), DEDUP, 0)
+                .admit("b", wire("b", 1, None), DEDUP, 0)
                 .unwrap()
                 .released
                 .len(),
@@ -701,12 +716,12 @@ mod tests {
         let mut inbound = core();
         for id in [1, 2] {
             assert!(inbound
-                .admit(wire("a", id, None), DEDUP, 0)
+                .admit("a", wire("a", id, None), DEDUP, 0)
                 .unwrap()
                 .signals
                 .is_empty());
         }
-        let out = inbound.admit(wire("a", 3, None), DEDUP, 0).unwrap();
+        let out = inbound.admit("a", wire("a", 3, None), DEDUP, 0).unwrap();
         assert_eq!(
             out.signals,
             vec![Signal::DedupWindowOverflow {
@@ -717,7 +732,7 @@ mod tests {
         // The oldest id left the window, so it is novel again.
         assert_eq!(
             inbound
-                .admit(wire("a", 1, None), DEDUP, 0)
+                .admit("a", wire("a", 1, None), DEDUP, 0)
                 .unwrap()
                 .released
                 .len(),
@@ -728,7 +743,9 @@ mod tests {
     #[test]
     fn the_first_ordered_envelope_anchors_its_sender() {
         let mut inbound = core();
-        let out = inbound.admit(wire("a", 7, Some(7)), ORDERED, 0).unwrap();
+        let out = inbound
+            .admit("a", wire("a", 7, Some(7)), ORDERED, 0)
+            .unwrap();
         assert_eq!(sequences(&out), vec![7]);
     }
 
@@ -736,34 +753,42 @@ mod tests {
     fn an_envelope_ahead_of_sequence_waits_for_the_gap_to_fill() {
         let mut inbound = core();
         assert_eq!(
-            sequences(&inbound.admit(wire("a", 1, Some(1)), ORDERED, 0).unwrap()),
+            sequences(
+                &inbound
+                    .admit("a", wire("a", 1, Some(1)), ORDERED, 0)
+                    .unwrap()
+            ),
             vec![1]
         );
         assert!(inbound
-            .admit(wire("a", 4, Some(4)), ORDERED, 0)
+            .admit("a", wire("a", 4, Some(4)), ORDERED, 0)
             .unwrap()
             .released
             .is_empty());
         assert!(inbound
-            .admit(wire("a", 3, Some(3)), ORDERED, 0)
+            .admit("a", wire("a", 3, Some(3)), ORDERED, 0)
             .unwrap()
             .released
             .is_empty());
-        let out = inbound.admit(wire("a", 2, Some(2)), ORDERED, 0).unwrap();
+        let out = inbound
+            .admit("a", wire("a", 2, Some(2)), ORDERED, 0)
+            .unwrap();
         assert_eq!(sequences(&out), vec![2, 3, 4]);
     }
 
     #[test]
     fn an_envelope_below_the_expected_sequence_is_dropped() {
         let mut inbound = core();
-        inbound.admit(wire("a", 5, Some(5)), ORDERED, 0).unwrap();
+        inbound
+            .admit("a", wire("a", 5, Some(5)), ORDERED, 0)
+            .unwrap();
         assert!(inbound
-            .admit(wire("a", 4, Some(4)), ORDERED, 0)
+            .admit("a", wire("a", 4, Some(4)), ORDERED, 0)
             .unwrap()
             .released
             .is_empty());
         assert!(inbound
-            .admit(wire("a", 5, Some(5)), ORDERED, 0)
+            .admit("a", wire("a", 5, Some(5)), ORDERED, 0)
             .unwrap()
             .released
             .is_empty());
@@ -772,9 +797,15 @@ mod tests {
     #[test]
     fn a_gap_that_waits_out_its_timeout_is_signalled_and_released_past() {
         let mut inbound = core();
-        inbound.admit(wire("a", 1, Some(1)), ORDERED, 0).unwrap();
-        inbound.admit(wire("a", 4, Some(4)), ORDERED, 100).unwrap();
-        inbound.admit(wire("a", 5, Some(5)), ORDERED, 120).unwrap();
+        inbound
+            .admit("a", wire("a", 1, Some(1)), ORDERED, 0)
+            .unwrap();
+        inbound
+            .admit("a", wire("a", 4, Some(4)), ORDERED, 100)
+            .unwrap();
+        inbound
+            .admit("a", wire("a", 5, Some(5)), ORDERED, 120)
+            .unwrap();
         assert_eq!(inbound.tick(149).unwrap(), Outcome::default());
         let out = inbound.tick(150).unwrap();
         assert_eq!(
@@ -788,12 +819,16 @@ mod tests {
         assert_eq!(sequences(&out), vec![4, 5]);
         // The sender now expects 6, and a late 3 is a straggler.
         assert!(inbound
-            .admit(wire("a", 3, Some(3)), ORDERED, 200)
+            .admit("a", wire("a", 3, Some(3)), ORDERED, 200)
             .unwrap()
             .released
             .is_empty());
         assert_eq!(
-            sequences(&inbound.admit(wire("a", 6, Some(6)), ORDERED, 200).unwrap()),
+            sequences(
+                &inbound
+                    .admit("a", wire("a", 6, Some(6)), ORDERED, 200)
+                    .unwrap()
+            ),
             vec![6]
         );
     }
@@ -806,12 +841,12 @@ mod tests {
             ordered: true,
         };
         assert_eq!(
-            inbound.admit(wire("a", 1, None), both, 0),
+            inbound.admit("a", wire("a", 1, None), both, 0),
             Err(AdmitError::Unstamped)
         );
         // Its id took no window slot: the same id stamped is novel.
         assert_eq!(
-            sequences(&inbound.admit(wire("a", 1, Some(1)), both, 0).unwrap()),
+            sequences(&inbound.admit("a", wire("a", 1, Some(1)), both, 0).unwrap()),
             vec![1]
         );
     }
@@ -820,9 +855,51 @@ mod tests {
     fn bytes_that_are_not_an_envelope_are_refused() {
         let mut inbound = core();
         assert!(matches!(
-            inbound.admit(vec![0xFF], PLAIN, 0),
+            inbound.admit("a", vec![0xFF], PLAIN, 0),
             Err(AdmitError::Malformed(_))
         ));
+    }
+
+    /// SCE_MESH.md section 10.5: the windows are as many as the links. Ten thousand envelopes on
+    /// one link, each claiming a source of its own, make one sender, whose window holds what they
+    /// carried; a second link is a second sender. Red if the window is keyed by the envelope's
+    /// `source`: every claimed name then makes a window of its own.
+    #[test]
+    fn envelopes_claiming_many_sources_on_one_link_make_one_window() {
+        let mut inbound = Inbound::new(4, 50).expect("a valid configuration");
+        for n in 0..10_000u32 {
+            let mut id = [0x5A; 16];
+            id[12..].copy_from_slice(&n.to_be_bytes());
+            let claimed = alloc::format!("s{n}");
+            let bytes = Envelope {
+                id: (&id).into(),
+                source: Bounded::new(claimed.as_str()).expect("a short source"),
+                event_type: Bounded::new("evt").expect("an event type within its bound"),
+                pattern: PatternKind::FireForget,
+                datacontenttype: PayloadCodec::None,
+                ..Envelope::new()
+            }
+            .encode_to_vec();
+            inbound.admit("phone", bytes, DEDUP, 0).unwrap();
+        }
+        assert_eq!(inbound.senders(), 1);
+        let held = inbound.states(Clocks {
+            monotonic_ms: 0,
+            wall_ms: 0,
+        });
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].source, "phone");
+        assert_eq!(
+            held[0].window.len(),
+            4,
+            "the window keeps its configured size"
+        );
+        inbound
+            .admit("tablet", wire("x", 1, None), DEDUP, 0)
+            .unwrap();
+        assert_eq!(inbound.senders(), 2);
+        inbound.forget("phone");
+        assert_eq!(inbound.senders(), 1);
     }
 
     #[test]
