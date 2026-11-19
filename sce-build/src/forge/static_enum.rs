@@ -13,7 +13,8 @@
 // the author never sees the document.
 //
 // So this pass says it where the document is read. An enum value is one of
-// five things — an `<alias>.<variant>`, a variable declared `enum:<alias>`, a
+// five things — an `<alias>.<variant>`, a variable declared `enum:<alias>` (or
+// a field or the value at a key of a map, read where it is held), a
 // conditional whose two branches are values of one enum, the call of an
 // imported algorithm that returns one, or `<alias>.fromNumber(n)` — and what it
 // may be used for is deliberately small: stored in a variable of its own enum,
@@ -306,26 +307,34 @@ fn class_of(
                     if let Some(held) =
                         (reading.var_alias)(&format!("{name}{INDEXED_ELEMENT}{property}"))
                     {
-                        if class_of(index, ctx, reading)?.is_some() {
-                            return Err(refuse(index, "an enum value as an index"));
-                        }
+                        index_held(list, index, ctx, reading)?;
                         return Ok(Some(held));
                     }
                 }
                 // An enum field or a union's tag read through an element of any
                 // list (`_event.data.lines[i].color`, `_event.data.shapes[i].kind`,
-                // docs/adr/0092, section 6.1): the place the read writes, every
-                // index an element.
+                // docs/adr/0092, section 6.1), or through the value at a key of a
+                // map (`m[k].kind`, docs/adr/0108, D3): the place the read writes,
+                // every index an element.
                 if let Some(held) =
                     crate::forge::expr::place_path(node).and_then(|path| (reading.var_alias)(&path))
                 {
-                    if class_of(index, ctx, reading)?.is_some() {
-                        return Err(refuse(index, "an enum value as an index"));
-                    }
+                    index_held(list, index, ctx, reading)?;
                     return Ok(Some(held));
                 }
             }
             nothing_but(node, ctx, reading)
+        }
+        // `<map>[<key>]`: the value at a key of a map of enum values is a value
+        // of that enum (docs/adr/0108, D3), read at the place the read writes,
+        // the key an element as a list's index is, so it is held to its enum as
+        // a variable of the enum is; a key of an enum is a value of the enum the
+        // map is keyed by.
+        ExprKind::Index { object, index }
+            if crate::forge::expr::keyed_place(object, ctx).is_some() =>
+        {
+            index_held(object, index, ctx, reading)?;
+            Ok(crate::forge::expr::place_path(node).and_then(|path| (reading.var_alias)(&path)))
         }
         ExprKind::Ident(name) => Ok((reading.var_alias)(name)),
         // A conditional and a read with a default are values of an enum when
@@ -506,6 +515,28 @@ fn class_of(
                 .map(|slot| slot.alias))
         }
         _ => nothing_but(node, ctx, reading),
+    }
+}
+
+/// Refuses `index`, the index of `object[index]`, where it is a value of an
+/// enum and no key of the map `object` names: a list is indexed by a number,
+/// and a map keyed by an enum by a value of that enum (docs/adr/0108, D3).
+fn index_held(
+    object: &TypedExpr,
+    index: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    reading: &EnumReading<'_>,
+) -> Result<(), Refusal> {
+    let Some(given) = class_of(index, ctx, reading)? else {
+        return Ok(());
+    };
+    let key = crate::forge::expr::keyed_place(object, ctx)
+        .and_then(|place| place.map_key())
+        .and_then(|key| crate::forge::value_path::enum_alias(ctx.value_scope?, &key));
+    if key.as_deref() == Some(given.as_str()) {
+        Ok(())
+    } else {
+        Err(refuse(index, "an enum value as an index"))
     }
 }
 

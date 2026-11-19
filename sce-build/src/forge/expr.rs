@@ -7460,7 +7460,10 @@ enum KeyedBuiltin {
 /// The map or the set `node` names, when it is a place the scope holds one in
 /// (docs/adr/0108): a statechart's map or set variable. `None` for any other
 /// expression, and in every scope that holds no value of the one value type.
-fn keyed_place(node: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<crate::forge::value_path::Place> {
+pub(crate) fn keyed_place(
+    node: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+) -> Option<crate::forge::value_path::Place> {
     place_path(node)
         .and_then(|path| ctx.value_of(&path))
         .filter(crate::forge::value_path::Place::is_keyed)
