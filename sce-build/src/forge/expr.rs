@@ -7615,13 +7615,13 @@ pub(crate) const RUST_MAP_READS: &str = "::sce_rust_runtime::portable::map";
 /// statement that takes it is lowered.
 ///
 /// An algorithm calls the same functions of the leaf crate its map type is
-/// declared in ([`TypeCtx::rust_map_reads`]). In one that does not declare
-/// `may-fail`, which has no failure to hand on, a value at a key is read where
-/// the build proved the key held (D6 item 2; any other read is refused as
-/// `algorithm/undeclared-integer-failure`), by `held` and `held_cloned`, which
-/// read it as a proven index of a list is read.
+/// declared in ([`TypeCtx::rust_algorithm_map_reads`]). In one that does not
+/// declare `may-fail`, which has no failure to hand on, a value at a key is
+/// read where the build proved the key held (D6 item 2; any other read is
+/// refused as `algorithm/undeclared-integer-failure`), by `held` and
+/// `held_cloned`, which read it as a proven index of a list is read.
 fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
-    let reads = ctx.rust_map_reads.unwrap_or(RUST_MAP_READS);
+    let reads = ctx.rust_algorithm_map_reads().unwrap_or(RUST_MAP_READS);
     // `m[k].f`: the field of the value the map lends.
     if let ExprKind::Member { object, property } = &mut expr.kind {
         let entry = keyed_entry(object, ctx);
@@ -7798,11 +7798,12 @@ fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> 
     let (map_ty, key_ty) = (map.ty, key.ty);
     wrap_in_call(&mut map, "&", map_ty);
     wrap_in_call(&mut key, "&", key_ty);
-    let reads = ctx.rust_map_reads.unwrap_or(RUST_MAP_READS);
+    let algorithm_reads = ctx.rust_algorithm_map_reads();
+    let reads = algorithm_reads.unwrap_or(RUST_MAP_READS);
     // An algorithm's body that hands on no failure reads the key the build
     // proved held ([`lower_keyed_reads_for_rust`]); a machine receives every
     // failure it runs into.
-    if ctx.rust_map_reads.is_some() && !ctx.receives_failures {
+    if algorithm_reads.is_some() && !ctx.receives_failures {
         let proven = match function {
             "value" => "held",
             _ => "held_cloned",
@@ -7895,7 +7896,7 @@ const C_MAP_FOUND: &str = "sce_map_lookup_found";
 /// What reads the value the lookup found as the map holds its values.
 const C_MAP_VALUE_OF: &str = "SCE_MAP_VALUE_OF";
 /// What reads it as a value of the type it is handed, for a map lent by the
-/// address of its storage ([`TypeCtx::lent_map_values`]).
+/// address of its storage ([`TypeCtx::c11_algorithm_map_value`]).
 const C_MAP_VALUE_AS: &str = "SCE_MAP_VALUE_AS";
 
 /// Each read of a map or a set of `expr` (docs/adr/0108, D3), spelled for a
@@ -7912,7 +7913,7 @@ const C_MAP_VALUE_AS: &str = "SCE_MAP_VALUE_AS";
 /// An algorithm reads its map parameter the same way, through the address of
 /// the caller's storage, which names no type of its bound: the value is read
 /// as the type the algorithm names for it (`SCE_MAP_VALUE_AS`,
-/// [`TypeCtx::lent_map_values`]), and in a body that does not declare
+/// [`TypeCtx::c11_algorithm_map_value`]), and in a body that does not declare
 /// `may-fail`, whose reads at a key the analysis proved present, as the value
 /// the lookup found with no failure to record (`sce_map_lookup_found`).
 ///
@@ -8050,9 +8051,9 @@ fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusa
     let (map, key) = (*object, *index);
     // A map an algorithm is lent by the address of its storage names no type
     // its value could be read as, so the read names the value's own
-    // ([`TypeCtx::lent_map_values`]).
+    // ([`TypeCtx::c11_algorithm_map_value`]).
     let lent_value = match &map.kind {
-        ExprKind::Ident(name) => ctx.lent_map_values.get(name).cloned(),
+        ExprKind::Ident(name) => ctx.c11_algorithm_map_value(name).map(str::to_string),
         _ => None,
     };
     let (probe, feed) = c_map_probe(key, &held, ctx)?;

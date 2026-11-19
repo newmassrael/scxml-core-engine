@@ -1573,14 +1573,12 @@ pub struct TypeCtx<'a> {
     /// ⚠ `None` everywhere but a transition of a C11 statechart whose payload
     /// is of the schema of a record a map is keyed by.
     pub payload_key_feed: Option<String>,
-    /// Each map an algorithm is lent by the address of its storage rather than
-    /// in a type of its bound, by name, with the C type it holds its values in:
-    /// a C11 algorithm's map parameter, which views a map of any bound, the
-    /// caller's (docs/adr/0108, D6 items 1 and 4), so a read at a key of it
-    /// names the type of the value it reads, which no type of the map says.
+    /// How a read of a map an algorithm's body holds is spelled on the lane
+    /// that lowers it ([`AlgorithmMapReads`]).
     ///
-    /// ⚠ Empty everywhere but the body of a C11 algorithm that takes a map.
-    pub lent_map_values: HashMap<String, String>,
+    /// ⚠ `None` everywhere but the body of an algorithm that holds a map, and
+    /// `None` is what keeps every machine's read of a map as it is.
+    pub algorithm_maps: Option<AlgorithmMapReads>,
     /// Each record and each enum a map of the statechart holds as its key or
     /// its value in the type the entry's own unit declares (docs/adr/0108, D6
     /// item 4), with that type and the functions an entry crosses by
@@ -1601,14 +1599,6 @@ pub struct TypeCtx<'a> {
     ///
     /// ⚠ Empty everywhere but the body of such a loop.
     pub unit_held_names: std::collections::HashSet<&'a str>,
-    /// The path whose functions a Rust read of a map or a set calls (`len`,
-    /// `has`, `m[k]`, docs/adr/0108, D3), where it is not the machine's own
-    /// (`expr::RUST_MAP_READS`, through the runtime a machine's crate depends
-    /// on alone): an algorithm's, which names the leaf crate its map type is
-    /// declared in, as its other bounded types are.
-    ///
-    /// ⚠ `None` everywhere but the body of a Rust algorithm that holds a map.
-    pub rust_map_reads: Option<&'static str>,
     /// Each function a call of which is handed a seed for the keys of the map
     /// locals it builds, as its last argument (docs/adr/0108, D8,
     /// [`crate::forge::model::AlgorithmModel::takes_map_seed`]): by its name as
@@ -1619,6 +1609,44 @@ pub struct TypeCtx<'a> {
     /// ⚠ Empty everywhere but a caller of such an algorithm on a lane that
     /// hands one a seed, and emptiness keeps every other call as it was.
     pub seeded_calls: HashMap<&'a str, String>,
+}
+
+/// How a read of a map or a set an algorithm's body holds (`len`, `has`,
+/// `m[k]`, docs/adr/0108, D3, D6 items 1 and 4) is spelled on the lane that
+/// lowers it, where it is not spelled as a machine's read of its own map.
+#[derive(Debug, Clone)]
+pub enum AlgorithmMapReads {
+    /// Rust: the path whose functions a read calls, the leaf crate the
+    /// algorithm's map type is declared in, as its other bounded types are,
+    /// rather than the machine's own (`expr::RUST_MAP_READS`, through the
+    /// runtime a machine's crate depends on alone).
+    Rust(&'static str),
+    /// C11: each map the body reaches by the address of its storage rather
+    /// than in a type of its bound, by name, with the C type it holds its
+    /// values in, so a read at a key of it names the type of the value it
+    /// reads, which no type of the map says.
+    C11(HashMap<String, String>),
+}
+
+impl TypeCtx<'_> {
+    /// The path a Rust algorithm's reads of its maps call
+    /// ([`AlgorithmMapReads::Rust`]); `None` everywhere else.
+    pub fn rust_algorithm_map_reads(&self) -> Option<&'static str> {
+        match &self.algorithm_maps {
+            Some(AlgorithmMapReads::Rust(path)) => Some(*path),
+            Some(AlgorithmMapReads::C11(_)) | None => None,
+        }
+    }
+
+    /// The C type the values of the map `name` a C11 algorithm reaches by an
+    /// address are held in ([`AlgorithmMapReads::C11`]); `None` everywhere
+    /// else.
+    pub fn c11_algorithm_map_value(&self, name: &str) -> Option<&str> {
+        match &self.algorithm_maps {
+            Some(AlgorithmMapReads::C11(values)) => values.get(name).map(String::as_str),
+            Some(AlgorithmMapReads::Rust(_)) | None => None,
+        }
+    }
 }
 
 /// How a target holds one record or one enum as a map's key or value in the
@@ -1747,10 +1775,9 @@ impl<'a> TypeCtx<'a> {
             place_items: std::collections::HashSet::new(),
             unit_unions: HashMap::new(),
             payload_key_feed: None,
-            lent_map_values: HashMap::new(),
+            algorithm_maps: None,
             map_units: MapUnits::default(),
             unit_held_names: std::collections::HashSet::new(),
-            rust_map_reads: None,
             seeded_calls: HashMap::new(),
         }
     }

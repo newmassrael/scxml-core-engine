@@ -58,7 +58,7 @@ pub(crate) type PartSpelling<'a> =
 pub(crate) const RUST_ALGORITHM_MAP_CRATE: &str = "::sce_portable_bytes";
 
 /// The module whose functions a Rust algorithm's reads of a map call
-/// ([`crate::forge::types::TypeCtx::rust_map_reads`]).
+/// ([`crate::forge::types::AlgorithmMapReads::Rust`]).
 pub(crate) const RUST_ALGORITHM_MAP_READS: &str = "::sce_portable_bytes::map";
 
 /// The parameter an algorithm that takes its caller's seed takes it in

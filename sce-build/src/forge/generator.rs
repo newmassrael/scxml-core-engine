@@ -48928,13 +48928,14 @@ fn render_algorithm(
     // docs/adr/0108, D6 items 1 and 4: every C11 map is reached through an
     // address in its caller's storage, which names no type of a parameter's
     // bound, so a read at a key of it names the type of the value
-    // ([`TypeCtx::lent_map_values`]). Each part is judged here, and the buffer
-    // of a text or a byte string part, with the view a byte string is read as,
-    // is declared beside the function under the guard every header that holds
-    // one of that bound shares.
+    // ([`crate::forge::types::AlgorithmMapReads::C11`]). Each part is judged
+    // here, and the buffer of a text or a byte string part, with the view a
+    // byte string is read as, is declared beside the function under the guard
+    // every header that holds one of that bound shares.
     let mut map_texts = std::collections::BTreeSet::new();
     let mut map_bytes = std::collections::BTreeSet::new();
-    if lang == Language::C11 {
+    if lang == Language::C11 && m.first_map().is_some() {
+        let mut values = std::collections::HashMap::new();
         let slots = m
             .signature
             .params
@@ -48964,9 +48965,10 @@ fn render_algorithm(
             }
             if let Some(value) = place.map_value() {
                 let held = c11_map_part_type(&l, imports, name, &value.ty)?;
-                type_ctx.lent_map_values.insert(name.to_string(), held);
+                values.insert(name.to_string(), held);
             }
         }
+        type_ctx.algorithm_maps = Some(crate::forge::types::AlgorithmMapReads::C11(values));
     }
     let map_texts: String = map_texts
         .into_iter()
@@ -49023,7 +49025,9 @@ fn render_algorithm(
         let local = |name: &str| l.local_id(name);
         let maps =
             crate::forge::rust_algorithm_map::RustAlgorithmMaps::of(m, &part, &local, &seeded)?;
-        type_ctx.rust_map_reads = Some(crate::forge::rust_algorithm_map::RUST_ALGORITHM_MAP_READS);
+        type_ctx.algorithm_maps = Some(crate::forge::types::AlgorithmMapReads::Rust(
+            crate::forge::rust_algorithm_map::RUST_ALGORITHM_MAP_READS,
+        ));
         for imp in imports
             .iter()
             .filter(|imp| seeded.contains(&imp.alias.as_str()))
