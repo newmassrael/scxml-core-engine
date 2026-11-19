@@ -36,6 +36,8 @@ pub const FORGE_CATALOG_RELATIVE_PATH: &str = "tests/forge/conformance/fixtures.
 #[serde(rename_all = "lowercase")]
 pub enum CanonicalType {
     Bool,
+    I8,
+    I16,
     I32,
     /// Signed 64-bit — day counts, epoch milliseconds and any other quantity
     /// past the 32-bit range. Without it the harness could not observe a
@@ -1092,6 +1094,8 @@ impl FixtureSpec {
 pub fn rust_type_for(ty: &str) -> &'static str {
     match ty {
         "bool" => "bool",
+        "i8" => "i8",
+        "i16" => "i16",
         "i32" => "i32",
         "i64" => "i64",
         "u8" => "u8",
@@ -1113,6 +1117,8 @@ pub fn rust_unmarshal_expr(raw: &str, ty: &str) -> String {
         "bool" => format!("{raw}.as_bool().expect(\"bool\")"),
         "f64" => format!("{raw}.as_f64().expect(\"f64\")"),
         "f32" => format!("{raw}.as_f64().expect(\"f64\") as f32"),
+        "i8" => format!("{raw}.as_i64().expect(\"i64\") as i8"),
+        "i16" => format!("{raw}.as_i64().expect(\"i64\") as i16"),
         "i32" => format!("{raw}.as_i64().expect(\"i64\") as i32"),
         "i64" => format!("{raw}.as_i64().expect(\"i64\")"),
         "u8" => format!("{raw}.as_u64().expect(\"u64\") as u8"),
@@ -1135,6 +1141,8 @@ pub fn cpp_type_for(ty: &str) -> &'static str {
         "bool" => "bool",
         "f64" => "double",
         "f32" => "float",
+        "i8" => "std::int8_t",
+        "i16" => "std::int16_t",
         "i32" => "std::int32_t",
         "i64" => "std::int64_t",
         "u8" => "std::uint8_t",
@@ -1155,6 +1163,8 @@ pub fn go_type_for(ty: &str) -> &'static str {
         "bool" => "bool",
         "f64" => "float64",
         "f32" => "float32",
+        "i8" => "int8",
+        "i16" => "int16",
         "i32" => "int32",
         "i64" => "int64",
         "u8" => "uint8",
@@ -1177,6 +1187,8 @@ pub fn c_type_for(ty: &str) -> &'static str {
         "bool" => "bool",
         "f64" => "double",
         "f32" => "float",
+        "i8" => "int8_t",
+        "i16" => "int16_t",
         "i32" => "int32_t",
         "i64" => "int64_t",
         "u8" => "uint8_t",
@@ -1334,6 +1346,8 @@ pub fn kt_type_for(ty: &str) -> &'static str {
         "bool" => "Boolean",
         "f64" => "Double",
         "f32" => "Float",
+        "i8" => "Byte",
+        "i16" => "Short",
         "i32" => "Int",
         "i64" => "Long",
         "u8" => "UByte",
@@ -1353,6 +1367,8 @@ pub fn kt_unmarshal_expr(raw: &str, ty: &str) -> String {
         "bool" => format!("{raw}.jsonPrimitive.boolean"),
         "f64" => format!("{raw}.jsonPrimitive.double"),
         "f32" => format!("{raw}.jsonPrimitive.double.toFloat()"),
+        "i8" => format!("{raw}.jsonPrimitive.int.toByte()"),
+        "i16" => format!("{raw}.jsonPrimitive.int.toShort()"),
         "i32" => format!("{raw}.jsonPrimitive.int"),
         "i64" => format!("{raw}.jsonPrimitive.long"),
         "u8" => format!("{raw}.jsonPrimitive.int.toUByte()"),
@@ -3132,6 +3148,8 @@ fn read_record_fields(
                 SceType::Uint16 => CanonicalType::U16,
                 SceType::Uint32 => CanonicalType::U32,
                 SceType::Uint64 => CanonicalType::U64,
+                SceType::Int8 => CanonicalType::I8,
+                SceType::Int16 => CanonicalType::I16,
                 SceType::Int32 => CanonicalType::I32,
                 SceType::Int64 => CanonicalType::I64,
                 SceType::Float32 => CanonicalType::F32,
@@ -6535,6 +6553,49 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Every fixed-width integer an algorithm declares is a canonical type of the
+    /// manifest, the signed 8- and 16-bit ones among them, and every lane names
+    /// and reads it at its own width: `algorithm_narrow_shift` takes an `int16`.
+    ///
+    /// ⚠ Until 2026-11-19 `i8` and `i16` were no canonical type, so a fixture
+    /// with an `int16` argument was refused by every reader of the manifest
+    /// ("did not match any variant of untagged enum AlgorithmArg").
+    #[test]
+    fn every_fixed_width_integer_is_a_canonical_type() {
+        let args: Vec<AlgorithmArg> =
+            serde_json::from_str(r#"["i8", "i16", "u8", "u16"]"#).expect("the arguments parse");
+        assert!(matches!(args[0], AlgorithmArg::Scalar(CanonicalType::I8)));
+        assert!(matches!(args[1], AlgorithmArg::Scalar(CanonicalType::I16)));
+        for (ty, rust, cpp, go, c, kotlin, swift) in [
+            ("i8", "i8", "std::int8_t", "int8", "int8_t", "Byte", "Int8"),
+            (
+                "i16",
+                "i16",
+                "std::int16_t",
+                "int16",
+                "int16_t",
+                "Short",
+                "Int16",
+            ),
+        ] {
+            assert_eq!(rust_type_for(ty), rust);
+            assert_eq!(cpp_type_for(ty), cpp);
+            assert_eq!(go_type_for(ty), go);
+            assert_eq!(c_type_for(ty), c);
+            assert_eq!(kt_type_for(ty), kotlin);
+            assert_eq!(swift_type_for(ty), swift);
+        }
+        assert_eq!(
+            rust_unmarshal_expr("v", "i16"),
+            "v.as_i64().expect(\"i64\") as i16"
+        );
+        assert_eq!(
+            kt_unmarshal_expr("v", "i16"),
+            "v.jsonPrimitive.int.toShort()"
+        );
+        assert_eq!(c_literal_for(&serde_json::json!(-256), "i16"), "-256");
     }
 
     /// The untagged forms of an algorithm's slots read each spelling as what it

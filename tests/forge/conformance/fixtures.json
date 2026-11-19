@@ -20,6 +20,8 @@
     "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++). `bytes` is the variable-length byte sequence; in args it represents a `sce_forge_bytes_t` view on C11 / `&[u8]` on Rust.",
     "types": [
       "bool",
+      "i8",
+      "i16",
       "i32",
       "i64",
       "u8",

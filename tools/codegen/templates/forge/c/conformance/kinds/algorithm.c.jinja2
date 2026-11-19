@@ -54,7 +54,7 @@
 {% endfor %}
 {% endif %}
 {% if f.output.list_of is defined %}
-{% set signed_elem = f.output.list_of in ["i32", "i64"] %}
+{% set signed_elem = f.output.list_of in ["i8", "i16", "i32", "i64"] %}
 {% set float_elem = f.output.list_of in ["f32", "f64"] %}
 {% endif %}
 static void test_{{ f.name }}(void) {
