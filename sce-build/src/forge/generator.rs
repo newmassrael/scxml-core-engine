@@ -43496,7 +43496,7 @@ fn c11_algorithm_map_part_value(
 /// what a variant written into an `outcome` is spelled by.
 fn c11_outcome_import<'i>(
     imports: &'i [ImportContext],
-    outcomes: &crate::forge::static_lowering::C11Outcomes,
+    outcomes: &crate::forge::static_lowering::MapOutcomes,
 ) -> Result<&'i ImportContext, ForgeError> {
     imports
         .iter()
@@ -43529,7 +43529,7 @@ fn c11_algorithm_map_write(
     pad: &str,
 ) -> Result<String, ForgeError> {
     use crate::forge::static_lowering::{
-        c11_outcome_variant, C11Outcomes, C11_PUT_OUTCOMES, C11_REMOVE_OUTCOMES,
+        c11_outcome_variant, MapOutcomes, PUT_OUTCOMES, REMOVE_OUTCOMES,
     };
     let inner = format!("{pad}    ");
     let key_line = |map: &C11LentMap, key: &str, spelling| -> Result<String, ForgeError> {
@@ -43545,7 +43545,7 @@ fn c11_algorithm_map_write(
         ))
     };
     let written =
-        |outcomes: &C11Outcomes, outcome: &str, answer: &str| -> Result<String, ForgeError> {
+        |outcomes: &MapOutcomes, outcome: &str, answer: &str| -> Result<String, ForgeError> {
             let imp = c11_outcome_import(ctx.imports, outcomes)?;
             let variant = c11_outcome_variant(outcomes, answer, &|variant| {
                 crate::forge::enum_naming::variant_ref(
@@ -43605,9 +43605,9 @@ fn c11_algorithm_map_write(
                 Some(outcome) => {
                     text.push_str(&format!(
                         "{inner}const {} sce_put_ = {call};\n",
-                        C11_PUT_OUTCOMES.runtime
+                        PUT_OUTCOMES.c11
                     ));
-                    text.push_str(&written(&C11_PUT_OUTCOMES, outcome, "sce_put_")?);
+                    text.push_str(&written(&PUT_OUTCOMES, outcome, "sce_put_")?);
                 }
                 None if ctx.channel.may_fail => text.push_str(&format!(
                     "{inner}if ({call} == SCE_MAP_PUT_FULL) {{\n{inner}    \
@@ -43640,9 +43640,9 @@ fn c11_algorithm_map_write(
                 Some(outcome) => {
                     text.push_str(&format!(
                         "{inner}const {} sce_removed_ = {call};\n",
-                        C11_REMOVE_OUTCOMES.runtime
+                        REMOVE_OUTCOMES.c11
                     ));
-                    text.push_str(&written(&C11_REMOVE_OUTCOMES, outcome, "sce_removed_")?);
+                    text.push_str(&written(&REMOVE_OUTCOMES, outcome, "sce_removed_")?);
                 }
                 None => text.push_str(&format!("{inner}(void){call};\n")),
             }
@@ -44021,7 +44021,10 @@ fn lower_rust_map_stmt(
                     )))
                 }
             };
-            let spelled = outcome_of(outcome, crate::forge::static_lowering::RUST_PUT_OUTCOMES.1)?;
+            let spelled = outcome_of(
+                outcome,
+                crate::forge::static_lowering::PUT_OUTCOMES.variants,
+            )?;
             // A put that names no outcome fails on a full map, which only a body
             // that declares `may-fail` may write (D6 item 2).
             if spelled.is_none() && !ctx.channel.may_fail {
@@ -44065,7 +44068,7 @@ fn lower_rust_map_stmt(
             )?;
             let spelled = outcome_of(
                 outcome,
-                crate::forge::static_lowering::RUST_REMOVE_OUTCOMES.1,
+                crate::forge::static_lowering::REMOVE_OUTCOMES.variants,
             )?;
             let outcome = spelled.as_ref().map(|(place, variants)| Outcome {
                 place: place.as_str(),
