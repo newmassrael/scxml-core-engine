@@ -121,7 +121,7 @@ pub fn check_machine_config(
             (None, Some(_)) => return Ok(None),
             (None, None) => {
                 return match declared.first() {
-                    Some((id, ty)) => Err(missing(*id, ty)),
+                    Some((id, ty)) => Err(missing(id, ty)),
                     None => Ok(None),
                 }
             }
@@ -138,7 +138,7 @@ pub fn check_machine_config(
     }
     let mut members = Vec::with_capacity(declared.len());
     for (id, ty) in &declared {
-        let value = config.get(*id).ok_or_else(|| missing(*id, ty))?;
+        let value = config.get(*id).ok_or_else(|| missing(id, ty))?;
         let json = conform(value, ty, &scope, &pointer_below("", id))
             .map_err(|fault| invalid(ConfigSource::Inline, fault.pointer, fault.reason))?;
         members.push(format!("{}:{json}", quoted(id)));
