@@ -6,7 +6,8 @@
 # Kotlin's arrays take an `Int` index, and the emitter converts an index from
 # the type its text has. An operation on a UByte or UShort is computed in the
 # type `kotlin_narrow_unsigned_operation` names (`Int` for a bitwise one), not
-# in the type it is inferred to, so reading the inferred type converts an `Int`
+# in the type it is inferred to (`kotlin_written_type` says which; a left shift
+# is converted back to its own), so reading the inferred type converts an `Int`
 # to `Int` again: a redundant call kotlinc `-Werror` refuses, as it refused
 # `algorithm_lcg_table`'s `LCG_TABLE[n & 15]`. The case makes the index read
 # the inferred type; `forge::expr::tests::kotlin_index_is_converted_to_int_once`
@@ -21,6 +22,6 @@ mutation_oracles sce-build/src/forge/expr.rs sce-build/tests/forge_conformance.r
 
 mutation_case "an index converts from the type it is inferred to" <<'PY'
 edit("sce-build/src/forge/expr.rs",
-     r'''            let idx_emit = match kotlin_narrow_unsigned_operation(index).unwrap_or(index.ty) {''',
+     r'''            let idx_emit = match kotlin_written_type(index) {''',
      r'''            let idx_emit = match index.ty {''')
 PY

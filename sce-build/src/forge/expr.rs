@@ -7262,6 +7262,90 @@ fn c_family_clarity_parens(child: &TypedExpr, parent_op: BinOp) -> bool {
     }
 }
 
+/// Which of the two C-family emitters a shared spelling is written for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CFamily {
+    C,
+    Cpp,
+}
+
+impl CFamily {
+    /// `text` converted to the integer type of `signed` and `bits`.
+    fn cast(self, signed: bool, bits: u8, text: &str) -> String {
+        let unsigned = if signed { "" } else { "u" };
+        match self {
+            Self::C => format!("({unsigned}int{bits}_t)({text})"),
+            Self::Cpp => format!("static_cast<std::{unsigned}int{bits}_t>({text})"),
+        }
+    }
+}
+
+/// `left op right`, the operands as the operator takes them, of the node type
+/// `ty`, as C and C++ write it.
+///
+/// A left shift wraps at the width of its type (SCE_FORGE.md §3.4.1, "The
+/// width of a shift"), and neither language makes it there by itself: an
+/// operand narrower than `int` is promoted to `int`, so a `uint8` or `int16`
+/// shift keeps the bits it shifts out until its value is converted back to its
+/// type, and a left shift of a negative signed value is undefined. So a narrow
+/// unsigned shift is converted back to its type, and a signed one is made in
+/// the unsigned type of its width and converted back, which is its
+/// two's-complement value. Every other operator is written as it is.
+///
+/// ⚠ Until 2026-11-19 a `uint8` `x << 4` stored in a `uint32` kept 12 bits in
+/// C, C++ and Kotlin and 8 in every other backend.
+fn c_family_binary(
+    family: CFamily,
+    op: BinOp,
+    ty: InferredType,
+    left: &str,
+    right: &str,
+) -> String {
+    let written = format!("{left} {} {right}", cpp_binop(op));
+    if op != BinOp::Shl {
+        return written;
+    }
+    match ty.strip_quantity() {
+        InferredType::Int { signed: true, bits } => {
+            let unsigned = family.cast(false, bits, left);
+            family.cast(true, bits, &format!("{unsigned} << {right}"))
+        }
+        InferredType::Int {
+            signed: false,
+            bits,
+        } if bits < 32 => family.cast(false, bits, &written),
+        _ => written,
+    }
+}
+
+/// `op` over `operand`, written `inner`, of the node type `ty`, as C and C++
+/// write it. A `~` of an operand narrower than `int` is converted back to its
+/// type, as a left shift is ([`c_family_binary`]): `~x` of a `uint8` is an
+/// `int` below 0 until it is.
+fn c_family_unary(
+    family: CFamily,
+    op: UnaryOp,
+    ty: InferredType,
+    operand: &TypedExpr,
+    inner: &str,
+) -> String {
+    let wrap = matches!(
+        &operand.kind,
+        ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+    );
+    let written = if wrap {
+        format!("{}({inner})", cpp_unary(op))
+    } else {
+        format!("{}{inner}", cpp_unary(op))
+    };
+    match (op, ty.strip_quantity()) {
+        (UnaryOp::BitNot, InferredType::Int { signed, bits }) if bits < 32 => {
+            family.cast(signed, bits, &written)
+        }
+        _ => written,
+    }
+}
+
 /// Wrap an emitted sub-expression in parens when it is used as the base of a
 /// postfix access (`.`, `[]`, `()`) and the underlying AST shape would
 /// otherwise bind differently than intended.
@@ -9259,19 +9343,11 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             } else {
                 r_raw
             };
-            format!("{l} {} {r}", cpp_binop(*op))
+            c_family_binary(CFamily::Cpp, *op, expr.ty, &l, &r)
         }
         ExprKind::Unary { op, operand } => {
             let inner = emit_cpp(operand, expr.ty)?;
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            if wrap {
-                format!("{}({inner})", cpp_unary(*op))
-            } else {
-                format!("{}{inner}", cpp_unary(*op))
-            }
+            c_family_unary(CFamily::Cpp, *op, expr.ty, operand, &inner)
         }
         ExprKind::Conditional {
             condition,
@@ -9708,6 +9784,15 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
                 r_raw
             };
             let inner = format!("{l} {} {r}", kotlin_binop(*op));
+            // A left shift made in `Int` wraps at the width of what it shifts
+            // (SCE_FORGE.md §3.4.1, "The width of a shift"), as it does on
+            // every backend: converted to its own type first, and only then
+            // to the type the caller asks for, so `x shl 4` of a `UByte`
+            // keeps 8 bits where it lands in a `UInt`.
+            if kotlin_wraps_at_its_width(expr) {
+                let own = kotlin_coerce(inner, widened, expr.ty, expr);
+                return Ok(kotlin_coerce(own, expr.ty, expected, expr));
+            }
             return Ok(kotlin_coerce(inner, widened, expected, expr));
         }
     }
@@ -9762,7 +9847,14 @@ fn kotlin_narrow_unsigned_operation(expr: &TypedExpr) -> Option<InferredType> {
     let ExprKind::Binary { op, left, right } = &expr.kind else {
         return None;
     };
-    if !(is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
+    // A shift's count is an `Int` wherever it is written, so only what it
+    // shifts decides; and `Byte` and `Short` define no shift either.
+    let narrow = if op.is_shift() {
+        is_kotlin_narrow(left.ty)
+    } else {
+        is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)
+    };
+    if !narrow {
         return None;
     }
     if op.is_bitwise() {
@@ -9802,6 +9894,31 @@ fn kotlin_narrow_unsigned_domain(joined: InferredType, narrow: InferredType) -> 
     match joined {
         InferredType::Int { bits: 64, .. } => joined,
         _ => narrow,
+    }
+}
+
+/// An integer Kotlin defines no shift on, whatever its sign: `Byte`, `Short`,
+/// `UByte`, `UShort` (8 or 16 bits). Its shift is made in `Int`.
+fn is_kotlin_narrow(ty: InferredType) -> bool {
+    matches!(ty, InferredType::Int { bits: 8 | 16, .. })
+}
+
+/// Whether the Kotlin text of `expr`, made in the type
+/// [`kotlin_narrow_unsigned_operation`] names, is converted back to `expr`'s
+/// own type before anything else reads it: a left shift, which wraps at the
+/// width of what it shifts.
+fn kotlin_wraps_at_its_width(expr: &TypedExpr) -> bool {
+    matches!(&expr.kind, ExprKind::Binary { op: BinOp::Shl, .. })
+}
+
+/// The type of the text [`emit_kotlin`] writes for `expr` before it is
+/// converted to what its caller asks: the type its operation is made in, or,
+/// for one [`kotlin_wraps_at_its_width`], its own.
+fn kotlin_written_type(expr: &TypedExpr) -> InferredType {
+    match kotlin_narrow_unsigned_operation(expr) {
+        Some(_) if kotlin_wraps_at_its_width(expr) => expr.ty,
+        Some(made_in) => made_in,
+        None => expr.ty,
     }
 }
 
@@ -9926,6 +10043,30 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             };
             format!("{l} {} {r}", kotlin_binop(*op))
         }
+        // `Byte` and `Short` have no `inv()` of their own (only
+        // `kotlin.experimental`'s), so their complement is made in `Int` and
+        // converted back to the operand's width, which is its value.
+        ExprKind::Unary {
+            op: UnaryOp::BitNot,
+            operand,
+        } if matches!(
+            expr.ty,
+            InferredType::Int {
+                signed: true,
+                bits: 8 | 16
+            }
+        ) =>
+        {
+            let int = InferredType::Int {
+                signed: true,
+                bits: 32,
+            };
+            let complement = format!(
+                "{}.inv()",
+                wrap_postfix(operand, emit_kotlin(operand, int)?)
+            );
+            kotlin_coerce(complement, int, expr.ty, expr)
+        }
         ExprKind::Unary {
             op: UnaryOp::BitNot,
             operand,
@@ -9981,7 +10122,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // An operation on a narrow unsigned index is emitted in the type
             // Kotlin computes it in, which may be `Int` already.
             let idx_raw = emit_kotlin(index, InferredType::Unknown)?;
-            let idx_emit = match kotlin_narrow_unsigned_operation(index).unwrap_or(index.ty) {
+            let idx_emit = match kotlin_written_type(index) {
                 InferredType::Int {
                     signed: true,
                     bits: 32,
@@ -12392,8 +12533,7 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             };
             // Python's `~x` is `-x - 1`, a negative number for every `x` at
             // least 0, where an unsigned type holds the complement of `x`'s
-            // bits: it is reduced into the type, as a whole, so the operator
-            // around it sees one value.
+            // bits: it is reduced into the type, as one operand.
             match (op, expr.ty) {
                 (
                     UnaryOp::BitNot,
@@ -12401,7 +12541,7 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                         signed: false,
                         bits,
                     },
-                ) => format!("({})", python_reduce(spelled, false, bits)),
+                ) => python_reduce(spelled, false, bits),
                 _ => spelled,
             }
         }
@@ -12676,13 +12816,22 @@ fn python_wrap_int(raw: String, from: (bool, u8), to: (bool, u8)) -> String {
 
 /// `raw`, any Python integer, reduced modulo 2^bits into the integer type of
 /// that width and sign — its two's-complement value for a signed one.
+///
+/// The reduction is one parenthesised operand, so it binds as the value it is
+/// under any operator its node stands beside: the node is still the operation
+/// or the read it reduces, and the parentheses a parent gives a child are
+/// decided by that node, not by the `&` and `-` written around it.
+///
+/// ⚠ Until 2026-11-19 it was written bare, `(x) & M`: under a `>>` it read
+/// `(x) & (M >> n)`, under a `+` `(x) & (M + n)`, and under a comparison
+/// `(x) & (M == n)`, since Python's `&` binds looser than all three.
 fn python_reduce(raw: String, signed: bool, bits: u8) -> String {
     let mask: u128 = (1u128 << bits) - 1;
     if signed {
         let half: u128 = 1u128 << (bits - 1);
-        format!("((({raw}) + 0x{half:X}) & 0x{mask:X}) - 0x{half:X}")
+        format!("(((({raw}) + 0x{half:X}) & 0x{mask:X}) - 0x{half:X})")
     } else {
-        format!("({raw}) & 0x{mask:X}")
+        format!("(({raw}) & 0x{mask:X})")
     }
 }
 
@@ -13550,19 +13699,11 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             } else {
                 r_raw
             };
-            format!("{l} {} {r}", cpp_binop(*op))
+            c_family_binary(CFamily::C, *op, expr.ty, &l, &r)
         }
         ExprKind::Unary { op, operand } => {
             let inner = emit_c(operand, expr.ty)?;
-            let wrap = matches!(
-                &operand.kind,
-                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
-            );
-            if wrap {
-                format!("{}({inner})", cpp_unary(*op))
-            } else {
-                format!("{}{inner}", cpp_unary(*op))
-            }
+            c_family_unary(CFamily::C, *op, expr.ty, operand, &inner)
         }
         ExprKind::Conditional {
             condition,
@@ -15220,12 +15361,13 @@ mod tests {
     }
 
     /// The places the literal-width tests below read: a `uint64` `prev`, a
-    /// `uint8` count `m` and an `int32` `s`.
+    /// `uint8` count `m`, an `int32` `s` and an `int16` `h`.
     fn literal_width_ctx() -> TypeCtx<'static> {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("prev", int(false, 64));
         ctx.insert_var("m", int(false, 8));
         ctx.insert_var("s", int(true, 32));
+        ctx.insert_var("h", int(true, 16));
         ctx
     }
 
@@ -15270,7 +15412,7 @@ mod tests {
         // Python's literal has no width; the shift is reduced to its 64 bits.
         assert_eq!(
             landed(source, ExprTarget::Python, u64t),
-            "prev | (1 << m) & 0xFFFFFFFFFFFFFFFF"
+            "prev | ((1 << m) & 0xFFFFFFFFFFFFFFFF)"
         );
         // The Interpreter's library takes the width from the operation.
         let js = landed(source, ExprTarget::Js, u64t);
@@ -15329,11 +15471,84 @@ mod tests {
     fn python_reduces_a_shift_and_a_complement_to_their_width() {
         assert_eq!(
             landed("s << 3", ExprTarget::Python, int(true, 32)),
-            "(((s << 3) + 0x80000000) & 0xFFFFFFFF) - 0x80000000"
+            "((((s << 3) + 0x80000000) & 0xFFFFFFFF) - 0x80000000)"
         );
         assert_eq!(
             landed("~(1 << m)", ExprTarget::Python, int(false, 64)),
-            "((~((1 << m) & 0xFFFFFFFFFFFFFFFF)) & 0xFFFFFFFFFFFFFFFF)"
+            "((~(((1 << m) & 0xFFFFFFFFFFFFFFFF))) & 0xFFFFFFFFFFFFFFFF)"
+        );
+    }
+
+    /// A reduction is one operand under any operator around it. Written bare,
+    /// `(m << 4) & 0xFF >> 4` is `(m << 4) & 0x0F` in Python, whose `&` binds
+    /// looser than `>>`, `+` and `==`; parenthesised, each line below is the
+    /// wrapped value: `((1 << 63) & M) >> 1` is `2^62`, `((m << 4) & 0xFF) >> 4`
+    /// is the low four bits of `m`, and `((m << 4) & 0xFF) == 16` holds for
+    /// `m = 17`.
+    #[test]
+    fn a_python_reduction_binds_as_one_operand() {
+        assert_eq!(
+            landed("((1 << m) >> 1) + 1", ExprTarget::Python, int(false, 64)),
+            "(((1 << m) & 0xFFFFFFFFFFFFFFFF) >> 1) + 1"
+        );
+        assert_eq!(
+            landed("(m << 4) >> 4", ExprTarget::Python, int(false, 8)),
+            "((m << 4) & 0xFF) >> 4"
+        );
+        assert_eq!(
+            landed("(m << 4) === 16", ExprTarget::Python, InferredType::Bool),
+            "((m << 4) & 0xFF) == 16"
+        );
+    }
+
+    /// A shift of an operand narrower than `int` wraps at its own width in C,
+    /// C++ and Kotlin as in every other backend (SCE_FORGE.md §3.4.1, "The
+    /// width of a shift"), and so does its `~`: each promotes the operand to a
+    /// 32-bit integer, so the shift is converted back to its type where it is
+    /// made. A signed one is made in the unsigned type of its width, since a
+    /// left shift of a negative value is undefined in C and C++.
+    #[test]
+    fn a_narrow_shift_wraps_at_its_width_in_the_c_family_and_kotlin() {
+        let u32t = int(false, 32);
+        let i32t = int(true, 32);
+        assert_eq!(landed("m << 4", ExprTarget::C, u32t), "(uint8_t)(m << 4)");
+        assert_eq!(
+            landed("(m << 4) >> 4", ExprTarget::C, int(false, 8)),
+            "(uint8_t)(m << 4) >> 4"
+        );
+        assert_eq!(
+            landed("h << 8", ExprTarget::C, i32t),
+            "(int16_t)((uint16_t)(h) << 8)"
+        );
+        assert_eq!(landed("~m", ExprTarget::C, u32t), "(uint8_t)(~m)");
+        assert_eq!(
+            landed("m << 4", ExprTarget::Cpp, u32t),
+            "static_cast<std::uint8_t>(m << 4)"
+        );
+        assert_eq!(
+            landed("h << 8", ExprTarget::Cpp, i32t),
+            "static_cast<std::int16_t>(static_cast<std::uint16_t>(h) << 8)"
+        );
+        assert_eq!(
+            landed("~m", ExprTarget::Cpp, u32t),
+            "static_cast<std::uint8_t>(~m)"
+        );
+        // A shift of a 32-bit unsigned value is made at its width already.
+        assert_eq!(
+            landed("prev << m", ExprTarget::C, int(false, 64)),
+            "prev << m"
+        );
+        assert_eq!(
+            landed("m << 4", ExprTarget::Kotlin, u32t),
+            "((m.toInt() shl 4).toUByte()).toUInt()"
+        );
+        assert_eq!(
+            landed("h << 8", ExprTarget::Kotlin, i32t),
+            "((h.toInt() shl 8).toShort()).toInt()"
+        );
+        assert_eq!(
+            landed("~h", ExprTarget::Kotlin, i32t),
+            "((h.toInt().inv()).toShort()).toInt()"
         );
     }
 
@@ -16363,19 +16578,19 @@ mod tests {
         let py = |expr: &str, to: InferredType| {
             transpile_typed(expr, ExprTarget::Python, &ctx, &empty_renames(), to).unwrap()
         };
-        assert_eq!(py("wide", int(false, 8)), "(wide) & 0xFF");
-        assert_eq!(py("signed_wide", int(false, 8)), "(signed_wide) & 0xFF");
+        assert_eq!(py("wide", int(false, 8)), "((wide) & 0xFF)");
+        assert_eq!(py("signed_wide", int(false, 8)), "((signed_wide) & 0xFF)");
         assert_eq!(
             py("signed_wide", int(false, 64)),
-            "(signed_wide) & 0xFFFFFFFFFFFFFFFF"
+            "((signed_wide) & 0xFFFFFFFFFFFFFFFF)"
         );
         assert_eq!(
             py("big", int(true, 32)),
-            "(((big) + 0x80000000) & 0xFFFFFFFF) - 0x80000000"
+            "((((big) + 0x80000000) & 0xFFFFFFFF) - 0x80000000)"
         );
         assert_eq!(
             py("wide", int(true, 32)),
-            "(((wide) + 0x80000000) & 0xFFFFFFFF) - 0x80000000"
+            "((((wide) + 0x80000000) & 0xFFFFFFFF) - 0x80000000)"
         );
         // A type that holds every value of the source changes nothing.
         assert_eq!(py("wide", int(false, 64)), "wide");
