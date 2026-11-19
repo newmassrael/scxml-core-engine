@@ -797,3 +797,206 @@ fn a_map_the_checker_does_not_read_is_refused_by_name() {
         refused(&document, "scxml/static-datamodel-rule", part);
     }
 }
+
+/// The fixture directory the algorithm that keeps each peer's latest
+/// generation stands in, beside the schemas, the enum and the union it imports.
+fn static_fixtures() -> PathBuf {
+    repo_root().join("sce-build/tests/fixtures/static_datamodel")
+}
+
+/// The documents `algorithm_take_generation.scxml` imports from the fixture
+/// directory, copied beside a variant of it.
+const TAKE_SIBLINGS: [&str; 4] = [
+    "schema_map_peer.scxml",
+    "enum_take_kind.scxml",
+    "schema_take_duplicate.scxml",
+    "union_take_result.scxml",
+];
+
+/// The algorithm that keeps each peer's latest generation in an `inout` map
+/// (docs/adr/0108, D6 item 2), as committed.
+fn take_generation() -> String {
+    std::fs::read_to_string(static_fixtures().join("algorithm_take_generation.scxml"))
+        .expect("read the algorithm")
+}
+
+/// `text` with the one occurrence of `from` replaced by `to`, for a document
+/// other than the statechart [`edited`] names in its message.
+fn edited_algorithm(text: &str, from: &str, to: &str) -> String {
+    assert_eq!(
+        text.matches(from).count(),
+        1,
+        "`{from}` stands once in the algorithm"
+    );
+    text.replacen(from, to, 1)
+}
+
+/// The forge parse of the algorithm `document`: its model, or the refusal the
+/// parser placed.
+fn parse_algorithm(
+    document: &str,
+) -> Result<sce_build::forge::model::AlgorithmModel, sce_build::forge::error::ForgeError> {
+    let label = sce_build::DocumentLabel::symmetric("algorithm_take_generation");
+    match sce_build::forge::parser::parse_forge_with_imports(document, label) {
+        Ok(Some(parsed)) => match parsed.document {
+            sce_build::forge::model::ForgeDocument::Algorithm(m) => Ok(m),
+            other => panic!("the document is an algorithm, not a {}", other.kind()),
+        },
+        Ok(None) => panic!("the document is a forge document"),
+        Err(located) => Err(located.error),
+    }
+}
+
+/// `document` is refused where the parser reads it, its message holding
+/// `part`.
+fn parse_refused(document: &str, part: &str) -> sce_build::forge::error::ForgeError {
+    let refusal = parse_algorithm(document)
+        .err()
+        .unwrap_or_else(|| panic!("expected a refusal holding `{part}`"));
+    assert!(
+        refusal.to_string().contains(part),
+        "expected a refusal holding `{part}`, got: {refusal}"
+    );
+    refusal
+}
+
+/// docs/adr/0108, D5 and D6 item 2: an algorithm's `inout` map slot, its
+/// put, its `has` and its read at a key are read and judged where the document
+/// is read: the parameter is written in place, the put names its outcome, and
+/// the body's judges, run before any backend renders it, prove the read at the
+/// peer's key inside the map where `has` holds it. No backend lowers an
+/// algorithm's map yet ("Order of work", step 7), so each refuses the
+/// algorithm by name, naming the record that lands it, rather than by any
+/// judge of its body.
+#[test]
+fn an_algorithm_holds_an_inout_map_and_every_backend_refuses_it_by_name() {
+    let m = parse_algorithm(&take_generation()).expect("the algorithm is read");
+    let resets = &m.signature.params[0];
+    assert!(resets.inout && resets.written_in_place(), "{resets:?}");
+    assert!(m.signature.writes_in_place());
+    assert!(!m.signature.params[1].inout);
+    assert_eq!(m.first_map().map(|(name, _)| name), Some("resets"));
+
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for name in TAKE_SIBLINGS {
+        std::fs::copy(static_fixtures().join(name), dir.path().join(name)).expect("copy an import");
+    }
+    let path = dir.path().join("algorithm_take_generation.scxml");
+    std::fs::write(&path, take_generation()).expect("write the algorithm");
+    for &language in sce_build::generator::Language::ALL {
+        let lane = language.canonical_name();
+        let out_dir = tempfile::tempdir().expect("an output directory");
+        let out_dir = out_dir.path().to_str().expect("a utf-8 path").to_string();
+        let mut args = vec!["generate", "-l", lane, "-o", out_dir.as_str()];
+        if language == sce_build::generator::Language::Go {
+            args.extend(["--go-module-prefix", "example.test/generated"]);
+        }
+        let (ok, out) = run(&args, &path);
+        assert!(!ok, "{lane} lowers no algorithm's map yet:\n{out}");
+        assert!(
+            out.contains("\"code\":\"generate/unsupported-feature\"")
+                && out.contains(&format!(
+                    "holds `resets` of map<record:Zid, uint64>, and {lane} does not lower a map \
+                     or a set in an algorithm yet (docs/adr/0108, D10)"
+                )),
+            "{lane}:\n{out}"
+        );
+    }
+}
+
+/// docs/adr/0108, D6 item 2: an `inout` slot only on an algorithm that cannot
+/// fail, by the code of its own; and the rules of where `inout` stands and
+/// what a non-failing algorithm's put names.
+#[test]
+fn an_inout_slot_is_given_only_to_an_algorithm_that_cannot_fail() {
+    let may_fail = edited_algorithm(
+        &take_generation(),
+        "<sce:return type=\"union:TakeResult\"/>",
+        "<sce:return type=\"union:TakeResult\" may-fail=\"true\"/>",
+    );
+    let refusal = parse_refused(
+        &may_fail,
+        "<sce:param name=\"resets\" inout=\"true\"> is written in place, and the algorithm \
+         declares <sce:return may-fail=\"true\">",
+    );
+    assert!(
+        matches!(
+            &refusal,
+            sce_build::forge::error::ForgeError::Validation(v)
+                if matches!(**v, sce_build::forge::error::ValidationError::AlgorithmInoutOnMayFail { .. })
+        ),
+        "{refusal:?}"
+    );
+
+    // `inout` on a parameter that is no map or set is read by nothing.
+    parse_refused(
+        &edited_algorithm(
+            &take_generation(),
+            "<sce:param name=\"generation\" type=\"uint64\"/>",
+            "<sce:param name=\"generation\" type=\"uint64\" inout=\"true\"/>",
+        ),
+        "only a map or a set parameter is written in place",
+    );
+
+    // A put with no outcome fails on a full map, which an algorithm that does
+    // not declare may-fail cannot.
+    parse_refused(
+        &edited_algorithm(&take_generation(), " outcome=\"stored\"", ""),
+        "an algorithm that does not declare may-fail names an outcome on every put",
+    );
+
+    // A map parameter not declared inout is a read-only view.
+    parse_refused(
+        &edited_algorithm(&take_generation(), " inout=\"true\"", ""),
+        "a map or a set parameter is written only where it is declared inout=\"true\"",
+    );
+}
+
+/// docs/adr/0108, D3 to D5: what a map's statements and loop in an algorithm
+/// name, each refused where the document is read, naming what is accepted.
+#[test]
+fn an_algorithm_map_statement_is_refused_naming_what_it_takes() {
+    let body_with = |statement: &str| {
+        edited_algorithm(
+            &take_generation(),
+            "    <sce:var name=\"taken\" type=\"union:TakeResult\">",
+            &format!("    {statement}\n    <sce:var name=\"taken\" type=\"union:TakeResult\">"),
+        )
+    };
+    for (statement, part) in [
+        (
+            "<sce:clear target=\"stored\"/>",
+            "the name of a map or a set local, or of an inout map or set parameter",
+        ),
+        (
+            "<sce:put target=\"resets\" key=\"peer\" outcome=\"stored\"/>",
+            "the value the put writes at the key",
+        ),
+        (
+            "<sce:remove target=\"resets\" key=\"peer\" expr=\"generation\"/>",
+            "a remove names the key of the entry it removes, and takes no value",
+        ),
+        (
+            "<sce:remove target=\"resets\" key=\"peer\" outcome=\"stored\"/>",
+            "sce:std/collection/remove_outcome.scxml",
+        ),
+        (
+            "<sce:foreach item=\"g\" in=\"generation\" key=\"k\"><sce:clear target=\"resets\"/></sce:foreach>",
+            "only a walk over a map binds each entry's key beside its value",
+        ),
+    ] {
+        parse_refused(&body_with(statement), part);
+    }
+
+    // A map returned is built by puts and taken whole by a variable that holds
+    // its bound: it declares may-fail (D5).
+    let returns_a_map = edited_algorithm(
+        &take_generation(),
+        "<sce:return type=\"union:TakeResult\"/>",
+        "<sce:return type=\"map&lt;uint32, uint64&gt;[4]\"/>",
+    );
+    parse_refused(
+        &returns_a_map,
+        "a map or a set an algorithm returns declares may-fail",
+    );
+}

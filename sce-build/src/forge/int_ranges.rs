@@ -215,6 +215,11 @@ struct Env {
     /// Pairs of collections a guard has shown to be equally long, each pair
     /// in sorted order.
     same_len: std::collections::BTreeSet<(String, String)>,
+    /// Pairs `(map, key)` a guard has shown `has(map, key)` of
+    /// (docs/adr/0108, D3 and D6): the value read at the key is read inside the
+    /// map exactly where it is held, so the fact is kept beside the range, as
+    /// a relation to a length is. A write of either name ends it.
+    held_keys: std::collections::BTreeSet<(String, String)>,
     unreachable: bool,
 }
 
@@ -263,8 +268,19 @@ impl Env {
                 .intersection(&other.same_len)
                 .cloned()
                 .collect(),
+            held_keys: self
+                .held_keys
+                .intersection(&other.held_keys)
+                .cloned()
+                .collect(),
             unreachable: false,
         }
+    }
+
+    /// Every key known to be held by the map `map`, dropped: the map was
+    /// written (docs/adr/0108, D3).
+    fn forget_held_keys(&mut self, map: &str) {
+        self.held_keys.retain(|(held, _)| held != map);
     }
 
     /// Whether `name < len(collection)` is known, directly or through a
@@ -298,6 +314,8 @@ impl Env {
     fn forget_relations(&mut self, name: &str) {
         self.below_len.retain(|(n, _), _| n != name);
         self.length_of.remove(name);
+        self.held_keys
+            .retain(|(map, key)| map != name && key != name);
     }
 }
 
@@ -468,6 +486,44 @@ impl Analysis<'_, '_> {
                 env.length_of.retain(|_, c| c != target);
                 env.same_len.retain(|(a, b)| a != target && b != target);
             }
+            // A map's key and value are judged like any expression
+            // (docs/adr/0108, D3): each lands in an entry whose type no guard
+            // here bounds, and the outcome is a value of an enum, which holds
+            // no range.
+            // The map is written, so no key a guard held is known held after
+            // it, and the outcome holds a new value.
+            AlgorithmStmt::Put {
+                target,
+                key,
+                key_spelling,
+                expr,
+                expr_spelling,
+                outcome,
+                ..
+            } => {
+                self.stored(key, key_spelling.as_ref(), env, None);
+                if let Some(e) = expr {
+                    self.stored(e, expr_spelling.as_ref(), env, None);
+                }
+                env.forget_held_keys(target.trim());
+                if let Some(outcome) = outcome {
+                    env.forget_relations(outcome.trim());
+                }
+            }
+            AlgorithmStmt::Remove {
+                target,
+                key,
+                key_spelling,
+                outcome,
+                ..
+            } => {
+                self.stored(key, key_spelling.as_ref(), env, None);
+                env.forget_held_keys(target.trim());
+                if let Some(outcome) = outcome {
+                    env.forget_relations(outcome.trim());
+                }
+            }
+            AlgorithmStmt::Clear { target, .. } => env.forget_held_keys(target.trim()),
             AlgorithmStmt::Return {
                 expr,
                 expr_spelling,
@@ -970,6 +1026,11 @@ impl Analysis<'_, '_> {
                 let i = self.eval(index, expr, spelling, env);
                 let non_negative = i.is_some_and(|i| i.lo >= 0);
                 let in_range = match name_of(object) {
+                    // A value read at a key of a map is read inside it where a
+                    // guard holds the key (docs/adr/0108, D3 and D6).
+                    Some(m) if self.is_keyed(&m) => {
+                        name_of(index).is_some_and(|k| env.held_keys.contains(&(m.clone(), k)))
+                    }
                     Some(c) => match self.arrays.get(&c) {
                         Some(len) => i.is_some_and(|i| i.lo >= 0 && i.hi < *len),
                         None => {
@@ -1061,8 +1122,26 @@ impl Analysis<'_, '_> {
                 }
                 _ => {}
             },
+            // `has(m, k)` where it is true: the value at `k` is held by `m`
+            // (docs/adr/0108, D3), so a read of `m[k]` there reads inside it.
+            ExprKind::Call { callee, args, .. } if truth && args.len() == 2 => {
+                let is_has = matches!(&callee.kind, ExprKind::Ident(n) if n == "has");
+                let held = name_of(&args[0])
+                    .filter(|map| self.is_keyed(map))
+                    .zip(name_of(&args[1]));
+                if let (true, Some(pair)) = (is_has, held) {
+                    env.held_keys.insert(pair);
+                }
+            }
             _ => {}
         }
+    }
+
+    /// Whether `name` is a map or a set the scope holds (docs/adr/0108, D5).
+    fn is_keyed(&self, name: &str) -> bool {
+        self.ctx
+            .value_of(name)
+            .is_some_and(|place| place.is_keyed())
     }
 
     /// Record what storing `expr` in `name` makes `name` against a length —

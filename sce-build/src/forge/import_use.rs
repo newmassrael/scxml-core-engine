@@ -289,6 +289,38 @@ impl Names {
                     self.expr(target, target_spelling.as_ref())?;
                     self.expr(expr, expr_spelling.as_ref())?;
                 }
+                // A map's statements read their key and value as expressions
+                // (docs/adr/0108, D3); the map and the outcome are names.
+                AlgorithmStmt::Put {
+                    target,
+                    key,
+                    key_spelling,
+                    expr,
+                    expr_spelling,
+                    outcome,
+                    ..
+                } => {
+                    self.name(target);
+                    self.expr(key, key_spelling.as_ref())?;
+                    self.opt_expr(expr.as_deref(), expr_spelling.as_ref())?;
+                    if let Some(outcome) = outcome {
+                        self.name(outcome);
+                    }
+                }
+                AlgorithmStmt::Remove {
+                    target,
+                    key,
+                    key_spelling,
+                    outcome,
+                    ..
+                } => {
+                    self.name(target);
+                    self.expr(key, key_spelling.as_ref())?;
+                    if let Some(outcome) = outcome {
+                        self.name(outcome);
+                    }
+                }
+                AlgorithmStmt::Clear { target, .. } => self.name(target),
                 AlgorithmStmt::If {
                     cond,
                     cond_spelling,

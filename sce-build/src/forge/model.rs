@@ -5185,6 +5185,26 @@ pub struct AlgorithmParam {
     /// the algorithm cannot take).
     #[serde(skip)]
     pub type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// `<sce:param inout="true">` (docs/adr/0108, D6 item 2): a map or a set
+    /// the algorithm writes in place with `<sce:put>`, `<sce:remove>` and
+    /// `<sce:clear>`, each write seen by the caller when the call returns.
+    /// Only a map or a set is written so, and only by an algorithm that does
+    /// not declare `may-fail`, which the parser holds; every other parameter
+    /// is a read-only view of its argument.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inout: bool,
+    /// The `inout` attribute as written — where a refusal of the declaration
+    /// is placed.
+    #[serde(skip)]
+    pub inout_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+}
+
+impl AlgorithmParam {
+    /// Whether the parameter is a map or a set the algorithm writes in place
+    /// ([`Self::inout`]).
+    pub fn written_in_place(&self) -> bool {
+        self.inout && self.sce_type.map_key().is_some()
+    }
 }
 
 /// Algorithm signature — parameters and return type. `return_type =
@@ -5210,6 +5230,20 @@ pub struct AlgorithmSignature {
 }
 
 impl AlgorithmSignature {
+    /// The parameter `name` names, a map or a set the algorithm writes in
+    /// place (docs/adr/0108, D6 item 2), if one is.
+    pub fn inout_param(&self, name: &str) -> Option<&AlgorithmParam> {
+        self.params
+            .iter()
+            .find(|p| p.name == name.trim() && p.written_in_place())
+    }
+
+    /// Whether any parameter is written in place ([`Self::inout_param`]): a
+    /// call of the algorithm is a statement, never a value of an expression.
+    pub fn writes_in_place(&self) -> bool {
+        self.params.iter().any(AlgorithmParam::written_in_place)
+    }
+
     /// The most bytes or elements the return holds: the bound of its
     /// outermost text, byte string or list, at the number the build gave its
     /// limit name. `None` for a return of no length, and for none.
@@ -5563,14 +5597,69 @@ pub enum AlgorithmStmt {
     },
     /// `<sce:foreach item="b" in="data">...</sce:foreach>` — iterate
     /// over a collection. Lowers to a counted byte-loop on `bytes`-typed
-    /// sources.
+    /// sources. Over a map, `item` is each value and `key` each key, in the
+    /// order the keys were first put; over a set, `item` is each key and no
+    /// `key` is bound (docs/adr/0108, D5).
     Foreach {
         item: String,
         source: String,
         /// The `in` attribute `source` was read from.
         #[serde(skip)]
         source_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        /// `key`: the name each entry's key of a map is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
+        #[serde(skip)]
+        key_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         body: Vec<AlgorithmStmt>,
+    },
+    /// `<sce:put target="m" key="k" expr="v" outcome="o"/>` — set the value
+    /// at `key` of the map local or `inout` map parameter `target`, putting
+    /// the key last where it is absent; on a set, `expr` is absent
+    /// (docs/adr/0108, D3 and D5). `outcome` names a local of the standard
+    /// enum `sce:std/collection/put_outcome.scxml` the put writes what it did
+    /// to, `full` among it, which leaves the map as it was; a put with no
+    /// `outcome` fails on a full map, so an algorithm that does not declare
+    /// `may-fail` names one on every put (D6 item 2).
+    Put {
+        target: String,
+        #[serde(skip)]
+        target_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        key: String,
+        #[serde(skip)]
+        key_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expr: Option<String>,
+        #[serde(skip)]
+        expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<String>,
+        #[serde(skip)]
+        outcome_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    },
+    /// `<sce:remove target="m" key="k" outcome="o"/>` — remove the entry at
+    /// `key` of the map local or `inout` map parameter `target`
+    /// (docs/adr/0108, D3); `outcome` names a local of the standard enum
+    /// `sce:std/collection/remove_outcome.scxml`. A remove of an absent key
+    /// with no `outcome` does nothing.
+    Remove {
+        target: String,
+        #[serde(skip)]
+        target_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        key: String,
+        #[serde(skip)]
+        key_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<String>,
+        #[serde(skip)]
+        outcome_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    },
+    /// `<sce:clear target="m"/>` — empty the map local or `inout` map
+    /// parameter `target` (docs/adr/0108, D3).
+    Clear {
+        target: String,
+        #[serde(skip)]
+        target_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
     /// `<sce:return expr=".../>"` — terminate body with an optional
     /// expression. Required at the body terminus when the signature
@@ -5655,6 +5744,10 @@ pub enum AlgorithmBinding<'a> {
     /// signature and the imports, so the model carries the name and the
     /// generator answers it.
     ForeachItem { name: &'a str, source: &'a str },
+    /// `<sce:foreach key in>` over a map — the name each entry's key is
+    /// bound to, typed by the key of the map `source` names (docs/adr/0108,
+    /// D5).
+    ForeachKey { name: &'a str, source: &'a str },
     /// `<sce:var name type="record:<alias>">` — a record local, typed by the
     /// imported event-schema `alias` names.
     RecordLocal { name: &'a str, alias: &'a str },
@@ -5669,6 +5762,7 @@ impl<'a> AlgorithmBinding<'a> {
         match self {
             AlgorithmBinding::Local { name, .. }
             | AlgorithmBinding::ForeachItem { name, .. }
+            | AlgorithmBinding::ForeachKey { name, .. }
             | AlgorithmBinding::RecordLocal { name, .. }
             | AlgorithmBinding::UnionLocal { name, .. } => name,
         }
@@ -5705,7 +5799,9 @@ pub fn algorithm_unions<'a>(
                     .iter()
                     .find(|(list, _)| *list == source.trim())
                     .map(|&(_, alias)| (name, alias)),
-                AlgorithmBinding::Local { .. } | AlgorithmBinding::RecordLocal { .. } => None,
+                AlgorithmBinding::Local { .. }
+                | AlgorithmBinding::ForeachKey { .. }
+                | AlgorithmBinding::RecordLocal { .. } => None,
             }
         }))
         .collect()
@@ -5729,6 +5825,7 @@ pub fn algorithm_union_lists<'a>(
         .chain(bindings.into_iter().filter_map(|binding| match binding {
             AlgorithmBinding::Local { name, sce_type } => Some((name, sce_type)),
             AlgorithmBinding::ForeachItem { .. }
+            | AlgorithmBinding::ForeachKey { .. }
             | AlgorithmBinding::RecordLocal { .. }
             | AlgorithmBinding::UnionLocal { .. } => None,
         }))
@@ -5747,7 +5844,10 @@ pub fn algorithm_union_lists<'a>(
 /// list, and a second copy of the traversal is how one of them would learn
 /// about a new statement kind and the other would not. The match is
 /// exhaustive on purpose: a statement added later must say whether it binds.
-fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<AlgorithmBinding<'a>>) {
+pub(crate) fn collect_algorithm_bindings<'a>(
+    stmts: &'a [AlgorithmStmt],
+    out: &mut Vec<AlgorithmBinding<'a>>,
+) {
     for s in stmts {
         match s {
             AlgorithmStmt::Var { name, sce_type, .. } => {
@@ -5762,9 +5862,16 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
                 out.push(AlgorithmBinding::UnionLocal { name, alias });
             }
             AlgorithmStmt::Foreach {
-                item, source, body, ..
+                item,
+                source,
+                key,
+                body,
+                ..
             } => {
                 out.push(AlgorithmBinding::ForeachItem { name: item, source });
+                if let Some(key) = key {
+                    out.push(AlgorithmBinding::ForeachKey { name: key, source });
+                }
                 collect_algorithm_bindings(body, out);
             }
             AlgorithmStmt::If {
@@ -5778,9 +5885,13 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
                 }
             }
             AlgorithmStmt::While { body, .. } => collect_algorithm_bindings(body, out),
-            // `<sce:append>` mutates an existing buffer; `<sce:assign>`,
-            // `<sce:return>`, `<sce:call>` and `<sce:require>` bind nothing.
+            // `<sce:append>` mutates an existing buffer, and a map's
+            // statements an existing map; `<sce:assign>`, `<sce:return>`,
+            // `<sce:call>` and `<sce:require>` bind nothing.
             AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
+            | AlgorithmStmt::Clear { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
@@ -5838,6 +5949,33 @@ impl AlgorithmModel {
     /// union's alias ([`algorithm_union_lists`]).
     pub fn union_lists(&self) -> Vec<(&str, &str)> {
         algorithm_union_lists(&self.signature, &self.body)
+    }
+
+    /// The first map or set the algorithm holds, by the name of the parameter
+    /// or local that holds it, or `"return"` for its return, with its type
+    /// (docs/adr/0108, D5): what a backend that lowers no algorithm's map
+    /// refuses it by. `None` for an algorithm that holds none.
+    pub fn first_map(&self) -> Option<(&str, &AlgorithmValueType)> {
+        let params = self
+            .signature
+            .params
+            .iter()
+            .map(|p| (p.name.as_str(), &p.sce_type));
+        let locals = self
+            .body_bindings()
+            .into_iter()
+            .filter_map(|binding| match binding {
+                AlgorithmBinding::Local { name, sce_type } => Some((name, sce_type)),
+                AlgorithmBinding::ForeachItem { .. }
+                | AlgorithmBinding::ForeachKey { .. }
+                | AlgorithmBinding::RecordLocal { .. }
+                | AlgorithmBinding::UnionLocal { .. } => None,
+            });
+        let returned = self.signature.return_type.iter().map(|ty| ("return", ty));
+        params
+            .chain(locals)
+            .chain(returned)
+            .find(|(_, ty)| ty.map_key().is_some())
     }
 
     /// Whether the algorithm holds a union anywhere: a parameter, a local, a
@@ -5920,6 +6058,9 @@ fn collect_buffers_and_returns<'a>(
             | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
+            | AlgorithmStmt::Clear { .. }
             | AlgorithmStmt::Return { expr: None, .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}

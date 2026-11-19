@@ -124,6 +124,25 @@ impl Walk<'_> {
                 expr_spelling,
                 ..
             } => self.expression(expr, expr_spelling.as_ref(), None),
+            // A map's key and value (docs/adr/0108, D3), each read as an
+            // appended value is.
+            AlgorithmStmt::Put {
+                key,
+                key_spelling,
+                expr,
+                expr_spelling,
+                ..
+            } => {
+                self.expression(key, key_spelling.as_ref(), None)?;
+                match expr {
+                    Some(expr) => self.expression(expr, expr_spelling.as_ref(), None),
+                    None => Ok(()),
+                }
+            }
+            AlgorithmStmt::Remove {
+                key, key_spelling, ..
+            } => self.expression(key, key_spelling.as_ref(), None),
+            AlgorithmStmt::Clear { .. } => Ok(()),
             AlgorithmStmt::If {
                 cond,
                 cond_spelling,

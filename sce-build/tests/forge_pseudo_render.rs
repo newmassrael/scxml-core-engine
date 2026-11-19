@@ -65,11 +65,15 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                     name: "data".to_string(),
                     sce_type: AlgorithmValueType::Bytes { max: None },
                     type_spelling: None,
+                    inout: false,
+                    inout_spelling: None,
                 },
                 AlgorithmParam {
                     name: "seed".to_string(),
                     sce_type: AlgorithmValueType::Scalar(SceType::Uint16),
                     type_spelling: None,
+                    inout: false,
+                    inout_spelling: None,
                 },
             ],
             return_type: Some(AlgorithmValueType::Bytes {
@@ -171,6 +175,8 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                 item: "b".to_string(),
                 source: "data".to_string(),
                 source_spelling: None,
+                key: None,
+                key_spelling: None,
                 body: vec![AlgorithmStmt::Assign {
                     target: "crc".to_string(),
                     target_spelling: None,
@@ -648,6 +654,8 @@ fn two_renderings_of_one_model_agree() {
                 name: "x".to_string(),
                 sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
                 type_spelling: None,
+                inout: false,
+                inout_spelling: None,
             }],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Uint8)),
             may_fail: false,

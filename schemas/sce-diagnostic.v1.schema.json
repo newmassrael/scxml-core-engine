@@ -164,6 +164,7 @@
         "algorithm/append-type-mismatch",
         "algorithm/undeclared-integer-failure",
         "algorithm/require-without-may-fail",
+        "algorithm/inout-on-may-fail",
         "codec/undeclared-encode-refusal",
         "codec/encode-may-fail-without-refusal",
         "codec/capacity-invalid",

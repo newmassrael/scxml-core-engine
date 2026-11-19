@@ -1510,11 +1510,17 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
     })?;
 
     let mut params = Vec::new();
-    for p in params_text
-        .split(',')
+    for p in split_top_level_commas(params_text)
+        .into_iter()
         .map(str::trim)
         .filter(|p| !p.is_empty())
     {
+        // `inout <name>: <type>`: a map or a set the algorithm writes in
+        // place (docs/adr/0108, D6), as `pseudo` writes it.
+        let (inout, p) = match p.strip_prefix("inout ") {
+            Some(rest) => (true, rest.trim_start()),
+            None => (false, p),
+        };
         let (pname, ptype) = p.split_once(": ").ok_or_else(|| ParseError {
             line: head.number,
             why: format!("`{p}` is not `<name>: <type>`"),
@@ -1526,21 +1532,35 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
                 why: format!("`{ptype}` is not an sce:type"),
             })?,
             type_spelling: None,
+            inout,
+            inout_spelling: None,
         });
     }
 
-    let tail: Vec<&str> = tail.split_whitespace().collect();
-    let (return_type, may_fail) = match tail.first().copied() {
-        None => (None, false),
-        Some("->") => {
-            let t = tail.get(1).copied().unwrap_or("");
+    // The return's type ends at the first space outside its angle brackets,
+    // as a variable's does ([`split_type_word`]): a map's is spelled with one.
+    let tail = tail.trim_start();
+    let (arrow, returned) = match tail.strip_prefix("->") {
+        Some(after) => {
+            let (t, more) = split_type_word(after.trim_start());
+            (Some(t), more)
+        }
+        None => (None, tail),
+    };
+    let tail: Vec<&str> = arrow
+        .into_iter()
+        .chain(returned.split_whitespace())
+        .collect();
+    let (return_type, may_fail) = match (arrow, tail.first().copied()) {
+        (None, None) => (None, false),
+        (Some(t), _) => {
             let rt = AlgorithmValueType::algorithm_from_attr(t).ok_or_else(|| ParseError {
                 line: head.number,
                 why: format!("`{t}` is not an sce:type"),
             })?;
             // Clause order is the renderer's: `returns-max <n>`, `limit <name>`
             // (the name a build gives another number for), then `may-fail`.
-            let mut rest = &tail[2.min(tail.len())..];
+            let mut rest = &tail[1.min(tail.len())..];
             let mut max = None;
             let mut limit = None;
             if rest.first().copied() == Some("returns-max") {
@@ -1567,7 +1587,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
                 may_fail,
             )
         }
-        Some(other) => {
+        (None, Some(other)) => {
             return Err(ParseError {
                 line: head.number,
                 why: format!("`{other}` is not a signature clause"),
@@ -1777,8 +1797,10 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             Some((decl, init)) => (decl, Some(init)),
             None => (after, None),
         };
-        let mut w = decl.split_whitespace();
-        let type_word = w.next().unwrap_or("");
+        // The type ends at the first space outside its angle brackets
+        // ([`split_type_word`]): a map's is spelled with one.
+        let (type_word, clauses) = split_type_word(decl.trim());
+        let mut w = clauses.split_whitespace();
         let capacity = match (w.next(), w.next()) {
             (Some("cap"), Some(n)) => n.parse().ok(),
             _ => None,
@@ -1880,7 +1902,10 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
                 fields,
             });
         }
-        let init = match (init, sce_type.is_append_buffer()) {
+        // A map or a set local starts empty too, filled by its puts
+        // (docs/adr/0108, D5).
+        let starts_empty = sce_type.is_append_buffer() || sce_type.map_key().is_some();
+        let init = match (init, starts_empty) {
             (Some(init), false) => Some(undo(init, line.number)?),
             (None, true) => None,
             (Some(_), true) => {
@@ -1959,11 +1984,92 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
                 line: line.number,
                 why: "a foreach needs `<item> in <source>`".to_string(),
             })?;
+        // `<item> key <key>`: a walk over a map binds each entry's key
+        // (docs/adr/0108, D5). Both are names, so neither holds a space.
+        let (item, key) = match item.split_once(" key ") {
+            Some((item, key)) => (item, Some(undo(key, line.number)?)),
+            None => (item, None),
+        };
         return Ok(AlgorithmStmt::Foreach {
             item: undo(item, line.number)?,
             source: undo(source, line.number)?,
             source_spelling: None,
+            key,
+            key_spelling: None,
             body: body_of(kids)?,
+        });
+    }
+    // A map's statements (docs/adr/0108, D3): `put <map>:` and
+    // `remove <map>:` with a `key`, a `value` and an `outcome` line beneath,
+    // and `clear <map>`. The map is a name, so the head holds no space after
+    // the word — what tells it from an assignment to a local named `put`,
+    // `remove` or `clear`, which is written `<name> = <expr>`.
+    let map_head = |word: &str| {
+        t.strip_prefix(word)
+            .and_then(|rest| rest.strip_suffix(':'))
+            .filter(|map| !map.is_empty() && !map.contains(' '))
+    };
+    if let Some(map) = map_head("put ").or_else(|| map_head("remove ")) {
+        let mut key = None;
+        let mut value = None;
+        let mut outcome = None;
+        for k in kids {
+            let (slot, held) = match k.text.split_once(' ') {
+                Some(pair) => pair,
+                None => (k.text, ""),
+            };
+            let held = Some(undo(held, k.number)?);
+            match slot {
+                "key" => key = held,
+                "value" => value = held,
+                "outcome" => outcome = held,
+                _ => {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{}` is not a key, value or outcome line", k.text),
+                    })
+                }
+            }
+        }
+        let key = key.ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a put or a remove needs a `key <expr>` line".to_string(),
+        })?;
+        let target = undo(map, line.number)?;
+        if t.starts_with("put ") {
+            return Ok(AlgorithmStmt::Put {
+                target,
+                target_spelling: None,
+                key,
+                key_spelling: None,
+                expr: value,
+                expr_spelling: None,
+                outcome,
+                outcome_spelling: None,
+            });
+        }
+        if value.is_some() {
+            return Err(ParseError {
+                line: line.number,
+                why: "a remove takes no `value` line".to_string(),
+            });
+        }
+        return Ok(AlgorithmStmt::Remove {
+            target,
+            target_spelling: None,
+            key,
+            key_spelling: None,
+            outcome,
+            outcome_spelling: None,
+        });
+    }
+    if let Some(map) = t
+        .strip_prefix("clear ")
+        .filter(|map| !map.is_empty() && !map.contains(' '))
+    {
+        return Ok(AlgorithmStmt::Clear {
+            target: undo(map, line.number)?,
+            target_spelling: None,
         });
     }
     if t == "return" {
@@ -3163,6 +3269,28 @@ fn split_type_word(text: &str) -> (&str, &str) {
         }
     }
     (text, "")
+}
+
+/// The parameters of an algorithm's head, `text` split at each comma outside
+/// angle brackets: a map's type is spelled with a comma inside them, the one
+/// of `map<K, T>` (docs/adr/0108, D1), which divides no two parameters.
+fn split_top_level_commas(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (i, c) in text.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&text[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts
 }
 
 /// `data <id>[: <type>] [sce-type <t>] [capacity <n>] [direction <d>] [from deployment] [src <s>] [= <expr>] [content <c>]`,

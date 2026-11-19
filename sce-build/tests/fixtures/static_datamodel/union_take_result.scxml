@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What `algorithm_take_generation.scxml` answers (docs/adr/0108, D6 item 2): a
+  union over `enum_take_kind.scxml` whose `taken` and `no_room` cases carry
+  nothing and whose `duplicate` case carries the last generation the table
+  holds for the peer.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="union"
+       name="union_take_result">
+  <sce:import kind="enum" src="enum_take_kind.scxml" as="TakeKind"/>
+  <sce:import kind="event-schema" src="schema_take_duplicate.scxml" as="Duplicate"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:TakeKind">
+      <sce:case variant="taken"/>
+      <sce:case variant="duplicate" record="Duplicate"/>
+      <sce:case variant="no_room"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -199,7 +199,9 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
                     AlgorithmBinding::Local { .. }
                     | AlgorithmBinding::RecordLocal { .. }
                     | AlgorithmBinding::UnionLocal { .. } => Declared::Local,
-                    AlgorithmBinding::ForeachItem { .. } => Declared::LoopItem,
+                    AlgorithmBinding::ForeachItem { .. } | AlgorithmBinding::ForeachKey { .. } => {
+                        Declared::LoopItem
+                    }
                 };
                 out.push((binding.name(), what));
             }

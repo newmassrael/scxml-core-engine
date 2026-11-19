@@ -33938,6 +33938,12 @@ pub fn generate_swift_with_imports(
     if let ForgeDocument::Codec(m) = doc {
         reject_mcu_only_codec(m, Language::Swift)?;
     }
+    // An algorithm that holds a map is refused by the one refusal every
+    // backend that lowers none answers (docs/adr/0108, D10), before the
+    // constructs Swift has yet to lower are asked about.
+    if let ForgeDocument::Algorithm(m) = doc {
+        reject_map_in_unsupported_lang(m, Language::Swift)?;
+    }
     let refused = match doc {
         ForgeDocument::Algorithm(m) => {
             swift_algorithm_unlowered(m, &swift_imports_of_context(imports))
@@ -34280,6 +34286,15 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             | AlgorithmStmt::Append { .. }
             // A precondition of a may-fail body, thrown as `AlgorithmError.precondition`.
             | AlgorithmStmt::Require { .. } => None,
+            // A statement of a map or a set, which no Swift algorithm holds
+            // (docs/adr/0108, D10).
+            AlgorithmStmt::Put { target, .. }
+            | AlgorithmStmt::Remove { target, .. }
+            | AlgorithmStmt::Clear { target, .. } => Some(format!(
+                "the write of the map `{}`, which no Swift algorithm holds yet ({})",
+                target.trim(),
+                crate::forge::value_type::MAP_LANDING
+            )),
             AlgorithmStmt::If {
                 then_body,
                 else_body,
@@ -40990,6 +41005,40 @@ fn reject_union_in_unsupported_lang(
     .into())
 }
 
+/// docs/adr/0108, D5 and D10: an algorithm that holds a map or a set — a
+/// parameter, `inout` or not, a local or its return — generates only on a
+/// backend that lowers one ([`crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS`]);
+/// on any other it is refused by name, naming the record that lands the
+/// lowering lane by lane, before any statement of its body is lowered.
+fn reject_map_in_unsupported_lang(
+    m: &AlgorithmModel,
+    lang: crate::generator::Language,
+) -> Result<(), ForgeError> {
+    use crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS;
+    if ALGORITHM_MAP_BACKENDS.contains(&lang) {
+        return Ok(());
+    }
+    let Some((name, ty)) = m.first_map() else {
+        return Ok(());
+    };
+    let held = if name == "return" {
+        format!("a return of {}", ty.as_attr())
+    } else {
+        format!("`{name}` of {}", ty.as_attr())
+    };
+    Err(GenerateError::unsupported_at(
+        format!(
+            "algorithm '{}' holds {held}, and {} does not lower a map or a set in an algorithm \
+             yet ({})",
+            m.name,
+            lang.canonical_name(),
+            crate::forge::value_type::MAP_LANDING
+        ),
+        m.source_location.clone(),
+    )
+    .into())
+}
+
 /// The record type `record:<alias>` names, judged for what v1 can carry
 /// (SCE_FORGE.md §4.12): an imported event-schema whose every field is a
 /// fixed-width number, a `bool`, an enum, or a `string` the schema bounds with
@@ -41678,6 +41727,9 @@ fn record_locals(
                 | AlgorithmStmt::UnionCopied { .. }
                 | AlgorithmStmt::Assign { .. }
                 | AlgorithmStmt::Append { .. }
+                | AlgorithmStmt::Put { .. }
+                | AlgorithmStmt::Remove { .. }
+                | AlgorithmStmt::Clear { .. }
                 | AlgorithmStmt::Return { .. }
                 | AlgorithmStmt::Call { .. }
                 | AlgorithmStmt::Require { .. } => {}
@@ -41729,6 +41781,9 @@ fn optional_locals(body: &[AlgorithmStmt]) -> Vec<(&str, &AlgorithmValueType)> {
                 | AlgorithmStmt::UnionCopied { .. }
                 | AlgorithmStmt::Assign { .. }
                 | AlgorithmStmt::Append { .. }
+                | AlgorithmStmt::Put { .. }
+                | AlgorithmStmt::Remove { .. }
+                | AlgorithmStmt::Clear { .. }
                 | AlgorithmStmt::Return { .. }
                 | AlgorithmStmt::Call { .. }
                 | AlgorithmStmt::Require { .. } => {}
@@ -41958,6 +42013,9 @@ fn collect_bc_foreach_member_types(
             | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
+            | AlgorithmStmt::Clear { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -42081,6 +42139,9 @@ fn collect_append_buffers(
             | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
+            | AlgorithmStmt::Clear { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -42532,7 +42593,11 @@ fn collect_algorithm_assigned_roots(
 ) {
     for s in stmts {
         match s {
-            AlgorithmStmt::Assign { target, .. } | AlgorithmStmt::Append { target, .. } => {
+            AlgorithmStmt::Assign { target, .. }
+            | AlgorithmStmt::Append { target, .. }
+            | AlgorithmStmt::Put { target, .. }
+            | AlgorithmStmt::Remove { target, .. }
+            | AlgorithmStmt::Clear { target, .. } => {
                 let root: String = target
                     .chars()
                     .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -42643,6 +42708,8 @@ fn lower_algorithm_stmt_and_check(
             | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
             | AlgorithmStmt::Call { .. }
     ) {
         out.push_str(&ctx.channel.check(pad));
@@ -43934,11 +44001,26 @@ fn lower_algorithm_stmt(
                 }
             }
         }
+        // docs/adr/0108, D5: a walk over a map, and the statements that write
+        // one, are lowered only by a backend that lowers an algorithm's map,
+        // which renders none of them before [`reject_map_in_unsupported_lang`]
+        // has let the algorithm through; every backend it lets through is one
+        // whose arm is above this one.
+        AlgorithmStmt::Foreach { key: Some(_), .. }
+        | AlgorithmStmt::Put { .. }
+        | AlgorithmStmt::Remove { .. }
+        | AlgorithmStmt::Clear { .. } => Err(GenerateError::unsupported(format!(
+            "a statement of a map or a set has no {} lowering in an algorithm yet ({})",
+            lang.canonical_name(),
+            crate::forge::value_type::MAP_LANDING
+        ))
+        .into()),
         AlgorithmStmt::Foreach {
             item,
             source,
             source_spelling,
             body,
+            ..
         } => {
             let source_site = ExpressionSite::new(source, source_spelling.as_ref());
             // RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (item C7 lowering
@@ -46247,9 +46329,36 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// type, read through its tag and the fields of the cases a test of the tag
     /// leaves it in ([`crate::forge::value_path`]).
     pub(crate) unions: Vec<(&'a str, &'a str)>,
+    /// Every parameter and local of a map or a set (docs/adr/0108, D5), and
+    /// every item and key of a `<sce:foreach>` over one that is no number, bool
+    /// or value of an enum, by name, with the type its place holds: what
+    /// `len`, `has` and `m[k]` read and what a field of a record key or value
+    /// is read through ([`crate::forge::value_path`]), as a statechart's map
+    /// variable and its loop's item are.
+    pub(crate) map_places: Vec<(String, crate::forge::value_type::ValueType)>,
     /// The scope the algorithm's imports name enums, records and unions in
     /// ([`import_type_scope`]): what a union place is walked in.
     pub(crate) scope: crate::forge::value_type::TypeScope,
+}
+
+/// The place an algorithm's map or set slot of `ty` is read as
+/// (docs/adr/0108, D5): its type with every bound inside it, its outermost the
+/// one it states, or, for a parameter, which views its argument's and states
+/// none, the most any map holds — what no read of it consults. `None` for a
+/// type no place holds.
+fn algorithm_map_place(ty: &AlgorithmValueType) -> Option<crate::forge::value_type::ValueType> {
+    let held = if ty.stated_outer_bound().is_some() {
+        ty.clone()
+    } else {
+        ty.clone()
+            .with_outer_bound(crate::forge::value_type::Bound {
+                max: u32::MAX,
+                limit: None,
+                min: 0,
+            })
+            .ok()?
+    };
+    held.bounded().ok()
 }
 
 /// Refuse the union `alias` an algorithm's parameter, local or return holds
@@ -46415,9 +46524,36 @@ impl<'a> AlgorithmTypes<'a> {
                     sce_type.list_elem().map(|elem| (name, elem))
                 }
                 crate::forge::model::AlgorithmBinding::ForeachItem { .. }
+                | crate::forge::model::AlgorithmBinding::ForeachKey { .. }
                 | crate::forge::model::AlgorithmBinding::RecordLocal { .. }
                 | crate::forge::model::AlgorithmBinding::UnionLocal { .. } => None,
             })
+            .collect();
+        // docs/adr/0108, D5: each parameter and local of a map or a set, by
+        // name, a place of its type ([`algorithm_map_place`]); what a walk over
+        // one binds is typed from it below.
+        let map_slots: Vec<(&str, &AlgorithmValueType)> = m
+            .signature
+            .params
+            .iter()
+            .map(|p| (p.name.as_str(), &p.sce_type))
+            .chain(bindings.iter().filter_map(|binding| match *binding {
+                crate::forge::model::AlgorithmBinding::Local { name, sce_type } => {
+                    Some((name, sce_type))
+                }
+                _ => None,
+            }))
+            .filter(|(_, ty)| ty.map_key().is_some())
+            .collect();
+        let map_slot = |source: &str| {
+            map_slots
+                .iter()
+                .find(|(slot, _)| *slot == source.trim())
+                .map(|&(_, ty)| ty)
+        };
+        let mut map_places: Vec<(String, crate::forge::value_type::ValueType)> = map_slots
+            .iter()
+            .filter_map(|&(name, ty)| Some((name.to_string(), algorithm_map_place(ty)?)))
             .collect();
         for binding in bindings {
             let ty = match binding {
@@ -46470,6 +46606,37 @@ impl<'a> AlgorithmTypes<'a> {
                         }
                     }
                 }
+                // An item and a key of a walk over a map or a set
+                // (docs/adr/0108, D5): a map's item is each value and its key
+                // each key, a set's item each key. A number, a bool or a value
+                // of an enum is typed as a local of that type; any other part,
+                // a record or a text, is a place read as the map holds it.
+                crate::forge::model::AlgorithmBinding::ForeachItem { name, source }
+                | crate::forge::model::AlgorithmBinding::ForeachKey { name, source }
+                    if map_slot(source).is_some() =>
+                {
+                    let keyed = matches!(
+                        binding,
+                        crate::forge::model::AlgorithmBinding::ForeachKey { .. }
+                    );
+                    let part = match map_slot(source) {
+                        Some(AlgorithmValueType::Map { value, .. }) if !keyed => Some(&**value),
+                        Some(map) => map.map_key(),
+                        None => None,
+                    };
+                    match part {
+                        Some(AlgorithmValueType::Scalar(t)) if !matches!(t, SceType::Bytes) => {
+                            t.clone()
+                        }
+                        Some(part) => {
+                            if let Ok(place) = part.clone().bounded() {
+                                map_places.push((name.to_string(), place));
+                            }
+                            continue;
+                        }
+                        None => continue,
+                    }
+                }
                 crate::forge::model::AlgorithmBinding::ForeachItem { name, source } => {
                     if let Some(imp) = bounded_collection_import(imports, source) {
                         let schema_known = imp
@@ -46519,6 +46686,9 @@ impl<'a> AlgorithmTypes<'a> {
                 // A place of the one value type, registered as the union
                 // parameters are ([`AlgorithmTypes::type_ctx`]).
                 crate::forge::model::AlgorithmBinding::UnionLocal { .. } => continue,
+                // A key bound over anything but a map is refused where the
+                // document is read; it is typed by nothing.
+                crate::forge::model::AlgorithmBinding::ForeachKey { .. } => continue,
             };
             env.push((binding.name().to_string(), ty));
         }
@@ -46705,6 +46875,7 @@ impl<'a> AlgorithmTypes<'a> {
             member_lens,
             limits,
             unions,
+            map_places,
             scope,
         })
     }
@@ -46953,6 +47124,33 @@ impl<'a> AlgorithmTypes<'a> {
         // test of the tag leaves (docs/adr/0092, section 6.1), walked in the
         // scope the algorithm's imports name the union in, as a statechart's
         // union variable is.
+        // A map or a set parameter or local, and what a walk over one binds
+        // that is no number, bool or value of an enum, is a place of the one
+        // value type (docs/adr/0108, D5), read by `len`, `has` and `m[k]` and
+        // through its fields, as a statechart's map variable is.
+        if !self.map_places.is_empty() {
+            type_ctx.value_scope = Some(&self.scope);
+            for (name, place) in &self.map_places {
+                type_ctx.insert_var(name.as_str(), InferredType::Unknown);
+                type_ctx.insert_value(
+                    name.as_str(),
+                    crate::forge::value_path::Place::of(place.clone()),
+                );
+            }
+            // A record key is named whole by a record of its schema
+            // (docs/adr/0108, D3), which the judge of a key finds as a place
+            // of the record's type.
+            for &(name, alias, _) in &self.records {
+                type_ctx.insert_value(
+                    name,
+                    crate::forge::value_path::Place::of(
+                        crate::forge::value_type::ValueType::Record {
+                            alias: alias.to_string(),
+                        },
+                    ),
+                );
+            }
+        }
         if !self.unions.is_empty() {
             type_ctx.value_scope = Some(&self.scope);
             for &(name, alias) in &self.unions {
@@ -47098,6 +47296,7 @@ fn render_algorithm(
     // gate was deleted in the final (Python) closure.
     reject_may_fail_in_unsupported_lang(m, lang)?;
     reject_union_in_unsupported_lang(m, lang)?;
+    reject_map_in_unsupported_lang(m, lang)?;
     let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
 

@@ -10244,6 +10244,48 @@ fn parse_algorithm(
     // `check` refuse the same documents.
     reject_require_without_may_fail(&body, &signature, &name, label.diagnostic_label)?;
 
+    // docs/adr/0108, D3 to D6: an `inout` slot only where nothing can fail, and
+    // the map statements and loops of the body, judged once here for the same
+    // reason.
+    reject_inout_on_may_fail(&signature, &name, label.diagnostic_label)?;
+    let enum_imports: Vec<(String, String)> = sce_children(root, "import")
+        .filter(|import| import.attribute("kind") == Some("enum"))
+        .filter_map(|import| {
+            Some((
+                import.attribute("as")?.trim().to_string(),
+                import.attribute("src")?.trim().to_string(),
+            ))
+        })
+        .collect();
+    let mut bindings = Vec::new();
+    crate::forge::model::collect_algorithm_bindings(&body, &mut bindings);
+    let locals = || {
+        bindings.iter().filter_map(|binding| match *binding {
+            crate::forge::model::AlgorithmBinding::Local { name, sce_type } => {
+                Some((name, sce_type))
+            }
+            _ => None,
+        })
+    };
+    let slots = MapSlots {
+        maps: signature
+            .params
+            .iter()
+            .map(|p| (p.name.as_str(), &p.sce_type))
+            .chain(locals())
+            .filter(|(_, ty)| ty.map_key().is_some())
+            .collect(),
+        enum_locals: locals()
+            .filter_map(|(name, ty)| match ty.scalar() {
+                Some(SceType::Enum(reference)) => Some((name, reference.alias.as_str())),
+                _ => None,
+            })
+            .collect(),
+        enum_imports: &enum_imports,
+        may_fail: signature.may_fail,
+    };
+    judge_map_statements(&body, &slots, label.diagnostic_label)?;
+
     Ok(AlgorithmModel {
         name,
         signature,
@@ -10431,6 +10473,32 @@ fn parse_test_vector_value(s: &str, return_type: &SceType) -> Result<TestVectorV
     })
 }
 
+/// `node`'s unprefixed `xs:boolean` attribute `attr` on `element`: `false`
+/// where it is absent, and each of the two spellings of each value the schema
+/// admits; anything else is refused rather than read as `false`, so a build
+/// without the schema cannot drop the declaration.
+fn read_boolean_attr(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    attr: &str,
+) -> Result<bool, Located<ForgeError>> {
+    match node.attribute(attr).map(str::trim) {
+        None | Some("false" | "0") => Ok(false),
+        Some("true" | "1") => Ok(true),
+        Some(_) => Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: element.to_string(),
+                attr: attr.to_string(),
+                value: node.attribute(attr).unwrap_or_default().into(),
+                allowed: vec!["true".into(), "false".into()],
+            },
+        )),
+    }
+}
+
 fn parse_algorithm_signature(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -10495,6 +10563,26 @@ fn parse_algorithm_signature(
                         },
                     ));
                 }
+                // A `map<K, V>` or `set<K>` parameter declared `inout` is the
+                // one a body writes, in place (docs/adr/0108, D6 item 2); on any
+                // other type the declaration would be read by nothing.
+                let inout = read_boolean_attr(&child, doc_name, &element, "inout")?;
+                if inout && sce_type.map_key().is_none() {
+                    return Err(located(
+                        &child,
+                        doc_name,
+                        ValidationError::AttributeRuleViolated {
+                            element,
+                            attr: "inout".into(),
+                            value: child.attribute("inout").unwrap_or_default().into(),
+                            rule: format!(
+                                "omitted — only a map or a set parameter is written in place \
+                                 (docs/adr/0108, D6), and this one is of type {}",
+                                sce_type.as_attr()
+                            ),
+                        },
+                    ));
+                }
                 // A `list<T>` parameter is a read-only view of the caller's
                 // elements (SCE_FORGE.md §4.12): read by index, `len` and
                 // `<sce:foreach>`, and refused as an assignment or append
@@ -10503,6 +10591,8 @@ fn parse_algorithm_signature(
                     name,
                     sce_type,
                     type_spelling: AttributeSpelling::of(&child, None, "type"),
+                    inout,
+                    inout_spelling: AttributeSpelling::of(&child, None, "inout"),
                 });
             }
             "return" => {
@@ -10556,6 +10646,28 @@ fn parse_algorithm_signature(
                         ));
                     }
                 };
+                // A map or a set returned is built by puts, each of which
+                // fails on a full map unless it names an outcome, and is taken
+                // whole by a variable that holds its bound: it declares
+                // `may-fail`, as a list a statechart takes does (docs/adr/0108,
+                // D5).
+                if let Some(ret) = return_type
+                    .as_ref()
+                    .filter(|ty| ty.map_key().is_some() && !may_fail)
+                {
+                    return Err(located(
+                        &child,
+                        doc_name,
+                        ValidationError::AttributeRuleViolated {
+                            element: format!("<sce:return type=\"{}\">", ret.as_attr()),
+                            attr: "may-fail".into(),
+                            value: child.attribute("may-fail").unwrap_or_default().into(),
+                            rule: "true — a map or a set an algorithm returns declares may-fail \
+                                   (docs/adr/0108, D5)"
+                                .into(),
+                        },
+                    ));
+                }
                 // Cap on a buffer return's output buffer — `bytes` or
                 // `list<T>` (the no-alloc profile's fixed capacity). Mirrors
                 // the `<sce:helper returns-max-size>` attribute. A buffer
@@ -11203,7 +11315,29 @@ fn parse_algorithm_stmt(
             // ⚠ The `capacity` rules ran there too, and placed every refusal
             // at `<sce:body>` — a row the attribute is not on — with a scalar's
             // capacity reported as the text `(present)` (measured 2026-09-23).
-            let init = if sce_type.is_append_buffer() {
+            // A map or a set local starts empty and is filled by `<sce:put>`
+            // (docs/adr/0108, D5), as a statechart's map variable is: it takes
+            // no `init`, and its bound is its type's, which the reader has
+            // already required of a held map.
+            let init = if sce_type.map_key().is_some() {
+                if let Some(stray) = node.attribute("init") {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::AttributeRuleViolated {
+                            element: format!("<sce:var name=\"{name}\">"),
+                            attr: "init".into(),
+                            value: stray.into(),
+                            rule: format!(
+                                "no init — a {} local starts empty and is filled by <sce:put> \
+                                 (docs/adr/0108, D5)",
+                                sce_type.constructor()
+                            ),
+                        },
+                    ));
+                }
+                None
+            } else if sce_type.is_append_buffer() {
                 // Named by its shape, as every buffer refusal names it.
                 let buffer_attr = sce_type.without_outer_bound().as_attr();
                 if let Some(stray) = node.attribute("init") {
@@ -11361,9 +11495,56 @@ fn parse_algorithm_stmt(
                 item,
                 source,
                 source_spelling: AttributeSpelling::of(node, None, "in"),
+                // docs/adr/0108, D5: a walk over a map binds each entry's key
+                // beside its value. Which source it walks is judged once the
+                // body is read ([`judge_map_statements`]).
+                key: node.attribute("key").map(str::to_string),
+                key_spelling: AttributeSpelling::of(node, None, "key"),
                 body,
             })
         }
+        // docs/adr/0108, D3 and D5: write, remove and empty the entries of a map
+        // or a set local, or of an `inout` map or set parameter. Which name
+        // each statement may write is judged once the body is read
+        // ([`judge_map_statements`]).
+        "put" => Ok(AlgorithmStmt::Put {
+            target: require_attr(node, "target", "<sce:put>", doc_name)?,
+            target_spelling: AttributeSpelling::of(node, None, "target"),
+            key: require_attr(node, "key", "<sce:put>", doc_name)?,
+            key_spelling: AttributeSpelling::of(node, None, "key"),
+            expr: node.attribute("expr").map(str::to_string),
+            expr_spelling: AttributeSpelling::of(node, None, "expr"),
+            outcome: node.attribute("outcome").map(str::to_string),
+            outcome_spelling: AttributeSpelling::of(node, None, "outcome"),
+        }),
+        "remove" => {
+            if let Some(stray) = node.attribute("expr") {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:remove>".into(),
+                        attr: "expr".into(),
+                        value: stray.into(),
+                        rule: "omitted — a remove names the key of the entry it removes, and \
+                               takes no value (docs/adr/0108, D3)"
+                            .into(),
+                    },
+                ));
+            }
+            Ok(AlgorithmStmt::Remove {
+                target: require_attr(node, "target", "<sce:remove>", doc_name)?,
+                target_spelling: AttributeSpelling::of(node, None, "target"),
+                key: require_attr(node, "key", "<sce:remove>", doc_name)?,
+                key_spelling: AttributeSpelling::of(node, None, "key"),
+                outcome: node.attribute("outcome").map(str::to_string),
+                outcome_spelling: AttributeSpelling::of(node, None, "outcome"),
+            })
+        }
+        "clear" => Ok(AlgorithmStmt::Clear {
+            target: require_attr(node, "target", "<sce:clear>", doc_name)?,
+            target_spelling: AttributeSpelling::of(node, None, "target"),
+        }),
         "return" => {
             // Whether the algorithm can fail is its signature's to declare;
             // on a body's return it would be a second, disagreeing answer.
@@ -11704,6 +11885,9 @@ fn judge_buffer_uses(
             | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
+            | AlgorithmStmt::Clear { .. }
             | AlgorithmStmt::Return { expr: None, .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -11773,6 +11957,50 @@ fn reject_read_only_assignment(
                     ));
                 }
             }
+            // A map's statements write a parameter only where it is declared
+            // `inout`, and never a loop's item (docs/adr/0108, D6 item 2).
+            AlgorithmStmt::Put {
+                target,
+                target_spelling,
+                ..
+            }
+            | AlgorithmStmt::Remove {
+                target,
+                target_spelling,
+                ..
+            }
+            | AlgorithmStmt::Clear {
+                target,
+                target_spelling,
+            } => {
+                let head = target.trim();
+                let restriction = if sig.inout_param(head).is_some() {
+                    None
+                } else if sig.params.iter().any(|p| p.name == head) {
+                    Some(
+                        "a map or a set parameter is written only where it is declared \
+                         inout=\"true\" (docs/adr/0108, D6)",
+                    )
+                } else if items.contains(&head) {
+                    Some(
+                        "a foreach item is read-only in v1 — it is an element of the \
+                         collection it iterates",
+                    )
+                } else {
+                    None
+                };
+                if let Some(restriction) = restriction {
+                    let refusal: ForgeError = ValidationError::AlgorithmLvalueUnsupported {
+                        target: target.clone(),
+                        restriction: restriction.into(),
+                    }
+                    .into();
+                    return Err(Located::in_file(
+                        WrittenAt::value(target_spelling.as_ref()).place_reporting(refusal),
+                        doc_name,
+                    ));
+                }
+            }
             AlgorithmStmt::If {
                 then_body,
                 else_body,
@@ -11786,11 +12014,15 @@ fn reject_read_only_assignment(
             AlgorithmStmt::While { body, .. } => {
                 reject_read_only_assignment(body, sig, items, doc_name)?;
             }
-            AlgorithmStmt::Foreach { item, body, .. } => {
+            AlgorithmStmt::Foreach {
+                item, key, body, ..
+            } => {
                 let mut inner = items.to_vec();
                 inner.push(item.as_str());
+                inner.extend(key.as_deref());
                 reject_read_only_assignment(body, sig, &inner, doc_name)?;
             }
+            // Bound to a local's own name, which no statement here writes.
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
@@ -11853,8 +12085,282 @@ fn reject_require_without_may_fail(
             | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
+            | AlgorithmStmt::Clear { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+/// docs/adr/0108, D6 item 2: an `inout` slot is given only to an algorithm
+/// that does not declare `may-fail`, whose writes are never left half done;
+/// the first `inout` parameter of one that does is refused at its `inout`.
+fn reject_inout_on_may_fail(
+    sig: &AlgorithmSignature,
+    algorithm: &str,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    if !sig.may_fail {
+        return Ok(());
+    }
+    let Some(param) = sig.params.iter().find(|p| p.inout) else {
+        return Ok(());
+    };
+    let refusal: ForgeError = ValidationError::AlgorithmInoutOnMayFail {
+        algorithm: algorithm.to_string(),
+        param: param.name.clone(),
+        value: "true".to_string(),
+    }
+    .into();
+    Err(Located::in_file(
+        WrittenAt::value(param.inout_spelling.as_ref()).place_reporting(refusal),
+        doc_name,
+    ))
+}
+
+/// The map and set slots an algorithm's statements write and walk
+/// (docs/adr/0108, D3 to D6), by name: each parameter and local of a map or a
+/// set type, with its type, and each local of an enum, with the alias of its
+/// enum, which an `outcome` names.
+struct MapSlots<'a> {
+    maps: Vec<(&'a str, &'a AlgorithmValueType)>,
+    enum_locals: Vec<(&'a str, &'a str)>,
+    /// The document each enum the algorithm imports is, by its alias: what
+    /// tells a local of the standard outcome enum from a local of another.
+    enum_imports: &'a [(String, String)],
+    may_fail: bool,
+}
+
+impl MapSlots<'_> {
+    fn map(&self, name: &str) -> Option<&AlgorithmValueType> {
+        let name = name.trim();
+        self.maps
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, ty)| *ty)
+    }
+}
+
+/// The structure of the map statements and loops of an algorithm's body
+/// (docs/adr/0108, D3 to D6), judged once the body is read so the refusal is
+/// backend-independent: a `<sce:put>`, `<sce:remove>` and `<sce:clear>` name a
+/// map or set slot by `target`; a put into a map names its value and one into
+/// a set none; an `outcome` names a local of the standard enum of its
+/// statement; in an algorithm that does not declare `may-fail`, every put
+/// names one, since a put with none fails on a full map (D6 item 2); and a
+/// `<sce:foreach key>` walks a map, a set binding its keys as the item. Which
+/// key and value fit the map's types is judged with the rest of the body's
+/// expressions, where a backend renders it. Whether a parameter may be
+/// written at all is [`reject_read_only_assignment`]'s.
+fn judge_map_statements(
+    stmts: &[AlgorithmStmt],
+    slots: &MapSlots<'_>,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    let rule = |spelling: Option<&AttributeSpelling>,
+                element: String,
+                attr: &str,
+                value: &str,
+                rule: String| {
+        let refusal: ForgeError = ValidationError::AttributeRuleViolated {
+            element,
+            attr: attr.to_string(),
+            value: value.to_string(),
+            rule,
+        }
+        .into();
+        Located::in_file(
+            WrittenAt::value(spelling).place_reporting(refusal),
+            doc_name,
+        )
+    };
+    let target_rule = |target: &str, spelling: Option<&AttributeSpelling>, element: &str| {
+        rule(
+            spelling,
+            format!("<sce:{element}>"),
+            "target",
+            target,
+            format!(
+                "the name of a map or a set local, or of an inout map or set parameter — \
+                 `{}` is none (docs/adr/0108, D5)",
+                target.trim()
+            ),
+        )
+    };
+    let outcome_rule = |outcome: &Option<String>,
+                        spelling: Option<&AttributeSpelling>,
+                        element: &str,
+                        document: &str,
+                        variants: &str|
+     -> Result<(), Located<ForgeError>> {
+        let Some(outcome) = outcome else {
+            return Ok(());
+        };
+        let named = outcome.trim();
+        let standard = slots
+            .enum_locals
+            .iter()
+            .find(|(local, _)| *local == named)
+            .and_then(|(_, alias)| {
+                slots
+                    .enum_imports
+                    .iter()
+                    .find(|(imported, _)| imported.as_str() == *alias)
+            })
+            .is_some_and(|(_, src)| src.trim() == document);
+        if standard {
+            return Ok(());
+        }
+        Err(rule(
+            spelling,
+            format!("<sce:{element}>"),
+            "outcome",
+            outcome,
+            format!(
+                "the name of a local of the standard enum `{document}` ({variants}), which the \
+                 statement writes what it did to (docs/adr/0108, D4)"
+            ),
+        ))
+    };
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Put {
+                target,
+                target_spelling,
+                expr,
+                expr_spelling,
+                outcome,
+                outcome_spelling,
+                ..
+            } => {
+                let Some(ty) = slots.map(target) else {
+                    return Err(target_rule(target, target_spelling.as_ref(), "put"));
+                };
+                let element = format!("<sce:put target=\"{}\">", target.trim());
+                match (ty, expr) {
+                    (AlgorithmValueType::Map { value, .. }, None) => {
+                        return Err(rule(
+                            target_spelling.as_ref(),
+                            element,
+                            "expr",
+                            "",
+                            format!(
+                                "the value the put writes at the key, a value of `{value}` \
+                                 (docs/adr/0108, D3)"
+                            ),
+                        ));
+                    }
+                    (AlgorithmValueType::Set { .. }, Some(stray)) => {
+                        return Err(rule(
+                            expr_spelling.as_ref(),
+                            element,
+                            "expr",
+                            stray,
+                            format!(
+                                "omitted — the set `{}` holds keys that carry no value, so a put \
+                                 into it names the key alone (docs/adr/0108, D3)",
+                                target.trim()
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+                if outcome.is_none() && !slots.may_fail {
+                    return Err(rule(
+                        target_spelling.as_ref(),
+                        element,
+                        "outcome",
+                        "",
+                        "the name of a local of the standard enum \
+                         `sce:std/collection/put_outcome.scxml` — an algorithm that does not \
+                         declare may-fail names an outcome on every put, since a put with none \
+                         fails on a full map (docs/adr/0108, D6)"
+                            .to_string(),
+                    ));
+                }
+                outcome_rule(
+                    outcome,
+                    outcome_spelling.as_ref(),
+                    "put",
+                    crate::forge::static_datamodel::PUT_OUTCOME_DOCUMENT,
+                    "inserted, replaced, full",
+                )?;
+            }
+            AlgorithmStmt::Remove {
+                target,
+                target_spelling,
+                outcome,
+                outcome_spelling,
+                ..
+            } => {
+                if slots.map(target).is_none() {
+                    return Err(target_rule(target, target_spelling.as_ref(), "remove"));
+                }
+                outcome_rule(
+                    outcome,
+                    outcome_spelling.as_ref(),
+                    "remove",
+                    crate::forge::static_datamodel::REMOVE_OUTCOME_DOCUMENT,
+                    "removed, absent",
+                )?;
+            }
+            AlgorithmStmt::Clear {
+                target,
+                target_spelling,
+            } => {
+                if slots.map(target).is_none() {
+                    return Err(target_rule(target, target_spelling.as_ref(), "clear"));
+                }
+            }
+            AlgorithmStmt::Foreach {
+                source,
+                key: Some(key),
+                key_spelling,
+                body,
+                ..
+            } => {
+                if !matches!(slots.map(source), Some(AlgorithmValueType::Map { .. })) {
+                    let why = if slots.map(source).is_some() {
+                        "omitted — a walk over a set binds each key as its item, and no other"
+                    } else {
+                        "omitted — only a walk over a map binds each entry's key beside its value"
+                    };
+                    return Err(rule(
+                        key_spelling.as_ref(),
+                        format!("<sce:foreach in=\"{}\">", source.trim()),
+                        "key",
+                        key,
+                        format!("{why} (docs/adr/0108, D5)"),
+                    ));
+                }
+                judge_map_statements(body, slots, doc_name)?;
+            }
+            AlgorithmStmt::Foreach { body, .. } | AlgorithmStmt::While { body, .. } => {
+                judge_map_statements(body, slots, doc_name)?;
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                judge_map_statements(then_body, slots, doc_name)?;
+                if let Some(eb) = else_body {
+                    judge_map_statements(eb, slots, doc_name)?;
+                }
+            }
+            AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
+            | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
         }
     }
     Ok(())

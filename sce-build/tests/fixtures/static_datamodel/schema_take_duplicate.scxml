@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The case of `union_take_result.scxml` for a generation a table already held,
+  or one older than it (docs/adr/0108, D6 item 2): the last generation the
+  table holds for the peer.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_take_duplicate"
+       sce:event-name="take.duplicate">
+  <datamodel>
+    <data id="last" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>
