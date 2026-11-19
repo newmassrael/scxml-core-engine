@@ -472,8 +472,22 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ enum.ty }} {
    to it; a byte string is saved as its Latin-1 text, which its own reader
    reads back. An optional value is read absent from `null` and otherwise as
    its present value is (docs/adr/0055). #}
+{# docs/adr/0108, D8: a key or a value of a map is written and read in the form
+   its type has in a saved state, a byte string as its Latin-1 text as a
+   byte-string variable is (§2.15, "A byte string"), and every other by its own
+   `SavedValue`. #}
+{% macro saved_part_writer(bytes) -%}
+{% if bytes %}|bytes| ::sce_rust_runtime::saved_state::bytes_to_saved(bytes){% else %}::sce_rust_runtime::saved_state::SavedValue::to_saved{% endif %}
+{%- endmacro %}
+{% macro saved_part_reader(bytes) -%}
+{% if bytes %}::sce_rust_runtime::saved_state::bounded_bytes{% else %}::sce_rust_runtime::saved_state::SavedValue::from_saved{% endif %}
+{%- endmacro %}
 {% macro saved_read(field) -%}
-{% if field.saved_kind == "optional" and field.bound is not none and field.saved_type == "bytes" -%}
+{% if field.saved_map and field.saved_kind == "set" -%}
+::sce_rust_runtime::saved_state::set_from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ saved_part_reader(field.saved_map.key_bytes) }})?
+{%- elif field.saved_map -%}
+::sce_rust_runtime::saved_state::map_from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ saved_part_reader(field.saved_map.key_bytes) }}, {{ saved_part_reader(field.saved_map.value_bytes) }})?
+{%- elif field.saved_kind == "optional" and field.bound is not none and field.saved_type == "bytes" -%}
 ::sce_rust_runtime::saved_state::optional(saved.variable("{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, "{{ field.id }}"))?
 {%- elif field.bound is not none and field.saved_type == "bytes" -%}
 ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
@@ -791,6 +805,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::optional_to_saved(policy.{{ field.name }}.as_deref(), ::sce_rust_runtime::saved_state::bytes_to_saved)),
 {% elif field.saved_type == "bytes" %}
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.{{ field.name }})),
+{% elif field.saved_map and field.saved_kind == "set" %}
+                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::set_to_saved(&policy.{{ field.name }}, {{ saved_part_writer(field.saved_map.key_bytes) }})),
+{% elif field.saved_map %}
+                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::map_to_saved(&policy.{{ field.name }}, {{ saved_part_writer(field.saved_map.key_bytes) }}, {{ saved_part_writer(field.saved_map.value_bytes) }})),
 {% else %}
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.{{ field.name }})),
 {% endif %}

@@ -214,8 +214,29 @@ fn rust_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
             "no `{held}` in the generated Rust:\n{code}"
         );
     }
-    // No loop of the document writes the map it walks.
+    // No loop of the document writes the map it walks, and the walk of
+    // `faces`, whose body reaches the machine through its fields alone, lends
+    // each face where the map holds it.
     assert!(!code.contains("sce_walk_"), "a loop copies a map:\n{code}");
+    assert!(
+        code.contains("let f = self.faces.value_at(sce_at_0);"),
+        "the walk of `faces` lends no face:\n{code}"
+    );
+
+    // docs/adr/0108, D6: a body with a statement that takes the machine whole
+    // (a `<send>`) beside an `<assign>` is handed a clone of each face, so the
+    // map is not borrowed while the machine is.
+    let sends = edited(
+        &faces(),
+        "<assign location=\"walked\" expr=\"i\"/>",
+        "<assign location=\"walked\" expr=\"i\"/>\n        <send event=\"face.walked\"/>",
+    );
+    let (ok, printed, code) = generate_rust(&sends);
+    assert!(ok, "Rust generates a walk whose body sends:\n{printed}");
+    assert!(
+        code.contains("let f = self.faces.value_at(sce_at_0).clone();"),
+        "the walk of `faces` whose body sends lends its face:\n{code}"
+    );
 
     // The walk of `seen` that removes each key it meets walks a copy of it.
     let writes_its_map = edited(
@@ -231,22 +252,63 @@ fn rust_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
     );
 }
 
-/// docs/adr/0108, D8: a map of Rust holds no byte string as a key or a value
-/// yet, and refuses one by name.
+/// docs/adr/0108, D1 and D8: Rust holds a map keyed by a byte string and one
+/// whose value is a byte string, and a set of byte strings, and its saved state
+/// writes and reads each byte string as its Latin-1 text, as it does a
+/// byte-string variable (§2.15, "A byte string"), the rest by their own form.
+/// The runtime holds that a zero byte and a byte above 0x7f cross whole
+/// (`saved_state::tests::a_byte_string_in_a_map_is_saved_as_its_latin1_text`).
 #[test]
-fn rust_refuses_a_map_of_byte_strings_by_name() {
+fn rust_saves_a_byte_string_of_a_map_as_its_latin1_text() {
     let document = edited(
         &faces(),
         "<data id=\"order\"",
-        "<data id=\"blobs\" sce:type=\"map&lt;uint8, bytes[4]&gt;[2]\"/>\n    <data id=\"order\"",
+        "<data id=\"blobs\" sce:type=\"map&lt;bytes[16], bytes[4]&gt;[2]\"/>\n    \
+         <data id=\"tags\" sce:type=\"map&lt;bytes[16], uint8&gt;[2]\"/>\n    \
+         <data id=\"ids\" sce:type=\"set&lt;bytes[16]&gt;[2]\"/>\n    <data id=\"order\"",
     );
-    let (ok, printed, _) = generate_rust(&document);
-    assert!(!ok, "Rust holds no byte string in a map:\n{printed}");
-    assert!(
-        printed.contains("\"code\":\"generate/unsupported-feature\"")
-            && printed.contains("holds no byte string as a key or a value"),
-        "{printed}"
-    );
+    let (ok, printed, code) = generate_rust(&document);
+    assert!(ok, "Rust generates a map of byte strings:\n{printed}");
+    let bytes_writer = "|bytes| ::sce_rust_runtime::saved_state::bytes_to_saved(bytes)";
+    let bytes_reader = "::sce_rust_runtime::saved_state::bounded_bytes";
+    let own_writer = "::sce_rust_runtime::saved_state::SavedValue::to_saved";
+    let own_reader = "::sce_rust_runtime::saved_state::SavedValue::from_saved";
+    for held in [
+        "::sce_rust_runtime::BoundedMap<::sce_rust_runtime::portable::SceBytes<16>, \
+         ::sce_rust_runtime::portable::SceBytes<4>, 2>"
+            .to_string(),
+        format!(
+            "::sce_rust_runtime::saved_state::map_to_saved(&policy.blobs, {bytes_writer}, \
+             {bytes_writer})"
+        ),
+        format!(
+            "::sce_rust_runtime::saved_state::map_from_saved(saved.variable(\"blobs\")?, \
+             \"blobs\", {bytes_reader}, {bytes_reader})?"
+        ),
+        format!(
+            "::sce_rust_runtime::saved_state::map_to_saved(&policy.tags, {bytes_writer}, \
+             {own_writer})"
+        ),
+        format!(
+            "::sce_rust_runtime::saved_state::map_from_saved(saved.variable(\"tags\")?, \
+             \"tags\", {bytes_reader}, {own_reader})?"
+        ),
+        format!("::sce_rust_runtime::saved_state::set_to_saved(&policy.ids, {bytes_writer})"),
+        format!(
+            "::sce_rust_runtime::saved_state::set_from_saved(saved.variable(\"ids\")?, \
+             \"ids\", {bytes_reader})?"
+        ),
+        // A map of no byte string writes each part by its own form.
+        format!(
+            "::sce_rust_runtime::saved_state::map_to_saved(&policy.counts, {own_writer}, \
+             {own_writer})"
+        ),
+    ] {
+        assert!(
+            code.contains(&held),
+            "no `{held}` in the generated Rust:\n{code}"
+        );
+    }
 }
 
 /// docs/adr/0108, D2, D3 and D11: a map is read through `len`, `has` and the
