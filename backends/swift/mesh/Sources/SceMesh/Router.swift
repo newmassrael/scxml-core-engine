@@ -524,7 +524,9 @@ public final class Router {
         if let signal = undeclaredReply(bytes, peer: peer) {
             return .done([.raise(peer: peer, signal: signal)])
         }
-        switch inbound.admit(bytes, delivery: delivery, nowMs: nowMs) {
+        // SCE_MESH.md section 10.5: the window is the link's, so a router keeps one per peer it binds
+        // and no envelope makes one of its own.
+        switch inbound.admit(link: peer, bytes, delivery: delivery, nowMs: nowMs) {
         case let .admitted(outcome):
             return .done(effectsOf(outcome, peer: peer))
         case let .refused(error):

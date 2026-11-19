@@ -102,11 +102,19 @@ public final class Inbound {
         self.gapTimeoutMs = gapTimeoutMs
     }
 
-    /// Admit the envelope `bytes` from a binding asking `delivery`, at `nowMs` on the host's monotonic
-    /// clock. §mesh-10.6.4: an ordered envelope below its sender's expected sequence is dropped, one
-    /// above it is held, and the one it expects is released together with every held envelope that
-    /// now follows on.
-    public func admit(_ bytes: [UInt8], delivery: Delivery, nowMs: Int64) -> Admission {
+    /// How many senders this half keeps state for: one per link it admitted an envelope from
+    /// (SCE_MESH.md section 10.5).
+    public var senderCount: Int {
+        senders.count
+    }
+
+    /// Admit the envelope `bytes` that arrived on the link of `link`, from a binding asking
+    /// `delivery`, at `nowMs` on the host's monotonic clock. The window and ordering state it is
+    /// judged by are `link`'s, whatever `source` it writes (SCE_MESH.md section 10.5): a caller passes
+    /// only a link it admitted, so the senders kept are as many as those links. §mesh-10.6.4: an
+    /// ordered envelope below its sender's expected sequence is dropped, one above it is held, and
+    /// the one it expects is released together with every held envelope that now follows on.
+    public func admit(link: String, _ bytes: [UInt8], delivery: Delivery, nowMs: Int64) -> Admission {
         var cursor = SceCursor(bytes)
         guard let envelope = try? Envelope.decode(&cursor) else {
             return .refused(.malformed)
@@ -116,17 +124,18 @@ public final class Inbound {
             return .refused(.unstamped)
         }
         do {
-            return .admitted(try admitDecoded(envelope, sequence: sequence, delivery: delivery, nowMs: nowMs))
+            return .admitted(
+                try admitDecoded(link: link, envelope, sequence: sequence, delivery: delivery, nowMs: nowMs))
         } catch {
             return .refused(.rule(ruleFailure(error)))
         }
     }
 
     private func admitDecoded(
-        _ envelope: Envelope, sequence: UInt64?, delivery: Delivery, nowMs: Int64
+        link: String, _ envelope: Envelope, sequence: UInt64?, delivery: Delivery, nowMs: Int64
     ) throws -> Outcome {
         var out = Outcome()
-        let sender = senderFor(envelope.source)
+        let sender = senderFor(link)
         if delivery.dedup {
             let id = envelopeID(envelope.id)
             if DedupHolds.dedupHolds(sender.window, id) {
@@ -135,7 +144,7 @@ public final class Inbound {
             let full = sender.window.count >= Int(dedupWindow)
             sender.window = try DedupAdmit.dedupAdmit(sender.window, id, dedupWindow)
             if full {
-                out.signals.append(.dedupWindowOverflow(source: envelope.source, windowSize: dedupWindow))
+                out.signals.append(.dedupWindowOverflow(source: link, windowSize: dedupWindow))
             }
         }
         guard delivery.ordered, let sequence else {
