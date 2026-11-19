@@ -658,10 +658,21 @@ impl<'g> Group<'g> {
         {
             tests.push(format!("!{held}.present"));
         }
-        if tests.is_empty() {
-            "0".to_string()
-        } else {
-            format!("({})", tests.join(" || "))
+        // An arm's test may be a conjunction (`present && kind == ...`):
+        // each is parenthesised where it is joined, so the disjunction states
+        // its grouping rather than leaning on `&&` binding tighter, which
+        // `-Wparentheses` asks of every such mix.
+        match tests.as_slice() {
+            [] => "0".to_string(),
+            [only] => format!("({only})"),
+            _ => format!(
+                "({})",
+                tests
+                    .iter()
+                    .map(|test| format!("({test})"))
+                    .collect::<Vec<_>>()
+                    .join(" || ")
+            ),
         }
     }
 
