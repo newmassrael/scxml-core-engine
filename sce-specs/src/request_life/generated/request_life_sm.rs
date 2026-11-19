@@ -523,6 +523,23 @@ impl RequestLifeVerdictEnum {
         }
     }
 
+    /// The variant whose declared name is `name`, or `None` for a name no variant declares.
+    #[allow(dead_code)]
+    pub fn from_sce_name(name: &str) -> Option<Self> {
+        match name {
+            "ok" => Some(Self::Ok),
+            "ended" => Some(Self::Ended),
+            "held" => Some(Self::Held),
+            "not_holder" => Some(Self::NotHolder),
+            "not_resuming" => Some(Self::NotResuming),
+            "wrong_connection" => Some(Self::WrongConnection),
+            "nothing" => Some(Self::Nothing),
+            "unanswered" => Some(Self::Unanswered),
+            "lane_full" => Some(Self::LaneFull),
+            _ => None,
+        }
+    }
+
     /// The number the enum document declares for this value.
     #[allow(dead_code)]
     pub fn to_underlying(self) -> u8 {
@@ -554,6 +571,15 @@ impl RequestLifeVerdictEnum {
             8 => Some(Self::LaneFull),
             _ => None,
         }
+    }
+}
+
+/// A value read from the name the enum document declares for it.
+impl ::core::str::FromStr for RequestLifeVerdictEnum {
+    type Err = ();
+
+    fn from_str(name: &str) -> ::core::result::Result<Self, Self::Err> {
+        Self::from_sce_name(name).ok_or(())
     }
 }
 
