@@ -136,12 +136,12 @@ static void test_{{ f.name }}(void) {
         val.{{ fname }} = cases[i].input_{{ fname }};
 {% endif %}
 {% endfor %}
-{% set max_macro = (f.name | to_upper_snake_case) ~ "_MAX_BYTES" %}
-        /* C11 §6.7.6.2: an array size must be non-zero. Empty-body codecs
-         * report MAX_BYTES == 0, so floor the encode scratch buffer at 1
-         * byte (the encoder writes 0 bytes into it). Mirrors the codec
-         * struct's `_reserved` placeholder for the same C11 constraint. */
-        uint8_t encoded_buf[{{ max_macro }} > 0u ? {{ max_macro }} : 1u];
+{# The encode is handed a sink one byte larger than the largest frame a case
+   holds, not one of `<CODEC>_MAX_BYTES`: a codec that states no bound has a
+   MAX_BYTES no array can be sized by, and the one extra byte is where an
+   encode that writes past its frame is seen, as the source sinks below see
+   it. #}
+        uint8_t encoded_buf[sizeof cases[0].expected_bytes + 1u];
         size_t encoded_len = 0;
         if (!cases[i].decode_only) {
             sce_forge_codec_status_t _enc_st = {{ f.name }}_encode_to_buf(&val, encoded_buf, sizeof(encoded_buf), &encoded_len);
