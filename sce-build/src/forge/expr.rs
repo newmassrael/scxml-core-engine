@@ -7790,7 +7790,7 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
     params.clear();
     match builtin {
         KeyedBuiltin::Len => {
-            *callee = Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_COUNT.to_string())));
+            **callee = TypedExpr::new(ExprKind::Raw(C_MAP_COUNT.to_string()));
             if let Some(map) = args.first_mut() {
                 let map_ty = map.ty;
                 wrap_in_call(map, "&", map_ty);
@@ -7808,7 +7808,7 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
             let (probe, feed) = c_map_probe(key, &held, ctx)?;
             let map_ty = map.ty;
             wrap_in_call(&mut map, "&", map_ty);
-            *callee = Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_HOLDS.to_string())));
+            **callee = TypedExpr::new(ExprKind::Raw(C_MAP_HOLDS.to_string()));
             *args = vec![map, probe, feed];
         }
     }
