@@ -9,7 +9,9 @@ use serde_json::json;
 
 /// The most bytes of response headers and of body a result record holds.
 const HEADERS_BOUND: usize = 4096;
-const BODY_BOUND: usize = 16384;
+/// The most bytes of a response's body the result record holds (`body` of
+/// `http_fetch_result`), the bound a network transport reads a body to.
+pub const HTTP_BODY_MAX_BYTES: usize = 16384;
 
 const METHODS: [&str; 7] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
@@ -31,10 +33,32 @@ pub struct HttpResponse {
     pub body: Vec<u8>,
 }
 
-/// A transport that got no response: name resolution, connection, TLS, or the
-/// connection ended.
+/// Why a transport answered no response, each the failure code of section 5
+/// it is reported as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TransportFailure;
+pub enum TransportFailure {
+    /// No response was received: name resolution, connection, TLS, a timeout,
+    /// or the connection ended (`network`).
+    Network,
+    /// The transport's destination policy refused the target before anything
+    /// was sent: it is not on the allow-list, or every address its name
+    /// resolved to is refused (`destination_refused`; docs/adr/0109, D4).
+    DestinationRefused,
+    /// The response passed a bound of the transport before it was read whole
+    /// (`response_too_large`); nothing of it is kept.
+    ResponseTooLarge,
+}
+
+impl TransportFailure {
+    /// The failure code of section 5 this is reported as.
+    pub fn code(self) -> &'static str {
+        match self {
+            TransportFailure::Network => "network",
+            TransportFailure::DestinationRefused => "destination_refused",
+            TransportFailure::ResponseTooLarge => "response_too_large",
+        }
+    }
+}
 
 /// Carries one exchange. `Ok(None)` is a transport that has not answered: the
 /// host holds the exchange until it is cancelled.
@@ -111,7 +135,7 @@ pub(crate) fn fetch<T: Transport>(
             host.held.push(id.to_string());
             return Outcome::Hold;
         }
-        Err(TransportFailure) => return failure("sce-host-http-fetch", "network"),
+        Err(why) => return failure("sce-host-http-fetch", why.code()),
     };
     let lines: Vec<String> = response
         .headers
@@ -125,7 +149,7 @@ pub(crate) fn fetch<T: Transport>(
     } else {
         response.body
     };
-    if headers.len() > HEADERS_BOUND || body.len() > BODY_BOUND {
+    if headers.len() > HEADERS_BOUND || body.len() > HTTP_BODY_MAX_BYTES {
         return failure("sce-host-http-fetch", "response_too_large");
     }
     let Ok(body) = String::from_utf8(body) else {
