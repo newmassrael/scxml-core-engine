@@ -4873,7 +4873,10 @@ impl<'a> Judge<'a> {
     /// - a bool into a `bool` field;
     /// - a string or byte string held by a variable whose `sce:capacity` is no
     ///   more than the field's `sce:max-size`, which is the one place this model
-    ///   knows the most bytes a value ever holds.
+    ///   knows the most bytes a value ever holds;
+    /// - a value of the field's own enum, a variant or a variable of it, which
+    ///   crosses as the name the enum declares for it
+    ///   ([`Self::request_enum_value`]).
     ///
     /// A literal was held to its field at parse time, and an empty `<param>` is
     /// judged where it is lowered.
@@ -4893,20 +4896,58 @@ impl<'a> Judge<'a> {
             return Ok(());
         };
         let written = wire.written;
-        // A typed request holds no optional field (`typed_invoke::validate`
-        // refuses one by name, docs/adr/0055), so the field is read as it is.
-        let want = InferredType::of_field(&field.sce_type);
-        // The field is the place the value lands in, so a literal in it takes
-        // the field's type, as a literal takes the type of the variable an
-        // `<assign>` writes, and one the field's type cannot hold is refused
-        // where it is written (`expression/literal-out-of-range`).
-        let ty = self.expr(ctx, written, wire.spelling, Expected::Hint(want))?;
-        let given = match (ty, want) {
-            (InferredType::UntypedInt, InferredType::Int { .. } | InferredType::Float { .. })
-            | (InferredType::UntypedFloat, InferredType::Float { .. }) => want,
-            _ => ty.wire_param_slot().unwrap_or(ty),
-        };
-        let verdict = match (want, given) {
+        let verdict =
+            if let crate::forge::model::SceType::Enum(reference) = field.sce_type.present_type() {
+                self.request_enum_value(ctx, written, wire.spelling, &reference.alias)?
+            } else {
+                // A typed request holds no optional field (`typed_invoke::validate`
+                // refuses one by name, docs/adr/0055), so the field is read as it is.
+                let want = InferredType::of_field(&field.sce_type);
+                // The field is the place the value lands in, so a literal in it takes
+                // the field's type, as a literal takes the type of the variable an
+                // `<assign>` writes, and one the field's type cannot hold is refused
+                // where it is written (`expression/literal-out-of-range`).
+                let ty = self.expr(ctx, written, wire.spelling, Expected::Hint(want))?;
+                let given = match (ty, want) {
+                    (
+                        InferredType::UntypedInt,
+                        InferredType::Int { .. } | InferredType::Float { .. },
+                    )
+                    | (InferredType::UntypedFloat, InferredType::Float { .. }) => want,
+                    _ => ty.wire_param_slot().unwrap_or(ty),
+                };
+                self.request_scalar_value(written, field.max_size, want, given)
+            };
+        match verdict {
+            Ok(()) => Ok(()),
+            Err(why) => {
+                let at = wire.source_location;
+                Err(self.rule_at(
+                    format!("<param name=\"{}\"> of {element}", param.name),
+                    &format!(
+                        "a request typed by sce:request is held to the record its schema names, \
+                         and {why}: a field takes a value its type holds, never a narrowed one"
+                    ),
+                    at.and_then(|l| l.line),
+                    at.and_then(|l| l.col),
+                    state,
+                    written,
+                ))
+            }
+        }
+    }
+
+    /// [`Self::request_field_value`]'s judgement of a value `given` for a field
+    /// whose type is the scalar `want` and whose bound is `max_size`: why the
+    /// field cannot hold it, if it cannot.
+    fn request_scalar_value(
+        &self,
+        written: &str,
+        max_size: Option<u32>,
+        want: InferredType,
+        given: InferredType,
+    ) -> Result<(), String> {
+        match (want, given) {
             (
                 InferredType::Int {
                     signed: want_signed,
@@ -4938,31 +4979,76 @@ impl<'a> Judge<'a> {
             }
             (InferredType::Bool, InferredType::Bool) => Ok(()),
             (InferredType::Str, InferredType::Str) | (InferredType::Bytes, InferredType::Bytes) => {
-                self.request_text_within(written, field.max_size)
+                self.request_text_within(written, max_size)
             }
             _ => Err(format!(
                 "the value is {}, and the field is {}",
                 given.describe(),
                 want.describe()
             )),
-        };
-        match verdict {
-            Ok(()) => Ok(()),
-            Err(why) => {
-                let at = wire.source_location;
-                Err(self.rule_at(
-                    format!("<param name=\"{}\"> of {element}", param.name),
-                    &format!(
-                        "a request typed by sce:request is held to the record its schema names, \
-                         and {why}: a field takes a value its type holds, never a narrowed one"
-                    ),
-                    at.and_then(|l| l.line),
-                    at.and_then(|l| l.col),
-                    state,
-                    written,
-                ))
-            }
         }
+    }
+
+    /// [`Self::request_field_value`]'s judgement of `written` for a field that
+    /// holds a value of the enum `alias` (docs/adr/0109, step 4 of its order of
+    /// work): a value of that very enum, a variant or a variable of it, which
+    /// crosses to the host as the name the enum declares for it and is read
+    /// back into the enum by that name. Why the field cannot hold it, if it
+    /// cannot; a use of an enum value the expression rules refuse is refused as
+    /// they refuse it.
+    fn request_enum_value(
+        &self,
+        ctx: &TypeCtx<'_>,
+        written: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        alias: &str,
+    ) -> Result<Result<(), String>, Located<ForgeError>> {
+        use crate::forge::static_enum::Held;
+        self.expr(
+            ctx,
+            written,
+            spelling,
+            Expected::Hint(InferredType::Unknown),
+        )?;
+        // The field holds the enum document the record imports whether or not
+        // this document imports it (docs/adr/0054); a value of it is named
+        // through the document's own import, so without one there is none.
+        if !self.enums.iter().any(|e| e.alias == alias) {
+            let document = self
+                .held_enums
+                .get(alias)
+                .map_or(alias, |model| model.name.as_str());
+            return Ok(Err(format!(
+                "the field holds a value of the enum `{document}` the record imports, which this \
+                 document does not import: import it (<sce:import kind=\"enum\">, under any \
+                 alias) and write one of its variants"
+            )));
+        }
+        let held = self.wire_value_held(ctx, written).map_err(|refusal| {
+            Located::in_file(
+                ExpressionSite::new(written, spelling).place(refusal),
+                self.diag_label,
+            )
+        })?;
+        Ok(match held {
+            Held::Enum(of) if of == alias => Ok(()),
+            Held::Enum(of) => Err(format!(
+                "the value is of the enum `{of}`, and the field holds a value of the enum \
+                 `{alias}`"
+            )),
+            Held::Optional(of) => Err(format!(
+                "the value is an optional value of the enum `{of}`, which may be absent, and a \
+                 request has no spelling for an absent value (read it with `??` and a default of \
+                 the enum `{alias}`)"
+            )),
+            Held::Null => Err(format!(
+                "the value is `null`, and the field holds a value of the enum `{alias}`"
+            )),
+            Held::Neither => Err(format!(
+                "the value is no value of an enum, and the field holds a value of the enum \
+                 `{alias}` (write `{alias}.<variant>`, or a variable of that enum)"
+            )),
+        })
     }
 
     /// Whether the text `written` is held by a variable whose declared bound is

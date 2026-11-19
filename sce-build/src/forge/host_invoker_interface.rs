@@ -36,8 +36,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::filters;
 use crate::forge::error::GenerateError;
 use crate::forge::model::{EntryField, EntrySchema, EntryType, SceType};
+use crate::forge::static_lowering::StaticEnumType;
 use crate::generator::Language;
 use crate::model::{Invoke, SCXMLModel};
+
+/// Why the renderers of the lanes other than Rust and C++ never meet an enum
+/// field of a host-run record: a result's is refused where the document is
+/// parsed ([`crate::forge::typed_invoke::validate`]), and a request's where a
+/// machine is written for such a lane
+/// ([`crate::forge::standard_host::refuse_enum_request_fields`]).
+const ENUM_FIELD_NOT_HERE: &str = "an enum field of a host-run record reaches only the Rust and \
+     C++ renderers: typed_invoke::validate refuses one in a result, and \
+     standard_host::refuse_enum_request_fields one in a request on every other lane";
 
 /// One host-run `<invoke>` that names a request or a result record.
 pub struct TypedHostInvoke<'m> {
@@ -155,9 +165,53 @@ fn record_field_type(lang: Language, f: &EntryField, present: &str) -> String {
     }
 }
 
+/// The machine's own type an enum field of a typed request is held in
+/// ([`StaticEnumType`]), or `None` for a field of any other type.
+///
+/// Only the Rust and C++ records hold one (docs/adr/0109, step 4 of its order
+/// of work): a build for any other lane refuses the request
+/// ([`crate::forge::standard_host::refuse_enum_request_fields`]). The type is
+/// the one the static lowering declared for the enum, which declares the enum
+/// of every typed request's field ([`crate::forge::static_lowering::lower`]).
+fn request_enum<'e>(
+    f: &EntryField,
+    static_enums: &'e [StaticEnumType],
+) -> Option<&'e StaticEnumType> {
+    match f.sce_type.present_type() {
+        SceType::Enum(reference) => Some(crate::forge::generator::static_enum_of(
+            static_enums,
+            &reference.alias,
+        )),
+        _ => None,
+    }
+}
+
+/// Whether a record of `schema` holds an enum field, which has no default:
+/// the enum is the machine's own, and no variant is the one to start from, as
+/// a payload struct that holds one derives none either.
+fn holds_an_enum(schema: &EntrySchema) -> bool {
+    schema
+        .fields
+        .iter()
+        .any(|f| matches!(f.sce_type.present_type(), SceType::Enum(_)))
+}
+
+/// Whether a typed host-run invoke of `model` names a request record that
+/// holds an enum field: the one whose host interface needs the machine's own
+/// enum types ([`render_rust`], [`render_cpp`]).
+pub fn requests_hold_an_enum(model: &SCXMLModel) -> bool {
+    let entry_records = model.entry_records();
+    typed_host_invokes(model, &entry_records)
+        .iter()
+        .any(|typed| typed.request.is_some_and(holds_an_enum))
+}
+
 /// A typed request holds no optional field (`typed_invoke::validate` refuses
 /// one by name, docs/adr/0055), so every request field read in this module is
-/// the scalar a present value of it is.
+/// the scalar a present value of it is. An enum field crosses as the name its
+/// enum declares for the value, a text, so the start site holds it as one: the
+/// value was held to its enum where the document was judged
+/// ([`crate::forge::static_datamodel`]), and its name is one the enum declares.
 fn request_field_spelling(f: &EntryField) -> RequestFieldSpelling {
     RequestFieldSpelling::Scalar(match f.sce_type.present_type() {
         SceType::Uint8 => "Uint8",
@@ -171,12 +225,9 @@ fn request_field_spelling(f: &EntryField) -> RequestFieldSpelling {
         SceType::Float32 => "Float32",
         SceType::Float64 => "Float64",
         SceType::Bool => "Bool",
-        SceType::String => "String",
+        SceType::String | SceType::Enum(_) => "String",
         SceType::Bytes => {
             return RequestFieldSpelling::Bytes(crate::forge::limits::resolve_bytes_max(f.max_size))
-        }
-        SceType::Enum(_) => {
-            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
         }
     })
 }
@@ -221,12 +272,19 @@ pub fn go_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String
 
 /// The Rust host interface for `model`'s typed host-run invokes; empty when
 /// it has none, or under `no_std`, which has no host invokers.
+///
+/// `static_enums` are the enums the machine declares
+/// ([`crate::forge::static_lowering::StaticLowering::enums`]): a request's enum
+/// field is held in the machine's own type for it, and the adapter reads it
+/// back from the name it crossed as through that type's `FromStr`, which
+/// `request_field` parses with.
 pub fn render_rust(
     model: &SCXMLModel,
     machine_name: &str,
     policy_generics_decl: &str,
     policy_generics_use: &str,
     no_std: bool,
+    static_enums: &[StaticEnumType],
 ) -> String {
     let entry_records = model.entry_records();
     let typed = typed_host_invokes(model, &entry_records);
@@ -238,9 +296,14 @@ pub fn render_rust(
         let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
             if let Some(schema) = record {
+                let derives = if holds_an_enum(schema) {
+                    "Clone, Debug, PartialEq"
+                } else {
+                    "Clone, Debug, Default, PartialEq"
+                };
                 records.push_str(&format!(
                     "/// {role} `<invoke id=\"{id}\">`\n/// with (SCE Accepted Subset \u{a7}2.12).\n\
-#[derive(Clone, Debug, Default, PartialEq)]\npub struct {machine_name}{pascal}{what} {{\n{fields}}}\n\n",
+#[derive({derives})]\npub struct {machine_name}{pascal}{what} {{\n{fields}}}\n\n",
                     id = invoke.invoke_id,
                     fields = schema
                         .fields
@@ -248,7 +311,10 @@ pub fn render_rust(
                         .map(|f| format!(
                             "    pub {}: {},\n",
                             f.id,
-                            crate::forge::generator::rust_record_type(f)
+                            request_enum(f, static_enums).map_or_else(
+                                || crate::forge::generator::rust_record_type(f),
+                                |declared| declared.ty.clone()
+                            )
                         ))
                         .collect::<String>(),
                 ));
@@ -784,9 +850,7 @@ pub fn render_python(model: &SCXMLModel) -> String {
             SceType::Bool => "bool",
             SceType::String => "str",
             SceType::Bytes => "bytes",
-            SceType::Enum(_) => unreachable!(
-                "typed_invoke::validate refuses an enum-typed field in a host-run record"
-            ),
+            SceType::Enum(_) => unreachable!("{ENUM_FIELD_NOT_HERE}"),
             _ => "int",
         }
     };
@@ -1194,7 +1258,12 @@ pub struct CppHostInvokerInterface {
 /// Header-only like the payload channel beside it: the records' JSON is
 /// spelled by `EventPayloadLift.h`, and the adapter's reading by
 /// `core/TypedHostInvokeRequest.h`.
-pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
+///
+/// `static_enums` are the enums the machine declares
+/// ([`crate::forge::static_lowering::StaticLowering::enums`]): a request's enum
+/// field is held in the machine's own type for it, and the adapter reads it
+/// back from the name it crossed as through that type's `<type>FromSceName`.
+pub fn render_cpp(model: &SCXMLModel, static_enums: &[StaticEnumType]) -> CppHostInvokerInterface {
     let mut defs = String::new();
     let mut members = String::new();
     let entry_records = model.entry_records();
@@ -1204,8 +1273,13 @@ pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
     }
     // The type a present value of `f` is held in: what a request's reader
     // names (`requestField<T>`), and what the optional type of a result's
-    // field wraps.
-    let cpp_type = |f: &EntryField| crate::forge::generator::cpp_type(f.sce_type.present_type());
+    // field wraps; the machine's own enum for a request's enum field.
+    let cpp_type = |f: &EntryField| -> String {
+        request_enum(f, static_enums).map_or_else(
+            || crate::forge::generator::cpp_type(f.sce_type.present_type()).to_string(),
+            |declared| declared.ty.clone(),
+        )
+    };
     for invoke in &typed {
         let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
@@ -1216,7 +1290,7 @@ pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
                 .map(|f| {
                     format!(
                         "    {} {}{{}};\n",
-                        record_field_type(Language::Cpp, f, cpp_type(f)),
+                        record_field_type(Language::Cpp, f, &cpp_type(f)),
                         f.id
                     )
                 })
@@ -1285,12 +1359,20 @@ virtual void cancel{pascal}(uint64_t token) = 0;\n"
                     let fields: String = schema
                         .fields
                         .iter()
-                        .map(|f| {
-                            format!(
+                        .map(|f| match request_enum(f, static_enums) {
+                            // The start site sent the name of a value of this
+                            // very enum, so the name is a variant's: `value()`
+                            // throws only where the two halves of the generated
+                            // code disagree, as `requestField` does.
+                            Some(declared) => format!(
+                                "                    typed.{0} = {1}FromSceName(::SCE::requestField<std::string>(start, \"{0}\")).value();\n",
+                                f.id, declared.ty
+                            ),
+                            None => format!(
                                 "                    typed.{0} = ::SCE::requestField<{1}>(start, \"{0}\");\n",
                                 f.id,
                                 cpp_type(f)
-                            )
+                            ),
                         })
                         .collect();
                     (
@@ -1724,7 +1806,7 @@ fn c11_request_read(ty: &SceType, id: &str) -> String {
             )
         }
         SceType::Enum(_) => {
-            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
+            unreachable!("{ENUM_FIELD_NOT_HERE}")
         }
     };
     format!("sce_request_read_{suffix}(event, \"{id}\", &request.{id})")
@@ -1747,7 +1829,7 @@ fn kotlin_request_reader(ty: &SceType) -> &'static str {
         SceType::String => "string",
         SceType::Bytes => "bytes",
         SceType::Enum(_) => {
-            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
+            unreachable!("{ENUM_FIELD_NOT_HERE}")
         }
     }
 }
@@ -1780,7 +1862,7 @@ fn swift_request_reader(f: &EntryField) -> String {
         SceType::String => format!("start.requestString(\"{id}\")"),
         SceType::Bytes => format!("start.requestBytes(\"{id}\")"),
         SceType::Enum(_) => {
-            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
+            unreachable!("{ENUM_FIELD_NOT_HERE}")
         }
     }
 }
@@ -1802,7 +1884,7 @@ fn go_request_reader(f: &EntryField) -> String {
         SceType::String => format!("sce.RequestString(*start, \"{id}\")"),
         SceType::Bytes => format!("sce.RequestBytes(*start, \"{id}\")"),
         SceType::Enum(_) => {
-            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
+            unreachable!("{ENUM_FIELD_NOT_HERE}")
         }
     }
 }

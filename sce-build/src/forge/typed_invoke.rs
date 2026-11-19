@@ -114,22 +114,40 @@ pub fn validate(
                     )));
                 }
             }
-            // The record crosses to and from the host as text in every
-            // backend, and an enumeration has no spelling there that all six
-            // share: its generated type is per-language, and the payload
-            // lift that reads a completion refuses it for the same reason.
-            // An optional enumeration is the same enumeration.
+            // An enum field of a request crosses as the name its enum declares
+            // for the value, and the Rust and C++ adapters read it back into the
+            // machine's own enum by that name (docs/adr/0109, step 4 of its order
+            // of work); every other lane refuses it where its machine is written
+            // (`standard_host::refuse_enum_request_fields`). The machine's own
+            // enum is a type of `datamodel="sce-static"` alone, so under any
+            // other data model there is no value of it to send. A result is
+            // completed with the record's JSON, which the payload lift that
+            // reads a completion does not read an enum from, so a result holds
+            // none. An optional enumeration is the same enumeration.
             if let Some(field) = schema
                 .fields
                 .iter()
                 .find(|f| matches!(f.sce_type.present_type(), SceType::Enum(_)))
             {
-                return Err(refuse(format!(
-                    "field '{}' is enum-typed ({}), and a host-run record carries \
-                     scalar fields only — declare it as its underlying integer type",
-                    field.id,
-                    field.sce_type.as_attr()
-                )));
+                if attr == "result" {
+                    return Err(refuse(format!(
+                        "field '{}' is enum-typed ({}), and a host-run result carries no enum \
+                         field: the completion's record is read by a payload lift that reads \
+                         none — declare it as its underlying integer type",
+                        field.id,
+                        field.sce_type.as_attr()
+                    )));
+                }
+                if model.datamodel != crate::model::Datamodel::SceStatic {
+                    return Err(refuse(format!(
+                        "field '{}' is enum-typed ({}), and an enum field of a host-run request \
+                         takes a value of the machine's own enum, which only \
+                         datamodel=\"sce-static\" holds — declare it as its underlying integer \
+                         type, or write the machine under sce-static",
+                        field.id,
+                        field.sce_type.as_attr()
+                    )));
+                }
             }
         }
         // Every schema the invoke names was taken one entry per field above.
@@ -326,6 +344,16 @@ fn literal_misfit(value: &str, field: &crate::forge::model::EntryField) -> Optio
                 None
             }
         }
+        // The name of a variant is the text the value crosses as, not the value:
+        // the field is held to a value of its own enum where it is written
+        // (`static_datamodel`), which a text never is.
+        enumerated @ SceType::Enum(_) => Some(format!(
+            "is a text literal, and '{}' is {}: a value of an enum is written as one of its \
+             variants (`<alias>.<variant>`, through the document's own import of the enum) or \
+             as a variable of that enum",
+            field.id,
+            enumerated.as_attr()
+        )),
         other => Some(format!(
             "is a text literal, and '{}' is {}",
             field.id,

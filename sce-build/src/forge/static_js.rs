@@ -2104,6 +2104,13 @@ fn lower_parsed(
         crate::forge::standard_host::HostLane::Interpreter,
     )
     .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
+    // docs/adr/0109, D0: the Interpreter is no lane that reads an enum field of
+    // a typed host-run request, and a lowering is its build.
+    crate::forge::standard_host::refuse_enum_request_fields(
+        model,
+        crate::forge::standard_host::HostLane::Interpreter,
+    )
+    .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
     if model.datamodel != Datamodel::SceStatic {
         return install_doors(text, model).map_err(refuse);
     }

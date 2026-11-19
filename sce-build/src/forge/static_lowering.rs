@@ -5077,6 +5077,21 @@ impl StaticTarget for RustTarget {
                 )
             })
             .collect();
+        // `from_sce_name` is `sce_name` read back: the variant a declared name
+        // names. A typed host-run request carries an enum field as that name,
+        // and its adapter reads the field back through `FromStr`, which
+        // `request_field` parses with (SCE Accepted Subset §2.12).
+        let named: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "            \"{}\" => Some(Self::{}),\n",
+                    filters::escape_rust(v.name.clone()),
+                    self.enum_variant(ty, &model.name, &v.name)
+                )
+            })
+            .collect();
         // `to_underlying` and `from_underlying` are the enum document's own
         // accessors, by the same names and shapes (`forge/rust/enum.rs.jinja2`):
         // what `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
@@ -5111,6 +5126,10 @@ impl StaticTarget for RustTarget {
              #[allow(dead_code)]\n    \
              pub fn sce_name(self) -> &'static str {{\n        \
              match self {{\n{names}        }}\n    }}\n\n    \
+             /// The variant whose declared name is `name`, or `None` for a name no variant declares.\n    \
+             #[allow(dead_code)]\n    \
+             pub fn from_sce_name(name: &str) -> Option<Self> {{\n        \
+             match name {{\n{named}            _ => None,\n        }}\n    }}\n\n    \
              /// The number the enum document declares for this value.\n    \
              #[allow(dead_code)]\n    \
              pub fn to_underlying(self) -> {carrier} {{\n        \
@@ -5118,7 +5137,12 @@ impl StaticTarget for RustTarget {
              /// The variant that declares `raw`, or `None` for a number no variant declares.\n    \
              #[allow(dead_code)]\n    \
              pub fn from_underlying(raw: {carrier}) -> Option<Self> {{\n        \
-             match raw {{\n{variants_of}            _ => None,\n        }}\n    }}\n}}",
+             match raw {{\n{variants_of}            _ => None,\n        }}\n    }}\n}}\n\n\
+             /// A value read from the name the enum document declares for it.\n\
+             impl ::core::str::FromStr for {ty} {{\n    \
+             type Err = ();\n\n    \
+             fn from_str(name: &str) -> ::core::result::Result<Self, Self::Err> {{\n        \
+             Self::from_sce_name(name).ok_or(())\n    }}\n}}",
             crate::rust_derive_policy::RustDeriveCategory::ForgeEnum.derives_attr()
         )
     }
@@ -8476,6 +8500,38 @@ pub fn lower(
             }
         }
     }
+    // An enum field of a typed host-run request (SCE Accepted Subset §2.12) is
+    // held, in the record the generated host interface hands the host, in the
+    // machine's own type for the enum, as a payload's enum field is: declared
+    // here whether or not a variable of the machine holds the enum.
+    let mut invoking: Vec<&crate::model::State> = model.states.values().collect();
+    invoking.sort_by_key(|s| s.document_order);
+    for info in invoking
+        .iter()
+        .flat_map(|s| s.invokes.iter())
+        .filter_map(|invoke| match invoke {
+            crate::model::Invoke::Unsupported(info) => Some(info),
+            _ => None,
+        })
+    {
+        let Some(request) = records.get(&info.request_schema) else {
+            continue;
+        };
+        for field in &request.fields {
+            if let SceType::Enum(reference) = field.sce_type.present_type() {
+                declarations
+                    .enum_type(&reference.alias)
+                    .map_err(|enum_alias| {
+                        GenerateError::unsupported(format!(
+                            "<invoke id=\"{}\">: the field `{}` of its request holds the enum \
+                         `{enum_alias}`: {lang} has no enum type for it, or the enum document \
+                         the schema imports could not be read",
+                            info.base.invoke_id, field.id
+                        ))
+                    })?;
+            }
+        }
+    }
     // A machine that takes a list an algorithm returns holds, in the code that
     // calls it, the type the algorithm returns it in, which a target may have to
     // be told it may use.
@@ -11632,6 +11688,21 @@ impl StaticTarget for CppTarget {
                 )
             })
             .collect();
+        // `{ty}FromSceName` is `sceLogName` read back: the variant a declared
+        // name names. A typed host-run request carries an enum field as that
+        // name, and its adapter reads the field back through it (SCE Accepted
+        // Subset §2.12).
+        let named: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "    if (name == \"{}\") {{\n        return {ty}::{};\n    }}\n",
+                    filters::escape_cpp(v.name.clone()),
+                    self.enum_variant(ty, &model.name, &v.name)
+                )
+            })
+            .collect();
         // The enum document's own accessors (`forge/cpp/enum.h.jinja2`), named for
         // the machine's type, since a machine's enums share its namespace and a
         // function cannot be overloaded on what it returns: what `<alias>.toNumber`
@@ -11667,6 +11738,8 @@ impl StaticTarget for CppTarget {
              enum class {ty} : {carrier} {{\n{variants}}};\n\n\
              /// The name the enum document declares for `value`.\n\
              inline const char *sceLogName({ty} value) {{\n    switch (value) {{\n{names}    }}\n    return \"\";\n}}\n\n\
+             /// The variant whose declared name is `name`, or `std::nullopt` for a name no variant declares.\n\
+             inline std::optional<{ty}> {ty}FromSceName(const std::string &name) {{\n{named}    return std::nullopt;\n}}\n\n\
              /// The number the enum document declares for `value`.\n\
              inline {carrier} {ty}ToUnderlying({ty} value) {{\n    return static_cast<{carrier}>(value);\n}}\n\n\
              /// The variant that declares `raw`, or `std::nullopt` for a number no variant declares.\n\
