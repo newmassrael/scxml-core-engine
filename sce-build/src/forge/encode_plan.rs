@@ -1657,10 +1657,12 @@ pub enum CborShape {
     Nullable(Box<CborShape>),
     /// A part of the type the plan cannot say: an enum, a record or a union
     /// the codec's imports do not resolve, a record or a union that holds
-    /// itself, or a text or a byte string with no bound. The compile refuses
-    /// each before any printer reads the plan (the import check,
+    /// itself, a text or a byte string with no bound, or a map or a set,
+    /// which has no CBOR wire form. The compile refuses each before any
+    /// printer reads the plan (the import check,
     /// [`crate::forge::cbor_codec::record_list_unlowered`], docs/adr/0101
-    /// section 1.3); the plan names what it met.
+    /// section 1.3, docs/adr/0108 D7 for a codec entry that holds a map);
+    /// the plan names what it met.
     Unresolved {
         /// The alias, or the type, as the document spells it.
         what: String,
@@ -1825,6 +1827,9 @@ fn shape_of(ty: &ValueType, env: &dyn TypeEnv, records: &mut Vec<String>) -> Cbo
             .map_or_else(|what| CborShape::Unresolved { what }, CborShape::Record),
         ValueType::Union { alias } => union_shape(alias, env, records)
             .map_or_else(|what| CborShape::Unresolved { what }, CborShape::Union),
+        ValueType::Map { .. } | ValueType::Set { .. } => CborShape::Unresolved {
+            what: ty.to_string(),
+        },
     }
 }
 
