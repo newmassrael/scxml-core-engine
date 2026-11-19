@@ -389,6 +389,19 @@ fn no_c11_frame_grows_with_a_list_bound() {
 /// every read, statement and loop of a map (`fixtures/map/map_faces.scxml`), every map
 /// and set of it bounded by one name and one of its loops writing the set it walks,
 /// is built at that bound and at 64 times it, and every function has the frame it had.
+/// The name `function` has at bound `to`, when it is an operation of a C11 map or set
+/// type: the bound is the last number of the type's name, before the operation's own.
+/// Any other function keeps its name.
+fn at_bound(function: &str, from: u32, to: u32) -> String {
+    let named_by_bound =
+        function.starts_with("sce_static_map_") || function.starts_with("sce_static_set_");
+    let from = format!("_{from}_");
+    match function.rfind(&from).filter(|_| named_by_bound) {
+        Some(at) => format!("{}_{to}_{}", &function[..at], &function[at + from.len()..]),
+        None => function.to_string(),
+    }
+}
+
 #[test]
 fn no_c11_frame_grows_with_a_map_bound() {
     let map_fixtures = repo_root().join("sce-build/tests/fixtures/map");
@@ -426,8 +439,17 @@ fn no_c11_frame_grows_with_a_map_bound() {
     }
     let path = dir.path().join("map_faces.scxml");
     std::fs::write(&path, &document).expect("write the statechart");
-    let small = c11_frames(dir.path(), &path, &[("face_max", 4)]);
-    let large = c11_frames(dir.path(), &path, &[("face_max", 4 * 64)]);
+    const SMALL: u32 = 4;
+    const LARGE: u32 = SMALL * 64;
+    let small = c11_frames(dir.path(), &path, &[("face_max", SMALL)]);
+    // A map's type is named by its bound (`sce_static_map_uint32_uint64_4_t`), and so is
+    // each operation of it, so an operation at the large bound is the function it was at
+    // the small one under the small bound's name.
+    let large: BTreeMap<(String, String), String> =
+        c11_frames(dir.path(), &path, &[("face_max", LARGE)])
+            .into_iter()
+            .map(|((file, function), frame)| ((file, at_bound(&function, LARGE, SMALL)), frame))
+            .collect();
     assert!(
         small.len() > 50,
         "only {} frames were read at the small bound",
