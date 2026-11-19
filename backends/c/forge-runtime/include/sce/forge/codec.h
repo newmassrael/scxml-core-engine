@@ -123,7 +123,9 @@ typedef enum {
      * `sce:length-arith` (docs/adr/0077 §1). On decode, the length the frame
      * says is outside it, judged before the frame's own length, so such a frame
      * is refused and never waited on; on encode, the member holds more than its
-     * array, and nothing is written. Mirrors the typed
+     * array, and nothing is written. A list made of fewer entries than the
+     * fewest it holds, one for a chain closed by an entry flag (docs/adr/0065 §6
+     * R7), is refused by its maker with this status too. Mirrors the typed
      * `CodecError::LengthOutOfRange` of Rust, `codec.ErrLengthOutOfRange` of Go
      * and `LengthOutOfRange` of Python. */
     SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE = 19,
@@ -159,6 +161,14 @@ typedef enum {
     SCE_FORGE_CODEC_CBOR_UNKNOWN_VARIANT = 25,
     /* A CBOR union's map held no entry, or more than one. */
     SCE_FORGE_CODEC_CBOR_UNION_ENTRIES = 26,
+    /* Encode-side: the source presents elements no frame holds together, such
+     * as two measures of one derived length that say different numbers, or a
+     * length a value states beside content of another length (docs/adr/0058
+     * §1, docs/adr/0081 §3). Nothing is written. Mirrors the typed
+     * `CodecError::InconsistentSource` every other runtime's encode answers
+     * (`codec.ErrInconsistentSource` of Go). Its value follows the CBOR
+     * statuses, which took the numbers after CAPACITY_EXCEEDED first. */
+    SCE_FORGE_CODEC_INCONSISTENT_SOURCE = 27,
 } sce_forge_codec_status_t;
 
 /* A refusal of a node's capacity, noted in `*over`, and every other status as
@@ -345,6 +355,19 @@ static inline sce_forge_writer_t sce_forge_writer_init_buf(uint8_t *buf, size_t 
     return w;
 }
 
+/* A writer that stores nothing and counts what is written to it: its position
+ * is the length of the bytes an encode writes, which a generated encode reads
+ * as the encoded length of a body before it writes the body itself
+ * (docs/adr/0058 §3). It has no buffer and never runs out of room, so an encode
+ * over it fails only where the encode refuses its value. */
+static inline sce_forge_writer_t sce_forge_writer_init_counting(void) {
+    sce_forge_writer_t w;
+    w.bytes = NULL;
+    w.cap = SIZE_MAX;
+    w.pos = 0;
+    return w;
+}
+
 /* Bytes written by this writer instance since `init_buf`. Mirrors the
  * cpp `SceSink::position()` semantics — defined as the write offset,
  * not `cap - remaining`, so its meaning does not depend on the
@@ -372,8 +395,11 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_bytes(sce_forge_wr
     if (w->cap - w->pos < n) {
         return SCE_FORGE_CODEC_BUFFER_OVERFLOW;
     }
-    for (size_t i = 0; i < n; ++i) {
-        w->bytes[w->pos + i] = data[i];
+    /* A counting writer stores nothing (`sce_forge_writer_init_counting`). */
+    if (w->bytes != NULL) {
+        for (size_t i = 0; i < n; ++i) {
+            w->bytes[w->pos + i] = data[i];
+        }
     }
     w->pos += n;
     return SCE_FORGE_CODEC_OK;
@@ -385,7 +411,11 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_u8(sce_forge_write
     if (w->pos >= w->cap) {
         return SCE_FORGE_CODEC_BUFFER_OVERFLOW;
     }
-    w->bytes[w->pos++] = v;
+    /* A counting writer stores nothing (`sce_forge_writer_init_counting`). */
+    if (w->bytes != NULL) {
+        w->bytes[w->pos] = v;
+    }
+    w->pos++;
     return SCE_FORGE_CODEC_OK;
 }
 
@@ -467,6 +497,23 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_u64_be(sce_forge_w
 static inline bool sce_forge_length_within_bound(size_t len, size_t bound) {
     return len <= bound;
 }
+
+/* How a source presents the entries of a list or a chain to a generated encode
+ * (docs/adr/0081 §2): a begin and next pair over the context the list is
+ * presented with. Each answers an entry as a pointer the entry codec's source
+ * table is handed as its context, or NULL past the last entry, so an array, a
+ * linked list or any store of the consumer's own is walked where it is held,
+ * with no copy. A walk presents the same entries each time it is run from its
+ * beginning for as long as the list is presented: the list's maker walks it to
+ * count the entries, and an encode walks it again to write them. One walk is a
+ * table in read-only memory for each type of list. */
+typedef struct {
+    /* The first entry of the list at `ctx`, or NULL where it holds none. */
+    const void *(*begin)(const void *ctx);
+    /* The entry after `entry` of the list at `ctx`, or NULL where `entry` is
+     * its last. */
+    const void *(*next)(const void *ctx, const void *entry);
+} sce_forge_walk_t;
 
 /* Generated codec emit helper: propagate writer status or continue.
  * Each write call in a generated encode body returns
