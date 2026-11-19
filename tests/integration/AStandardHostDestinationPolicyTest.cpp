@@ -250,7 +250,7 @@ TEST(AStandardHostDestinationPolicy, RefusesAnAllowListedNameThatResolvesToASpec
     });
     const auto policy = host::DestinationPolicy::allowList(
         {host::AllowedDestination(host::Scheme::Http, "internal.example.com", 80),
-         host::AllowedDestination(host::Scheme::Http, "reached.example.com", 8080).reaching(network("10.0.0.0", 8))},
+         host::AllowedDestination(host::Scheme::Http, "reached.example.com", 9443).reaching(network("10.0.0.0", 8))},
         resolver);
     const host::Admission refused = policy.admit("http", "internal.example.com", 80);
     ASSERT_EQ(refused.verdict, host::Admission::Verdict::AddressesRefused);
@@ -259,7 +259,7 @@ TEST(AStandardHostDestinationPolicy, RefusesAnAllowListedNameThatResolvesToASpec
     EXPECT_EQ(refused.refused[0].second, SpecialPurpose::Loopback);
     EXPECT_EQ(refused.refused[1].second, SpecialPurpose::Private);
     EXPECT_EQ(refused.failure(), host::Exchange::Kind::DestinationRefused);
-    const host::Admission reached = policy.admit("http", "reached.example.com", 8080);
+    const host::Admission reached = policy.admit("http", "reached.example.com", 9443);
     ASSERT_EQ(reached.verdict, host::Admission::Verdict::Admitted);
     EXPECT_EQ(texts(reached.destination.addresses), std::vector<std::string>{"10.0.3.7"});
 }

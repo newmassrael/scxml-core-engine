@@ -484,15 +484,15 @@ mod tests {
     fn the_target_is_sent_in_origin_form_with_the_host_of_the_url() {
         let request = HttpRequest {
             method: "POST".to_string(),
-            url: "http://user@api.example.com:8080/items?page=2#top".to_string(),
+            url: "http://user@api.example.com:9443/items?page=2#top".to_string(),
             headers: vec![("X-Trace".to_string(), "7".to_string())],
             body: "payload".to_string(),
         };
         let uri: Uri = request.url.parse().expect("a URL");
-        let sent = outgoing(&request, &uri, "api.example.com:8080").expect("a request");
+        let sent = outgoing(&request, &uri, "api.example.com:9443").expect("a request");
         assert_eq!(*sent.method(), Method::POST);
         assert_eq!(sent.uri().to_string(), "/items?page=2");
-        assert_eq!(sent.headers()[HOST], "api.example.com:8080");
+        assert_eq!(sent.headers()[HOST], "api.example.com:9443");
         assert_eq!(sent.headers()["x-trace"], "7");
         let bare: Uri = "https://api.example.com".parse().expect("a URL");
         let sent = outgoing(&request, &bare, "api.example.com").expect("a request");

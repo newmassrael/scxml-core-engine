@@ -733,7 +733,7 @@ mod tests {
         ]);
         let policy = DestinationPolicy::allow_list(vec![
             AllowedDestination::new(Scheme::Http, "internal.example.com", 80),
-            AllowedDestination::new(Scheme::Http, "reached.example.com", 8080)
+            AllowedDestination::new(Scheme::Http, "reached.example.com", 9443)
                 .reaching(IpNetwork::new(address("10.0.0.0"), 8).expect("a prefix that fits")),
         ])
         .resolving_with(resolver);
@@ -746,9 +746,9 @@ mod tests {
         );
         assert_eq!(
             policy
-                .admit("http", "reached.example.com", 8080)
+                .admit("http", "reached.example.com", 9443)
                 .map(|destination| destination.addresses),
-            Ok(at(&["10.0.3.7"], 8080))
+            Ok(at(&["10.0.3.7"], 9443))
         );
     }
 
