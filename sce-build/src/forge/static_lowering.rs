@@ -68,7 +68,8 @@ pub struct StaticField {
     pub bound: Option<u32>,
     /// How a saved state holds the value: `scalar`, `enum`, `list`, `record`,
     /// `record_list`, `union` (its tag beside its case's fields, docs/adr/0092),
-    /// or `optional` for a value that may be absent, which a saved state holds
+    /// `map` and `set` (the array of its entries, docs/adr/0108, D8), or
+    /// `optional` for a value that may be absent, which a saved state holds
     /// as `null` or as its present value (docs/adr/0055).
     pub saved_kind: &'static str,
     /// What [`Self::saved_kind`] is of: a scalar's or a list element's
@@ -168,6 +169,12 @@ pub struct StaticLowering {
     /// `<assign>` that does it, a list or record `<data>` to the `<data>` that
     /// holds its initial value — for the same readers as [`Self::sites`].
     pub elements: Vec<LoweredElement>,
+    /// The `array` attribute of each `<foreach>` over a map that binds its key
+    /// by `sce:key` (docs/adr/0108, D5), for a lowering that rewrites the
+    /// document itself and runs the document's own loop, whose body reads the
+    /// key out of the entry its item is bound to
+    /// ([`StaticTarget::map_entry`]): the attribute its loop no longer reads.
+    pub keyed_loops: Vec<crate::attribute_spelling::AttributeSpelling>,
     /// Whether the walk lowered a `<log>` that writes a value, to the engine's
     /// log ([`StaticTarget::log`]) or to a test component's test log
     /// ([`StaticTarget::test_log`]): what a target that shows the value
@@ -1168,6 +1175,61 @@ pub enum Lifted<'a> {
     /// ([`crate::forge::composed_lowering::machine_type`]), which a target
     /// whose function literal states its result's type names (Go).
     Whole { reader: String, ty: String },
+}
+
+/// An `<sce:put>` or an `<sce:remove>` of a map or a set variable
+/// (docs/adr/0108, D3 and D4), as the walk lowered its parts, for a target to
+/// spell ([`StaticTarget::map_write`]).
+///
+/// A put sets the value at the key, the key keeping its place when it is
+/// present and going last when it is absent, while the map holds fewer than
+/// `capacity` entries; a remove takes the entry at the key out, the others
+/// keeping their order. Where `outcome` names a variable, the statement writes
+/// what it did there, a value of the standard outcome enum, and a put into a
+/// full map writes `full`, leaves the map as it was and raises nothing; where it
+/// names none, a put into a full map fails, as a full list's append does, and a
+/// remove of an absent key does nothing. A key or a value that cannot be
+/// computed or held fails either statement.
+pub struct MapWrite<'a> {
+    /// The map or set variable the statement writes, as the target names it.
+    pub map: &'a str,
+    /// Its type, where the statement stands
+    /// ([`crate::forge::types::TypeCtx::value_of`]).
+    pub place: &'a crate::forge::value_path::Place,
+    /// The scope the statechart names its types in, in which a record key's
+    /// fields are read.
+    pub types: Option<&'a crate::forge::value_type::TypeScope>,
+    /// The most entries the map holds: its declared bound, as the build
+    /// resolved it (`[name=N]` under `--limit name=N`, docs/adr/0050).
+    pub capacity: u32,
+    /// The key, lowered as the place of the key's type takes it.
+    pub key: &'a str,
+    /// What the statement does.
+    pub op: MapOp<'a>,
+    /// The variable of the statement's standard outcome enum it writes what it
+    /// did to, as the target names it; `None` where it names none.
+    pub outcome: Option<&'a str>,
+}
+
+/// What a [`MapWrite`] does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapOp<'a> {
+    /// `<sce:put>`: the value put at the key, lowered as the place of the
+    /// value's type takes it, or `None` for a put into a set, whose entries
+    /// carry no value.
+    Put { value: Option<&'a str> },
+    /// `<sce:remove>`.
+    Remove,
+}
+
+/// How the body of a `<foreach>` over a map or a set reads what the loop binds
+/// its item to (docs/adr/0108, D5), as a target spells it
+/// ([`StaticTarget::map_entry`]): the value of the entry, which the item names,
+/// and its key, which `sce:key` names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapEntry {
+    pub value: String,
+    pub key: String,
 }
 
 impl<'a> LiftStatement<'a> {
@@ -2325,8 +2387,34 @@ pub trait StaticTarget {
         overflow: &str,
         failed: &str,
     ) -> String;
-    /// Empty the list at `target`.
+    /// Empty the list at `target`, or the map or set at it on a target that
+    /// holds one ([`Self::map_empty`]).
     fn clear(&self, target: &str) -> String;
+    /// The value a map or a set variable starts as, empty (docs/adr/0108, D3).
+    /// `None` for a target whose machine holds no map yet (D10): its row of
+    /// [`crate::forge::event_schema_check::ComposedLowering::maps`] refuses a
+    /// map before the walk, and the walk refuses one by name all the same.
+    fn map_empty(&self) -> Option<String> {
+        None
+    }
+    /// The value an `<assign>` writes into a map or a set variable from
+    /// `value`, the whole of another (docs/adr/0108, D2): a copy of it, which
+    /// cannot fail, since the judge held `value` to a map whose type the
+    /// variable's fits. `None` for a target whose machine holds no map yet.
+    fn map_copy(&self, _value: &str) -> Option<String> {
+        None
+    }
+    /// The statement an `<sce:put>` or an `<sce:remove>` lowers to
+    /// ([`MapWrite`]). `None` for a target whose machine holds no map yet.
+    fn map_write(&self, _write: &MapWrite<'_>) -> Option<String> {
+        None
+    }
+    /// How the body of a `<foreach>` over a map (`set` false) or a set reads
+    /// what the loop binds its item to, spelled `item` ([`MapEntry`]). `None`
+    /// for a target whose machine holds no map yet.
+    fn map_entry(&self, _item: &str, _set: bool) -> Option<MapEntry> {
+        None
+    }
     /// The loop a `<foreach>` over the list at `list` lowers to, as the head
     /// that opens it and the statements that open each iteration: `item`
     /// bound to each element, `index` — a `uint32`, when the document names one
@@ -5742,6 +5830,86 @@ pub(crate) fn composition_not_lowered(
     )
 }
 
+/// The refusal of `element`, a map or a set variable or a statement or a loop
+/// of one, by a target, `lang`, whose machine holds no map yet
+/// ([`StaticTarget::map_empty`]), naming the record that lands a map lane by
+/// lane (docs/adr/0108, D10).
+fn map_not_lowered(element: &str, lang: &str) -> GenerateError {
+    GenerateError::unsupported(format!(
+        "{element}: a map or a set has no {lang} lowering yet ({})",
+        crate::forge::value_type::MAP_LANDING
+    ))
+}
+
+/// The key or the value of an entry an `<sce:put>` or an `<sce:remove>` writes
+/// (docs/adr/0108, D3), `written` for a place of `ty`, lowered as that place
+/// takes it: a record by the name of a record of its schema (a record variable,
+/// the item or key of a `<foreach>`, which a target reaches by its local
+/// spelling) or the payload taken whole, copied as a record variable takes one;
+/// a text and a byte string held to the bound of `ty`, which fails past it; and
+/// every other value as an assignment to a place of its type is lowered.
+fn map_part(
+    written: &str,
+    ty: &crate::forge::value_type::ValueType,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+    lower: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+    lower_bounded: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+) -> Result<Receiving, GenerateError> {
+    use crate::forge::value_type::ValueType;
+    let target = rewrites.target;
+    let written = written.trim();
+    match ty {
+        ValueType::Record { alias } => {
+            let schema = rewrites.schemas.get(alias).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "`{written}`: record:{alias} names no event-schema this build read"
+                ))
+            })?;
+            if written == crate::forge::event_schema_check::EVENT_DATA_PATH {
+                return payload_record_value(
+                    rewrites.machine,
+                    alias,
+                    schema,
+                    target,
+                    lower_bounded,
+                );
+            }
+            let named = match renames.get(written) {
+                Some(held) => held.to_string(),
+                None => target.expr_target().local_spelling(written),
+            };
+            Ok(Receiving {
+                text: target.record_copy(&named, schema),
+                can_fail: false,
+            })
+        }
+        ValueType::Text { max } => {
+            let value = lower_bounded(written, InferredType::Str)?;
+            Ok(Receiving {
+                text: target.bounded_string(&value.text, max.max),
+                can_fail: true,
+            })
+        }
+        ValueType::Bytes { max } => {
+            let value = lower_bounded(written, InferredType::Bytes)?;
+            Ok(Receiving {
+                text: target.bounded_bytes(&value.text, max.max),
+                can_fail: true,
+            })
+        }
+        ValueType::Scalar(scalar) => lower(written, InferredType::from_sce_type(scalar)),
+        ValueType::Optional { .. }
+        | ValueType::Union { .. }
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => Err(GenerateError::unsupported(format!(
+            "`{written}`: {}",
+            crate::forge::value_type::map_unlowered(&ty.to_string())
+        ))),
+    }
+}
+
 /// The refusal of the first optional record of `scope` (docs/adr/0055, step 9)
 /// on a target, `lang`, that does not lower one yet
 /// ([`StaticTarget::lowers_optional_record`]): a variable of one, or a call of
@@ -6964,6 +7132,7 @@ pub fn lower(
         loop_lists: Default::default(),
         sites: Default::default(),
         elements: Default::default(),
+        keyed_loops: Default::default(),
         next_if_ordinal: std::cell::Cell::new(max_if_ordinal(model) + 1),
         host_optional: std::cell::Cell::new(false),
         composed: ComposedNames::of(model, target, machine, &held_enums),
@@ -7150,6 +7319,38 @@ pub fn lower(
                     rewrites.note(&var.expr, var.expr_spelling.as_ref(), &field.init);
                 }
                 fields.push(field);
+                continue;
+            }
+            // A map or a set starts empty, as a list does (docs/adr/0108, D3), as
+            // the target holds one. A target whose machine holds none was refused
+            // by its row of the composed lowering before the walk (D10), and is
+            // refused by name here all the same.
+            if let Some(ty) = var.value_type.as_ref().filter(|t| t.map_key().is_some()) {
+                let empty = target
+                    .map_empty()
+                    .ok_or_else(|| map_not_lowered(&format!("<data id=\"{}\">", var.id), lang))?;
+                if let Some(element) = target.data_element(&var.id, &empty) {
+                    rewrites.note_element(var.value_type_spelling.as_ref(), &element);
+                }
+                let set = matches!(ty, crate::forge::model::AlgorithmValueType::Set { .. });
+                fields.push(StaticField {
+                    id: var.id.clone(),
+                    name,
+                    ty: ty.as_attr(),
+                    init: empty,
+                    published,
+                    view: None,
+                    read: None,
+                    bound: var.capacity(),
+                    saved_kind: if set { "set" } else { "map" },
+                    saved_type: ty.as_attr(),
+                    saved_elem: None,
+                    elem_ty: None,
+                    reader: None,
+                    holds_bytes: false,
+                    seeded: false,
+                    module_parameter: false,
+                });
                 continue;
             }
             // A list starts empty. Its elements are numbers and bools, or
@@ -8050,6 +8251,7 @@ pub fn lower(
         deadline_text: rewrites.deadline_text.get(),
         sites: rewrites.sites.into_inner(),
         elements: rewrites.elements.into_inner(),
+        keyed_loops: rewrites.keyed_loops.into_inner(),
         logs_a_value: rewrites.logs_a_value.get(),
     })
 }
@@ -9438,6 +9640,9 @@ struct Rewrites<'m> {
     /// The elements the walk has lowered to another
     /// ([`StaticLowering::elements`]).
     elements: std::cell::RefCell<Vec<LoweredElement>>,
+    /// The `<foreach>`es over a map the walk has lowered that bind a key
+    /// ([`StaticLowering::keyed_loops`]).
+    keyed_loops: std::cell::RefCell<Vec<crate::attribute_spelling::AttributeSpelling>>,
     /// The number the next `<if>` the walk writes takes
     /// ([`Action::if_ordinal`]): one past the largest the document holds, so a
     /// choice the walk expands ([`expand_computed_type`]) never shares the flag a
@@ -20259,6 +20464,21 @@ fn lower_action(
                 lower_optional_record_assign(action, place, ctx, renames, rewrites)?;
                 return Ok(reads_payload);
             }
+            // ... and a map or a set variable takes another whole, copied: the
+            // judge held the value to a map variable whose type the location's
+            // fits, so the copy cannot fail (docs/adr/0108, D2 and D3).
+            if rewrites.scope.map_variable(&action.location).is_some() {
+                let location = action.location.trim();
+                let value = lower(&action.expr, InferredType::Unknown)?;
+                let copy = target.map_copy(&value.text).ok_or_else(|| {
+                    map_not_lowered(&format!("<assign location=\"{location}\">"), lang)
+                })?;
+                rewrites.note(&action.expr, action.spellings.get("expr"), &copy);
+                let name = renames.get(location).copied().unwrap_or(location);
+                action.native_code = target.assign(name, &copy);
+                action.native_fails = value.can_fail;
+                return Ok(reads_payload);
+            }
             // ... and a list variable takes a list a place holds whole, copied
             // into its own type, which the value's fits (docs/adr/0086, sections
             // 5.1 and 6.1).
@@ -20379,8 +20599,13 @@ fn lower_action(
                 }
                 // The element of a list of records at an index, whole: a target
                 // that reads one whole copies it as it copies a named record; any
-                // other copies the element a field at a time.
-                Some((_, schema)) if indexed_element(&action.expr).is_some() => {
+                // other copies the element a field at a time. The value of a map
+                // of records at a key is read whole by the expression that reads
+                // it (docs/adr/0108, D3), and copied below as a named record is.
+                Some((_, schema))
+                    if indexed_element(&action.expr)
+                        .is_some_and(|(list, _)| rewrites.scope.map_variable(list).is_none()) =>
+                {
                     let (list, index) =
                         indexed_element(&action.expr).expect("guarded by the match above");
                     let lowered = lower(index, InferredType::Unknown)?;
@@ -20889,6 +21114,81 @@ fn lower_action(
             action.native_code = target.clear(name);
             rewrites.note_element(action.spellings.get("target"), &action.native_code);
         }
+        // docs/adr/0108, D3 and D4: an entry of a map or a set put or removed at
+        // its key, and what the statement did written where `outcome` names. A
+        // put that names no outcome into a full map, and a key or a value that
+        // cannot be computed or held, fails, and so ends the block (§scxml-4.9)
+        // as a full list's append does: either statement can always fail.
+        "sce_put" | "sce_remove" => {
+            reads_payload = reads(&action.key) || reads(&action.expr);
+            let map = action.location.trim().to_string();
+            let put = action.action_type == "sce_put";
+            let element = format!(
+                "<sce:{} target=\"{map}\">",
+                if put { "put" } else { "remove" }
+            );
+            let unlowered = |why: &str| GenerateError::unsupported(format!("{element}: {why}"));
+            let place = ctx
+                .value_of(&map)
+                .filter(crate::forge::value_path::Place::is_keyed)
+                .ok_or_else(|| unlowered("its target names no map or set variable"))?;
+            let capacity = rewrites
+                .scope
+                .map_variable(&map)
+                .and_then(|(var, _)| var.capacity())
+                .ok_or_else(|| unlowered("its target names no map or set of a stated bound"))?;
+            let key_place = place
+                .map_key()
+                .ok_or_else(|| unlowered("its target names no map or set variable"))?;
+            let key = map_part(
+                &action.key,
+                &key_place.ty,
+                renames,
+                rewrites,
+                &lower,
+                &lower_bounded,
+            )?;
+            let value = place
+                .map_value()
+                .filter(|_| put)
+                .map(|value| {
+                    map_part(
+                        &action.expr,
+                        &value.ty,
+                        renames,
+                        rewrites,
+                        &lower,
+                        &lower_bounded,
+                    )
+                })
+                .transpose()?;
+            let outcome = action.outcome.trim();
+            let outcome =
+                (!outcome.is_empty()).then(|| renames.get(outcome).copied().unwrap_or(outcome));
+            let write = MapWrite {
+                map: renames.get(map.as_str()).copied().unwrap_or(map.as_str()),
+                place: &place,
+                types: ctx.value_scope,
+                capacity,
+                key: &key.text,
+                op: if put {
+                    MapOp::Put {
+                        value: value.as_ref().map(|value| value.text.as_str()),
+                    }
+                } else {
+                    MapOp::Remove
+                },
+                outcome,
+            };
+            action.native_code = target
+                .map_write(&write)
+                .ok_or_else(|| map_not_lowered(&element, lang))?;
+            action.native_fails = true;
+            // The whole element, for a target that rewrites the document
+            // itself: its statement is the element that writes the map and
+            // holds the key and the value, so neither is noted beside it.
+            rewrites.note_element(action.spellings.get("target"), &action.native_code);
+        }
         // docs/adr/0087, section 2.1: the text read as a record of the schema,
         // or the refusal kept; the judge held every name to its type before this
         // walk ([`crate::forge::static_datamodel`]), so what is missing here is a
@@ -21001,6 +21301,10 @@ fn lower_action(
         // nothing else is nested below it (§scxml-4.6).
         "foreach" => {
             let list = action.array.trim().to_string();
+            // A map or a set is walked by its entries (docs/adr/0108, D5).
+            if rewrites.scope.map_variable(&list).is_some() {
+                return lower_map_foreach(action, &list, ctx, renames, rewrites);
+            }
             let walked = match rewrites.lists.get(list.as_str()) {
                 Some((elem, capacity)) => {
                     // What a target that has to name the item's type and the list
@@ -21440,6 +21744,134 @@ fn lower_action(
         _ => {}
     }
     Ok(lower_nested(action, ctx, renames, rewrites)? || reads_payload)
+}
+
+/// A `<foreach>` over the map or set variable `map` (docs/adr/0108, D5): its
+/// item bound to each value of a map and each key of a set, its `sce:key` to
+/// each key of a map, and its index to each position from 0, in the order the
+/// keys were first put and over the map as it was when the loop began
+/// (§scxml-4.6). The body is lowered in a scope that binds them, each read as
+/// the target reads what the loop binds its item to
+/// ([`StaticTarget::map_entry`]); a record item or key is a record the body may
+/// take whole by name, as a list's record item is. `true` when the body reads
+/// the payload of the event the transition is on.
+fn lower_map_foreach(
+    action: &mut Action,
+    map: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<bool, GenerateError> {
+    use crate::forge::type_ctx::LoopVariables;
+    use crate::forge::value_path::Place;
+    use crate::forge::value_type::ValueType;
+    let target = rewrites.target;
+    let lang = target.name();
+    let construct = format!("<foreach array=\"{map}\">");
+    let place = ctx
+        .value_of(map)
+        .filter(Place::is_keyed)
+        .ok_or_else(|| GenerateError::unsupported(format!("{construct} names no map variable")))?;
+    let item = action.item.trim().to_string();
+    let index = action.index.trim().to_string();
+    let key = action.key.trim().to_string();
+    let item_local = target.expr_target().local_spelling(&item);
+    let entry = target
+        .map_entry(&item_local, place.is_set())
+        .ok_or_else(|| map_not_lowered(&construct, lang))?;
+    // The map as the loop's head reaches it, for a target that runs the
+    // document's own `<foreach>` (the Interpreter).
+    let name = renames.get(map).copied().unwrap_or(map);
+    rewrites.note(&action.array, action.spellings.get("array"), name);
+    // A map's item is each value and its key each key; a set's item is each
+    // key, and it binds no other.
+    let (element, key_place) = match place.map_value() {
+        Some(value) => (value, place.map_key().filter(|_| !key.is_empty())),
+        None => (
+            place.map_key().ok_or_else(|| {
+                GenerateError::unsupported(format!("{construct} names no map variable"))
+            })?,
+            None,
+        ),
+    };
+    let record_of = |at: &Place| match &at.ty {
+        ValueType::Record { alias } => Some(alias.clone()),
+        _ => None,
+    };
+    let record_item = record_of(&element);
+    let record_key = key_place.as_ref().and_then(record_of);
+    let loop_variables = LoopVariables::of_place(
+        &item,
+        (!index.is_empty()).then_some(index.as_str()),
+        Some(element),
+        record_item
+            .as_deref()
+            .and_then(|alias| rewrites.schemas.get(alias)),
+    );
+    let loop_variables = match key_place {
+        Some(at) => loop_variables.with_key(LoopVariables::of_place(
+            &key,
+            None,
+            Some(at),
+            record_key
+                .as_deref()
+                .and_then(|alias| rewrites.schemas.get(alias)),
+        )),
+        None => loop_variables,
+    };
+    let mut inner = loop_variables.bind(ctx);
+    // A fact proven before the loop holds in its body only if nothing in the
+    // body ends it, as the judge read it (docs/adr/0055, section 3).
+    inner.proven = crate::forge::narrowing::loop_entry(&ctx.proven, &action.actions);
+    // Every read of the item and of the key in the body is a read of the entry
+    // the loop binds the item to.
+    let mut reads: Vec<(String, String)> = Vec::new();
+    if entry.value != item_local {
+        reads.push((item.clone(), entry.value));
+    }
+    if !key.is_empty() {
+        reads.push((key.clone(), entry.key));
+    }
+    // A loop variable the generated machine already has a field of that name
+    // would hide it in a backend that reaches fields by their bare names.
+    if let Some(clash) = [item.as_str(), key.as_str(), index.as_str()]
+        .into_iter()
+        .filter(|name| !name.is_empty())
+        .find(|name| {
+            let local = target.expr_target().local_spelling(name);
+            renames.values().any(|field| *field == local)
+        })
+    {
+        return Err(GenerateError::unsupported(format!(
+            "<foreach> names a loop variable `{clash}` that is the name {lang} gives a field of \
+             the machine"
+        )));
+    }
+    let inner_renames: HashMap<&str, &str> = renames
+        .iter()
+        .map(|(from, to)| (*from, *to))
+        .chain(reads.iter().map(|(from, to)| (from.as_str(), to.as_str())))
+        .collect();
+    let records: Vec<(String, String)> = [(&item, record_item), (&key, record_key)]
+        .into_iter()
+        .filter_map(|(name, alias)| Some((name.clone(), alias?)))
+        .collect();
+    rewrites
+        .loop_records
+        .borrow_mut()
+        .extend(records.iter().cloned());
+    if !key.is_empty() {
+        if let Some(array) = action.spellings.get("array") {
+            rewrites.keyed_loops.borrow_mut().push(array.clone());
+        }
+    }
+    let depth = rewrites.loop_depth.get();
+    rewrites.loop_depth.set(depth + 1);
+    let lowered = lower_actions(&mut action.actions, &inner, &inner_renames, rewrites);
+    rewrites.loop_depth.set(depth);
+    let kept = rewrites.loop_records.borrow().len() - records.len();
+    rewrites.loop_records.borrow_mut().truncate(kept);
+    lowered
 }
 
 /// The list a `<foreach>` walks, as the loop's lowering reads it: a list
@@ -22143,7 +22575,12 @@ fn lower_optional_record_assign(
             target,
             &lower,
         )?)?
-    } else if let Some((list, index)) = indexed_element(&written) {
+    } else if let Some((list, index)) =
+        indexed_element(&written).filter(|(list, _)| rewrites.scope.map_variable(list).is_none())
+    {
+        // An element of a list of records. The value of a map of records at a
+        // key is read whole by the expression that reads it (docs/adr/0108, D3),
+        // and lifted below as any record is.
         let lowered = lower(index, InferredType::Unknown)?;
         let named = renames.get(list).copied().unwrap_or(list);
         let element = target

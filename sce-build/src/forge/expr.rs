@@ -861,6 +861,12 @@ fn resolve_then_rename(
     lower_call_crossings(ast, ctx, target);
     lower_call_readings(ast, ctx, target);
     lower_enum_variant_refs(ast, ctx, target)?;
+    // docs/adr/0108, D3: a read of a map or a set, judged above, spelled on the
+    // one lowering that holds one, while each map is still the name the author
+    // wrote.
+    if matches!(target, ExprTarget::Js) {
+        lower_keyed_reads_for_js(ast, ctx)?;
+    }
     // docs/adr/0092, section 6.1: a read of a union's member, judged above
     // where its case is proven, spelled by the cases the facts leave, on the
     // backend whose machine holds a union.
@@ -7121,6 +7127,70 @@ fn keyed_builtin(
         _ => return None,
     };
     Some((builtin, keyed_place(args.first()?, ctx)?))
+}
+
+/// Each read of a map or a set of `expr` (docs/adr/0108, D3), spelled for the
+/// Interpreter's library, which holds a map as the array of its entries
+/// ([`crate::forge::static_js::map_descriptor`]): `has(m, k)` is a call of its
+/// `mapHas`, and `m[k]` of its `mapGet`, which fails `out-of-range` for a key
+/// that is absent, as an index outside a list does, and so is a call that can
+/// fail. `len(m)` is the length of the array, as a list's is, and is left as it
+/// is. Run after the reads are judged and before any rename, while each map is
+/// the place the author named; a scope that holds no map holds no such read.
+fn lower_keyed_reads_for_js(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
+    for child in expr.children_mut() {
+        lower_keyed_reads_for_js(child, ctx)?;
+    }
+    let (helper, held, fails) = match &expr.kind {
+        ExprKind::Index { object, .. } => match keyed_place(object, ctx) {
+            Some(held) => ("mapGet", held, true),
+            None => return Ok(()),
+        },
+        ExprKind::Call { callee, args, .. } => match keyed_builtin(callee, args, ctx) {
+            Some((KeyedBuiltin::Has, held)) => ("mapHas", held, false),
+            _ => return Ok(()),
+        },
+        _ => return Ok(()),
+    };
+    let unspelled = || {
+        ExprError::UnsupportedConstruct {
+            construct: format!(
+                "a read of the map or set of type `{}`, whose key has no ecmascript spelling",
+                held.ty
+            ),
+            observed: None,
+        }
+        .at(expr.span.clone())
+    };
+    let Some(descriptor) = crate::forge::static_js::map_descriptor(&held, ctx.value_scope) else {
+        return Err(unspelled());
+    };
+    let (map, key) = match std::mem::replace(&mut expr.kind, ExprKind::NullLit) {
+        ExprKind::Index { object, index } => (*object, *index),
+        ExprKind::Call { args, .. } => {
+            let mut args = args.into_iter();
+            match (args.next(), args.next()) {
+                (Some(map), Some(key)) => (map, key),
+                _ => return Err(unspelled()),
+            }
+        }
+        other => {
+            expr.kind = other;
+            return Ok(());
+        }
+    };
+    expr.kind = ExprKind::Call {
+        callee: Box::new(TypedExpr::new(ExprKind::Raw(format!(
+            "{}.{helper}",
+            crate::forge::static_js::RUNTIME_GLOBAL
+        )))),
+        args: vec![map, TypedExpr::new(ExprKind::Raw(descriptor)), key],
+        params: Vec::new(),
+        fails,
+        into_destination: false,
+        storage: None,
+    };
+    Ok(())
 }
 
 /// Where the key of a read at a key of the map `map` names stands
