@@ -22,9 +22,9 @@
 typedef struct {
     uint8_t head;
     /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint8_t count;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
     struct { bool present; struct { codec_chain_flag_entry_t data[4]; size_t len; } value; } entries;
+    /* The `wide` every entry of `entries` says (docs/adr/0065 §6 R8). */
+    uint8_t entries_start_wide;
 } codec_repeat_flag_gated_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -51,19 +51,18 @@ static inline sce_forge_codec_status_t codec_repeat_flag_gated_decode(sce_forge_
         out->head = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    uint8_t _d_count = 0;
     if ((out->head & 0x02) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->count = sce_optional_uint8_some((uint8_t)(raw[0]));
+        _d_count = (uint8_t)(raw[0]);
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->count = sce_optional_uint8_none();
     }
     if ((out->head & 0x02) != 0) {
-        if (out->count.value > 4) {
+        if (_d_count > 4) {
             return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
         }
-        size_t _n = (size_t)out->count.value;
+        size_t _n = (size_t)_d_count;
         memset(&out->entries, 0, sizeof out->entries);
         for (size_t _i = 0; _i < _n; ++_i) {
             sce_forge_codec_status_t _st = codec_chain_flag_entry_decode(cursor, &out->entries.value.data[_i], (uint8_t)((out->head >> 0) & 0x1));
@@ -74,6 +73,172 @@ static inline sce_forge_codec_status_t codec_repeat_flag_gated_decode(sce_forge_
     } else {
         memset(&out->entries, 0, sizeof out->entries);
     }
+    out->entries_start_wide = (uint8_t)(((((uint64_t)out->head >> 0) & 1u) != 0) ? 1u : 0u);
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The `entries` element of codec_repeat_flag_gated_t: a list of 0 to 4 entries of codec_chain_flag_entry_t,
+ * walked where it is held, which outlives the list. A list is made by
+ * codec_repeat_flag_gated_entries_list_make, which walks it once, counts its entries and refuses one
+ * outside the bound, so every list holds it (docs/adr/0081 §2) and the
+ * encode over a source writes its `count` entries, refusing nothing of
+ * the count. */
+typedef struct {
+    const sce_forge_walk_t *walk;
+    const void *ctx;
+    const codec_chain_flag_entry_source_t *entry;
+    size_t count;
+    uint8_t start_wide;
+} codec_repeat_flag_gated_entries_list_t;
+
+/* Make `*out` the list `walk` presents over `ctx`, each entry a source of
+ * codec_chain_flag_entry_t by `entry`: SCE_FORGE_CODEC_OK, or the refusal of a list
+ * outside its bound, `*out` then as it was.
+ * Each entry says the inputs its law asks of its place (docs/adr/0065
+ * §6 R8), or the list is refused with
+ * SCE_FORGE_CODEC_PRESENT_IF_MISMATCH. */
+static inline sce_forge_codec_status_t codec_repeat_flag_gated_entries_list_make(codec_repeat_flag_gated_entries_list_t *out, const sce_forge_walk_t *walk, const void *ctx, const codec_chain_flag_entry_source_t *entry, uint8_t start_wide) {
+    size_t count = 0;
+    for (const void *at = walk->begin(ctx); at != NULL; at = walk->next(ctx, at)) {
+        ++count;
+        if (!sce_forge_length_within_bound(count, 4)) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
+        if (((codec_chain_flag_entry_input_wide(entry, at)) != 0) != (start_wide != 0)) {
+            return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+        }
+    }
+    out->walk = walk;
+    out->ctx = ctx;
+    out->entry = entry;
+    out->count = count;
+    out->start_wide = start_wide;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* A list of codec_repeat_flag_gated_entries_list_t that may be absent: absent where the gate leaves the
+ * element out. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_repeat_flag_gated_entries_list_optional, codec_repeat_flag_gated_entries_list_t)
+
+/* The elements a value of codec_repeat_flag_gated_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_repeat_flag_gated_t is a source by the table
+ * codec_repeat_flag_gated_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*head)(const void *ctx);
+    codec_repeat_flag_gated_entries_list_optional_t (*entries)(const void *ctx);
+} codec_repeat_flag_gated_source_t;
+
+/* A source of codec_repeat_flag_gated_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_repeat_flag_gated_source_t *table;
+    const void *ctx;
+} codec_repeat_flag_gated_source_ref_t;
+
+/* A source of codec_repeat_flag_gated_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_repeat_flag_gated_source_ref_optional, codec_repeat_flag_gated_source_ref_t)
+
+/* The `head` of the codec_repeat_flag_gated_t at `ctx`. */
+static inline uint8_t codec_repeat_flag_gated_value_head(const void *ctx) {
+    return ((const codec_repeat_flag_gated_t *)ctx)->head;
+}
+
+/* The first entry of the `entries` of the codec_repeat_flag_gated_t at `ctx`, or NULL where
+ * it holds none. */
+static inline const void *codec_repeat_flag_gated_value_entries_begin(const void *ctx) {
+    const codec_repeat_flag_gated_t *self = (const codec_repeat_flag_gated_t *)ctx;
+    return self->entries.value.len > 0u ? (const void *)&self->entries.value.data[0] : NULL;
+}
+
+/* The entry after `entry` of the `entries` of the codec_repeat_flag_gated_t at `ctx`, or
+ * NULL where `entry` is its last. */
+static inline const void *codec_repeat_flag_gated_value_entries_next(const void *ctx, const void *entry) {
+    const codec_repeat_flag_gated_t *self = (const codec_repeat_flag_gated_t *)ctx;
+    const codec_chain_flag_entry_t *at = (const codec_chain_flag_entry_t *)entry + 1;
+    return at < self->entries.value.data + self->entries.value.len ? (const void *)at : NULL;
+}
+
+/* The `entries` of the codec_repeat_flag_gated_t at `ctx`. */
+static inline codec_repeat_flag_gated_entries_list_optional_t codec_repeat_flag_gated_value_entries(const void *ctx) {
+    static const sce_forge_walk_t walk = {
+        codec_repeat_flag_gated_value_entries_begin,
+        codec_repeat_flag_gated_value_entries_next,
+    };
+    const codec_repeat_flag_gated_t *self = (const codec_repeat_flag_gated_t *)ctx;
+    if (!self->entries.present) {
+        return codec_repeat_flag_gated_entries_list_optional_none();
+    }
+    codec_repeat_flag_gated_entries_list_t list;
+    list.walk = &walk;
+    list.ctx = ctx;
+    list.entry = codec_chain_flag_entry_value_source();
+    list.count = self->entries.value.len;
+    list.start_wide = self->entries_start_wide;
+    return codec_repeat_flag_gated_entries_list_optional_some(list);
+}
+
+/* The table that presents a value of codec_repeat_flag_gated_t as a source of it, its
+ * context a `const codec_repeat_flag_gated_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_repeat_flag_gated_source_t *codec_repeat_flag_gated_value_source(void) {
+    static const codec_repeat_flag_gated_source_t table = {
+        codec_repeat_flag_gated_value_head,
+        codec_repeat_flag_gated_value_entries,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_repeat_flag_gated_encode_source(const codec_repeat_flag_gated_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint8_t _e_head = src->head(ctx);
+    const codec_repeat_flag_gated_entries_list_optional_t _e_entries = src->entries(ctx);
+    const uint8_t _d_count = _e_entries.present ? (uint8_t)(_e_entries.value.count) : (uint8_t)0;
+    uint64_t _f_head = (uint64_t)_e_head;
+    if (_e_entries.present) {
+        _f_head = (_f_head & ~0x1ull) | (uint64_t)((size_t)_e_entries.value.start_wide);
+    }
+    _f_head = (_f_head & ~0x2ull) | ((uint64_t)(_e_entries.present) << 1);
+    const uint8_t _c_head = (uint8_t)_f_head;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_head));
+    if ((((uint64_t)_c_head & 0x2ull) != 0)) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _d_count));
+    }
+    if (_e_entries.present) {
+        {
+            const void *_at = _e_entries.value.walk->begin(_e_entries.value.ctx);
+            for (size_t _i = 0; _i < _e_entries.value.count && _at != NULL; ++_i) {
+                SCE_FORGE_TRY_WRITE(codec_chain_flag_entry_encode_source(_e_entries.value.entry, _at, w));
+                _at = _e_entries.value.walk->next(_e_entries.value.ctx, _at);
+            }
+        }
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Whether `self` is a value of codec_repeat_flag_gated_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_repeat_flag_gated_check_value(const codec_repeat_flag_gated_t *self) {
+    if (self->entries.present) {
+        if (!sce_forge_length_within_bound(self->entries.value.len, 4)) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
+        for (size_t _i = 0; _i < self->entries.value.len; ++_i) {
+            SCE_FORGE_TRY_WRITE(codec_chain_flag_entry_check_value(&self->entries.value.data[_i]));
+        }
+        {
+            const codec_repeat_flag_gated_entries_list_t _l = codec_repeat_flag_gated_value_entries(self).value;
+            codec_repeat_flag_gated_entries_list_t _made;
+            SCE_FORGE_TRY_WRITE(codec_repeat_flag_gated_entries_list_make(&_made, _l.walk, _l.ctx, _l.entry, _l.start_wide));
+        }
+    }
     return SCE_FORGE_CODEC_OK;
 }
 
@@ -82,33 +247,13 @@ static inline sce_forge_codec_status_t codec_repeat_flag_gated_decode(sce_forge_
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_REPEAT_FLAG_GATED_MAX_BYTES bytes and use
  * `codec_repeat_flag_gated_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_repeat_flag_gated_encode(const codec_repeat_flag_gated_t *self, sce_forge_writer_t *w) {
-    /* A byte string, text, list or chain above the bound of the array that
-     * holds it is refused before the first byte is written: the array cannot
-     * hold that many, and a frame of fewer is not the value given. */
-    if (self->entries.present && !sce_forge_length_within_bound(self->entries.value.len, 4)) {
-        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
-    }
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->head));
-    if (self->count.present) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->count.value));
-    }
-    if (self->entries.present) {
-        for (size_t _ri = 0; _ri < self->entries.value.len; ++_ri) {
-            SCE_FORGE_TRY_WRITE(codec_chain_flag_entry_encode(&self->entries.value.data[_ri], w, (uint8_t)((self->head >> 0) & 0x1)));
-        }
-    }
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_repeat_flag_gated_check_value(self));
+    return codec_repeat_flag_gated_encode_source(codec_repeat_flag_gated_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`

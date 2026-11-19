@@ -13,7 +13,6 @@ static inline int test_vector_codec_zenoh_locator(void) {
     int failures = 0;
     {
         codec_zenoh_locator_t actual = {0};
-        actual.locator_len = (uint64_t)0x0uLL;
         {
             static const char _str[] = "";
             /* sizeof _str includes the implicit NUL terminator; the
@@ -24,6 +23,9 @@ static inline int test_vector_codec_zenoh_locator(void) {
              * length sibling). */
             size_t _str_len = sizeof _str - 1;
             memcpy(actual.locator, _str, _str_len);
+            /* The text's own length: a row of a codec printed from its plan
+             * states no length the encode derives (docs/adr/0081 §3). */
+            actual.locator_len = _str_len;
         }
         uint8_t _encoded_buf[CODEC_ZENOH_LOCATOR_MAX_BYTES];
         size_t _encoded_len = 0;
@@ -53,12 +55,6 @@ static inline int test_vector_codec_zenoh_locator(void) {
                 sce_forge_cursor_remaining(&_cursor));
             ++failures;
         } else {
-            if (decoded.locator_len != (uint64_t)0x0uLL) {
-                fprintf(stderr,
-                    "FAIL: codec_zenoh_locator test_vector @SCXML L39: "
-                    "field `locator_len` mismatch\n");
-                ++failures;
-            }
             {
                 static const char _expected_str[] = "";
                 size_t _expected_len = sizeof _expected_str - 1;
@@ -79,7 +75,6 @@ static inline int test_vector_codec_zenoh_locator(void) {
     }
     {
         codec_zenoh_locator_t actual = {0};
-        actual.locator_len = (uint64_t)0x3uLL;
         {
             static const char _str[] = "abc";
             /* sizeof _str includes the implicit NUL terminator; the
@@ -90,6 +85,9 @@ static inline int test_vector_codec_zenoh_locator(void) {
              * length sibling). */
             size_t _str_len = sizeof _str - 1;
             memcpy(actual.locator, _str, _str_len);
+            /* The text's own length: a row of a codec printed from its plan
+             * states no length the encode derives (docs/adr/0081 §3). */
+            actual.locator_len = _str_len;
         }
         uint8_t _encoded_buf[CODEC_ZENOH_LOCATOR_MAX_BYTES];
         size_t _encoded_len = 0;
@@ -119,12 +117,6 @@ static inline int test_vector_codec_zenoh_locator(void) {
                 sce_forge_cursor_remaining(&_cursor));
             ++failures;
         } else {
-            if (decoded.locator_len != (uint64_t)0x3uLL) {
-                fprintf(stderr,
-                    "FAIL: codec_zenoh_locator test_vector @SCXML L43: "
-                    "field `locator_len` mismatch\n");
-                ++failures;
-            }
             {
                 static const char _expected_str[] = "abc";
                 size_t _expected_len = sizeof _expected_str - 1;
@@ -145,7 +137,6 @@ static inline int test_vector_codec_zenoh_locator(void) {
     }
     {
         codec_zenoh_locator_t actual = {0};
-        actual.locator_len = (uint64_t)0x12uLL;
         {
             static const char _str[] = "tcp/127.0.0.1:7447";
             /* sizeof _str includes the implicit NUL terminator; the
@@ -156,6 +147,9 @@ static inline int test_vector_codec_zenoh_locator(void) {
              * length sibling). */
             size_t _str_len = sizeof _str - 1;
             memcpy(actual.locator, _str, _str_len);
+            /* The text's own length: a row of a codec printed from its plan
+             * states no length the encode derives (docs/adr/0081 §3). */
+            actual.locator_len = _str_len;
         }
         uint8_t _encoded_buf[CODEC_ZENOH_LOCATOR_MAX_BYTES];
         size_t _encoded_len = 0;
@@ -185,12 +179,6 @@ static inline int test_vector_codec_zenoh_locator(void) {
                 sce_forge_cursor_remaining(&_cursor));
             ++failures;
         } else {
-            if (decoded.locator_len != (uint64_t)0x12uLL) {
-                fprintf(stderr,
-                    "FAIL: codec_zenoh_locator test_vector @SCXML L47: "
-                    "field `locator_len` mismatch\n");
-                ++failures;
-            }
             {
                 static const char _expected_str[] = "tcp/127.0.0.1:7447";
                 size_t _expected_len = sizeof _expected_str - 1;
@@ -211,7 +199,6 @@ static inline int test_vector_codec_zenoh_locator(void) {
     }
     {
         codec_zenoh_locator_t actual = {0};
-        actual.locator_len = (uint64_t)0x6uLL;
         {
             static const char _str[] = "héllo";
             /* sizeof _str includes the implicit NUL terminator; the
@@ -222,6 +209,9 @@ static inline int test_vector_codec_zenoh_locator(void) {
              * length sibling). */
             size_t _str_len = sizeof _str - 1;
             memcpy(actual.locator, _str, _str_len);
+            /* The text's own length: a row of a codec printed from its plan
+             * states no length the encode derives (docs/adr/0081 §3). */
+            actual.locator_len = _str_len;
         }
         uint8_t _encoded_buf[CODEC_ZENOH_LOCATOR_MAX_BYTES];
         size_t _encoded_len = 0;
@@ -251,12 +241,6 @@ static inline int test_vector_codec_zenoh_locator(void) {
                 sce_forge_cursor_remaining(&_cursor));
             ++failures;
         } else {
-            if (decoded.locator_len != (uint64_t)0x6uLL) {
-                fprintf(stderr,
-                    "FAIL: codec_zenoh_locator test_vector @SCXML L51: "
-                    "field `locator_len` mismatch\n");
-                ++failures;
-            }
             {
                 static const char _expected_str[] = "héllo";
                 size_t _expected_len = sizeof _expected_str - 1;

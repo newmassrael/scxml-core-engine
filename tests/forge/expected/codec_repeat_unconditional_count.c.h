@@ -92,7 +92,9 @@ static inline sce_forge_codec_status_t codec_repeat_unconditional_count_decode(s
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_REPEAT_UNCONDITIONAL_COUNT_MAX_BYTES bytes and use
  * `codec_repeat_unconditional_count_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_repeat_unconditional_count_encode(const codec_repeat_unconditional_count_t *self, sce_forge_writer_t *w) {
     /* A byte string, text, list or chain above the bound of the array that
      * holds it is refused before the first byte is written: the array cannot
