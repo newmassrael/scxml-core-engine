@@ -6340,34 +6340,50 @@ wherever it is read. The Interpreter's lowering holds an algorithm's map
 never changed in place: a parameter lent to be read is the caller's array, and
 one declared `inout` arrives in a holder `{map, capacity}` the function reads
 the array out of, holds each put to the capacity, the bound of the caller's
-variable, and leaves the array it ends with in, however it returns. C11 lends
-an algorithm each map by the address of its caller's storage, the core every map
-type of `sce/forge/map.h` begins with (`const sce_map_core_t *` for a slot read,
-`sce_map_core_t *` for one declared `inout`), which views a map of any bound and
-is never copied: `len`, `has` and `m[k]` are the header's functions over that
-address, the value read as the type the algorithm names for it, and a read at a
-key in an algorithm that does not declare `may-fail`, proven present, records no
-failure. A put, a remove and a clear write the map where the caller holds it,
-the key and the value computed into locals of one entry each, and an `outcome`
-takes the standard enum's variant of the same name as what the header answered.
-A `<sce:foreach in>` whose body writes nothing of the map walks the map itself,
-binding a copy of one entry at a time, a text as its buffer's text and a byte
-string as a view of its buffer. No C11 frame holds a map's bound
-(docs/adr/0082): the map an algorithm returns is built in the destination its
-caller hands it last with the caller's failure record, as a list return is, a
-map of the caller's bound and seed emptied where the returned local is
-declared, and the call answers whether it built it. Every other map local, and
-the copy a walk whose body writes the map it walks takes as the loop begins,
-is a member of the struct `<symbol>_maps_t` the algorithm declares, which the
-caller holds and hands by its address after the arguments; the copy of a map
-the caller lends or takes back is storage the caller hands for it, a machine's
-map of the largest bound it could lend. A local of the algorithm's own is
-started where it is declared under a seed derived (`sce_map_seed_of_child`)
-from the seed of a map it is lent or returns, and an algorithm that has
-neither takes a `sce_map_seed_t` last, which a machine hands it from the seed
-its own maps were started under; a machine that holds no map, and so is started
-under no seed, refuses the call by name. A machine holds this storage in its
-`scratch`, beside the rest of a call's. A generated
+variable, and leaves the array it ends with in, however it returns. Rust and
+C11 hold an algorithm's map in the type a machine's variable of the same parts
+is held in, a record in the type its unit declares and a value of an enum in
+its document's type (D6 item 4), and lend it where the caller holds it, never
+copied and never crossed. Rust names `BoundedMap<K, V, N>` or
+`BoundedSet<K, N>` through `sce_portable_bytes`, and a parameter, generic over
+the bound its caller's variable states (`const N0: usize`), takes the map `&`
+to be read or `&mut` where it is `inout`. C11 lends the address of the caller's
+storage, the core every map type of `sce/forge/map.h` begins with
+(`const sce_map_core_t *` for a slot read, `sce_map_core_t *` for one declared
+`inout`), which views a map of any bound, a value read as the type the
+algorithm names for it. `len(m)`, `has(m, k)` and `m[k]` are the runtime's reads
+(`sce_portable_bytes::map`, the header's functions); in an algorithm that does
+not declare `may-fail` a value at a key, proven held, records no failure (Rust
+reads it by `held` and `held_cloned`, which panic on a key that is absent as a
+proven index read past a list does). `<sce:put>`, `<sce:remove>` and
+`<sce:clear>` write the map where it stands, an `outcome` taking the standard
+enum's variant of the same name as what the runtime answered, and a put with no
+outcome fails `capacity-exceeded` on a full map. `<sce:foreach in item key>`
+walks the map's positions, over the map itself where nothing in its body writes
+the map and over a copy taken where it begins where something does (D6 item 3),
+binding one entry at a time: Rust a number and a `bool` by copy and any other
+part by a clone, C11 a copy of the entry, a text as its buffer's text and a byte
+string as a view of its buffer. A map return is built in the caller's
+destination, a parameter after the declared ones, as a list return is, emptied
+where the returned local is declared, and the call answers whether it built it
+(Rust `Result<(), AlgorithmError>` and `&mut` the map of the local's bound; C11
+`bool`, the address of a map of the caller's bound and seed handed with the
+caller's failure record). Rust holds every other map local, and the copy a
+writing walk takes, in its frame. No C11 frame holds a map's bound
+(docs/adr/0082): every other map local, and the copy a writing walk takes, is a
+member of the struct `<symbol>_maps_t` the algorithm declares, which the caller
+holds and hands by its address after the arguments; the copy of a map the
+caller lends or takes back is storage the caller hands for it, a machine's map
+of the largest bound it could lend, and a machine holds this storage in its
+`scratch`, beside the rest of a call's. A local of the algorithm's own is keyed
+under a seed derived from the seed of a map the algorithm is lent or returns
+(D8), on Rust by its number among such locals, on C11 under its name
+(`sce_map_seed_of_child`). A C11 algorithm that has neither takes a
+`sce_map_seed_t` last, which a machine hands it from the seed its own maps were
+started under, and a machine that holds no map, and so is started under no
+seed, refuses the call by name; a Rust one is refused, having no seed to draw
+from. A key or a value that is a text or a byte string is refused by name on
+Rust. A generated
 backend that does not lower one yet refuses such an algorithm as
 `generate/unsupported-feature`, naming the slot and that record, before any
 statement of its body is lowered, and a statechart lends one a map by name, as
@@ -6409,12 +6425,15 @@ is refused as `generate/unsupported-feature` where the call is lowered. The
 Interpreter lowers the call ("Order of work", step 7): a `<script>` that lends
 each map written in place in a holder carrying its variable's bound, makes the
 call, and then writes each variable from its holder and the answer into
-`location`, all once the call has returned. C11 lowers the call as a call of
-the machine's adapter, each map lent by the address of the machine's own
-storage, which the adapter hands on as it is: the algorithm writes the map where
-the machine holds it, so nothing is written back, and the statement stores the
-answer into `location` as an `<assign>` of it does. A generated lane that lends
-no algorithm a map yet refuses the document as `generate/unsupported-feature`,
+`location`, all once the call has returned. Rust and C11 lower the call as a
+call of the machine's adapter, each map lent where the machine holds it (Rust
+`&mut` its variable to be written and `&` it to be read, the adapter generic
+over each map's bound; C11 the address of the machine's own storage), which the
+adapter hands on as it is: the algorithm writes the map where the machine holds
+it, so nothing is written back, the adapter crosses only the call's records,
+enums and union, and the statement stores the answer into `location` as an
+`<assign>` of it does. A generated lane that lends no algorithm a map yet
+refuses the document as `generate/unsupported-feature`,
 naming that record.
 `sce-build/tests/fixtures/static_datamodel/static_map_take.scxml` hands
 `algorithm_take_generation.scxml` its table and branches on the union it
