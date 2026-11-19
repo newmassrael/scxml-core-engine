@@ -332,9 +332,16 @@ only), and judges each request before anything is sent:
   second resolution of the name, so a name that answers another address between
   the check and the connect cannot pass; `Host` and the TLS server name stay the
   URL's host, and TLS is verified against it.
-- No redirect is followed and no proxy is used. A connection, a TLS handshake, the
-  response's head and the whole exchange each have a bound, which fails `network`;
-  a body or a head past the transport's bound fails `response_too_large`.
+- No redirect is followed. A connection, a TLS handshake, the response's head and
+  the whole exchange each have a bound, which fails `network`; a body or a head
+  past the transport's bound fails `response_too_large`.
+- No proxy is read from the environment. A proxy the deployment configures is
+  reached as itself: its own address is not judged, the target still is, as
+  without one. Every exchange through it is tunnelled with `CONNECT`, for `http`
+  as for `https`, to the address the policy admitted and not to the name, so the
+  proxy never resolves the name either; TLS is still verified against the URL's
+  host. The proxy's credentials travel in the `CONNECT` alone and never reach the
+  target, and a proxy that refuses the tunnel fails `network`.
 
 ## 6. Generated text
 
@@ -540,7 +547,9 @@ policy (section 5) are held besides, against a server on a loopback port and a
 resolver the test scripts, to refusing a name that resolves to loopback before a
 byte is sent while serving one the allow-list lets reach it, to resolving a name
 once per exchange and connecting to the address checked, to answering a redirect
-to a private address as the `3xx` it is, and to their bounds of time and size
+to a private address as the `3xx` it is, to their bounds of time and size, and,
+through a `CONNECT` proxy of the test, to judging the target, tunnelling to the
+address checked and keeping the proxy's credentials from the target
 (`backends/rust/host-http/tests/`, `tests/integration/AStandardHostCurlTransportTest.cpp`);
 each lane's policy is held to one table of addresses in every special-purpose
 range (`backends/rust/host-features/src/destination.rs`,
@@ -616,10 +625,6 @@ These are not built, and nothing here stands in for them:
   a transport of this feature; Rust's (`backends/rust/host-http`) and C++'s
   (`CurlTransport.h`) are, on the same stacks (section 5, "Destination
   policy").
-- **A proxy for the network transports of section 5.** The Rust and C++ ones
-  connect directly and read no proxy from the environment; a server whose
-  outbound requests must pass a proxy has no transport here that reaches it
-  while the target is still judged against the policy (docs/adr/0109, D4).
 - **A zone for the Rust host's system clock on a platform other than Unix**, which
   answers `unavailable` for `sce-host-clock-zone`.
 - **Delivery of a scheduled notification while the application is not running**,
