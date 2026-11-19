@@ -259,6 +259,15 @@ pub struct ComposedLowering {
     /// place's type (section 5.3). A `<raise>` carries no data, so none of
     /// those events is raised by any lowering.
     pub sends: bool,
+    /// Whether it holds a statechart's variable of `map<K, T>[B]` or
+    /// `set<K>[B]` (docs/adr/0108, D10): the machine's own bounded map, its
+    /// reads, its statements and its loop. A lowering that holds none refuses
+    /// such a variable by name, naming that record, and so every read and
+    /// statement of it. The checker judges a map before any lowering holds one
+    /// (docs/adr/0108, "Order of work", step 3), so the gate every route asks
+    /// lets one through ([`Self::ANY_BACKEND`]), and each lowering's own row
+    /// decides whether it generates one.
+    pub maps: bool,
 }
 
 impl ComposedLowering {
@@ -279,12 +288,16 @@ impl ComposedLowering {
         unions: true,
         records: true,
         sends: true,
+        maps: false,
     };
 
     /// What some generated backend lowers: the gate every route asks before a
     /// backend is chosen ([`crate::analyzer::can_generate_static`]) refuses only
     /// what none lowers, and each backend asks its own ([`Self::of`]) where it is
-    /// generated. Each position is the union of [`Self::of`] over every backend.
+    /// generated. Each position is the union of [`Self::of`] over every backend,
+    /// but a map: the checker judges one before any lowering holds one
+    /// (docs/adr/0108, "Order of work", step 3), so `check` accepts a well-formed
+    /// map and every lowering that holds none refuses it by name ([`Self::maps`]).
     pub const ANY_BACKEND: Self = Self {
         name: "backend",
         reads: true,
@@ -292,6 +305,7 @@ impl ComposedLowering {
         unions: true,
         records: true,
         sends: true,
+        maps: true,
     };
 
     /// What the backend `language` lowers: the one table of what each
@@ -320,6 +334,7 @@ impl ComposedLowering {
             unions: false,
             records: false,
             sends: false,
+            maps: false,
         };
         let walks = Self {
             reads: true,
@@ -455,6 +470,7 @@ fn first_unlowered_composed_use(
         unions: lowers_unions,
         records: lowers_records,
         sends: lowers_sends,
+        maps: lowers_maps,
     } = lowering;
     // Each refusal names the construct and the lowering that has none of it,
     // as every backend's refusal of what it does not lower yet does.
@@ -500,7 +516,16 @@ fn first_unlowered_composed_use(
                 line: Some(spelling.row()),
                 col: Some(spelling.col()),
             });
-        if let Err(composition) = ty.variable_view(lowers_unions) {
+        // A variable that is itself a map or a set is held where the lowering
+        // holds one (docs/adr/0108, D10); the checker refuses one held inside
+        // another type, and one of a value it does not read
+        // ([`crate::forge::static_datamodel::check`]).
+        let view = if lowers_maps && ty.map_key().is_some() {
+            Ok(ty)
+        } else {
+            ty.variable_view(lowers_unions)
+        };
+        if let Err(composition) = view {
             // A map's or a set's lowering lands lane by lane (docs/adr/0108,
             // D10), and its refusal names that record.
             let basis = composition
@@ -2748,6 +2773,46 @@ mod tests {
             ComposedLowering::ANY_BACKEND.sends,
             some_backend(|lowering| lowering.sends)
         );
+        // A map is the checker's before it is any lowering's (docs/adr/0108,
+        // "Order of work", step 3): the gate lets a map variable through, and
+        // each lowering's own row refuses it until its step lands.
+        assert!(ComposedLowering::ANY_BACKEND.maps);
+    }
+
+    /// docs/adr/0108, D10: a statechart's map or set variable passes the gate
+    /// every route asks, and is refused by name, naming the record, by every
+    /// lowering whose row holds none, the Interpreter's among them.
+    #[test]
+    fn a_map_variable_passes_the_gate_and_is_refused_by_each_lowering_that_holds_none() {
+        let mut model = SCXMLModel {
+            datamodel: crate::model::Datamodel::SceStatic,
+            ..SCXMLModel::default()
+        };
+        model.variables.push(crate::model::Variable {
+            id: "faces".into(),
+            value_type: crate::forge::model::AlgorithmValueType::read("map<uint32, bool>[4]").ok(),
+            ..crate::model::Variable::default()
+        });
+        assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_none());
+        let lowerings = crate::generator::Language::ALL
+            .iter()
+            .map(|language| ComposedLowering::of(*language))
+            .chain([ComposedLowering::ECMASCRIPT]);
+        for lowering in lowerings.filter(|lowering| !lowering.maps) {
+            let (refusal, _) = first_unlowered_composed_use(&model, lowering)
+                .unwrap_or_else(|| panic!("{} holds no map", lowering.name));
+            assert!(
+                refusal.contains("`map<uint32, bool>[4]` in a statechart's variable")
+                    && refusal.contains(&format!("has no {} lowering of its map", lowering.name))
+                    && refusal.contains("(docs/adr/0108, D10)"),
+                "{}: {refusal}",
+                lowering.name
+            );
+        }
+        // A map held inside another type is no variable a lowering holds yet.
+        model.variables[0].value_type =
+            crate::forge::model::AlgorithmValueType::read("list<set<uint8>[2]>[3]").ok();
+        assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_some());
     }
 
     /// Each backend's row says what its machine spells, no more and no less:

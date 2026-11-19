@@ -911,7 +911,8 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unknown_names(ast, ctx)?;
     reject_unnamed_record_elements(ast, ctx, source)?;
     reject_union_elements_as_parts(ast, ctx, source, true)?;
-    reject_misdirected_indexing(ast, source)?;
+    reject_misdirected_indexing(ast, ctx, source)?;
+    reject_misread_keys(ast, ctx, source)?;
     reject_unreadable_element_fields(ast, ctx, source)?;
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
     reject_record_text_misuse(ast, ctx, source, false)?;
@@ -1004,10 +1005,19 @@ fn reject_composed_operands(
         }
         ExprKind::Index { object, index } => {
             reject_composed_operands(object, ctx, source, ReadThrough::Part)?;
-            reject_composed_operands(index, ctx, source, ReadThrough::Operand)
+            reject_composed_operands(index, ctx, source, key_stands(object, ctx))
         }
         ExprKind::Call { callee, args, .. } if is_len_builtin(callee, args) => {
             reject_composed_operands(&args[0], ctx, source, ReadThrough::Part)
+        }
+        // A map or a set is read through by `len` and `has`, and a key stands
+        // where [`key_stands`] says (docs/adr/0108, D3).
+        ExprKind::Call { callee, args, .. } if keyed_builtin(callee, args, ctx).is_some() => {
+            reject_composed_operands(&args[0], ctx, source, ReadThrough::Part)?;
+            let stands = key_stands(&args[0], ctx);
+            args[1..]
+                .iter()
+                .try_for_each(|key| reject_composed_operands(key, ctx, source, stands))
         }
         ExprKind::Binary {
             op: BinOp::StrictEq | BinOp::StrictNeq,
@@ -1294,8 +1304,20 @@ fn reject_unreadable_element_fields(
     source: &str,
 ) -> Result<(), Refusal> {
     if let ExprKind::Member { object, property } = &expr.kind {
+        // The value at a key of a map of records is read as an element of a
+        // list of records is (docs/adr/0108, D3).
+        let record_value = |map: &TypedExpr| {
+            keyed_place(map, ctx)
+                .and_then(|held| held.map_value())
+                .is_some_and(|value| {
+                    matches!(value.ty, crate::forge::value_type::ValueType::Record { .. })
+                })
+        };
         let indexed = match &object.kind {
-            ExprKind::Index { object: list, .. } if matches!(list.ty, InferredType::List(elem) if elem.is_record()) => {
+            ExprKind::Index { object: list, .. }
+                if matches!(list.ty, InferredType::List(elem) if elem.is_record())
+                    || record_value(list) =>
+            {
                 place_path(list)
             }
             _ => None,
@@ -1749,7 +1771,15 @@ fn lower_union_reads(
 ///
 /// A type the lattice cannot name — an enum, a table's name — is `Unknown`
 /// and is let through: the name checks and the target's compiler own it.
-fn reject_misdirected_indexing(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+///
+/// A map is read at a key, whatever the key's type is (docs/adr/0108, D3): its
+/// key is judged against the map's ([`reject_misread_keys`]), and not as a
+/// position.
+fn reject_misdirected_indexing(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<(), Refusal> {
     let observed = || {
         expr.span
             .clone()
@@ -1783,7 +1813,7 @@ fn reject_misdirected_indexing(expr: &TypedExpr, source: &str) -> Result<(), Ref
             index.ty.strip_quantity(),
             InferredType::Int { .. } | InferredType::UntypedInt | InferredType::Unknown
         );
-        if !whole {
+        if !whole && keyed_place(object, ctx).is_none() {
             return Err(ExprError::UnsupportedConstruct {
                 construct: format!(
                     "an index of {} (an index is a whole number)",
@@ -1796,7 +1826,7 @@ fn reject_misdirected_indexing(expr: &TypedExpr, source: &str) -> Result<(), Ref
     }
     expr.children()
         .into_iter()
-        .try_for_each(|child| reject_misdirected_indexing(child, source))
+        .try_for_each(|child| reject_misdirected_indexing(child, ctx, source))
 }
 
 /// Refuse an element of a list of records read by index. A record is read
@@ -4245,13 +4275,27 @@ pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, Refusal> {
 /// its length, and one that is the object of an index is asked for one
 /// element (the index itself is still walked) — neither reads it as a value.
 /// What a `sce-static` list variable may appear as (SCE Accepted Subset
-/// §2.15) — anywhere else, it is a value it is not.
+/// §2.15) — anywhere else, it is a value it is not. The first argument of
+/// `has(…)` is asked whether it holds a key (the key itself is still walked),
+/// which a map or a set may be asked and is no read of it as a value either
+/// (docs/adr/0108, D3).
 pub fn identifiers_read_as_values(raw_expr: &str) -> Result<Vec<String>, Refusal> {
     fn walk(node: &TypedExpr, names: &mut Vec<String>) {
         if let ExprKind::Call { callee, args, .. } = &node.kind {
             let is_len =
                 matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len");
             if is_len && args.len() == 1 && matches!(args[0].kind, ExprKind::Ident(_)) {
+                return;
+            }
+            let is_has = matches!(&callee.kind, ExprKind::Ident(n) if n == HAS_BUILTIN);
+            if is_has
+                && args
+                    .first()
+                    .is_some_and(|map| matches!(map.kind, ExprKind::Ident(_)))
+            {
+                for key in &args[1..] {
+                    walk(key, names);
+                }
                 return;
             }
         }
@@ -6643,6 +6687,19 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 // of being poisoned to `Unknown`, so a context like
                 // `i < len(a)` (`i: u32`) can width-coerce the always-wider
                 // host length type (`usize` / `size_t`) at emit time.
+                //
+                // A map's or a set's length is a `uint32`, as a statechart's
+                // list's is, and `has` answers whether it holds a key
+                // (docs/adr/0108, D3).
+                None if keyed_builtin(callee, args, ctx)
+                    .is_some_and(|(builtin, _)| builtin == KeyedBuiltin::Has) =>
+                {
+                    InferredType::Bool
+                }
+                None if keyed_builtin(callee, args, ctx).is_some() => InferredType::Int {
+                    signed: false,
+                    bits: 32,
+                },
                 None if is_len_builtin(callee, args) && ctx.lengths_are_uint32 => {
                     InferredType::Int {
                         signed: false,
@@ -7021,6 +7078,230 @@ fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
         && matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len")
 }
 
+/// The builtin that asks a map or a set whether it holds a key, `has(m, k)`
+/// (docs/adr/0108, D3). It is the vocabulary's only where its first argument
+/// names a map or a set the scope holds and no callable of the name is
+/// registered ([`keyed_builtin`]), so every kind that holds no map keeps the
+/// name for its own.
+const HAS_BUILTIN: &str = "has";
+
+/// A read of a map or a set through a builtin (docs/adr/0108, D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyedBuiltin {
+    /// `len(m)`: how many entries it holds, a `uint32` as a list's length is.
+    Len,
+    /// `has(m, k)`: whether `k` is one of its keys.
+    Has,
+}
+
+/// The map or the set `node` names, when it is a place the scope holds one in
+/// (docs/adr/0108): a statechart's map or set variable. `None` for any other
+/// expression, and in every scope that holds no value of the one value type.
+fn keyed_place(node: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<crate::forge::value_path::Place> {
+    place_path(node)
+        .and_then(|path| ctx.value_of(&path))
+        .filter(crate::forge::value_path::Place::is_keyed)
+}
+
+/// Which read of a map or a set the call of `callee` with `args` is, with the
+/// map or the set it reads: `len` of one argument, or `has` of any number,
+/// whose first argument names a map or a set ([`keyed_place`]) and whose name
+/// no callable of the scope takes. `None` for any other call.
+fn keyed_builtin(
+    callee: &TypedExpr,
+    args: &[TypedExpr],
+    ctx: &TypeCtx<'_>,
+) -> Option<(KeyedBuiltin, crate::forge::value_path::Place)> {
+    let ExprKind::Ident(name) = &callee.kind else {
+        return None;
+    };
+    let builtin = match name.as_str() {
+        "len" if args.len() == 1 => KeyedBuiltin::Len,
+        HAS_BUILTIN if ctx.lookup_func(HAS_BUILTIN).is_none() => KeyedBuiltin::Has,
+        _ => return None,
+    };
+    Some((builtin, keyed_place(args.first()?, ctx)?))
+}
+
+/// Where the key of a read at a key of the map `map` names stands
+/// (docs/adr/0108, D3), for [`reject_composed_operands`]: whole where the
+/// map's key is a record, which a key names whole, and as an operand
+/// everywhere else, a number, a bool, an enum, a text or a byte string being
+/// read as a value there.
+fn key_stands(map: &TypedExpr, ctx: &TypeCtx<'_>) -> ReadThrough {
+    let record_key = keyed_place(map, ctx)
+        .and_then(|held| held.map_key())
+        .is_some_and(|key| matches!(key.ty, crate::forge::value_type::ValueType::Record { .. }));
+    if record_key {
+        ReadThrough::Whole
+    } else {
+        ReadThrough::Operand
+    }
+}
+
+/// The enum `node` is a value of, as the scope's types resolve it: a variant
+/// `Alias.v` of an enum the scope imports, or a place that holds a value of an
+/// enum, read in the scope of the document that declares it. `None` for any
+/// other expression, and in a scope with no types of the one value type.
+fn enum_held_by<'a>(
+    node: &TypedExpr,
+    ctx: &TypeCtx<'a>,
+) -> Option<&'a crate::forge::value_type::ScopedEnum> {
+    let base = ctx.value_scope?;
+    if let ExprKind::Member { object, .. } = &node.kind {
+        if let ExprKind::Ident(alias) = &object.kind {
+            if ctx.lookup_enum(alias).is_some() {
+                return base.enums.get(alias.as_str());
+            }
+        }
+    }
+    let place = ctx.value_of(&place_path(node)?)?;
+    let crate::forge::value_type::ValueType::Scalar(crate::forge::model::SceType::Enum(reference)) =
+        &place.ty
+    else {
+        return None;
+    };
+    crate::forge::value_path::scope_at(base, &place.scope)?
+        .enums
+        .get(&reference.alias)
+}
+
+/// Refuse a read of a map or a set (docs/adr/0108, D3) that is no read of it:
+/// the value at a key of a set, whose entries carry none; a `has` of other
+/// than two arguments; and a key that does not fit the map's key
+/// ([`judge_key`]). A scope that holds no map or set holds no such read.
+fn reject_misread_keys(expr: &TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result<(), Refusal> {
+    let written = |node: &TypedExpr| {
+        node.span
+            .clone()
+            .and_then(|span| source.get(span))
+            .map(str::to_string)
+    };
+    match &expr.kind {
+        ExprKind::Index { object, index } => {
+            if let Some(held) = keyed_place(object, ctx) {
+                if held.is_set() {
+                    let set = written(object).unwrap_or_default();
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: format!(
+                            "`{}`, a value read at a key of the set `{set}` (a set holds keys \
+                             that carry no value: `{HAS_BUILTIN}({set}, k)` asks whether `k` is \
+                             one of them)",
+                            written(expr).unwrap_or_default()
+                        ),
+                        observed: written(expr),
+                    }
+                    .at(expr.span.clone()));
+                }
+                judge_key(index, &held, object, ctx, source)?;
+            }
+        }
+        ExprKind::Call { callee, args, .. } => {
+            if let Some((KeyedBuiltin::Has, held)) = keyed_builtin(callee, args, ctx) {
+                if args.len() != 2 {
+                    return Err(ExprError::ArgumentCount {
+                        callee: HAS_BUILTIN.to_string(),
+                        expected: 2,
+                        actual: args.len(),
+                    }
+                    .at(callee.span.clone()));
+                }
+                judge_key(&args[1], &held, &args[0], ctx, source)?;
+            }
+        }
+        _ => {}
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_misread_keys(child, ctx, source))
+}
+
+/// `key`, read at a key of the map or the set `held` that `map` names, judged
+/// against the map's key (docs/adr/0108, D1 and D3) as an assignment to a place
+/// of that type is judged: a value of the key's own kind for a number, a bool,
+/// a text or a byte string, and never a value of an enum there; a variant or a
+/// place of the key's enum for an enum key; and, for a record key, the name of
+/// a record of the key's schema (a record variable, the item of a `<foreach>`,
+/// the payload or a field that holds one), since nothing in an expression makes
+/// a record.
+fn judge_key(
+    key: &TypedExpr,
+    held: &crate::forge::value_path::Place,
+    map: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<(), Refusal> {
+    use crate::forge::value_type::ValueType;
+    let Some(want) = held.map_key() else {
+        return Ok(());
+    };
+    let written = |node: &TypedExpr| {
+        node.span
+            .clone()
+            .and_then(|span| source.get(span))
+            .map(str::to_string)
+    };
+    let unfit = |why: &str| {
+        ExprError::UnsupportedConstruct {
+            construct: format!(
+                "`{}` as a key of `{}`, whose key is `{}`: {why}",
+                written(key).unwrap_or_default(),
+                written(map).unwrap_or_default(),
+                want.ty
+            ),
+            observed: written(key),
+        }
+        .at(key.span.clone())
+    };
+    let base = ctx.value_scope;
+    match &want.ty {
+        ValueType::Record { .. } => {
+            let given = place_path(key).and_then(|path| ctx.value_of(&path));
+            let same = given
+                .as_ref()
+                .and_then(|given| crate::forge::value_path::record_identity(base, given))
+                .zip(crate::forge::value_path::record_identity(base, &want))
+                .is_some_and(|(given, wanted)| given == wanted);
+            if !same {
+                return Err(unfit(
+                    "a record key is named whole, by a record of its schema (a record \
+                     variable, the item of a <foreach>, the payload or a field that holds one)",
+                ));
+            }
+        }
+        ValueType::Scalar(crate::forge::model::SceType::Enum(reference)) => {
+            let wanted = base
+                .and_then(|base| crate::forge::value_path::scope_at(base, &want.scope))
+                .and_then(|scope| scope.enums.get(&reference.alias));
+            let fits = match (enum_held_by(key, ctx), wanted) {
+                (Some(given), Some(wanted)) => given.holds_the_values_of(wanted),
+                (_, None) => true,
+                (None, Some(_)) => false,
+            };
+            if !fits {
+                return Err(unfit(&format!(
+                    "a key of an enum is a value of it, one of its variants \
+                     (`{}.<variant>`) or a place that holds one",
+                    reference.alias
+                )));
+            }
+        }
+        other => {
+            if enum_held_by(key, ctx).is_some() || is_enum_value(key, ctx) {
+                return Err(unfit(
+                    "a value of an enum is no number, bool, text or byte string \
+                     (`<alias>.toNumber(value)` is the number its variant declares)",
+                ));
+            }
+            let slot = InferredType::of_value(other);
+            if !slot_admits(slot, key.ty) {
+                return Err(type_mismatch(slot, key, source));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The type every emitter converts a call's argument `index` to: its
 /// parameter's, from the call's resolved `params`, or none at all for a
 /// callee no context registers.
@@ -7206,7 +7487,21 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Ref
             let known = is_enum_conversion(callee, ctx)
                 || ctx.lookup_func(&name).is_some()
                 || EXPR_BUILTINS.contains(&name.as_str())
-                || is_len_builtin(callee, args);
+                || is_len_builtin(callee, args)
+                || keyed_builtin(callee, args, ctx).is_some();
+            // `has` asks a map or a set (docs/adr/0108, D3): asked of anything
+            // else it names no read, and the refusal says what it reads.
+            if !known && name == HAS_BUILTIN {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "a call of `{HAS_BUILTIN}` whose first argument names no map or set \
+                         variable (`{HAS_BUILTIN}(m, k)` asks the map or the set `m` whether \
+                         `k` is one of its keys)"
+                    ),
+                    observed: Some(HAS_BUILTIN.to_string()),
+                }
+                .at(callee.span.clone()));
+            }
             if !known {
                 let mut available: Vec<String> =
                     ctx.funcs.keys().map(|k| (*k).to_string()).collect();

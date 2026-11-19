@@ -883,6 +883,11 @@ pub struct LoopVariables {
     string_bounds: Vec<(String, usize)>,
     /// Each field of a record item that is a text and is never absent.
     text_fields: Vec<String>,
+    /// The key a loop over a map binds beside its item, the value
+    /// (docs/adr/0108, D5): a variable of its own, bound as an item is, with no
+    /// index. `None` for a loop over a list or a set, and for one that names no
+    /// key.
+    key: Option<Box<LoopVariables>>,
 }
 
 impl LoopVariables {
@@ -935,7 +940,16 @@ impl LoopVariables {
             index: index.map(str::to_string),
             string_bounds,
             text_fields,
+            key: None,
         }
+    }
+
+    /// These variables with `key` bound beside the item: the key of each entry
+    /// of the map the loop walks, the item being its value (docs/adr/0108,
+    /// D5). `key` is built as an item is ([`Self::of_place`]), with no index.
+    pub fn with_key(mut self, key: LoopVariables) -> Self {
+        self.key = Some(Box::new(key));
+        self
     }
 
     /// [`Self::bind`] for a loop over a list a place holds rather than a list
@@ -949,9 +963,17 @@ impl LoopVariables {
 
     /// `ctx` with the loop's variables added: the scope of its body. The item
     /// is a value of the loop's own, which hides a part of a composed value an
-    /// enclosing loop named alike ([`Self::bind_item_of_a_place`]).
+    /// enclosing loop named alike ([`Self::bind_item_of_a_place`]); so is the
+    /// key of a loop over a map.
     pub fn bind<'s, 'c: 's>(&'s self, ctx: &TypeCtx<'c>) -> TypeCtx<'s> {
         let mut inner: TypeCtx<'s> = ctx.clone();
+        self.bind_into(&mut inner);
+        inner
+    }
+
+    /// The loop's variables added to `inner`: the item, its index, and the key
+    /// a loop over a map binds ([`Self::with_key`]).
+    fn bind_into<'s>(&'s self, inner: &mut TypeCtx<'s>) {
         inner.place_items.remove(self.item.as_str());
         match &self.place {
             // Its fields are read through its type, and are the whole of what
@@ -976,7 +998,9 @@ impl LoopVariables {
                 InferredType::from_sce_type(&SceType::Uint32),
             );
         }
-        inner
+        if let Some(key) = &self.key {
+            key.bind_into(inner);
+        }
     }
 
     /// The fields of a record item that are strings, each bounded by the
@@ -1687,6 +1711,31 @@ impl StaticScope {
                             .is_some()
                 })
             })
+    }
+
+    /// The first map or set variable `expr` reads as a value — anywhere but as
+    /// the first argument of `len(…)` or `has(…)`, or the map `m[k]` reads the
+    /// value at a key of — or `None` (docs/adr/0108, D2 and D3). Two maps are
+    /// not compared and a map is no operand, as a list is not
+    /// ([`Self::list_read_as_value`]), so a map is refused alike wherever it is
+    /// read as one.
+    pub fn map_read_as_value(&self, expr: &str) -> Option<String> {
+        crate::forge::expr::identifiers_read_as_values(expr)
+            .ok()?
+            .into_iter()
+            .find(|name| self.map_variable(name).is_some())
+    }
+
+    /// The map or set variable `name` names, with its type, if it names one
+    /// (docs/adr/0108): a variable whose type is a map or a set itself.
+    pub fn map_variable(
+        &self,
+        name: &str,
+    ) -> Option<(&crate::model::Variable, &AlgorithmValueType)> {
+        self.variables.iter().find_map(|v| {
+            let ty = v.value_type.as_ref()?;
+            (v.id == name.trim() && ty.map_key().is_some()).then_some((v, ty))
+        })
     }
 
     /// The imported callee `expr` is, taken whole, a call of — and that returns a

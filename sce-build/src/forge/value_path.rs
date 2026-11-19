@@ -95,6 +95,43 @@ impl Place {
             _ => None,
         }
     }
+
+    /// Whether the value is a map or a set (docs/adr/0108): read through its
+    /// length, `has` and, for a map, the value at a key, and never an operand.
+    pub fn is_keyed(&self) -> bool {
+        matches!(self.ty, ValueType::Map { .. } | ValueType::Set { .. })
+    }
+
+    /// Whether the value is a set, whose entries are keys that carry no value
+    /// (docs/adr/0108, D1).
+    pub fn is_set(&self) -> bool {
+        matches!(self.ty, ValueType::Set { .. })
+    }
+
+    /// The place of a key of the map or the set this place holds; `None` for a
+    /// value that is neither.
+    pub fn map_key(&self) -> Option<Place> {
+        match &self.ty {
+            ValueType::Map { key, .. } | ValueType::Set { key, .. } => Some(Place {
+                ty: (**key).clone(),
+                scope: self.scope.clone(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// The place of the value at a key of the map this place holds, what
+    /// `m[k]` reads (docs/adr/0108, D3); `None` for a set, whose entries carry
+    /// no value, and for any other value.
+    pub fn map_value(&self) -> Option<Place> {
+        match &self.ty {
+            ValueType::Map { value, .. } => Some(Place {
+                ty: (**value).clone(),
+                scope: self.scope.clone(),
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// One step from a value to a part of it.
@@ -103,7 +140,8 @@ pub enum Step<'p> {
     /// A field of a record, or `value`, the present value of an optional one
     /// (docs/adr/0055).
     Field(&'p str),
-    /// An element of a list.
+    /// An element of a list, or the value at a key of a map (docs/adr/0108,
+    /// D3).
     Element,
 }
 
@@ -388,7 +426,9 @@ fn walk_narrowed(
     let mut subject = root_name.map(str::to_string);
     for step in steps {
         place = match (*step, &place.ty) {
-            (Step::Element, _) => place.element()?,
+            // The value at a key of a map is read as an element of a list is,
+            // whatever the key (docs/adr/0108, D3); a set holds no value.
+            (Step::Element, _) => place.element().or_else(|| place.map_value())?,
             (Step::Field(name), ValueType::Optional { elem })
                 if name == crate::forge::expr::OPTIONAL_VALUE =>
             {
@@ -702,6 +742,30 @@ mod tests {
             resolve(None, |name| roots.get(name), "_event.data.note"),
             None
         );
+    }
+
+    /// docs/adr/0108, D3: the value at a key of a map is read as an element of
+    /// a list is, whatever the key, and a field of a record value through it;
+    /// a set's entries carry no value, so nothing is read at a key of one.
+    #[test]
+    fn a_map_value_is_read_at_its_key_and_a_set_holds_none() {
+        let scope = scope();
+        let roots = HashMap::from([
+            ("faces", Place::of(ty("map<uint64, record:Batch>[4]"))),
+            ("ids", Place::of(ty("set<string[8]>[2]"))),
+        ]);
+        let typed = |path: &str| resolve(Some(&scope), |name| roots.get(name), path);
+        assert_eq!(typed("faces[]").map(|p| p.ty), Some(ty("record:Batch")));
+        assert_eq!(typed("faces[].note").map(|p| p.ty), Some(ty("string[4]")));
+        assert_eq!(typed("ids[]"), None);
+        let faces = Place::of(ty("map<uint64, record:Batch>[4]"));
+        assert!(faces.is_keyed() && !faces.is_set() && faces.is_composed());
+        assert_eq!(faces.map_key().map(|p| p.ty), Some(ty("uint64")));
+        let ids = Place::of(ty("set<string[8]>[2]"));
+        assert!(ids.is_keyed() && ids.is_set());
+        assert_eq!(ids.map_key().map(|p| p.ty), Some(ty("string[8]")));
+        assert_eq!(ids.map_value(), None);
+        assert!(!Place::of(ty("list<uint8>[2]")).is_keyed());
     }
 
     /// The longest name at the start of a path that holds a value is the one

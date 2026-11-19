@@ -394,8 +394,8 @@ impl OptionalElem {
             // 7), so it is refused by name before an expression is typed.
             ValueType::Union { .. } => Self::Record,
             // A map and a set, like a record, have no operand type; no
-            // statechart holds one yet (docs/adr/0108, D10), so each is refused
-            // by name before an expression is typed.
+            // statechart holds one inside an optional value (docs/adr/0108,
+            // D10), so each is refused by name before an expression is typed.
             ValueType::Map { .. } | ValueType::Set { .. } => Self::Record,
             ValueType::List { elem, .. } => Self::List(ListElem::of_value(elem)),
             ValueType::Optional { elem } => Self::of_element(elem),
@@ -857,7 +857,7 @@ impl InferredType {
             // record is through its fields (docs/adr/0092, section 6.1).
             ValueType::Record { .. } | ValueType::Union { .. } => Self::Unknown,
             // A map and a set are no operand (docs/adr/0108, D2): each is read
-            // through its entries, and no statechart holds one yet (D10).
+            // through `len`, `has` and the value at a key (D3).
             ValueType::Map { .. } | ValueType::Set { .. } => Self::Unknown,
             ValueType::List { elem, .. } => Self::List(ListElem::of_value(elem)),
         }

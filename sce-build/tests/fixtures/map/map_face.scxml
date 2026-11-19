@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A record value of a map (docs/adr/0108, D3): what a machine keeps of each
+  face it holds by its peer's id. Its fields are read at a key
+  (`faces[peer].active`), and the value is taken whole into a record variable
+  of this schema.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="map_face"
+       sce:event-name="face.opened">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="active" sce:type="bool" sce:direction="in"/>
+    <data id="label" sce:type="string[16]" sce:direction="in"/>
+  </datamodel>
+</scxml>

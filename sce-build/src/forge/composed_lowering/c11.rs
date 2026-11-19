@@ -1917,6 +1917,7 @@ mod tests {
                 unions: true,
                 records: true,
                 sends: true,
+                maps: false,
             }
         );
     }

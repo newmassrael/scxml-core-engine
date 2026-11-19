@@ -268,6 +268,17 @@ pub enum Word {
     /// A feature model's heading (ADR 0057 §2). It opens the block of its
     /// features, so its line names the word a shape closes it with.
     FeatureModel,
+    /// The statements that write an entry of a map or a set and remove one
+    /// (docs/adr/0108, D3). Each opens the block of its clauses, so its line
+    /// names the word a shape closes it with.
+    Put,
+    Remove,
+    /// The key clause of a put or a remove, and the name a walk over a map
+    /// binds each entry's key to (docs/adr/0108, D3 and D5).
+    Key,
+    /// The variable a put or a remove writes what it did to (docs/adr/0108,
+    /// D4).
+    Outcome,
 }
 
 impl Word {
@@ -421,6 +432,10 @@ impl Word {
         Word::TypeInternal,
         Word::Raise,
         Word::FeatureModel,
+        Word::Put,
+        Word::Remove,
+        Word::Key,
+        Word::Outcome,
     ];
 }
 
@@ -604,6 +619,10 @@ fn en_word(w: Word) -> &'static str {
         Word::TypeInternal => "[internal]",
         Word::Raise => "raise",
         Word::FeatureModel => "feature-model",
+        Word::Put => "put",
+        Word::Remove => "remove",
+        Word::Key => "key",
+        Word::Outcome => "outcome",
     }
 }
 
@@ -1140,6 +1159,10 @@ fn ko_word(w: Word) -> &'static str {
         Word::TypeInternal => "[내부]",
         Word::Raise => "발생",
         Word::FeatureModel => "기능모델",
+        Word::Put => "넣기",
+        Word::Remove => "빼기",
+        Word::Key => "키",
+        Word::Outcome => "결과",
     }
 }
 

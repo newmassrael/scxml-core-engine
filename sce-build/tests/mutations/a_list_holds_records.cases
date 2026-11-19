@@ -45,6 +45,6 @@ PY
 # takes a record nothing holds.
 mutation_case "a record item outlives its loop" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "            self.loop_records.borrow_mut().pop();\n",
+     "        self.loop_records.borrow_mut().truncate(kept);\n",
      "")
 PY

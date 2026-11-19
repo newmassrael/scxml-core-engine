@@ -1041,10 +1041,11 @@ fn enforce_static_datamodel(
             // means nothing on any other variable.
             //
             // A map or a set variable starts empty the same way, and is
-            // filled by `<sce:put>` (docs/adr/0108, D3 and D4). No lowering
-            // holds one yet: it is refused by name where the document's
-            // variables are judged (`crate::forge::static_datamodel::check`),
-            // and a key that is no key where its type is read.
+            // filled by `<sce:put>` (docs/adr/0108, D3 and D4). Its reads and
+            // statements are judged where the document's variables are
+            // (`crate::forge::static_datamodel::check`), a key that is no key
+            // where its type is read, and each lowering that holds no map
+            // refuses it by name where it generates.
             let keyed = (
                 "map or set",
                 "<sce:put>",
@@ -5202,6 +5203,26 @@ impl SCXMLParser {
                 action.array = child.attribute("array").unwrap_or("").to_string();
                 action.item = child.attribute("item").unwrap_or("").to_string();
                 action.index = child.attribute("index").unwrap_or("").to_string();
+                // docs/adr/0108, D5: a walk over a map binds each entry's key
+                // beside its value. Only a `sce-static` variable holds a map.
+                if let Some(key) = crate::sce_attr::read(child, "key") {
+                    if model.datamodel != Datamodel::SceStatic {
+                        return Err(crate::forge::parser::located(
+                            child,
+                            source_name,
+                            ScxmlSemanticError::StaticDatamodelRule {
+                                construct: format!("<foreach sce:key=\"{key}\">"),
+                                datamodel: model.datamodel.as_str().to_string(),
+                                rule: "a <foreach> binds the key of a map's entry only where a \
+                                       variable holds a map: under datamodel=\"sce-static\""
+                                    .to_string(),
+                                state: owning_state(child),
+                                observed: Some(key.to_string()),
+                            },
+                        ));
+                    }
+                    action.key = key.to_string();
+                }
                 action.actions = self.parse_executable_content(child, model, source_name)?;
             }
             (true, "if") => self.parse_if_action(child, &mut action, model, source_name)?,
@@ -5233,6 +5254,33 @@ impl SCXMLParser {
                 action.action_type = format!("sce_{name}");
                 action.location = child.attribute("target").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
+            }
+            // docs/adr/0108, D3 and D4: write and remove an entry of a
+            // `sce-static` map or set variable `target` names, at `key`, the
+            // value a put writes `expr` and what each did `outcome`. Which
+            // variable each names, and whether its key and value fit, is judged
+            // with the rest of the typed scope.
+            (false, name @ ("put" | "remove")) => {
+                if model.datamodel != Datamodel::SceStatic {
+                    return Err(crate::forge::parser::located(
+                        child,
+                        source_name,
+                        ScxmlSemanticError::StaticDatamodelRule {
+                            construct: format!("<sce:{name}>"),
+                            datamodel: model.datamodel.as_str().to_string(),
+                            rule: "a map or a set variable, and so the statements that write \
+                                   one, exist only under datamodel=\"sce-static\""
+                                .to_string(),
+                            state: owning_state(child),
+                            observed: Some(name.to_string()),
+                        },
+                    ));
+                }
+                action.action_type = format!("sce_{name}");
+                action.location = child.attribute("target").unwrap_or("").to_string();
+                action.key = child.attribute("key").unwrap_or("").to_string();
+                action.expr = child.attribute("expr").unwrap_or("").to_string();
+                action.outcome = child.attribute("outcome").unwrap_or("").to_string();
             }
             // docs/adr/0087, section 2.1: read a text the statechart holds into a
             // record of an imported event schema, or keep why it is not one in a
@@ -7442,7 +7490,9 @@ fn document_positions(
 
 /// The SCE elements the reader of executable content takes as actions, beside
 /// every element of the SCXML namespace.
-const SCE_EXECUTABLE_CONTENT: [&str; 5] = ["action", "append", "clear", "lift", "render"];
+const SCE_EXECUTABLE_CONTENT: [&str; 7] = [
+    "action", "append", "clear", "lift", "put", "remove", "render",
+];
 
 /// Whether `node` is one of the actions of the executable content it sits in:
 /// an element `parse_executable_content_single` reads into an action (or

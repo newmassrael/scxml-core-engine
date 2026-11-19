@@ -792,6 +792,17 @@ fn static_signature(
                 diag_label,
             ));
         }
+        // ... nor a map or a set (docs/adr/0108, D2).
+        if let Some(map) = static_scope.map_read_as_value(&arg.expr) {
+            return Err(crate::forge::error::Located::in_file(
+                crate::forge::expression_site::ExpressionSite::new(
+                    &arg.expr,
+                    arg.expr_spelling.as_ref(),
+                )
+                .place(crate::forge::static_datamodel::map_read_refusal(&map)),
+                diag_label,
+            ));
+        }
         // ... and neither is the list an imported algorithm returns, which only
         // an <assign> to a list variable takes.
         if let Some(callee) = static_scope

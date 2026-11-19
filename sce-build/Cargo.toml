@@ -2003,6 +2003,14 @@ name = "a_map_type_is_read_and_refused_by_name_where_it_is_not_lowered"
 path = "tests/a_map_type_is_read_and_refused_by_name_where_it_is_not_lowered.rs"
 required-features = ["cli"]
 
+# A map or set variable, its reads, statements and loop are judged by the checker, and refused
+# by name on every lane until a lowering holds one (docs/adr/0108). It runs `sce-codegen`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane"
+path = "tests/a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane.rs"
+required-features = ["cli"]
+
 # A union variable is built where it is declared or starts absent. It runs `sce-codegen`, so it
 # carries the `cli` gate.
 [[test]]

@@ -4001,6 +4001,31 @@ fn parse_scxml_action_body(
     {
         a.action_type = "sce_clear".to_string();
         a.location = undo(target, line.number)?;
+    } else if let Some((tag, target)) = ["put", "remove"].into_iter().find_map(|word| {
+        // `put <map>:` / `remove <map>:`, the map one name with no space in
+        // it (docs/adr/0108, D3), so `put = x`, an assignment to a variable
+        // named `put`, is never read as this.
+        t.strip_prefix(word)
+            .and_then(|rest| rest.strip_prefix(' '))
+            .and_then(|rest| rest.strip_suffix(':'))
+            .filter(|target| !target.is_empty() && !target.contains(' '))
+            .map(|target| (word, target))
+    }) {
+        a.action_type = format!("sce_{tag}");
+        a.location = undo(target, line.number)?;
+        for k in kids {
+            match split_clause(k.text) {
+                ("key", v) => a.key = undo(v, k.number)?,
+                ("expr", v) => a.expr = undo(v, k.number)?,
+                ("outcome", v) => a.outcome = undo(v, k.number)?,
+                (other, _) => {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{other}` is not a {tag} clause"),
+                    })
+                }
+            }
+        }
     } else if let Some((template, location)) = t.strip_prefix("render ").and_then(|rest| {
         // `render <template> into <location>`: each is one name with no space
         // in it (docs/adr/0087, section 3.1, item 6), so the keyword between
@@ -4090,10 +4115,19 @@ fn parse_scxml_action_body(
                 why: "a foreach needs `in <array>`".to_string(),
             })?;
         a.array = undo(array, line.number)?;
-        match head.split_once(" index ") {
+        let head = match head.split_once(" index ") {
             Some((item, index)) => {
-                a.item = undo(item, line.number)?;
                 a.index = undo(index, line.number)?;
+                item
+            }
+            None => head,
+        };
+        // The key a walk over a map binds stands between the item and the
+        // index (docs/adr/0108, D5).
+        match head.split_once(" key ") {
+            Some((item, key)) => {
+                a.item = undo(item, line.number)?;
+                a.key = undo(key, line.number)?;
             }
             None => a.item = undo(head, line.number)?,
         }

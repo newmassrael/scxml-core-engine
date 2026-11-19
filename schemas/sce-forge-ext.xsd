@@ -643,12 +643,19 @@
        section 1.3): read as that bracket and reported with
        `validation/bound-attribute-superseded`. -->
   <xs:attribute name="max-count" type="xs:positiveInteger"/>
-  <!-- Section 4.6: a CBOR codec entry's map key — 0..23, a one-byte head. -->
+  <!-- Section 4.6: a CBOR codec entry's map key — 0..23, a one-byte head.
+       On a statechart's `<foreach>` over a map (docs/adr/0108, D5): the name
+       each entry's key is bound to, which the parser holds to the name rules
+       of the loop's item and index. -->
   <xs:attribute name="key">
     <xs:simpleType>
-      <xs:restriction base="xs:nonNegativeInteger">
-        <xs:maxInclusive value="23"/>
-      </xs:restriction>
+      <xs:union memberTypes="xs:NCName">
+        <xs:simpleType>
+          <xs:restriction base="xs:nonNegativeInteger">
+            <xs:maxInclusive value="23"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:union>
     </xs:simpleType>
   </xs:attribute>
   <!-- Section 4.6: a codec entry whose absence a decode refuses, in format 1 of
@@ -2108,23 +2115,59 @@
   <xs:element name="text">
     <xs:complexType mixed="true">
       <xs:sequence>
-        <xs:element ref="sce:put" minOccurs="0" maxOccurs="unbounded"/>
+        <!-- Where the text of the hole `hole` goes in a template's
+             `<sce:text>`. Declared here, beside the text that holds it: the
+             `<sce:put>` of a statechart's executable content is the global
+             declaration below, a statement of another shape. -->
+        <xs:element name="put" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="hole" type="xs:NCName" use="required"/>
+          </xs:complexType>
+        </xs:element>
       </xs:sequence>
     </xs:complexType>
   </xs:element>
 
-  <!-- Where the text of the hole `hole` goes in a template's `<sce:text>`. -->
+  <!--
+    Put an entry into a `sce-static` statechart's map or set variable
+    (docs/adr/0108, D3 and D4). `target` names the variable; `key` the key, an
+    expression for a key of a number, a bool, an enum, a text or a byte string
+    and the name of a record for a record key; `expr` the value, required of a
+    map and refused on a set (the parser's rule); `outcome`, when written, a
+    variable of the standard enum `sce:std/collection/put_outcome.scxml`
+    (`inserted`, `replaced`, `full`).
+  -->
   <xs:element name="put">
     <xs:complexType>
-      <xs:attribute name="hole" type="xs:NCName" use="required"/>
+      <xs:attribute name="target" type="xs:string" use="required"/>
+      <xs:attribute name="key" type="xs:string" use="required"/>
+      <xs:attribute name="expr" type="xs:string"/>
+      <xs:attribute name="outcome" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    Remove the entry at `key` from a `sce-static` statechart's map or set
+    variable `target` (docs/adr/0108, D3 and D4); `outcome`, when written, a
+    variable of the standard enum `sce:std/collection/remove_outcome.scxml`
+    (`removed`, `absent`). A key that is absent is removed by nothing. An
+    `expr` is declared so that the parser's refusal of it (a remove takes no
+    value), and not a schema violation, is what the author reads.
+  -->
+  <xs:element name="remove">
+    <xs:complexType>
+      <xs:attribute name="target" type="xs:string" use="required"/>
+      <xs:attribute name="key" type="xs:string" use="required"/>
+      <xs:attribute name="expr" type="xs:string"/>
+      <xs:attribute name="outcome" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 
   <!--
     Empty a `sce-static` statechart's `list<T>` variable (SCE Accepted Subset
-    §2.15). An algorithm's list local needs no such statement — it starts
-    empty on every call — but a datamodel list outlives the macrostep that
-    filled it.
+    §2.15), or its map or set variable (docs/adr/0108, D3). An algorithm's
+    list local needs no such statement — it starts empty on every call — but
+    a datamodel list outlives the macrostep that filled it.
   -->
   <xs:element name="clear">
     <xs:complexType>

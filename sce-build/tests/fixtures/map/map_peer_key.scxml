@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A record key of a map (docs/adr/0108, D1): a 128-bit peer id held as its low
+  and high halves, two integers, so two keys are equal when the integers are.
+  Its event carries the id of a peer that was seen, whose payload is taken
+  whole as a key (`_event.data`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="map_peer_key"
+       sce:event-name="peer.seen">
+  <datamodel>
+    <data id="low" sce:type="uint64" sce:direction="in"/>
+    <data id="high" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

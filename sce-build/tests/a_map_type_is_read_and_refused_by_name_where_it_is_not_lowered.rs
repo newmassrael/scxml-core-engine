@@ -6,8 +6,10 @@
 //! where the type is read and, for a record key, where the record is read
 //! (`validation/map-key-type`); refused in every position that crosses the
 //! wire (`validation/map-in-wire-position`, D7); and refused by name in every
-//! position a later step lands them in, a statechart's variable and an
-//! algorithm's slot (`generate/unsupported-feature`, D10).
+//! position a later step lands them in, a map held inside another type of a
+//! statechart's variable and an algorithm's slot
+//! (`generate/unsupported-feature`, D10). A statechart's variable that is
+//! itself a map or a set is checked.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -269,41 +271,37 @@ fn a_record_key_is_judged_through_its_fields() {
             && out.contains("\"actual\":\"set&lt;record:Ratio&gt;[4]\""),
         "{out}"
     );
-    // A record of two integers is a key: the variable is then refused by name
-    // as every map is, not for its key.
+    // A record of two integers is a key: the variable is accepted, its key
+    // judged through its fields.
     let (ok, out) = check(
         &statechart(&[("Zid", "zid.scxml")], "map<record:Zid, bool>[4]"),
         &siblings,
     );
-    assert!(!ok, "a map variable:\n{out}");
-    assert!(
-        out.contains("\"code\":\"generate/unsupported-feature\"")
-            && !out.contains("validation/map-key-type"),
-        "{out}"
-    );
+    assert!(ok, "a map variable of a record key:\n{out}");
 }
 
-/// docs/adr/0108, D10: no lowering holds a map yet, so a statechart's variable
-/// of one, at any depth, is refused by name, the type and the record that
-/// lands it named; and, as a list does, it starts empty and takes no `expr`.
+/// docs/adr/0108, D3 and D10: a statechart's variable that is itself a map or
+/// a set is checked (each lane refuses it where it generates,
+/// `a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane`), and
+/// one held inside another type is refused by name, the type and the record
+/// that lands it named; and, as a list does, a map starts empty and takes no
+/// `expr`.
 #[test]
-fn a_map_variable_is_refused_by_name_until_a_lowering_holds_one() {
-    for (ty, place) in [
-        ("map<uint32, bool>[4]", "map<uint32, bool>[4]"),
-        ("set<string[8]>[faces=2]", "set<string[8]>[faces=2]"),
-        ("list<set<uint8>[2]>[3]", "set<uint8>[2]"),
-    ] {
+fn a_map_variable_is_checked_and_a_map_inside_another_type_is_refused_by_name() {
+    for ty in ["map<uint32, bool>[4]", "set<string[8]>[faces=2]"] {
         let (ok, out) = check(&statechart(&[], ty), &[]);
-        assert!(!ok, "{ty} in a variable:\n{out}");
-        assert!(
-            out.contains("\"code\":\"generate/unsupported-feature\"")
-                && out.contains(&format!(
-                    "`{place}`: a map or a set is a type of the language, and no lowering \
-                     holds one here yet (docs/adr/0108, D10)"
-                )),
-            "{ty}:\n{out}"
-        );
+        assert!(ok, "{ty} in a variable is checked:\n{out}");
     }
+    let (ok, out) = check(&statechart(&[], "list<set<uint8>[2]>[3]"), &[]);
+    assert!(!ok, "a set inside a list:\n{out}");
+    assert!(
+        out.contains("\"code\":\"generate/unsupported-feature\"")
+            && out.contains(
+                "`set<uint8>[2]`: a map or a set is a type of the language, and no lowering \
+                 holds one here yet (docs/adr/0108, D10)"
+            ),
+        "{out}"
+    );
     let (ok, out) = check(
         &statechart(&[], "map<uint32, bool>[4]")
             .replace("/>\n  </datamodel>", " expr=\"0\"/>\n  </datamodel>"),

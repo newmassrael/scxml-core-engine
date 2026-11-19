@@ -30,8 +30,8 @@ PY
 # The index takes the item's name: one of the two is lost.
 mutation_case "the index has the item's name" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "            } else if attr == \"index\" && name == item {\n",
-     "            } else if attr == \"index\" && name == \"\" {\n")
+     "            } else if attr != \"item\" && name == item {\n",
+     "            } else if attr != \"item\" && name == \"\" {\n")
 PY
 
 # The names the generated code keeps for its own (`sce_position_of_<index>`,

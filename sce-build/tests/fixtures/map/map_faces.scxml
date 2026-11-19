@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Map and set
+  variables", docs/adr/0108): a machine that keeps the faces it holds by its
+  peer's id, a record key of two integers, each face a record; a count by a
+  number, a flag by a text, and a set of numbers.
+
+  Every read and statement of a map the checker judges is written here once:
+  `len`, `has`, the value at a key and a field of it, a value taken whole into a
+  record variable of its schema; `<sce:put>` with and without an outcome, into a
+  map and into a set; `<sce:remove>` with and without one; `<sce:clear>`; a map
+  taken whole into another whose type it fits (`spare`); and a `<foreach>` over a
+  map that binds its key and over a set. The payload of the event `peer.seen` is
+  a record of the key's schema, taken whole as a key.
+
+  No lane generates a map yet (docs/adr/0108, D10): `check` accepts this
+  document, and every lane's `generate` refuses it by name.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="holding" datamodel="sce-static" name="map_faces">
+  <sce:import kind="event-schema" src="map_peer_key.scxml" as="PeerKey"/>
+  <sce:import kind="event-schema" src="map_face.scxml" as="Face"/>
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <sce:import kind="enum" src="sce:std/collection/remove_outcome.scxml" as="RemoveOutcome"/>
+  <datamodel>
+    <data id="faces" sce:type="map&lt;record:PeerKey, record:Face&gt;[face_max=4]"/>
+    <data id="counts" sce:type="map&lt;uint32, uint64&gt;[8]"/>
+    <data id="flags" sce:type="map&lt;string[8], bool&gt;[2]"/>
+    <data id="seen" sce:type="set&lt;uint32&gt;[4]"/>
+    <data id="byId" sce:type="map&lt;uint32, record:Face&gt;[4]"/>
+    <data id="spare" sce:type="map&lt;uint32, uint64&gt;[16]"/>
+    <data id="order" sce:type="list&lt;uint32&gt;[4]"/>
+    <data id="peer" sce:type="record:PeerKey">
+      <sce:set name="low" expr="1"/>
+      <sce:set name="high" expr="0"/>
+    </data>
+    <data id="face" sce:type="record:Face">
+      <sce:set name="id" expr="7"/>
+      <sce:set name="active" expr="true"/>
+      <sce:set name="label" expr="'first'"/>
+    </data>
+    <data id="last" sce:type="record:Face">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="active" expr="false"/>
+      <sce:set name="label" expr="''"/>
+    </data>
+    <data id="putResult" sce:type="enum:PutOutcome" expr="PutOutcome.inserted"/>
+    <data id="removeResult" sce:type="enum:RemoveOutcome" expr="RemoveOutcome.absent"/>
+    <data id="total" sce:type="uint64" expr="0"/>
+    <data id="walked" sce:type="uint32" expr="0"/>
+    <data id="refused" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="holding">
+    <onentry>
+      <if cond="len(faces) &lt; _x.limits.face_max">
+        <sce:put target="faces" key="peer" expr="face" outcome="putResult"/>
+      </if>
+      <if cond="putResult == PutOutcome.full">
+        <assign location="refused" expr="refused + 1"/>
+      </if>
+      <sce:put target="counts" key="7" expr="1"/>
+      <sce:put target="flags" key="'on'" expr="true"/>
+      <sce:put target="seen" key="3" outcome="putResult"/>
+      <if cond="has(faces, peer) &amp;&amp; faces[peer].active">
+        <assign location="last" expr="faces[peer]"/>
+      </if>
+      <if cond="len(counts) &gt; 0 &amp;&amp; has(counts, 7)">
+        <assign location="total" expr="counts[7]"/>
+      </if>
+      <if cond="flags['on']">
+        <assign location="walked" expr="len(seen)"/>
+      </if>
+      <sce:put target="byId" key="face.id" expr="face"/>
+      <assign location="last" expr="byId[face.id]"/>
+      <assign location="spare" expr="counts"/>
+      <sce:append target="order" expr="5"/>
+      <foreach array="order" item="o">
+        <sce:put target="seen" key="o"/>
+      </foreach>
+      <foreach array="faces" item="f" sce:key="k" index="i">
+        <sce:put target="counts" key="f.id" expr="k.low"/>
+        <assign location="walked" expr="i"/>
+      </foreach>
+      <foreach array="seen" item="s">
+        <sce:put target="counts" key="s" expr="total"/>
+      </foreach>
+      <sce:remove target="faces" key="peer" outcome="removeResult"/>
+      <if cond="removeResult == RemoveOutcome.removed">
+        <assign location="refused" expr="refused"/>
+      </if>
+      <sce:remove target="seen" key="3"/>
+      <sce:clear target="flags"/>
+    </onentry>
+    <transition event="peer.seen" cond="!has(faces, _event.data)" type="internal">
+      <sce:put target="faces" key="_event.data" expr="face"/>
+    </transition>
+  </state>
+</scxml>

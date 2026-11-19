@@ -3421,6 +3421,12 @@ fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
                 Part::Word(Word::Foreach),
                 Part::Text(text(&a.item).into_owned()),
             ];
+            // The key a walk over a map binds (docs/adr/0108, D5), an
+            // identifier as the item and the index are.
+            if !a.key.is_empty() {
+                head.push(Part::Word(Word::Key));
+                head.push(Part::Text(text(&a.key).into_owned()));
+            }
             if !a.index.is_empty() {
                 head.push(Part::Word(Word::Index));
                 head.push(Part::Text(text(&a.index).into_owned()));
@@ -3478,6 +3484,35 @@ fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
             text(&a.expr)
         )),
         "sce_clear" => out.line(&format!("clear {}", text(&a.location))),
+        // docs/adr/0108, D3 and D4: the map is one name; the key, the value and
+        // the outcome each stand last on a line of their own, since a key or a
+        // value is an expression and may hold any word.
+        "sce_put" | "sce_remove" => {
+            let word = if a.action_type == "sce_put" {
+                Word::Put
+            } else {
+                Word::Remove
+            };
+            out.line_of(vec![
+                Part::Word(word),
+                Part::Text(text(&a.location).into_owned()),
+                Part::Glued(":".into()),
+            ]);
+            out.nested(|out| {
+                for (clause, value) in [
+                    (Word::Key, &a.key),
+                    (Word::Expr, &a.expr),
+                    (Word::Outcome, &a.outcome),
+                ] {
+                    if !value.is_empty() {
+                        out.line_of(vec![
+                            Part::Word(clause),
+                            Part::Text(text(value).into_owned()),
+                        ]);
+                    }
+                }
+            });
+        }
         // docs/adr/0087, section 2.1: each of the four is one name or path, with
         // no space in it, so each keyword selects the one after it.
         "sce_lift" => out.line(&format!(

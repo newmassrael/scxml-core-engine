@@ -817,6 +817,20 @@ pub struct Action {
     /// other action.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub render_sets: Vec<RenderSet>,
+    /// `<sce:put key>` and `<sce:remove key>` (docs/adr/0108, D3): the key of
+    /// the entry the statement writes, an expression for a key of a number, a
+    /// bool, an enum, a text or a byte string, and the name of a record for a
+    /// record key. On a `<foreach>` over a map, its `sce:key`: the name each
+    /// entry's key is bound to (D5). The map the statement writes is
+    /// [`Self::location`]. Empty on every other action.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key: String,
+    /// `<sce:put outcome>` and `<sce:remove outcome>` (docs/adr/0108, D4): the
+    /// variable of the standard outcome enum the statement writes what it did
+    /// to, a full map among it. Empty where the statement names none, and on
+    /// every other action.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub outcome: String,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name
@@ -1098,7 +1112,7 @@ impl Action {
         match action_type {
             "assign" => &["location", "expr", "content"],
             "cancel" => &["sendid", "sendidexpr"],
-            "foreach" => &["array", "item", "index", "actions"],
+            "foreach" => &["array", "item", "index", "key", "actions"],
             "if" => &["cond", "then_actions", "else_actions", "elseif_branches"],
             "log" => &["label", "expr"],
             "native_action" => &[
@@ -1110,6 +1124,8 @@ impl Action {
             "raise" => &["event"],
             "sce_append" => &["location", "expr"],
             "sce_clear" => &["location"],
+            "sce_put" => &["location", "key", "expr", "outcome"],
+            "sce_remove" => &["location", "key", "expr", "outcome"],
             "sce_lift" => &["lift_text", "lift_schema", "location", "lift_refusal"],
             "sce_render" => &["render_template", "location", "render_sets"],
             "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => &["test_statement"],
@@ -1175,9 +1191,11 @@ impl Action {
         }
     }
 
-    /// The sixteen tags an `action_type` can hold, in the order the parser
+    /// The eighteen tags an `action_type` can hold, in the order the parser
     /// and the template branches list them. `sce_append` / `sce_clear` are a
-    /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`),
+    /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`), the
+    /// second a map's too, `sce_put` / `sce_remove` a map's or a set's
+    /// (`<sce:put>` / `<sce:remove>`, docs/adr/0108, which no lane lowers yet),
     /// `sce_lift` the statement that reads a text into a record or keeps why
     /// it could not (`<sce:lift>`, docs/adr/0087), `sce_render` the
     /// statement that renders a text template into a string variable
@@ -1196,6 +1214,8 @@ impl Action {
         "sce_append",
         "sce_clear",
         "sce_lift",
+        "sce_put",
+        "sce_remove",
         "sce_render",
         "sce_setverdict",
         "sce_start_timer",

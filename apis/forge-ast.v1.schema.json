@@ -132,6 +132,10 @@
         "item": {
           "type": "string"
         },
+        "key": {
+          "description": "`<sce:put key>` and `<sce:remove key>` (docs/adr/0108, D3): the key of the entry the statement writes, an expression for a key of a number, a bool, an enum, a text or a byte string, and the name of a record for a record key. On a `<foreach>` over a map, its `sce:key`: the name each entry's key is bound to (D5). The map the statement writes is [`Self::location`]. Empty on every other action.",
+          "type": "string"
+        },
         "label": {
           "type": "string"
         },
@@ -163,6 +167,10 @@
         },
         "native_action_released_by": {
           "description": "`<sce:action released-by=\"op\">` (docs/adr/0038): the `<sce:action>` of the same machine that gives back what this `duty` took, performed on the `<onexit>` of the state whose `<onentry>` took it. Empty for a duty that lasts the machine's life and for a `notice`.",
+          "type": "string"
+        },
+        "outcome": {
+          "description": "`<sce:put outcome>` and `<sce:remove outcome>` (docs/adr/0108, D4): the variable of the standard outcome enum the statement writes what it did to, a full map among it. Empty where the statement names none, and on every other action.",
           "type": "string"
         },
         "params": {
