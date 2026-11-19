@@ -85,22 +85,43 @@ pub fn rustc_flags(scratch: &Path) -> Vec<String> {
     );
 
     let stdout = String::from_utf8_lossy(&built.output.stdout);
-    let mut flags = vec![
-        "-L".to_string(),
-        format!("dependency={}", target.join("debug/deps").display()),
-    ];
+    // Each library cargo built, by the crate name `rustc` links it under, as
+    // cargo's artifact messages name its files.
+    let rlibs: Vec<(String, PathBuf)> = stdout
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|message| message["reason"] == "compiler-artifact")
+        .filter_map(|message| {
+            let name = message["target"]["name"].as_str()?.replace('-', "_");
+            let rlib = message["filenames"]
+                .as_array()?
+                .iter()
+                .filter_map(|file| file.as_str())
+                .find(|file| file.ends_with(".rlib"))?;
+            Some((name, PathBuf::from(rlib)))
+        })
+        .collect();
+    // The directory of every library built, `heapless` among them, which a crate
+    // `--extern` names depends on: what `rustc` searches for a dependency of a
+    // dependency, as cargo passes it. Read from where the libraries are, not
+    // assumed, since a target or a profile cargo is run under moves them.
+    let mut flags = Vec::new();
+    let mut searched: Vec<&Path> = Vec::new();
+    for (_, rlib) in &rlibs {
+        let dir = rlib.parent().expect("a built library lies in a directory");
+        if !searched.contains(&dir) {
+            searched.push(dir);
+            flags.push("-L".to_string());
+            flags.push(format!("dependency={}", dir.display()));
+        }
+    }
     for crate_name in CRATES {
-        let rlib = stdout
-            .lines()
-            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-            .filter(|message| message["reason"] == "compiler-artifact")
-            .filter(|message| message["target"]["name"] == crate_name)
-            .flat_map(|message| message["filenames"].as_array().cloned().unwrap_or_default())
-            .filter_map(|file| file.as_str().map(str::to_string))
-            .find(|file| file.ends_with(".rlib"))
+        let (_, rlib) = rlibs
+            .iter()
+            .find(|(name, _)| name == crate_name)
             .unwrap_or_else(|| panic!("cargo built no rlib of `{crate_name}`"));
         flags.push("--extern".to_string());
-        flags.push(format!("{crate_name}={rlib}"));
+        flags.push(format!("{crate_name}={}", rlib.display()));
     }
     flags
 }
