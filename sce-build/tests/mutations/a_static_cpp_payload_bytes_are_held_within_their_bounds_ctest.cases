@@ -34,8 +34,8 @@ PY
 
 mutation_case "an assignment to a bytes variable is not held to its bound" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
-     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
+     "        } else if let Some(capacity) = self.bytes.get(location) {",
+     "        } else if let Some(capacity) = self.bytes.get(location).filter(|_| false) {")
 PY
 
 mutation_case "the bytes of a payload are the bytes of its UTF-8 text" <<'PY'
