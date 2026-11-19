@@ -271,7 +271,10 @@ has there. A restored map holds its entries in the saved order. A saved map with
 with a key twice, is refused as a saved list with too many elements is.
 
 **The snapshot** gives the host a read-only view in D2's order: Rust an iterator of `(&K, &V)` with `get(&K)`, C11
-a pointer to the entry array and its length.
+the map type's view `{entries, first, len}`. `entries` points to the map's array of entry slots, `first` is the
+position of its first entry (0 for an empty map) and `len` how many entries it holds. The entry at position `p` is
+`entries[p - 1]`, and its `links.next` is the position of the entry after it in D2's order (0 after the last), so a
+host walks the links from `first` and never the array in slot order.
 
 ### D9. The bounded-collection kind is unchanged, and §2.15's refusal names a different reopening
 
@@ -363,7 +366,7 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
    form and the snapshot. The scenarios of step 4 run on the Rust lane. Unit tests hold that a remove moves no
    entry, that order survives any sequence of puts and removes (a property test against a reference list), and that
    keys chosen to collide under one seed spread under another.
-6. C11: the runtime macros, storage in the machine, the seed argument, the lowering, the saved form and the
+6. (Landed 2026-11-20.) C11: the runtime macros, storage in the machine, the seed argument, the lowering, the saved form and the
    snapshot. The same scenarios and unit tests run, and `no_c11_frame_grows_with_a_list_bound` is extended to a map.
 7. Algorithms: map slots as views, `inout` slots, locals and returns, `<sce:foreach in>` with `key`, `<sce:call>` in a
    statechart, on the Interpreter, Rust and C11, held by the numerical reference
