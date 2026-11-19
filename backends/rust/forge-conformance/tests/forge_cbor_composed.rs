@@ -338,11 +338,15 @@ fn card_of(len: u8) -> Choice {
     })
 }
 
+/// A change to a value of the codec that leaves it one its types hold and no
+/// encoding carries, with why it has none.
+type Unencodable = (&'static str, fn(&mut CodecCborComposed<'_>));
+
 #[test]
 fn a_value_its_types_hold_and_no_encoding_carries_is_refused_before_a_byte() {
     let corpus = corpus();
     let smallest = &rows(&corpus, "cases")[0]["decoded"];
-    let changes: [(&str, fn(&mut CodecCborComposed<'_>)); 5] = [
+    let changes: [Unencodable; 5] = [
         ("no flag, below the lower count 1", |v| {
             v.flags = BoundedList::new();
         }),
