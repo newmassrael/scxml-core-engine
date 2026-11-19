@@ -4512,14 +4512,49 @@ mod tests {
         );
     }
 
+    /// An algorithm that puts a generation at a peer's key of the table it is
+    /// lent and answers the peer: a value a `<sce:call>` takes by its location.
+    const TAKE_COUNT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="take_count" version="1.0">
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <sce:signature>
+    <sce:param name="resets" type="map&lt;uint32, uint64&gt;" inout="true"/>
+    <sce:param name="peer" type="uint32"/>
+    <sce:param name="generation" type="uint64"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="stored" type="enum:PutOutcome" init="PutOutcome.inserted"/>
+    <sce:put target="resets" key="peer" expr="generation" outcome="stored"/>
+    <sce:return expr="peer"/>
+  </sce:body>
+</scxml>"#;
+
+    /// An algorithm that empties the table it is lent and returns nothing: a
+    /// `<sce:call>` with no location.
+    const EXPIRE_ALL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="expire_all" version="1.0">
+  <sce:signature>
+    <sce:param name="resets" type="map&lt;uint32, uint64&gt;" inout="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:clear target="resets"/>
+  </sce:body>
+</scxml>"#;
+
     /// A `<sce:call>` with a location and one without (docs/adr/0108, D6 item
-    /// 2): each renders as its own line beside a host action's, and reads back
-    /// as the statement it was, with the same call and location.
+    /// 2), each of an imported algorithm that writes the table in place: each
+    /// renders as its own line beside a host action's, and reads back as the
+    /// statement it was, with the same call and location.
     #[test]
     fn a_call_that_writes_a_map_in_place_reads_back_as_the_same_statement() {
         let document = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="taking" datamodel="sce-static" name="call_page">
+  <sce:import kind="algorithm" src="algorithm_take_count.scxml" as="Take"/>
+  <sce:import kind="algorithm" src="algorithm_expire_all.scxml" as="Expire"/>
   <datamodel>
     <data id="resets" sce:type="map&lt;uint32, uint64&gt;[4]" sce:direction="out"/>
     <data id="took" sce:type="uint32" expr="0" sce:direction="out"/>
@@ -4527,13 +4562,22 @@ mod tests {
   <state id="taking">
     <transition event="take" type="internal">
       <sce:call expr="Take(resets, 7, 1)" location="took"/>
-      <sce:call expr="Expire(resets, 2)"/>
+      <sce:call expr="Expire(resets)"/>
     </transition>
   </state>
 </scxml>"#;
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        for (name, text) in [
+            ("algorithm_take_count.scxml", TAKE_COUNT),
+            ("algorithm_expire_all.scxml", EXPIRE_ALL),
+            ("call_page.scxml", document),
+        ] {
+            std::fs::write(dir.path().join(name), text).expect("write a document");
+        }
+        let path = dir.path().join("call_page.scxml");
         let model = crate::parser::SCXMLParser::new()
-            .parse_string(document, "call_page")
-            .expect("the document parses");
+            .parse_file(path.to_str().expect("a utf-8 path"))
+            .unwrap_or_else(|e| panic!("the document parses beside its algorithms: {e:?}"));
         let doc = ForgeDocument::Statechart(Box::new(model));
         let page = crate::forge::pseudo::render(&doc).expect("the page renders");
         assert!(
@@ -4541,7 +4585,7 @@ mod tests {
             "the call that keeps its value names its location first:\n{page}"
         );
         assert!(
-            page.contains("call: Expire(resets, 2)\n"),
+            page.contains("call: Expire(resets)\n"),
             "the call that drops its value is the call alone:\n{page}"
         );
         let back = parse(&page).unwrap_or_else(|e| panic!("{e}\n{page}"));
@@ -4557,7 +4601,7 @@ mod tests {
             calls,
             [
                 ("sce_call", "Take(resets, 7, 1)", "took"),
-                ("sce_call", "Expire(resets, 2)", ""),
+                ("sce_call", "Expire(resets)", ""),
             ]
         );
         assert_eq!(
