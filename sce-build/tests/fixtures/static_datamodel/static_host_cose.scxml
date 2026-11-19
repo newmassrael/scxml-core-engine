@@ -13,7 +13,10 @@
   Each request record of the library is also the event that asks for it
   (`host.cose.sign1.request`, ...). `cose.held.open` opens the object the
   machine sealed last, which it keeps in `sealed_object`, for a seal whose
-  nonce the scenario does not fix.
+  nonce the scenario does not fix. A key's use is a value of the library's
+  enum key_use.scxml, in the request and in the event alike, so a use that is
+  none of the four cannot be written (docs/adr/0109, step 4 of its order of
+  work).
 
     outcome    `done` when the host answered (a signature or a tag that does
                not verify and an object that does not open included), the
@@ -57,6 +60,7 @@
   <sce:import kind="event-schema" src="sce:std/host/mac_verify_result.scxml" as="MacVerifyResult"/>
   <sce:import kind="event-schema" src="sce:std/host/key_generate_request.scxml" as="KeyGenerateRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/key_generate_result.scxml" as="KeyGenerateResult"/>
+  <sce:import kind="enum" src="sce:std/host/key_use.scxml" as="KeyUse"/>
   <sce:import kind="event-schema" src="sce:std/host/key_public_request.scxml" as="KeyPublicRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/key_public_result.scxml" as="KeyPublicResult"/>
   <sce:import kind="event-schema" src="sce:std/host/key_retire_request.scxml" as="KeyRetireRequest"/>
@@ -84,7 +88,7 @@
     <data id="tag_key" sce:type="string[64]" expr="''"/>
     <data id="tag_message" sce:type="bytes[mac_message=4096]" expr="''"/>
     <data id="tag_given" sce:type="bytes[32]" expr="''"/>
-    <data id="key_use" sce:type="string[8]" expr="''"/>
+    <data id="key_use" sce:type="enum:KeyUse" expr="KeyUse.sign"/>
     <data id="key_label" sce:type="string[64]" expr="''"/>
     <data id="export_key" sce:type="string[64]" expr="''"/>
     <data id="retire_key" sce:type="string[64]" expr="''"/>

@@ -29,6 +29,10 @@
   10, a derived key named by what derived it, a key of the key ring signing and
   sealing beside the configured ones, and `key_retired`; sections 7 to 9 name
   them where they list the types, the scenarios and what is not provided.
+- Amended by: ADR 0109 (step 4 of its order of work): section 13, `key_use` the
+  library's enum `key_use`, refused where it is written; section 5, `method`
+  stays a text the host judges, because the operation is served on every lane
+  and only the Rust and C++ lanes read an enum field of a request yet.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -283,6 +287,13 @@ Refusal (`invalid_argument`): a `method` that is not one of `GET`, `HEAD`, `POST
 absolute `http` or `https` URL with a host, or that holds an ASCII space or control
 character (U+0000 to U+0020, U+007F); a header line without a colon, or whose name
 is not an RFC 9110 token.
+
+**`method` is a text the host judges.** It is no enum: an enum field of a request
+is read on the Rust and C++ lanes alone (SCE Accepted Subset §2.12), and this
+operation is served on every lane, so an enum would take it from the others,
+which docs/adr/0109 (D0, its first exception) does not allow of a surface every
+lane shares. It becomes an enum in the change that gives every lane serving this
+operation an enum field of a request, so that no lane loses it.
 
 - `headers` of a request are zero or more `Name: value` lines separated by a line
   feed; an empty line is ignored and a value is without the spaces and tabs around
@@ -897,7 +908,7 @@ are not, and keep their meaning. Served by the Rust and C++ reference hosts
 
 | Operation | `type` | Request | Result |
 |---|---|---|---|
-| Generate | `sce-host-key-generate` | `key_generate_request`: `key_use` (8), `label` (64) | `key_generate_result`: `key_id` string (64) |
+| Generate | `sce-host-key-generate` | `key_generate_request`: `key_use` enum `key_use`, `label` (64) | `key_generate_result`: `key_id` string (64) |
 | Export | `sce-host-key-public` | `key_public_request`: `key_id` (64) | `key_public_result`: `cose_key` bytes (128) |
 | Retire | `sce-host-key-retire` | `key_retire_request`: `key_id` (64) | `key_retire_result`: `retired` bool |
 
@@ -907,17 +918,26 @@ retire: the key is no key of the key ring, a configured key included) and
 not be used).
 
 Refusal (`invalid_argument`): a `key_use` that is not `sign`, `seal`, `mac` or
-`derive`; an empty `key_id`; a value past its field's bound.
+`derive` (which a typed request cannot carry, see below); an empty `key_id`; a
+value past its field's bound.
 
-**`key_use` is a text the host judges.** The field is a text of at most 8 bytes,
-one of the closed set above, judged by the host when the invocation starts, as
-an HTTP request's `method` is (section 5): any other text is refused and nothing
-is generated. It is no enum, because the build refuses a host-run record with an
-enum field (SCE Accepted Subset §2.12, `typed_invoke::validate`); it becomes the
-enum of the same four names, refused where it is written, in step 4 of
-docs/adr/0109's order of work, which admits an enum field in a typed request on
-the Rust and C++ lanes. It is named `key_use`, not `use`, so that every target
-language can spell it as a field (`use` is a keyword of Rust).
+**`key_use` is an enum, refused where it is written.** The field is a value of
+the library's enum `key_use` (`sce:std/host/key_use.scxml`, beside the record),
+whose variants are the four uses (docs/adr/0109, step 4 of its order of work). A
+machine imports that enum and writes one of its variants, or a variable of it,
+at the `<param>`; a text, a value of another enum, and a value of an enum the
+machine does not import are refused where they are written
+(`scxml/static-datamodel-rule`, or `validation/typed-invoke-request` for a text
+literal), so no request names a use that is none of the four (SCE Accepted
+Subset §2.12, an enum field of a request). The value crosses to the host as the
+name the enum declares for it, which is what the reference hosts read: they
+still refuse any other text (`invalid_argument`), which only a request made
+without the generated interface can carry. The generated Rust and C++ interfaces
+hand the host the variant itself. Since the operation is served by the Rust and
+C++ reference hosts alone, which are the lanes that read an enum field of a
+request, no lane serves the operation and refuses the field. It is named
+`key_use`, not `use`, so that every target language can spell it as a field
+(`use` is a keyword of Rust).
 
 **One use.** A generated key has the one use it was generated for (key
 separation, NIST SP 800-57 Part 1): a `sign` key signs and exports (section 10),

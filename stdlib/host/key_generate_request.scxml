@@ -5,11 +5,11 @@
   sce:std/host/key_generate_request.scxml — the request of
   `sce-host-key-generate` (docs/SCE_HOST_FEATURES.md, "Keys").
 
-  `key_use` is the one use of the key: `sign` (an Ed25519 signing key),
-  `seal` (a ChaCha20/Poly1305 key that seals and opens), `mac` (an
-  HMAC-SHA-256 key) or `derive` (input keying material of a derivation); the
-  host refuses any other. `label` is what the document calls the key, kept
-  beside it for the operator; empty when there is none.
+  `key_use` is the one use of the key, a value of key_use.scxml (`sign`,
+  `seal`, `mac` or `derive`): a machine imports that enum to write one, and a
+  value of any other type is refused where it is written. It crosses to the
+  host as its name. `label` is what the document calls the key, kept beside
+  it for the operator; empty when there is none.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -17,8 +17,9 @@
        sce:kind="event-schema"
        name="key_generate_request"
        sce:event-name="host.key.generate.request">
+  <sce:import kind="enum" src="key_use.scxml" as="KeyUse"/>
   <datamodel>
-    <data id="key_use" sce:type="string[8]" sce:direction="in"/>
+    <data id="key_use" sce:type="enum:KeyUse" sce:direction="in"/>
     <data id="label" sce:type="string[64]" sce:direction="in"/>
   </datamodel>
 </scxml>
