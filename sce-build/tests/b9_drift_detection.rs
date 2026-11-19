@@ -770,8 +770,10 @@ fn verify_passes_on_the_materialized_rust_w3c_tree() {
 /// ADR 0094 test 16 for the tree the defect was measured on: every file of
 /// the Rust `static_datamodel` tree states the closure of the documents it
 /// was generated from, found under the three fixture directories its
-/// generations read (standard documents need no root). Before the ADR one
-/// digest of the whole fixture directory stood in all of them.
+/// generations read and the kind examples the test profile's ports import
+/// (`kind-examples/event-schema.scxml`, which the tree writes a file of its
+/// own for; standard documents need no root). Before the ADR one digest of
+/// the whole fixture directory stood in all of them.
 #[test]
 fn verify_passes_on_the_materialized_rust_static_datamodel_tree() {
     let workspace = workspace_root();
@@ -789,6 +791,8 @@ fn verify_passes_on_the_materialized_rust_static_datamodel_tree() {
         .arg(fixtures.join("test_profile"))
         .arg("--input-root")
         .arg(fixtures.join("union"))
+        .arg("--input-root")
+        .arg(workspace.join("sce-build/kind-examples"))
         .output()
         .expect("spawn sce-codegen");
     assert_eq!(

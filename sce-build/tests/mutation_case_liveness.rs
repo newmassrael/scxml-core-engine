@@ -613,12 +613,15 @@ const A_TEMPLATE_IN_A_ROUND_THAT_EMBEDS_IT: &str =
 /// `sce-build` writes the template tree into its own binaries through its
 /// build script, so a round selecting one of ITS tests reaches a template
 /// with nothing declared — which is what the seven casefiles that mutate
-/// templates in a cargo round rely on. `sce-rust-tests` links no such crate
+/// templates in a cargo round rely on. `sce-rust-runtime` links no such crate
 /// (measured through `cargo metadata`: its dependency closure does not
 /// contain `sce-build`), so a template mutation reaches its binaries only
-/// through the committed generated tree, and only if something regenerates
-/// it. That is the shape these two tests are about.
-const SELECTOR_WITHOUT_THE_TEMPLATES: &str = "mutation_tests -p sce-rust-tests --test ai_loop";
+/// if something regenerates what they compile. That is the shape these two
+/// tests are about. `sce-rust-tests` no longer serves: its build script
+/// writes its tree with `sce-build` (docs/adr/0097), which reaches the
+/// templates.
+const SELECTOR_WITHOUT_THE_TEMPLATES: &str =
+    "mutation_tests -p sce-rust-runtime --test a_machine_whose_script_session_fails_does_not_start";
 
 /// A casefile declaring the temp subject AND a real template, with whatever
 /// extra declarations the test is about.
