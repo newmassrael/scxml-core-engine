@@ -144,8 +144,8 @@ fn a_read_of_a_map_that_is_no_read_of_it_is_refused() {
             "reading the map or set `counts` as a value",
         ),
         (
-            "cond=\"putResult == PutOutcome.full\"",
-            "cond=\"counts == spare\"",
+            "cond=\"putResult === PutOutcome.full\"",
+            "cond=\"counts === spare\"",
             unsupported,
             "reading the map or set `counts` as a value",
         ),

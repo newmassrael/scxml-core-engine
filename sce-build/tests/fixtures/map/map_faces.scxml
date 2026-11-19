@@ -57,7 +57,7 @@
       <if cond="len(faces) &lt; _x.limits.face_max">
         <sce:put target="faces" key="peer" expr="face" outcome="putResult"/>
       </if>
-      <if cond="putResult == PutOutcome.full">
+      <if cond="putResult === PutOutcome.full">
         <assign location="refused" expr="refused + 1"/>
       </if>
       <sce:put target="counts" key="7" expr="1"/>
@@ -87,7 +87,7 @@
         <sce:put target="counts" key="s" expr="total"/>
       </foreach>
       <sce:remove target="faces" key="peer" outcome="removeResult"/>
-      <if cond="removeResult == RemoveOutcome.removed">
+      <if cond="removeResult === RemoveOutcome.removed">
         <assign location="refused" expr="refused"/>
       </if>
       <sce:remove target="seen" key="3"/>

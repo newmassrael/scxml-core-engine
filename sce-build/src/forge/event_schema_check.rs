@@ -2774,9 +2774,9 @@ mod tests {
             some_backend(|lowering| lowering.sends)
         );
         // A map is the checker's before it is any lowering's (docs/adr/0108,
-        // "Order of work", step 3): the gate lets a map variable through, and
-        // each lowering's own row refuses it until its step lands.
-        assert!(ComposedLowering::ANY_BACKEND.maps);
+        // "Order of work", step 3): the gate lets a map variable through
+        // whatever the rows say, which the gate's own walk is held to
+        // (`a_map_variable_passes_the_gate_and_is_refused_by_each_lowering_that_holds_none`).
     }
 
     /// docs/adr/0108, D10: a statechart's map or set variable passes the gate
