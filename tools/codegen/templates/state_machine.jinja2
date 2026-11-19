@@ -511,6 +511,59 @@ inline const ::SCE::Saved::SavedShape &savedShape() {
             built.enums.push_back(std::move(lineage));
         }
 {% endfor %}
+{# docs/adr/0109, D11: each step of the migration the document declares, as the build
+   judged it against its two shape files; upgradeSavedState applies them to a state an
+   earlier version saved before it judges the shape. A conversion reads the old value as
+   the algorithm's parameter and writes the new one as its return, each a fixed-width
+   number or bool the build matched to the two shapes. #}
+{% set saved_scalar = {"uint8": "Uint8", "uint16": "Uint16", "uint32": "Uint32", "uint64": "Uint64", "int8": "Int8", "int16": "Int16", "int32": "Int32", "int64": "Int64", "float32": "Float32", "float64": "Float64", "bool": "Bool"} %}
+{% for step in static_saved_shape.migrations %}
+        {
+            ::SCE::Saved::MigrationStep step;
+            step.from = "{{ step.from }}";
+            step.fromRevised = "{{ step.from_revised }}";
+            step.to = "{{ step.to }}";
+            step.toRevised = "{{ step.to_revised }}";
+{% for renamed in step.states %}
+            step.states.push_back(::SCE::Saved::Renamed{"{{ renamed.from | escape_cpp }}", "{{ renamed.to | escape_cpp }}"});
+{% endfor %}
+{% for renamed in step.histories %}
+            step.histories.push_back(::SCE::Saved::Renamed{"{{ renamed.from | escape_cpp }}", "{{ renamed.to | escape_cpp }}"});
+{% endfor %}
+{% for id in step.dropped_histories %}
+            step.droppedHistories.push_back("{{ id | escape_cpp }}");
+{% endfor %}
+{% for renamed in step.invokes %}
+            step.invokes.push_back(::SCE::Saved::Renamed{"{{ renamed.from | escape_cpp }}", "{{ renamed.to | escape_cpp }}"});
+{% endfor %}
+{% for id in step.dropped_invokes %}
+            step.droppedInvokes.push_back("{{ id | escape_cpp }}");
+{% endfor %}
+{% for renamed in step.events %}
+            step.events.push_back(::SCE::Saved::Renamed{"{{ renamed.from | escape_cpp }}", "{{ renamed.to | escape_cpp }}"});
+{% endfor %}
+{% for renamed in step.data %}
+            step.data.push_back(::SCE::Saved::Renamed{"{{ renamed.from | escape_cpp }}", "{{ renamed.to | escape_cpp }}"});
+{% endfor %}
+{% for id in step.dropped_data %}
+            step.droppedData.push_back("{{ id | escape_cpp }}");
+{% endfor %}
+{% for id in step.widened_to_text %}
+            step.widenedToText.push_back("{{ id | escape_cpp }}");
+{% endfor %}
+{% for added in step.added_data %}
+            step.addedData.push_back(::SCE::Saved::AddedData{"{{ added.id | escape_cpp }}", "{{ added.value | escape_cpp }}"});
+{% endfor %}
+{% for converted in step.converted %}
+            step.converted.push_back(::SCE::Saved::ConvertedData{
+                "{{ converted.data | escape_cpp }}",
+                [](const ::SCE::Saved::JsonValue &old, const std::string &what) {
+                    return ::SCE::Saved::savedWrite{{ saved_scalar[converted.ret] }}({{ converted.call }}(::SCE::Saved::savedRead{{ saved_scalar[converted.param] }}(old, what)));
+                }});
+{% endfor %}
+            built.migrations.push_back(std::move(step));
+        }
+{% endfor %}
         return built;
     }();
     return shape;

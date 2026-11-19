@@ -39,12 +39,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -362,6 +364,65 @@ struct RecordLineage {
     std::vector<RecordHolder> holders;
 };
 
+// ── A declared migration (docs/adr/0109, D11) ────────────────────────────────
+
+/// A name a migration step carries to another: the one the earlier version gave it, and the
+/// one this version gives it.
+struct Renamed {
+    std::string from;
+    std::string to;
+};
+
+/// A variable a migration step adds, with its value as saved-state JSON.
+struct AddedData {
+    std::string id;
+    std::string valueText;
+};
+
+/// A variable a migration step converts by a pure algorithm the document names: the variable as
+/// this version names it, and the conversion the generator wrote around the algorithm's call,
+/// from the old value and what names it in a refusal to the new value. A conversion refuses an
+/// old value that is not of the algorithm's parameter by throwing StateRefusal.
+struct ConvertedData {
+    std::string data;
+    std::function<JsonValue(const JsonValue &, const std::string &)> convert;
+};
+
+/// One step of a migration a document declares (docs/adr/0109, D11): the shape a state saved by
+/// an earlier version names, the shape the step carries it to, and what it carries by name. The
+/// generator writes it from the step the build held to its two shape files, so every name here is
+/// one of them.
+struct MigrationStep {
+    /// The shape a state the step applies to names when it names no revision, and when it does.
+    std::string from;
+    std::string fromRevised;
+    /// The shape the step leaves a state of `from` at, and one of `fromRevised`.
+    std::string to;
+    std::string toRevised;
+    /// Each state renamed, and each removed state mapped to one of the new document: in the
+    /// configuration, the current leaf and what each history recorded.
+    std::vector<Renamed> states;
+    /// Each `<history>` renamed, and each whose state was removed, whose record is let go.
+    std::vector<Renamed> histories;
+    std::vector<std::string> droppedHistories;
+    /// Each `<invoke>` renamed, and each the new document no longer runs, which ends without a
+    /// start, and a waiting send to its child with it.
+    std::vector<Renamed> invokes;
+    std::vector<std::string> droppedInvokes;
+    /// Each event a waiting send names that was renamed.
+    std::vector<Renamed> events;
+    /// Each variable renamed, and each the new document does not carry.
+    std::vector<Renamed> data;
+    std::vector<std::string> droppedData;
+    /// Each variable, by its new name, whose integer widened from 32 bits or fewer to 64: written
+    /// as a number before and as a text now.
+    std::vector<std::string> widenedToText;
+    /// Each variable the step adds, with its value.
+    std::vector<AddedData> addedData;
+    /// Each variable the step converts.
+    std::vector<ConvertedData> converted;
+};
+
 /// What a machine's saved state is bound to: the document's shape, and the revisions of each
 /// schema a record variable of it is of (docs/adr/0044). The generator computes it, and every
 /// saved state is written and judged against it.
@@ -386,6 +447,10 @@ struct SavedShape {
     /// (SavedState::features); nullopt for a machine of no product line. A machine generated
     /// for every build of one states it per build, under the build's own condition.
     std::optional<std::vector<std::string>> features;
+    /// The steps of each migration the document declares, in the order of the chain the build
+    /// judged (docs/adr/0109, D11): what upgradeSavedState applies to a state an earlier version
+    /// of the document saved before it judges the shape. Empty for a document that declares none.
+    std::vector<MigrationStep> migrations;
 };
 
 /// A machine's whole state at a macrostep boundary.
@@ -1580,7 +1645,215 @@ inline void checkWidenedHolder(const SavedState &saved, const RecordLineage &rec
     }
 }
 
+/// The name `table` carries `id` to, or nullptr when it carries it nowhere.
+inline const std::string *migrationRenamed(const std::vector<Renamed> &table, const std::string &id) {
+    for (const Renamed &renamed : table) {
+        if (renamed.from == id) {
+            return &renamed.to;
+        }
+    }
+    return nullptr;
+}
+
+/// Whether `names` holds `id`.
+inline bool migrationListed(const std::vector<std::string> &names, const std::string &id) {
+    return std::find(names.begin(), names.end(), id) != names.end();
+}
+
+/// Carries each id of `ids` by `table`, keeping the first of any two it makes one.
+inline void migrationCarryIds(std::vector<std::string> &ids, const std::vector<Renamed> &table) {
+    std::vector<std::string> carried;
+    carried.reserve(ids.size());
+    for (const std::string &id : ids) {
+        const std::string *to = migrationRenamed(table, id);
+        const std::string &name = to != nullptr ? *to : id;
+        if (std::find(carried.begin(), carried.end(), name) == carried.end()) {
+            carried.push_back(name);
+        }
+    }
+    ids = std::move(carried);
+}
+
+/// Carries the count of each `<invoke>` of `starts` by `step`: one the new document no longer
+/// runs is let go, and the rest keyed by their new ids.
+inline void migrationCarryStarts(std::vector<SavedInvokeStart> &starts, const MigrationStep &step) {
+    std::vector<SavedInvokeStart> carried;
+    carried.reserve(starts.size());
+    for (SavedInvokeStart &started : starts) {
+        if (migrationListed(step.droppedInvokes, started.id)) {
+            continue;
+        }
+        if (const std::string *to = migrationRenamed(step.invokes, started.id)) {
+            started.id = *to;
+        }
+        carried.push_back(std::move(started));
+    }
+    starts = std::move(carried);
+}
+
+/// Applies one migration step to `state`, a session saved under `step.from` (docs/adr/0109,
+/// D11): its states, histories, invocations, the events its waiting sends name, and its
+/// variables, each carried by name. The shape is the caller's to set. A running child's own
+/// session is its document's to migrate, when the child's machine judges it, and is not touched
+/// here.
+inline void applyMigrationStep(SavedState &state, const MigrationStep &step) {
+    // States: renamed, or removed and mapped to one of the new document.
+    migrationCarryIds(state.configuration, step.states);
+    if (const std::string *to = migrationRenamed(step.states, state.current)) {
+        state.current = *to;
+    }
+    // Histories: a removed state's is let go, and the rest keyed by their new ids, in the order
+    // of those ids, as a saved state orders them.
+    std::vector<SavedHistory> history;
+    history.reserve(state.history.size());
+    for (SavedHistory &recorded : state.history) {
+        if (migrationListed(step.droppedHistories, recorded.id)) {
+            continue;
+        }
+        migrationCarryIds(recorded.states, step.states);
+        if (const std::string *to = migrationRenamed(step.histories, recorded.id)) {
+            recorded.id = *to;
+        }
+        history.push_back(std::move(recorded));
+    }
+    std::sort(history.begin(), history.end(), [](const SavedHistory &a, const SavedHistory &b) { return a.id < b.id; });
+    state.history = std::move(history);
+    // Invocations: one the new document no longer runs ends without a start, and the rest carry
+    // their new ids, the id a child was started under included where the document gave it.
+    if (state.invokes.resumed) {
+        std::vector<SavedChild> children;
+        children.reserve(state.invokes.children.size());
+        for (SavedChild &child : state.invokes.children) {
+            if (migrationListed(step.droppedInvokes, child.id)) {
+                continue;
+            }
+            if (const std::string *to = migrationRenamed(step.invokes, child.id)) {
+                if (child.invokeId == child.id) {
+                    child.invokeId = *to;
+                }
+                child.id = *to;
+            }
+            children.push_back(std::move(child));
+        }
+        state.invokes.children = std::move(children);
+    } else {
+        std::vector<std::string> ids;
+        for (const std::string &id : state.invokes.ids) {
+            if (!migrationListed(step.droppedInvokes, id)) {
+                ids.push_back(id);
+            }
+        }
+        migrationCarryIds(ids, step.invokes);
+        state.invokes.ids = std::move(ids);
+    }
+    migrationCarryStarts(state.invokeStarts, step);
+    migrationCarryStarts(state.hostInvokeStarts, step);
+    std::sort(state.hostInvokeStarts.begin(), state.hostInvokeStarts.end(),
+              [](const SavedInvokeStart &a, const SavedInvokeStart &b) { return a.id < b.id; });
+    std::vector<SavedHostInvoke> hostInvokes;
+    hostInvokes.reserve(state.hostInvokes.size());
+    for (SavedHostInvoke &host : state.hostInvokes) {
+        if (migrationListed(step.droppedInvokes, host.invokeId)) {
+            continue;
+        }
+        if (const std::string *to = migrationRenamed(step.invokes, host.invokeId)) {
+            host.invokeId = *to;
+        }
+        hostInvokes.push_back(std::move(host));
+    }
+    std::sort(hostInvokes.begin(), hostInvokes.end(), [](const SavedHostInvoke &a, const SavedHostInvoke &b) {
+        return std::tie(a.processorType, a.invokeId) < std::tie(b.processorType, b.invokeId);
+    });
+    state.hostInvokes = std::move(hostInvokes);
+    // Waiting sends: a send to the child of an invocation that ends goes with it, and each event
+    // renamed is delivered under its new name.
+    std::vector<SavedSend> pending;
+    pending.reserve(state.pending.size());
+    for (SavedSend &send : state.pending) {
+        if (send.act.kind == SavedActKind::Child) {
+            if (migrationListed(step.droppedInvokes, send.act.invokeId)) {
+                continue;
+            }
+            if (const std::string *to = migrationRenamed(step.invokes, send.act.invokeId)) {
+                send.act.invokeId = *to;
+            }
+        }
+        if (const std::string *to = migrationRenamed(step.events, send.act.event)) {
+            send.act.event = *to;
+        }
+        pending.push_back(std::move(send));
+    }
+    state.pending = std::move(pending);
+    // Variables: dropped, renamed, widened, converted and added, in that order, so each later act
+    // names a variable by its new name.
+    JsonObject variables;
+    for (std::size_t at = 0; at < state.variables.size(); ++at) {
+        const std::string &id = state.variables.keys()[at];
+        if (migrationListed(step.droppedData, id)) {
+            continue;
+        }
+        const std::string *to = migrationRenamed(step.data, id);
+        variables.set(to != nullptr ? *to : id, state.variables.valueAt(at));
+    }
+    for (const std::string &widened : step.widenedToText) {
+        // A number of the narrower type is the text of the wider one; any other value is left
+        // for the variable's own read to refuse.
+        const JsonValue *value = variables.get(widened);
+        if (value != nullptr && value->isNumber()) {
+            JsonValue text(value->asNumber().text);
+            variables.set(widened, std::move(text));
+        }
+    }
+    for (const ConvertedData &conversion : step.converted) {
+        if (const JsonValue *value = variables.get(conversion.data)) {
+            JsonValue converted = conversion.convert(*value, conversion.data);
+            variables.set(conversion.data, std::move(converted));
+        }
+    }
+    for (const AddedData &added : step.addedData) {
+        if (variables.has(added.id)) {
+            refuse("the saved state holds '" + added.id + "', which the migration to this version adds");
+        }
+        try {
+            variables.set(added.id, parseJson(added.valueText));
+        } catch (const JsonError &err) {
+            refuse("the value the migration adds '" + added.id + "' with is " + err.what());
+        }
+    }
+    state.variables = std::move(variables);
+}
+
 }  // namespace detail
+
+/// `saved` carried by `steps`, the migration a document declares (docs/adr/0109, D11), or
+/// nullopt when no step applies to it. The steps are applied in order, each to a state whose shape
+/// is its `from` (its `fromRevised` for one that names revisions), which leaves the state at its
+/// `to` (`toRevised`), so a state of the first version runs through every step to this one. A
+/// state whose shape no step starts from is left as it is, for the shape's own judgement to take
+/// or refuse, and so is a state of format 1: it names an enum by the alias it was imported under,
+/// which no shape file spells.
+inline std::optional<SavedState> migratedSavedState(const SavedState &saved, const std::vector<MigrationStep> &steps) {
+    if (saved.format() == kSavedFormat1) {
+        return std::nullopt;
+    }
+    std::optional<SavedState> migrated;
+    for (const MigrationStep &step : steps) {
+        const SavedState &current = migrated.has_value() ? *migrated : saved;
+        const std::string *to = nullptr;
+        if (current.shape == step.from) {
+            to = &step.to;
+        } else if (current.shape == step.fromRevised) {
+            to = &step.toRevised;
+        } else {
+            continue;
+        }
+        SavedState next = current;
+        detail::applyMigrationStep(next, step);
+        next.shape = *to;
+        migrated = std::move(next);
+    }
+    return migrated;
+}
 
 /// `saved` as a state of the machine whose saved state is bound to `shape`, or the refusal
 /// that says why it is not one (docs/adr/0044), judged before any variable is read, as
@@ -1596,8 +1869,14 @@ inline void checkWidenedHolder(const SavedState &saved, const RecordLineage &rec
 /// saved at does not declare it, and so is one that holds `null` in a field a later revision
 /// widened to optional, since at the revision it was saved at the field was a value of its
 /// present type and no build wrote it absent (docs/adr/0055, section 6).
-inline SavedState upgradeSavedState(const SavedState &saved, const SavedShape &shape) {
-    checkSavedFeatures(saved, shape.features);
+///
+/// A state an earlier version of the document saved is first carried to this one by the
+/// migration the document declares, when a step of it starts from the state's shape
+/// (docs/adr/0109, D11; migratedSavedState).
+inline SavedState upgradeSavedState(const SavedState &given, const SavedShape &shape) {
+    checkSavedFeatures(given, shape.features);
+    const std::optional<SavedState> migrated = migratedSavedState(given, shape.migrations);
+    const SavedState &saved = migrated.has_value() ? *migrated : given;
     // A tree names an enum by its document and a format-1 state by the alias it is imported
     // under, so each is judged against its own shape (docs/adr/0045, section 2). Format 3 holds
     // format 2's tree, so it is of format 2's shape (docs/adr/0090, section 7).

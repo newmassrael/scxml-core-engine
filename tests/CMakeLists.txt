@@ -608,6 +608,7 @@ add_executable(static_datamodel_generated_cpp_test
     integration/ASavedTreeHoldsEverySessionWhereItStoodTest.cpp
     integration/ASavedWaitingSendSurvivesARestoreTest.cpp
     integration/ASavedChildSessionIsResumedAfterARestoreTest.cpp
+    integration/ASavedStateIsMigratedIntoTheNextVersionTest.cpp
     integration/ATestTemplateMatchesItsValuesTest.cpp
     integration/ATestComponentRunsThroughItsDoorsTest.cpp
     integration/ATestSuiteRunsEndToEndTest.cpp
@@ -658,9 +659,12 @@ sce_add_static_scenario_suite(
 # scenario's machine (scenarios/static_composed_payload.json), which the suite above
 # generates, and AComposedPayloadIsReadAtAnyDepthTest drives the same machine.
 # The tree a host posts a child's ending to from inside the parent's macrostep is
-# generated for integration_tests, whose inbox driver posts to it.
+# generated for integration_tests, whose inbox driver posts to it. The two versions
+# of one machine a saved state is migrated between (docs/adr/0109, D11) are driven
+# by ASavedStateIsMigratedIntoTheNextVersionTest; the second reads the shape files
+# under shapes/ beside it when it is generated.
 foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_hybrid_saved static_schema_pending
-                            static_composed_send)
+                            static_composed_send static_migration_1 static_migration_2)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
