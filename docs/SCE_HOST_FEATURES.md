@@ -18,6 +18,12 @@
   built in the Rust host core leave the list, which names what a server still
   lacks and points to the runbook, `docs/SCE_SERVER_DEPLOY.md`; the Swift item
   narrowed to iOS, since the Swift lane serves sections 2 to 6.
+- Amended by: ADR 0109 (D4): section 5, the destination policy a server's
+  transport is built with and the failure code `destination_refused`;
+  section 8, the network transports of the Rust and C++ reference hosts;
+  section 9, Rust leaves the list of lanes without a network transport, and a
+  server's outbound HTTP leaves what a server lacks
+  (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`).
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -261,8 +267,11 @@ what it saved.
 | One exchange | `sce-host-http-fetch` | `http_fetch_request`: `method` (8), `url` (2048), `headers` (2048), `body` (16384) | `http_fetch_result`: `status` uint16, `headers` string (4096), `body` string (16384) |
 
 Failure codes: `network` (no response was received: name resolution, connection,
-TLS, or the connection ended), `response_too_large` (the headers or the body do not
-fit the record), `invalid_body` (the body is not UTF-8).
+TLS, a timeout, or the connection ended), `response_too_large` (the headers or the
+body do not fit the record, or pass a bound of the transport), `invalid_body` (the
+body is not UTF-8), `destination_refused` (the transport's destination policy
+refused the target before anything was sent: it is not on the policy's allow-list,
+or every address its name resolved to is refused; see "Destination policy" below).
 
 Refusal (`invalid_argument`): a `method` that is not one of `GET`, `HEAD`, `POST`,
 `PUT`, `PATCH`, `DELETE`, `OPTIONS` (spelled in capitals); a `url` that is not an
@@ -293,6 +302,39 @@ is not an RFC 9110 token.
 
 Left to the host: the trust store and certificate policy, proxies, connection
 reuse, compression, HTTP version, and the host's own timeout.
+
+**Destination policy** (docs/adr/0109, D4). A transport that reaches the network
+for a server, where the URL a document fetches may come from a client, is built
+with a destination policy and has no constructor without one. The policy is
+either an allow-list (each entry a scheme, a host or `*.` before a name for every
+name below it, and a port) or the public internet (any host and port, `https`
+only), and judges each request before anything is sent:
+
+- A target the policy does not admit is refused before its name is resolved.
+- The name is resolved once for the exchange, by the policy, and every address it
+  resolves to is judged against the special-purpose ranges of RFC 6890 and the
+  IANA registries it set up: unspecified, "this network" `0.0.0.0/8`, loopback,
+  RFC 1918, shared `100.64.0.0/10`, link-local `169.254.0.0/16` and `fe80::/10`,
+  unique local `fc00::/7`, the IETF protocol assignments `192.0.0.0/24` and
+  `2001::/23`, documentation, benchmarking `198.18.0.0/15`, multicast, broadcast,
+  discard-only `100::/64`, the local-use NAT64 prefix `64:ff9b:1::/48`, reserved
+  `240.0.0.0/4`, the deprecated `192.88.99.0/24` and `fec0::/10`, and every IPv6
+  address outside `2000::/3`. An IPv6 address that carries an IPv4 address
+  (IPv4-mapped, IPv4-translated, IPv4-compatible, 6to4, the well-known NAT64 prefix
+  `64:ff9b::/96`) is judged by the address it carries. An address literal is
+  judged without being resolved.
+- An address in such a range is refused unless the allow-list entry the target
+  matched names a network that holds it (an internal service the deployment names,
+  and no other); the addresses left are where the transport may connect, and a
+  name with none left is refused `destination_refused`. A name that resolves to no
+  address fails `network`.
+- The transport connects only to an address the policy admitted, never to a
+  second resolution of the name, so a name that answers another address between
+  the check and the connect cannot pass; `Host` and the TLS server name stay the
+  URL's host, and TLS is verified against it.
+- No redirect is followed and no proxy is used. A connection, a TLS handshake, the
+  response's head and the whole exchange each have a bound, which fails `network`;
+  a body or a head past the transport's bound fails `response_too_large`.
 
 ## 6. Generated text
 
@@ -472,11 +514,11 @@ machine and replays the scenarios:
 
 | Lane | Reference host | Driver | Clock | HTTP transport |
 |---|---|---|---|---|
-| Rust | `backends/rust/host-features` | `backends/rust/scenarios/tests/host_features.rs` | system, scripted | none |
+| Rust | `backends/rust/host-features` | `backends/rust/scenarios/tests/host_features.rs` | system, scripted | hyper over rustls, behind a destination policy (`backends/rust/host-http`) |
 | Kotlin (JVM) | `backends/kotlin/host-features` | `backends/kotlin/tests/src/test/kotlin/com/sce/integration/HostFeaturesTest.kt` | system, scripted | JDK client |
 | Go | `backends/go/host-features` | `backends/go/tests/integration/static_datamodel/host_features_test.go` | system, scripted | `net/http` |
 | Python | `backends/python/host-features` | `backends/python/tests/integration/static_datamodel/test_host_features.py` | system, scripted | `http.client` |
-| C++ | `sce/include/host/StandardHost.h` | `tests/integration/AStandardHostScenarioTest.cpp` | system, scripted | cpp-httplib (`HttplibTransport.h`) |
+| C++ | `sce/include/host/StandardHost.h` | `tests/integration/AStandardHostScenarioTest.cpp` | system, scripted | cpp-httplib (`HttplibTransport.h`); libcurl, behind a destination policy (`CurlTransport.h`, `DestinationPolicy.h`) |
 | C | `backends/c/host-features` | `backends/c/tests/integration/test_host_features.c` | system, scripted | none |
 | Swift | `backends/swift/host-features` | `backends/swift/tests/Tests/StaticDatamodelTests/HostFeaturesTests.swift` | system, scripted | none |
 | C++ Interpreter | `sce/include/host/StandardHost.h` | `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp` | scripted | none |
@@ -493,7 +535,16 @@ Interpreter's driver holds `static_host_model` and the reference harness
 Each driver runs the machine on a manual clock and the host on a scripted one, so a
 scenario is deterministic. The transports that exist are held by a test against a
 local server (carrying headers and a body, no redirect followed, an error status
-an answer, a server that is gone `network`). Each lane's host is also held, apart
+an answer, a server that is gone `network`). The two built with a destination
+policy (section 5) are held besides, against a server on a loopback port and a
+resolver the test scripts, to refusing a name that resolves to loopback before a
+byte is sent while serving one the allow-list lets reach it, to resolving a name
+once per exchange and connecting to the address checked, to answering a redirect
+to a private address as the `3xx` it is, and to their bounds of time and size
+(`backends/rust/host-http/tests/`, `tests/integration/AStandardHostCurlTransportTest.cpp`);
+each lane's policy is held to one table of addresses in every special-purpose
+range (`backends/rust/host-features/src/destination.rs`,
+`tests/integration/AStandardHostDestinationPolicyTest.cpp`). Each lane's host is also held, apart
 from the scenarios, to the system clock's monotonic reading never decreasing, to
 serving none of a type outside the standard set, and, where a lane's strings can
 hold U+0000 (a C string cannot), to refusing a key with one. Every lane is held to
@@ -511,12 +562,14 @@ starts the host records carry the session's id and the start number beside the
 
 Three things differ by lane and are not hidden:
 
-- **The order of a response's fields.** The Python transport gives them in the
-  order received. The Go, Kotlin and C++ transports give them sorted by name
-  because their clients keep fields in a map.
+- **The order of a response's fields.** The Python transport and the C++ libcurl
+  one give them in the order received. The Go, Kotlin, C++ cpp-httplib and Rust
+  transports give them sorted by name because their clients keep fields in a map.
 - **The Kotlin JVM transport cannot carry a request header the JDK client
   reserves** (`host`, `content-length`, `connection`, `expect`, `upgrade`): a
-  request that names one fails `network`.
+  request that names one fails `network`. The Rust and C++ network transports
+  likewise carry none of the fields that frame or route a message (`host`,
+  `content-length`, `transfer-encoding`, `connection`, `upgrade`, `expect`, `te`).
 - **The C host is a hosted reference** (it allocates), and a result record travels
   in one data slot of the machine, `SCE_MAX_DATA_LEN`, which defaults to 256 bytes.
   A C build that serves the HTTP operation sets it to at least 40000
@@ -545,8 +598,7 @@ These are not built, and nothing here stands in for them:
   `docs/SCE_SERVER_DEPLOY.md` is the runbook for a program built from them. No
   such program is built here: each deployment writes the program that joins them
   to its machine, its keys and its credentials. Beside it there is still no
-  quota policy, no outbound HTTP for this document's section 5 with a trust
-  policy on a server, no delivery of notifications, no durable keeping of the
+  quota policy, no delivery of notifications, no durable keeping of the
   `install` authenticator's pins (the server has only `MemoryPins`, SCE_MESH.md
   section 22.5), and no orderly stop of a pool that saves every session it holds
   as a clean checkpoint.
@@ -555,13 +607,19 @@ These are not built, and nothing here stands in for them:
   put-if repeated under one identity (section 8): a host that stops forgets
   both. Durability is left to the host (section 3). The session store above is
   durable, but it keeps a pool's sessions, not this feature's values.
-- **A network HTTP transport for Rust, C and Swift.** Their reference hosts are
+- **A network HTTP transport for C and Swift.** Their reference hosts are
   the full semantics over a transport the embedding supplies, driven by a
-  scripted one. The Rust runtime links no HTTP client, and the C runtime's client
-  posts a form for a `<send>` and carries no general exchange. The adapters of
-  the Mesh `https` binding (hyper over rustls for Rust; the system's libcurl and
-  WinHTTP for C++; SCE_MESH.md section 22.6) carry that binding's exchanges
-  through its own port and are not a transport of this feature.
+  scripted one. The C runtime's client posts a form for a `<send>` and carries
+  no general exchange. The adapters of the Mesh `https` binding (hyper over
+  rustls for Rust; the system's libcurl and WinHTTP for C++; SCE_MESH.md
+  section 22.6) carry that binding's exchanges through its own port and are not
+  a transport of this feature; Rust's (`backends/rust/host-http`) and C++'s
+  (`CurlTransport.h`) are, on the same stacks (section 5, "Destination
+  policy").
+- **A proxy for the network transports of section 5.** The Rust and C++ ones
+  connect directly and read no proxy from the environment; a server whose
+  outbound requests must pass a proxy has no transport here that reaches it
+  while the target is still judged against the policy (docs/adr/0109, D4).
 - **A zone for the Rust host's system clock on a platform other than Unix**, which
   answers `unavailable` for `sce-host-clock-zone`.
 - **Delivery of a scheduled notification while the application is not running**,
