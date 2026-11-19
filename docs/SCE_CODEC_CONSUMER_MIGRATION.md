@@ -2829,3 +2829,18 @@ narrower than its type, so none is regenerated; a consumer regenerates the codec
 - The printed Python decode hands a field its number directly; `BoundedInt.from_wire` stays in the runtime for code
   that calls it, and no printed codec does.
 
+## A CBOR codec writes an enum of a signed carrier as the integer it is, and its size is its largest encoding (ADR 0101 step 2)
+
+Landing: the commits that add this section. No committed tree holds a CBOR enum of a signed carrier or reads a CBOR
+`<NAME>_MAX_BYTES`, so none is regenerated; a consumer regenerates the CBOR codecs it owns.
+
+- An enum entry whose carrier is signed (`int8` to `int64`) is written as the CBOR integer of its value on every
+  backend, a negative one as major type 1, and read back within its carrier. Before, its encode refused a negative
+  value (`CborOutOfRange`), so a codec holding one declared `sce:encode-may-fail="true"`; that encode now refuses
+  nothing, and a codec whose only refusal it was is refused for declaring it (ADR 0065 §3). Remove the attribute,
+  and code that handled the encode's refusal for such a value drops it.
+- `<NAME>_MAX_BYTES` of a CBOR codec is the size of its largest encoding (docs/adr/0101, section 4.1), where it
+  counted every integer and enum entry at 9 bytes: an enum or narrow integer counts the longest head its values
+  take. It narrows, so a buffer sized by it stays large enough, and one sized by an earlier value is larger than it
+  needs. The C11 broadcast log's slot follows it.
+
