@@ -17,7 +17,9 @@
 //!   derived with HKDF-SHA-256, and a public key exported as a `COSE_Key`;
 //! - [`wrap`]: a key's material wrapped under a key-encryption key the key store never holds;
 //! - [`keyring`]: the life of a key a host generates or derives, over a key store
-//!   (`sce_rust_session_store::KeyStore`).
+//!   (`sce_rust_session_store::KeyStore`);
+//! - [`sealed`]: every store a server keeps sealed at rest, each key it finds a row by kept as a
+//!   keyed digest (ADR 0109, D8).
 //!
 //! Key material is held in [`zeroize::Zeroizing`] wherever this crate holds it, and no type here
 //! prints a key through `Debug`.
@@ -30,6 +32,7 @@ pub mod equal;
 pub mod keyring;
 pub mod mac;
 pub mod random;
+pub mod sealed;
 pub mod wrap;
 
 pub use zeroize::Zeroizing;

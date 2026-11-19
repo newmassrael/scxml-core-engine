@@ -64,7 +64,7 @@ pub fn is_key_ring_id(id: &str) -> bool {
 }
 
 /// The algorithm a key of `key_use` is for, as a store names it.
-pub fn algorithm_of(key_use: KeyUse) -> &'static str {
+pub const fn algorithm_of(key_use: KeyUse) -> &'static str {
     match key_use {
         KeyUse::Sign => "EdDSA-Ed25519",
         KeyUse::Seal | KeyUse::Derived => "ChaCha20-Poly1305",
@@ -166,6 +166,16 @@ pub enum DerivationInput<'a> {
     Key(&'a str),
     /// Bytes the statechart gave, which the id names by their SHA-256.
     Secret(&'a [u8]),
+}
+
+/// A key a host keeps for itself under an id no statechart names, drawn at its first use
+/// ([`Keyring::keep_drawn`]).
+pub(crate) struct Reserved<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) key_use: KeyUse,
+    pub(crate) algorithm: &'a str,
+    /// What the operator who lists the store's keys reads it as.
+    pub(crate) label: &'a str,
 }
 
 /// The context a key's material is wrapped for: its id and its use.
@@ -348,28 +358,53 @@ impl Keyring {
         now_ms: u64,
         random: &mut dyn RandomSource,
     ) -> Result<[u8; TAG_BYTES], KeyError> {
-        if self.store.key(ISSUING_KEY_ID)?.is_none() {
-            let mut drawn = Zeroizing::new([0u8; KEY_BYTES]);
-            if !random.fill(&mut drawn[..]) {
-                return Err(KeyError::Unavailable(
-                    "the random source gave no issuing key".to_string(),
-                ));
-            }
-            let row = KeyRow {
-                id: ISSUING_KEY_ID.to_string(),
+        self.keep_drawn(
+            &Reserved {
+                id: ISSUING_KEY_ID,
                 key_use: KeyUse::Mac,
-                algorithm: algorithm_of(KeyUse::Mac).to_string(),
-                wrapped: self
-                    .wrap
-                    .wrap(&context(ISSUING_KEY_ID, KeyUse::Mac), &drawn[..])?,
-                label: ISSUING_LABEL.to_string(),
-                created_ms: now_ms,
-                state: KeyState::Active,
-            };
-            self.store.insert(&row, None)?;
-        }
+                algorithm: algorithm_of(KeyUse::Mac),
+                label: ISSUING_LABEL,
+            },
+            now_ms,
+            random,
+        )?;
         let key = self.material(ISSUING_KEY_ID, Purpose::Tag)?;
         Ok(hmac_sha256(&key[..], message))
+    }
+
+    /// Keep the key `reserved` names, 32 bytes drawn from `random`, made at `now_ms` and wrapped
+    /// as every key of the ring is, unless the store holds a key of its id: of two processes that
+    /// each drew one, the first kept is the key. A key a host keeps for itself under an id no
+    /// statechart names (the issuing key, the keys of a sealing store) is made this way.
+    pub(crate) fn keep_drawn(
+        &self,
+        reserved: &Reserved<'_>,
+        now_ms: u64,
+        random: &mut dyn RandomSource,
+    ) -> Result<(), KeyError> {
+        if self.store.key(reserved.id)?.is_some() {
+            return Ok(());
+        }
+        let mut drawn = Zeroizing::new([0u8; KEY_BYTES]);
+        if !random.fill(&mut drawn[..]) {
+            return Err(KeyError::Unavailable(format!(
+                "the random source gave no key for {}",
+                reserved.id
+            )));
+        }
+        let row = KeyRow {
+            id: reserved.id.to_string(),
+            key_use: reserved.key_use,
+            algorithm: reserved.algorithm.to_string(),
+            wrapped: self
+                .wrap
+                .wrap(&context(reserved.id, reserved.key_use), &drawn[..])?,
+            label: reserved.label.to_string(),
+            created_ms: now_ms,
+            state: KeyState::Active,
+        };
+        self.store.insert(&row, None)?;
+        Ok(())
     }
 
     /// The Ed25519 public key of the signing key `id` names, retired or not.

@@ -1,0 +1,79 @@
+{
+  "about": [
+    "What the Rust and the C++ reference hosts agree on for a sealed record, byte for byte",
+    "(docs/SCE_SEALED_RECORD.md; docs/adr/0109, D8). Every hexadecimal value is the bytes it spells.",
+    "",
+    "`digests` lists keys and the entry a sealing store indexes each under: the lowercase hexadecimal",
+    "of the HMAC-SHA-256 under `index_key` of the key's UTF-8 bytes. `token_entry` is the entry of a",
+    "token whose digest is `token_digest`: the HMAC-SHA-256 under `index_key` of the digest's bytes.",
+    "",
+    "`records` lists sealings: each host must seal `plaintext` under the key `key`, named `key_id`, with",
+    "the nonce `nonce`, for the store `store` and the row's entry `indexed`, into exactly `record`,",
+    "and must open `record` for the same store and entry back into `plaintext`. A record opened for",
+    "another entry or another store, with a byte of it changed, or under another key, does not open.",
+    "The first and third plaintexts are the payloads of a session's row and of a token's row."
+  ],
+  "index_key": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+  "digests": [
+    {
+      "key": "r1",
+      "digest": "4b49336eb1087a76dc2f4b3901c0433fab93cd8644c58f6678df162834603510"
+    },
+    {
+      "key": "phone",
+      "digest": "12ab5892387123a67f15447925f90a950e08f33f942d991aa4f156af6cb74070"
+    },
+    {
+      "key": "",
+      "digest": "f49240b78aa90e53f46106c3481e377e19696e777328b1cd6ec6061a0bd868a9"
+    },
+    {
+      "key": "生",
+      "digest": "c556e4822562d4b3c239e1ca1171235393f7f40a0478b5672db62b3c2ae329a8"
+    }
+  ],
+  "token_digest": "a00fa16c82a11dcd9b3ba9019e7e6a29bc8e25948052e302d875ac36bc391c28",
+  "token_entry": "d616a0a7a9f3ac7810d389f74d09f496f1bc02ece80e581126cecbf39b4215ac",
+  "records": [
+    {
+      "about": "a session's row: its entry, the digest of `r1`, and its payload [key, state]",
+      "key_id": "sealing:000102030405060708090a0b0c0d0e0f",
+      "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonce": "404142434445464748494a4b4c4d4e4f5051525354555657",
+      "store": "sessions",
+      "indexed": "34623439333336656231303837613736646332663462333930316330343333666162393363643836343463353866363637386466313632383334363033353130",
+      "plaintext": "826272314e7b2273657175656e6365223a317d",
+      "record": "5343452d5345414c45442d31287365616c696e673a3030303130323033303430353036303730383039306130623063306430653066404142434445464748494a4b4c4d4e4f5051525354555657565b77419e9b5b65ea85f2dbc1ff00b0a88bd06dff85a0fb81f6eec0afdc6d6a5fbc69"
+    },
+    {
+      "about": "the same row under another key and nonce",
+      "key_id": "sealing:808182838485868788898a8b8c8d8e8f",
+      "key": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+      "nonce": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7",
+      "store": "sessions",
+      "indexed": "34623439333336656231303837613736646332663462333930316330343333666162393363643836343463353866363637386466313632383334363033353130",
+      "plaintext": "826272314e7b2273657175656e6365223a317d",
+      "record": "5343452d5345414c45442d31287365616c696e673a3830383138323833383438353836383738383839386138623863386438653866c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d77679fe2f66cdf567d3937295a7c59652a0ef75d461f61db918f134d9831b0a65a9ae68"
+    },
+    {
+      "about": "a token's row: its entry, the keyed digest of its digest, and its payload [digest, name, issued_ms, expires_ms, sealed]",
+      "key_id": "sealing:000102030405060708090a0b0c0d0e0f",
+      "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonce": "404142434445464748494a4b4c4d4e4f5051525354555657",
+      "store": "credential_tokens",
+      "indexed": "d616a0a7a9f3ac7810d389f74d09f496f1bc02ece80e581126cecbf39b4215ac",
+      "plaintext": "855820a00fa16c82a11dcd9b3ba9019e7e6a29bc8e25948052e302d875ac36bc391c286570686f6e651903e81a0036f26840",
+      "record": "5343452d5345414c45442d31287365616c696e673a3030303130323033303430353036303730383039306130623063306430653066404142434445464748494a4b4c4d4e4f5051525354555657516125d0df4115942ee94a259435640cecd084789d7cc71a38d2ff9d7ca8152c2fe52a0b25faeb7e9aabf7a410daec03f32b80331de1d8c80dff40430ec5d7578b29"
+    },
+    {
+      "about": "an empty plaintext, for the store's one row, whose entry is empty",
+      "key_id": "sealing:000102030405060708090a0b0c0d0e0f",
+      "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonce": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7",
+      "store": "key_naming",
+      "indexed": "",
+      "plaintext": "",
+      "record": "5343452d5345414c45442d31287365616c696e673a3030303130323033303430353036303730383039306130623063306430653066c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7cfed5fbb0d7a1159339f296d91269fe1"
+    }
+  ]
+}

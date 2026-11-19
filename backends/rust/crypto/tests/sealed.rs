@@ -1,0 +1,835 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! A sealing store (ADR 0109, D8; docs/SCE_SEALED_RECORD.md): its records are the bytes of
+//! `tests/host_features/sealed_cross_language.json`, whose values libsodium computed apart from
+//! this crate and which the C++ host is held to as well; every store contract it wraps keeps its
+//! conformance kit under it, in memory and in the SQLite file; a row moved to another key, changed
+//! by a byte or opened under another key is refused; the file holds none of what was saved; and a
+//! re-seal pass moves every row to the active key, so a retired one may go.
+
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use sce_rust_crypto::bytes_of_hex;
+use sce_rust_crypto::keyring::Keyring;
+use sce_rust_crypto::random::ScriptedRandom;
+use sce_rust_crypto::sealed::{
+    keyed_digest, open_record, record_key_id, seal_record, Resealed, SealError, Sealed,
+    SealingKeys, INDEX_KEY_ID, RECORD_MAGIC, SEALING_PREFIX,
+};
+use sce_rust_crypto::wrap::KeyEncryptionKey;
+use sce_rust_session_store::conformance::{self, Harness};
+use sce_rust_session_store::credential_conformance::{self, CredentialHarness};
+use sce_rust_session_store::key_conformance::{self, KeyHarness};
+use sce_rust_session_store::{
+    CredentialStore, KeyRow, KeyState, KeyStore, KeyUse, MemoryCredentials, MemoryKeys,
+    MemoryStore, PinStore, SessionStore, SqliteStore, TokenRow, TokenStore, LATEST_MOMENT,
+};
+use serde_json::Value;
+
+fn vectors() -> Value {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/host_features/sealed_cross_language.json");
+    let text = std::fs::read_to_string(&path).expect("the vector file is readable");
+    serde_json::from_str(&text).expect("the vector file is JSON")
+}
+
+fn hex(value: &Value) -> Vec<u8> {
+    bytes_of_hex(value.as_str().expect("a hexadecimal text")).expect("hexadecimal")
+}
+
+fn text(value: &Value) -> &str {
+    value.as_str().expect("a text")
+}
+
+fn array<const N: usize>(value: &Value) -> [u8; N] {
+    hex(value)
+        .try_into()
+        .expect("as many bytes as the field holds")
+}
+
+/// The index key of the vectors.
+const INDEX: [u8; 32] = [
+    0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
+];
+/// The first sealing key of the vectors and its id.
+const ID_1: &str = "sealing:000102030405060708090a0b0c0d0e0f";
+const KEY_1: [u8; 32] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+];
+/// The second sealing key of the vectors and its id.
+const ID_2: &str = "sealing:808182838485868788898a8b8c8d8e8f";
+const KEY_2: [u8; 32] = [
+    0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+    0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f,
+];
+
+/// The keys of a store sealed under `active`, holding `held`, its index key the vectors'.
+fn keys_of(active: &str, held: &[(&str, [u8; 32])]) -> SealingKeys {
+    SealingKeys::new(
+        INDEX,
+        active,
+        held.iter().map(|(id, key)| (id.to_string(), *key)),
+    )
+    .expect("the active key is one of the keys held")
+}
+
+/// The keys every store of a kit is sealed under: the first key of the vectors.
+fn first_keys() -> SealingKeys {
+    keys_of(ID_1, &[(ID_1, KEY_1)])
+}
+
+#[test]
+fn every_record_of_the_vectors_is_sealed_and_opened_to_its_bytes() {
+    let records = vectors()["records"].as_array().expect("records").clone();
+    assert_eq!(records.len(), 4);
+    for vector in &records {
+        let key: [u8; 32] = array(&vector["key"]);
+        let nonce: [u8; 24] = array(&vector["nonce"]);
+        let (store, indexed) = (text(&vector["store"]), hex(&vector["indexed"]));
+        let record = seal_record(
+            text(&vector["key_id"]),
+            &key,
+            &nonce,
+            store,
+            &indexed,
+            &hex(&vector["plaintext"]),
+        )
+        .expect("a sealing");
+        assert_eq!(record, hex(&vector["record"]), "{}", text(&vector["about"]));
+        assert!(record.starts_with(RECORD_MAGIC));
+        assert_eq!(record_key_id(&record), Ok(text(&vector["key_id"])));
+        assert_eq!(
+            open_record(&key, store, &indexed, &record)
+                .expect("the record opens")
+                .as_slice(),
+            hex(&vector["plaintext"]).as_slice()
+        );
+    }
+}
+
+#[test]
+fn a_record_opened_for_another_row_changed_or_under_another_key_does_not_open() {
+    let vector = vectors()["records"][0].clone();
+    let key: [u8; 32] = array(&vector["key"]);
+    let record = hex(&vector["record"]);
+    let indexed = hex(&vector["indexed"]);
+    let store = text(&vector["store"]);
+    let refused = |key: &[u8; 32], store: &str, indexed: &[u8], record: &[u8]| {
+        open_record(key, store, indexed, record).err()
+    };
+    let mut other_entry = indexed.clone();
+    other_entry[0] ^= 0x01;
+    assert_eq!(
+        refused(&key, store, other_entry.as_slice(), record.as_slice()),
+        Some(SealError::Refused),
+        "the record of another row"
+    );
+    assert_eq!(
+        refused(
+            &key,
+            "credential_pins",
+            indexed.as_slice(),
+            record.as_slice()
+        ),
+        Some(SealError::Refused),
+        "the record of another store"
+    );
+    for at in [RECORD_MAGIC.len() + 1, record.len() - 30, record.len() - 1] {
+        let mut changed = record.clone();
+        changed[at] ^= 0x01;
+        assert!(
+            refused(&key, store, indexed.as_slice(), changed.as_slice()).is_some(),
+            "a byte changed at {at}"
+        );
+    }
+    assert_eq!(
+        refused(&KEY_2, store, indexed.as_slice(), record.as_slice()),
+        Some(SealError::Refused),
+        "another key"
+    );
+    assert_eq!(
+        refused(
+            &key,
+            store,
+            indexed.as_slice(),
+            &record[..RECORD_MAGIC.len() + 20]
+        ),
+        Some(SealError::Malformed),
+        "too short for a nonce and a tag"
+    );
+    assert_eq!(
+        refused(&key, store, indexed.as_slice(), &b"not a record"[..]),
+        Some(SealError::Malformed)
+    );
+    assert_eq!(
+        seal_record("", &key, &[0; 24], store, &indexed, b"x"),
+        Err(SealError::Unnameable),
+        "a key with no id"
+    );
+}
+
+#[test]
+fn every_key_is_kept_under_its_keyed_digest() {
+    let vectors = vectors();
+    let sealed = Sealed::new(MemoryStore::new(), first_keys());
+    let digests = vectors["digests"].as_array().expect("digests");
+    assert_eq!(digests.len(), 4);
+    for digest in digests {
+        assert_eq!(
+            sealed.digest_of(text(&digest["key"])),
+            text(&digest["digest"]),
+            "the entry of {:?}",
+            digest["key"]
+        );
+    }
+    assert_eq!(
+        keyed_digest(&INDEX, &hex(&vectors["token_digest"])).to_vec(),
+        hex(&vectors["token_entry"])
+    );
+    assert_eq!(
+        sealed.indexed("r1"),
+        sealed.digest_of("r1"),
+        "a session is listed by its entry"
+    );
+}
+
+/// A directory of its own for a test's database, removed when the test ends.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        static MADE: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "sce-crypto-sealed-{name}-{}-{}",
+            std::process::id(),
+            MADE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        Self(dir)
+    }
+
+    fn database(&self) -> PathBuf {
+        self.0.join("sealed.db")
+    }
+
+    /// Every byte of every file in the directory: the database, its log and its index.
+    fn every_byte(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for entry in std::fs::read_dir(&self.0).expect("the scratch directory") {
+            let path = entry.expect("an entry").path();
+            if path.is_file() {
+                bytes.extend(std::fs::read(path).expect("a file"));
+            }
+        }
+        bytes
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Stores in memory, sealed under the first key; every handle shares the one store.
+struct SealedInMemory {
+    sessions: MemoryStore,
+    credentials: MemoryCredentials,
+    keys: MemoryKeys,
+}
+
+fn in_memory(_: &str) -> SealedInMemory {
+    SealedInMemory {
+        sessions: MemoryStore::new(),
+        credentials: MemoryCredentials::new(),
+        keys: MemoryKeys::new(),
+    }
+}
+
+impl Harness for SealedInMemory {
+    type Store = Sealed<MemoryStore>;
+
+    fn handle(&self) -> Sealed<MemoryStore> {
+        Sealed::new(self.sessions.clone(), first_keys())
+    }
+}
+
+impl CredentialHarness for SealedInMemory {
+    type Store = Sealed<MemoryCredentials>;
+
+    fn handle(&self) -> Sealed<MemoryCredentials> {
+        Sealed::new(self.credentials.clone(), first_keys())
+    }
+}
+
+impl KeyHarness for SealedInMemory {
+    type Store = Sealed<MemoryKeys>;
+
+    fn handle(&self) -> Sealed<MemoryKeys> {
+        Sealed::new(self.keys.clone(), first_keys())
+    }
+}
+
+/// A database file of its own, sealed under the first key; every handle opens a connection to it.
+struct SealedOnSqlite(Scratch);
+
+fn on_sqlite(name: &str) -> SealedOnSqlite {
+    SealedOnSqlite(Scratch::new(name))
+}
+
+impl SealedOnSqlite {
+    fn sealed(&self) -> Sealed<SqliteStore> {
+        Sealed::new(
+            SqliteStore::open(self.0.database()).expect("opening the store"),
+            first_keys(),
+        )
+    }
+}
+
+impl Harness for SealedOnSqlite {
+    type Store = Sealed<SqliteStore>;
+
+    fn handle(&self) -> Sealed<SqliteStore> {
+        self.sealed()
+    }
+}
+
+impl CredentialHarness for SealedOnSqlite {
+    type Store = Sealed<SqliteStore>;
+
+    fn handle(&self) -> Sealed<SqliteStore> {
+        self.sealed()
+    }
+}
+
+impl KeyHarness for SealedOnSqlite {
+    type Store = Sealed<SqliteStore>;
+
+    fn handle(&self) -> Sealed<SqliteStore> {
+        self.sealed()
+    }
+}
+
+/// A test per function of a kit, each on a store of its own the harness `$made` makes.
+macro_rules! kit {
+    ($kit:ident, $made:ident, [$($case:ident),* $(,)?]) => {
+        $(
+            #[test]
+            fn $case() {
+                $kit::$case(&super::$made(stringify!($case)));
+            }
+        )*
+    };
+}
+
+mod sessions_in_memory {
+    use super::conformance;
+    kit!(
+        conformance,
+        in_memory,
+        [
+            versions_are_compared_and_set,
+            a_write_needs_the_current_fence,
+            a_lease_runs_out_and_is_taken_over,
+            due_sessions_are_listed_earliest_first,
+            state_and_due_are_written_together,
+            concurrent_writers_never_both_win,
+            no_update_is_lost,
+            handles_share_one_store,
+            every_session_is_listed_by_its_entry_and_named_by_its_key,
+        ]
+    );
+}
+
+mod sessions_on_sqlite {
+    use super::conformance;
+    kit!(
+        conformance,
+        on_sqlite,
+        [
+            versions_are_compared_and_set,
+            a_write_needs_the_current_fence,
+            a_lease_runs_out_and_is_taken_over,
+            due_sessions_are_listed_earliest_first,
+            state_and_due_are_written_together,
+            concurrent_writers_never_both_win,
+            no_update_is_lost,
+            handles_share_one_store,
+            every_session_is_listed_by_its_entry_and_named_by_its_key,
+        ]
+    );
+}
+
+mod credentials_in_memory {
+    use super::credential_conformance;
+    kit!(
+        credential_conformance,
+        in_memory,
+        [
+            a_name_is_pinned_to_its_first_secret,
+            an_unpinned_name_is_pinned_again,
+            a_token_is_kept_once_under_its_digest,
+            a_token_expires_at_its_moment,
+            a_revoked_name_keeps_no_live_token_and_no_pin,
+            handles_share_the_credentials,
+            a_pin_is_replaced_only_from_the_bytes_it_holds,
+            a_tokens_sealed_bytes_are_replaced_only_from_what_it_holds,
+        ]
+    );
+}
+
+mod credentials_on_sqlite {
+    use super::credential_conformance;
+    kit!(
+        credential_conformance,
+        on_sqlite,
+        [
+            a_name_is_pinned_to_its_first_secret,
+            an_unpinned_name_is_pinned_again,
+            a_token_is_kept_once_under_its_digest,
+            a_token_expires_at_its_moment,
+            a_revoked_name_keeps_no_live_token_and_no_pin,
+            handles_share_the_credentials,
+            a_pin_is_replaced_only_from_the_bytes_it_holds,
+            a_tokens_sealed_bytes_are_replaced_only_from_what_it_holds,
+        ]
+    );
+}
+
+mod keys_in_memory {
+    use super::key_conformance;
+    kit!(
+        key_conformance,
+        in_memory,
+        [
+            a_key_is_kept_once_under_its_id,
+            a_generation_makes_one_key,
+            a_retired_key_stays_retired,
+            a_key_is_rewrapped_in_place,
+            the_first_naming_key_is_kept,
+            handles_share_the_keys,
+        ]
+    );
+}
+
+mod keys_on_sqlite {
+    use super::key_conformance;
+    kit!(
+        key_conformance,
+        on_sqlite,
+        [
+            a_key_is_kept_once_under_its_id,
+            a_generation_makes_one_key,
+            a_retired_key_stays_retired,
+            a_key_is_rewrapped_in_place,
+            the_first_naming_key_is_kept,
+            handles_share_the_keys,
+        ]
+    );
+}
+
+/// A session written under a lease the writer gives back: its version.
+fn saved(store: &impl SessionStore, key: &str, state: &[u8]) -> u64 {
+    let lease = store
+        .acquire(key, "writer", LATEST_MOMENT, 0)
+        .expect("a lease");
+    let version = store
+        .put(key, state, Some(5_000), 0, lease.fence)
+        .expect("a session written");
+    store
+        .release(key, lease.fence)
+        .expect("the lease given back");
+    version
+}
+
+/// A token of `digest` for `name`.
+fn token(digest: [u8; 32], name: &str) -> TokenRow {
+    TokenRow {
+        digest,
+        name: name.to_string(),
+        issued_ms: 1_000,
+        expires_ms: 61_000,
+        revoked: false,
+        sealed: Vec::new(),
+    }
+}
+
+/// A key of `id`, labelled `label`, wrapped as `wrapped`.
+fn key_row(id: &str, label: &str, wrapped: &[u8]) -> KeyRow {
+    KeyRow {
+        id: id.to_string(),
+        key_use: KeyUse::Seal,
+        algorithm: "ChaCha20-Poly1305".to_string(),
+        wrapped: wrapped.to_vec(),
+        label: label.to_string(),
+        created_ms: 1_000,
+        state: KeyState::Active,
+    }
+}
+
+/// ADR 0109, D8: a row's record moved to another key's row, a record changed by a byte, and a
+/// record read under another key of its id, or under keys that lack its id, are each refused; a
+/// pin, a token and a key moved to another row are refused as a session is.
+#[test]
+fn a_row_moved_to_another_key_changed_or_read_under_another_key_is_refused() {
+    let inner = MemoryStore::new();
+    let sealed = Sealed::new(inner.clone(), first_keys());
+    saved(&sealed, "alice", b"the state of alice");
+    saved(&sealed, "bob", b"the state of bob");
+    let (alice, bob) = (sealed.digest_of("alice"), sealed.digest_of("bob"));
+    let record_of = |entry: &str| inner.get(entry).expect("read").expect("held");
+
+    let lease = inner
+        .acquire(&bob, "medium", LATEST_MOMENT, 0)
+        .expect("a lease");
+    let moved = record_of(&alice).state;
+    inner
+        .put(&bob, &moved, None, record_of(&bob).version, lease.fence)
+        .expect("alice's record written as bob's row");
+    let refused = sealed
+        .get("bob")
+        .expect_err("a record moved to another key");
+    assert!(refused.to_string().contains("does not open"), "{refused}");
+    assert!(sealed.key_of(&bob).is_err(), "nor is its key read from it");
+
+    let mut changed = record_of(&alice).state;
+    let last = changed.len() - 1;
+    changed[last] ^= 0x01;
+    let lease = inner
+        .acquire(&alice, "medium", LATEST_MOMENT, 0)
+        .expect("a lease");
+    let version = record_of(&alice).version;
+    inner
+        .put(&alice, &changed, None, version, lease.fence)
+        .expect("a byte of alice's record changed");
+    assert!(sealed.get("alice").is_err(), "a changed byte");
+
+    saved(&sealed, "carol", b"the state of carol");
+    let other_key = Sealed::new(inner.clone(), keys_of(ID_1, &[(ID_1, KEY_2)]));
+    assert!(other_key.get("carol").is_err(), "another key of its id");
+    let lacking = Sealed::new(inner.clone(), keys_of(ID_2, &[(ID_2, KEY_2)]));
+    let unknown = lacking.get("carol").expect_err("keys that lack its id");
+    assert!(
+        unknown.to_string().contains(ID_1),
+        "the key it names is told: {unknown}"
+    );
+    assert_eq!(
+        sealed
+            .get("carol")
+            .expect("carol")
+            .map(|stored| stored.state),
+        Some(b"the state of carol".to_vec()),
+        "the right key opens it"
+    );
+
+    let pins = MemoryCredentials::new();
+    let sealed_pins = Sealed::new(pins.clone(), first_keys());
+    sealed_pins.pin("phone", &[0xA1; 32]).expect("phone's pin");
+    let phone_pin = pins
+        .pinned(&sealed_pins.digest_of("phone"))
+        .expect("read")
+        .expect("held");
+    pins.pin(&sealed_pins.digest_of("tablet"), &phone_pin)
+        .expect("phone's pin written as tablet's");
+    assert!(
+        sealed_pins.pinned("tablet").is_err(),
+        "a pin moved to another name"
+    );
+    sealed_pins
+        .issue(&token([0x11; 32], "phone"))
+        .expect("phone's token");
+    let held = pins.tokens().expect("the tokens").remove(0);
+    pins.issue(&TokenRow {
+        digest: keyed_digest(&INDEX, &[0x22; 32]),
+        ..held
+    })
+    .expect("phone's token row written as another token's");
+    assert!(
+        sealed_pins.token(&[0x22; 32]).is_err(),
+        "a token moved to another digest"
+    );
+
+    let keys = MemoryKeys::new();
+    let sealed_keys = Sealed::new(keys.clone(), first_keys());
+    sealed_keys
+        .insert(&key_row("generated:a", "of a", b"material of a"), None)
+        .expect("a key");
+    let row = keys
+        .key(&sealed_keys.digest_of("generated:a"))
+        .expect("read")
+        .expect("held");
+    keys.insert(
+        &KeyRow {
+            id: sealed_keys.digest_of("generated:b"),
+            ..row
+        },
+        None,
+    )
+    .expect("a's row written as b's");
+    assert!(
+        sealed_keys.key("generated:b").is_err(),
+        "a key moved to another id"
+    );
+}
+
+/// ADR 0109, D8: a file the sealing store wrote, read without its keys, holds none of the values
+/// saved in it, no session's key, no name a credential proves, no key's id, label or material;
+/// what it holds is entries and records.
+#[test]
+fn a_file_read_without_the_key_holds_none_of_the_saved_values() {
+    let scratch = Scratch::new("at-rest");
+    let secrets: [&[u8]; 9] = [
+        b"alice@example.org",
+        b"the balance of alice is 1234",
+        b"the pin of alice's phone 0123456",
+        b"phone-of-alice",
+        b"a token digest of alice 01234567",
+        b"generated:alice",
+        b"the key alice generated",
+        b"the wrapped material of alice",
+        b"the naming key of the store",
+    ];
+    let entry = {
+        let store = Sealed::new(
+            SqliteStore::open(scratch.database()).expect("making the store"),
+            first_keys(),
+        );
+        let lease = store
+            .acquire("alice@example.org", "server", LATEST_MOMENT, 0)
+            .expect("a lease");
+        store
+            .put(
+                "alice@example.org",
+                b"the balance of alice is 1234",
+                Some(9_000),
+                0,
+                lease.fence,
+            )
+            .expect("alice's session");
+        store
+            .pin("phone-of-alice", b"the pin of alice's phone 0123456")
+            .expect("a pin");
+        store
+            .issue(&token(
+                *b"a token digest of alice 01234567",
+                "alice@example.org",
+            ))
+            .expect("a token");
+        store
+            .insert(
+                &key_row(
+                    "generated:alice",
+                    "the key alice generated",
+                    b"the wrapped material of alice",
+                ),
+                Some("alice@example.org/generate/1"),
+            )
+            .expect("a key");
+        store
+            .keep_naming_key(b"the naming key of the store")
+            .expect("a naming key");
+        assert_eq!(
+            store
+                .get("alice@example.org")
+                .expect("read back")
+                .map(|stored| stored.state),
+            Some(b"the balance of alice is 1234".to_vec()),
+            "the store reads back what it sealed"
+        );
+        store.digest_of("alice@example.org")
+    };
+    let bytes = scratch.every_byte();
+    let holds = |needle: &[u8]| bytes.windows(needle.len()).any(|window| window == needle);
+    assert!(
+        holds(entry.as_bytes()),
+        "the file holds the session's entry: the read reached the rows"
+    );
+    assert!(holds(RECORD_MAGIC), "the file holds records");
+    for secret in secrets {
+        assert!(
+            !holds(secret),
+            "the file holds {:?} in the clear",
+            String::from_utf8_lossy(secret)
+        );
+    }
+}
+
+/// ADR 0109, D8: the keys a sealing store seals and indexes under are keys of the key ring kept
+/// in its key store, wrapped under the key-encryption key: drawn once, the same at every later
+/// read; a rotation makes a new active key and retires the one before, which still opens.
+#[test]
+fn the_keys_are_kept_in_the_key_ring_and_a_rotation_retires_the_one_before() {
+    let ring = Keyring::new(
+        Box::new(MemoryKeys::new()),
+        Box::new(KeyEncryptionKey::new([7; 32])),
+    );
+    let mut random = ScriptedRandom::new();
+    let first = SealingKeys::from_keyring(&ring, 1_000, &mut random).expect("the first keys");
+    assert!(first.active().starts_with(SEALING_PREFIX), "{first:?}");
+    assert_eq!(first.ids().count(), 1);
+    let again = SealingKeys::from_keyring(&ring, 2_000, &mut random).expect("the keys again");
+    assert_eq!(again.active(), first.active(), "a second read draws none");
+    let index = ring
+        .store()
+        .key(INDEX_KEY_ID)
+        .expect("read")
+        .expect("the index key is kept");
+    assert_eq!(index.key_use, KeyUse::Mac);
+    assert!(
+        !format!("{first:?}").contains("0x"),
+        "the keys are never printed"
+    );
+
+    let rotated = SealingKeys::rotate(&ring, 3_000, &mut random).expect("a rotation");
+    assert_ne!(rotated, first.active());
+    let keys = SealingKeys::from_keyring(&ring, 4_000, &mut random).expect("the keys after it");
+    assert_eq!(keys.active(), rotated, "the new key seals");
+    assert_eq!(keys.ids().count(), 2, "the retired one still opens");
+    assert_eq!(
+        ring.store()
+            .key(first.active())
+            .expect("read")
+            .map(|row| row.state),
+        Some(KeyState::Retired)
+    );
+
+    let before = Sealed::new(MemoryStore::new(), first.clone());
+    saved(&before, "k", b"sealed before the rotation");
+    let after = Sealed::new(before.inner().clone(), keys);
+    assert_eq!(
+        after.digest_of("k"),
+        before.digest_of("k"),
+        "a rotation keeps the index key"
+    );
+    assert_eq!(
+        after.get("k").expect("read").map(|stored| stored.state),
+        Some(b"sealed before the rotation".to_vec()),
+        "a row sealed under the retired key opens"
+    );
+}
+
+/// ADR 0109, D8: once the active key changes, a re-seal pass writes every row sealed under the
+/// key before again under it, each through the store's own write: a session under a lease the
+/// pass takes and gives back, from the version it read, and one another process holds is left for
+/// a later pass; pins, tokens, keys and the naming key alike. Then a store given the new key alone
+/// reads everything.
+#[test]
+fn a_reseal_pass_moves_every_row_to_the_active_key() {
+    let (sessions, credentials, key_rows) = (
+        MemoryStore::new(),
+        MemoryCredentials::new(),
+        MemoryKeys::new(),
+    );
+    let one = first_keys();
+    let s = Sealed::new(sessions.clone(), one.clone());
+    let c = Sealed::new(credentials.clone(), one.clone());
+    let k = Sealed::new(key_rows.clone(), one);
+    saved(&s, "a", b"the state of a");
+    saved(&s, "b", b"the state of b");
+    c.pin("phone", &[0xA1; 32]).expect("a pin");
+    c.issue(&token([0x11; 32], "phone")).expect("a token");
+    k.insert(&key_row("generated:a", "of a", b"material of a"), None)
+        .expect("a key");
+    k.keep_naming_key(b"the naming key").expect("a naming key");
+
+    let both = keys_of(ID_2, &[(ID_1, KEY_1), (ID_2, KEY_2)]);
+    s.set_keys(both.clone());
+    c.set_keys(both.clone());
+    k.set_keys(both);
+    let held = s
+        .acquire("b", "another process", LATEST_MOMENT, 0)
+        .expect("b held elsewhere");
+    let sealed_under = |key: &str| {
+        let record = sessions
+            .get(&s.digest_of(key))
+            .expect("read")
+            .expect("held")
+            .state;
+        record_key_id(&record).expect("a record").to_string()
+    };
+    assert_eq!(
+        s.reseal_sessions("resealer", 1_000, 10)
+            .expect("a re-seal pass"),
+        Resealed {
+            resealed: 1,
+            left: 1,
+            refused: 0,
+        },
+        "the session another process holds is left"
+    );
+    assert_eq!(sealed_under("a"), ID_2);
+    assert_eq!(sealed_under("b"), ID_1);
+    s.acquire("a", "server", 1_000, 20)
+        .expect("the pass gave back the lease it took");
+    s.release("b", held.fence).expect("b given back");
+    assert_eq!(
+        s.reseal_sessions("resealer", 1_000, 30)
+            .expect("a second pass"),
+        Resealed {
+            resealed: 1,
+            left: 0,
+            refused: 0,
+        }
+    );
+    assert_eq!(sealed_under("b"), ID_2);
+    assert_eq!(
+        s.reseal_sessions("resealer", 1_000, 40)
+            .expect("a third pass"),
+        Resealed::default(),
+        "nothing is left under the key before"
+    );
+    assert_eq!(
+        c.reseal_credentials().expect("the credentials' pass"),
+        Resealed {
+            resealed: 2,
+            left: 0,
+            refused: 0,
+        },
+        "the pin and the token"
+    );
+    assert_eq!(
+        k.reseal_keys().expect("the keys' pass"),
+        Resealed {
+            resealed: 2,
+            left: 0,
+            refused: 0,
+        },
+        "the key and the naming key"
+    );
+
+    let only = keys_of(ID_2, &[(ID_2, KEY_2)]);
+    let s = Sealed::new(sessions, only.clone());
+    let c = Sealed::new(credentials, only.clone());
+    let k = Sealed::new(key_rows, only);
+    for (key, state) in [("a", &b"the state of a"[..]), ("b", &b"the state of b"[..])] {
+        let stored = s.get(key).expect("read").expect("held");
+        assert_eq!(stored.state, state);
+        assert_eq!(stored.earliest_due, Some(5_000), "its due is kept");
+    }
+    assert_eq!(
+        c.pinned("phone").expect("the pin"),
+        Some([0xA1; 32].to_vec())
+    );
+    assert_eq!(
+        c.token(&[0x11; 32]).expect("the token"),
+        Some(token([0x11; 32], "phone"))
+    );
+    assert_eq!(
+        k.key("generated:a").expect("the key"),
+        Some(key_row("generated:a", "of a", b"material of a"))
+    );
+    assert_eq!(
+        k.naming_key().expect("the naming key"),
+        Some(b"the naming key".to_vec())
+    );
+    assert_eq!(
+        c.revoke("phone").expect("revoking phone").count(),
+        2,
+        "the revocation finds the token and the pin by the name's entry"
+    );
+}
