@@ -7733,11 +7733,21 @@ mod tests {
             );
         }
 
+        // The §6.4.1 construct, a type no processor implements, is what the
+        // section's own text describes before its first subsection. The
+        // subsections (`--host-invoker TYPE`, the typed interface) describe
+        // SCE extensions a lane may refuse by name, which are not valid SCXML
+        // that the refusal would reject.
+        let unsupported_type = section
+            .split("\n#### ")
+            .next()
+            .expect("§2.12 text before its first subsection");
         assert!(
-            !section.contains("unsupported-feature"),
-            "§2.12 still documents a `generate/unsupported-feature` refusal. \
-             §6.4.1 assigns the construct a meaning instead of declaring it \
-             malformed, so refusing it at build time refuses valid SCXML"
+            !unsupported_type.contains("unsupported-feature"),
+            "§2.12 still documents a `generate/unsupported-feature` refusal of an \
+             unsupported invoke type. §6.4.1 assigns the construct a meaning \
+             instead of declaring it malformed, so refusing it at build time \
+             refuses valid SCXML"
         );
     }
 
