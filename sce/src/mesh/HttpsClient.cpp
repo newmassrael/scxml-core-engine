@@ -5,6 +5,10 @@
 // (docs/adr/0107, D2). The contract is stated in
 // mesh/transports/HttpsClient.h; this file is its one implementation, shared
 // by every generated router and by the conformance kit.
+//
+// SCE_MESH.md §mesh-22.8: the C++ core's client of the binding, which the
+// router's `https` arm runs over the SCE::Mesh::HttpsTransport the host gives
+// the router at construction.
 
 #include "mesh/transports/HttpsClient.h"
 
@@ -290,6 +294,9 @@ CommunicationError communicationError(ReasonCode reason, const ClientConfig &con
 // ── The wire ──
 
 std::string exchangeUrl(const std::string &base, const std::string &client) {
+    // SCE_MESH.md §mesh-22.1: every exchange posts to
+    // `<base>/sce-mesh/1/<client>`; the path is the only place the client's
+    // machine name travels.
     std::string url = base;
     while (!url.empty() && url.back() == '/') {
         url.pop_back();
@@ -302,6 +309,8 @@ std::string exchangeUrl(const std::string &base, const std::string &client) {
 }
 
 std::vector<std::uint8_t> encodeBody(const std::vector<MeshEnvelope> &envelopes) {
+    // SCE_MESH.md §mesh-22.2: a request body is its envelopes' CBOR bytes one
+    // after another, a CBOR sequence.
     std::vector<std::uint8_t> body;
     for (const auto &env : envelopes) {
         const auto bytes = encodeEnvelope(env);
@@ -312,6 +321,8 @@ std::vector<std::uint8_t> encodeBody(const std::vector<MeshEnvelope> &envelopes)
 
 bool splitCborSequence(const std::uint8_t *data, std::size_t size,
                        std::vector<std::pair<std::size_t, std::size_t>> &items, std::size_t &position) {
+    // SCE_MESH.md §mesh-22.2: a body is split by reading one CBOR data item
+    // after another; where none can be read is handed back as `position`.
     std::size_t pos = 0;
     while (pos < size) {
         const std::size_t start = pos;
@@ -485,9 +496,10 @@ bool Client::start() {
         running_ = true;
     }
     if (config_.authenticator == Authenticator::Install) {
-        // Drawn once and kept where the host says; a secret the host could
-        // not keep is not used, since the server pins the name to the first
-        // secret it sees and a lost one would lock the name out.
+        // SCE_MESH.md §mesh-22.5: drawn once and kept where the host says; a
+        // secret the host could not keep is not used, since the server pins
+        // the name to the first secret it sees and a lost one would lock the
+        // name out.
         std::optional<InstallSecret> kept;
         if (host_.credentials != nullptr) {
             kept = host_.credentials->loadInstallSecret(config_.peer);
@@ -562,6 +574,8 @@ bool Client::send(const MeshEnvelope &env) {
 }
 
 std::optional<std::string> Client::authorization() {
+    // SCE_MESH.md §mesh-22.5: the `Authorization` value of the binding's
+    // authenticator; `mtls` sends none, its certificate being the adapter's.
     switch (config_.authenticator) {
     case Authenticator::Bearer:
         if (host_.credentials != nullptr) {
@@ -587,6 +601,9 @@ HttpsRequest Client::buildRequest(std::vector<std::uint8_t> body, std::chrono::m
         sent.ack = acknowledged_.load(std::memory_order_acquire);
         sent.epoch = epoch_;
     }
+    // SCE_MESH.md §mesh-22.1: the headers every request carries, the
+    // acknowledgement and the incarnation it counts in (§mesh-22.3; none
+    // before the first `200`), the hold and the credential.
     HttpsRequest request;
     request.url = exchangeUrl(config_.base_url, config_.client);
     request.headers.emplace_back("Content-Type", kContentType);
@@ -606,6 +623,10 @@ HttpsRequest Client::buildRequest(std::vector<std::uint8_t> body, std::chrono::m
 }
 
 Client::Verdict Client::judge(const HttpsExchange &answer) {
+    // SCE_MESH.md §mesh-22.4: what an answer is, by the section's status
+    // table: no response is a failure at the transport, `200` is taken in,
+    // `429` and `503` are load shed with the `Retry-After` they ask for, and
+    // any other status leaves the request's envelopes not sent.
     Verdict verdict;
     if (answer.kind == HttpsExchange::Kind::Failure) {
         verdict.kind = Verdict::Kind::Failed;
@@ -637,7 +658,8 @@ Client::Verdict Client::judge(const HttpsExchange &answer) {
 }
 
 void Client::takeIn(const HttpsExchange &answer, const Mark &sent) {
-    // The incarnation the response's numbers count in (section 22.3).
+    // The incarnation the response's numbers count in (SCE_MESH.md
+    // §mesh-22.3); a client takes no body of a `200` without it (§mesh-22.2).
     const auto epochText = headerValue(answer.headers, kEpochHeader);
     if (!epochText || !isEpoch(*epochText)) {
         if (!answer.body.empty()) {
@@ -759,6 +781,9 @@ void Client::refusedName(const HttpsExchange &answer) {
 }
 
 void Client::failEnvelopes(std::vector<Pending> batch, const std::string &error, bool retryable) {
+    // SCE_MESH.md §mesh-22.4: envelopes no answered exchange took are row 2
+    // (`sendFailed`) without a retry policy, and under one are sent again
+    // until they are row 3 (`deliveryExhausted`).
     if (!config_.retry) {
         for (const auto &pending : batch) {
             auto err = communicationError(ReasonCode::SendFailed, config_);

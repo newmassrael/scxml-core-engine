@@ -335,7 +335,8 @@ pub enum TransportState {
         #[serde(skip_serializing_if = "Option::is_none")]
         keepalive_ms: Option<u32>,
     },
-    /// The Mesh binding over HTTP request and response (ADR 0107, D2). The
+    /// The Mesh binding over HTTP request and response (ADR 0107, D2;
+    /// SCE_MESH.md §mesh-22), its keys as that section's table names them. The
     /// side holding `url` dials and the side holding `listen` accepts;
     /// exactly one of the two is present, which
     /// `validate_https_extras_partial` proved. Every number is resolved here,
@@ -402,9 +403,10 @@ impl TransportState {
     }
 }
 
-/// Who may claim a name on an `https` binding (ADR 0107, D2). A mailbox is
-/// read only by the name that owns it, so a binding names one of these on
-/// both sides and a binding with none is refused.
+/// Who may claim a name on an `https` binding (ADR 0107, D2): the three
+/// authenticators of SCE_MESH.md §mesh-22.5. A mailbox is read only by the
+/// name that owns it, so a binding names one of these on both sides and a
+/// binding with none is refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HttpsAuthenticator {
@@ -2894,6 +2896,8 @@ fn validate_https_extras_partial(
         reason,
     };
 
+    // §mesh-22: which side dials is read from which of `url` and `listen`
+    // the binding has, and a binding with both or neither is refused here.
     let dials = pt.extra.contains_key("url");
     let accepts = pt.extra.contains_key("listen");
     match (dials, accepts) {
@@ -2949,6 +2953,8 @@ fn validate_https_extras_partial(
         ));
     }
 
+    // §mesh-22.5: a mailbox is read only by the name that owns it, so a
+    // binding without an authenticator is refused at deploy validation.
     match pt.extra.get("authenticator") {
         None => {
             return Err(TopologyError::BindingWithoutAuthenticator {
@@ -3044,6 +3050,7 @@ fn https_state(extra: &std::collections::HashMap<String, serde_yaml_ng::Value>) 
             .and_then(|n| u32::try_from(n).ok())
             .unwrap_or(default)
     };
+    // §mesh-22: the defaults of the binding's key table, each applied once.
     TransportState::Https {
         url: text("url"),
         listen: text("listen"),

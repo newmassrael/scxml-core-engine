@@ -4,10 +4,11 @@
 // The https binding's port on the system's libcurl (docs/adr/0107, D2); the
 // contract is in mesh/transports/https/CurlHttpsTransport.h.
 //
-// One easy handle per exchange: the port is called from more than one thread
-// at once, and an easy handle may be used by one thread at a time. libcurl
-// reads the proxy variables itself when no proxy is set on the handle, which
-// is the platform policy this adapter owes, so none is set here.
+// SCE_MESH.md §mesh-22.6: the reference adapter on Linux. One easy handle per
+// exchange: the port is called from more than one thread at once, and an easy
+// handle may be used by one thread at a time. libcurl reads the proxy
+// variables itself when no proxy is set on the handle, which is the platform
+// policy this adapter owes, so none is set here.
 
 #include "mesh/transports/https/CurlHttpsTransport.h"
 
@@ -99,7 +100,8 @@ int onProgress(void *user, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
     return (cancellation != nullptr && cancellation->requested()) ? 1 : 0;
 }
 
-/// The failure kind of a transfer that produced no response.
+/// The failure kind of a transfer that produced no response, in the named
+/// kinds of the port (SCE_MESH.md §mesh-22.6).
 HttpsExchange::Failure classify(CURLcode code, long connectCode) {
     using Failure = HttpsExchange::Failure;
     if (connectCode != 0 && connectCode != 200) {

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-// The conformance kit of the https binding's port; its cases are stated in
-// HttpsKit.h. The servers here speak HTTP/1.1 with a Content-Length on every
-// message and offer no ALPN, so an adapter that would speak HTTP/2 falls back
-// to HTTP/1.1 against them, as the port allows. TLS is OpenSSL's, which is the
-// kit's own dependency and none of the adapters'.
+// The conformance kit of the https binding's port, the C++ kit of SCE_MESH.md
+// §mesh-22.7; its cases are stated in HttpsKit.h. The servers here speak
+// HTTP/1.1 with a Content-Length on every message and offer no ALPN, so an
+// adapter that would speak HTTP/2 falls back to HTTP/1.1 against them, as the
+// port allows. TLS is OpenSSL's, which is the kit's own dependency and none of
+// the adapters'.
 
 #include "HttpsKit.h"
 
@@ -1037,6 +1038,9 @@ bool Kit::ready() const {
     return impl_->made;
 }
 
+// SCE_MESH.md §mesh-22.7: the cases every adapter is held to, one function
+// each, each against servers and proxies on loopback ports of its own under
+// the authorities the kit made.
 CaseResult Kit::directExchange(AdapterFactory &factory) {
     Mailbox mailbox(kitMailbox());
     MailboxServer server(mailbox, impl_->server_context.get());

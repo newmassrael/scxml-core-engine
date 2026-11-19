@@ -213,6 +213,13 @@ scan_exclusions = [
     # 2026-11-09 over its 13 Rust sources: each `§` names a section of
     # docs/SCE_TEST_PROFILE.md or of ES 201 873-1, none of any ledger.
     "sce-ttcn3-validator/",
+    # The durability suite of a server (`sce-server-suite`, ADR 0107 D10). Measured
+    # 2026-11-19 over its 15 Rust sources: no citation of any ledger.
+    "tests/server/",
+    # The standard engine documents the Forge generator writes into the Rust runtime
+    # (`sce:std/engine`), which the SCXML ledger scans. Measured 2026-11-19 over its 2
+    # Rust sources: no §synth- citation.
+    "backends/rust/runtime/generated/",
 ]
 severity_missing = "reject"
 # Path B curated: all 2590 §synth- citations are bound to a

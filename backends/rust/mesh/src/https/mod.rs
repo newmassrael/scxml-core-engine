@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The HTTPS binding (SCE_MESH.md section 22): a client reaches a server by HTTP request and
+//! The HTTPS binding (SCE_MESH.md §mesh-22): a client reaches a server by HTTP request and
 //! response, so that a client on a network it does not know (a proxy it must tunnel through, a
 //! TLS inspection it must accept) still takes part in Mesh.
 //!
@@ -52,7 +52,8 @@ pub const VERSION: &str = "1";
 /// The path a client posts to, before its own machine name: `/sce-mesh/1/`.
 pub const PATH_PREFIX: &str = "/sce-mesh/1/";
 
-/// The media type of a request's and a response's body: a CBOR sequence (RFC 8742).
+/// The media type of a request's and a response's body: a CBOR sequence (RFC 8742), the framing
+/// of §mesh-22.2.
 pub const CONTENT_TYPE: &str = "application/cbor-seq";
 
 /// The request header naming the highest mailbox number the client has received, 0 for none.
@@ -89,8 +90,8 @@ pub const DEFAULT_ABSENCE_MS: u32 = 120_000;
 /// deploy.yaml's `mailbox` on the accepting side when the binding sets none.
 pub const DEFAULT_MAILBOX: u32 = 1024;
 
-/// One exchange, as the binding hands it to the port: a POST of `body` to `url` with `headers`,
-/// answered within `timeout` or failed as [`HttpsFailure::Timeout`].
+/// One exchange, as the binding hands it to the port (§mesh-22.6): a POST of `body` to `url`
+/// with `headers`, answered within `timeout` or failed as [`HttpsFailure::Timeout`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpsRequest {
     /// The full URL: the deployment's base and the binding's path.
@@ -105,7 +106,7 @@ pub struct HttpsRequest {
     pub timeout: Duration,
 }
 
-/// What a server answered, whatever the status.
+/// What a server answered, whatever the status: the port's response (§mesh-22.6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpsResponse {
     /// The status code.
@@ -127,8 +128,9 @@ impl HttpsResponse {
     }
 }
 
-/// Why an exchange got no response. Each is a failure at the transport, which ends the client's
-/// readiness (section 22.4); a response of any status is not a failure.
+/// Why an exchange got no response: the port's failure of a named kind (§mesh-22.6). Each is a
+/// failure at the transport, which ends the client's readiness (section 22.4); a response of any
+/// status is not a failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HttpsFailure {
     /// No connection could be opened to the server, or to the proxy that reaches it.
@@ -157,7 +159,7 @@ impl fmt::Display for HttpsFailure {
     }
 }
 
-/// The port (section 22.6): carries one exchange and nothing else. Every decision of the binding
+/// The port (§mesh-22.6): carries one exchange and nothing else. Every decision of the binding
 /// (what to send, what to make of the answer, when to try again) is the binding's; an adapter
 /// moves a request to the server and its response back.
 ///
@@ -166,9 +168,9 @@ impl fmt::Display for HttpsFailure {
 /// envelopes and one that carries the client's), so an adapter is shared and must take
 /// concurrent calls.
 ///
-/// An adapter is held to section 22.6's requirements: it believes the authorities the operating
-/// system believes, and it reaches a server through the proxy the platform's settings name,
-/// tunnelling with `CONNECT`.
+/// An adapter is held to the platform policy of §mesh-22.6: it believes the authorities the
+/// operating system believes, and it reaches a server through the proxy the platform's settings
+/// name, tunnelling with `CONNECT`.
 pub trait HttpsTransport: Send + Sync {
     /// Carry `request` and return what the server answered.
     fn exchange(&self, request: HttpsRequest) -> Result<HttpsResponse, HttpsFailure>;
@@ -270,7 +272,7 @@ pub fn decode_install_secret(text: &str) -> Option<[u8; 32]> {
     bytes.try_into().ok()
 }
 
-/// The envelopes a body carries, in order (section 22.2). Each is one CBOR data item, found by
+/// The envelopes a body carries, in order (§mesh-22.2). Each is one CBOR data item, found by
 /// skipping it whole; bytes from which no item can be read (a truncated or malformed item) are
 /// handed on as one last piece, so that the core reports them as an envelope that does not
 /// decode (SCE_MESH.md section 16.7 row 4) and nothing is dropped unseen.
@@ -290,7 +292,8 @@ pub fn split_sequence(body: &[u8]) -> Vec<Vec<u8>> {
     items
 }
 
-/// A body carrying `envelopes`, each its CBOR bytes, one after another (RFC 8742).
+/// A body carrying `envelopes`, each its CBOR bytes, one after another (RFC 8742): the request
+/// and response body of §mesh-22.2.
 pub fn join_sequence<'a>(envelopes: impl IntoIterator<Item = &'a [u8]>) -> Vec<u8> {
     let mut body = Vec::new();
     for envelope in envelopes {

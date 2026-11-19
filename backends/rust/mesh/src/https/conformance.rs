@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The behaviour every adapter of the HTTPS port is held to (SCE_MESH.md section 22.7).
+//! The behaviour every adapter of the HTTPS port is held to: the Rust conformance kit of
+//! SCE_MESH.md §mesh-22.7.
 //!
 //! The binding reaches the network through [`HttpsTransport`], so an adapter is a choice: this
 //! crate's ([`super::adapter::HyperTransport`], see the test target `https_conformance`), or one a
@@ -81,7 +82,8 @@ use crate::reconnect::Backoff;
 use crate::router::{PeerConfig, Router};
 use sce_rust_runtime::HostSendRequest;
 
-/// What an adapter is run through: how to make one.
+/// What an adapter is run through: how to make one, told which authorities to believe and which
+/// proxy to use, as §mesh-22.7 asks of the kit's `Harness`.
 pub trait Harness {
     /// The adapter under test.
     type Transport: HttpsTransport + 'static;

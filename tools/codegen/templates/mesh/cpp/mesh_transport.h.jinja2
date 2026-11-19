@@ -1377,7 +1377,10 @@ inline void send_to_{{ target.target_snake }}(
 {# The https client is a member of TransportRouter (D1): it holds the
    threads that poll and send, and the router's callbacks for what it
    receives and the readiness it observes, so no free send function is
-   emitted. route_send hands it the envelope (D5). #}
+   emitted. route_send hands it the envelope (D5).
+   §mesh-22.8: this is the router's `https` arm, the C++ core's client of
+   the binding, which reaches the network only through the
+   `SCE::Mesh::HttpsTransport` the host gives the router at construction. #}
 
 {% else %}
 #error "SCE Mesh: unsupported transport '{{ target.state.kind }}' for target '{{ target.target }}'. Update codegen::transport_shape() and mesh_transport.h.jinja2."

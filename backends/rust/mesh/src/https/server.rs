@@ -4,11 +4,12 @@
 //! The accepting side of the HTTPS binding (SCE_MESH.md section 22): the server machine's end,
 //! where each client's envelopes wait in a mailbox until the client's next exchange carries them.
 //!
-//! hyper on tokio, HTTP/1.1 and HTTP/2 on one listener, TLS from [`server_tls`]. For each
-//! exchange the server reads the client's name from the path, checks the authenticator, drops
-//! what the client acknowledged, hands the core what the request carried and waits until the
-//! macrosteps it caused have run ([`ServerHost::deliver`]), then answers with what the mailbox
-//! holds, holding the exchange while it holds nothing (section 22.3).
+//! The server of §mesh-22.8: hyper on tokio, HTTP/1.1 and HTTP/2 on one listener, TLS from
+//! [`server_tls`], the mailbox as the endpoint's transport. For each exchange the server reads
+//! the client's name from the path, checks the authenticator, drops what the client
+//! acknowledged, hands the core what the request carried and waits until the macrosteps it
+//! caused have run ([`ServerHost::deliver`]), then answers with what the mailbox holds, holding
+//! the exchange while it holds nothing (§mesh-22.3).
 //!
 //! What the machine sends a client reaches the mailbox through [`MailboxTransport`], the
 //! transport the host builds its endpoint on. A full mailbox refuses the envelope as a full queue
@@ -161,7 +162,7 @@ pub type BearerCheck = Arc<dyn Fn(&str, &str) -> bool + Send + Sync>;
 /// the client.
 pub type CertificateCheck = Arc<dyn Fn(&str, &[u8]) -> bool + Send + Sync>;
 
-/// Who may claim a name (section 22.5). A binding with none is refused at deploy validation, so a
+/// Who may claim a name (§mesh-22.5). A binding with none is refused at deploy validation, so a
 /// server is never built without one.
 #[derive(Clone)]
 pub enum Authenticator {
@@ -209,7 +210,8 @@ fn same_digest(a: &[u8; 32], b: &[u8; 32]) -> bool {
 
 /// When a `200` may acknowledge the envelopes an exchange carried, as the host that took them in
 /// says (SCE_MESH.md section 10.11: nothing is acknowledged before a checkpoint that holds it is
-/// durable). The server waits as it says, and answers nothing the host has not vouched for.
+/// durable). The server waits as it says, and answers nothing the host has not vouched for: the
+/// three answers of §mesh-22.8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Durability {
     /// Now, once the macrosteps have run: the host's endpoint does not checkpoint, or a durable
@@ -225,16 +227,16 @@ pub enum Durability {
     After(u64),
     /// Not by this exchange: the checkpoint that would hold the envelopes was not made durable
     /// (its write failed, or a fence refused it), or the session that took them in was dropped
-    /// first. The exchange is answered `503` with `Retry-After`, as load shed (section 22.4): the
+    /// first. The exchange is answered `503` with `Retry-After`, as load shed (§mesh-22.4): the
     /// client carries the envelopes again, the section 10.5 window drops what was taken in, and a
     /// later exchange is answered once a checkpoint holds them.
     NotDurable,
 }
 
-/// What the server asks of its host: tell the endpoint what the binding observed, run the
-/// macrosteps it caused, and return once they have run. What the machine sent meanwhile is then
-/// in the mailboxes, which is what lets an exchange answer with the replies its own request
-/// caused.
+/// What the server asks of its host (§mesh-22.8): tell the endpoint what the binding observed,
+/// run the macrosteps it caused, and return once they have run. What the machine sent meanwhile
+/// is then in the mailboxes, which is what lets an exchange answer with the replies its own
+/// request caused.
 ///
 /// Called on a thread of tokio's blocking pool, one call at a time, in the order the binding
 /// observed the events. A closure that takes the events is a host whose endpoint does not
@@ -279,7 +281,7 @@ impl Client {
         }
     }
 
-    /// Drop what `ack` acknowledges (section 22.3), when `epoch`, the incarnation the request says
+    /// Drop what `ack` acknowledges (§mesh-22.3), when `epoch`, the incarnation the request says
     /// its acknowledgement counts in, is `current`, the incarnation this mailbox numbers in. An
     /// acknowledgement of another incarnation, or of none, counts in a numbering this mailbox
     /// does not hold, and drops nothing.
@@ -300,7 +302,7 @@ impl Client {
 /// Every client's mailbox, shared by the server and the transport the endpoint sends through.
 struct Mailboxes {
     capacity: usize,
-    /// The incarnation every mailbox here numbers in (section 22.3): drawn when the server started
+    /// The incarnation every mailbox here numbers in (§mesh-22.3): drawn when the server started
     /// with its mailboxes empty, and named on every `200`.
     epoch: String,
     clients: Mutex<HashMap<String, Client>>,
@@ -312,7 +314,8 @@ impl Mailboxes {
     }
 }
 
-/// The core's side of the server: what the machine sends a client waits in its mailbox.
+/// The core's side of the server: what the machine sends a client waits in its mailbox, numbered
+/// in arrival order and bounded by `mailbox` (§mesh-22.3).
 #[derive(Clone)]
 pub struct MailboxTransport {
     mailboxes: Arc<Mailboxes>,
@@ -396,7 +399,7 @@ impl HttpsServer {
         }
     }
 
-    /// The incarnation the mailboxes number in (`Sce-Mesh-Epoch`, section 22.3).
+    /// The incarnation the mailboxes number in (`Sce-Mesh-Epoch`, §mesh-22.3).
     pub fn epoch(&self) -> &str {
         &self.shared.mailboxes.epoch
     }
@@ -475,7 +478,8 @@ impl HttpsServer {
 
     /// Tell the host, once per edge, of every ready client whose last exchange ended longer ago
     /// than `absence` and that has none in flight: SCE_MESH.md section 16.7 row 1. Runs until
-    /// dropped.
+    /// dropped. This is the server's half of readiness in §mesh-22.4: an exchange in flight
+    /// counts as presence, and the mailbox stays.
     pub async fn watch_absence(&self) {
         let absence = self.shared.settings.absence;
         let every = (absence / 4).clamp(Duration::from_millis(10), Duration::from_secs(1));
@@ -584,6 +588,8 @@ fn answer(status: StatusCode) -> Response<Full<Bytes>> {
     response
 }
 
+/// Load shed (§mesh-22.4): `429` or `503` with the `Retry-After` the client waits at least before
+/// it sends what the request carried again.
 fn shed(status: StatusCode, wait: Duration) -> Response<Full<Bytes>> {
     let mut response = answer(status);
     let seconds = wait.as_secs().max(1).to_string();
@@ -609,14 +615,16 @@ fn unauthorized(authenticator: &Authenticator) -> Response<Full<Bytes>> {
 }
 
 /// The client name a path posts under, when it is `<base>/sce-mesh/<version>/<name>` with the
-/// version this server speaks; `None` is a `404`.
+/// version this server speaks; `None` is a `404`. The path is the only place the server learns
+/// the client's name from (§mesh-22.1).
 fn client_of<'a>(base_path: &str, path: &'a str) -> Option<&'a str> {
     let rest = path.strip_prefix(base_path)?.strip_prefix(PATH_ROOT)?;
     let (version, name) = rest.split_once('/')?;
     (version == VERSION && is_path_segment(name)).then_some(name)
 }
 
-/// A request header read as a number: absent is 0, anything but digits is `None` (a `400`).
+/// A request header read as a number: absent is 0, anything but digits is `None` (a `400`, as
+/// §mesh-22.1 answers a binding header that is not a number).
 fn number_header(request: &Request<Incoming>, name: &str) -> Option<u64> {
     match request.headers().get(name) {
         None => Some(0),
@@ -656,6 +664,8 @@ fn admit(
     request: &Request<Incoming>,
     certificate: Option<&[u8]>,
 ) -> Admission {
+    // §mesh-22.5: the name the path claims is proved by the deployment's one authenticator, a
+    // bearer token, an installation secret checked against its pin, or a client certificate.
     match authenticator {
         Authenticator::Bearer(check) => match credential(request, BEARER_SCHEME) {
             Some(token) if check(name, token) => Admission::Admitted { pin: None },
@@ -679,12 +689,16 @@ fn admit(
     }
 }
 
-/// One exchange (section 22.3).
+/// One exchange, in the order §mesh-22.3 gives: refused if a status of §mesh-22.4 says so, the
+/// acknowledgement taken, the request's envelopes taken in, then answered with what the mailbox
+/// holds.
 async fn exchange(
     shared: Arc<Shared>,
     request: Request<Incoming>,
     certificate: Option<Arc<Vec<u8>>>,
 ) -> Response<Full<Bytes>> {
+    // §mesh-22.4: the refusals below (`405`, `404`, `503`, `401`, `400`, `413`, `429`, `415`)
+    // are each answered before the request's envelopes reach the core.
     if request.method() != Method::POST {
         let mut response = answer(StatusCode::METHOD_NOT_ALLOWED);
         response
@@ -770,6 +784,8 @@ async fn exchange(
     if !body.is_empty() && typed.as_deref() != Some(CONTENT_TYPE) {
         return answer(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
+    // §mesh-22.5: the name is pinned to the installation secret's SHA-256 in one step with the
+    // check, so of two first exchanges that bring different secrets one is refused `401`.
     if let Some(digest) = pin {
         if let Authenticator::Install(pins) = &shared.authenticator {
             if !pins.pin(&name, digest) {
@@ -778,7 +794,9 @@ async fn exchange(
         }
     }
 
-    // Taken in: the acknowledgement, readiness and the envelopes, told in the order decided.
+    // Taken in: the acknowledgement, readiness and the envelopes, told in the order decided
+    // (§mesh-22.3). The body is split as §mesh-22.2 frames it, a CBOR sequence whose unreadable
+    // tail reaches the core as one last envelope.
     let (arrived, held_by) = {
         let telling = shared.telling.lock().await;
         let (became_ready, arrived) = {
@@ -823,7 +841,8 @@ async fn exchange(
         return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
     }
 
-    // Held while the mailbox is empty, for at most the shorter of the two bounds.
+    // Held while the mailbox is empty, for at most the shorter of the two bounds: the long poll
+    // of §mesh-22.3, answered as soon as an envelope arrives.
     let hold = Duration::from_millis(hold_ms).min(settings.max_hold);
     let until = tokio::time::Instant::now() + hold;
     loop {
@@ -855,6 +874,8 @@ async fn exchange(
         }
     };
     drop(in_flight);
+    // §mesh-22.2: the body is every unacknowledged envelope as a CBOR sequence, `Sce-Mesh-First`
+    // numbers its first (absent when it is empty), and every `200` names its incarnation.
     let mut response = Response::new(Full::new(Bytes::from(body)));
     response
         .headers_mut()

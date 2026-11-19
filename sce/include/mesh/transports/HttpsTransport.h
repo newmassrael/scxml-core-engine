@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // The port of the Mesh binding over HTTP request and response (docs/adr/0107,
-// D2): one exchange at the level of HTTP semantics (RFC 9110), which is the
+// D2; SCE_MESH.md §mesh-22.6, the C++ interface of the port that section
+// names): one exchange at the level of HTTP semantics (RFC 9110), which is the
 // level the binding is defined on. A POST with its headers and body and a
 // bound on the wait goes in; a response, or a failure of a named kind, comes
 // out.
@@ -252,7 +253,9 @@ inline const char *failureName(HttpsExchange::Failure failure) {
     return "other";
 }
 
-/// Carries one exchange. The host owns the network policy, so it builds the
+/// Carries one exchange: the port of SCE_MESH.md §mesh-22.6, which every
+/// adapter implements, answering a response whatever its status or a failure
+/// of a named kind. The host owns the network policy, so it builds the
 /// adapter and hands it to the generated router at construction.
 class HttpsTransport {
 public:

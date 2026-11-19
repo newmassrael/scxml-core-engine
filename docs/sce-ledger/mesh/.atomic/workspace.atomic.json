@@ -3797,55 +3797,261 @@
     "mesh-22": {
       "title": "HTTPS Binding",
       "parent_doc": "mesh",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/mod.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_conformance.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "sce-build/tests/mesh_https_cpp_codegen.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/Cargo.toml",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-22.1": {
       "title": "Exchange and Peer Identity",
       "parent_doc": "mesh",
       "parent_section": "mesh-22",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/server.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "tests/server/tests/the_https_binding_reaches_a_pool.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_conformance.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-22.2": {
       "title": "Framing",
       "parent_doc": "mesh",
       "parent_section": "mesh-22",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/mod.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/server.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_conformance.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-22.3": {
       "title": "Mailbox, Acknowledgement and Hold",
       "parent_doc": "mesh",
       "parent_section": "mesh-22",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/server.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_conformance.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/server/tests/the_https_binding_reaches_a_pool.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-22.4": {
       "title": "Status Codes, Readiness and Faults",
       "parent_doc": "mesh",
       "parent_section": "mesh-22",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/client.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/server.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_conformance.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/HttpsClientTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-22.5": {
       "title": "Authentication",
       "parent_doc": "mesh",
       "parent_section": "mesh-22",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/server.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/mesh_https_cpp_codegen.rs",
+          "kind": "verifies"
+        }
+      ]
     },
     "mesh-22.6": {
       "title": "Port, Adapters and Platform Policy",
       "parent_doc": "mesh",
       "parent_section": "mesh-22",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/mod.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/adapter.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/transports/HttpsTransport.h",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/mesh/https/CurlHttpsTransport.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/mesh/https/WinHttpHttpsTransport.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_conformance.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/HttpsCurlAdapterTest.cpp",
+          "kind": "verifies"
+        }
+      ]
     },
     "mesh-22.7": {
       "title": "Conformance Kit",
       "parent_doc": "mesh",
       "parent_section": "mesh-22",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/conformance.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/https_kit/HttpsKit.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_conformance.rs",
+          "kind": "verifies"
+        }
+      ]
     },
     "mesh-22.8": {
       "title": "Implementations",
       "parent_doc": "mesh",
       "parent_section": "mesh-22",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/server.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "tests/server/tests/the_https_binding_reaches_a_pool.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "sce-build/tests/mesh_https_cpp_codegen.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/HttpsClientTest.cpp",
+          "kind": "verifies"
+        }
+      ]
     },
     "mesh-3": {
       "title": "Three Abstraction Axes",
@@ -5518,6 +5724,12 @@
       "target_kind": "section",
       "target_id": "mesh-16.7",
       "reason": "ReasonCode is now an alias of the engine vocabulary's enum (docs/adr/0106 #111); the rows that cite this section are the entries of kReasonCodeTable, at namespace scope"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-22.5",
+      "reason": "The authenticator refusal is verified by mesh_https_cpp_codegen.rs; this test's catalog names sections 18 to 20"
     }
   ],
   "frames": {},

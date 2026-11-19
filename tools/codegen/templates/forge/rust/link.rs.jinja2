@@ -12,7 +12,7 @@
 // owns an `impl Link` driver (downstream `sce_link_runtime_<os>`
 // implementation).
 {% if events %}
-// Receive path: `pump` gives the driver its tick, decodes every
+{# §synth-5-B: both paths run through the framer codec the link names. #}// Receive path: `pump` gives the driver its tick, decodes every
 // frame it has with the framer codec `{{ framer }}` and injects the event of
 // every `<sce:inbound>` row whose `when` holds for the frame. Transmit path:
 // `send` encodes an `<sce:outbound>` event's value with its codec into

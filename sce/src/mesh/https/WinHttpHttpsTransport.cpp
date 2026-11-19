@@ -10,11 +10,13 @@
 // handle from the cancelling thread, which is how WinHTTP ends a synchronous
 // call that is waiting.
 //
-// The proxy is the current user's configuration, read once when the adapter is
-// made: a named proxy with its bypass list, or an automatic configuration
-// script and WPAD, which WinHttpGetProxyForUrl resolves for each URL. The
-// server's chain is validated by WinHTTP against the Windows certificate
-// store, which is the platform trust the port requires; no flag weakens it.
+// SCE_MESH.md §mesh-22.6: the reference adapter on Windows, under the
+// platform policy that section sets. The proxy is the current user's
+// configuration, read once when the adapter is made: a named proxy with its
+// bypass list, or an automatic configuration script and WPAD, which
+// WinHttpGetProxyForUrl resolves for each URL. The server's chain is validated
+// by WinHTTP against the Windows certificate store, which is the platform
+// trust the port requires; no flag weakens it.
 
 #include "mesh/transports/https/WinHttpHttpsTransport.h"
 
@@ -131,7 +133,8 @@ private:
     bool closed_ = false;
 };
 
-/// The failure kind of a WinHTTP error. A name that does not resolve and a
+/// The failure kind of a WinHTTP error, in the named kinds of the port
+/// (SCE_MESH.md §mesh-22.6). A name that does not resolve and a
 /// connection refused are the proxy's when the exchange went through one,
 /// since the client resolves and dials only the proxy then.
 HttpsExchange::Failure classify(DWORD error, bool viaProxy) {
@@ -308,7 +311,9 @@ struct WinHttpHttpsTransport::Impl {
         clientCertificateMissing = clientCertificate == nullptr;
     }
 
-    /// Set the proxy `url` takes on `request`. Whether one is used.
+    /// Set the proxy `url` takes on `request`: the host's own when it names
+    /// one, otherwise the one the platform's settings name (SCE_MESH.md
+    /// §mesh-22.6). Whether one is used.
     bool applyProxy(HINTERNET request, const std::wstring &url) {
         if (explicitProxy) {
             WINHTTP_PROXY_INFO info{};

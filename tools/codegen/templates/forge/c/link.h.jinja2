@@ -13,7 +13,7 @@
  * `backends/c/runtime`-adjacent contract `sce/forge/link.h`) through the
  * canonical Linux-kernel separate-vtable shape.
 {% if events %}
- * Receive path: `{{ snake_name }}_link_pump` gives the driver its tick,
+{# §synth-5-B: both paths run through the framer codec the link names. #} * Receive path: `{{ snake_name }}_link_pump` gives the driver its tick,
  * decodes every frame it has with the framer codec `{{ framer }}` and
  * injects the event of every `<sce:inbound>` row whose `when` holds for the
  * frame. Transmit path: one `{{ snake_name }}_link_send_<event>` per

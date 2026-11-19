@@ -69,7 +69,7 @@ zenoh = ["dep:zenoh"]
 # default and dependency-free: it is compiled for a client's own test target, in this repository
 # or in the one that implements another client, and not for a host.
 conformance = []
-# The HTTPS binding (SCE_MESH.md section 22): a client that reaches a server by HTTP request and
+# The HTTPS binding (SCE_MESH.md §mesh-22): a client that reaches a server by HTTP request and
 # response through the port `https::HttpsTransport`, the server that holds a mailbox per client,
 # and the reference adapter of the port, hyper over rustls with the operating system's verifier
 # and proxy settings. Off by default for the reason `wss` is.

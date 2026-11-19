@@ -2,13 +2,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The dialing side of the HTTPS binding (SCE_MESH.md section 22): a machine that reaches one
-//! server machine by exchanges it opens, through the port [`HttpsTransport`].
+//! server machine by exchanges it opens, through the port [`HttpsTransport`]. It is the client
+//! of §mesh-22.8: [`HttpsClient`] over the port, and [`HttpsClientTransport`], the core's
+//! transport.
 //!
-//! Two threads, each with at most one exchange in flight. The poller holds an exchange open
-//! (`Sce-Mesh-Hold-Ms`) so that what the server sends reaches the client as soon as it is made;
-//! the sender carries what the core transmits as soon as it is transmitted, without waiting for a
-//! held exchange to end. Both acknowledge what the client has received, and what either response
-//! carries is handed to the core once, in mailbox order.
+//! Two threads, each with at most one exchange in flight, as §mesh-22.3 has a client keep them.
+//! The poller holds an exchange open (`Sce-Mesh-Hold-Ms`) so that what the server sends reaches
+//! the client as soon as it is made; the sender carries what the core transmits as soon as it is
+//! transmitted, without waiting for a held exchange to end. Both acknowledge what the client has
+//! received, and what either response carries is handed to the core once, in mailbox order.
 //!
 //! The binding keeps no decision of the core's. What it hands its host is [`LinkEvent`]s: the
 //! server is ready (from the first exchange answered `200`), bytes arrived, an envelope the
@@ -45,7 +47,7 @@ pub struct ClientSettings {
     pub own: String,
     /// The server machine's name: the peer the core addresses.
     pub server: String,
-    /// How the client proves its name (section 22.5).
+    /// How the client proves its name (§mesh-22.5).
     pub credential: Credential,
     /// deploy.yaml's `hold_ms`: how long a poll asks the server to hold it while nothing waits.
     pub hold: Duration,
@@ -91,6 +93,8 @@ impl ClientSettings {
         else {
             return None;
         };
+        // §mesh-22.5: the credential is of the one authenticator the binding names, which is the
+        // one the server checks.
         let fits = matches!(
             (authenticator, &credential),
             (HttpsAuthenticator::Bearer, Credential::Bearer(_))
@@ -107,7 +111,7 @@ impl ClientSettings {
 /// Why a client could not be started.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientError {
-    /// The machine name is not a path segment as it stands (section 22.1).
+    /// The machine name is not a path segment as it stands (§mesh-22.1).
     NotAPathSegment(String),
     /// The base is not an `https://` URL, or an `http://` one for a loopback host, or carries a
     /// query or a fragment.
@@ -142,7 +146,7 @@ struct State {
     events: EventSink,
 }
 
-/// Where an acknowledgement stands (section 22.3): the highest mailbox number handed to the core,
+/// Where an acknowledgement stands (§mesh-22.3): the highest mailbox number handed to the core,
 /// and the incarnation of the mailbox it counts in, `None` before the first `200`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct Mark {
@@ -158,6 +162,9 @@ impl Shared {
     }
 
     fn request(&self, body: Vec<u8>, mark: &Mark, hold: Duration) -> HttpsRequest {
+        // §mesh-22.1: what every request carries besides its body, the media type of the
+        // §mesh-22.2 framing, the acknowledgement and the incarnation it counts in (none before
+        // the first `200`), the hold, and the credential.
         let mut headers = alloc::vec![
             ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
             (ACK_HEADER.to_string(), mark.ack.to_string()),
@@ -217,6 +224,8 @@ fn take_outcome(
             take_mailbox(&mut state, &server, sent, &response);
             Then::Continue
         }
+        // §mesh-22.4: load shed is neither a failure nor a lost server. What the request carried
+        // goes again after at least the wait `Retry-After` asks for.
         Ok(response) if matches!(response.status, 429 | 503) => {
             for envelope in carried.into_iter().rev() {
                 state.outbox.push_front(envelope);
@@ -229,7 +238,7 @@ fn take_outcome(
             Then::Wait(wait)
         }
         // A status the binding does not take in: the server answered, so the client stays as
-        // ready as it was, and what the request carried was not taken (section 22.4).
+        // ready as it was, and what the request carried was not taken (§mesh-22.4).
         Ok(_) => {
             for envelope in carried {
                 (state.events)(LinkEvent::Unsent(server.clone(), envelope));
@@ -238,6 +247,8 @@ fn take_outcome(
             *failures = failures.saturating_add(1);
             Then::Wait(wait)
         }
+        // §mesh-22.4: a failure at the transport hands the envelopes back as not sent and ends
+        // readiness until the next `200`.
         Err(failure) => {
             for envelope in carried {
                 (state.events)(LinkEvent::Unsent(server.clone(), envelope));
@@ -257,7 +268,7 @@ fn take_outcome(
 }
 
 /// Hand the core the envelopes of a `200` response, in mailbox order and each once, and move the
-/// acknowledgement past them (section 22.3). `sent` is what the response's request acknowledged.
+/// acknowledgement past them (§mesh-22.3). `sent` is what the response's request acknowledged.
 ///
 /// The response's incarnation (`Sce-Mesh-Epoch`) says which numbering its numbers count in:
 ///
@@ -278,6 +289,8 @@ fn take_outcome(
 /// without a first number cannot be acknowledged: what a server that breaks the binding sends is
 /// not taken.
 fn take_mailbox(state: &mut State, server: &str, sent: &Mark, response: &HttpsResponse) {
+    // §mesh-22.2: a client takes nothing of a `200` without `Sce-Mesh-Epoch`, reads the body as a
+    // CBOR sequence, and numbers it from `Sce-Mesh-First`.
     let Some(epoch) = response
         .header(EPOCH_HEADER)
         .map(str::trim)
@@ -373,6 +386,8 @@ impl HttpsClient {
         if !base_is_allowed(base) {
             return Err(ClientError::BadBase(settings.base));
         }
+        // §mesh-22.1: every exchange posts to `<base>/sce-mesh/1/<client>`; the path is the only
+        // place the client's machine name travels.
         let url = alloc::format!("{base}{PATH_PREFIX}{}", settings.own);
         let shared = Arc::new(Shared {
             authorization: settings.credential.authorization(),
@@ -451,7 +466,8 @@ impl Drop for HttpsClient {
 }
 
 /// Whether `base` is a URL the binding posts to: `https://` with a host, or `http://` with a
-/// loopback host, and in either no query or fragment.
+/// loopback host, and in either no query or fragment (§mesh-22.1: `http://` without TLS is for a
+/// loopback test only).
 fn base_is_allowed(base: &str) -> bool {
     if base.contains(['?', '#']) {
         return false;

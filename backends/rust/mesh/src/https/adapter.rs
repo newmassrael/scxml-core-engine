@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! This crate's adapter of the HTTPS port (SCE_MESH.md section 22.6): hyper over rustls, with the
+//! This crate's adapter of the HTTPS port (SCE_MESH.md §mesh-22.6): hyper over rustls, with the
 //! operating system's certificate verifier and the platform's proxy settings.
 //!
 //! * **Trust.** A server's certificate is verified by `rustls-platform-verifier`, which asks the
@@ -44,7 +44,7 @@ use super::{HttpsFailure, HttpsRequest, HttpsResponse, HttpsTransport};
 /// Which proxy the adapter reaches an `https://` server through.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ProxyPolicy {
-    /// The platform's settings (section 22.6): the proxy variables, and the operating system's
+    /// The platform's settings (§mesh-22.6): the proxy variables, and the operating system's
     /// own settings where it keeps them.
     #[default]
     System,
@@ -95,7 +95,7 @@ impl Sender {
     }
 }
 
-/// The reference adapter of the HTTPS port.
+/// The reference adapter of the HTTPS port for Rust on every operating system (§mesh-22.6).
 pub struct HyperTransport {
     runtime: tokio::runtime::Runtime,
     tls: Arc<ClientConfig>,
@@ -205,6 +205,8 @@ impl HyperTransport {
             other => return Err(HttpsFailure::Other(alloc::format!("no scheme {other}"))),
         };
         let port = uri.port_u16().unwrap_or(if secure { 443 } else { 80 });
+        // §mesh-22.6: the server is reached through the proxy the platform's settings name, by a
+        // `CONNECT` tunnel, and a tunnel the proxy refuses is reported as `Proxy`.
         let proxy = if secure {
             self.proxies
                 .as_ref()
@@ -415,6 +417,8 @@ async fn tunnel(
 /// The client's TLS: the platform's verifier with `extra_authorities` beside it, the identity of
 /// an `mtls` client, and HTTP/2 offered before HTTP/1.1.
 fn client_tls(settings: &AdapterSettings) -> Result<Arc<ClientConfig>, rustls::Error> {
+    // §mesh-22.6: the adapter believes the authorities the operating system believes, so a
+    // network that inspects TLS is honoured exactly where the user's machine trusts it.
     let provider = crate::tls::provider();
     let extra: Vec<CertificateDer<'static>> = settings
         .extra_authorities
