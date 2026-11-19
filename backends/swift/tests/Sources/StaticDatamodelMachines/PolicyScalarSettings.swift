@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
+// source-hash: 0b56f2bc2831ecc566ce205772e8316a5481439b752a8cd93a8cf668ba68a621
+// source: policy_scalar_settings.scxml
 // SCE-MAP: policy_scalar_settings.scxml:21 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +29,7 @@ public enum PolicyScalarSettings {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:policy_scalar_settings:1\",\"x-sce-source-hash\":\"2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"strict\":{\"type\":\"boolean\"},\"limitDays\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"burst\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"locked\":{\"type\":\"boolean\"}},\"required\":[\"strict\",\"limitDays\",\"burst\",\"locked\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:policy_scalar_settings:1\",\"x-sce-source-hash\":\"0b56f2bc2831ecc566ce205772e8316a5481439b752a8cd93a8cf668ba68a621\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"strict\":{\"type\":\"boolean\"},\"limitDays\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"burst\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"locked\":{\"type\":\"boolean\"}},\"required\":[\"strict\",\"limitDays\",\"burst\",\"locked\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built

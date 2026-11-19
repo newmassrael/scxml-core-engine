@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9bcde893aca9b8bd0b4481ded56da43b529733ffefb711be8f993d5a07ed257a
+// source-hash: 98ad23a6fb352599a674d7382fe852edda39538f0e481e2365f39732aa31df91
+// source: parallel_region_root_external_domain.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: tests/integration/parallel_region_root_external_domain.scxml

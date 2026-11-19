@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a86b3b19a12dab1982345f4a46c1e37355ff902583da2c2f5d8395ee9c56f9e7
+// source-hash: bb7857d7d1f4365f9de874dc2d97c18e0acca1306f8df158493db4e923478c62
+// source: sce:std/sync/mailbox_assign.scxml
 // SCE-MAP: mailbox_assign.scxml:29 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

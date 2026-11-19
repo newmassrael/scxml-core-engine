@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8e0f0b7b552dfbb89b9083db177a216e77a3534d3f6112690f84145daf0386d4
+// source: event_data_arrives_as_sent.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 79bd488e080bbb06d64d257e2fbd5255070d9d17deefefd2dca818e62be7e33d
+// source-hash: 19a127f54c9deebd5f70030e23e03228c6cca2b28c17631c421836bbc812839a
+// source: sce:std/shared/record_refusal.scxml
 // SCE-MAP: record_refusal.scxml:39 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_hash": "7e40b95c2d842dcf564705fa3efcf7ff2175df2e7887977f32be9e362c2a3f25",
+  "source_hash": "697a515dcdf64588ed96fecc4c179536c5d6505de5e793663c2f7d2e5529b047",
   "symbols": {
     "test240_____machine": {
       "scxml_file": "test240.scxml",

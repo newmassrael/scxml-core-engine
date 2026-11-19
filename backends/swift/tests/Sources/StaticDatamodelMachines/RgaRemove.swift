@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 451ed84f90f73b42f48909eca6f7a302d6cb0b852dd68c846f5e713406957876
+// source-hash: e2bf212dfcacc07a5f234cb226581db9ed3d138a2139d84366a976d9c4f3be1d
+// source: sce:std/merge/rga_remove.scxml
 // SCE-MAP: rga_remove.scxml:20 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

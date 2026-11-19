@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5ba52a313a5f53415f5c7e49a957fa6eb851fa976ae81a41db1540add4319d51
+// source-hash: c926019cafd3154684c1bbf1e27ee86bc92611b98c4337fe93116c695bf2f567
+// source: union_shape_minimal.scxml
 // SCE-MAP: union_shape_minimal.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="union")
@@ -21,7 +22,7 @@ public enum UnionShapeMinimal: Equatable, Sendable {
 
     /// A value as a JSON Schema (2020-12): the `oneOf` of the cases, each its tag `kind` beside the
     /// fields of its record, every bound as this build resolved it.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:union_shape_minimal:1\",\"x-sce-source-hash\":\"5ba52a313a5f53415f5c7e49a957fa6eb851fa976ae81a41db1540add4319d51\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"oneOf\":[{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"dot\"}},\"required\":[\"kind\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"circle\"},\"radius\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"kind\",\"radius\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"rect\"},\"width\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"height\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"kind\",\"width\",\"height\"],\"additionalProperties\":false}]}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:union_shape_minimal:1\",\"x-sce-source-hash\":\"c926019cafd3154684c1bbf1e27ee86bc92611b98c4337fe93116c695bf2f567\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"oneOf\":[{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"dot\"}},\"required\":[\"kind\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"circle\"},\"radius\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"kind\",\"radius\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"rect\"},\"width\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"height\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"kind\",\"width\",\"height\"],\"additionalProperties\":false}]}"
 
     /// The case `dot`, its tag alone.
     case dot

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
+// source: event_origin_is_a_location.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/event_origin_is_a_location/event_origin_is_a_location.scxml#inv_peer

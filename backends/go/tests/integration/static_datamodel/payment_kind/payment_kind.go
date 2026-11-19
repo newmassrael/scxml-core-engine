@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d4646eb3233d0326b8220cebf3753ec7bf14af5b5faee8ffa467c7536202f42b
+// source-hash: c5adbeaab86f399e2a5f61b0df743727628707f2c9fb98227d9c3b11c4e0758a
+// source: payment_kind.scxml
 // SCE-MAP: payment_kind.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e42ed63c802c7386a2f8b67e636e3f2fc069318df1d1d244f1fe8932e043803f
+// source-hash: f17873240220948ffe9cce4f8fc2f8602bc545220f1573e4063dc8865d96977f
+// source: jvm_long_text_ecmascript.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: backends/kotlin/tests/fixtures/jvm_long_text/jvm_long_text_ecmascript.scxml

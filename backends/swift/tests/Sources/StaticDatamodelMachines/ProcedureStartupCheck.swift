@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
+// source-hash: 69de94720136a0fbbb07657dd94bf2d3f58f3e50610eb1e4745d7cd7ec621c8a
+// source: procedure_startup_check.scxml
 // SCE-MAP: procedure_startup_check.scxml:2 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")

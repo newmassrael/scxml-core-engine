@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3f51ae17d132a35fd3a1ecd1d4b65de1ff71b9a382e0fdbb0ba786d0f4532e45
+// source-hash: 013ae16a1e0d81f03584fdc475d27718a106397792bc58ba7a1a10e8b447ad8e
+// source: sce:std/time/date_kind.scxml
 // SCE-MAP: date_kind.scxml:32 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

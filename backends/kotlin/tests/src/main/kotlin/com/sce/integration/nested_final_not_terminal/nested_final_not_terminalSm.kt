@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
+// source: nested_final_not_terminal.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/nested_final_not_terminal/nested_final_not_terminal.scxml

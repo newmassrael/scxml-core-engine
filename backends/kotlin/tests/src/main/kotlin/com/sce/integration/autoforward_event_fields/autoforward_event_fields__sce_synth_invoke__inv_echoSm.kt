@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
+// source: autoforward_event_fields.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_event_fields/autoforward_event_fields.scxml#inv_echo

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d4646eb3233d0326b8220cebf3753ec7bf14af5b5faee8ffa467c7536202f42b
+// source-hash: 7b35eca6b3f681067b34761a497e6a06a3d23cc753d1cb81844a566ae16a52f6
+// source: order_customer.scxml
 // SCE-MAP: order_customer.scxml:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +29,7 @@ const SchemaID string = "urn:sce:schema:order_customer:1"
 
 // JSONSchema is the payload as a JSON Schema (2020-12): one spelling of each value, every
 // bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-const JSONSchema string = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:order_customer:1\",\"x-sce-source-hash\":\"d4646eb3233d0326b8220cebf3753ec7bf14af5b5faee8ffa467c7536202f42b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"full_name\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"vip\":{\"type\":\"boolean\"}},\"required\":[\"full_name\",\"vip\"],\"additionalProperties\":false}"
+const JSONSchema string = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:order_customer:1\",\"x-sce-source-hash\":\"7b35eca6b3f681067b34761a497e6a06a3d23cc753d1cb81844a566ae16a52f6\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"full_name\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"vip\":{\"type\":\"boolean\"}},\"required\":[\"full_name\",\"vip\"],\"additionalProperties\":false}"
 
 type OrderCustomerPayload struct {
 	FullName string

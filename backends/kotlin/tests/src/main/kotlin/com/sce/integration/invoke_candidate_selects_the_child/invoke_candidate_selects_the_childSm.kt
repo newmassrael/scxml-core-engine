@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 34a3aa3a202a7ed359ee0ab4d1bade13a9630715ad1b32496ec4d19b29db3f4f
+// source: invoke_candidate_selects_the_child.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/invoke_candidate_selects_the_child/invoke_candidate_selects_the_child.scxml

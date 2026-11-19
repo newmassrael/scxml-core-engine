@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b0ef9e173278564420c2e6be5ad06d376c615a4162d9ec67007ff7e1f2e21834
+// source: an_error_ends_the_block_it_was_raised_in.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

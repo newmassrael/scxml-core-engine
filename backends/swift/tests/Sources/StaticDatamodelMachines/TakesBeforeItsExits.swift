@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 982a23a5ec15b8216f29e9e8e4ba6c1047dee0d66671c7835c2776a4de5a13d2
+// source-hash: da8cfaa8149c596ce55c8e1b8c2853ee2c20bb8f1999394376d21de2c156738a
+// source: takes_before_its_exits.scxml
 // SCE-MAP: takes_before_its_exits.scxml:6 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-case")

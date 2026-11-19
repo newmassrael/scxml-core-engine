@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7e40b95c2d842dcf564705fa3efcf7ff2175df2e7887977f32be9e362c2a3f25
+// source-hash: 5a095d22970297c11305d0511d6a4144b57baee226525a5af9b1a3c5e44b7d3e
+// source: test236.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/236/test236.scxml#_invoke_0

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 451ed84f90f73b42f48909eca6f7a302d6cb0b852dd68c846f5e713406957876
+// source-hash: 1a2b5898b1c6418f207409a7f6864ee9f7f55daa4a3a279b578c80fe4b89a4d0
+// source: sce:std/merge/hlc_send.scxml
 // SCE-MAP: hlc_send.scxml:17 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 12784c68459b3d7eace7410d1b4623224107fed95aa065f0d94c55e5663fd9e2
+// source: a_self_sent_event_names_its_origin.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_self_sent_event_names_its_origin/a_self_sent_event_names_its_origin.scxml

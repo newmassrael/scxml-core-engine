@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cd05c4ff1bc721d243e8db6c4a2dc3d3152d02ae04710b3754fe882a5c2313f
+// source: sce:std/rate/gcra_admit.scxml
 // SCE-MAP: gcra_admit.scxml:35 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

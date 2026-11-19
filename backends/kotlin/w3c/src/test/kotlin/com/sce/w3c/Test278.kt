@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7e40b95c2d842dcf564705fa3efcf7ff2175df2e7887977f32be9e362c2a3f25
+// source-hash: ac50f553dbd4ad6d46f25b857dd16c5cadd8340b07d0d1ffacf99f24a30ff156
+// source: test278.scxml
 // GENERATED -- DO NOT EDIT (sce-codegen)
 // SCE-MAP: test278.scxml:1
 package com.sce.w3c

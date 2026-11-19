@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d7a9764edbc3c62648b57fd440c3eed4e401e25a63b873b4e90fad2c675a4c34
+// source-hash: 1736f9ba650ecacc053aef36ae9bb6a86ba641607ce094c6833df9525dc5f7b2
+// source: statechart_lifted.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/event_schema/statechart_lifted.scxml

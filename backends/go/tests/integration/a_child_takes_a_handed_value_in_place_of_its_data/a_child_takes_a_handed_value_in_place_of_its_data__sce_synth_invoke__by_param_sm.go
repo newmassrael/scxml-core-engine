@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 428dfedc40362bcde893d2a13aaf88295d66fbb3c5dc619cc8fae908cc42df31
+// source: a_child_takes_a_handed_value_in_place_of_its_data.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

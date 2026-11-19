@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 79bd488e080bbb06d64d257e2fbd5255070d9d17deefefd2dca818e62be7e33d
+// source-hash: d33807f273908bcf0c618164c9358f1caa01fcae9ec6f6c74812a2887ca07eec
+// source: sce:std/shared/record_command.scxml
 // SCE-MAP: record_command.scxml:19 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

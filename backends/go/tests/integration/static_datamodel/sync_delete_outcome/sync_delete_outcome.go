@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a86b3b19a12dab1982345f4a46c1e37355ff902583da2c2f5d8395ee9c56f9e7
+// source-hash: 14e606f3cf1e7812017b5644cfc8eae8583c21d3a88314c7ab2afa22685d6826
+// source: sce:std/sync/sync_delete_outcome.scxml
 // SCE-MAP: sync_delete_outcome.scxml:28 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

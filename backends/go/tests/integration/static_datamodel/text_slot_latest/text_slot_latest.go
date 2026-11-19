@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a80f93552f3d4a294d630f8c946db59915adc7e7feafcd130d0bd06a37d76e3b
+// source-hash: ffaa190a07e30df25d3080cb0ae2b255b15e12109f4d095a6651dc58c3ed152a
+// source: sce:std/text/text_slot_latest.scxml
 // SCE-MAP: text_slot_latest.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

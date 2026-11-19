@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8127f9886416636d06d894fac0be36c9fa1ea112226dc4621acfcba18ed7e87c
+// source: a_child_may_send_many_events_in_one_tick.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

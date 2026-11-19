@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
+// source-hash: 0b434fd9f05be39ce9f59361c9a8f0ae2a09c4294ba439a23a6de4d16b0d2789
+// source: algorithm_total_arith_i64.scxml
 // SCE-MAP: algorithm_total_arith_i64.scxml:16 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

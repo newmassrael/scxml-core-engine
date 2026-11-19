@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d4646eb3233d0326b8220cebf3753ec7bf14af5b5faee8ffa467c7536202f42b
+// source-hash: c4a4afbbd1df067ca57050ec11f1a2492f00b5bd54a64285853752908956ac51
+// source: card_within.scxml
 // SCE-MAP: card_within.scxml:6 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")

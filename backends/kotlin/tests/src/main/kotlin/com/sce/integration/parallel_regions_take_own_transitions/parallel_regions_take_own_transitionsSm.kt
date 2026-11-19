@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
+// source: parallel_regions_take_own_transitions.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/parallel_regions_take_own_transitions/parallel_regions_take_own_transitions.scxml

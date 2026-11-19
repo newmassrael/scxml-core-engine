@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
+// source-hash: 17b81fab7511f9f9bd3b8709eba7e1613b6e0835449a880ebedecec415c7bba8
+// source: codec_declared_bounds_gated.scxml
 // SCE-MAP: codec_declared_bounds_gated.scxml:13 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 98f78fa2beb43da678ad03c1203b1a5f133dea114700199b89d9372091f1eb2a
+// source-hash: d1f143f0858d7624b3d972d6cd75fcd20bc1e27f79c0fcb306f68353b582b1a8
+// source: sce:std/acl/acl_privilege.scxml
 // SCE-MAP: acl_privilege.scxml:10 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +29,7 @@ public enum AclPrivilege {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:acl_privilege:1\",\"x-sce-source-hash\":\"98f78fa2beb43da678ad03c1203b1a5f133dea114700199b89d9372091f1eb2a\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"parent\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"id\",\"parent\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:acl_privilege:1\",\"x-sce-source-hash\":\"d1f143f0858d7624b3d972d6cd75fcd20bc1e27f79c0fcb306f68353b582b1a8\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"parent\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"id\",\"parent\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built

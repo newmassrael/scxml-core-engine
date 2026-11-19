@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5ba52a313a5f53415f5c7e49a957fa6eb851fa976ae81a41db1540add4319d51
+// source-hash: 8cfe2f723c9955d0f1684d168c621707d6520eb0bf0ba7bf88e7c2818e0316aa
+// source: shape_radius_minimal.scxml
 // SCE-MAP: shape_radius_minimal.scxml:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -22,6 +23,6 @@ const val DATA_MAX_LEN: ULong = 16uL
 const val SCHEMA_ID: String = "urn:sce:schema:shape_radius_minimal:1"
 
 /** The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`. */
-const val JSON_SCHEMA: String = "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"\$id\":\"urn:sce:schema:shape_radius_minimal:1\",\"x-sce-source-hash\":\"5ba52a313a5f53415f5c7e49a957fa6eb851fa976ae81a41db1540add4319d51\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"radius\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"radius\"],\"additionalProperties\":false}"
+const val JSON_SCHEMA: String = "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"\$id\":\"urn:sce:schema:shape_radius_minimal:1\",\"x-sce-source-hash\":\"8cfe2f723c9955d0f1684d168c621707d6520eb0bf0ba7bf88e7c2818e0316aa\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"radius\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"radius\"],\"additionalProperties\":false}"
 
 data class ShapeRadiusMinimalPayload(    val radius: UShort)

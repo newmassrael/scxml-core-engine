@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
+// source: autoforward_event_fields.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e42ed63c802c7386a2f8b67e636e3f2fc069318df1d1d244f1fe8932e043803f
+// source-hash: 8f314e5e4102486b521baf5d55ffb7e0ac8c0c11e41058aae5021b7f0df0b71e
+// source: jvm_long_text_static.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: backends/kotlin/tests/fixtures/jvm_long_text/jvm_long_text_static.scxml

@@ -1,5 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ee6dc8a8311259cc746ef6014f59f29c1765ebca541134463c70d1f787755a9f
+// source: broadcast_log_swift_frame.scxml
+// source: broadcast_log_swift_ring.scxml
 // SCE-MAP: broadcast_log_swift_ring.scxml:10 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")

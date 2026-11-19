@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f01c184986658113c3d88b7783aaf923ed4e30d14575633fec8ae3793b107abd
+// source-hash: 877621f37229fecc457ee8a018ed01bc608e1a8e4c0614dec2a1a4502368fff1
+// source: pattern_kind.scxml
 #![doc = "SCE-MAP: pattern_kind.scxml:18 :: _forge_body"]
 // SCE-MAP: pattern_kind.scxml:18 :: _forge_body
 

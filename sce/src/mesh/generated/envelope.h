@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f01c184986658113c3d88b7783aaf923ed4e30d14575633fec8ae3793b107abd
+// source-hash: fc87f60788825a2accbefbd7d310802e57bdcedce19d2a650856b2530bfaac44
+// source: envelope.scxml
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")

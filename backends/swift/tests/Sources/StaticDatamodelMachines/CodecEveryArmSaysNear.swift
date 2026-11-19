@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
+// source-hash: e76706c72ef19a34f90d587777c5ce2c0bf7ea10c1137f62e3b08da2d086b57e
+// source: codec_every_arm_says_near.scxml
 // SCE-MAP: codec_every_arm_says_near.scxml:5 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")

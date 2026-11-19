@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 79bd488e080bbb06d64d257e2fbd5255070d9d17deefefd2dca818e62be7e33d
+// source-hash: c708339acb338a1bc607c23d50861e8c6e791144004eb13013939d9a3efcd580
+// source: sce:std/shared/record_roster.scxml
 // SCE-MAP: record_roster.scxml:14 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

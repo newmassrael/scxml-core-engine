@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 3df514d5d4409dcae43d9342fc78a7d5cfc4a992b127150338c716e67cc1a388
+// source: an_error_inside_a_foreach_ends_its_block.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/an_error_inside_a_foreach_ends_its_block/an_error_inside_a_foreach_ends_its_block.scxml

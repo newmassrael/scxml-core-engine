@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: aba7884293df72194a909ee8240f8376d0d98958e0d17eb2bec8d76ccd227f77
+// source: a_payload_rides_on_its_own_event.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

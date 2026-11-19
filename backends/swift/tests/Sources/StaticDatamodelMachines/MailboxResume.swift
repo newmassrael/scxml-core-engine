@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a86b3b19a12dab1982345f4a46c1e37355ff902583da2c2f5d8395ee9c56f9e7
+// source-hash: fbf6d74eed288a955e76ccdcaaf966f2b277b20786c37dd95086908e29bc362c
+// source: sce:std/sync/mailbox_resume.scxml
 // SCE-MAP: mailbox_resume.scxml:35 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

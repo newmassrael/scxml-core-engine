@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
+// source-hash: b21cc989377975e5c2ecc603df45de6db67ecc954cc557ad21fc927c3c5b0d75
+// source: job_reply.scxml
 // SCE-MAP: job_reply.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -22,6 +23,6 @@ const val DATA_MAX_LEN: ULong = 36uL
 const val SCHEMA_ID: String = "urn:sce:schema:job_reply:1"
 
 /** The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`. */
-const val JSON_SCHEMA: String = "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"\$id\":\"urn:sce:schema:job_reply:1\",\"x-sce-source-hash\":\"16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"job\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"code\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"job\",\"code\"],\"additionalProperties\":false}"
+const val JSON_SCHEMA: String = "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"\$id\":\"urn:sce:schema:job_reply:1\",\"x-sce-source-hash\":\"b21cc989377975e5c2ecc603df45de6db67ecc954cc557ad21fc927c3c5b0d75\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"job\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"code\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"job\",\"code\"],\"additionalProperties\":false}"
 
 data class JobReplyPayload(    val job: UInt,    val code: UInt)

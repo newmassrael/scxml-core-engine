@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 228574de0bc19d5365ce601baf2f5ab947df25fe447cdc72ac9bd281728c1abf
+// source-hash: b7a6ec45a294ac597b81deb765eae0b55de51c28ecdf26098f7e5828e62d8b1b
+// source: sce:std/mesh/pattern_kind.scxml
 // SCE-MAP: pattern_kind.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

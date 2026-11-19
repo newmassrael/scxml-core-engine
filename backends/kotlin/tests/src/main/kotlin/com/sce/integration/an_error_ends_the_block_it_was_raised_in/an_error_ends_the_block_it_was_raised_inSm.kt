@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b0ef9e173278564420c2e6be5ad06d376c615a4162d9ec67007ff7e1f2e21834
+// source: an_error_ends_the_block_it_was_raised_in.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/an_error_ends_the_block_it_was_raised_in/an_error_ends_the_block_it_was_raised_in.scxml

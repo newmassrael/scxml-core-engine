@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 55e9ecc57d956027bb6dd08c16d46cb9a2c0a99fe474a4b0312c33d8ac0ac34c
+// source: sce:std/engine/error_reason.scxml
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

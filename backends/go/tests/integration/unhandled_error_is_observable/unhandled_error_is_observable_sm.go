@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 88c46d955f89d1b6f7eb00aaedced29c5fbacc4db8ed4464fa38145a023ef16c
+// source: unhandled_error_is_observable.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

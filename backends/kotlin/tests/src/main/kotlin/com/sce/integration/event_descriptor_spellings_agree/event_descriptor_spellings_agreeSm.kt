@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50d20d99cbb48f12a0880885cd1f0df5d9e67ae77d666c0c74ded8f10b4a9982
+// source: event_descriptor_spellings_agree.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/event_descriptor_spellings_agree/event_descriptor_spellings_agree.scxml

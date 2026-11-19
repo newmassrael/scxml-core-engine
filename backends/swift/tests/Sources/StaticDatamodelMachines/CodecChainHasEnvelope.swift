@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
+// source-hash: 29380ed08dbfe4a6cb4eda98d7019b9e04fb3e50328ecf7f0bf148608ab995aa
+// source: codec_chain_has_envelope.scxml
 // SCE-MAP: codec_chain_has_envelope.scxml:23 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
+// source-hash: 233e406144a1116060737baa09452c8d1807e0727e64d7893e565b8a5c513b79
+// source: ptc_keeper.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/test_profile/runtime/ptc_keeper.scxml

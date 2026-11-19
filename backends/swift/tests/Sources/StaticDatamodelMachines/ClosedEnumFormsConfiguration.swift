@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 75f53f6deefa1a9e19646e018ad72cacc30c4c7ca7f7f96f21be9f17f58cfdae
+// source-hash: 25c037af0ca133c6fcfb52a89947eaf7c62eedde0e4f9ec600ca2951357cbf7c
+// source: closed_enum_forms_configuration.scxml
 // SCE-MAP: closed_enum_forms_configuration.scxml:7 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-configuration")
