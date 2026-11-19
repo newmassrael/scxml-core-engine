@@ -50,6 +50,24 @@
 //! throws, the script engine's statement that the point is not reached, with
 //! no failure name: it is no failure an algorithm reports.
 //!
+//! # Maps and sets
+//!
+//! A map or a set (docs/adr/0108, D5) is what a statechart holds one as
+//! ([`crate::forge::static_js`]): the array of its entries in the order their
+//! keys were first put, `[key, value]` of a map and the key of a set, read by
+//! `len`, `has` and `m[k]` through the library, and never changed in place. A
+//! local starts as the empty array and a `<sce:put>`, a `<sce:remove>` and a
+//! `<sce:clear>` write it again, a put held to the bound the local states. A
+//! parameter lent to be read is the caller's array itself, which nothing
+//! writes. One declared `inout` arrives in a holder, `{map, capacity}`, the
+//! caller's array and its variable's bound: the function reads the array into
+//! a local of the parameter's name, writes that local as it writes a map local,
+//! holding a put to the capacity, and leaves the array it ends with in the
+//! holder however it returns, which the caller writes back into its variable
+//! once the call has returned (D6 item 2). A `<sce:foreach>` walks the array
+//! the map held when the loop began, which a write in its body replaces and
+//! never changes, so no copy is taken (D6 item 3).
+//!
 //! # Imports
 //!
 //! What a body's expressions are typed against includes the documents it
@@ -77,8 +95,8 @@ use crate::forge::generator::{
     TextSource,
 };
 use crate::forge::model::{
-    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport,
-    RecordFieldInit, SceType,
+    AlgorithmBinding, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType,
+    ForgeImport, RecordFieldInit, SceType,
 };
 use crate::forge::narrowing::{
     after_algorithm_statement, loop_entry, present_record_of, proves_written, Chain, Facts,
@@ -444,6 +462,18 @@ fn collect_buffers<'a>(stmts: &'a [AlgorithmStmt], out: &mut HashMap<&'a str, Bu
     }
 }
 
+/// A map or a set the body holds (docs/adr/0108, D5): a parameter, `inout` or
+/// not, or a local, each the array of its entries ([`lower`]).
+struct MapHeld {
+    /// The most entries a put leaves in it, as ECMAScript reads it: a local's
+    /// stated bound, or the capacity the holder of an `inout` parameter carries
+    /// from the caller's variable, since the parameter states none. `None` for
+    /// a parameter lent to be read, which no statement writes.
+    capacity: Option<String>,
+    /// Whether it is a set, each entry of which is the key itself.
+    set: bool,
+}
+
 /// What lowering one body reads and does not change.
 struct Body<'a> {
     algorithm: &'a str,
@@ -471,6 +501,8 @@ struct Body<'a> {
     /// The unions the parameters and locals hold, and the case a union local
     /// builds (docs/adr/0092, Landing order step 5).
     unions: AlgorithmUnions<'a>,
+    /// Every map and set parameter and local, by name (docs/adr/0108, D5).
+    maps: HashMap<&'a str, MapHeld>,
 }
 
 impl Body<'_> {
@@ -621,6 +653,111 @@ impl Body<'_> {
         })
     }
 
+    /// The map or set `target` a `<sce:put>`, a `<sce:remove>` or a
+    /// `<sce:clear>` writes (docs/adr/0108, D5): its place, the type the
+    /// library reads it by ([`crate::forge::static_js::map_descriptor`]), and
+    /// the most entries it holds. Only a local and an `inout` parameter are
+    /// written, which the parser held every such statement to; any other name
+    /// is refused here all the same rather than written.
+    fn map_written(
+        &self,
+        element: &str,
+        target: &str,
+    ) -> Result<(crate::forge::value_path::Place, String, &str), ForgeError> {
+        let capacity = self
+            .maps
+            .get(target)
+            .and_then(|held| held.capacity.as_deref())
+            .ok_or_else(|| {
+                refusal(
+                    self.algorithm,
+                    format!(
+                        "{element}, whose target is no map or set local and no inout map or set \
+                         parameter"
+                    ),
+                )
+            })?;
+        let place = self
+            .ctx
+            .value_of(target)
+            .filter(crate::forge::value_path::Place::is_keyed)
+            .ok_or_else(|| {
+                refusal(
+                    self.algorithm,
+                    format!("{element}, whose target this build did not type"),
+                )
+            })?;
+        let descriptor = crate::forge::static_js::map_descriptor(&place, self.ctx.value_scope)
+            .ok_or_else(|| {
+                refusal(
+                    self.algorithm,
+                    format!(
+                        "{element}, whose key of type `{}` has no ecmascript spelling",
+                        place.ty
+                    ),
+                )
+            })?;
+        Ok((place, descriptor, capacity))
+    }
+
+    /// `written`, a key or a value of type `ty` an `<sce:put>` or an
+    /// `<sce:remove>` of the map `element` names hands the library, read where
+    /// `proven` holds: a number, a truth value, a value of an enum (its
+    /// declared name) and a text as the expressions they are, a text held to
+    /// the bound its type states as a record's field is, and a record by the
+    /// name of the parameter, local or loop item that holds it, the plain
+    /// object no algorithm changes in place. A byte string is the array of
+    /// numbers an algorithm holds it as, which a statechart's map does not
+    /// hold, and is refused by name with every other type.
+    fn map_part(
+        &self,
+        element: &str,
+        written: &str,
+        ty: &crate::forge::value_type::ValueType,
+        proven: &Facts,
+    ) -> Result<String, ForgeError> {
+        use crate::forge::value_type::ValueType;
+        let written = written.trim();
+        match ty {
+            ValueType::Record { .. } => {
+                let named = self.records.contains_key(written)
+                    || self
+                        .ctx
+                        .value_of(written)
+                        .is_some_and(|place| matches!(place.ty, ValueType::Record { .. }));
+                if named {
+                    Ok(written.to_string())
+                } else {
+                    Err(refusal(
+                        self.algorithm,
+                        format!(
+                            "{element} of `{written}`, which is not a record parameter, local or \
+                             loop item"
+                        ),
+                    ))
+                }
+            }
+            ValueType::Text { max } => Ok(format!(
+                "{RUNTIME_GLOBAL}.bounded({}, {})",
+                self.slot_at(written, InferredType::Str, proven)?,
+                max.max
+            )),
+            ValueType::Scalar(scalar) if has_a_value_form(scalar) => self
+                .slot_at(written, InferredType::from_sce_type(scalar), proven)
+                .map_err(ForgeError::from),
+            ValueType::Scalar(_)
+            | ValueType::Bytes { .. }
+            | ValueType::Optional { .. }
+            | ValueType::Union { .. }
+            | ValueType::List { .. }
+            | ValueType::Map { .. }
+            | ValueType::Set { .. } => Err(refusal(
+                self.algorithm,
+                format!("{element} of `{written}`, a key or a value of type `{ty}`"),
+            )),
+        }
+    }
+
     /// `statement`, with `depth` the number of `<sce:foreach>` it sits in, which
     /// names the loop's counter, read where `proven` holds (docs/adr/0055).
     fn statement(
@@ -631,6 +768,12 @@ impl Body<'_> {
     ) -> Result<String, ForgeError> {
         let lowered = |text: &str, ty: InferredType| self.slot_at(text, ty, proven);
         Ok(match stmt {
+            // A map or a set local starts as the array of no entries
+            // (docs/adr/0108, D5); its bound is what a put is held to.
+            AlgorithmStmt::Var { name, .. } if self.maps.contains_key(name.as_str()) => {
+                check_name(self.algorithm, name)?;
+                format!("var {name} = [];")
+            }
             // A buffer starts empty; its capacity is what an append is held to.
             AlgorithmStmt::Var { name, .. } if self.buffers.contains_key(name.as_str()) => {
                 check_name(self.algorithm, name)?;
@@ -934,17 +1077,69 @@ impl Body<'_> {
             // of the function, and a record item is changed, as any record is,
             // by writing it again.
             AlgorithmStmt::Foreach {
-                item, source, body, ..
+                item,
+                source,
+                key,
+                body,
+                ..
             } => {
                 check_name(self.algorithm, item)?;
                 let source = source.trim();
                 if self.imports.is_bounded_collection(source) {
                     // Not a gap to close: a `sce-static` statechart has no
                     // variable of this kind, so nothing could hand the
-                    // function one to loop over.
+                    // function one to loop over; the table a statechart holds
+                    // is a map, walked below (docs/adr/0108, D9).
                     return Err(refusal(
                         self.algorithm,
                         format!("<sce:foreach item=\"{item}\" in=\"{source}\">, a loop over a bounded-collection import, which a sce-static statechart cannot hold"),
+                    ));
+                }
+                // A map or a set is walked by its entries in the order their
+                // keys were first put (docs/adr/0108, D5): a map's item is each
+                // value and its key each key, a set's item each key. The walk
+                // reads the array the map held when the loop began, which a
+                // put, a remove or a clear in the body replaces and never
+                // changes (D6 item 3), so the array is held under a name of the
+                // loop's own and no copy is taken.
+                if let Some(held) = self.maps.get(source) {
+                    let walked = format!("__w{depth}");
+                    let counter = format!("__i{depth}");
+                    let entry = format!("{walked}[{counter}]");
+                    let mut bound = vec![if held.set {
+                        format!("var {item} = {entry};")
+                    } else {
+                        format!("var {item} = {entry}[1];")
+                    }];
+                    if let Some(key) = key.as_deref().map(str::trim) {
+                        check_name(self.algorithm, key)?;
+                        if held.set {
+                            return Err(refusal(
+                                self.algorithm,
+                                format!(
+                                    "<sce:foreach in=\"{source}\" key=\"{key}\">, a key of a walk \
+                                     over a set, whose item is its key"
+                                ),
+                            ));
+                        }
+                        bound.push(format!("var {key} = {entry}[0];"));
+                    }
+                    return Ok(format!(
+                        "var {walked} = {source}; for (var {counter} = 0; {counter} < \
+                         {walked}.length; {counter}++) {{ {} {} }}",
+                        bound.join(" "),
+                        self.statements(body, depth + 1, &loop_entry(proven, body))?
+                            .join(" ")
+                    ));
+                }
+                if let Some(key) = key {
+                    return Err(refusal(
+                        self.algorithm,
+                        format!(
+                            "<sce:foreach in=\"{source}\" key=\"{}\">, a key of a walk over no \
+                             map",
+                            key.trim()
+                        ),
                     ));
                 }
                 if !self.iterable.contains(source) {
@@ -961,21 +1156,84 @@ impl Body<'_> {
                         .join(" ")
                 )
             }
-            // A map's statements, and a walk that binds a map's keys, stand
-            // only where the algorithm holds a map, which this lowering
-            // refuses where its slot is met (docs/adr/0108, D10).
-            AlgorithmStmt::Put { target, .. }
-            | AlgorithmStmt::Remove { target, .. }
-            | AlgorithmStmt::Clear { target, .. } => {
-                return Err(refusal(
-                    self.algorithm,
-                    format!(
-                        "the write of the map `{}`, which the Interpreter does not lower in an \
-                         algorithm yet ({})",
-                        target.trim(),
-                        crate::forge::value_type::MAP_LANDING
+            // A map's statements write the map local or the `inout` parameter
+            // again, as a buffer's append does: the library answers a new
+            // array and never changes the one it is handed (docs/adr/0108, D3,
+            // D5 and D10). One that names an outcome writes the map and the
+            // outcome from the one answer; a put that names none fails
+            // `capacity-exceeded` on a full map, as an append to a full buffer
+            // does, and a remove that names none of a key that is absent
+            // writes the map as it was.
+            AlgorithmStmt::Put {
+                target,
+                key,
+                expr,
+                outcome,
+                ..
+            } => {
+                let map = target.trim();
+                let element = format!("<sce:put target=\"{map}\">");
+                let (place, descriptor, capacity) = self.map_written(&element, map)?;
+                let key_place = place.map_key().ok_or_else(|| {
+                    refusal(
+                        self.algorithm,
+                        format!("{element}, whose target has no key"),
+                    )
+                })?;
+                let key = self.map_part(&element, key, &key_place.ty, proven)?;
+                let value = match (place.map_value(), expr) {
+                    (Some(value), Some(expr)) => {
+                        format!(", {}", self.map_part(&element, expr, &value.ty, proven)?)
+                    }
+                    (None, None) => String::new(),
+                    (Some(_), None) | (None, Some(_)) => {
+                        return Err(refusal(
+                            self.algorithm,
+                            format!("{element}, which puts a value into a set or none into a map"),
+                        ))
+                    }
+                };
+                match outcome.as_deref().map(str::trim) {
+                    Some(outcome) => format!(
+                        "{{ var __wrote = {RUNTIME_GLOBAL}.mapPut({map}, {descriptor}, \
+                         {capacity}, {key}{value}); {map} = __wrote.map; {outcome} = \
+                         __wrote.outcome; }}"
                     ),
-                ));
+                    None => format!(
+                        "{map} = {RUNTIME_GLOBAL}.mapPutOrFail({map}, {descriptor}, {capacity}, \
+                         {key}{value});"
+                    ),
+                }
+            }
+            AlgorithmStmt::Remove {
+                target,
+                key,
+                outcome,
+                ..
+            } => {
+                let map = target.trim();
+                let element = format!("<sce:remove target=\"{map}\">");
+                let (place, descriptor, _) = self.map_written(&element, map)?;
+                let key_place = place.map_key().ok_or_else(|| {
+                    refusal(
+                        self.algorithm,
+                        format!("{element}, whose target has no key"),
+                    )
+                })?;
+                let key = self.map_part(&element, key, &key_place.ty, proven)?;
+                let removed = format!("{RUNTIME_GLOBAL}.mapRemove({map}, {descriptor}, {key})");
+                match outcome.as_deref().map(str::trim) {
+                    Some(outcome) => format!(
+                        "{{ var __wrote = {removed}; {map} = __wrote.map; {outcome} = \
+                         __wrote.outcome; }}"
+                    ),
+                    None => format!("{map} = {removed}.map;"),
+                }
+            }
+            AlgorithmStmt::Clear { target, .. } => {
+                let map = target.trim();
+                self.map_written(&format!("<sce:clear target=\"{map}\">"), map)?;
+                format!("{map} = [];")
             }
             // The body goes on only where the condition holds, and fails
             // `precondition` where it does not (SCE_FORGE.md §3.4.1).
@@ -1041,10 +1299,12 @@ fn holds(ty: &AlgorithmValueType) -> bool {
         // A union is the plain object of its wire form (docs/adr/0092, section
         // 7, the Interpreter row), held whole.
         AlgorithmValueType::Union { .. } => true,
-        // An algorithm's map or set (docs/adr/0108, D5) is judged where its
-        // document is read, and this lowering holds none yet (D10): refused
-        // by name where it is met.
-        AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => false,
+        // A map or a set (docs/adr/0108, D5 and D10) is the array of its
+        // entries, `[key, value]` of a map and the key of a set, a parameter
+        // written in place lent in a holder of it ([`lower`]). A key or a value
+        // this lowering does not spell is refused by name where a statement
+        // writes one.
+        AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => true,
         // A value that may be absent is `null` or its present value
         // (docs/adr/0055): a number, a `bool`, a text, a value of an enum (its
         // declared name) or a record (a plain object). A byte string is the array
@@ -1099,7 +1359,12 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, For
     let mut params = Vec::new();
     let mut iterable: HashSet<&str> = HashSet::new();
     let mut whole_values: HashSet<&str> = HashSet::new();
-    for param in &m.signature.params {
+    let mut maps: HashMap<&str, MapHeld> = HashMap::new();
+    // Each `inout` map or set parameter, by name, with the holder the caller
+    // lends it in (docs/adr/0108, D6 item 2): `{map, capacity}`, the array of
+    // its entries and the bound of the variable it is (`JsTarget::in_place_call`).
+    let mut lent: Vec<(&str, String)> = Vec::new();
+    for (index, param) in m.signature.params.iter().enumerate() {
         check_name(&m.name, &param.name)?;
         if !holds(&param.sce_type) {
             return Err(refusal(
@@ -1127,7 +1392,62 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, For
         {
             whole_values.insert(&param.name);
         }
+        // A map or a set is the array of its entries (docs/adr/0108, D10). One
+        // lent to be read is that array, and one written in place arrives in
+        // the holder its caller lends, read into a local of the parameter's
+        // name and left there again when the function returns.
+        if param.sce_type.map_key().is_some() {
+            let set = matches!(param.sce_type, AlgorithmValueType::Set { .. });
+            if param.written_in_place() {
+                let holder = format!("__lent{index}");
+                maps.insert(
+                    param.name.as_str(),
+                    MapHeld {
+                        capacity: Some(format!("{holder}.capacity")),
+                        set,
+                    },
+                );
+                params.push(holder.clone());
+                lent.push((param.name.as_str(), holder));
+                continue;
+            }
+            maps.insert(
+                param.name.as_str(),
+                MapHeld {
+                    capacity: None,
+                    set,
+                },
+            );
+        }
         params.push(param.name.clone());
+    }
+    // A map or a set local starts empty, and a put into it is held to the bound
+    // its type states (docs/adr/0108, D5).
+    for binding in m.body_bindings() {
+        let AlgorithmBinding::Local { name, sce_type } = binding else {
+            continue;
+        };
+        if sce_type.map_key().is_none() {
+            continue;
+        }
+        let Some(capacity) = sce_type.stated_outer_bound().map(|bound| bound.max) else {
+            return Err(refusal(
+                &m.name,
+                format!(
+                    "the local `{name}` of type `{}`, which states no bound",
+                    sce_type.as_attr()
+                ),
+            ));
+        };
+        check_name(&m.name, name)?;
+        maps.insert(
+            name,
+            MapHeld {
+                capacity: Some(capacity.to_string()),
+                set: matches!(sce_type, AlgorithmValueType::Set { .. }),
+            },
+        );
+        whole_values.insert(name);
     }
     let mut buffers = HashMap::new();
     collect_buffers(&m.body, &mut buffers);
@@ -1169,8 +1489,8 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, For
             .map_or(InferredType::Unknown, InferredType::from_sce_type),
         // A list and a union are returned by name, never judged as an operand
         // (SCE_FORGE.md §4.12; docs/adr/0092, "Decided while landing step 5"
-        // item 4). A map is refused by the guard above, as no slot holds one
-        // yet (docs/adr/0108, D10).
+        // item 4), and so is a map or a set, the array of a local's entries
+        // (docs/adr/0108, D5).
         Some(
             AlgorithmValueType::List { .. }
             | AlgorithmValueType::Union { .. }
@@ -1218,6 +1538,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, For
         iterable,
         whole_values,
         unions: types.union_rules(),
+        maps,
     };
     let mut statements = body.statements(&m.body, 0, &Facts::none())?;
     // docs/adr/0092, section 6.1 item 4: a body that ends where the tests of a
@@ -1231,11 +1552,31 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, For
             quoted(&unreached_end_reason(&m.name))
         ));
     }
-    let function = format!(
-        "function ({}) {{ {} }}",
-        params.join(", "),
+    // docs/adr/0108, D6 item 2: each map written in place is read out of the
+    // holder it was lent in and left in it again however the body ends, so the
+    // caller, which writes its variable from the holder only once the call has
+    // returned, sees every write of the call at once. The body cannot fail
+    // (`algorithm/inout-on-may-fail`), and a holder the call threw out of is
+    // read by no one.
+    let body_text = if lent.is_empty() {
         statements.join(" ")
-    );
+    } else {
+        let taken: Vec<String> = lent
+            .iter()
+            .map(|(name, holder)| format!("var {name} = {holder}.map;"))
+            .collect();
+        let left: Vec<String> = lent
+            .iter()
+            .map(|(name, holder)| format!("{holder}.map = {name};"))
+            .collect();
+        format!(
+            "{} try {{ {} }} finally {{ {} }}",
+            taken.join(" "),
+            statements.join(" "),
+            left.join(" ")
+        )
+    };
+    let function = format!("function ({}) {{ {body_text} }}", params.join(", "));
     if m.consts.is_empty() {
         return Ok(function);
     }
@@ -1388,6 +1729,81 @@ mod tests {
             function,
             "function (n) { var out = []; out = SceStatic.append(out, 4, n); return out; }"
         );
+    }
+
+    /// The function `document`, an algorithm document that imports nothing,
+    /// lowers to.
+    fn lowered_document(document: &str) -> Result<String, String> {
+        let parsed =
+            crate::forge::parser::parse_forge(document, crate::DocumentLabel::symmetric("probe"))
+                .unwrap_or_else(|e| panic!("the probe does not parse: {e:?}"))
+                .expect("an algorithm document");
+        let ForgeDocument::Algorithm(algorithm) = parsed else {
+            panic!("the probe is not an algorithm");
+        };
+        lower(&algorithm, &no_imports()).map_err(|e| e.to_string())
+    }
+
+    /// docs/adr/0108, D5, D6 and D10: a map or a set is the array of its
+    /// entries. A parameter lent to be read is the caller's array, read through
+    /// the library. One declared `inout` arrives in a holder: it is read out
+    /// of it into a local of its name, written again by each statement, and
+    /// left in the holder however the function returns. A local starts empty,
+    /// and a walk reads the array the map held when the loop began, its value
+    /// and its key from each entry, under names of the loop's own.
+    #[test]
+    fn a_map_is_an_array_lent_whole_and_written_back_through_its_holder() {
+        let read = lowered_document(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="probe" version="1.0">
+  <sce:signature>
+    <sce:param name="m" type="map&lt;uint32, uint32&gt;"/>
+    <sce:param name="k" type="uint32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="has(m, k)"/>
+  </sce:body>
+</scxml>"#,
+        )
+        .expect("lowers");
+        assert_eq!(
+            read,
+            "function (m, k) { return SceStatic.mapHas(m, {key: 'integer'}, k); }"
+        );
+
+        let written = lowered_document(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="probe" version="1.0">
+  <sce:signature>
+    <sce:param name="m" type="map&lt;uint32, uint32&gt;" inout="true"/>
+    <sce:param name="k" type="uint32"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="seen" type="set&lt;uint32&gt;[4]"/>
+    <sce:var name="last" type="uint32" init="0"/>
+    <sce:remove target="m" key="k"/>
+    <sce:foreach in="m" item="v" key="at">
+      <sce:assign target="last" expr="at"/>
+    </sce:foreach>
+    <sce:clear target="seen"/>
+    <sce:return expr="last"/>
+  </sce:body>
+</scxml>"#,
+        )
+        .expect("lowers");
+        for part in [
+            "function (__lent0, k) { var m = __lent0.map; try { ",
+            "var seen = [];",
+            "m = SceStatic.mapRemove(m, {key: 'integer'}, k).map;",
+            "var __w0 = m; for (var __i0 = 0; __i0 < __w0.length; __i0++) { var v = \
+             __w0[__i0][1]; var at = __w0[__i0][0];",
+            "seen = [];",
+            " } finally { __lent0.map = m; } }",
+        ] {
+            assert!(written.contains(part), "`{part}` in {written}");
+        }
     }
 
     /// A construct with no lowering yet is named, and the algorithm is not
