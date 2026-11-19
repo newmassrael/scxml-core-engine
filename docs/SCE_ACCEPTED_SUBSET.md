@@ -6303,12 +6303,22 @@ of the largest bound it could lend, and a machine holds this storage in its
 `scratch`, beside the rest of a call's. A local of the algorithm's own is keyed
 under a seed derived from the seed of a map the algorithm is lent or returns
 (D8), on Rust by its number among such locals, on C11 under its name
-(`sce_map_seed_of_child`). A C11 algorithm that has neither takes a
-`sce_map_seed_t` last, which a machine hands it from the seed its own maps were
-started under, and a machine that holds no map, and so is started under no
-seed, refuses the call by name; a Rust one is refused, having no seed to draw
-from. A key or a value that is a text or a byte string is refused by name on
-Rust. A generated
+(`sce_map_seed_of_child`). An algorithm that has neither takes its caller's
+seed instead, a parameter after the declared ones and before any destination
+(Rust `sce_map_seed: MapSeed`, C11 `sce_map_seed_t` last): a Rust machine that
+calls one keeps a seed drawn from the seed of its maps where it is built
+(`sce_algorithm_seed`) and a C11 machine hands it the seed its own maps were
+started under, a C11 machine that holds no map, and so is started under no
+seed, refusing the call by name; a Rust algorithm that calls one hands it a
+seed drawn from its own after its locals' (one with no seed of its own to draw
+one from is refused by name). On Rust a text or a byte string key or value is
+held in `SceString<N>` or `SceBytes<N>`, `N` the bound the slot's type states
+inside it or, for a parameter that states none, the caller's, a further bound
+the function is generic over (`K0`, `V0`); a put builds one from a walk's item
+or key or a record's text field by a widening the compiler judges, from a
+string literal by a construction it judges, and from any other value, in a body
+that declares `may-fail`, by a copy that fails `capacity-exceeded` past the
+bound (refused by name in any other body). A generated
 backend that does not lower one yet refuses such an algorithm as
 `generate/unsupported-feature`, naming the slot and that record, before any
 statement of its body is lowered, and a statechart lends one a map by name, as
