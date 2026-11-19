@@ -2505,6 +2505,8 @@ pub const MAX_SESSION_KEY_BYTES: u32 = 256;
 /// sessions:
 ///   key_from: data.room      # or `client`
 ///   idle_ms: 60000
+///   max_live: 100000         # optional: sessions held in memory at most
+///   max_inbox: 64            # optional: inputs waiting in one session's inbox
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2516,6 +2518,30 @@ pub struct SessionsConfig {
     /// How long a session that has had no event and holds nothing pending
     /// stays in memory before it is saved and dropped, in milliseconds.
     pub idle_ms: u64,
+    /// The most sessions the pool holds in memory (docs/adr/0109, D1): at it,
+    /// the longest idle session that holds nothing pending is saved and
+    /// dropped to make room, and when none can be, an input for a key not in
+    /// memory is shed. At least 1.
+    #[serde(default = "default_sessions_max_live")]
+    pub max_live: u32,
+    /// The most inputs that wait in one session's inbox (docs/adr/0109, D1):
+    /// an envelope past it is shed. At least 1.
+    #[serde(default = "default_sessions_max_inbox")]
+    pub max_inbox: u32,
+}
+
+/// `sessions.max_live` when the section sets none (docs/adr/0109, D1).
+pub const DEFAULT_SESSIONS_MAX_LIVE: u32 = 100_000;
+
+/// `sessions.max_inbox` when the section sets none (docs/adr/0109, D1).
+pub const DEFAULT_SESSIONS_MAX_INBOX: u32 = 64;
+
+fn default_sessions_max_live() -> u32 {
+    DEFAULT_SESSIONS_MAX_LIVE
+}
+
+fn default_sessions_max_inbox() -> u32 {
+    DEFAULT_SESSIONS_MAX_INBOX
 }
 
 /// Where [`SessionsConfig::key_from`] reads a session's key.
@@ -2562,6 +2588,17 @@ impl SessionsConfig {
                 "`idle_ms` ({}) exceeds {MAX_MESH_MILLIS}, which no Mesh core can count to",
                 self.idle_ms
             ));
+        }
+        if self.max_live == 0 {
+            return Some(
+                "`max_live` is 0: a pool that may hold no session in memory serves none"
+                    .to_string(),
+            );
+        }
+        if self.max_inbox == 0 {
+            return Some(
+                "`max_inbox` is 0: a session whose inbox holds nothing takes no input".to_string(),
+            );
         }
         None
     }
@@ -8870,6 +8907,25 @@ topology:
             Ok(SessionKeySource::Field("room".to_string()))
         );
         assert_eq!(sessions.idle_ms, 60_000);
+        // docs/adr/0109, D1: the bounds on what a pool holds in memory have
+        // their defaults when the section sets none, and are read when it does.
+        assert_eq!(sessions.max_live, DEFAULT_SESSIONS_MAX_LIVE);
+        assert_eq!(sessions.max_inbox, DEFAULT_SESSIONS_MAX_INBOX);
+        assert_eq!(
+            (DEFAULT_SESSIONS_MAX_LIVE, DEFAULT_SESSIONS_MAX_INBOX),
+            (100_000, 64)
+        );
+        let cfg = parse_deploy_str(&keyed(
+            "{ key_from: client, idle_ms: 1, max_live: 3, max_inbox: 2 }",
+            "",
+            "",
+        ))
+        .expect("parse");
+        let sessions = cfg.topology["cloud"].machines["rooms"]
+            .sessions
+            .clone()
+            .expect("declared");
+        assert_eq!((sessions.max_live, sessions.max_inbox), (3, 2));
 
         let cfg =
             parse_deploy_str(&keyed("{ key_from: client, idle_ms: 0 }", "", "")).expect("parse");
@@ -8917,6 +8973,18 @@ topology:
                 "",
                 "",
                 "exceeds",
+            ),
+            (
+                "{ key_from: client, idle_ms: 1, max_live: 0 }",
+                "",
+                "",
+                "`max_live` is 0",
+            ),
+            (
+                "{ key_from: client, idle_ms: 1, max_inbox: 0 }",
+                "",
+                "",
+                "`max_inbox` is 0",
             ),
             (
                 client,

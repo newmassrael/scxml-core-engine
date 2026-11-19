@@ -4139,6 +4139,10 @@ pub struct KeyedPool {
     pub max_key_bytes: u32,
     /// deploy.yaml's `sessions.idle_ms`.
     pub idle_ms: u64,
+    /// deploy.yaml's `sessions.max_live`, its default applied.
+    pub max_live: u32,
+    /// deploy.yaml's `sessions.max_inbox`, its default applied.
+    pub max_inbox: u32,
 }
 
 /// `machine`'s `sessions:` section resolved against its document `model`
@@ -4178,6 +4182,8 @@ pub fn resolve_keyed_pool(
                 key_field: None,
                 max_key_bytes: MAX_SESSION_KEY_BYTES,
                 idle_ms: sessions.idle_ms,
+                max_live: sessions.max_live,
+                max_inbox: sessions.max_inbox,
             })
         }
         SessionKeySource::Field(field) => field,
@@ -4226,6 +4232,8 @@ pub fn resolve_keyed_pool(
         key_field: Some(field),
         max_key_bytes,
         idle_ms: sessions.idle_ms,
+        max_live: sessions.max_live,
+        max_inbox: sessions.max_inbox,
     })
 }
 
@@ -6996,6 +7004,8 @@ topology:
         crate::mesh::deploy::SessionsConfig {
             key_from: key_from.to_string(),
             idle_ms: 60_000,
+            max_live: 500,
+            max_inbox: 8,
         }
     }
 
@@ -7020,6 +7030,8 @@ topology:
                 key_field: Some("room".to_string()),
                 max_key_bytes: 12,
                 idle_ms: 60_000,
+                max_live: 500,
+                max_inbox: 8,
             }
         );
         let model = rooms_with(
@@ -7040,6 +7052,8 @@ topology:
                 key_field: None,
                 max_key_bytes: crate::mesh::deploy::MAX_SESSION_KEY_BYTES,
                 idle_ms: 60_000,
+                max_live: 500,
+                max_inbox: 8,
             }
         );
     }

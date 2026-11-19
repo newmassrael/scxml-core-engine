@@ -39,6 +39,17 @@
 //! comes due while it is out of memory is loaded again ([`Pool::due`]), and its
 //! restore arms what came due.
 //!
+//! What a client can make the pool hold is bounded (docs/adr/0109, D1;
+//! SCE_MESH.md section 14.4). At most `sessions.max_live` sessions are in
+//! memory: at the bound the session idle longest that holds nothing pending
+//! is saved and dropped to make room, and when none can be, an envelope for a
+//! key not in memory is shed. At most `sessions.max_inbox` envelopes wait in
+//! one session's inbox, and one past it is shed the same way. A session
+//! started for a key the store holds nothing for is provisional until its
+//! first run ends: if its machine finished in that run it is never written,
+//! so a document that answers and finishes on a key it does not know costs
+//! the store nothing.
+//!
 //! A host whose binding acknowledges what it carries (the HTTPS binding's
 //! `200`, SCE_MESH.md section 22) acknowledges nothing a crash would lose: it
 //! hands the pool each envelope with [`Pool::receive_with_receipt`] and reads
@@ -196,6 +207,15 @@ pub enum PoolError {
     /// An envelope for `key` that is not a request, dropped because this
     /// process does not serve the key now.
     Dropped {
+        key: String,
+        event: String,
+        reason: String,
+    },
+    /// An envelope for `key` shed at a bound of what the pool holds in memory
+    /// (`sessions.max_live` or `sessions.max_inbox`, docs/adr/0109, D1): no
+    /// session took it in. A request the host does not acknowledge by
+    /// receipt is answered `Unavailable` instead of told here.
+    Shed {
         key: String,
         event: String,
         reason: String,
@@ -369,6 +389,11 @@ struct Live<M, T, E> {
     /// The receipts of the envelopes taken in since the last durable
     /// checkpoint, settled by the next one.
     unsaved: Vec<Receipt>,
+    /// Started for a key the store held nothing for, and in its first run: it
+    /// is written only if that run does not end in a top-level final state
+    /// (docs/adr/0109, D1), so a key a document refuses costs the store
+    /// nothing.
+    provisional: bool,
 }
 
 /// What the pool answers a request with when it cannot serve its session.
@@ -410,6 +435,33 @@ enum Take {
 struct Request {
     invoke_id: [u8; 16],
     event: String,
+}
+
+/// Which bound of what the pool holds in memory an envelope met
+/// (docs/adr/0109, D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Full {
+    /// Its session's inbox holds `sessions.max_inbox` envelopes.
+    Inbox,
+    /// Its key is not in memory, and the pool holds `sessions.max_live`.
+    Live,
+}
+
+impl Full {
+    /// The reason a shed envelope is told or answered with.
+    fn reason(self, sessions: &Sessions) -> String {
+        match self {
+            Full::Inbox => alloc::format!(
+                "its session's inbox holds {} envelopes, the most it takes",
+                sessions.max_inbox
+            ),
+            Full::Live => alloc::format!(
+                "the pool holds {} sessions in memory, the most it holds, and none is \
+                 quiet enough to save and drop",
+                sessions.max_live
+            ),
+        }
+    }
 }
 
 /// Why an envelope names no session.
@@ -517,8 +569,16 @@ where
     /// whose key cannot be read is answered, when it is a request, with
     /// `RpcStatus::InvalidArgument`, and otherwise dropped and told to the
     /// host ([`Self::take_errors`]); either way no session is named.
+    ///
+    /// The pool holds at most `sessions.max_live` sessions in memory and
+    /// `sessions.max_inbox` envelopes in one session's inbox (docs/adr/0109,
+    /// D1). An envelope for a key not in memory while the pool holds its
+    /// most, and none of its sessions can be saved and dropped to make room,
+    /// or one past its session's inbox, is shed: a request is answered
+    /// `RpcStatus::Unavailable`, which tells its client to try again, and
+    /// anything else is dropped and told to the host ([`PoolError::Shed`]).
     pub fn receive(&self, peer: &str, bytes: Vec<u8>) -> Option<String> {
-        self.receive_with_receipt(peer, bytes).0
+        self.receive_as(peer, bytes, false).0
     }
 
     /// [`Self::receive`], with the envelope's [`Receipt`]: the host reads it
@@ -526,7 +586,24 @@ where
     /// envelope to its sender only when it is [`Fate::Settled`]. An envelope
     /// that names no session is settled at once, unless the failure reply to
     /// its request could not be sent.
+    ///
+    /// An envelope shed at a bound of what the pool holds is answered by
+    /// nothing and is [`Fate::Lost`]: the binding refuses it to its sender,
+    /// who carries it again (the `https` binding's `503`), so no reply tells
+    /// a client of a request it will send again and the pool then serves.
     pub fn receive_with_receipt(&self, peer: &str, bytes: Vec<u8>) -> (Option<String>, Receipt) {
+        self.receive_as(peer, bytes, true)
+    }
+
+    /// [`Self::receive_with_receipt`], where `acknowledged` says whether the
+    /// host reads the receipt: a shed envelope is then lost rather than
+    /// answered.
+    fn receive_as(
+        &self,
+        peer: &str,
+        bytes: Vec<u8>,
+        acknowledged: bool,
+    ) -> (Option<String>, Receipt) {
         let placed = {
             let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) else {
                 self.error(PoolError::Malformed {
@@ -539,15 +616,18 @@ where
         match placed {
             Ok(key) => {
                 let receipt = Receipt::new(Fate::Pending);
-                let key = self.post(
-                    key,
-                    Input::Envelope {
-                        peer: peer.to_string(),
-                        bytes,
-                        receipt: receipt.clone(),
-                    },
-                );
-                (Some(key), receipt)
+                let input = Input::Envelope {
+                    peer: peer.to_string(),
+                    bytes,
+                    receipt: receipt.clone(),
+                };
+                match self.post_bounded(&key, input) {
+                    Ok(()) => (Some(key), receipt),
+                    Err((input, reason)) => {
+                        self.shed(&key, input, &reason, acknowledged);
+                        (None, receipt)
+                    }
+                }
             }
             Err(Unplaced::Reply) => {
                 self.error(PoolError::UnroutedReply {
@@ -679,6 +759,11 @@ where
             if table.contains_key(&listed.key) || held_elsewhere {
                 continue;
             }
+            // The pool holds at most `max_live` sessions (docs/adr/0109, D1):
+            // the rest come due again at a later call, once room is made.
+            if table.len() >= self.sessions.max_live as usize {
+                break;
+            }
             let slot = Arc::new(Slot::new(&listed.key));
             lock(&slot.inbox).queue.push_back(Input::Wake);
             table.insert(listed.key.clone(), slot);
@@ -743,52 +828,65 @@ where
             let Some(mut live) = try_lock(&slot.live) else {
                 continue;
             };
-            let Some(session) = live.as_mut() else {
-                continue;
-            };
-            if now < session.last_active_ms.saturating_add(self.sessions.idle_ms)
-                || !lock(&slot.inbox).queue.is_empty()
-                || !lock(&session.endpoint).is_quiet()
-            {
-                continue;
+            let idle = live.as_ref().is_some_and(|session| {
+                now >= session.last_active_ms.saturating_add(self.sessions.idle_ms)
+                    && self.is_quiet(&slot, session)
+            });
+            if idle && self.evict(&slot, &mut live, now) {
+                evicted.push(slot.key.clone());
             }
-            match self.checkpoint(&slot, session, now, Take::Clean) {
-                Err(reason) => {
-                    self.lose(&slot, &mut live, reason);
-                    continue;
-                }
-                // Not saved: dropped, it would be lost.
-                Ok(false) => continue,
-                Ok(true) => {}
-            }
-            let removed = {
-                let mut table = lock(&self.table);
-                let mut inbox = lock(&slot.inbox);
-                if inbox.queue.is_empty() {
-                    inbox.closed = true;
-                    remove_slot(&mut table, &slot);
-                    true
-                } else {
-                    false
-                }
-            };
-            if !removed {
-                // An input arrived while the clean checkpoint was written, and
-                // the endpoint takes it in after that checkpoint: one that is
-                // not clean replaces it now, so that a restore after a crash
-                // still tells the peers an envelope may have been lost.
-                session.dirty = true;
-                if let Err(reason) = self.checkpoint(&slot, session, now, Take::IfChanged) {
-                    self.lose(&slot, &mut live, reason);
-                }
-                continue;
-            }
-            *live = None;
-            self.forget_replies(&slot.key);
-            self.release(&slot);
-            evicted.push(slot.key.clone());
         }
         evicted
+    }
+
+    /// Save `slot`'s session, which holds nothing pending, as a clean
+    /// checkpoint, drop it from memory and release its lease. Whether it was
+    /// dropped: one whose save failed stays, and so does one an input reached
+    /// while it was saved.
+    fn evict(
+        &self,
+        slot: &Arc<Slot<F::Machine, T, E>>,
+        live: &mut MutexGuard<'_, Option<Live<F::Machine, T, E>>>,
+        now: u64,
+    ) -> bool {
+        let Some(session) = live.as_mut() else {
+            return false;
+        };
+        match self.checkpoint(slot, session, now, Take::Clean) {
+            Err(reason) => {
+                self.lose(slot, live, reason);
+                return false;
+            }
+            // Not saved: dropped, it would be lost.
+            Ok(false) => return false,
+            Ok(true) => {}
+        }
+        let removed = {
+            let mut table = lock(&self.table);
+            let mut inbox = lock(&slot.inbox);
+            if inbox.queue.is_empty() {
+                inbox.closed = true;
+                remove_slot(&mut table, slot);
+                true
+            } else {
+                false
+            }
+        };
+        if !removed {
+            // An input arrived while the clean checkpoint was written, and
+            // the endpoint takes it in after that checkpoint: one that is
+            // not clean replaces it now, so that a restore after a crash
+            // still tells the peers an envelope may have been lost.
+            session.dirty = true;
+            if let Err(reason) = self.checkpoint(slot, session, now, Take::IfChanged) {
+                self.lose(slot, live, reason);
+            }
+            return false;
+        }
+        **live = None;
+        self.forget_replies(&slot.key);
+        self.release(slot);
+        true
     }
 
     /// The earliest wall-clock moment, in milliseconds since the Unix epoch,
@@ -881,15 +979,113 @@ where
         Ok(key)
     }
 
-    /// Put `input` in the inbox of the session `key`, which the table holds
-    /// from now on if it did not.
-    fn post(&self, key: String, input: Input) -> String {
+    /// Put the envelope `input` in the inbox of the session `key`, which the
+    /// table holds from now on if it did not, within the pool's bounds
+    /// (docs/adr/0109, D1): past `max_inbox` envelopes in its inbox it is
+    /// refused, and a key the table does not hold while it holds `max_live`
+    /// is refused unless a session can be saved and dropped to make room. A
+    /// refused input comes back with the reason.
+    fn post_bounded(&self, key: &str, input: Input) -> Result<(), (Input, String)> {
+        match self.try_post(key, input) {
+            Err((input, Full::Live)) if self.make_room() => self.try_post(key, input),
+            other => other,
+        }
+        .map_err(|(input, full)| (input, full.reason(&self.sessions)))
+    }
+
+    /// [`Self::post_bounded`] without making room.
+    fn try_post(&self, key: &str, input: Input) -> Result<(), (Input, Full)> {
         let mut table = lock(&self.table);
-        let slot = table
-            .entry(key.clone())
-            .or_insert_with(|| Arc::new(Slot::new(&key)));
+        if let Some(slot) = table.get(key) {
+            let mut inbox = lock(&slot.inbox);
+            let waiting = inbox
+                .queue
+                .iter()
+                .filter(|input| matches!(input, Input::Envelope { .. }))
+                .count();
+            if waiting >= self.sessions.max_inbox as usize {
+                return Err((input, Full::Inbox));
+            }
+            inbox.queue.push_back(input);
+            return Ok(());
+        }
+        if table.len() >= self.sessions.max_live as usize {
+            return Err((input, Full::Live));
+        }
+        let slot = Arc::new(Slot::new(key));
         lock(&slot.inbox).queue.push_back(input);
-        key
+        table.insert(key.to_string(), slot);
+        Ok(())
+    }
+
+    /// Save and drop the session that has gone longest without an event and
+    /// holds nothing pending, to make room for another (docs/adr/0109, D1).
+    /// Whether one was dropped; a session being run is not a candidate.
+    fn make_room(&self) -> bool {
+        let now = self.wall_now();
+        let mut quiet: Vec<(u64, Arc<Slot<F::Machine, T, E>>)> = Vec::new();
+        for slot in self.slots() {
+            let Some(live) = try_lock(&slot.live) else {
+                continue;
+            };
+            if let Some(session) = live
+                .as_ref()
+                .filter(|session| self.is_quiet(&slot, session))
+            {
+                quiet.push((session.last_active_ms, Arc::clone(&slot)));
+            }
+        }
+        quiet.sort_by_key(|(last_active_ms, _)| *last_active_ms);
+        for (_, slot) in quiet {
+            let Some(mut live) = try_lock(&slot.live) else {
+                continue;
+            };
+            let still_quiet = live
+                .as_ref()
+                .is_some_and(|session| self.is_quiet(&slot, session));
+            if still_quiet && self.evict(&slot, &mut live, now) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether `session` holds nothing a later call acts on: its inbox is
+    /// empty and its endpoint is quiet ([`Endpoint::is_quiet`]).
+    fn is_quiet(&self, slot: &Slot<F::Machine, T, E>, session: &Live<F::Machine, T, E>) -> bool {
+        lock(&slot.inbox).queue.is_empty() && lock(&session.endpoint).is_quiet()
+    }
+
+    /// Tell what became of `input`, an envelope for `key` that no session
+    /// took in for `reason` (docs/adr/0109, D1). For a host that reads the
+    /// receipt (`acknowledged`) it is lost, and its binding refuses it to its
+    /// sender, who carries it again; otherwise a request is answered
+    /// `Unavailable`, and anything else is dropped and told to the host.
+    fn shed(&self, key: &str, input: Input, reason: &str, acknowledged: bool) {
+        let Input::Envelope {
+            peer,
+            bytes,
+            receipt,
+        } = input
+        else {
+            return;
+        };
+        let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) else {
+            receipt.settle(Fate::Lost);
+            return;
+        };
+        let fate = match request_of(&envelope).filter(|_| !acknowledged) {
+            Some(request) => self.refuse(&peer, &request, RpcStatus::Unavailable, reason),
+            None => {
+                self.error(PoolError::Shed {
+                    key: key.to_string(),
+                    event: envelope.event_type.to_string(),
+                    reason: reason.to_string(),
+                });
+                Fate::Lost
+            }
+        };
+        receipt.settle(fate);
     }
 
     /// Put an input made by `input` in every session's inbox, and answer their
@@ -1013,6 +1209,7 @@ where
             // checkpoint holds yet.
             dirty: loaded.is_none(),
             unsaved: Vec::new(),
+            provisional: loaded.is_none(),
         })
     }
 
@@ -1100,13 +1297,20 @@ where
             // duplicate window, its reply cache), which the checkpoint holds
             // too, even when it ran no macrostep.
             session.dirty |= event;
-            if let Err(reason) = self.checkpoint(slot, session, now, Take::IfChanged) {
-                return Served::Lost(reason);
+            // A provisional session is written once its first run ends, and
+            // only if its machine is still running then (docs/adr/0109, D1).
+            if !session.provisional {
+                if let Err(reason) = self.checkpoint(slot, session, now, Take::IfChanged) {
+                    return Served::Lost(reason);
+                }
             }
             if session.machine.finished() {
                 return Served::Finished;
             }
         }
+        // The first run of a provisional session ends here with its machine
+        // running: the document keeps the key, and its checkpoint is taken.
+        session.provisional = false;
         let mut calls = lock(&session.endpoint).take_calls();
         loop {
             let now = self.wall_now();
@@ -1234,7 +1438,7 @@ where
     }
 
     /// The machine of `slot` finished: its saved session is removed from the
-    /// store, and its lease released. What the inputs since its last
+    /// store, when the store holds one, and its lease released. What the inputs since its last
     /// checkpoint made is sealed first and leaves once the removal answered,
     /// as a checkpoint's envelopes leave once it is durable: a process that
     /// fails before restores the session from that checkpoint, and its
@@ -1256,7 +1460,15 @@ where
                     false
                 }
             };
-            match self.store.delete(key, finished.version, fence) {
+            // A session the store never held (a provisional one whose first
+            // run finished, docs/adr/0109, D1) has nothing to remove, and what
+            // it sent leaves at once: nothing durable changed.
+            let removed = if finished.version == 0 {
+                Ok(())
+            } else {
+                self.store.delete(key, finished.version, fence)
+            };
+            match removed {
                 Ok(()) if sealed => {
                     endpoint.durable(sequence);
                     self.report(key, &mut endpoint);
@@ -1967,12 +2179,31 @@ mod tests {
                 },
             },
         ],
-        sessions: Some(Sessions {
-            key_from: KeyFrom::Field("room"),
-            max_key_bytes: 16,
-            idle_ms: 1_000,
-        }),
+        sessions: Some(ROOMS_SESSIONS),
     };
+
+    /// How [`ROOMS`] is pooled: by its `room` field, idle after a second, with
+    /// deploy.yaml's default bounds.
+    const ROOMS_SESSIONS: Sessions = Sessions {
+        key_from: KeyFrom::Field("room"),
+        max_key_bytes: 16,
+        idle_ms: 1_000,
+        max_live: 100_000,
+        max_inbox: 64,
+    };
+
+    /// [`ROOMS`] holding at most `max_live` sessions in memory and
+    /// `max_inbox` envelopes in one session's inbox.
+    fn rooms_bounded(max_live: u32, max_inbox: u32) -> Machine {
+        Machine {
+            sessions: Some(Sessions {
+                max_live,
+                max_inbox,
+                ..ROOMS_SESSIONS
+            }),
+            ..ROOMS
+        }
+    }
 
     const LEASE_TTL_MS: u64 = 10_000;
 
@@ -1994,9 +2225,21 @@ mod tests {
         clock: &Clock,
         probe: &Arc<Probe>,
     ) -> (Pool<Rooms, Wire, Clock>, Wire) {
+        pool_of(ROOMS, owner, store, clock, probe)
+    }
+
+    /// A pool of `machine`, a deployment of the rooms, as [`pool`] makes one,
+    /// kept in `store`.
+    fn pool_of(
+        machine: Machine,
+        owner: &str,
+        store: Arc<dyn SessionStore>,
+        clock: &Clock,
+        probe: &Arc<Probe>,
+    ) -> (Pool<Rooms, Wire, Clock>, Wire) {
         let wire = Wire::default();
         let pool = Pool::new(
-            ROOMS,
+            machine,
             PoolConfig {
                 owner: owner.to_string(),
                 lease_ttl_ms: LEASE_TTL_MS,
@@ -2616,6 +2859,217 @@ mod tests {
         let replies = wire.take();
         assert!(replies[1].data.contains(r#""members":1"#), "{replies:?}");
         assert_eq!(probe.started.load(Ordering::SeqCst), 2);
+    }
+
+    /// A store that counts the checkpoints written to it.
+    struct Counting {
+        inner: MemoryStore,
+        puts: AtomicU64,
+    }
+
+    impl SessionStore for Counting {
+        fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+            self.inner.get(key)
+        }
+
+        fn put(
+            &self,
+            key: &str,
+            state: &[u8],
+            earliest_due: Option<u64>,
+            expected_version: u64,
+            fence: u64,
+        ) -> Result<u64, WriteError> {
+            self.puts.fetch_add(1, Ordering::SeqCst);
+            self.inner
+                .put(key, state, earliest_due, expected_version, fence)
+        }
+
+        fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
+            self.inner.delete(key, expected_version, fence)
+        }
+
+        fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
+            self.inner.due_before(ms, limit)
+        }
+
+        fn acquire(
+            &self,
+            key: &str,
+            owner: &str,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, AcquireError> {
+            self.inner.acquire(key, owner, ttl_ms, now_ms)
+        }
+
+        fn renew(
+            &self,
+            key: &str,
+            fence: u64,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, LeaseError> {
+            self.inner.renew(key, fence, ttl_ms, now_ms)
+        }
+
+        fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+            self.inner.release(key, fence)
+        }
+    }
+
+    /// docs/adr/0109, D1: a session started for a key the store holds nothing
+    /// for is written only if its first run does not end in a final state. A
+    /// request for an unknown key that the document answers and finishes on
+    /// is answered at once and writes nothing; a key the document keeps is
+    /// written once its first run ends. Red if the pool checkpoints a
+    /// provisional session inside its first run: the finished room is then
+    /// written before it is removed.
+    #[test]
+    fn a_key_whose_document_answers_and_finishes_leaves_the_store_unwritten() {
+        let (clock, probe) = (Clock::new(), Arc::new(Probe::default()));
+        let store = Arc::new(Counting {
+            inner: MemoryStore::new(),
+            puts: AtomicU64::new(0),
+        });
+        let shared: Arc<dyn SessionStore> = Arc::clone(&store) as Arc<dyn SessionStore>;
+        let (pool, wire) = pool_over("p1", shared, &clock, &probe);
+        let key = pool.receive("client", join("r9", 1)).expect("placed");
+        assert_eq!(
+            pool.receive("client", from_client("close", r#"{"room":"r9"}"#, 2, false)),
+            Some(key.clone())
+        );
+        pool.run(&key);
+        let replies = wire.take();
+        assert_eq!(replies.len(), 1, "the answer left: {replies:?}");
+        assert_eq!(replies[0].status, Some(RpcStatus::Ok));
+        assert_eq!(store.puts.load(Ordering::SeqCst), 0, "nothing was written");
+        assert_eq!(store.inner.get("r9").expect("read"), None);
+        assert!(!pool.is_live("r9"));
+        let lease = store
+            .inner
+            .acquire("r9", "someone", 1, clock.at())
+            .expect("its lease was released");
+        store.inner.release("r9", lease.fence).expect("given back");
+
+        deliver(&pool, join("r1", 3));
+        assert_eq!(
+            store.puts.load(Ordering::SeqCst),
+            1,
+            "a kept key is written"
+        );
+        assert_eq!(stored_members(&store.inner, "r1"), 1);
+        assert!(pool.take_errors().is_empty());
+    }
+
+    /// docs/adr/0109, D1: at `max_live`, the session that has gone longest
+    /// without an event and holds nothing pending is saved and dropped to make
+    /// room for a key not in memory. Red if the pool admits a key past its
+    /// bound: three sessions are then in memory.
+    #[test]
+    fn a_pool_at_max_live_saves_and_drops_its_longest_idle_quiet_session() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire) = pool_of(
+            rooms_bounded(2, 64),
+            "p1",
+            Arc::new(store.clone()),
+            &clock,
+            &probe,
+        );
+        deliver(&pool, join("r1", 1));
+        clock.advance(10);
+        deliver(&pool, join("r2", 2));
+        clock.advance(10);
+        deliver(&pool, join("r3", 3));
+        assert_eq!(wire.take().len(), 3);
+        assert!(!pool.is_live("r1"), "the longest idle made room");
+        assert!(pool.is_live("r2"));
+        assert!(pool.is_live("r3"));
+        assert_eq!(
+            stored_members(&store, "r1"),
+            1,
+            "saved before it was dropped"
+        );
+        assert!(pool.take_errors().is_empty());
+    }
+
+    /// docs/adr/0109, D1: at `max_live` with no session quiet enough to drop,
+    /// an envelope for a key not in memory is shed: a request a host does not
+    /// acknowledge by receipt is answered `Unavailable`, and one it does is
+    /// lost unanswered, so its binding refuses it and its client carries it
+    /// again. Red if the pool admits a key past its bound.
+    #[test]
+    fn a_pool_at_max_live_with_no_quiet_session_sheds_a_new_key() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire) = pool_of(
+            rooms_bounded(1, 64),
+            "p1",
+            Arc::new(store.clone()),
+            &clock,
+            &probe,
+        );
+        // r1 waits for an answer from another machine: it is not quiet.
+        deliver(&pool, from_client("ask", r#"{"room":"r1"}"#, 1, false));
+        assert_eq!(wire.take().len(), 1, "its request left");
+
+        assert_eq!(pool.receive("client", join("r2", 2)), None);
+        let replies = wire.take();
+        let [reply] = replies.as_slice() else {
+            panic!("one reply, got {replies:?}");
+        };
+        assert_eq!(reply.status, Some(RpcStatus::Unavailable));
+        assert_eq!(reply.wire_id, Some(id(0x22, 2)));
+
+        let (key, receipt) = pool.receive_with_receipt("client", join("r3", 3));
+        assert_eq!(key, None);
+        assert_eq!(receipt.fate(), Fate::Lost);
+        assert!(
+            wire.take().is_empty(),
+            "a shed the binding refuses is not answered"
+        );
+        assert!(matches!(
+            pool.take_errors().as_slice(),
+            [PoolError::Shed { key, .. }] if key == "r3"
+        ));
+        assert!(pool.is_live("r1"));
+        assert!(!pool.is_live("r2") && !pool.is_live("r3"));
+        assert_eq!(store.get("r3").expect("read"), None);
+    }
+
+    /// docs/adr/0109, D1: a session's inbox takes at most `max_inbox`
+    /// envelopes; one past it is shed as a key past `max_live` is, and what
+    /// the inbox took is served. Red if the inbox takes past its bound: four
+    /// requests are then answered `Ok`.
+    #[test]
+    fn an_envelope_past_max_inbox_is_shed() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire) = pool_of(rooms_bounded(16, 2), "p1", Arc::new(store), &clock, &probe);
+        assert_eq!(
+            pool.receive("client", join("r1", 1)),
+            Some("r1".to_string())
+        );
+        assert_eq!(
+            pool.receive("client", join("r1", 2)),
+            Some("r1".to_string())
+        );
+        assert_eq!(pool.receive("client", join("r1", 3)), None);
+        let shed = wire.take();
+        assert_eq!(shed.len(), 1, "{shed:?}");
+        assert_eq!(shed[0].status, Some(RpcStatus::Unavailable));
+        assert_eq!(shed[0].wire_id, Some(id(0x22, 3)));
+        let (key, receipt) = pool.receive_with_receipt("client", join("r1", 4));
+        assert_eq!((key, receipt.fate()), (None, Fate::Lost));
+
+        pool.run("r1");
+        let served = wire.take();
+        assert_eq!(served.len(), 2, "{served:?}");
+        assert!(served
+            .iter()
+            .all(|reply| reply.status == Some(RpcStatus::Ok)));
+        assert!(matches!(
+            pool.take_errors().as_slice(),
+            [PoolError::Shed { key, .. }] if key == "r1"
+        ));
     }
 
     /// A link's readiness reaches every session: one that is lost is told to

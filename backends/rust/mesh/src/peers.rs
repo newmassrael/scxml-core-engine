@@ -110,6 +110,12 @@ pub struct Sessions {
     /// How long a session with no event and nothing pending stays in memory
     /// before it is saved and dropped, in milliseconds.
     pub idle_ms: u64,
+    /// deploy.yaml's `sessions.max_live`: the most sessions the pool holds in
+    /// memory (docs/adr/0109, D1).
+    pub max_live: u32,
+    /// deploy.yaml's `sessions.max_inbox`: the most envelopes that wait in one
+    /// session's inbox (docs/adr/0109, D1).
+    pub max_inbox: u32,
 }
 
 /// One machine's side of a deployment.

@@ -991,6 +991,9 @@ fn a_keyed_pool_reaches_the_rust_peer_table_and_no_other_core() {
         "key_from: sce_rust_mesh::peers::KeyFrom::Field(\"room\"),",
         "max_key_bytes: 16,",
         "idle_ms: 30000,",
+        // docs/adr/0109, D1: the bounds the section leaves out, at their defaults.
+        "max_live: 100000,",
+        "max_inbox: 64,",
     ] {
         assert!(peers.contains(expected), "missing `{expected}`:\n{peers}");
     }
