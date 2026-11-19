@@ -2477,34 +2477,122 @@ fn a_rust_algorithm_returns_a_map_into_its_callers_destination() {
     );
 }
 
-/// docs/adr/0108, D1 and D8: Rust refuses by name an algorithm whose map holds
-/// a text or a byte string, which an algorithm holds in types of its own, and
-/// one that builds a map local with no map it is lent or returns to draw the
-/// local's seed from.
-#[test]
-fn a_rust_algorithm_map_with_no_spelling_or_no_seed_is_refused_by_name() {
-    let text_key = DISTINCT
-        .replace(
-            "<sce:param name=\"m\" type=\"map&lt;uint32, uint64&gt;\"/>",
-            "<sce:param name=\"m\" type=\"map&lt;string[8], uint64&gt;\"/>",
-        )
-        .replace(
-            "type=\"set&lt;uint32&gt;[4]\"",
-            "type=\"set&lt;string[8]&gt;[4]\"",
-        )
-        .replace(
-            "<sce:var name=\"out\" type=\"map&lt;uint32, uint64&gt;[4]\"/>",
-            "<sce:var name=\"out\" type=\"map&lt;string[8], uint64&gt;[4]\"/>",
-        )
-        .replace(
-            "<sce:return type=\"map&lt;uint32, uint64&gt;[4]\" may-fail=\"true\"/>",
-            "<sce:return type=\"map&lt;string[8], uint64&gt;[4]\" may-fail=\"true\"/>",
-        );
-    let no_seed = r#"<?xml version="1.0" encoding="UTF-8"?>
+/// An algorithm that is lent a table of names to write in place and one to
+/// read: each name it reads is put into the first, a literal name is put and
+/// then removed.
+const KEEP_NAMES: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm"
-       name="distinct"
+       name="keep"
+       version="1.0">
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <sce:signature>
+    <sce:param name="names" type="map&lt;string[8], uint32&gt;" inout="true"/>
+    <sce:param name="seen" type="map&lt;string[8], uint32&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="stored" type="enum:PutOutcome" init="PutOutcome.inserted"/>
+    <sce:foreach in="seen" item="count" key="name">
+      <sce:put target="names" key="name" expr="count" outcome="stored"/>
+    </sce:foreach>
+    <sce:put target="names" key="'zz'" expr="0" outcome="stored"/>
+    <sce:remove target="names" key="'zz'"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A statechart that lends its two tables of names to `Keep(names, seen)`.
+const TEXT_LEND: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="text_lend">
+  <sce:import kind="algorithm" src="algorithm_keep.scxml" as="Keep"/>
+  <datamodel>
+    <data id="names" sce:type="map&lt;string[8], uint32&gt;[4]" sce:direction="out"/>
+    <data id="seen" sce:type="map&lt;string[8], uint32&gt;[4]" sce:direction="out"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal">
+      <sce:call expr="Keep(names, seen)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+
+/// docs/adr/0108, D1, D6 items 1, 2 and 4: a map keyed by a text is lent to a
+/// Rust algorithm read-only and in place. Each text key is held in
+/// `SceString` of the bound the slot's type states, in the algorithm, the
+/// adapter and the machine alike, so the map crosses whole; a walk's key is put
+/// by a widening the compiler judges, a literal by a construction it judges,
+/// and a remove looks the literal up as it is.
+#[test]
+fn a_map_keyed_by_a_text_is_lent_to_a_rust_algorithm() {
+    let documents = [
+        ("algorithm_keep.scxml", KEEP_NAMES.to_string()),
+        ("text_lend.scxml", TEXT_LEND.to_string()),
+    ];
+    let (ok, printed, files) = generate_rust_beside(&documents, "text_lend.scxml", true);
+    assert!(
+        ok,
+        "Rust generates the statechart and the algorithm:\n{printed}"
+    );
+    let functions = functions_of(&files);
+    let keep = function_named(&functions, "keep");
+    let (generics, inputs) = signature_of(keep);
+    assert_eq!(generics, ["const N0 : usize", "const N1 : usize"]);
+    assert_eq!(
+        inputs,
+        [
+            "& mut :: sce_portable_bytes :: BoundedMap < :: sce_portable_bytes :: SceString < 8 \
+             > , u32 , N0 >",
+            "& :: sce_portable_bytes :: BoundedMap < :: sce_portable_bytes :: SceString < 8 > , \
+             u32 , N1 >",
+        ]
+    );
+    let (_, text) = files
+        .iter()
+        .find(|(_, text)| text.contains("pub fn keep"))
+        .expect("the algorithm's file");
+    for part in [
+        "::sce_portable_bytes::SceString::<8>::widened(&name)",
+        "::sce_portable_bytes::SceString::<8>::proven::<{ \"zz\".len() }>(\"zz\")",
+    ] {
+        assert!(text.contains(part), "no `{part}` in:\n{text}");
+    }
+    let mut methods = MethodCalls::default();
+    syn::visit::Visit::visit_item_fn(&mut methods, keep);
+    assert!(
+        methods
+            .0
+            .iter()
+            .any(|(receiver, method)| receiver == "names" && method == "remove"),
+        "{:?}",
+        methods.0
+    );
+
+    let (_, inputs) = signature_of(adapter_of(&functions));
+    assert_eq!(
+        inputs,
+        [
+            "& mut :: sce_rust_runtime :: BoundedMap < :: sce_rust_runtime :: portable :: \
+             SceString < 8 > , u32 , N0 >",
+            "& :: sce_rust_runtime :: BoundedMap < :: sce_rust_runtime :: portable :: SceString \
+             < 8 > , u32 , N1 >",
+        ]
+    );
+    let (tree, _) = machine_tree(&files);
+    let mut calls = AdapterCalls::default();
+    syn::visit::Visit::visit_file(&mut calls, &tree);
+    assert_eq!(calls.0, [["& mut self . names", "& self . seen"]]);
+}
+
+/// An algorithm that counts the distinct numbers of a list in a set of its
+/// own, lent no map and returning none: it takes its caller's seed.
+const DISTINCT_COUNT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="distinct_count"
        version="1.0">
   <sce:signature>
     <sce:param name="xs" type="list&lt;uint32&gt;"/>
@@ -2519,24 +2607,88 @@ fn a_rust_algorithm_map_with_no_spelling_or_no_seed_is_refused_by_name() {
   </sce:body>
 </scxml>
 "#;
-    for (document, part) in [
-        (
-            text_key,
-            "a map whose key or value is a text or a byte string, which Rust does not lower \
-             in an algorithm",
-        ),
-        (
-            no_seed.to_string(),
-            "builds a map local and is lent no map and returns none, so there is no seed to \
-             draw the local's from",
-        ),
-    ] {
-        let documents = [("algorithm_distinct.scxml", document)];
-        let (ok, printed, _) = generate_rust_beside(&documents, "algorithm_distinct.scxml", false);
-        assert!(!ok, "Rust refuses the algorithm:\n{printed}");
-        assert!(
-            printed.contains("\"code\":\"generate/unsupported-feature\"") && printed.contains(part),
-            "expected a refusal holding `{part}`:\n{printed}"
+
+/// A statechart that counts the distinct numbers of its list by
+/// `DistinctCount(xs)`.
+const SEED_LEND: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="seed_lend">
+  <sce:import kind="algorithm" src="algorithm_distinct_count.scxml" as="DistinctCount"/>
+  <datamodel>
+    <data id="xs" sce:type="list&lt;uint32&gt;[4]" sce:direction="out"/>
+    <data id="n" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal">
+      <assign location="n" expr="DistinctCount(xs)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+
+/// docs/adr/0108, D8: an algorithm that builds a map local and is lent no map
+/// and returns none takes the seed of the local's keys from its caller, as a
+/// parameter after its declared ones, and draws the local's from it; a Rust
+/// machine that calls one keeps a seed drawn where it is built from the seed
+/// of its maps, and hands it to each call, through the call's adapter.
+#[test]
+fn a_rust_machine_hands_its_seed_to_an_algorithm_that_builds_a_map() {
+    let documents = [
+        ("algorithm_distinct_count.scxml", DISTINCT_COUNT.to_string()),
+        ("seed_lend.scxml", SEED_LEND.to_string()),
+    ];
+    let (ok, printed, files) = generate_rust_beside(&documents, "seed_lend.scxml", true);
+    assert!(
+        ok,
+        "Rust generates the statechart and the algorithm:\n{printed}"
+    );
+    let functions = functions_of(&files);
+    let distinct = function_named(&functions, "distinct_count");
+    let (_, inputs) = signature_of(distinct);
+    assert_eq!(
+        inputs.last().map(String::as_str),
+        Some(":: sce_portable_bytes :: MapSeed"),
+        "{inputs:?}"
+    );
+    let mut methods = MethodCalls::default();
+    syn::visit::Visit::visit_item_fn(&mut methods, distinct);
+    assert!(
+        methods
+            .0
+            .iter()
+            .any(|(receiver, method)| receiver == "sce_map_seed" && method == "derive"),
+        "the set local draws its seed from its caller's: {:?}",
+        methods.0
+    );
+
+    let (_, inputs) = signature_of(adapter_of(&functions));
+    assert_eq!(
+        inputs.last().map(String::as_str),
+        Some(":: sce_rust_runtime :: MapSeed"),
+        "{inputs:?}"
+    );
+    let (tree, machine) = machine_tree(&files);
+    let mut calls = AdapterCalls::default();
+    syn::visit::Visit::visit_file(&mut calls, &tree);
+    assert_eq!(calls.0.len(), 1, "{:?}", calls.0);
+    assert_eq!(
+        calls.0[0].last().map(String::as_str),
+        Some("self . sce_algorithm_seed")
+    );
+    let mut declared = Declared::default();
+    syn::visit::Visit::visit_file(&mut declared, &tree);
+    {
+        use quote::ToTokens;
+        assert_eq!(
+            declared
+                .field("sce_algorithm_seed", &machine)
+                .to_token_stream()
+                .to_string(),
+            ":: sce_rust_runtime :: MapSeed"
         );
     }
+    assert!(
+        machine.contains("sce_algorithm_seed: sce_map_seeds.draw(),"),
+        "the machine draws its algorithms' seed where it is built:\n{machine}"
+    );
 }
