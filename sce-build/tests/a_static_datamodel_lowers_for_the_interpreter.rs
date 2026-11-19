@@ -168,6 +168,14 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         // (`sce:std/shared/record_list.scxml`), lowered from the library and
         // written beside its parent.
         "record_list_parent",
+        // ... and a map and a set, held as the array of their entries
+        // (docs/adr/0108, "Order of work", step 4).
+        "static_map",
+        "static_map_full",
+        "static_map_record",
+        "static_map_composite_key",
+        "static_set",
+        "static_map_order",
     ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Map and set
+  variables"; docs/adr/0108, D1 and D3): a map keyed by a record of two 64-bit
+  halves, compared field by field.
+
+  `peer.seen` counts how often each peer was seen, the payload taken whole as
+  the key: a peer seen before is read at its key and put again one higher, and
+  one never seen is put at 1; `hits` is the count of the peer just seen. Ids
+  whose halves are swapped, or whose digits run together alike (1 and 11
+  against 11 and 1), are other keys.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="watching" datamodel="sce-static" name="static_map_composite_key">
+  <sce:import kind="event-schema" src="schema_map_peer.scxml" as="Peer"/>
+  <datamodel>
+    <data id="seen" sce:type="map&lt;record:Peer, uint32&gt;[6]" sce:direction="out"/>
+    <data id="hits" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="watching">
+    <transition event="peer.seen" cond="has(seen, _event.data)" type="internal">
+      <assign location="hits" expr="seen[_event.data] + 1"/>
+      <sce:put target="seen" key="_event.data" expr="hits"/>
+    </transition>
+    <transition event="peer.seen" type="internal">
+      <assign location="hits" expr="1"/>
+      <sce:put target="seen" key="_event.data" expr="hits"/>
+    </transition>
+  </state>
+</scxml>

@@ -932,6 +932,14 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_child_mesh"), replayed.end())
         << "static_child_mesh was not replayed: a child given a Mesh router by its parent has no lowering for the "
         << "Interpreter";
+    // ... and the scenarios of a map and a set (docs/adr/0108, "Order of work", step 4), the
+    // Interpreter the first engine to hold one: its reads, its statements with and without an
+    // outcome, a full map, a record value, a record key, the order of its entries and a walk of it.
+    for (const char *keyed : {"static_map", "static_map_full", "static_map_record", "static_map_composite_key",
+                              "static_set", "static_map_order"}) {
+        EXPECT_NE(std::find(replayed.begin(), replayed.end(), keyed), replayed.end())
+            << keyed << " was not replayed: a map has no lowering for the Interpreter";
+    }
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }
@@ -1187,6 +1195,61 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ALoopHandsEachRecordI
                                                        "spare.charCodeAt(3) === 98"))
         << "spare is " << variable(*machine, "spare").dump();
     EXPECT_EQ(nlohmann::json(0), variable(*machine, "errors"));
+}
+
+// The canonical text of a key (docs/adr/0108, D1 and D10): the library's
+// `keyText`, through which every map of the lowered document finds its keys, so
+// two keys of one type are one key exactly when their texts are one text. Asked
+// of the library a lowered map document installs: for each kind of key, keys
+// that differ give texts that differ, a byte string that runs on past another
+// with a zero byte and a text that holds what a separator would be among them,
+// and so do record keys whose fields run together alike. One key held two ways
+// gives one text: an integer whatever its width or whether it crossed as its
+// digits, and a record whatever order its object was built in.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TwoKeysAreOneKeyExactlyWhenTheirTextsAreOne) {
+    const Lowered lowered = lower(kFixtures / "static_map.scxml");
+    ASSERT_TRUE(lowered.ok) << "a map is lowered for the Interpreter now: " << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+
+    const auto shared = variable(*machine, R"js((function () {
+      var pair = {record: [['high', 'integer'], ['low', 'integer']]};
+      var texts = {record: [['a', 'string'], ['b', 'string']]};
+      var kinds = [
+        ['bytes', ['\u0001', '\u0001\u0000', '', '\u0000', ':', '1:', 'y1:\u0001']],
+        ['string', ['a;b', 'a', ';', 's1:a', '', ':', '1:a', '{', '}', 'i1;']],
+        ['enum', ['on', 'off', 'o', 'n']],
+        ['integer', [0, 1, -1, 10, 11, 9007199254740991, -9007199254740991]],
+        ['bool', [true, false]],
+        [pair, [{high: 0, low: 1}, {high: 1, low: 0}, {high: 1, low: 11}, {high: 11, low: 1}, {high: 0, low: 0}]],
+        [texts, [{a: 'x', b: 'y'}, {a: 'xy', b: ''}, {a: '', b: 'xy'}, {a: 'x', b: ''}, {a: '1:x', b: ''},
+                 {a: '', b: '1:x'}, {a: 'x}', b: '{y'}]]
+      ];
+      var shared = [];
+      kinds.forEach(function (kind) {
+        var seen = {};
+        kind[1].forEach(function (key) {
+          var text = SceStatic.keyText(kind[0], key);
+          if (Object.prototype.hasOwnProperty.call(seen, text)) {
+            shared.push(text);
+          }
+          seen[text] = true;
+        });
+      });
+      return shared;
+    })())js");
+    EXPECT_EQ(nlohmann::json::array(), shared) << "two keys share one text";
+
+    const auto one = variable(*machine, R"js((function () {
+      var pair = {record: [['high', 'integer'], ['low', 'integer']]};
+      return [
+        SceStatic.keyText('integer', 5) === SceStatic.keyText('integer', '5'),
+        SceStatic.keyText('integer', 9007199254740991) === SceStatic.keyText('integer', BigInt('9007199254740991')),
+        SceStatic.keyText(pair, {low: 2, high: 1}) === SceStatic.keyText(pair, {high: 1, low: 2})
+      ];
+    })())js");
+    EXPECT_EQ(nlohmann::json::array({true, true, true}), one) << "one key held two ways gives two texts";
 }
 
 // A document under another data model is not the lowering's to touch: what it

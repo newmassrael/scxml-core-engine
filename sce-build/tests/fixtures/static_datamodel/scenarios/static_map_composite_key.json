@@ -1,0 +1,25 @@
+{
+  "machine": "static_map_composite_key",
+  "about": "A map keyed by a record of two 64-bit halves (docs/adr/0108, D1): two ids are one key exactly when both halves are equal, so ids whose halves are swapped, or whose digits run together alike, are kept apart, and an id seen again is read at its key and put again where it stands. A key is stated as an object of its fields. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "watching", "variables": { "seen": [], "hits": 0 } } },
+
+    { "event": "peer.seen", "data": { "low": 1, "high": 0 },
+      "expect": { "variables": { "seen": [[{ "low": 1, "high": 0 }, 1]], "hits": 1 } } },
+    { "note": "the halves swapped are another id",
+      "event": "peer.seen", "data": { "low": 0, "high": 1 },
+      "expect": { "variables": { "seen": [[{ "low": 1, "high": 0 }, 1], [{ "low": 0, "high": 1 }, 1]], "hits": 1 } } },
+    { "note": "the first id again: read at its key and put again where it stands",
+      "event": "peer.seen", "data": { "low": 1, "high": 0 },
+      "expect": { "variables": { "seen": [[{ "low": 1, "high": 0 }, 2], [{ "low": 0, "high": 1 }, 1]], "hits": 2 } } },
+    { "event": "peer.seen", "data": { "low": 11, "high": 1 },
+      "expect": { "variables": { "seen": [[{ "low": 1, "high": 0 }, 2], [{ "low": 0, "high": 1 }, 1], [{ "low": 11, "high": 1 }, 1]], "hits": 1 } } },
+    { "note": "1 and 11 are not 11 and 1",
+      "event": "peer.seen", "data": { "low": 1, "high": 11 },
+      "expect": { "variables": { "seen": [[{ "low": 1, "high": 0 }, 2], [{ "low": 0, "high": 1 }, 1], [{ "low": 11, "high": 1 }, 1], [{ "low": 1, "high": 11 }, 1]], "hits": 1 } } },
+    { "event": "peer.seen", "data": { "low": 11, "high": 1 },
+      "expect": { "variables": { "seen": [[{ "low": 1, "high": 0 }, 2], [{ "low": 0, "high": 1 }, 1], [{ "low": 11, "high": 1 }, 2], [{ "low": 1, "high": 11 }, 1]], "hits": 2 } } },
+    { "event": "peer.seen", "data": { "low": 1, "high": 0 },
+      "expect": { "variables": { "seen": [[{ "low": 1, "high": 0 }, 3], [{ "low": 0, "high": 1 }, 1], [{ "low": 11, "high": 1 }, 2], [{ "low": 1, "high": 11 }, 1]], "hits": 3 } } }
+  ]
+}

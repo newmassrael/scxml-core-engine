@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A record key of a map (docs/adr/0108, D1): a 128-bit peer id held as its low
+  and high halves, two 64-bit integers, so two ids are one key exactly when both
+  halves are equal. Its event says a peer was seen, and its payload is taken
+  whole as the key (`_event.data`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_map_peer"
+       sce:event-name="peer.seen">
+  <datamodel>
+    <data id="low" sce:type="uint64" sce:direction="in"/>
+    <data id="high" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

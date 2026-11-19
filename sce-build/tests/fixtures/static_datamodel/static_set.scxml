@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Map and set
+  variables" and "Iterating a map"; docs/adr/0108, D1 to D5): a set of texts,
+  a map whose entries carry no value.
+
+  `labelled.taken` puts its label in `tags`, three at most, and says what the
+  put did in `putResult`: a label the set holds is `replaced` and left as it
+  was, and one past the third is `full`. `ask` asks whether `red` is held,
+  `walk` walks the set in the order its labels were first put, keeping the
+  last label it met and how many it met, and `untag` removes `red`, which a
+  later put puts last.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="tagging" datamodel="sce-static" name="static_set">
+  <sce:import kind="event-schema" src="schema_labelled.scxml" as="Labelled"/>
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <sce:import kind="enum" src="sce:std/collection/remove_outcome.scxml" as="RemoveOutcome"/>
+  <datamodel>
+    <data id="tags" sce:type="set&lt;string[8]&gt;[3]" sce:direction="out"/>
+    <data id="putResult" sce:type="enum:PutOutcome" expr="PutOutcome.inserted" sce:direction="out"/>
+    <data id="removeResult" sce:type="enum:RemoveOutcome" expr="RemoveOutcome.absent" sce:direction="out"/>
+    <data id="tagged" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="lastTag" sce:type="string[8]" expr="''" sce:direction="out"/>
+    <data id="walked" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="tagging">
+    <transition event="labelled.taken" type="internal">
+      <sce:put target="tags" key="_event.data.label" outcome="putResult"/>
+      <assign location="count" expr="len(tags)"/>
+    </transition>
+    <transition event="ask" type="internal">
+      <assign location="tagged" expr="has(tags, 'red')"/>
+    </transition>
+    <transition event="walk" type="internal">
+      <foreach array="tags" item="tag" index="at">
+        <assign location="lastTag" expr="tag"/>
+        <assign location="walked" expr="at + 1"/>
+      </foreach>
+    </transition>
+    <transition event="untag" type="internal">
+      <sce:remove target="tags" key="'red'" outcome="removeResult"/>
+      <assign location="count" expr="len(tags)"/>
+    </transition>
+  </state>
+</scxml>

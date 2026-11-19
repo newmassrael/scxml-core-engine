@@ -1,0 +1,29 @@
+{
+  "machine": "static_map_full",
+  "about": "A full map (docs/adr/0108, D4): a put that names an outcome and finds the map full of other keys writes `full`, leaves the map as it was and raises nothing, so the document counts it; a put of a key the map holds replaces it however full the map is; the same put with no outcome raises error.execution and ends its block, as an append to a full list does. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "filling", "variables": { "slots": [], "putResult": "inserted", "refused": 0, "afterPut": 0, "errors": 0 } } },
+
+    { "event": "ledger.entry", "data": { "id": 1, "amount": 10 },
+      "expect": { "variables": { "slots": [[1, 10]], "putResult": "inserted", "refused": 0 } } },
+    { "event": "ledger.entry", "data": { "id": 2, "amount": 20 },
+      "expect": { "variables": { "slots": [[1, 10], [2, 20]], "putResult": "inserted", "refused": 0 } } },
+    { "note": "the map holds its two: 3 is refused as a value, the map is as it was, and nothing is raised",
+      "event": "ledger.entry", "data": { "id": 3, "amount": 30 },
+      "expect": { "variables": { "slots": [[1, 10], [2, 20]], "putResult": "full", "refused": 1, "errors": 0 } } },
+    { "note": "2 is held: a full map replaces a key it holds",
+      "event": "ledger.entry", "data": { "id": 2, "amount": 21 },
+      "expect": { "variables": { "slots": [[1, 10], [2, 21]], "putResult": "replaced", "refused": 1 } } },
+    { "note": "a put with no outcome into the full map fails: error.execution, and the block ends before `afterPut` counts it",
+      "event": "force",
+      "expect": { "variables": { "slots": [[1, 10], [2, 21]], "afterPut": 0, "errors": 1 } } },
+
+    { "event": "free",
+      "expect": { "variables": { "slots": [[2, 21]] } } },
+    { "note": "with room for it, the same put goes last and the block runs on",
+      "event": "force",
+      "expect": { "variables": { "slots": [[2, 21], [99, 0]], "afterPut": 1, "errors": 1 } } },
+    { "event": "ledger.entry", "data": { "id": 4, "amount": 40 },
+      "expect": { "variables": { "slots": [[2, 21], [99, 0]], "putResult": "full", "refused": 2, "errors": 1 } } }
+  ]
+}

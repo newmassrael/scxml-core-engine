@@ -640,10 +640,15 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
+# The machines of a map and a set (docs/adr/0108): the Interpreter holds one first
+# ("Order of work", step 4), and the generator refuses them for C++ by name until its
+# own step (D10).
 sce_add_static_scenario_suite(
     TARGET static_datamodel_generated_cpp_test
     SCENARIOS ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios
     FIXTURES ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel
+    NOT_YET_LOWERED static_map static_map_full static_map_record static_map_composite_key static_set
+                    static_map_order
 )
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which
