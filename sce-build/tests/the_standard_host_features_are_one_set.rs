@@ -111,6 +111,37 @@ fn library_documents() -> BTreeSet<String> {
         .collect()
 }
 
+/// The enums the records `named` import, by their name under `stdlib/host`
+/// without the extension: the documents beside the records that no type names
+/// and a record of the table reads (docs/adr/0109, step 4 of its order of
+/// work). Each is held to be an enum, since nothing else is a record's to
+/// import.
+fn imported_enums(named: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut enums = BTreeSet::new();
+    for name in named {
+        let path = repo_root().join(format!("stdlib/host/{name}.scxml"));
+        let text = std::fs::read_to_string(&path).expect("a record of the library");
+        for src in sce_build::forge::stdlib::import_sources(&text) {
+            let stem = Path::new(&src)
+                .file_stem()
+                .expect("an imported document has a file name")
+                .to_string_lossy()
+                .into_owned();
+            let imported =
+                std::fs::read_to_string(repo_root().join(format!("stdlib/host/{stem}.scxml")))
+                    .unwrap_or_else(|_| {
+                        panic!("{name} imports {src}, which stdlib/host does not hold")
+                    });
+            assert!(
+                imported.contains(r#"sce:kind="enum""#),
+                "{name} imports {src}, which is no enum"
+            );
+            enums.insert(stem);
+        }
+    }
+    enums
+}
+
 #[test]
 fn the_table_and_the_library_name_each_other() {
     let named: BTreeSet<String> = TYPES
@@ -124,14 +155,21 @@ fn the_table_and_the_library_name_each_other() {
         "stdlib/host held {} documents: a test that read none would pass",
         held.len()
     );
+    let enums = imported_enums(&named);
+    assert!(
+        enums.contains("key_use"),
+        "the enum key_generate_request imports was not read: {enums:?}"
+    );
+    let read: BTreeSet<String> = named.union(&enums).cloned().collect();
     assert_eq!(
-        named, held,
-        "a record of the library no type names, or a type naming a record the library lacks"
+        read, held,
+        "a document of the library no type names and no record imports, or a type naming a \
+         record the library lacks"
     );
     let embedded: BTreeSet<String> = sce_build::forge::stdlib::documents()
         .map(|(name, _)| name)
         .collect();
-    for name in &named {
+    for name in &read {
         assert!(
             embedded.contains(&document(name)),
             "{name} is not embedded in the generator"
@@ -337,14 +375,24 @@ fn signing_is_served_on_rust_and_cpp_and_refused_on_every_other_lane() {
 // ── Random bytes, keyed digests and keys (docs/SCE_HOST_FEATURES.md, sections 11 to 13) ──
 
 /// A `sce-static` statechart that runs `invoke_type` with the library's records
-/// `request` and `result`, each request field given from a variable of the
-/// field's own type: `(field, type, initial value)`.
+/// `request` and `result`, importing besides them the library's enums
+/// `enums`, `(document, alias)`, each request field given from a variable of
+/// the field's own type: `(field, type, initial value)`.
 fn host_operation(
     invoke_type: &str,
     request: &str,
     result: &str,
+    enums: &[(&str, &str)],
     fields: &[(&str, &str, &str)],
 ) -> String {
+    let imports: String = enums
+        .iter()
+        .map(|(document, alias)| {
+            format!(
+                "  <sce:import kind=\"enum\" src=\"sce:std/host/{document}.scxml\" as=\"{alias}\"/>\n"
+            )
+        })
+        .collect();
     let variables: String = fields
         .iter()
         .map(|(name, ty, init)| {
@@ -361,7 +409,7 @@ fn host_operation(
        version="1.0" initial="idle" datamodel="sce-static" name="probe">
   <sce:import kind="event-schema" src="sce:std/host/{request}.scxml" as="Request"/>
   <sce:import kind="event-schema" src="sce:std/host/{result}.scxml" as="Result"/>
-  <datamodel>
+{imports}  <datamodel>
 {variables}    <data id="failed" sce:type="string[24]" expr="''" sce:direction="out"/>
   </datamodel>
   <state id="idle">
@@ -379,6 +427,12 @@ fn host_operation(
     )
 }
 
+/// The library's enum of a key's use, under the alias a machine imports it by.
+const KEY_USE_ENUM: (&str, &str) = ("key_use", "KeyUse");
+
+/// A key's use as a variable of that enum, the field's own type.
+const KEY_USE_MAC: (&str, &str, &str) = ("key_use", "enum:KeyUse", "KeyUse.mac");
+
 /// docs/adr/0109, D0: random bytes, keyed digests and keys are built for Rust
 /// and C++, and a build for every other emitting lane refuses a machine that
 /// asks for one by name, `codegen/standard-host-type-not-served`, naming the
@@ -388,44 +442,48 @@ fn host_operation(
 fn random_bytes_keyed_digests_and_keys_are_served_on_rust_and_cpp_and_refused_elsewhere() {
     let key_id = ("key_id", "string[64]", "'k'");
     let message = ("message", "bytes[mac_message=4096]", "'m'");
+    let none: Vec<(&str, &str)> = Vec::new();
     let operations = [
         (
             "sce-host-random-bytes",
             "random_bytes_request",
             "random_bytes_result",
+            none.clone(),
             vec![("length", "uint16", "16")],
         ),
         (
             "sce-host-mac",
             "mac_request",
             "mac_result",
+            none.clone(),
             vec![key_id, message],
         ),
         (
             "sce-host-mac-verify",
             "mac_verify_request",
             "mac_verify_result",
+            none.clone(),
             vec![key_id, message, ("tag", "bytes[32]", "''")],
         ),
         (
             "sce-host-key-generate",
             "key_generate_request",
             "key_generate_result",
-            vec![
-                ("key_use", "string[8]", "'mac'"),
-                ("label", "string[64]", "''"),
-            ],
+            vec![KEY_USE_ENUM],
+            vec![KEY_USE_MAC, ("label", "string[64]", "''")],
         ),
         (
             "sce-host-key-public",
             "key_public_request",
             "key_public_result",
+            none.clone(),
             vec![key_id],
         ),
         (
             "sce-host-key-retire",
             "key_retire_request",
             "key_retire_result",
+            none,
             vec![key_id],
         ),
     ];
@@ -438,8 +496,8 @@ fn random_bytes_keyed_digests_and_keys_are_served_on_rust_and_cpp_and_refused_el
         others > 0,
         "no emitting lane but rust and cpp: the refusal is held on none"
     );
-    for (invoke_type, request, result, fields) in &operations {
-        let doc = host_operation(invoke_type, request, result, fields);
+    for (invoke_type, request, result, enums, fields) in &operations {
+        let doc = host_operation(invoke_type, request, result, enums, fields);
         let mut refused_on = 0;
         for &language in &lanes {
             let (ok, text) = run(&["check", "-l", language], &doc, &[]);
@@ -466,6 +524,52 @@ fn random_bytes_keyed_digests_and_keys_are_served_on_rust_and_cpp_and_refused_el
         assert_eq!(
             refused_on, others,
             "{invoke_type} was refused on {refused_on} of the {others} lanes that do not serve it"
+        );
+    }
+}
+
+/// docs/adr/0109, step 4 of its order of work: a key's use is a value of the
+/// library's enum `key_use`, so a use that is none of its four is refused where
+/// it is written rather than judged by the host when the invocation starts: its
+/// name as a text, a text a variable holds, and a text where the machine does
+/// not import the enum. The field's own value is accepted on the lanes that
+/// serve the operation.
+#[test]
+fn a_key_use_that_is_no_value_of_its_enum_is_refused_where_it_is_written() {
+    let generate = |enums: &[(&str, &str)], key_use: (&str, &str, &str)| {
+        host_operation(
+            "sce-host-key-generate",
+            "key_generate_request",
+            "key_generate_result",
+            enums,
+            &[key_use, ("label", "string[64]", "''")],
+        )
+    };
+    let accepted = generate(&[KEY_USE_ENUM], KEY_USE_MAC);
+    for language in ["rust", "cpp"] {
+        let (ok, text) = run(&["check", "-l", language], &accepted, &[]);
+        assert!(ok, "{language} refused a use of the enum: {text}");
+    }
+
+    let named = accepted.replace(
+        r#"<param name="key_use" expr="key_use"/>"#,
+        r#"<param name="key_use" expr="'mac'"/>"#,
+    );
+    assert_ne!(named, accepted, "the probe's <param> was not rewritten");
+    let (ok, text) = run(&["check"], &named, &[]);
+    assert!(!ok, "the name of a use was taken as the use: {text}");
+    assert!(text.contains("validation/typed-invoke-request"), "{text}");
+
+    for (enums, why) in [
+        (&[KEY_USE_ENUM][..], "no value of an enum"),
+        (&[][..], "does not import"),
+    ] {
+        let doc = generate(enums, ("key_use", "string[8]", "'mac'"));
+        let (ok, text) = run(&["check"], &doc, &[]);
+        assert!(!ok, "a text was taken as a key's use: {text}");
+        assert!(
+            text.contains("scxml/static-datamodel-rule") && text.contains(why),
+            "{why}: {text}"
         );
     }
 }

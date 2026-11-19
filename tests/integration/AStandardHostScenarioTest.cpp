@@ -38,6 +38,7 @@
 #include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -53,6 +54,18 @@ using HostScenario::Rig;
 using HostScenario::ScriptTransport;
 
 constexpr int kSettleTicks = 5;
+
+/// Run @p machine until what it was handed is taken: a round of its scheduler's ticks where it keeps one, a
+/// step otherwise.
+template <typename Machine> void settleMachine(Machine &machine) {
+    if constexpr (::SCE::Core::NeedsEventSchedulerTrait<typename Machine::PolicyType>::value) {
+        for (int round = 0; round < kSettleTicks; ++round) {
+            machine.tick();
+        }
+    } else {
+        machine.step();
+    }
+}
 
 /// Replay the scenario @p stem against a machine of the document @p machine, which the scenario
 /// names: a machine whose run ends has one scenario a run (the reference harness's cases).
@@ -70,15 +83,7 @@ void replayScenario(const std::string &stem, const std::string &machineName,
     host::serve(machine, rig.host);
     machine.setClock(std::make_shared<SCE::ManualClock>(0));
     EXPECT_EQ(machine.initialize(), std::nullopt);
-    const auto settle = [&machine]() {
-        if constexpr (::SCE::Core::NeedsEventSchedulerTrait<typename Machine::PolicyType>::value) {
-            for (int round = 0; round < kSettleTicks; ++round) {
-                machine.tick();
-            }
-        } else {
-            machine.step();
-        }
-    };
+    const auto settle = [&machine]() { settleMachine(machine); };
     settle();
     HostScenario::HostScenarioDriver driver;
     driver.advance = [&](uint64_t ms) {
@@ -728,6 +733,57 @@ TEST(AStandardHostScenario, AMachineSignsSealsAndDerivesKeysThroughItsHost) {
     for (const auto &stem : stems) {
         replayScenario<CoseMachine>(stem, HostScenario::COSE_MACHINE, coseVariables(HostScenario::readScenario(stem)),
                                     {});
+    }
+}
+
+namespace {
+
+namespace cose = SCE::Generated::static_host_cose;
+
+/// A host of key generation through the generated typed interface: records each request it is handed and
+/// answers it with a key id at once.
+class RecordingKeyGeneration : public cose::SceHostKeyGenerateInvoker {
+public:
+    std::vector<cose::KeyGenerateRequest> requests;
+
+    std::optional<cose::KeyGenerateResult> startKeyGenerate(const cose::KeyGenerateRequest &request,
+                                                            uint64_t) override {
+        requests.push_back(request);
+        cose::KeyGenerateResult result;
+        result.key_id = "generated:k";
+        return result;
+    }
+
+    void cancelKeyGenerate(uint64_t) override {}
+};
+
+}  // namespace
+
+/// docs/adr/0109, step 4 of its order of work: a key's use is a value of the library's enum `key_use`, which
+/// crosses to the host as the name the enum declares for it, and the generated adapter reads it back into the
+/// machine's own enum by that name. The Rust twin is a_typed_request_reads_its_enum_field_by_its_name.
+TEST(AStandardHostScenario, ATypedKeyGenerationReadsItsUseByItsName) {
+    CoseMachine machine;
+    const auto host = std::make_shared<RecordingKeyGeneration>();
+    machine.registerSceHostKeyGenerateInvoker(host);
+    machine.setClock(std::make_shared<SCE::ManualClock>(0));
+    EXPECT_EQ(machine.initialize(), std::nullopt);
+    settleMachine(machine);
+    const std::vector<std::pair<std::string, cose::StaticHostCoseKeyUseEnum>> uses{
+        {"sign", cose::StaticHostCoseKeyUseEnum::Sign},
+        {"seal", cose::StaticHostCoseKeyUseEnum::Seal},
+        {"mac", cose::StaticHostCoseKeyUseEnum::Mac},
+        {"derive", cose::StaticHostCoseKeyUseEnum::Derive},
+    };
+    for (const auto &use : uses) {
+        machine.raiseExternal("host.key.generate.request", json{{"key_use", use.first}, {"label", "device"}}.dump());
+        settleMachine(machine);
+        settleMachine(machine);
+    }
+    ASSERT_EQ(host->requests.size(), uses.size()) << "each use reached the host once";
+    for (size_t i = 0; i < uses.size(); ++i) {
+        EXPECT_TRUE(host->requests[i].key_use == uses[i].second) << "the use the host was handed for " << uses[i].first;
+        EXPECT_EQ(host->requests[i].label, "device");
     }
 }
 

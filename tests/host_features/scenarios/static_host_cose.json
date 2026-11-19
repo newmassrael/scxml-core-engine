@@ -435,12 +435,6 @@
       "expect": { "state": "idle",
                   "variables": {"outcome": "unknown_key"} } },
 
-    { "note": "a use that is none of sign, seal, mac and derive is refused",
-      "event": "host.key.generate.request",
-      "data": {"key_use": "derived", "label": ""},
-      "expect": { "state": "idle",
-                  "variables": {"outcome": "refused", "generated": "generated:303132333435363738393a3b3c3d3e3f"} } },
-
     { "note": "the MAC key is retired",
       "event": "host.key.retire.request",
       "data": {"key_id": "generated:303132333435363738393a3b3c3d3e3f"},

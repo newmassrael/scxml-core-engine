@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/key_use.scxml — the one use of a key a host generates
+  (docs/SCE_HOST_FEATURES.md, "Keys"), the field `key_use` of
+  key_generate_request.scxml:
+
+  - `sign`: an Ed25519 signing key, which signs and whose public key is
+    exported;
+  - `seal`: a ChaCha20/Poly1305 key, which seals and opens;
+  - `mac`: an HMAC-SHA-256 key, which tags and verifies;
+  - `derive`: input keying material of a derivation.
+
+  A request carries the value as its name, which the host reads.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="key_use" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="sign" value="0"/>
+      <sce:variant name="seal" value="1"/>
+      <sce:variant name="mac" value="2"/>
+      <sce:variant name="derive" value="3"/>
+    </data>
+  </datamodel>
+</scxml>
