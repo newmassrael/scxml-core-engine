@@ -457,7 +457,9 @@ pub fn load<S: SessionStore + ?Sized>(store: &S, key: &str) -> Result<Option<Loa
 
 /// The sessions of `store` whose earliest delayed send is due at or before `now_wall_ms`, at most
 /// `limit` of them, earliest first, each loaded: restored, each arms its sends already due as due
-/// now. A session deleted between the listing and its loading is left out.
+/// now. A session deleted between the listing and its loading is left out. Each is loaded by the
+/// key the store names for the entry it listed, which a store that indexes its keys by a keyed
+/// digest reads from the session it holds (docs/adr/0109, D8).
 pub fn wake_due<S: SessionStore + ?Sized>(
     store: &S,
     now_wall_ms: u64,
@@ -468,7 +470,10 @@ pub fn wake_due<S: SessionStore + ?Sized>(
         .map_err(LoadError::Store)?;
     let mut woken = Vec::with_capacity(due.len());
     for session in due {
-        if let Some(loaded) = load(store, &session.key)? {
+        let Some(key) = store.key_of(&session.key).map_err(LoadError::Store)? else {
+            continue;
+        };
+        if let Some(loaded) = load(store, &key)? {
             woken.push(loaded);
         }
     }

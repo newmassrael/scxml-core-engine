@@ -4,6 +4,7 @@
 //! A session store that keeps nothing past the process.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::rules::{self, Holding};
@@ -114,6 +115,17 @@ impl SessionStore for MemoryStore {
         listed.sort_by_key(|entry| entry.due);
         listed.truncate(limit);
         Ok(listed)
+    }
+
+    fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+        let records = self.records();
+        let from = after.map_or(Bound::Unbounded, Bound::Excluded);
+        Ok(records
+            .sessions
+            .range::<str, _>((from, Bound::Unbounded))
+            .take(limit)
+            .map(|(key, _)| key.clone())
+            .collect())
     }
 
     fn acquire(

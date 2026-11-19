@@ -99,6 +99,18 @@ impl SessionStore for Refusing {
         self.inner.due_before(ms, limit)
     }
 
+    fn indexed(&self, key: &str) -> String {
+        self.inner.indexed(key)
+    }
+
+    fn key_of(&self, indexed: &str) -> Result<Option<String>, Failure> {
+        self.inner.key_of(indexed)
+    }
+
+    fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+        self.inner.indexed_after(after, limit)
+    }
+
     fn acquire(
         &self,
         key: &str,

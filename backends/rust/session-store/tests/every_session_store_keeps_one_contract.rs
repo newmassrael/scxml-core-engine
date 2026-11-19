@@ -64,6 +64,11 @@ fn in_memory_handles_share_one_store() {
     conformance::handles_share_one_store(&in_memory());
 }
 
+#[test]
+fn in_memory_every_session_is_listed_by_its_entry_and_named_by_its_key() {
+    conformance::every_session_is_listed_by_its_entry_and_named_by_its_key(&in_memory());
+}
+
 #[cfg(feature = "sqlite")]
 mod common;
 
@@ -127,5 +132,12 @@ mod on_sqlite {
     #[test]
     fn handles_share_one_store() {
         conformance::handles_share_one_store(&on_sqlite("handles"));
+    }
+
+    #[test]
+    fn every_session_is_listed_by_its_entry_and_named_by_its_key() {
+        conformance::every_session_is_listed_by_its_entry_and_named_by_its_key(&on_sqlite(
+            "entries",
+        ));
     }
 }

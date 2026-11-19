@@ -133,11 +133,36 @@ pub trait SessionStore: Send + Sync {
     fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError>;
 
     /// At most `limit` sessions whose earliest due is at or before `ms`, earliest first, sessions
-    /// due at the same moment in the order of their keys. At or before, because a send due at the
-    /// moment a restore runs is armed as due now, as `sce_rust_runtime::saved_state` arms it. The
-    /// host core keeps a timer on the first of `due_before(LATEST_MOMENT, 1)` and loads what this
-    /// lists when it fires.
+    /// due at the same moment in the order of the entries the store indexes them under
+    /// ([`SessionStore::indexed`]). At or before, because a send due at the moment a restore runs
+    /// is armed as due now, as `sce_rust_runtime::saved_state` arms it. The host core keeps a timer
+    /// on the first of `due_before(LATEST_MOMENT, 1)` and loads what this lists when it fires, by
+    /// the key [`SessionStore::key_of`] answers for each entry.
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure>;
+
+    /// The entry the store indexes the session `key` under: what [`SessionStore::due_before`] and
+    /// [`SessionStore::indexed_after`] list it as. A store that keeps its keys as they are
+    /// answers `key`; one that keeps each key as a keyed digest of it, so that no key is in the
+    /// clear on its medium (ADR 0109, D8), answers that digest. It is computed, not read: it is
+    /// the same for a key the store holds no session for, and two keys never share one.
+    fn indexed(&self, key: &str) -> String {
+        key.to_string()
+    }
+
+    /// The key of the session the store holds under the entry `indexed`, one that
+    /// [`SessionStore::due_before`] or [`SessionStore::indexed_after`] listed, or `None` when it
+    /// holds none there: a host wakes what came due by the key this answers. A store that keeps
+    /// its keys as they are answers `indexed` itself when it holds a session there; one that keeps
+    /// keyed digests reads the key from the session it holds.
+    fn key_of(&self, indexed: &str) -> Result<Option<String>, Failure> {
+        Ok(self.get(indexed)?.map(|_| indexed.to_string()))
+    }
+
+    /// At most `limit` of the sessions the store holds, as the entries it indexes them under
+    /// ([`SessionStore::indexed`]), in the order of their UTF-8 bytes, each after `after` when it
+    /// is given. A pass over every session (the re-seal of ADR 0109, D8) reads them a page at a
+    /// time, each page after the last entry of the one before.
+    fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure>;
 
     /// Grant `owner` the lease on `key` until `now_ms + ttl_ms`, with a fence above every fence the
     /// store granted before.
@@ -184,6 +209,8 @@ pub struct Stored {
 /// A session that comes due, as [`SessionStore::due_before`] lists it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Due {
+    /// The entry the store indexes the session under ([`SessionStore::indexed`]): its key, or a
+    /// keyed digest of it, whose key [`SessionStore::key_of`] answers.
     pub key: String,
     /// Its earliest due, in milliseconds since the Unix epoch.
     pub due: u64,

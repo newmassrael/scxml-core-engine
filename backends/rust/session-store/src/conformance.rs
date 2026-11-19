@@ -42,6 +42,9 @@
 //! * [`no_update_is_lost`]: writers that read, change and put back, again on a conflict, lose none
 //!   of their changes.
 //! * [`handles_share_one_store`]: what one handle wrote, another sees, its leases included.
+//! * [`every_session_is_listed_by_its_entry_and_named_by_its_key`]: each key is indexed under
+//!   an entry of its own, every session held is listed by its entry a page at a time in their
+//!   order, and the entry of a held session names its key.
 //!
 //! Each function needs a harness whose store holds nothing when it starts, since it reads the whole
 //! index of dues. The clock is the one the functions give; nothing here waits on time. A failed
@@ -321,19 +324,19 @@ pub fn due_sessions_are_listed_earliest_first(harness: &impl Harness) {
 
     assert_eq!(
         listed(&store, LATEST_MOMENT, 10),
-        dues(&[("a", 10), ("b", 10), ("e", 20), ("c", 30)])
+        dues(&store, &[("a", 10), ("b", 10), ("e", 20), ("c", 30)])
     );
     assert_eq!(
         listed(&store, LATEST_MOMENT, 2),
-        dues(&[("a", 10), ("b", 10)])
+        dues(&store, &[("a", 10), ("b", 10)])
     );
     assert_eq!(
         listed(&store, 20, 10),
-        dues(&[("a", 10), ("b", 10), ("e", 20)]),
+        dues(&store, &[("a", 10), ("b", 10), ("e", 20)]),
         "a session due at the moment asked is due"
     );
-    assert_eq!(listed(&store, 9, 10), dues(&[]));
-    assert_eq!(listed(&store, LATEST_MOMENT, 0), dues(&[]));
+    assert_eq!(listed(&store, 9, 10), dues(&store, &[]));
+    assert_eq!(listed(&store, LATEST_MOMENT, 0), dues(&store, &[]));
 
     store
         .put("a", b"a", Some(25), a.version, a.lease.fence)
@@ -343,14 +346,14 @@ pub fn due_sessions_are_listed_earliest_first(harness: &impl Harness) {
         .expect("clearing a due");
     assert_eq!(
         listed(&store, LATEST_MOMENT, 10),
-        dues(&[("e", 20), ("a", 25), ("c", 30)])
+        dues(&store, &[("e", 20), ("a", 25), ("c", 30)])
     );
     store
         .delete("c", c.version, c.lease.fence)
         .expect("deleting a session that was due");
     assert_eq!(
         listed(&store, LATEST_MOMENT, 10),
-        dues(&[("e", 20), ("a", 25)])
+        dues(&store, &[("e", 20), ("a", 25)])
     );
 
     create(&store, "f", Some(u64::MAX));
@@ -360,7 +363,7 @@ pub fn due_sessions_are_listed_earliest_first(harness: &impl Harness) {
     );
     assert_eq!(
         listed(&store, u64::MAX, 10),
-        dues(&[("e", 20), ("a", 25), ("f", LATEST_MOMENT)])
+        dues(&store, &[("e", 20), ("a", 25), ("f", LATEST_MOMENT)])
     );
 }
 
@@ -370,13 +373,13 @@ pub fn state_and_due_are_written_together(harness: &impl Harness) {
     let store = harness.handle();
     let keys = ["k1", "k2", "k3"];
     let agree = |when: &str| {
-        // Ordered as the index orders: by due, then by key.
+        // Ordered as the index orders: by due, then by the entry the key is indexed under.
         let ordered: BTreeSet<(u64, String)> = keys
             .iter()
             .filter_map(|&key| {
                 read(&store, key)
                     .and_then(|stored| stored.earliest_due)
-                    .map(|due| (due, key.to_string()))
+                    .map(|due| (due, store.indexed(key)))
             })
             .collect();
         let expected: Vec<Due> = ordered
@@ -582,7 +585,7 @@ pub fn handles_share_one_store(harness: &impl Harness) {
             earliest_due: Some(7),
         })
     );
-    assert_eq!(listed(&first, LATEST_MOMENT, 10), dues(&[("k", 7)]));
+    assert_eq!(listed(&first, LATEST_MOMENT, 10), dues(&first, &[("k", 7)]));
     drop(second);
 
     let third = harness.handle();
@@ -590,6 +593,86 @@ pub fn handles_share_one_store(harness: &impl Harness) {
         .delete("k", version, lease.fence)
         .expect("a delete through a handle opened after the write");
     assert_eq!(read(&first, "k"), None);
+}
+
+/// Each key is indexed under an entry of its own, the same each time it is asked; every session
+/// held is listed by its entry, in the order of their bytes, a page at a time; the entry of a held
+/// session names its key, and the entry of a key with no session names none.
+pub fn every_session_is_listed_by_its_entry_and_named_by_its_key(harness: &impl Harness) {
+    let store = harness.handle();
+    let keys = ["b", "a", "d", "c"];
+    let created: Vec<Created> = keys.iter().map(|&key| create(&store, key, None)).collect();
+    let again = harness.handle();
+    assert_eq!(
+        store.indexed("a"),
+        again.indexed("a"),
+        "an entry is computed, the same through every handle"
+    );
+    let mut entries: Vec<String> = keys.iter().map(|&key| store.indexed(key)).collect();
+    entries.sort();
+    entries.dedup();
+    assert_eq!(entries.len(), keys.len(), "two keys share an entry");
+
+    let page = |after: Option<&str>, limit: usize| {
+        store
+            .indexed_after(after, limit)
+            .expect("a listing the store could not make")
+    };
+    assert_eq!(page(None, 10), entries, "every session, in order");
+    assert_eq!(page(None, 2), entries[..2], "at most the limit");
+    assert_eq!(
+        page(Some(entries[1].as_str()), 10),
+        entries[2..],
+        "after an entry, not at it"
+    );
+    assert!(
+        page(Some(entries[3].as_str()), 10).is_empty(),
+        "after the last"
+    );
+    assert!(page(None, 0).is_empty(), "a limit of none");
+    let mut paged = Vec::new();
+    let mut after: Option<String> = None;
+    loop {
+        let next = page(after.as_deref(), 3);
+        let Some(last) = next.last().cloned() else {
+            break;
+        };
+        paged.extend(next);
+        after = Some(last);
+    }
+    assert_eq!(paged, entries, "a pass a page at a time reads each once");
+
+    for &key in &keys {
+        assert_eq!(
+            store
+                .key_of(&store.indexed(key))
+                .expect("the key of an entry"),
+            Some(key.to_string()),
+            "the entry of a held session names its key"
+        );
+    }
+    assert_eq!(
+        store
+            .key_of(&store.indexed("never written"))
+            .expect("the key of an entry with no session"),
+        None
+    );
+
+    let c = &created[3];
+    store
+        .delete("c", c.version, c.lease.fence)
+        .expect("deleting a session");
+    assert_eq!(
+        store
+            .key_of(&store.indexed("c"))
+            .expect("the key of a deleted session's entry"),
+        None,
+        "a deleted session's entry names no key"
+    );
+    assert!(
+        !page(None, 10).contains(&store.indexed("c")),
+        "a deleted session is not listed"
+    );
 }
 
 /// A session [`create`] made: the lease it was written under and its version.
@@ -617,14 +700,18 @@ fn listed(store: &impl SessionStore, ms: u64, limit: usize) -> Vec<Due> {
         .expect("a listing the store could not make")
 }
 
-fn dues(pairs: &[(&str, u64)]) -> Vec<Due> {
-    pairs
+/// The listing of the sessions `pairs` names, each by the entry `store` indexes it under, in the
+/// order the contract gives: by due, then by entry.
+fn dues(store: &impl SessionStore, pairs: &[(&str, u64)]) -> Vec<Due> {
+    let mut listed: Vec<Due> = pairs
         .iter()
         .map(|&(key, due)| Due {
-            key: key.to_string(),
+            key: store.indexed(key),
             due,
         })
-        .collect()
+        .collect();
+    listed.sort_by(|a, b| a.due.cmp(&b.due).then_with(|| a.key.cmp(&b.key)));
+    listed
 }
 
 fn granted(result: Result<Lease, AcquireError>) -> Lease {

@@ -324,6 +324,28 @@ impl SessionStore for SqliteStore {
         Ok(listed)
     }
 
+    fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+        let connection = self.connection();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        // A key is TEXT compared by the BINARY collation, which is the order of its UTF-8 bytes.
+        let listed = match after {
+            Some(after) => {
+                let mut statement = connection.prepare_cached(
+                    "SELECT session FROM sessions WHERE session > ?1 ORDER BY session LIMIT ?2",
+                )?;
+                let rows = statement.query_map((after, limit), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+            None => {
+                let mut statement = connection
+                    .prepare_cached("SELECT session FROM sessions ORDER BY session LIMIT ?1")?;
+                let rows = statement.query_map((limit,), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+        };
+        Ok(listed)
+    }
+
     fn acquire(
         &self,
         key: &str,

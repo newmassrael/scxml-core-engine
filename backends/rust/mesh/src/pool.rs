@@ -356,15 +356,19 @@ enum LeaseState {
 /// lease, which the thread that renews leases reads too.
 struct Slot<M, T, E> {
     key: String,
+    /// The entry the store indexes the key under ([`SessionStore::indexed`]):
+    /// what its listing of dues names the session by.
+    indexed: String,
     inbox: Mutex<Inbox>,
     live: Mutex<Option<Live<M, T, E>>>,
     lease: Mutex<LeaseState>,
 }
 
 impl<M, T, E> Slot<M, T, E> {
-    fn new(key: &str) -> Self {
+    fn new(key: &str, indexed: String) -> Self {
         Self {
             key: key.to_string(),
+            indexed,
             inbox: Mutex::new(Inbox::default()),
             live: Mutex::new(None),
             lease: Mutex::new(LeaseState::Unheld),
@@ -497,7 +501,8 @@ where
     /// when it is built.
     ready: Mutex<BTreeSet<String>>,
     replies: Replies,
-    /// The keys another process held when this one asked, until when.
+    /// The keys another process held when this one asked, until when, each
+    /// by the entry the store indexes it under.
     deferred: Mutex<BTreeMap<String, u64>>,
     errors: Mutex<Vec<PoolError>>,
 }
@@ -756,21 +761,47 @@ where
             }
         };
         let deferred = lock(&self.deferred).clone();
-        let mut table = lock(&self.table);
-        for listed in listed {
-            let held_elsewhere = deferred.get(&listed.key).is_some_and(|until| *until > now);
-            if table.contains_key(&listed.key) || held_elsewhere {
-                continue;
-            }
+        let (in_memory, room) = {
+            let table = lock(&self.table);
+            let in_memory: BTreeSet<String> =
+                table.values().map(|slot| slot.indexed.clone()).collect();
             // The pool holds at most `max_live` sessions (docs/adr/0109, D1):
             // the rest come due again at a later call, once room is made.
+            let room = (self.sessions.max_live as usize).saturating_sub(table.len());
+            (in_memory, room)
+        };
+        // The store lists each session by the entry it indexes it under; a
+        // store that keeps each key as a keyed digest reads the key from the
+        // session it holds (docs/adr/0109, D8). Named outside the table's
+        // lock, since naming one reads the store.
+        let mut named = Vec::new();
+        for listed in listed {
+            if named.len() >= room {
+                break;
+            }
+            let held_elsewhere = deferred.get(&listed.key).is_some_and(|until| *until > now);
+            if in_memory.contains(&listed.key) || held_elsewhere {
+                continue;
+            }
+            match self.store.key_of(&listed.key) {
+                Ok(Some(key)) => named.push((key, listed.key)),
+                // Removed since it was listed: nothing comes due.
+                Ok(None) => {}
+                Err(failure) => self.error(PoolError::Store { key: None, failure }),
+            }
+        }
+        let mut table = lock(&self.table);
+        for (key, indexed) in named {
+            if table.contains_key(&key) {
+                continue;
+            }
             if table.len() >= self.sessions.max_live as usize {
                 break;
             }
-            let slot = Arc::new(Slot::new(&listed.key));
+            let slot = Arc::new(Slot::new(&key, indexed));
             lock(&slot.inbox).queue.push_back(Input::Wake);
-            table.insert(listed.key.clone(), slot);
-            keys.push(listed.key);
+            table.insert(key.clone(), slot);
+            keys.push(key);
         }
         keys
     }
@@ -922,10 +953,12 @@ where
         match self.store.due_before(LATEST_MOMENT, WAKE_BATCH) {
             Ok(listed) => {
                 let table = lock(&self.table);
+                let in_memory: BTreeSet<&str> =
+                    table.values().map(|slot| slot.indexed.as_str()).collect();
                 let deferred = lock(&self.deferred);
                 let first = listed
                     .iter()
-                    .filter(|listed| !table.contains_key(&listed.key))
+                    .filter(|listed| !in_memory.contains(listed.key.as_str()))
                     .map(|listed| {
                         deferred
                             .get(&listed.key)
@@ -1015,7 +1048,7 @@ where
         if table.len() >= self.sessions.max_live as usize {
             return Err((input, Full::Live));
         }
-        let slot = Arc::new(Slot::new(key));
+        let slot = Arc::new(Slot::new(key, self.store.indexed(key)));
         lock(&slot.inbox).queue.push_back(input);
         table.insert(key.to_string(), slot);
         Ok(())
@@ -1135,7 +1168,7 @@ where
         {
             Ok(lease) => lease,
             Err(AcquireError::Held(held)) => {
-                lock(&self.deferred).insert(key.to_string(), held.expires_ms);
+                lock(&self.deferred).insert(slot.indexed.clone(), held.expires_ms);
                 let reason = alloc::format!("another process serves the session: {held}");
                 self.error(PoolError::LeaseHeld {
                     key: key.to_string(),
@@ -1152,7 +1185,7 @@ where
                 return Err(Refusal::unavailable(reason));
             }
         };
-        lock(&self.deferred).remove(key);
+        lock(&self.deferred).remove(&slot.indexed);
         *lock(&slot.lease) = LeaseState::Held {
             fence: lease.fence,
             renewed_ms: now,
@@ -2633,6 +2666,139 @@ mod tests {
         assert!(pool.due().is_empty());
     }
 
+    /// A store that indexes each key apart from it, as one that keeps keyed digests does
+    /// (docs/adr/0109, D8): the session `k` is kept under the entry `#k`, which its listing of
+    /// dues names, and the key is read back from the store.
+    struct IndexedApart {
+        inner: MemoryStore,
+    }
+
+    impl IndexedApart {
+        fn entry(key: &str) -> String {
+            alloc::format!("#{key}")
+        }
+    }
+
+    impl SessionStore for IndexedApart {
+        fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+            self.inner.get(&Self::entry(key))
+        }
+
+        fn put(
+            &self,
+            key: &str,
+            state: &[u8],
+            earliest_due: Option<u64>,
+            expected_version: u64,
+            fence: u64,
+        ) -> Result<u64, WriteError> {
+            self.inner.put(
+                &Self::entry(key),
+                state,
+                earliest_due,
+                expected_version,
+                fence,
+            )
+        }
+
+        fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
+            self.inner
+                .delete(&Self::entry(key), expected_version, fence)
+        }
+
+        fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
+            self.inner.due_before(ms, limit)
+        }
+
+        fn indexed(&self, key: &str) -> String {
+            Self::entry(key)
+        }
+
+        fn key_of(&self, indexed: &str) -> Result<Option<String>, Failure> {
+            Ok(self
+                .inner
+                .get(indexed)?
+                .and(indexed.strip_prefix('#'))
+                .map(ToString::to_string))
+        }
+
+        fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+            self.inner.indexed_after(after, limit)
+        }
+
+        fn acquire(
+            &self,
+            key: &str,
+            owner: &str,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, AcquireError> {
+            self.inner.acquire(&Self::entry(key), owner, ttl_ms, now_ms)
+        }
+
+        fn renew(
+            &self,
+            key: &str,
+            fence: u64,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, LeaseError> {
+            self.inner.renew(&Self::entry(key), fence, ttl_ms, now_ms)
+        }
+
+        fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+            self.inner.release(&Self::entry(key), fence)
+        }
+    }
+
+    /// docs/adr/0109, D8: a store that lists what comes due by an entry other than the key, a
+    /// keyed digest of it, wakes the session by the key it names for that entry; a session in
+    /// memory or held elsewhere is told apart by its entry, so it is neither loaded twice nor
+    /// woken early.
+    #[test]
+    fn a_session_listed_by_an_entry_apart_from_its_key_is_woken_by_its_key() {
+        let (inner, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let store: Arc<dyn SessionStore> = Arc::new(IndexedApart {
+            inner: inner.clone(),
+        });
+        let (pool, wire) = pool_over("p1", store, &clock, &probe);
+        deliver(
+            &pool,
+            from_client("remind", r#"{"room":"r1","after_ms":5000}"#, 1, false),
+        );
+        assert!(inner.get("r1").expect("read").is_none());
+        assert_eq!(
+            inner
+                .due_before(LATEST_MOMENT, 10)
+                .expect("the listing")
+                .into_iter()
+                .map(|due| due.key)
+                .collect::<Vec<_>>(),
+            ["#r1"],
+            "the store lists the session by its entry"
+        );
+        clock.advance(1_000);
+        assert_eq!(pool.evict_idle(), vec!["r1".to_string()]);
+        assert_eq!(pool.next_wake_ms(), Some(T0 + 5_000));
+        clock.advance(4_000);
+        assert_eq!(
+            pool.due(),
+            vec!["r1".to_string()],
+            "the session is woken by the key its entry names"
+        );
+        assert!(
+            pool.due().is_empty(),
+            "the entry the store still lists is told apart as the session the pool holds"
+        );
+        pool.run("r1");
+        let sent = wire.take();
+        let [reminded] = sent.as_slice() else {
+            panic!("one reminder, got {sent:?}");
+        };
+        assert_eq!(reminded.data, r#"{"room":"r1"}"#);
+        assert_eq!(probe.restored.load(Ordering::SeqCst), 1);
+    }
+
     /// A store that, once armed, takes one write and then fails its process: the write is
     /// durable, and the pool never hears it answered, so it releases nothing the write held.
     struct DiesAfterWrite {
@@ -2668,6 +2834,18 @@ mod tests {
 
         fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
             self.inner.due_before(ms, limit)
+        }
+
+        fn indexed(&self, key: &str) -> String {
+            self.inner.indexed(key)
+        }
+
+        fn key_of(&self, indexed: &str) -> Result<Option<String>, Failure> {
+            self.inner.key_of(indexed)
+        }
+
+        fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+            self.inner.indexed_after(after, limit)
         }
 
         fn acquire(
@@ -2895,6 +3073,18 @@ mod tests {
 
         fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
             self.inner.due_before(ms, limit)
+        }
+
+        fn indexed(&self, key: &str) -> String {
+            self.inner.indexed(key)
+        }
+
+        fn key_of(&self, indexed: &str) -> Result<Option<String>, Failure> {
+            self.inner.key_of(indexed)
+        }
+
+        fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+            self.inner.indexed_after(after, limit)
         }
 
         fn acquire(
@@ -3132,6 +3322,18 @@ mod tests {
 
         fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
             self.inner.due_before(ms, limit)
+        }
+
+        fn indexed(&self, key: &str) -> String {
+            self.inner.indexed(key)
+        }
+
+        fn key_of(&self, indexed: &str) -> Result<Option<String>, Failure> {
+            self.inner.key_of(indexed)
+        }
+
+        fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+            self.inner.indexed_after(after, limit)
         }
 
         fn acquire(
