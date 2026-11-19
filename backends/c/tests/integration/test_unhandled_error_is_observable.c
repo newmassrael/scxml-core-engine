@@ -107,6 +107,8 @@ int main(void) {
                             "on its own.\n");
             rc = 1;
         }
+
+        unhandled_error_is_observable_destroy(&sm);
     }
 
     // The other half: an error the DOCUMENT answered must not be counted. An
@@ -142,6 +144,8 @@ int main(void) {
                             "report the author's own error handling as a silent failure.\n");
             rc = 1;
         }
+
+        unhandled_error_is_observable_destroy(&sm);
     }
 
     // The boundary the count is drawn at: an author's own unmatched <raise> is
@@ -178,6 +182,8 @@ int main(void) {
                             "raised are not on that queue at all.\n");
             rc = 1;
         }
+
+        unhandled_error_is_observable_destroy(&sm);
     }
 
     // Why the query has to exist: every pre-existing accessor answers the same
@@ -211,6 +217,8 @@ int main(void) {
                             "only thing that separates a silent failure from a clean run.\n");
             rc = 1;
         }
+
+        unhandled_error_is_observable_destroy(&sm);
     }
 
     // The supervisor's actual failure mode: every round fails the same way and
@@ -240,6 +248,8 @@ int main(void) {
                     (long long)booms);
             rc = 1;
         }
+
+        unhandled_error_is_observable_destroy(&sm);
     }
 
     if (rc == 0) {

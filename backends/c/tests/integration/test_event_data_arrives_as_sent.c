@@ -39,12 +39,12 @@ static void send_with_payload(event_data_arrives_as_sent_t *sm, event_data_arriv
     event_data_arrives_as_sent_run(sm);
 }
 
-int main(void) {
-    event_data_arrives_as_sent_t sm;
-    REQUIRE_STARTED(event_data_arrives_as_sent_init(&sm), EVENT_DATA_ARRIVES_AS_SENT_START_OK);
-    event_data_arrives_as_sent_run(&sm);
+// The run and its verdict. `main` starts the machine and destroys it, so a
+// verdict returned early does not skip the `_destroy` that closes its Lua state.
+static int judge(event_data_arrives_as_sent_t *sm) {
+    event_data_arrives_as_sent_run(sm);
 
-    if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_WAITING)) {
+    if (!event_data_arrives_as_sent_in_state(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_WAITING)) {
         fprintf(stderr, "FAIL: the fixture is supposed to start in `waiting`; it did not, so "
                         "nothing below is testing what it claims\n");
         return 1;
@@ -52,15 +52,15 @@ int main(void) {
 
     // A JSON object, the shape an embedder has when it holds structured data
     // and a state machine to give it to.
-    send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_PAYLOAD, "{\"milestone\":\"refined\",\"turns\":2}");
+    send_with_payload(sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_PAYLOAD, "{\"milestone\":\"refined\",\"turns\":2}");
 
-    if (event_data_arrives_as_sent_ended_in(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_MANGLED)) {
+    if (event_data_arrives_as_sent_ended_in(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_MANGLED)) {
         fprintf(stderr, "FAIL: the host sent {\"milestone\":\"refined\",\"turns\":2} and the guard "
                         "`_event.data.milestone === 'refined' && _event.data.turns === 2` did not hold, "
                         "so the payload did not arrive as an object with those properties\n");
         return 1;
     }
-    if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_HEARD)) {
+    if (!event_data_arrives_as_sent_in_state(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_HEARD)) {
         fprintf(stderr, "FAIL: the payload guard neither matched nor mismatched — the machine is "
                         "not in `heard`\n");
         return 1;
@@ -69,9 +69,9 @@ int main(void) {
     // Text that is not JSON. The same call, and it must NOT be parsed into
     // something else: `hold the line` is the value the document compares
     // against, character for character.
-    send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_NOTE, "hold the line");
+    send_with_payload(sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_NOTE, "hold the line");
 
-    if (event_data_arrives_as_sent_ended_in(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_GARBLED)) {
+    if (event_data_arrives_as_sent_ended_in(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_GARBLED)) {
         fprintf(stderr, "FAIL: the host sent the text `hold the line` and `_event.data === 'hold the "
                         "line'` did not hold, so a payload that is not JSON did not arrive as the string "
                         "it was sent as\n");
@@ -82,14 +82,14 @@ int main(void) {
        payload three readings and none of them is "evaluate it": a payload is
        what a host, a peer session or an HTTP sender put there, and running it
        makes `_event.data` mean whatever the receiver's engine is written in. */
-    send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_ARITH, "2 + 3");
+    send_with_payload(sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_ARITH, "2 + 3");
 
-    if (event_data_arrives_as_sent_ended_in(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_EVALUATED)) {
+    if (event_data_arrives_as_sent_ended_in(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_EVALUATED)) {
         fprintf(stderr, "FAIL: the host sent the text `2 + 3` and it arrived as 5 — the payload "
                         "was run rather than read\n");
         return 1;
     }
-    if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_DOCUMENTED)) {
+    if (!event_data_arrives_as_sent_in_state(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_DOCUMENTED)) {
         fprintf(stderr, "FAIL: the arithmetic-shaped payload neither matched nor mismatched — the "
                         "machine is not in `documented`\n");
         return 1;
@@ -103,9 +103,9 @@ int main(void) {
     /* Leading whitespace on purpose: the reading is chosen by the first
        NON-blank character, and a pretty-printed document is the ordinary shape
        of one. The scan past it is small enough to look redundant. */
-    send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_DOC, "\n  <books xmlns=\"\"><book title=\"t1\"/></books>");
+    send_with_payload(sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_DOC, "\n  <books xmlns=\"\"><book title=\"t1\"/></books>");
 
-    if (event_data_arrives_as_sent_ended_in(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_FLATTENED)) {
+    if (event_data_arrives_as_sent_ended_in(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_FLATTENED)) {
         fprintf(stderr, "FAIL: the host sent a well-formed XML document and "
                         "`_event.data.documentElement.nodeName === 'books'` did not hold, so the "
                         "payload did not become the DOM structure the clause requires\n");
@@ -115,15 +115,15 @@ int main(void) {
     /* The sentence that closes the clause. Every `error.*` message this
        repository raises names the SCXML construct that failed, so every one of
        them has exactly this shape: it opens like a document and is not one. */
-    send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_BROKEN, "<assign>  to  detail failed");
+    send_with_payload(sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_BROKEN, "<assign>  to  detail failed");
 
-    if (event_data_arrives_as_sent_ended_in(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SWALLOWED)) {
+    if (event_data_arrives_as_sent_ended_in(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SWALLOWED)) {
         fprintf(stderr, "FAIL: the host sent `<assign>  to  detail failed`, which opens with `<` and "
                         "is not a valid XML document, so B.2.8.1's closing MUST applies and the "
                         "reading is the space-normalized string\n");
         return 1;
     }
-    if (!event_data_arrives_as_sent_ended_in(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SETTLED)) {
+    if (!event_data_arrives_as_sent_ended_in(sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SETTLED)) {
         fprintf(stderr, "FAIL: the malformed-XML payload neither matched nor mismatched — the "
                         "machine is not in `settled`\n");
         return 1;
@@ -132,4 +132,12 @@ int main(void) {
     printf("PASS: a host payload reached the datamodel as an object, as text, unevaluated, as a DOM, "
            "and as the string a malformed document falls back to\n");
     return 0;
+}
+
+int main(void) {
+    event_data_arrives_as_sent_t sm;
+    REQUIRE_STARTED(event_data_arrives_as_sent_init(&sm), EVENT_DATA_ARRIVES_AS_SENT_START_OK);
+    const int rc = judge(&sm);
+    event_data_arrives_as_sent_destroy(&sm);
+    return rc;
 }

@@ -25,14 +25,13 @@
 #include "../require_started.h"
 #include "parallel_self_transition_keeps_its_leaf_sm.h"
 
-int main(void) {
-    parallel_self_transition_keeps_its_leaf_t sm;
-    REQUIRE_STARTED(parallel_self_transition_keeps_its_leaf_init(&sm),
-                    PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_START_OK);
-    parallel_self_transition_keeps_its_leaf_run(&sm);
+// The run and its verdict. `main` starts the machine and destroys it, so a
+// verdict returned early does not skip the `_destroy` that closes its Lua state.
+static int judge(parallel_self_transition_keeps_its_leaf_t *sm) {
+    parallel_self_transition_keeps_its_leaf_run(sm);
 
-    if (!parallel_self_transition_keeps_its_leaf_in_state(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WITHIN) ||
-        !parallel_self_transition_keeps_its_leaf_in_state(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WORKING)) {
+    if (!parallel_self_transition_keeps_its_leaf_in_state(sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WITHIN) ||
+        !parallel_self_transition_keeps_its_leaf_in_state(sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WORKING)) {
         fprintf(stderr, "FAIL: the fixture is supposed to start with the self-transitioning "
                         "region in `within` and the deeper one in `working`; it did not, so "
                         "nothing below is testing what it claims\n");
@@ -41,12 +40,12 @@ int main(void) {
 
     parallel_self_transition_keeps_its_leaf_event_with_meta_t first = {0};
     first.event = PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_EVENT_E;
-    parallel_self_transition_keeps_its_leaf_raise_external(&sm, &first);
-    parallel_self_transition_keeps_its_leaf_run(&sm);
+    parallel_self_transition_keeps_its_leaf_raise_external(sm, &first);
+    parallel_self_transition_keeps_its_leaf_run(sm);
 
     // The symptom, named where it happens. A region holding no atomic state is
     // still "in" the parallel by every ancestor test.
-    if (!parallel_self_transition_keeps_its_leaf_in_state(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WITHIN)) {
+    if (!parallel_self_transition_keeps_its_leaf_in_state(sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WITHIN)) {
         fprintf(stderr, "FAIL: the self-transitioning region lost its leaf on the first event. "
                         "`within` is both the source and the target of its own external "
                         "self-transition, so the microstep exits and re-enters it; anything "
@@ -54,7 +53,7 @@ int main(void) {
                         "back.\n");
         return 1;
     }
-    if (!parallel_self_transition_keeps_its_leaf_in_state(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_JUDGING)) {
+    if (!parallel_self_transition_keeps_its_leaf_in_state(sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_JUDGING)) {
         fprintf(stderr, "FAIL: the deeper region did not take its own transition on `e`.\n");
         return 1;
     }
@@ -64,10 +63,10 @@ int main(void) {
     // it can only answer from a leaf.
     parallel_self_transition_keeps_its_leaf_event_with_meta_t second = {0};
     second.event = PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_EVENT_E;
-    parallel_self_transition_keeps_its_leaf_raise_external(&sm, &second);
-    parallel_self_transition_keeps_its_leaf_run(&sm);
+    parallel_self_transition_keeps_its_leaf_raise_external(sm, &second);
+    parallel_self_transition_keeps_its_leaf_run(sm);
 
-    if (!parallel_self_transition_keeps_its_leaf_in_state(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WITHIN)) {
+    if (!parallel_self_transition_keeps_its_leaf_in_state(sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WITHIN)) {
         fprintf(stderr, "FAIL: the self-transitioning region is not in `within` after the "
                         "second `e`.\n");
         return 1;
@@ -75,10 +74,10 @@ int main(void) {
 
     parallel_self_transition_keeps_its_leaf_event_with_meta_t check = {0};
     check.event = PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_EVENT_CHECK;
-    parallel_self_transition_keeps_its_leaf_raise_external(&sm, &check);
-    parallel_self_transition_keeps_its_leaf_run(&sm);
+    parallel_self_transition_keeps_its_leaf_raise_external(sm, &check);
+    parallel_self_transition_keeps_its_leaf_run(sm);
 
-    if (!parallel_self_transition_keeps_its_leaf_ended_in(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_SETTLED)) {
+    if (!parallel_self_transition_keeps_its_leaf_ended_in(sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_SETTLED)) {
         fprintf(stderr, "FAIL: `check` did not carry the machine to `settled`, which the "
                         "document guards on `n == 1 && m == 2`. `m` reaches 2 only if the "
                         "self-transitioning region still had a leaf to transition from when "
@@ -88,4 +87,13 @@ int main(void) {
 
     printf("PASS: the self-transitioned region kept its leaf and answered the next event\n");
     return 0;
+}
+
+int main(void) {
+    parallel_self_transition_keeps_its_leaf_t sm;
+    REQUIRE_STARTED(parallel_self_transition_keeps_its_leaf_init(&sm),
+                    PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_START_OK);
+    const int rc = judge(&sm);
+    parallel_self_transition_keeps_its_leaf_destroy(&sm);
+    return rc;
 }

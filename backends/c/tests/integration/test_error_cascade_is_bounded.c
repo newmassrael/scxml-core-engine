@@ -128,6 +128,8 @@ int main(void) {
                             "nothing here may move the machine.\n");
             rc = 1;
         }
+
+        error_cascade_is_bounded_destroy(&sm);
     }
 
     // The other half, and the one that makes the count mean something: a chain
@@ -164,6 +166,8 @@ int main(void) {
                             "exactly one of each.\n");
             rc = 1;
         }
+
+        error_cascade_is_bounded_destroy(&sm);
     }
 
     // A single failure with nobody to answer it is not a chain. The chain is
@@ -188,6 +192,8 @@ int main(void) {
                             "be at five here.\n");
             rc = 1;
         }
+
+        error_cascade_is_bounded_destroy(&sm);
     }
 
     // The machine is still a machine afterwards, and a second chain starts
@@ -231,6 +237,8 @@ int main(void) {
                             "that saturates at one would read as a machine that recovered.\n");
             rc = 1;
         }
+
+        error_cascade_is_bounded_destroy(&sm);
     }
 
     if (rc == 0) {

@@ -29,13 +29,13 @@
 #include "../require_started.h"
 #include "parallel_regions_take_own_transitions_sm.h"
 
-int main(void) {
-    parallel_regions_take_own_transitions_t sm;
-    REQUIRE_STARTED(parallel_regions_take_own_transitions_init(&sm), PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_START_OK);
-    parallel_regions_take_own_transitions_run(&sm);
+// The run and its verdict. `main` starts the machine and destroys it, so a
+// verdict returned early does not skip the `_destroy` that closes its Lua state.
+static int judge(parallel_regions_take_own_transitions_t *sm) {
+    parallel_regions_take_own_transitions_run(sm);
 
-    if (!parallel_regions_take_own_transitions_in_state(&sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_WORKING) ||
-        !parallel_regions_take_own_transitions_in_state(&sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_WITHIN)) {
+    if (!parallel_regions_take_own_transitions_in_state(sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_WORKING) ||
+        !parallel_regions_take_own_transitions_in_state(sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_WITHIN)) {
         fprintf(stderr, "FAIL: the fixture is supposed to start with the deeper region in "
                         "`working` and the shallower one in `within`; it did not, so nothing "
                         "below is testing what it claims\n");
@@ -44,16 +44,16 @@ int main(void) {
 
     parallel_regions_take_own_transitions_event_with_meta_t e = {0};
     e.event = PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_EVENT_E;
-    parallel_regions_take_own_transitions_raise_external(&sm, &e);
-    parallel_regions_take_own_transitions_run(&sm);
+    parallel_regions_take_own_transitions_raise_external(sm, &e);
+    parallel_regions_take_own_transitions_run(sm);
 
-    if (!parallel_regions_take_own_transitions_in_state(&sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_JUDGING)) {
+    if (!parallel_regions_take_own_transitions_in_state(sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_JUDGING)) {
         fprintf(stderr, "FAIL: the deeper region lost its leaf. W3C SCXML 3.4 has every region "
                         "take its own enabled transition on `e`; the sibling region's external "
                         "self-transition must not preempt this one.\n");
         return 1;
     }
-    if (!parallel_regions_take_own_transitions_in_state(&sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_WITHIN)) {
+    if (!parallel_regions_take_own_transitions_in_state(sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_WITHIN)) {
         fprintf(stderr, "FAIL: the shallower region left `within`, which is both the source and "
                         "the target of its own external self-transition.\n");
         return 1;
@@ -61,10 +61,10 @@ int main(void) {
 
     parallel_regions_take_own_transitions_event_with_meta_t check = {0};
     check.event = PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_EVENT_CHECK;
-    parallel_regions_take_own_transitions_raise_external(&sm, &check);
-    parallel_regions_take_own_transitions_run(&sm);
+    parallel_regions_take_own_transitions_raise_external(sm, &check);
+    parallel_regions_take_own_transitions_run(sm);
 
-    if (!parallel_regions_take_own_transitions_ended_in(&sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_SETTLED)) {
+    if (!parallel_regions_take_own_transitions_ended_in(sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_SETTLED)) {
         fprintf(stderr, "FAIL: `check` did not carry the machine to `settled`, which the document "
                         "guards on both regions' assignments having run. Reaching `judging` "
                         "without `n == 1 && m == 1` means a region changed state while its "
@@ -74,4 +74,12 @@ int main(void) {
 
     printf("PASS: both regions took their own transition and the verdict was reached\n");
     return 0;
+}
+
+int main(void) {
+    parallel_regions_take_own_transitions_t sm;
+    REQUIRE_STARTED(parallel_regions_take_own_transitions_init(&sm), PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_START_OK);
+    const int rc = judge(&sm);
+    parallel_regions_take_own_transitions_destroy(&sm);
+    return rc;
 }

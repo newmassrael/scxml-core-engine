@@ -110,6 +110,8 @@ int main(void) {
                             "machine.\n");
             rc = 1;
         }
+
+        eventless_macrostep_is_bounded_destroy(&sm);
     }
 
     // The other half, and the one that makes the count mean something: a chain
@@ -154,6 +156,8 @@ int main(void) {
                             "guard closed.\n");
             rc = 1;
         }
+
+        eventless_macrostep_is_bounded_destroy(&sm);
     }
 
     // A count, not a flag: a second unbounded macrostep is refused the same way
@@ -186,6 +190,8 @@ int main(void) {
                             "recovered.\n");
             rc = 1;
         }
+
+        eventless_macrostep_is_bounded_destroy(&sm);
     }
 
     // The control: an ordinary document is untouched by any of this. Without
@@ -210,6 +216,8 @@ int main(void) {
                             "ends the way the clause says it does.\n");
             rc = 1;
         }
+
+        eventless_macrostep_is_bounded_destroy(&sm);
     }
 
     if (rc == 0) {

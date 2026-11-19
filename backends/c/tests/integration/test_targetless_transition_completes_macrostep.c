@@ -96,6 +96,8 @@ int main(void) {
                             "through.\n");
             rc = 1;
         }
+
+        targetless_transition_completes_macrostep_destroy(&sm);
     }
 
     // The other side of the same inner loop: what a targetless transition
@@ -125,6 +127,8 @@ int main(void) {
                             "anyway.\n");
             rc = 1;
         }
+
+        targetless_transition_completes_macrostep_destroy(&sm);
     }
 
     // The control, and the reason a zero above means anything: a targetless
@@ -172,6 +176,8 @@ int main(void) {
                             "left running, exactly where it was.\n");
             rc = 1;
         }
+
+        targetless_transition_completes_macrostep_destroy(&sm);
     }
 
     // The other microstep that ends where it began: a transition whose target
@@ -203,6 +209,8 @@ int main(void) {
                             "behind it, so the machine must rest here rather than spin.\n");
             rc = 1;
         }
+
+        targetless_transition_completes_macrostep_destroy(&sm);
     }
 
     // A macrostep, not a one-shot: the second targetless transition is
@@ -237,6 +245,8 @@ int main(void) {
                     (long long)quiet);
             rc = 1;
         }
+
+        targetless_transition_completes_macrostep_destroy(&sm);
     }
 
     if (rc == 0) {

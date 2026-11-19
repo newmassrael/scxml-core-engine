@@ -111,6 +111,8 @@ int main(void) {
                             "machine.\n");
             rc = 1;
         }
+
+        internal_chain_is_bounded_destroy(&sm);
     }
 
     // The other half, and the one that makes the count mean something: a chain
@@ -153,6 +155,8 @@ int main(void) {
             fprintf(stderr, "internal_chain_is_bounded: FAIL - the chain rests where it ended.\n");
             rc = 1;
         }
+
+        internal_chain_is_bounded_destroy(&sm);
     }
 
     // A dequeue that selected nothing is not a microstep, so it spends no
@@ -198,6 +202,8 @@ int main(void) {
             fprintf(stderr, "internal_chain_is_bounded: FAIL - the chain rests where it ended.\n");
             rc = 1;
         }
+
+        internal_chain_is_bounded_destroy(&sm);
     }
 
     // The case a per-branch budget lets through: a chain that alternates one
@@ -236,6 +242,8 @@ int main(void) {
                             "chain that could not settle.\n");
             rc = 1;
         }
+
+        internal_chain_is_bounded_destroy(&sm);
     }
 
     // What the refusal did with the links it would not run: it left them
@@ -283,6 +291,8 @@ int main(void) {
                             "ordinary macrostep however long the document took to get there.\n");
             rc = 1;
         }
+
+        internal_chain_is_bounded_destroy(&sm);
     }
 
     // The control: an ordinary document is untouched by any of this. Without
@@ -315,6 +325,8 @@ int main(void) {
                             "idle.\n");
             rc = 1;
         }
+
+        internal_chain_is_bounded_destroy(&sm);
     }
 
     if (rc == 0) {

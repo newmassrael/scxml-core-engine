@@ -268,6 +268,8 @@ int main(void) {
         external_chain_is_bounded_event_t head = EXTERNAL_CHAIN_IS_BOUNDED_EVENT_POKE;
         EXPECT(!external_chain_is_bounded_last_truncated_event(&sm, &head),
                "the machine named a cut event before anything had been cut");
+
+        external_chain_is_bounded_destroy(&sm);
     }
 
     // This block returning at all is half the assertion: before the budget the
@@ -291,6 +293,8 @@ int main(void) {
                    head == EXTERNAL_CHAIN_IS_BOUNDED_EVENT_LINK,
                "the count says a call did not reach quiet; this says what it was still taking");
         EXPECT(sm.is_running, "the chain was cut, not the machine");
+
+        external_chain_is_bounded_destroy(&sm);
     }
 
     // The half that makes the count mean something: a chain that ends on its own
@@ -325,6 +329,9 @@ int main(void) {
         EXPECT(external_chain_is_bounded_last_truncated_event(&one_short, &cut) &&
                    cut == EXTERNAL_CHAIN_IS_BOUNDED_EVENT_LAP,
                "the cut left a lap queued");
+
+        external_chain_is_bounded_destroy(&one_short);
+        external_chain_is_bounded_destroy(&exactly);
     }
 
     // What the refusal did with the events it would not take: it left them
@@ -350,6 +357,8 @@ int main(void) {
         EXPECT(counter_pokes(&sm) == table_value("resume", "pokes"), "and the host's second event was heard");
         EXPECT(external_chain_is_bounded_truncated_event_chains(&sm) == table_u32("resume", "truncated"),
                "the second call ended the way the clause says: nothing more is counted");
+
+        external_chain_is_bounded_destroy(&sm);
     }
 
     // delay="0ms" is due at the instant being processed. This engine hands it to
@@ -381,6 +390,8 @@ int main(void) {
         EXPECT(external_chain_is_bounded_last_truncated_event(&sm, &cut) &&
                    cut == EXTERNAL_CHAIN_IS_BOUNDED_EVENT_BLINK,
                "the cut left a blink due");
+
+        external_chain_is_bounded_destroy(&sm);
     }
 
     // The same chain through delayexpr="'0ms'", which has no static value an
@@ -400,6 +411,8 @@ int main(void) {
                "the tick popped entries due at its own reading until the budget and said so");
         EXPECT(counter_exprs(&sm) == table_value("zero_expr", "exprs"), "the budget of pops at one reading (got %lld)",
                (long long)counter_exprs(&sm));
+
+        external_chain_is_bounded_destroy(&sm);
     }
 
     // Eight pulses, each due one millisecond after the last. They are due at
@@ -435,6 +448,9 @@ int main(void) {
                "eight entries came due on the way to one reading, seven of them at earlier "
                "instants: a clock that moved a long way is bounded by how far it moved, and is "
                "not a chain that does not end");
+
+        external_chain_is_bounded_destroy(&jumped);
+        external_chain_is_bounded_destroy(&walked);
     }
 
     // A host chooses the budget, and a budget that takes no event is refused and
@@ -465,6 +481,8 @@ int main(void) {
         EXPECT(tried > 0u, "no refused budget of the table fits the engine's unsigned type");
         EXPECT(external_chain_is_bounded_max_external_events_per_call(&sm) == chosen,
                "a refused budget changes nothing");
+
+        external_chain_is_bounded_destroy(&sm);
     }
 
     free(table_text);

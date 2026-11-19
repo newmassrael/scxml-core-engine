@@ -57,12 +57,12 @@ static void send(ancestor_entry_is_not_default_entry_t *sm, ancestor_entry_is_no
     ancestor_entry_is_not_default_entry_run(sm);
 }
 
-int main(void) {
-    ancestor_entry_is_not_default_entry_t sm;
-    REQUIRE_STARTED(ancestor_entry_is_not_default_entry_init(&sm), ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_START_OK);
-    ancestor_entry_is_not_default_entry_run(&sm);
+// The run and its verdict. `main` starts the machine and destroys it, so a
+// verdict returned early does not skip the `_destroy` that closes its Lua state.
+static int judge(ancestor_entry_is_not_default_entry_t *sm) {
+    ancestor_entry_is_not_default_entry_run(sm);
 
-    if (!ancestor_entry_is_not_default_entry_in_state(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_AWAY)) {
+    if (!ancestor_entry_is_not_default_entry_in_state(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_AWAY)) {
         fprintf(stderr, "FAIL: the run has to start OUTSIDE the `<parallel>` for the first pass "
                         "to be testing anything — a source already inside it leaves the "
                         "ancestors active and the entry chain never reaches their defaults\n");
@@ -71,22 +71,22 @@ int main(void) {
 
     // Pass one: the parallel is not active, so `run` is entered as a parallel
     // ancestor and `drive` and `outer` as compound ones.
-    send(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_CROSS);
+    send(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_CROSS);
 
-    if (!ancestor_entry_is_not_default_entry_in_state(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_CHOSEN)) {
+    if (!ancestor_entry_is_not_default_entry_in_state(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_CHOSEN)) {
         fprintf(stderr, "FAIL: the transition named `chosen` and the machine did not enter it\n");
         return 1;
     }
     // The symptom, named where it happens. The extra child is a SIBLING of the
     // target, so every ancestor test still holds and the current leaf is right.
-    if (ancestor_entry_is_not_default_entry_in_state(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_BY_DEFAULT)) {
+    if (ancestor_entry_is_not_default_entry_in_state(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_BY_DEFAULT)) {
         fprintf(stderr, "FAIL: `outer` has two children active at once. `by_default` is what "
                         "`initial` names, and nothing targeted it — it was entered because the "
                         "engine gave `outer` its default child while entering `outer` merely as "
                         "an ancestor of `chosen`\n");
         return 1;
     }
-    if (!ancestor_entry_is_not_default_entry_in_state(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_IDLE)) {
+    if (!ancestor_entry_is_not_default_entry_in_state(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_IDLE)) {
         fprintf(stderr, "FAIL: the region no entering state is inside must still be entered with "
                         "its default — Appendix D's one exception for a parallel ancestor\n");
         return 1;
@@ -95,10 +95,10 @@ int main(void) {
     // Pass two: the parallel is already active now, so `run` and `drive` are
     // skipped and only `outer` is entered. That is a different branch of the
     // entry walk, and it is the one a running machine takes.
-    send(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_BACK);
-    send(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_AGAIN);
+    send(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_BACK);
+    send(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_AGAIN);
 
-    if (ancestor_entry_is_not_default_entry_in_state(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_BY_DEFAULT)) {
+    if (ancestor_entry_is_not_default_entry_in_state(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_BY_DEFAULT)) {
         fprintf(stderr, "FAIL: `outer` took its default child on the second pass, where the "
                         "`<parallel>` was already active and only `outer` itself was entered — "
                         "the shape the worked example hits every time a person answers a "
@@ -106,30 +106,37 @@ int main(void) {
         return 1;
     }
 
-    send(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_CHECK);
+    send(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_CHECK);
 
-    if (!ancestor_entry_is_not_default_entry_ended_in(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_SETTLED)) {
+    if (!ancestor_entry_is_not_default_entry_ended_in(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_SETTLED)) {
         // The document checks its four clauses in document order and lands each
         // in a `<final>` of its own, so which one it stopped at names the defect.
         const char *stopped = "no final at all — `check` was not answered";
-        if (ancestor_entry_is_not_default_entry_ended_in(&sm,
-                                                         ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILDEFAULTED)) {
+        if (ancestor_entry_is_not_default_entry_ended_in(sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILDEFAULTED)) {
             stopped = "failDefaulted — a default child nobody targeted was entered";
         } else if (ancestor_entry_is_not_default_entry_ended_in(
-                       &sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILLOBBIED)) {
+                       sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILLOBBIED)) {
             stopped = "failLobbied — `drive`'s default was taken while it was only an ancestor";
-        } else if (ancestor_entry_is_not_default_entry_ended_in(&sm,
+        } else if (ancestor_entry_is_not_default_entry_ended_in(sm,
                                                                 ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILIDLED)) {
             stopped = "failIdled — the untouched region did not get its default, or got it twice";
         } else if (ancestor_entry_is_not_default_entry_ended_in(
-                       &sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILTARGETED)) {
+                       sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILTARGETED)) {
             stopped = "failTargeted — a pass never reached the target";
         }
         fprintf(stderr, "FAIL: `check` did not carry the machine to `settled`. It stopped at %s\n", stopped);
-        report_counters(&sm);
+        report_counters(sm);
         return 1;
     }
 
     printf("PASS: an ancestor entered on the way to a target took no default child\n");
     return 0;
+}
+
+int main(void) {
+    ancestor_entry_is_not_default_entry_t sm;
+    REQUIRE_STARTED(ancestor_entry_is_not_default_entry_init(&sm), ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_START_OK);
+    const int rc = judge(&sm);
+    ancestor_entry_is_not_default_entry_destroy(&sm);
+    return rc;
 }
