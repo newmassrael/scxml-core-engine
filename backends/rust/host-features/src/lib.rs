@@ -46,7 +46,7 @@ pub use model::{
 pub use sce_rust_crypto::keyring::Keyring;
 pub use sce_rust_crypto::random::{RandomSource, ScriptedRandom, SystemRandom};
 pub use sce_rust_runtime::AnswerSchema;
-pub use sce_rust_session_store::{CredentialStore, MemoryCredentials};
+pub use sce_rust_session_store::{CredentialStore, MemoryCredentials, TokenRow, TokenStore};
 pub use serve::{serve, Shared};
 
 /// The operation that generates a text (docs/SCE_HOST_FEATURES.md, section 6).

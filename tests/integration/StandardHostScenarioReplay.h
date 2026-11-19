@@ -27,6 +27,7 @@
 
 #if defined(SCE_HOST_COSE)
 #include "host/CoseHost.h"
+#include "host/CredentialHost.h"
 #include "host/SodiumCoseCrypto.h"
 #endif
 
@@ -41,6 +42,7 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #ifndef SCE_PROJECT_ROOT
@@ -183,7 +185,8 @@ inline std::string answerText(const json &answer) {
 
 /// The request fields a scenario writes as numbers; every other is text.
 inline bool integerField(const std::string &name) {
-    return name == "at_ms" || name == "length" || name == "max_tokens" || name == "temperature_milli";
+    return name == "at_ms" || name == "length" || name == "max_tokens" || name == "temperature_milli" ||
+           name == "ttl_s";
 }
 
 #if defined(SCE_HOST_COSE)
@@ -215,13 +218,15 @@ private:
 #endif
 
 /// The reference host, over a clock, a transport and a model provider a scenario sets, and in a build
-/// that has them, the COSE operations on libsodium with the keys and the random bytes a scenario sets.
+/// that has them, the COSE operations on libsodium with the keys and the random bytes a scenario sets,
+/// and the credential operations over the same key ring and clock.
 struct Rig {
     host::ScriptedClock clock;
     ScriptTransport transport;
 #if defined(SCE_HOST_COSE)
     ScriptedRandomCrypto crypto;
     host::CoseFeature cose{crypto};
+    host::CredentialFeature credentials{cose, crypto, clock};
 #endif
     host::ReferenceHost host{clock, transport};
     host::ScriptedProvider model;
@@ -230,7 +235,34 @@ struct Rig {
         host.setModelProvider(model);
 #if defined(SCE_HOST_COSE)
         EXPECT_TRUE(host.addFeature(cose)) << "the COSE operations are served by the host already";
+        EXPECT_TRUE(host.addFeature(credentials)) << "the credential operations are served by the host already";
 #endif
+    }
+
+    /// The `credentials` member of `host_state`: each name the host issued a token for, to its tokens as
+    /// `{issued_ms, expires_ms, revoked}`, in the order of those three. A token's digest depends on the
+    /// session's id, which differs by lane, so a token is named by what the host keeps beside it.
+    json credentialState() {
+        json state = json::object();
+#if defined(SCE_HOST_COSE)
+        std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, bool>>> byName;
+        for (const auto &entry : credentials.tokens()) {
+            const host::StoredToken &token = entry.second;
+            byName[token.name].emplace_back(token.issuedMs, token.expiresMs, token.revoked);
+        }
+        for (auto &[name, tokens] : byName) {
+            std::sort(tokens.begin(), tokens.end());
+            json list = json::array();
+            for (const auto &[issuedMs, expiresMs, revoked] : tokens) {
+                list.push_back({{"issued_ms", issuedMs}, {"expires_ms", expiresMs}, {"revoked", revoked}});
+            }
+            state[name] = list;
+        }
+#else
+        ADD_FAILURE() << "`credentials` is the state of the credential operations, which this build does not "
+                      << "serve: it found no libsodium (cmake/SCEHostCose.cmake)";
+#endif
+        return state;
     }
 
     /// Apply a `cose_keys` directive to the COSE operations: it replaces the host's four tables, a table
@@ -368,6 +400,8 @@ struct Rig {
                     log.push_back({{"method", r.method}, {"url", r.url}, {"headers", headers}, {"body", r.body}});
                 }
                 state[name] = log;
+            } else if (name == "credentials") {
+                state[name] = credentialState();
             } else {
                 ADD_FAILURE() << "`" << name << "` is not host state";
             }

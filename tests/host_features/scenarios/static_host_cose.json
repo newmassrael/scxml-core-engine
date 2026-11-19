@@ -1,10 +1,10 @@
 {
   "machine": "static_host_cose",
-  "about": "Signing and sealing, random bytes, keyed digests and keys of docs/SCE_HOST_FEATURES.md, sections 10 to 13, as a machine sees them through its host. A `cose_keys` directive replaces the keys the host is configured with: `sign` maps a key id to the hexadecimal 32-byte seed of an Ed25519 key, `aead` a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key, `mac` a key id to a hexadecimal HMAC-SHA-256 key of any length, and `trust` a trust set's name to the ids of the signing keys whose public keys it holds; the keys the host generated and derived are kept. A `random` directive gives the hexadecimal bytes the host's random source gives next, before the operating system's: a draw, a generation (the id's 16 bytes, then the key's 32), the naming key of the store's first derivation (32 bytes) and a seal's nonce take them in the order the host draws. `jefe` and `rfc4231-1` are the keys of RFC 4231 test cases 2 and 1; the generated keys and their COSE_Key are those of tests/host_features/keys_cross_language.json. Byte strings travel as their byte-exact Latin-1 text. `11` is the key of RFC 8032 section 7.1 test 1 and of the COSE working group's EdDSA examples, `other` that of test 2, `sec-256` the key of the working group's ChaCha20/Poly1305 examples. The objects of a host's own signatures and of the objects sealed elsewhere were computed by an implementation that shares nothing with any reference host, which first reproduced the working group's signature of eddsa-sig-01.json. Expected values are derived from the specification, not observed from a host.",
+  "about": "Signing and sealing, random bytes, keyed digests, keys and credentials of docs/SCE_HOST_FEATURES.md, sections 10 to 14, as a machine sees them through its host. `host_state.credentials` is each name the host issued a token for, to its tokens as `issued_ms`, `expires_ms` and `revoked`, in that order: a token's own bytes are the tag of the session's identity, which differs by lane, and are not stated. A `cose_keys` directive replaces the keys the host is configured with: `sign` maps a key id to the hexadecimal 32-byte seed of an Ed25519 key, `aead` a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key, `mac` a key id to a hexadecimal HMAC-SHA-256 key of any length, and `trust` a trust set's name to the ids of the signing keys whose public keys it holds; the keys the host generated and derived are kept. A `random` directive gives the hexadecimal bytes the host's random source gives next, before the operating system's: a draw, a generation (the id's 16 bytes, then the key's 32), the naming key of the store's first derivation (32 bytes) and a seal's nonce take them in the order the host draws. `jefe` and `rfc4231-1` are the keys of RFC 4231 test cases 2 and 1; the generated keys and their COSE_Key are those of tests/host_features/keys_cross_language.json. Byte strings travel as their byte-exact Latin-1 text. `11` is the key of RFC 8032 section 7.1 test 1 and of the COSE working group's EdDSA examples, `other` that of test 2, `sec-256` the key of the working group's ChaCha20/Poly1305 examples. The objects of a host's own signatures and of the objects sealed elsewhere were computed by an implementation that shares nothing with any reference host, which first reproduced the working group's signature of eddsa-sig-01.json. Expected values are derived from the specification, not observed from a host.",
   "steps": [
-    { "note": "started: nothing is signed, sealed, derived, drawn, tagged, generated, exported or retired",
+    { "note": "started: nothing is signed, sealed, derived, drawn, tagged, generated, exported, retired, issued or revoked",
       "expect": { "state": "idle",
-                  "variables": {"outcome": "", "signed_object": "", "valid": false, "signer": "", "payload": "", "sealed_object": "", "opened": false, "plaintext": "", "derived": "", "drawn": "", "tag": "", "tag_valid": false, "generated": "", "cose_key": "", "retired": false},
+                  "variables": {"outcome": "", "signed_object": "", "valid": false, "signer": "", "payload": "", "sealed_object": "", "opened": false, "plaintext": "", "derived": "", "drawn": "", "tag": "", "tag_valid": false, "generated": "", "cose_key": "", "retired": false, "issued_token": "", "revoked": 0},
                   "host_invokes": [] } },
 
     { "note": "a signature is a completion: the tagged COSE_Sign1 of the payload, EdDSA on Ed25519, the key id in the protected header, byte for byte the deterministic encoding",
@@ -470,6 +470,76 @@
       "event": "host.key.generate.request",
       "data": {"key_use": "seal", "label": ""},
       "expect": { "state": "idle",
-                  "variables": {"outcome": "unavailable", "generated": "generated:303132333435363738393a3b3c3d3e3f"} } }
+                  "variables": {"outcome": "unavailable", "generated": "generated:303132333435363738393a3b3c3d3e3f"} } },
+
+    { "note": "a token is issued for a name: the host keeps its digest with the name, the moment of the issue and its expiry ttl_s seconds later; the token's bytes are the tag of the session's identity, which differs by lane, so they are not stated (docs/adr/0109, D3)",
+      "host": {"fail": {}, "clock": {"utc_ms": 1700000000000}, "random": "5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d"},
+      "event": "host.credential.issue.request",
+      "data": {"name": "phone", "ttl_s": 3600},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "done"},
+                  "host_invokes": [{"type": "sce-host-credential-issue", "id": "credential_issue", "request": {"name": "phone", "ttl_s": 3600}}],
+                  "host_state": {"credentials": {"phone": [{"issued_ms": 1700000000000, "expires_ms": 1700003600000, "revoked": false}]}} } },
+
+    { "note": "another name is issued a token of its own",
+      "host": {"clock": {"utc_ms": 1700000060000}},
+      "event": "host.credential.issue.request",
+      "data": {"name": "tablet", "ttl_s": 60},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "done"},
+                  "host_state": {"credentials": {"phone": [{"issued_ms": 1700000000000, "expires_ms": 1700003600000, "revoked": false}],
+                                                 "tablet": [{"issued_ms": 1700000060000, "expires_ms": 1700000120000, "revoked": false}]}} } },
+
+    { "note": "a revocation revokes the name's tokens, keeps them as revoked, and answers how many it took away; another name is untouched",
+      "event": "host.credential.revoke.request",
+      "data": {"name": "phone"},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "done", "revoked": 1},
+                  "host_invokes": [{"type": "sce-host-credential-revoke", "id": "credential_revoke", "request": {"name": "phone"}}],
+                  "host_state": {"credentials": {"phone": [{"issued_ms": 1700000000000, "expires_ms": 1700003600000, "revoked": true}],
+                                                 "tablet": [{"issued_ms": 1700000060000, "expires_ms": 1700000120000, "revoked": false}]}} } },
+
+    { "note": "a name revoked already has nothing more to revoke",
+      "event": "host.credential.revoke.request",
+      "data": {"name": "phone"},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "done", "revoked": 0} } },
+
+    { "note": "an empty name is refused: error.execution, and nothing is issued",
+      "event": "host.credential.issue.request",
+      "data": {"name": "", "ttl_s": 60},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "refused", "revoked": 0},
+                  "host_invokes": [{"type": "sce-host-credential-issue", "id": "credential_issue", "request": {"name": "", "ttl_s": 60}}] } },
+
+    { "note": "a token that would expire as it is issued is refused: ttl_s is at least 1",
+      "event": "host.credential.issue.request",
+      "data": {"name": "phone", "ttl_s": 0},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "refused"} } },
+
+    { "note": "an empty name is refused a revocation too",
+      "event": "host.credential.revoke.request",
+      "data": {"name": ""},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "refused", "revoked": 0} } },
+
+    { "note": "an issue that fails unavailable issues nothing",
+      "host": {"fail": {"sce-host-credential-issue": "unavailable"}},
+      "event": "host.credential.issue.request",
+      "data": {"name": "laptop", "ttl_s": 60},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "unavailable"},
+                  "host_state": {"credentials": {"phone": [{"issued_ms": 1700000000000, "expires_ms": 1700003600000, "revoked": true}],
+                                                 "tablet": [{"issued_ms": 1700000060000, "expires_ms": 1700000120000, "revoked": false}]}} } },
+
+    { "note": "a revocation that fails unavailable revokes nothing",
+      "host": {"fail": {"sce-host-credential-revoke": "unavailable"}},
+      "event": "host.credential.revoke.request",
+      "data": {"name": "tablet"},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "unavailable", "revoked": 0},
+                  "host_state": {"credentials": {"phone": [{"issued_ms": 1700000000000, "expires_ms": 1700003600000, "revoked": true}],
+                                                 "tablet": [{"issued_ms": 1700000060000, "expires_ms": 1700000120000, "revoked": false}]}} } }
   ]
 }

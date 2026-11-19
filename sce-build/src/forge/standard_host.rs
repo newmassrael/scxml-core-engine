@@ -124,11 +124,11 @@ pub const EVERY_REFERENCE_HOST: &[HostLane] = &[
 ];
 
 /// The lanes whose reference host serves signing and sealing, random bytes,
-/// keyed digests and keys (docs/SCE_HOST_FEATURES.md, sections 10 to 13;
-/// docs/adr/0107, D7; docs/adr/0109, D0 and D5 to D7): Rust on the RustCrypto
-/// crates and C++ on libsodium. Every other lane is a later step, which adds the
-/// lane here in the change that lands its host and its driver's replay of the
-/// scenario.
+/// keyed digests, keys and credentials (docs/SCE_HOST_FEATURES.md, sections 10
+/// to 14; docs/adr/0107, D7; docs/adr/0109, D0, D3 and D5 to D7): Rust on the
+/// RustCrypto crates and C++ on libsodium. Every other lane is a later step,
+/// which adds the lane here in the change that lands its host and its driver's
+/// replay of the scenario.
 pub const COSE_REFERENCE_HOSTS: &[HostLane] = &[
     HostLane::Generated(Language::Rust),
     HostLane::Generated(Language::Cpp),
@@ -142,7 +142,7 @@ const LIBRARY_DIRECTORY: &str = "sce:std/host/";
 /// test holds this table to the library and the specification. Each names
 /// the lanes that serve it: those of sections 2 to 6 every lane
 /// ([`EVERY_REFERENCE_HOST`]), signing and sealing, random bytes, keyed
-/// digests and keys Rust and C++ ([`COSE_REFERENCE_HOSTS`]).
+/// digests, keys and credentials Rust and C++ ([`COSE_REFERENCE_HOSTS`]).
 pub const TYPES: &[StandardHostType] = &[
     StandardHostType {
         invoke_type: "sce-host-clock-now",
@@ -286,6 +286,18 @@ pub const TYPES: &[StandardHostType] = &[
         invoke_type: "sce-host-key-retire",
         request: Some("key_retire_request"),
         result: "key_retire_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-credential-issue",
+        request: Some("credential_issue_request"),
+        result: "credential_issue_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-credential-revoke",
+        request: Some("credential_revoke_request"),
+        result: "credential_revoke_result",
         served_by: COSE_REFERENCE_HOSTS,
     },
 ];
@@ -756,6 +768,8 @@ mod tests {
                 "sce-host-key-generate",
                 "sce-host-key-public",
                 "sce-host-key-retire",
+                "sce-host-credential-issue",
+                "sce-host-credential-revoke",
             ]
         );
         for standard in cose {

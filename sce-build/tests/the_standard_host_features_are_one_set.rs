@@ -487,6 +487,51 @@ fn random_bytes_keyed_digests_and_keys_are_served_on_rust_and_cpp_and_refused_el
             vec![key_id],
         ),
     ];
+    held_to_rust_and_cpp(&operations);
+}
+
+/// docs/adr/0109, D0 and D3: issuing and revoking credentials are built for
+/// Rust and C++, and a build for every other emitting lane refuses a machine
+/// that asks for either by name, `codegen/standard-host-type-not-served`,
+/// naming the two lanes that serve it.
+#[test]
+fn credentials_are_served_on_rust_and_cpp_and_refused_elsewhere() {
+    let name = ("name", "string[256]", "'phone'");
+    let none: Vec<(&str, &str)> = Vec::new();
+    let operations = [
+        (
+            "sce-host-credential-issue",
+            "credential_issue_request",
+            "credential_issue_result",
+            none.clone(),
+            vec![name, ("ttl_s", "uint32", "3600")],
+        ),
+        (
+            "sce-host-credential-revoke",
+            "credential_revoke_request",
+            "credential_revoke_result",
+            none,
+            vec![name],
+        ),
+    ];
+    held_to_rust_and_cpp(&operations);
+}
+
+/// An operation a probe runs: its `type`, its request and result records, the
+/// library's enums it imports, `(document, alias)`, and each request field with
+/// its type and the value the probe gives it.
+type ProbedOperation<'a> = (
+    &'a str,
+    &'a str,
+    &'a str,
+    Vec<(&'a str, &'a str)>,
+    Vec<(&'a str, &'a str, &'a str)>,
+);
+
+/// Each of `operations`, run by a probe of [`host_operation`], is served on
+/// Rust and C++ and refused by name on every other emitting lane, naming the
+/// two that serve it (docs/adr/0109, D0).
+fn held_to_rust_and_cpp(operations: &[ProbedOperation<'_>]) {
     let lanes = languages();
     let others = lanes
         .iter()
@@ -496,7 +541,7 @@ fn random_bytes_keyed_digests_and_keys_are_served_on_rust_and_cpp_and_refused_el
         others > 0,
         "no emitting lane but rust and cpp: the refusal is held on none"
     );
-    for (invoke_type, request, result, enums, fields) in &operations {
+    for (invoke_type, request, result, enums, fields) in operations {
         let doc = host_operation(invoke_type, request, result, enums, fields);
         let mut refused_on = 0;
         for &language in &lanes {

@@ -18,9 +18,9 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_host_features::{
     cose, serve, AnswerSchema, ClockSource, CoseKeys, ExhaustiveProvider, HttpRequest,
-    HttpResponse, Invocation, OutcomeClass, Params, Reading, ReferenceHost, ScriptedAnswer,
-    ScriptedClock, ScriptedProvider, ScriptedRandom, Shared, Transport, TransportFailure,
-    TrustedKey, Zone,
+    HttpResponse, Invocation, MemoryCredentials, OutcomeClass, Params, Reading, ReferenceHost,
+    ScriptedAnswer, ScriptedClock, ScriptedProvider, ScriptedRandom, Shared, TokenStore, Transport,
+    TransportFailure, TrustedKey, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, HostInvokeEvent, SceClock, StatePolicy, TransitionTaken};
@@ -242,7 +242,13 @@ fn cose_keys(directive: &Value) -> CoseKeys {
 }
 
 /// The request fields a scenario writes as numbers; every other is text.
-const INTEGER_FIELDS: [&str; 4] = ["at_ms", "length", "max_tokens", "temperature_milli"];
+const INTEGER_FIELDS: [&str; 5] = [
+    "at_ms",
+    "length",
+    "max_tokens",
+    "temperature_milli",
+    "ttl_s",
+];
 
 struct Rig {
     host: Shared<Scripted>,
@@ -252,6 +258,42 @@ struct Rig {
     /// The host's random source: the bytes a `random` directive queues, then
     /// the operating system's.
     random: Arc<Mutex<ScriptedRandom>>,
+    /// The host's credential store, which `host_state.credentials` reads.
+    credentials: MemoryCredentials,
+}
+
+/// The `credentials` member of `host_state`: each name the host issued a token
+/// for, to its tokens as `{issued_ms, expires_ms, revoked}`, in the order of
+/// those three. A token's digest depends on the session's id, which differs by
+/// lane, so a token is named by what the store keeps beside it.
+fn credential_state(store: &MemoryCredentials) -> Value {
+    let mut by_name: std::collections::BTreeMap<String, Vec<(u64, u64, bool)>> =
+        std::collections::BTreeMap::new();
+    for row in store.tokens().expect("the credential store in memory") {
+        by_name
+            .entry(row.name)
+            .or_default()
+            .push((row.issued_ms, row.expires_ms, row.revoked));
+    }
+    Value::Object(
+        by_name
+            .into_iter()
+            .map(|(name, mut tokens)| {
+                tokens.sort_unstable();
+                let list = tokens
+                    .into_iter()
+                    .map(|(issued_ms, expires_ms, revoked)| {
+                        json!({
+                            "issued_ms": issued_ms,
+                            "expires_ms": expires_ms,
+                            "revoked": revoked,
+                        })
+                    })
+                    .collect();
+                (name, Value::Array(list))
+            })
+            .collect(),
+    )
 }
 
 impl Rig {
@@ -373,6 +415,7 @@ impl Rig {
                         })
                         .collect(),
                 ),
+                "credentials" => credential_state(&self.credentials),
                 other => panic!("`{other}` is not host state"),
             };
             state.insert(name.clone(), value);
@@ -430,6 +473,7 @@ fn replay_scenario<P: StatePolicy>(
     let script = Arc::new(Mutex::new(Script::default()));
     let model = Arc::new(Mutex::new(ScriptedProvider::default()));
     let random = Arc::new(Mutex::new(ScriptedRandom::new()));
+    let credentials = MemoryCredentials::new();
     let mut reference = ReferenceHost::new(
         Box::new(Arc::clone(&clock)) as Box<dyn ClockSource + Send>,
         Scripted(Arc::clone(&script)),
@@ -437,6 +481,7 @@ fn replay_scenario<P: StatePolicy>(
     reference.set_answer_schemas(answer_schemas);
     reference.set_model_provider(Box::new(Arc::clone(&model)));
     reference.set_random_source(Box::new(Arc::clone(&random)));
+    reference.set_credentials(Arc::new(credentials.clone()));
     let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
     serve(&mut engine, &host);
     let rig = Rig {
@@ -445,6 +490,7 @@ fn replay_scenario<P: StatePolicy>(
         script,
         model,
         random,
+        credentials,
     };
     engine.set_clock(SceClock::Manual(0));
     engine.initialize().expect("the machine starts");
