@@ -315,6 +315,123 @@ fn rust_saves_a_byte_string_of_a_map_as_its_latin1_text() {
     }
 }
 
+/// The one Rust file the forge document at `path` generates, alone.
+fn rust_unit(path: &Path) -> String {
+    let output = sce_build::compile_forge_file(
+        path,
+        sce_build::generator::Language::Rust,
+        &[],
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("{} generates on Rust: {}", path.display(), refusal.error));
+    let mut files: Vec<String> = output
+        .files
+        .into_iter()
+        .filter(|(file, _)| file.ends_with(".rs"))
+        .map(|(_, text)| text)
+        .collect();
+    assert_eq!(files.len(), 1, "{}: one Rust unit", path.display());
+    files.remove(0)
+}
+
+/// The fields of `self` an impl reads, in the order it reads them.
+#[derive(Default)]
+struct SelfFields(Vec<String>);
+
+impl<'ast> syn::visit::Visit<'ast> for SelfFields {
+    fn visit_expr_field(&mut self, field: &'ast syn::ExprField) {
+        use quote::ToTokens;
+        if let syn::Expr::Path(base) = field.base.as_ref() {
+            if base.path.is_ident("self") {
+                self.0.push(field.member.to_token_stream().to_string());
+            }
+        }
+        syn::visit::visit_expr_field(self, field);
+    }
+}
+
+/// Each type `text`, a Rust file, makes a key of the runtime's map
+/// (`impl ::sce_portable_bytes::MapKey for <type>`), with the fields of it the
+/// impl feeds, in order; read off the syntax tree.
+fn map_key_impls(text: &str) -> Vec<(String, Vec<String>)> {
+    use quote::ToTokens;
+    let tree = syn::parse_file(text).expect("the unit parses as Rust");
+    tree.items
+        .iter()
+        .filter_map(|item| {
+            let syn::Item::Impl(implemented) = item else {
+                return None;
+            };
+            let (_, trait_path, _) = implemented.trait_.as_ref()?;
+            let named: Vec<String> = trait_path
+                .segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect();
+            if named != ["sce_portable_bytes", "MapKey"] {
+                return None;
+            }
+            let mut fed = SelfFields::default();
+            syn::visit::Visit::visit_item_impl(&mut fed, implemented);
+            Some((implemented.self_ty.to_token_stream().to_string(), fed.0))
+        })
+        .collect()
+}
+
+/// docs/adr/0108, D6 item 4: a statechart's map holds a record key and an enum
+/// key in the types their units declare, so each Rust unit makes its type a key
+/// of the runtime's map itself: a record whose every field is a key, field by
+/// field in the order its schema declares them, and an enum by its number. A
+/// machine of the same crate could not, since two machines keyed by one record
+/// would each make it one. A record with a field that is no key (a float) is
+/// none, and its unit names no `MapKey`.
+#[test]
+fn a_rust_record_or_enum_unit_is_a_key_of_the_runtimes_map() {
+    assert_eq!(
+        map_key_impls(&rust_unit(&fixtures().join("map_peer_key.scxml"))),
+        [(
+            "MapPeerKeyPayload".to_string(),
+            vec!["low".to_string(), "high".to_string()]
+        )],
+        "the record of two integers is a key by both, low first"
+    );
+    assert_eq!(
+        map_key_impls(&rust_unit(&fixtures().join("map_face.scxml"))),
+        [(
+            "MapFacePayload".to_string(),
+            vec!["id".to_string(), "active".to_string(), "label".to_string()]
+        )],
+        "a record of a number, a truth value and a bounded text is a key by each"
+    );
+    let outcome = rust_unit(&repo_root().join("stdlib/collection/put_outcome.scxml"));
+    let impls = map_key_impls(&outcome);
+    assert_eq!(
+        impls.iter().map(|(ty, _)| ty.as_str()).collect::<Vec<_>>(),
+        ["PutOutcome"],
+        "an enum's unit is a key by its number:\n{outcome}"
+    );
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let reading = dir.path().join("map_reading.scxml");
+    std::fs::write(
+        &reading,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\"\n\
+         \x20      version=\"1.0\" sce:kind=\"event-schema\" name=\"map_reading\"\n\
+         \x20      sce:event-name=\"reading.taken\">\n\
+         \x20 <datamodel>\n\
+         \x20   <data id=\"sensor\" sce:type=\"uint8\" sce:direction=\"in\"/>\n\
+         \x20   <data id=\"celsius\" sce:type=\"float64\" sce:direction=\"in\"/>\n\
+         \x20 </datamodel>\n\
+         </scxml>\n",
+    )
+    .expect("write the schema");
+    let unit = rust_unit(&reading);
+    assert!(
+        map_key_impls(&unit).is_empty(),
+        "a record with a float field is no key:\n{unit}"
+    );
+}
+
 /// The C11 lowering of `document`, written beside the schemas it imports:
 /// whether `generate` passed, what it printed, and every header and source it
 /// wrote, joined.
