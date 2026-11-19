@@ -98,12 +98,13 @@ Column legend:
 | mesh_zenoh_eventgroup_engine_driven | §8.3 | Zenoh session.put triggers field.notify without prior get/set. | 1P |
 | mesh_pool_zenoh_runtime_verification | §14 (pool) | Pool-deployed motor serves multiple brake clients over Zenoh. | 1P |
 
-### Bucket 4 — Ordering / dedup / gap-recovery (2 fixtures)
+### Bucket 4 — Ordering / dedup / gap-recovery (3 fixtures)
 
 | Fixture | Spec anchor | Property verified | Shape |
 |---|---|---|---|
 | mesh_dedup_injection_verification | §10.5 | Generated `admitInbound` suppresses same-(source,id) duplicates. Mutation-verified. | 1P |
 | mesh_order_injection_verification | §10.6, §16.7 rows 11 + 12 | `OrderingBuffer` reorders out-of-order, gap-times out, raises `MISSING_SEQUENCE` / `ORDERING_GAP`. | 1P |
+| mesh_zenoh_ordered_rpc_verification | §10.6.3, §9.5 | A `<send>` and a `<invoke type="sce:mesh-rpc">` request on one ordered Zenoh binding both carry `sequence_no`, drawn from the binding's one counter. | 1P |
 
 ### Bucket 5 — Liveness / availability (4 fixtures)
 
@@ -143,7 +144,7 @@ fixture that would duplicate an existing Rust test, while `B` names the gap as
 | §10.4.2 Transport descriptor interface | F (build-time) | `mesh_pattern_capability_rejection`, `mesh_event_coverage_rejection`, and every `*_compile_verification` fixture. |
 | §10.4.3 Conformance verification | P | Gates 1 & 2 (build-time): F — bucket 2. Gates 3 & 4 (runtime): S — the IRP distributed harness and seeded fault injection are Session E2 scope. |
 | §10.5 Duplicate suppression | F | Unit (`mesh_dedup_router_verification`) + integration (`mesh_dedup_injection_verification`). Mutation-verified. |
-| §10.6 Sequence ordering buffer | F | Unit (`mesh_ordering_buffer_verification`) + integration (`mesh_order_injection_verification`). |
+| §10.6 Sequence ordering buffer | F | Unit (`mesh_ordering_buffer_verification`) + integration (`mesh_order_injection_verification`) + sender stamp on both dispatch paths (`mesh_zenoh_ordered_rpc_verification`). |
 | §10.7 `_event` field wiring | P | Covered indirectly by every runtime fixture that raises `error.communication` or `done.invoke.<id>`. No dedicated field-by-field assertion suite. |
 | §10.7.1 Structured `error.*` data | F | `mesh_communication_error_verification` covers every catalog row. |
 | §10.8 Delayed send + cancel | P | Deadline scheduler unit test + RPC deadline expiry; `<send delay>` cross-process sender-hold not exercised (Session E2 scope). |

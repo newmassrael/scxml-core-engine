@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §10.6.3 sequence stamping on an ordered binding (client side).
+
+     `#motor_zenoh_ordered_rpc` is a Zenoh binding with `ordering: required`
+     (deploy_zenoh_ordered_rpc.yaml), so every envelope this machine sends on
+     it carries the binding's next sequence number. Entering `computing` puts
+     two requests on that binding: a `<send>` of `service.request.calibrate`
+     (an RpcRequest by its name, stamped by the router's send callback) and
+     the `<invoke type="sce:mesh-rpc">` request (stamped by `invokeMeshRpc`).
+     Both reach the test harness's queryable, which records the stamps and
+     answers only the invoke's request; the two draw from one counter, so the
+     harness sees the sequence numbers 1 and 2 between them. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" name="brake_zenoh_ordered_rpc" initial="idle">
+    <state id="idle">
+        <transition event="go" target="computing"/>
+    </state>
+    <state id="computing">
+        <onentry>
+            <send target="#motor_zenoh_ordered_rpc" event="service.request.calibrate"/>
+        </onentry>
+        <invoke type="sce:mesh-rpc" src="#motor_zenoh_ordered_rpc">
+            <param name="_mesh_event" expr="'service.request.compute_force'"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+    </state>
+    <final id="ok"/>
+    <final id="failed"/>
+</scxml>

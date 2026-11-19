@@ -8248,6 +8248,64 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         message(STATUS "zenohcxx not found — skipping mesh_zenoh_pool_test")
     endif()
 
+    # ── SCE_MESH.md §10.6.3 ordered-binding mesh-rpc stamp ──────────
+    # A Zenoh binding with `ordering: required` carries a `<send>` and a
+    # `<invoke type="sce:mesh-rpc">` request. A raw harness queryable on
+    # the binding's key records the `sequence_no` of both and answers the
+    # invoke's request:
+    #
+    #   engine onentry <send> → mesh send callback → stampSequence
+    #   engine invoke → invokeMeshRpc → stampSequence
+    #     → session.get on the ordered key → harness reads both stamps
+    #     → reply → admitZenohInbound → admitOrdered → done.invoke
+    #
+    # The two must draw 1 and 2 from the binding's one counter; a request
+    # that leaves unstamped is what an ordered receiver drops as
+    # missingSequence (§16.7 row 11). Port 17458 is this fixture's own
+    # (17447-17457 are taken by the sibling Zenoh runtime fixtures).
+    if(zenohc_FOUND AND zenohcxx_FOUND)
+        set(MESH_ZENOH_ORDERED_RPC_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_ordered_rpc_generated")
+
+        sce_mesh_fixture_generations(MESH_ZENOH_ORDERED_RPC_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_ORDERED_RPC_OUTPUT_DIR}" MACHINES brake_zenoh_ordered_rpc
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_ordered_rpc.yaml"
+            LABEL "Mesh zenoh ordered mesh-rpc (§10.6.3)")
+
+        add_executable(mesh_zenoh_ordered_rpc_test
+            mesh/test_mesh_zenoh_ordered_rpc.cpp
+            ${MESH_ZENOH_ORDERED_RPC_HEADERS}
+        )
+
+        target_include_directories(mesh_zenoh_ordered_rpc_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${CMAKE_SOURCE_DIR}/tests/mesh
+                ${MESH_ZENOH_ORDERED_RPC_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_zenoh_ordered_rpc_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+                pthread
+        )
+
+        target_compile_features(mesh_zenoh_ordered_rpc_test PRIVATE cxx_std_17)
+        target_compile_definitions(mesh_zenoh_ordered_rpc_test PRIVATE SCE_THREAD_SAFE)
+
+        apply_sce_test_policies(mesh_zenoh_ordered_rpc_test)
+
+        add_test(NAME mesh_zenoh_ordered_rpc_verification
+                 COMMAND mesh_zenoh_ordered_rpc_test)
+        set_tests_properties(mesh_zenoh_ordered_rpc_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_ordered_rpc_port_17458
+        )
+    else()
+        message(STATUS "zenohcxx not found — skipping mesh_zenoh_ordered_rpc_test")
+    endif()
+
     # ── SCE_TEMPLATE_DIR injection for mesh rejection ctests ───────────
     # sce-codegen's `find_template_base` refuses the compile-time
     # CARGO_MANIFEST_DIR fallback in release builds (the only profile

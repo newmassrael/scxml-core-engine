@@ -1,0 +1,30 @@
+# SCE Mesh §10.6.3 runtime fixture: a mesh-rpc request on an ordered binding.
+#
+# Consumed by `test_mesh_zenoh_ordered_rpc.cpp`. The `#motor_zenoh_ordered_rpc`
+# binding declares `ordering: required` on zenoh (supplies_ordering=false), so
+# the generated `TransportRouter` keeps a sequence counter for it and stamps
+# every envelope it sends there: the `<send>` and the `<invoke
+# type="sce:mesh-rpc">` request of brake_zenoh_ordered_rpc.scxml alike.
+#
+# Port 17458 is reserved for this fixture (tests/CMakeLists.txt RESOURCE_LOCK
+# zenoh_ordered_rpc_port_17458), clear of the 17447-17457 ports the other
+# Zenoh runtime tests use. Peer mode with an explicit TCP locator and no
+# multicast scouting keeps the test hermetic: the client dials the harness's
+# listen endpoint and nothing else.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh_keyexpr:
+        mode: peer
+        connect: ["tcp/127.0.0.1:17458"]
+    machines:
+      brake_zenoh_ordered_rpc:
+        source: brake_zenoh_ordered_rpc.scxml
+        bindings:
+          "#motor_zenoh_ordered_rpc":
+            transport: zenoh_keyexpr
+            key: "sce/brake_ordered_rpc/motor/cmd"
+            ordering: required
+      motor_zenoh_ordered_rpc:
+        source: motor_zenoh_ordered_rpc.scxml

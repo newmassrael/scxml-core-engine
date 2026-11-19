@@ -19,12 +19,16 @@
    code, and rewriting them to §-form is what this channel exists to avoid. #}
 
 {# §mesh-10.6.3: the sequence stamp the section describes is emitted by this
-   template and exists nowhere else. `setMeshSendCallback` carries one
+   template and exists nowhere else. `TransportRouter` carries one
    `seq_counter_<target>_` member per target selected by `needs_ordering`
    (`ordering: required` on a transport whose registry entry does not already
-   supply ordering), and stamps `env.sequence_no` from it immediately before
-   `route_send` — the placement the section names. The counter is plain
-   `uint64_t` rather than an atomic because the callback runs only on the
+   supply ordering), and `stampSequence` is the one step that stamps
+   `env.sequence_no` from it. The mesh send callback takes that step
+   immediately before `route_send` — the placement the section names — and
+   `invokeMeshRpc` takes it before a request reaches any transport, so a
+   `<send>` and a mesh-rpc request on one binding share one counter, as the
+   host cores' shared write step has them share it. The counter is plain
+   `uint64_t` rather than an atomic because both callers run only on the
    engine's step thread, and carries no wrap guard, both as the section
    allows. The receiving half (`admitOrdered`, MISSING_SEQUENCE) is
    §mesh-10.6.4 and is bound separately. #}
@@ -2191,8 +2195,9 @@ struct TransportRouter {
 {% endif %}
 {# SCE_MESH.md §10.6.3: per-target monotonic sequence counter. One
    counter per binding that has `needs_ordering = true`; counter is
-   incremented inside the mesh-send-callback on the engine's single
-   step thread, so no mutex is needed. The codegen emits counters
+   incremented only by `stampSequence`, whose callers (the mesh send
+   callback and `invokeMeshRpc`) run on the engine's single step
+   thread, so no mutex is needed. The codegen emits counters
    only for the specific targets that need them, so zero-overhead
    mixed-binding machines keep their existing layout. #}
 {% for target in targets if target.needs_ordering %}
@@ -3101,16 +3106,12 @@ struct TransportRouter {
                                        causal_{{ t.target_snake }}_mutex_, env);
                 }
 {% endfor %}
-{% for t in targets if t.needs_ordering %}
-                // SCE_MESH.md §10.6.3: sequence stamp for {{ t.target }}.
-                // The counter is incremented on the engine's single step
-                // thread (mesh-send-callback is only invoked from there),
-                // so no atomic fetch_add is needed. u64 wrap takes ~5.8e8
-                // years at 1 kHz — no wrap guard emitted.
-                if (target == "{{ t.target }}") {
-                    env.sequence_no = ++seq_counter_{{ t.target_snake }}_;
-                }
-{% endfor %}
+{% if has_ordered_binding %}
+                // SCE_MESH.md §10.6.3: the sequence stamp, immediately
+                // before route_send; a target whose binding does not
+                // stamp is left as it is.
+                stampSequence(target, env);
+{% endif %}
                 return route_send(target, env);
             });
 {% if partition_wire21_outbound_routes %}
@@ -6361,6 +6362,26 @@ struct TransportRouter {
         }
     }
 
+    /// Stamp `env` with the next sequence number of the ordered binding
+    /// `target` (SCE_MESH.md §10.6.3), or leave it as it is when the
+    /// binding does not stamp. The router's one stamping step: the mesh
+    /// send callback takes it immediately before `route_send`, and
+    /// `invokeMeshRpc` before the request reaches a transport, so a
+    /// `<send>` and a mesh-rpc request on one binding draw from one
+    /// counter and the receiver's `admitOrdered` sees one stream.
+    ///
+    /// Both callers run on the engine's single step thread, so the
+    /// counter needs no atomic. u64 wrap takes ~5.8e8 years at 1 kHz,
+    /// so no wrap guard is emitted.
+    void stampSequence(const std::string& target, SCE::Mesh::MeshEnvelope& env) {
+{% for t in targets if t.needs_ordering %}
+        if (target == "{{ t.target }}") {
+            env.sequence_no = ++seq_counter_{{ t.target_snake }}_;
+            return;
+        }
+{% endfor %}
+    }
+
     /// Sequence-ordered admit + dispatch (SCE_MESH.md §10.6).
     ///
     /// Chains the three inbound layers the codegen composes for an
@@ -6915,6 +6936,15 @@ struct TransportRouter {
                 ActiveInvokeRecord{invoke_uuid, envelope_uuid};
         }
 
+{% if has_ordered_binding %}
+        // SCE_MESH.md §10.6.3: a request on an ordered binding is in that
+        // binding's sequence stream like any `<send>` (the receiver's
+        // admitOrdered lets only RpcReply and FieldNotify past its
+        // buffer), so it takes the send callback's stamping step before
+        // any transport arm below encodes it.
+        stampSequence(target, env);
+
+{% endif %}
 {% for target in targets if target.pool_plan and target.pool_plan.kind == "typed_instance" %}
         // SCE_MESH.md §14.4: SOME/IP bounded pool — runtime instance selection.
         // The instance id is read from the `{{ target.pool_plan.instance_from }}`

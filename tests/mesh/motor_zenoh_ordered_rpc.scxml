@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Topology stub for brake_zenoh_ordered_rpc's ordered binding. The peer is
+     the test harness's raw zenoh queryable; codegen still needs the bound
+     target declared so event coverage and the invoke site resolve. Never
+     instantiated at runtime. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="motor_zenoh_ordered_rpc" initial="ready">
+    <state id="ready">
+        <transition event="service.request.calibrate" target="ready"/>
+        <transition event="service.request.compute_force" target="replying"/>
+    </state>
+    <state id="replying"/>
+</scxml>
