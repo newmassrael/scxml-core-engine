@@ -2264,4 +2264,54 @@ mod tests {
             "`record:Radius` names no record of the scope it is read in"
         );
     }
+
+    /// A payload whose list holds records of another document (docs/adr/0086,
+    /// section 6.2): `static_composed_payload` takes `batch.sent`, whose
+    /// `items` are records of `event_batch_item.scxml` as `event_batch.scxml`
+    /// imports it, so an item's `due` is read in that document's scope and
+    /// admits `null`. A value given where the list is declared is no list of
+    /// records, so a `null` inside it stands at no declared place.
+    #[test]
+    fn a_list_of_records_of_another_document_holds_each_optional_field() {
+        let document = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/static_datamodel/static_composed_payload.scxml");
+        let model = crate::parser::SCXMLParser::new()
+            .parse_file(document.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the fixture parses: {e}"));
+        let machine = MachineFacts::of(&model, "static_composed_payload")
+            .unwrap_or_else(|e| panic!("every type of the fixture is read: {e}"));
+        let item = machine
+            .payloads
+            .get("batch.sent")
+            .and_then(|batch| batch.field("items"))
+            .and_then(Holds::element)
+            .expect("`items` is a list of records");
+        assert!(item.field("due").is_some_and(Holds::admits_null));
+        assert!(item
+            .field("amount")
+            .is_some_and(|amount| !amount.admits_null()));
+        let an_item = |due: Value| {
+            json!({"id": 1, "amount": "1", "label": "a", "level": "high", "due": due,
+                   "blob": "", "tags": []})
+        };
+        let batch = |items: Value| {
+            json!({"items": items, "grid": [], "levels": [], "maybe": [null],
+                   "spare": null, "note": "", "late": []})
+        };
+        let scenario = json!({"machine": "static_composed_payload", "steps": [
+            {"event": "batch.sent",
+             "data": batch(json!([an_item(Value::Null), an_item(json!("2"))])),
+             "expect": {"variables": {"refusals": 0}}},
+            {"event": "batch.sent", "data": batch(an_item(Value::Null)),
+             "expect": {"variables": {"refusals": 1}}}
+        ]});
+        let found: Vec<(&str, String)> = machine_problems(&scenario, &machine)
+            .into_iter()
+            .map(|p| (p.code, p.path))
+            .collect();
+        assert_eq!(
+            found,
+            vec![("null-not-optional", "/steps/1/data/items/due".to_string())]
+        );
+    }
 }

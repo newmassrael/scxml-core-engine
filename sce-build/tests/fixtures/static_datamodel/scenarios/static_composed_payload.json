@@ -65,7 +65,7 @@
 
     { "note": "`items` given as an object, not a list: refused whole",
       "event": "batch.sent",
-      "data": { "items": { "id": 1, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] },
+      "data": { "items": { "id": 1, "amount": "1", "label": "a", "level": "high", "due": "1", "blob": "", "tags": [] },
         "grid": [], "levels": [], "maybe": [], "spare": null, "note": "", "late": [9] },
       "expect": { "variables": { "item_count": 3, "late": [5, 6], "refusals": 7 } } },
 
