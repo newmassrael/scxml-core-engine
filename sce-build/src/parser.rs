@@ -5295,6 +5295,60 @@ impl SCXMLParser {
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
                 action.outcome = child.attribute("outcome").unwrap_or("").to_string();
             }
+            // docs/adr/0108, D6 item 2: call an imported algorithm that writes a
+            // map in place, as a statement: `expr` the call whole, and
+            // `location`, when written, the variable that takes what it returns.
+            // An algorithm's body writes its own `<sce:call target args>`, a
+            // statement of another shape the forge parser reads; each reader
+            // refuses the other's attributes, which the grammar declares on the
+            // one element for both. Which algorithm it calls, and what each
+            // argument and the location hold, is judged with the rest of the
+            // typed scope.
+            (false, "call") => {
+                let refused = |rule: &str, observed: &str| {
+                    crate::forge::parser::located(
+                        child,
+                        source_name,
+                        ScxmlSemanticError::StaticDatamodelRule {
+                            construct: "<sce:call>".to_string(),
+                            datamodel: model.datamodel.as_str().to_string(),
+                            rule: rule.to_string(),
+                            state: owning_state(child),
+                            observed: Some(observed.to_string()),
+                        },
+                    )
+                };
+                if model.datamodel != Datamodel::SceStatic {
+                    return Err(refused(
+                        "an algorithm that writes a map in place is called where a variable \
+                         holds a map, which exists only under datamodel=\"sce-static\"",
+                        "call",
+                    ));
+                }
+                if let Some((attr, value)) = ["target", "args"]
+                    .into_iter()
+                    .find_map(|attr| child.attribute(attr).map(|value| (attr, value)))
+                {
+                    return Err(refused(
+                        &format!(
+                            "a statechart's <sce:call> writes the call whole in `expr` \
+                             (`Algorithm(a, b)`) and what it returns in `location`; `{attr}` \
+                             is an algorithm body's spelling of a call"
+                        ),
+                        value,
+                    ));
+                }
+                let expr = child.attribute("expr").unwrap_or("");
+                if expr.trim().is_empty() {
+                    return Err(refused(
+                        "a <sce:call> writes the call of the algorithm in `expr`",
+                        "call",
+                    ));
+                }
+                action.action_type = "sce_call".to_string();
+                action.expr = expr.to_string();
+                action.location = child.attribute("location").unwrap_or("").to_string();
+            }
             // docs/adr/0087, section 2.1: read a text the statechart holds into a
             // record of an imported event schema, or keep why it is not one in a
             // refusal record. Which names it reads and writes, and whether each
@@ -7512,8 +7566,8 @@ fn document_positions(
 
 /// The SCE elements the reader of executable content takes as actions, beside
 /// every element of the SCXML namespace.
-const SCE_EXECUTABLE_CONTENT: [&str; 7] = [
-    "action", "append", "clear", "lift", "put", "remove", "render",
+const SCE_EXECUTABLE_CONTENT: [&str; 8] = [
+    "action", "append", "call", "clear", "lift", "put", "remove", "render",
 ];
 
 /// Whether `node` is one of the actions of the executable content it sits in:

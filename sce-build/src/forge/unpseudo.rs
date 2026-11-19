@@ -4207,6 +4207,23 @@ fn parse_scxml_action_body(
                 expr_spelling: None,
             });
         }
+    } else if let Some(expr) = t.strip_prefix("call: ") {
+        // `call: <expr>`: a call of an algorithm that writes a map in place,
+        // its value dropped (docs/adr/0108, D6 item 2). A host action's head
+        // names its operation, so it never reads `call:`.
+        a.action_type = "sce_call".to_string();
+        a.expr = undo(expr, line.number)?;
+    } else if let Some((location, expr)) = t
+        .strip_prefix("call ")
+        .and_then(|rest| rest.split_once(" = "))
+        .filter(|(location, _)| !location.is_empty() && !location.contains(' '))
+    {
+        // `call <location> = <expr>`: the same call, its value taken by
+        // `location`, one name with no space in it, so a host action's head,
+        // `call <name>` with no ` = ` after the name, is never read as this.
+        a.action_type = "sce_call".to_string();
+        a.location = undo(location, line.number)?;
+        a.expr = undo(expr, line.number)?;
     } else if let Some(rest) = t.strip_prefix("call ") {
         a.action_type = "native_action".to_string();
         a.native_action_name = undo(rest.trim_end_matches(':'), line.number)?;
@@ -4471,6 +4488,60 @@ mod tests {
         assert_eq!(
             types_of(&back)[1],
             ("tags".to_string(), Some("set<string[8]>[3]".to_string()))
+        );
+        assert_eq!(
+            crate::forge::pseudo::render(&back).expect("the read-back renders"),
+            page
+        );
+    }
+
+    /// A `<sce:call>` with a location and one without (docs/adr/0108, D6 item
+    /// 2): each renders as its own line beside a host action's, and reads back
+    /// as the statement it was, with the same call and location.
+    #[test]
+    fn a_call_that_writes_a_map_in_place_reads_back_as_the_same_statement() {
+        let document = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="taking" datamodel="sce-static" name="call_page">
+  <datamodel>
+    <data id="resets" sce:type="map&lt;uint32, uint64&gt;[4]" sce:direction="out"/>
+    <data id="took" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="taking">
+    <transition event="take" type="internal">
+      <sce:call expr="Take(resets, 7, 1)" location="took"/>
+      <sce:call expr="Expire(resets, 2)"/>
+    </transition>
+  </state>
+</scxml>"#;
+        let model = crate::parser::SCXMLParser::new()
+            .parse_string(document, "call_page")
+            .expect("the document parses");
+        let doc = ForgeDocument::Statechart(Box::new(model));
+        let page = crate::forge::pseudo::render(&doc).expect("the page renders");
+        assert!(
+            page.contains("call took = Take(resets, 7, 1)\n"),
+            "the call that keeps its value names its location first:\n{page}"
+        );
+        assert!(
+            page.contains("call: Expire(resets, 2)\n"),
+            "the call that drops its value is the call alone:\n{page}"
+        );
+        let back = parse(&page).unwrap_or_else(|e| panic!("{e}\n{page}"));
+        let ForgeDocument::Statechart(read) = &back else {
+            panic!("a statechart reads back as a statechart");
+        };
+        let calls: Vec<(&str, &str, &str)> = read.states["taking"].transitions[0]
+            .actions
+            .iter()
+            .map(|a| (a.action_type.as_str(), a.expr.as_str(), a.location.as_str()))
+            .collect();
+        assert_eq!(
+            calls,
+            [
+                ("sce_call", "Take(resets, 7, 1)", "took"),
+                ("sce_call", "Expire(resets, 2)", ""),
+            ]
         );
         assert_eq!(
             crate::forge::pseudo::render(&back).expect("the read-back renders"),

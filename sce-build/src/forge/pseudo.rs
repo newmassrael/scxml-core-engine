@@ -3574,6 +3574,21 @@ fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
                 }
             });
         }
+        // docs/adr/0108, D6 item 2: the call is an expression and stands last;
+        // the location, one name with no space in it, stands before it as an
+        // assignment's does. `call:` with no name is never a host action's
+        // head, which names its operation.
+        "sce_call" if a.location.is_empty() => out.line_of(vec![
+            Part::Word(Word::Call),
+            Part::Glued(":".into()),
+            Part::Text(text(&a.expr).into_owned()),
+        ]),
+        "sce_call" => out.line_of(vec![
+            Part::Word(Word::Call),
+            Part::Text(text(&a.location).into_owned()),
+            Part::Text("=".into()),
+            Part::Text(text(&a.expr).into_owned()),
+        ]),
         // docs/adr/0087, section 2.1: each of the four is one name or path, with
         // no space in it, so each keyword selects the one after it.
         "sce_lift" => out.line(&format!(

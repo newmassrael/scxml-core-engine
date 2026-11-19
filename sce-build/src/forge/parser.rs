@@ -11561,6 +11561,28 @@ fn parse_algorithm_stmt(
             })
         }
         "call" => {
+            // A statechart's `<sce:call expr location>` (docs/adr/0108, D6 item
+            // 2) is a statement of another shape, read by the statechart's
+            // parser; the grammar declares one element for both, so each reader
+            // refuses the other's attributes.
+            if let Some((attr, value)) = ["expr", "location"]
+                .into_iter()
+                .find_map(|attr| node.attribute(attr).map(|value| (attr, value)))
+            {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:call>".into(),
+                        attr: attr.into(),
+                        value: value.to_string(),
+                        rule: "an algorithm's <sce:call> names the algorithm it calls in `target` \
+                               and its arguments in `args`; `expr` and `location` are a \
+                               statechart's spelling of a call"
+                            .into(),
+                    },
+                ));
+            }
             let target = require_attr(node, "target", "<sce:call>", doc_name)?;
             let args_spelling = AttributeSpelling::of(node, None, "args");
             let args = match node.attribute("args") {

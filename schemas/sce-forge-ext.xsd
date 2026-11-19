@@ -2305,10 +2305,25 @@
     </xs:complexType>
   </xs:element>
 
+  <!--
+    A call of an imported algorithm, as a statement, in two shapes that stand
+    in two places. In an algorithm's body, `target` names the algorithm and
+    `args` lists its arguments. In a `sce-static` statechart's executable
+    content (docs/adr/0108, D6 item 2), `expr` is the call written whole, of an
+    algorithm that writes a map in place, and `location`, when written, the
+    variable that takes what it returns. XSD 1.0 cannot make an attribute's use
+    depend on where its element stands, so the four are declared optional
+    here, as `<sce:return>`'s `type` and `expr` are, and each parser holds its
+    own shape: the algorithm's requires `target` and refuses `expr` and
+    `location`, and the statechart's requires `expr` and refuses `target` and
+    `args`.
+  -->
   <xs:element name="call">
     <xs:complexType>
-      <xs:attribute name="target" type="xs:NCName" use="required"/>
+      <xs:attribute name="target" type="xs:NCName"/>
       <xs:attribute name="args" type="xs:string"/>
+      <xs:attribute name="expr" type="xs:string"/>
+      <xs:attribute name="location" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

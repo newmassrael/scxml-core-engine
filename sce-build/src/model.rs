@@ -1123,6 +1123,7 @@ impl Action {
             ],
             "raise" => &["event"],
             "sce_append" => &["location", "expr"],
+            "sce_call" => &["expr", "location"],
             "sce_clear" => &["location"],
             "sce_put" => &["location", "key", "expr", "outcome"],
             "sce_remove" => &["location", "key", "expr", "outcome"],
@@ -1191,12 +1192,14 @@ impl Action {
         }
     }
 
-    /// The eighteen tags an `action_type` can hold, in the order the parser
+    /// The nineteen tags an `action_type` can hold, in the order the parser
     /// and the template branches list them. `sce_append` / `sce_clear` are a
     /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`), the
     /// second a map's too, `sce_put` / `sce_remove` a map's or a set's
     /// (`<sce:put>` / `<sce:remove>`, docs/adr/0108, which the Interpreter and
-    /// Rust lower),
+    /// Rust lower), `sce_call` the statement that calls an algorithm that
+    /// writes a map in place (`<sce:call>`, docs/adr/0108, D6 item 2, which no
+    /// lane lowers yet),
     /// `sce_lift` the statement that reads a text into a record or keeps why
     /// it could not (`<sce:lift>`, docs/adr/0087), `sce_render` the
     /// statement that renders a text template into a string variable
@@ -1213,6 +1216,7 @@ impl Action {
         "native_action",
         "raise",
         "sce_append",
+        "sce_call",
         "sce_clear",
         "sce_lift",
         "sce_put",
