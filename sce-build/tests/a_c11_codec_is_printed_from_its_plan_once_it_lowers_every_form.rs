@@ -86,6 +86,20 @@ fn holds_none(name: &str, text: &str, needles: &[&str]) {
     }
 }
 
+/// The decode of the codec `name` in its header `text`, from its signature to
+/// the brace that closes its body: the one function whose `out` is the value,
+/// where a view's maker names the view it makes `out` as well.
+fn decode_of<'t>(name: &str, text: &'t str) -> &'t str {
+    let signature = format!("sce_forge_codec_status_t {name}_decode(");
+    let start = text
+        .find(&signature)
+        .unwrap_or_else(|| panic!("{name}: the header declares `{signature}`:\n{text}"));
+    let end = text[start..]
+        .find("\n}\n")
+        .unwrap_or_else(|| panic!("{name}: the decode's body closes:\n{text}"));
+    &text[start..start + end]
+}
+
 /// A codec of integers is presented by a table of a function for each element,
 /// each handed the context; the encode reads each element once through the
 /// table and writes it, and the value's encode is the encode over the value's
@@ -209,7 +223,15 @@ fn a_length_is_derived_from_the_view_it_measures_and_is_no_member_of_the_value()
     holds_none(
         "codec_length_ref",
         &text,
-        &["    uint8_t len;\n", "out->len", "self->len", "src->len"],
+        &["    uint8_t len;\n", "self->len", "src->len"],
+    );
+    // The decode sets no member `len` of the value. The view's maker sets the
+    // `len` of the view it makes, its own `out`, which is no member of the
+    // value, so the decode is read alone.
+    holds_none(
+        "codec_length_ref",
+        decode_of("codec_length_ref", &text),
+        &["out->len"],
     );
 }
 
