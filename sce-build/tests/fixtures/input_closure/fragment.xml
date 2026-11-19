@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The fragment included_fragment.scxml splices. XInclude replaces the root
+     element with its children, so the transition below lands in the state
+     that includes it. -->
+<wrap xmlns="http://www.w3.org/2005/07/scxml">
+  <transition event="go" target="done"/>
+</wrap>

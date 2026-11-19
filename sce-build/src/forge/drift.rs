@@ -2248,6 +2248,18 @@ mod tests {
         assert_ne!(closure_of(&c).digest(), before);
     }
 
+    /// A fragment an `<xi:include>` splices: a container whose one child is
+    /// the state `id`. An included root is replaced by its children, so a
+    /// root with none is refused (docs/SCE_ACCEPTED_SUBSET.md) and the
+    /// document that includes it never reaches a closure.
+    fn fragment_of(id: &str) -> Vec<u8> {
+        format!(
+            "<state xmlns=\"http://www.w3.org/2005/07/scxml\" id=\"container\">\
+             <state id=\"{id}\"/></state>\n"
+        )
+        .into_bytes()
+    }
+
     /// ADR 0094 test 4: an import outside the document's directory and a
     /// fragment that is not `.scxml` are inputs, which the directory set
     /// never read.
@@ -2256,11 +2268,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         let outside = write_file(root, "other/x.scxml", algorithm("x", "").as_bytes());
-        let fragment = write_file(
-            root,
-            "doc/frag.xml",
-            b"<state xmlns=\"http://www.w3.org/2005/07/scxml\" id=\"included\"/>\n",
-        );
+        let fragment = write_file(root, "doc/frag.xml", &fragment_of("included"));
         let body = format!(
             "{}<xi:include xmlns:xi=\"http://www.w3.org/2001/XInclude\" href=\"frag.xml\"/>\n",
             import("../other/x.scxml")
@@ -2278,11 +2286,7 @@ mod tests {
             "which the directory set does not read: the defect"
         );
 
-        fs::write(
-            &fragment,
-            b"<state xmlns=\"http://www.w3.org/2005/07/scxml\" id=\"edited\"/>\n",
-        )
-        .unwrap();
+        fs::write(&fragment, fragment_of("edited")).unwrap();
         assert_ne!(
             closure_of(&main).digest(),
             after_import,
