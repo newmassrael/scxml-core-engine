@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"; docs/adr/0109, D11): the first released version of a machine a
+  later version restores the saved states of. It waits in `waiting` and counts
+  ticks into `count`, and takes two from `total`, an int32, at each.
+
+  Its shape is committed as shapes/static_migration_1.shape, the writer's
+  schema of every state it saves (`sce-codegen shape`); static_migration_2.scxml
+  is the next version, which declares the step from this shape to its own.
+  Driven on Rust by a_saved_state_is_migrated_into_the_next_version.rs and on
+  C++ by ASavedStateIsMigratedIntoTheNextVersionTest.cpp.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_migration_1">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="total" sce:type="int32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="waiting"/>
+  </state>
+  <state id="waiting">
+    <transition event="tick" type="internal">
+      <assign location="count" expr="count + 1"/>
+      <assign location="total" expr="total - 2"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

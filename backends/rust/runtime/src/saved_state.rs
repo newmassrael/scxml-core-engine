@@ -351,6 +351,95 @@ pub struct SavedShape {
     /// machine generated for every build of one states it per build, under the
     /// build's own condition.
     pub features: Option<&'static [&'static str]>,
+    /// The steps of each migration the document declares (docs/adr/0109, D11),
+    /// in the order of the chain the build judged: what [`upgrade`] applies to a
+    /// state saved by an earlier version of the document before it judges the
+    /// shape. Empty for a document that declares none.
+    pub migrations: &'static [MigrationStep],
+}
+
+/// One step of a migration a document declares (docs/adr/0109, D11): the shape
+/// a state saved by an earlier version names, the shape the step carries it to,
+/// and what it carries by name. The generator writes it from the step the build
+/// held to its two shape files, so every name here is one of them.
+#[derive(Clone, Copy, Debug)]
+pub struct MigrationStep {
+    /// The shape a state the step applies to names when it names no revision of
+    /// a record schema or an enum.
+    pub from: &'static str,
+    /// The shape such a state names when it names one (docs/adr/0044).
+    pub from_revised: &'static str,
+    /// The shape the step leaves a state of [`Self::from`] at.
+    pub to: &'static str,
+    /// The shape the step leaves a state of [`Self::from_revised`] at.
+    pub to_revised: &'static str,
+    /// Each state renamed, and each removed state mapped to one of the new
+    /// document: in the configuration, the current leaf and what each history
+    /// recorded.
+    pub states: &'static [Renamed],
+    /// Each `<history>` renamed.
+    pub histories: &'static [Renamed],
+    /// Each `<history>` whose state was removed: what it recorded is let go.
+    pub dropped_histories: &'static [&'static str],
+    /// Each `<invoke>` renamed: a running child, a host-run invocation and the
+    /// count of their starts.
+    pub invokes: &'static [Renamed],
+    /// Each `<invoke>` the new document no longer runs: it ends without a start,
+    /// and a waiting send to its child with it.
+    pub dropped_invokes: &'static [&'static str],
+    /// Each event a waiting send names that was renamed.
+    pub events: &'static [Renamed],
+    /// Each variable renamed.
+    pub data: &'static [Renamed],
+    /// Each variable the new document does not carry.
+    pub dropped_data: &'static [&'static str],
+    /// Each variable, by its new name, whose integer widened from 32 bits or
+    /// fewer to 64: written as a number before and as a text now.
+    pub widened_to_text: &'static [&'static str],
+    /// Each variable the step adds, with its value.
+    pub added_data: &'static [AddedData],
+    /// Each variable the step converts by a pure algorithm.
+    pub converted: &'static [ConvertedData],
+}
+
+/// A name a migration step carries to another.
+#[derive(Clone, Copy, Debug)]
+pub struct Renamed {
+    /// The name the earlier version gave it.
+    pub from: &'static str,
+    /// The name this version gives it.
+    pub to: &'static str,
+}
+
+/// A variable a migration step adds.
+#[derive(Clone, Copy, Debug)]
+pub struct AddedData {
+    /// The variable's document id.
+    pub id: &'static str,
+    /// Its value, as saved-state JSON.
+    pub value: &'static str,
+}
+
+/// How a migration step converts one saved value: the old value and what names
+/// it in a refusal, to the new value or the refusal that the old one is not of
+/// the algorithm's parameter.
+pub type Conversion = fn(&Value, &str) -> Result<Value, StateRefusal>;
+
+/// A variable a migration step converts by a pure algorithm the document names.
+#[derive(Clone, Copy)]
+pub struct ConvertedData {
+    /// The variable, as this version names it.
+    pub data: &'static str,
+    /// The conversion the generator wrote around the algorithm's call.
+    pub convert: Conversion,
+}
+
+impl fmt::Debug for ConvertedData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConvertedData")
+            .field("data", &self.data)
+            .finish_non_exhaustive()
+    }
 }
 
 /// An enum a value of a machine's state is of, as a saved state names it
@@ -2685,9 +2774,221 @@ pub fn check_shape(saved: &SavedState, shape: &str) -> Result<(), StateRefusal> 
     }
 }
 
+/// `saved` carried by `steps`, the migration a document declares
+/// (docs/adr/0109, D11), or `None` when no step applies to it.
+///
+/// The steps are applied in order, each to a state whose shape is its `from`
+/// (its `from_revised` for one that names revisions), which leaves the state at
+/// its `to` (`to_revised`), so a state of the first version runs through every
+/// step to this one. A state whose shape no step starts from is left as it is,
+/// for the shape's own judgement to take or refuse. A state of format 1 is left
+/// as it is too: it names an enum by the alias it was imported under, which no
+/// shape file spells, and a shape file is what a step starts from.
+fn migrate(
+    saved: &SavedState,
+    steps: &[MigrationStep],
+) -> Result<Option<SavedState>, StateRefusal> {
+    if saved.format() == FORMAT_1 {
+        return Ok(None);
+    }
+    let mut migrated: Option<SavedState> = None;
+    for step in steps {
+        let current = migrated.as_ref().unwrap_or(saved);
+        let to = if current.shape == step.from {
+            step.to
+        } else if current.shape == step.from_revised {
+            step.to_revised
+        } else {
+            continue;
+        };
+        let mut next = current.clone();
+        apply_step(&mut next, step)?;
+        next.shape = to.to_string();
+        migrated = Some(next);
+    }
+    Ok(migrated)
+}
+
+/// The name `step`'s `table` carries `id` to, if it carries it.
+fn renamed(table: &[Renamed], id: &str) -> Option<&'static str> {
+    table.iter().find(|r| r.from == id).map(|r| r.to)
+}
+
+/// Carry each id of `ids` by `table`, keeping the first of any two it makes one.
+fn carry_ids(ids: &mut Vec<String>, table: &[Renamed]) {
+    for id in ids.iter_mut() {
+        if let Some(to) = renamed(table, id) {
+            *id = to.to_string();
+        }
+    }
+    let mut seen: Vec<String> = Vec::with_capacity(ids.len());
+    ids.retain(|id| {
+        if seen.contains(id) {
+            false
+        } else {
+            seen.push(id.clone());
+            true
+        }
+    });
+}
+
+/// Carry the key of each entry of `entries` by `table`.
+fn carry_keys<V>(entries: &mut [(String, V)], table: &[Renamed]) {
+    for (id, _) in entries.iter_mut() {
+        if let Some(to) = renamed(table, id) {
+            *id = to.to_string();
+        }
+    }
+}
+
+/// Apply one migration step to `state`, a session saved under `step.from`
+/// (docs/adr/0109, D11): its states, histories, invocations, the events its
+/// waiting sends name, and its variables, each carried by name. The shape is the
+/// caller's to set. A running child's own session is its document's to migrate,
+/// when the child's machine judges it, and is not touched here.
+fn apply_step(state: &mut SavedState, step: &MigrationStep) -> Result<(), StateRefusal> {
+    // States: renamed, or removed and mapped to one of the new document.
+    carry_ids(&mut state.configuration, step.states);
+    if let Some(to) = renamed(step.states, &state.current) {
+        state.current = to.to_string();
+    }
+    for (_, recorded) in state.history.iter_mut() {
+        carry_ids(recorded, step.states);
+    }
+    // Histories: a removed state's is let go, and the rest keyed by their new ids,
+    // in the order of those ids, as a saved state orders them.
+    let listed = |names: &[&str], id: &str| names.iter().any(|name| *name == id);
+    state
+        .history
+        .retain(|(id, _)| !listed(step.dropped_histories, id.as_str()));
+    carry_keys(&mut state.history, step.histories);
+    state.history.sort_by(|a, b| a.0.cmp(&b.0));
+    // Invocations: one the new document no longer runs ends without a start, and
+    // the rest carry their new ids, the id a child was started under included
+    // where the document gave it.
+    let dropped = |id: &str| listed(step.dropped_invokes, id);
+    match &mut state.invokes {
+        SavedInvokes::Restarted(ids) => {
+            ids.retain(|id| !dropped(id.as_str()));
+            carry_ids(ids, step.invokes);
+        }
+        SavedInvokes::Resumed(children) => {
+            children.retain(|child| !dropped(child.id.as_str()));
+            for child in children.iter_mut() {
+                if let Some(to) = renamed(step.invokes, &child.id) {
+                    if child.invoke_id == child.id {
+                        child.invoke_id = to.to_string();
+                    }
+                    child.id = to.to_string();
+                }
+            }
+        }
+    }
+    state.invoke_starts.retain(|(id, _)| !dropped(id.as_str()));
+    carry_keys(&mut state.invoke_starts, step.invokes);
+    state
+        .host_invokes
+        .retain(|invoke| !dropped(invoke.invoke_id.as_str()));
+    for invoke in state.host_invokes.iter_mut() {
+        if let Some(to) = renamed(step.invokes, &invoke.invoke_id) {
+            invoke.invoke_id = to.to_string();
+        }
+    }
+    state.host_invokes.sort_by(|a, b| {
+        (a.processor_type.as_str(), a.invoke_id.as_bytes())
+            .cmp(&(b.processor_type.as_str(), b.invoke_id.as_bytes()))
+    });
+    state
+        .host_invoke_starts
+        .retain(|(id, _)| !dropped(id.as_str()));
+    carry_keys(&mut state.host_invoke_starts, step.invokes);
+    state
+        .host_invoke_starts
+        .sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    // Waiting sends: a send to the child of an invocation that ends goes with it,
+    // and each event renamed is delivered under its new name.
+    state.pending.retain(|send| match &send.act {
+        SavedAct::Child { invoke_id, .. } => !dropped(invoke_id.as_str()),
+        _ => true,
+    });
+    for send in state.pending.iter_mut() {
+        let event = match &mut send.act {
+            SavedAct::Parent { event, .. }
+            | SavedAct::Raise { event, .. }
+            | SavedAct::Internal { event, .. } => event,
+            SavedAct::Child {
+                invoke_id, event, ..
+            } => {
+                if let Some(to) = renamed(step.invokes, invoke_id) {
+                    *invoke_id = to.to_string();
+                }
+                event
+            }
+            SavedAct::Host(host) => &mut host.event,
+        };
+        if let Some(to) = renamed(step.events, event) {
+            *event = to.to_string();
+        }
+    }
+    // Variables: dropped, renamed, widened, converted and added, in that order,
+    // so each later act names a variable by its new name.
+    state
+        .variables
+        .retain(|(id, _)| !listed(step.dropped_data, id.as_str()));
+    carry_keys(&mut state.variables, step.data);
+    for widened in step.widened_to_text {
+        if let Some((_, value)) = state
+            .variables
+            .iter_mut()
+            .find(|(id, _)| id.as_str() == *widened)
+        {
+            // A number of the narrower type is the text of the wider one; any
+            // other value is left for the variable's own read to refuse.
+            *value = match core::mem::replace(value, Value::Null) {
+                Value::Number(n) => Value::Text(n),
+                other => other,
+            };
+        }
+    }
+    for conversion in step.converted {
+        if let Some((_, value)) = state
+            .variables
+            .iter_mut()
+            .find(|(id, _)| id.as_str() == conversion.data)
+        {
+            let converted = (conversion.convert)(value, conversion.data)?;
+            *value = converted;
+        }
+    }
+    for added in step.added_data {
+        if state
+            .variables
+            .iter()
+            .any(|(id, _)| id.as_str() == added.id)
+        {
+            return Err(StateRefusal::new(format!(
+                "the saved state holds '{}', which the migration to this version adds",
+                added.id
+            )));
+        }
+        let value = json::parse(added.value).map_err(|e| {
+            StateRefusal::new(format!(
+                "the value the migration adds '{}' with is {e}",
+                added.id
+            ))
+        })?;
+        state.variables.push((added.id.to_string(), value));
+    }
+    Ok(())
+}
+
 /// `saved` as a state of the machine whose saved state is bound to `shape`, or
 /// the refusal that says why it is not one (docs/adr/0044) — judged before any
 /// variable is read, as [`check_shape`] is.
+///
+/// A state an earlier version of the document saved is first carried to this
+/// one by the migration the document declares, if a step of it starts from the
+/// state's shape (docs/adr/0109, D11; [`MigrationStep`]).
 ///
 /// A state that names no revision is of the first shape; one that does is of
 /// the revised shape, and each revision it names is of a schema a record
@@ -2713,6 +3014,11 @@ pub fn check_shape(saved: &SavedState, shape: &str) -> Result<(), StateRefusal> 
 /// before.
 pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, StateRefusal> {
     check_features(saved, shape.features)?;
+    // A state an earlier version of the document saved, carried to this one by
+    // the steps the document declares (docs/adr/0109, D11), and then judged as
+    // one this machine saved.
+    let migrated = migrate(saved, shape.migrations)?;
+    let saved = migrated.as_ref().unwrap_or(saved);
     let (first, revised) = match saved.format() {
         FORMAT_1 => (shape.first, shape.revised),
         _ => (shape.format2_first, shape.format2_revised),
@@ -4693,6 +4999,7 @@ mod tests {
     /// `reading.taken` at its third revision: `urgent` came with the second and
     /// `note` with the third.
     const READING_SHAPE: SavedShape = SavedShape {
+        migrations: &[],
         first: FIRST_SHAPE,
         revised: REVISED_SHAPE,
         // It holds no enum, so format 2 names its shape as format 1 does.
@@ -4734,6 +5041,7 @@ mod tests {
     /// `level`, a field of the first revision, and `urgent`, which the second
     /// revision added as a value of its present type.
     const WIDENED_SHAPE: SavedShape = SavedShape {
+        migrations: &[],
         first: FIRST_SHAPE,
         revised: REVISED_SHAPE,
         format2_first: FIRST_SHAPE,
@@ -4778,6 +5086,7 @@ mod tests {
     /// `seen` of records whose field `layout` is of it, at the enum's second
     /// revision, which added `agenda`.
     const LAYOUT_SHAPE: SavedShape = SavedShape {
+        migrations: &[],
         first: FIRST_SHAPE,
         revised: REVISED_SHAPE,
         format2_first: FORMAT2_FIRST_SHAPE,
@@ -5375,5 +5684,275 @@ mod tests {
                 "{params}: {refusal}"
             );
         }
+    }
+
+    // ── a declared migration (docs/adr/0109, D11) ──
+
+    const FROM: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const FROM_REVISED: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const TO: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const TO_REVISED: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+    const LATER: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+    /// What a generated conversion of a flag held as a number to a bool does.
+    fn flag_of(old: &Value, what: &str) -> Result<Value, StateRefusal> {
+        Ok(Value::Bool(u8::from_saved(old, what)? > 0))
+    }
+
+    /// A step that carries every part of a session it can.
+    const EVERY_PART: MigrationStep = MigrationStep {
+        from: FROM,
+        from_revised: FROM_REVISED,
+        to: TO,
+        to_revised: TO_REVISED,
+        states: &[
+            Renamed {
+                from: "waiting",
+                to: "pending",
+            },
+            Renamed {
+                from: "legacy",
+                to: "idle",
+            },
+        ],
+        histories: &[Renamed {
+            from: "h",
+            to: "remembered",
+        }],
+        dropped_histories: &["gone"],
+        invokes: &[Renamed {
+            from: "worker",
+            to: "helper",
+        }],
+        dropped_invokes: &["poller"],
+        events: &[Renamed {
+            from: "tock",
+            to: "tick",
+        }],
+        data: &[Renamed {
+            from: "count",
+            to: "attempts",
+        }],
+        dropped_data: &["scratch"],
+        widened_to_text: &["total"],
+        added_data: &[AddedData {
+            id: "ceiling",
+            value: "16",
+        }],
+        converted: &[ConvertedData {
+            data: "flag",
+            convert: flag_of,
+        }],
+    };
+
+    /// A running child of `id`, started under the id the document gives it.
+    fn child(id: &str) -> SavedChild {
+        SavedChild {
+            id: id.to_string(),
+            start: 1,
+            invoke_id: id.to_string(),
+            document: id.to_string(),
+            session: session('f', &format!("root.{id}"), Vec::new()),
+        }
+    }
+
+    /// A session an earlier version saved under [`FROM`], holding something of
+    /// every part [`EVERY_PART`] carries.
+    fn earlier() -> SavedState {
+        SavedState {
+            shape: FROM.to_string(),
+            configuration: vec!["outer".to_string(), "waiting".to_string()],
+            current: "waiting".to_string(),
+            variables: vec![
+                ("count".to_string(), 3u32.to_saved()),
+                ("scratch".to_string(), 1u8.to_saved()),
+                ("total".to_string(), (-6i32).to_saved()),
+                ("flag".to_string(), 1u8.to_saved()),
+            ],
+            history: vec![
+                ("gone".to_string(), vec!["legacy".to_string()]),
+                ("h".to_string(), vec!["waiting".to_string()]),
+            ],
+            pending: vec![
+                SavedSend {
+                    due: 5,
+                    act: SavedAct::Raise {
+                        event: "tock".to_string(),
+                        data: String::new(),
+                        send_id: String::new(),
+                        sender: "root".to_string(),
+                    },
+                },
+                SavedSend {
+                    due: 6,
+                    act: SavedAct::Child {
+                        invoke_id: "poller".to_string(),
+                        event: "poll".to_string(),
+                        data: String::new(),
+                        send_id: String::new(),
+                        sender: "root".to_string(),
+                    },
+                },
+            ],
+            invokes: SavedInvokes::Resumed(vec![child("poller"), child("worker")]),
+            session_id: "root".to_string(),
+            invoke_starts: vec![("poller".to_string(), 1), ("worker".to_string(), 2)],
+            host_invokes: vec![SavedHostInvoke {
+                processor_type: "x-fetch".to_string(),
+                invoke_id: "poller".to_string(),
+                start: 1,
+                ..SavedHostInvoke::default()
+            }],
+            host_invoke_starts: vec![("poller".to_string(), 1)],
+            host_invoke_token: 0,
+            auto_send_seq: 0,
+            external: Vec::new(),
+            revisions: Vec::new(),
+            features: None,
+        }
+    }
+
+    #[test]
+    fn a_step_carries_every_part_of_a_session_by_name() {
+        let migrated = migrate(&earlier(), &[EVERY_PART])
+            .expect("the step applies")
+            .expect("a state of its `from`");
+        assert_eq!(migrated.shape, TO, "the state is left at the step's `to`");
+        assert_eq!(migrated.configuration, vec!["outer", "pending"]);
+        assert_eq!(migrated.current, "pending");
+        assert_eq!(
+            migrated.history,
+            vec![("remembered".to_string(), vec!["pending".to_string()])],
+            "a history renamed records the renamed state, and one of a removed state is let go"
+        );
+        assert_eq!(migrated.invokes.ids(), vec!["helper"]);
+        let SavedInvokes::Resumed(children) = &migrated.invokes else {
+            panic!("a tree stays a tree");
+        };
+        assert_eq!(children[0].invoke_id, "helper", "an id the document gave");
+        assert_eq!(migrated.invoke_starts, vec![("helper".to_string(), 2)]);
+        assert!(
+            migrated.host_invokes.is_empty() && migrated.host_invoke_starts.is_empty(),
+            "a dropped invocation ends without a start: {:?}",
+            migrated.host_invokes
+        );
+        assert_eq!(
+            migrated.pending.len(),
+            1,
+            "a send to a dropped child goes with it"
+        );
+        assert!(
+            matches!(&migrated.pending[0].act, SavedAct::Raise { event, .. } if event == "tick"),
+            "{:?}",
+            migrated.pending
+        );
+        assert_eq!(
+            migrated.variables,
+            vec![
+                ("attempts".to_string(), Value::Number("3".to_string())),
+                ("total".to_string(), Value::Text("-6".to_string())),
+                ("flag".to_string(), Value::Bool(true)),
+                ("ceiling".to_string(), Value::Number("16".to_string())),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_step_applies_to_the_shape_it_starts_from_and_no_other() {
+        let revised = SavedState {
+            shape: FROM_REVISED.to_string(),
+            ..earlier()
+        };
+        let migrated = migrate(&revised, &[EVERY_PART])
+            .expect("applies")
+            .expect("a state that names revisions is of the revised `from`");
+        assert_eq!(migrated.shape, TO_REVISED);
+
+        let other = SavedState {
+            shape: LATER.to_string(),
+            ..earlier()
+        };
+        assert_eq!(
+            migrate(&other, &[EVERY_PART]),
+            Ok(None),
+            "no step starts from it"
+        );
+
+        let format_1 = SavedState {
+            invokes: SavedInvokes::Restarted(vec!["worker".to_string()]),
+            session_id: String::new(),
+            ..earlier()
+        };
+        assert_eq!(
+            migrate(&format_1, &[EVERY_PART]),
+            Ok(None),
+            "a format-1 state names its shape in a spelling no shape file holds"
+        );
+    }
+
+    #[test]
+    fn the_steps_of_a_chain_are_applied_in_order() {
+        const NEXT: MigrationStep = MigrationStep {
+            from: TO,
+            from_revised: TO_REVISED,
+            to: LATER,
+            to_revised: LATER,
+            states: &[Renamed {
+                from: "pending",
+                to: "queued",
+            }],
+            histories: &[],
+            dropped_histories: &[],
+            invokes: &[],
+            dropped_invokes: &[],
+            events: &[],
+            data: &[],
+            dropped_data: &[],
+            widened_to_text: &[],
+            added_data: &[],
+            converted: &[],
+        };
+        let migrated = migrate(&earlier(), &[EVERY_PART, NEXT])
+            .expect("applies")
+            .expect("both steps apply");
+        assert_eq!(migrated.shape, LATER);
+        assert_eq!(
+            migrated.current, "queued",
+            "the second step reads what the first left"
+        );
+    }
+
+    #[test]
+    fn a_state_that_already_holds_a_variable_the_step_adds_is_refused() {
+        let mut held = earlier();
+        held.variables
+            .push(("ceiling".to_string(), 3u32.to_saved()));
+        let refusal = migrate(&held, &[EVERY_PART]).expect_err("no earlier version held it");
+        assert!(refusal.reason().contains("'ceiling'"), "{refusal}");
+    }
+
+    #[test]
+    fn upgrade_migrates_before_it_judges_the_shape() {
+        let shape = SavedShape {
+            first: "",
+            revised: "",
+            format2_first: TO,
+            format2_revised: TO_REVISED,
+            records: &[],
+            enums: &[],
+            features: None,
+            migrations: &[EVERY_PART],
+        };
+        let upgraded = upgrade(&earlier(), &shape).expect("carried to this machine's shape");
+        assert_eq!(upgraded.shape, TO);
+        let unmigrated = SavedShape {
+            migrations: &[],
+            ..shape
+        };
+        let refusal = upgrade(&earlier(), &unmigrated).expect_err("of another shape");
+        assert!(
+            refusal.reason().contains("of a document of shape"),
+            "{refusal}"
+        );
     }
 }

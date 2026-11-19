@@ -1,0 +1,61 @@
+# Mutation cases for a saved state restored into the next version of its document
+# through the migration that version declares, generated as Rust (docs/adr/0109,
+# D11; docs/SCE_ACCEPTED_SUBSET.md §2.15, "A declared migration").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_state_is_migrated_into_the_next_version_rust.cases`.
+#
+# `static_migration_1.scxml` saves a machine standing in `waiting` with `count` and
+# an int32 `total` moved; `static_migration_2.scxml` renamed the state `pending`,
+# widened `total` to int64 and added `ceiling`, and declares the step between their
+# committed shapes. `a_saved_state_is_migrated_into_the_next_version.rs` restores
+# the first version's state into the second. Each mutant below takes one part of
+# the migration away and leaves a machine that still compiles:
+#
+#   the build plans the step without its rename, so the state is carried to a
+#     configuration of a state the document does not have;
+#   the restore applies no rename to the configuration;
+#   the restore leaves a widened integer a number where its type is written as
+#     a text;
+#   the restore adds no variable the step adds.
+#
+# The plan reaches the tests only through the committed tree the regeneration
+# writes, so the generated machine is declared beside the build, and the command
+# is what carries a mutated build into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_saved_state_is_migrated_into_the_next_version
+mutation_targets sce-build/src/forge/saved_migration.rs
+mutation_targets backends/rust/runtime/src/saved_state.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/a_saved_state_is_migrated_into_the_next_version.rs sce-build/tests/fixtures/static_datamodel/static_migration_1.scxml sce-build/tests/fixtures/static_datamodel/static_migration_2.scxml sce-build/tests/fixtures/static_datamodel/shapes/static_migration_1.shape sce-build/tests/fixtures/static_datamodel/shapes/static_migration_2.shape
+
+# ── The build plans each rename ─────────────────────────────────────
+
+mutation_case "the plan drops the step's renames of states" <<'PY'
+edit("sce-build/src/forge/saved_migration.rs",
+     "    step.states = pairs(states);",
+     "    step.states = Vec::new();")
+PY
+
+# ── The restore applies the plan ────────────────────────────────────
+
+mutation_case "the restore renames no state of the configuration" <<'PY'
+edit("backends/rust/runtime/src/saved_state.rs",
+     "    carry_ids(&mut state.configuration, step.states);",
+     "    let _ = &state.configuration;")
+PY
+
+mutation_case "a widened integer is left a number" <<'PY'
+edit("backends/rust/runtime/src/saved_state.rs",
+     "                Value::Number(n) => Value::Text(n),",
+     "                Value::Number(n) => Value::Number(n),")
+PY
+
+mutation_case "a variable the step adds is not added" <<'PY'
+edit("backends/rust/runtime/src/saved_state.rs",
+     "        state.variables.push((added.id.to_string(), value));",
+     "        let _ = value;")
+PY

@@ -48,6 +48,7 @@ const SHAPE: SavedShape = SavedShape {
     records: &[],
     enums: &[],
     features: None,
+    migrations: &[],
 };
 
 /// The wall-clock moment the machine is saved at.

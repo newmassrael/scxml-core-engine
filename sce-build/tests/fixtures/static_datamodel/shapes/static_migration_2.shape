@@ -1,0 +1,7 @@
+sce-saved-state-shape 1
+state idle atomic -
+state pending atomic -
+state done final -
+variable count uint32 -
+variable total int64 -
+variable ceiling uint32 -

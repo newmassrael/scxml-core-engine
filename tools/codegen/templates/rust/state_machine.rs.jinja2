@@ -643,6 +643,26 @@ pub trait {{ machine_name }}Persist: Sized {
     }
 }
 
+{# docs/adr/0109, D11: each conversion a migration step makes, the old value read as
+   the algorithm's parameter and the new one written as its return, each a
+   fixed-width number or bool the build matched to the two shapes. #}
+{% set rust_scalar = {"uint8": "u8", "uint16": "u16", "uint32": "u32", "uint64": "u64", "int8": "i8", "int16": "i16", "int32": "i32", "int64": "i64", "float32": "f32", "float64": "f64", "bool": "bool"} %}
+{% for step in static_saved_shape.migrations %}
+{% set step_index = loop.index0 %}
+{% for converted in step.converted %}
+/// docs/adr/0109, D11: `{{ converted.data }}` of a state an earlier version saved,
+/// converted from {{ converted.param }} to {{ converted.ret }}.
+fn sce_migration_convert_{{ step_index }}_{{ loop.index0 }}(
+    old: &::sce_rust_runtime::json::Value,
+    what: &str,
+) -> Result<::sce_rust_runtime::json::Value, ::sce_rust_runtime::saved_state::StateRefusal> {
+    let old: {{ rust_scalar[converted.param] }} = ::sce_rust_runtime::saved_state::SavedValue::from_saved(old, what)?;
+    let new: {{ rust_scalar[converted.ret] }} = {{ converted.call }}(old);
+    Ok(::sce_rust_runtime::saved_state::SavedValue::to_saved(&new))
+}
+
+{% endfor %}
+{% endfor %}
 impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_name }}Policy{{ policy_generics_use }}> {
     type Policy = {{ machine_name }}Policy{{ policy_generics_use }};
 
@@ -721,6 +741,31 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% endfor %}
         ],
         features: {% if static_saved_shape.features is not none %}Some(&[{% for feature in static_saved_shape.features %}"{{ feature | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}]){% else %}None{% endif %},
+{# docs/adr/0109, D11: each step of the migration the document declares, as the
+   build judged it against its two shape files; `upgrade` applies them to a state
+   an earlier version saved before it judges the shape. #}
+        migrations: &[
+{% for step in static_saved_shape.migrations %}
+{% set step_index = loop.index0 %}
+            ::sce_rust_runtime::saved_state::MigrationStep {
+                from: "{{ step.from }}",
+                from_revised: "{{ step.from_revised }}",
+                to: "{{ step.to }}",
+                to_revised: "{{ step.to_revised }}",
+                states: &[{% for renamed in step.states %}::sce_rust_runtime::saved_state::Renamed { from: "{{ renamed.from | escape_rust }}", to: "{{ renamed.to | escape_rust }}" }, {% endfor %}],
+                histories: &[{% for renamed in step.histories %}::sce_rust_runtime::saved_state::Renamed { from: "{{ renamed.from | escape_rust }}", to: "{{ renamed.to | escape_rust }}" }, {% endfor %}],
+                dropped_histories: &[{% for id in step.dropped_histories %}"{{ id | escape_rust }}", {% endfor %}],
+                invokes: &[{% for renamed in step.invokes %}::sce_rust_runtime::saved_state::Renamed { from: "{{ renamed.from | escape_rust }}", to: "{{ renamed.to | escape_rust }}" }, {% endfor %}],
+                dropped_invokes: &[{% for id in step.dropped_invokes %}"{{ id | escape_rust }}", {% endfor %}],
+                events: &[{% for renamed in step.events %}::sce_rust_runtime::saved_state::Renamed { from: "{{ renamed.from | escape_rust }}", to: "{{ renamed.to | escape_rust }}" }, {% endfor %}],
+                data: &[{% for renamed in step.data %}::sce_rust_runtime::saved_state::Renamed { from: "{{ renamed.from | escape_rust }}", to: "{{ renamed.to | escape_rust }}" }, {% endfor %}],
+                dropped_data: &[{% for id in step.dropped_data %}"{{ id | escape_rust }}", {% endfor %}],
+                widened_to_text: &[{% for id in step.widened_to_text %}"{{ id | escape_rust }}", {% endfor %}],
+                added_data: &[{% for added in step.added_data %}::sce_rust_runtime::saved_state::AddedData { id: "{{ added.id | escape_rust }}", value: "{{ added.value | escape_rust }}" }, {% endfor %}],
+                converted: &[{% for converted in step.converted %}::sce_rust_runtime::saved_state::ConvertedData { data: "{{ converted.data | escape_rust }}", convert: sce_migration_convert_{{ step_index }}_{{ loop.index0 }} }, {% endfor %}],
+            },
+{% endfor %}
+        ],
     };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<{{ history_type }}>] = &[

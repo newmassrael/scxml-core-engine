@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"; docs/adr/0109, D11): the next version of static_migration_1.scxml,
+  which restores a state the first version saved through the step it declares.
+  `waiting` is renamed `pending`; `total` widens from int32 to int64, which needs
+  no element; `ceiling` is new, and a state of the first version holds it at 16.
+
+  Its own shape is committed as shapes/static_migration_2.shape, the `to` of the
+  step: the build refuses the document when that text is not its shape. Every
+  backend but Rust and C++ refuses the document by name (docs/adr/0109, D0).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_migration_2">
+  <sce:migration from="shapes/static_migration_1.shape" to="shapes/static_migration_2.shape">
+    <sce:rename kind="state" from="waiting" to="pending"/>
+    <sce:add-data id="ceiling" expr="16"/>
+  </sce:migration>
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="total" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="ceiling" sce:type="uint32" expr="16" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="pending"/>
+  </state>
+  <state id="pending">
+    <transition event="tick" cond="count &lt; ceiling" type="internal">
+      <assign location="count" expr="count + 1"/>
+      <assign location="total" expr="total - 2"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
