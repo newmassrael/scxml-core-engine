@@ -1263,6 +1263,37 @@ pub(crate) fn sce_call_unlowered(action: &Action) -> String {
     )
 }
 
+/// The refusal of a statechart whose scope calls an imported algorithm that
+/// takes a map or a set, on the lane `lane` (docs/adr/0108, D6 items 1, 2 and
+/// 4): the map is lent whole, the map itself where the algorithm writes it in
+/// place, and no lane lowers the loan yet. The one refusal every lane asks
+/// first, where its lowering of a `sce-static` document begins, before it reads
+/// the document's maps or lowers the algorithms it imports, so that a document
+/// that makes such a call is refused for the call on every lane, the
+/// Interpreter's among them. `Ok` for a scope that lends no map.
+pub(crate) fn lent_map_unlowered(scope: &StaticScope, lane: &str) -> Result<(), GenerateError> {
+    let lent_map = scope.callees.iter().find_map(|callee| {
+        callee.value.as_ref()?.params.iter().find_map(|slot| {
+            if let StaticSlot::Map(map) = slot {
+                Some((callee, map))
+            } else {
+                None
+            }
+        })
+    });
+    match lent_map {
+        Some((callee, map)) => Err(GenerateError::unsupported(format!(
+            "`{}(…)`: an imported algorithm that takes the {} {} has no {lane} lowering of \
+             the call yet ({})",
+            callee.alias,
+            if map.inout { "inout" } else { "read-only" },
+            map.ty.as_attr(),
+            crate::forge::value_type::MAP_CALL_LANDING
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// Each declared variant of `model` as the two sides of a crossing spell it in `lang`,
 /// `(from, to)`: the machine's own type `machine_type`, and the type the enum
 /// document's generation declares. A value crosses as the variant of the same declared
@@ -7894,30 +7925,9 @@ pub fn lower(
             "{construct} has no {lang} lowering yet"
         )));
     }
-    // A map or a set is lent to an algorithm whole, the map itself where the
-    // algorithm writes it in place, and never copied (docs/adr/0108, D6 items 1,
-    // 2 and 4). No lane lowers the loan yet, so a call of an algorithm that
-    // takes one is refused by name on every lane, before any adapter is asked
-    // for the slot.
-    let lent_map = scope.callees.iter().find_map(|callee| {
-        callee.value.as_ref()?.params.iter().find_map(|slot| {
-            if let StaticSlot::Map(map) = slot {
-                Some((callee, map))
-            } else {
-                None
-            }
-        })
-    });
-    if let Some((callee, map)) = lent_map {
-        return Err(GenerateError::unsupported(format!(
-            "`{}(…)`: an imported algorithm that takes the {} {} has no {lang} lowering of \
-             the call yet ({})",
-            callee.alias,
-            if map.inout { "inout" } else { "read-only" },
-            map.ty.as_attr(),
-            crate::forge::value_type::MAP_CALL_LANDING
-        )));
-    }
+    // Asked again of a target lowered on its own, before any adapter is asked
+    // for a map slot; each lane's entry asks it first ([`lent_map_unlowered`]).
+    lent_map_unlowered(&scope, lang)?;
     // A call that hands an algorithm a record or a list, or takes one back, needs
     // the target's adapter for it; a target without one refuses the document by
     // name instead of leaving the call undefined where the machine runs.

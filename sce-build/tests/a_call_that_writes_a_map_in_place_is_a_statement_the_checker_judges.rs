@@ -318,16 +318,82 @@ fn each_reader_refuses_the_other_shape_of_a_call() {
     );
 }
 
-/// docs/adr/0108, D10 and "Order of work", step 7: no lane lowers the call, nor
-/// an algorithm that holds a map, yet. `generate` refuses the statechart by
-/// name on every generated lane, and the Interpreter's lowering refuses it, as
-/// an unsupported feature naming the record that lands it: the call, the map
-/// slot it lends, the map the statechart holds or the map the algorithm holds,
-/// whichever the lane meets first.
+/// An algorithm that empties the table `b` in place and is lent the table `a`
+/// to read, written beside the statechart [`WALKED`] as
+/// `algorithm_refill.scxml`.
+const REFILL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="refill"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="b" type="map&lt;uint32, uint64&gt;" inout="true"/>
+    <sce:param name="a" type="map&lt;uint32, uint64&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:clear target="b"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A statechart whose `<foreach>` over `a` calls `Refill(b, a)`: `b` is
+/// written in place, and `a`, the map the loop walks, is lent to be read.
+const WALKED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="walk_lend">
+  <sce:import kind="algorithm" src="algorithm_refill.scxml" as="Refill"/>
+  <datamodel>
+    <data id="a" sce:type="map&lt;uint32, uint64&gt;[4]" sce:direction="out"/>
+    <data id="b" sce:type="map&lt;uint32, uint64&gt;[4]" sce:direction="out"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal">
+      <foreach array="a" item="v" sce:key="k">
+        <sce:call expr="Refill(b, a)"/>
+      </foreach>
+    </transition>
+  </state>
+</scxml>
+"#;
+
+/// docs/adr/0108, D6 items 2 and 3: a call writes only the maps its callee
+/// writes in place, as the callee resolved where the document is read names
+/// them, so a `<foreach>` over a map lent to the call to be read walks it
+/// without a copy, and the map lent to be written is written.
+#[test]
+fn a_loop_over_a_map_lent_to_be_read_walks_it_without_a_copy() {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    std::fs::write(dir.path().join("algorithm_refill.scxml"), REFILL).expect("write the algorithm");
+    let path = dir.path().join("walk_lend.scxml");
+    std::fs::write(&path, WALKED).expect("write the statechart");
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_file(path.to_str().expect("a utf-8 path"))
+        .unwrap_or_else(|e| panic!("the statechart is read and judged: {e:?}"));
+    let walk = &model.states["s"].transitions[0].actions[0];
+    assert_eq!(walk.action_type, "foreach");
+    assert_eq!(walk.actions[0].in_place_arguments, ["b"]);
+    let writes = sce_build::forge::narrowing::Writes::of_block(&walk.actions);
+    assert!(!writes.reaches("a"), "the walked map is lent to be read");
+    assert!(writes.reaches("b"), "the map written in place is written");
+}
+
+/// docs/adr/0108, "Order of work", step 7: no lane lowers a call that lends an
+/// algorithm a map yet. `generate` refuses the statechart on every generated
+/// lane, and the Interpreter's lowering refuses it, as an unsupported feature,
+/// by the one refusal each lane asks first, naming the callee, the map slot it
+/// takes and that step, before the lane reads the map the statechart holds or
+/// lowers the algorithm it imports.
 #[test]
 fn every_lane_refuses_the_call_by_name() {
     let path = fixtures().join(STATECHART);
-    let named = |out: &str| out.contains("docs/adr/0108");
+    let named = |out: &str, lane: &str| {
+        out.contains("`TakeGeneration(")
+            && out.contains("an imported algorithm that takes the inout map<record:Peer, uint64>")
+            && out.contains(&format!(
+                "has no {lane} lowering of the call yet (docs/adr/0108, Order of work, step 7)"
+            ))
+    };
     for &language in sce_build::generator::Language::ALL {
         let lane = language.canonical_name();
         let out_dir = tempfile::tempdir().expect("an output directory");
@@ -339,7 +405,7 @@ fn every_lane_refuses_the_call_by_name() {
         let (ok, out) = run(&args, &path);
         assert!(!ok, "{lane} lowers no call that lends a map yet:\n{out}");
         assert!(
-            out.contains("\"code\":\"generate/unsupported-feature\"") && named(&out),
+            out.contains("\"code\":\"generate/unsupported-feature\"") && named(&out, lane),
             "{lane}:\n{out}"
         );
     }
@@ -348,7 +414,7 @@ fn every_lane_refuses_the_call_by_name() {
             .expect_err("the Interpreter lowers no call that lends a map yet");
     let text = format!("{refusal:?}");
     assert!(
-        text.contains("UnsupportedFeature") && named(&text),
+        text.contains("UnsupportedFeature") && named(&text, "ecmascript"),
         "the Interpreter refuses the call by name: {text}"
     );
 }

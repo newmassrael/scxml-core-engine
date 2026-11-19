@@ -2118,6 +2118,13 @@ fn lower_parsed(
     if model.datamodel != Datamodel::SceStatic {
         return install_doors(text, model).map_err(refuse);
     }
+    // A call that lends an imported algorithm a map is refused for the call,
+    // the one refusal every lane asks first (docs/adr/0108, D6 item 2), before
+    // the algorithms it calls are lowered.
+    if let Some(scope) = StaticScope::of(model) {
+        crate::forge::static_lowering::lent_map_unlowered(&scope, LOWERED_DATAMODEL)
+            .map_err(refuse)?;
+    }
     // A composed value this lowering does not hold yet is refused by name, by
     // the one place that decides it, before this lowering reads the model, as
     // every other backend's is (docs/adr/0086, section 7.3).
