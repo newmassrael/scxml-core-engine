@@ -364,6 +364,17 @@ pub enum TransportState {
         /// How many envelopes the server keeps for one client before a send
         /// to it is dropped as backpressure.
         mailbox: u32,
+        /// The most client entries the server holds in memory; an exchange
+        /// for a name past it is answered `503` (docs/adr/0109, D1).
+        max_clients: u32,
+        /// The most mailbox bytes one response carries; the rest go at the
+        /// next exchange (docs/adr/0109, D1). `max_body_bytes` when unset.
+        max_response_bytes: u64,
+        /// The edge's rate limits (docs/adr/0109, D2).
+        rate: HttpsRates,
+        /// The proxies whose `Forwarded` header names the client's address
+        /// (docs/adr/0109, D2): CIDR blocks, each as written.
+        trusted_proxies: Vec<String>,
     },
     /// Zenoh binding of the host Mesh cores (§mesh-20). The
     /// binding carries no field: the peer is the `#peer` it is keyed by, the
@@ -452,6 +463,79 @@ pub const HTTPS_DEFAULT_ABSENCE_MS: u32 = 120_000;
 /// The envelopes a server keeps for one client when its binding sets no
 /// `mailbox`.
 pub const HTTPS_DEFAULT_MAILBOX: u32 = 1024;
+/// The client entries a server holds in memory when its binding sets no
+/// `max_clients` (docs/adr/0109, D1).
+pub const HTTPS_DEFAULT_MAX_CLIENTS: u32 = 100_000;
+/// The keys each edge limiter tracks when the binding's `rate:` sets no
+/// `max_tracked` (docs/adr/0109, D2).
+pub const HTTPS_DEFAULT_RATE_MAX_TRACKED: u32 = 100_000;
+
+/// One limiter of the edge (docs/adr/0109, D2), judged by the generic cell
+/// rate algorithm of `sce:std/rate/gcra_admit`: one permit regenerates every
+/// `interval_ms`, and at most `burst` are held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct HttpsRate {
+    pub interval_ms: u64,
+    pub burst: u32,
+}
+
+/// The limiters of an `https` accepting binding's `rate:` (docs/adr/0109,
+/// D2), each `None` when the deployment turned it off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct HttpsRates {
+    /// Every exchange, keyed by the remote address.
+    pub address: Option<HttpsRate>,
+    /// Every authenticated exchange, keyed by the client's name.
+    pub client: Option<HttpsRate>,
+    /// Each `401`, keyed by the name and by the address.
+    pub failed_auth: Option<HttpsRate>,
+    /// Each name pinned for the first time, keyed by the address.
+    pub new_names: Option<HttpsRate>,
+    /// The most keys each limiter tracks.
+    pub max_tracked: u32,
+}
+
+impl HttpsRates {
+    /// The limiters a binding that writes no `rate:` has: `address` 100 a
+    /// second with a burst of 200, `client` 20 a second with 40,
+    /// `failed_auth` 10 a minute with 10, `new_names` 20 an hour with 20.
+    pub const DEFAULT: Self = Self {
+        address: Some(HttpsRate {
+            interval_ms: 10,
+            burst: 200,
+        }),
+        client: Some(HttpsRate {
+            interval_ms: 50,
+            burst: 40,
+        }),
+        failed_auth: Some(HttpsRate {
+            interval_ms: 6_000,
+            burst: 10,
+        }),
+        new_names: Some(HttpsRate {
+            interval_ms: 180_000,
+            burst: 20,
+        }),
+        max_tracked: HTTPS_DEFAULT_RATE_MAX_TRACKED,
+    };
+
+    /// `rate: none`: every limiter off.
+    pub const NONE: Self = Self {
+        address: None,
+        client: None,
+        failed_auth: None,
+        new_names: None,
+        max_tracked: HTTPS_DEFAULT_RATE_MAX_TRACKED,
+    };
+
+    /// The limiters `rate:` names, in the order deploy.yaml lists them.
+    pub const LIMITERS: [&'static str; 4] = ["address", "client", "failed_auth", "new_names"];
+}
+
+/// The largest span, `interval_ms` times `burst`, an edge limiter may hold:
+/// the rule adds it to a clock reading in 64-bit milliseconds, so it leaves
+/// room for any reading a server makes.
+pub const HTTPS_RATE_MAX_SPAN_MS: u64 = (i64::MAX as u64) / 4;
 
 /// A resolved send target: SCXML <send> target matched to a deploy.yaml binding.
 ///
@@ -2859,12 +2943,16 @@ fn check_positive_u32(value: &serde_yaml_ng::Value) -> Result<(), String> {
 /// The keys only the dialing side of an `https` binding reads.
 const HTTPS_DIAL_KEYS: [&str; 2] = ["url", "hold_ms"];
 /// The keys only the accepting side of an `https` binding reads.
-const HTTPS_ACCEPT_KEYS: [&str; 5] = [
+const HTTPS_ACCEPT_KEYS: [&str; 9] = [
     "listen",
     "max_hold_ms",
     "max_body_bytes",
     "absence_ms",
     "mailbox",
+    "max_clients",
+    "max_response_bytes",
+    "rate",
+    "trusted_proxies",
 ];
 
 /// Validate an `https` binding's fields (ADR 0107, D2).
@@ -2987,20 +3075,174 @@ fn validate_https_extras_partial(
     if let Some(v) = pt.extra.get("listen") {
         check_listen_endpoint(v).map_err(|reason| invalid("listen", reason))?;
     }
-    for key in ["hold_ms", "max_hold_ms", "absence_ms", "mailbox"] {
+    for key in [
+        "hold_ms",
+        "max_hold_ms",
+        "absence_ms",
+        "mailbox",
+        "max_clients",
+    ] {
         if let Some(v) = pt.extra.get(key) {
             check_positive_u32(v).map_err(|reason| invalid(key, reason))?;
         }
     }
-    if let Some(v) = pt.extra.get("max_body_bytes") {
-        match v.as_u64() {
-            Some(n) if n > 0 => {}
+    for key in ["max_body_bytes", "max_response_bytes"] {
+        if let Some(v) = pt.extra.get(key) {
+            match v.as_u64() {
+                Some(n) if n > 0 => {}
+                _ => {
+                    return Err(invalid(
+                        key,
+                        format!("must be a positive integer (got {})", render_yaml_value(v)),
+                    ))
+                }
+            }
+        }
+    }
+    if let Some(v) = pt.extra.get("rate") {
+        https_rates(v).map_err(|reason| invalid("rate", reason))?;
+    }
+    if let Some(v) = pt.extra.get("trusted_proxies") {
+        trusted_proxies(v).map_err(|reason| invalid("trusted_proxies", reason))?;
+    }
+    Ok(())
+}
+
+/// The limiters an `https` binding's `rate:` declares (docs/adr/0109, D2):
+/// `none`, every limiter off; or a map of `address`, `client`,
+/// `failed_auth` and `new_names`, each `{ interval_ms, burst }` or `none`
+/// and each at its default when left out, and `max_tracked`. Every number
+/// is a positive integer, a burst and `max_tracked` fit a u32, and a
+/// limiter's span (`interval_ms` times `burst`) is at most
+/// [`HTTPS_RATE_MAX_SPAN_MS`].
+fn https_rates(value: &serde_yaml_ng::Value) -> Result<HttpsRates, String> {
+    if value.as_str() == Some("none") {
+        return Ok(HttpsRates::NONE);
+    }
+    let map = value.as_mapping().ok_or_else(|| {
+        format!(
+            "must be `none` or a map of {} and `max_tracked` (got {})",
+            HttpsRates::LIMITERS
+                .iter()
+                .map(|l| format!("`{l}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            render_yaml_value(value)
+        )
+    })?;
+    let mut rates = HttpsRates::DEFAULT;
+    for (key, entry) in map {
+        let name = key.as_str().unwrap_or_default();
+        let slot = match name {
+            "address" => &mut rates.address,
+            "client" => &mut rates.client,
+            "failed_auth" => &mut rates.failed_auth,
+            "new_names" => &mut rates.new_names,
+            "max_tracked" => {
+                check_positive_u32(entry).map_err(|reason| format!("`max_tracked` {reason}"))?;
+                rates.max_tracked = entry
+                    .as_u64()
+                    .and_then(|n| u32::try_from(n).ok())
+                    .unwrap_or(HTTPS_DEFAULT_RATE_MAX_TRACKED);
+                continue;
+            }
             _ => {
-                return Err(invalid(
-                    "max_body_bytes",
-                    format!("must be a positive integer (got {})", render_yaml_value(v)),
+                return Err(format!(
+                    "names `{}`, which is no limiter; the limiters are {} and the bound is \
+                     `max_tracked`",
+                    render_yaml_value(key),
+                    HttpsRates::LIMITERS
+                        .iter()
+                        .map(|l| format!("`{l}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ))
             }
+        };
+        *slot = https_rate(name, entry)?;
+    }
+    Ok(rates)
+}
+
+/// One limiter of `rate:`: `none`, or `{ interval_ms, burst }`.
+fn https_rate(name: &str, value: &serde_yaml_ng::Value) -> Result<Option<HttpsRate>, String> {
+    if value.as_str() == Some("none") {
+        return Ok(None);
+    }
+    let shape = || {
+        format!(
+            "`{name}` must be `none` or `{{ interval_ms, burst }}` (got {})",
+            render_yaml_value(value)
+        )
+    };
+    let map = value.as_mapping().ok_or_else(shape)?;
+    if map.len() != 2 {
+        return Err(shape());
+    }
+    let interval_ms = map
+        .get("interval_ms")
+        .and_then(serde_yaml_ng::Value::as_u64)
+        .filter(|n| *n > 0)
+        .ok_or_else(|| format!("`{name}.interval_ms` must be a positive integer"))?;
+    let burst = map
+        .get("burst")
+        .and_then(serde_yaml_ng::Value::as_u64)
+        .filter(|n| *n > 0)
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| {
+            format!(
+                "`{name}.burst` must be an integer between 1 and {}",
+                u32::MAX
+            )
+        })?;
+    if interval_ms.saturating_mul(u64::from(burst)) > HTTPS_RATE_MAX_SPAN_MS {
+        return Err(format!(
+            "`{name}` spans {interval_ms} ms times {burst}, more than the \
+             {HTTPS_RATE_MAX_SPAN_MS} ms a limiter can count"
+        ));
+    }
+    Ok(Some(HttpsRate { interval_ms, burst }))
+}
+
+/// The CIDR blocks of `trusted_proxies:` (docs/adr/0109, D2): a list of
+/// `<address>/<prefix>` or bare addresses, IPv4 or IPv6, the prefix at most
+/// the address's width.
+fn trusted_proxies(value: &serde_yaml_ng::Value) -> Result<Vec<String>, String> {
+    let list = value.as_sequence().ok_or_else(|| {
+        format!(
+            "must be a list of CIDR blocks (got {})",
+            render_yaml_value(value)
+        )
+    })?;
+    list.iter()
+        .map(|entry| {
+            let block = entry.as_str().ok_or_else(|| {
+                format!(
+                    "must list CIDR blocks as text (got {})",
+                    render_yaml_value(entry)
+                )
+            })?;
+            check_cidr(block)?;
+            Ok(block.to_string())
+        })
+        .collect()
+}
+
+/// Check `block` is `<address>[/<prefix>]`, the prefix at most 32 for IPv4
+/// and 128 for IPv6.
+fn check_cidr(block: &str) -> Result<(), String> {
+    let (address, prefix) = match block.split_once('/') {
+        Some((address, prefix)) => (address, Some(prefix)),
+        None => (block, None),
+    };
+    let address: std::net::IpAddr = address
+        .parse()
+        .map_err(|_| format!("'{block}' names no IPv4 or IPv6 address"))?;
+    let width = if address.is_ipv4() { 32 } else { 128 };
+    if let Some(prefix) = prefix {
+        match prefix.parse::<u8>() {
+            Ok(n) if n <= width => {}
+            _ => return Err(format!("'{block}' has a prefix that is not 0 to {width}")),
         }
     }
     Ok(())
@@ -3044,6 +3286,10 @@ fn https_state(extra: &std::collections::HashMap<String, serde_yaml_ng::Value>) 
             .and_then(|n| u32::try_from(n).ok())
             .unwrap_or(default)
     };
+    let max_body_bytes = extra
+        .get("max_body_bytes")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(HTTPS_DEFAULT_MAX_BODY_BYTES);
     TransportState::Https {
         url: text("url"),
         listen: text("listen"),
@@ -3053,12 +3299,22 @@ fn https_state(extra: &std::collections::HashMap<String, serde_yaml_ng::Value>) 
             .expect("validate_https_extras_partial proved the authenticator"),
         hold_ms: number("hold_ms", HTTPS_DEFAULT_HOLD_MS),
         max_hold_ms: number("max_hold_ms", HTTPS_DEFAULT_MAX_HOLD_MS),
-        max_body_bytes: extra
-            .get("max_body_bytes")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(HTTPS_DEFAULT_MAX_BODY_BYTES),
+        max_body_bytes,
         absence_ms: number("absence_ms", HTTPS_DEFAULT_ABSENCE_MS),
         mailbox: number("mailbox", HTTPS_DEFAULT_MAILBOX),
+        max_clients: number("max_clients", HTTPS_DEFAULT_MAX_CLIENTS),
+        max_response_bytes: extra
+            .get("max_response_bytes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(max_body_bytes),
+        rate: extra
+            .get("rate")
+            .map(|v| https_rates(v).expect("validate_https_extras_partial proved the rates"))
+            .unwrap_or(HttpsRates::DEFAULT),
+        trusted_proxies: extra
+            .get("trusted_proxies")
+            .map(|v| trusted_proxies(v).expect("validate_https_extras_partial proved the proxies"))
+            .unwrap_or_default(),
     }
 }
 
@@ -5804,8 +6060,17 @@ topology:
                 max_body_bytes,
                 absence_ms,
                 mailbox,
+                max_clients,
+                max_response_bytes,
+                rate,
+                trusted_proxies,
             } => {
                 assert_eq!(url.as_deref(), Some("https://cal.example:8443/api"));
+                // docs/adr/0109, D1 and D2: the edge's bounds at their defaults.
+                assert_eq!(*max_clients, HTTPS_DEFAULT_MAX_CLIENTS);
+                assert_eq!(*max_response_bytes, HTTPS_DEFAULT_MAX_BODY_BYTES);
+                assert_eq!(*rate, HttpsRates::DEFAULT);
+                assert!(trusted_proxies.is_empty());
                 assert_eq!(*listen, None);
                 assert_eq!(*authenticator, HttpsAuthenticator::Bearer);
                 assert_eq!(*hold_ms, HTTPS_DEFAULT_HOLD_MS);
@@ -5864,6 +6129,152 @@ topology:
                 assert_eq!(*mailbox, 16);
             }
             other => panic!("expected TransportState::Https, got {other:?}"),
+        }
+        // A response carries at most the request body's bound when the
+        // binding names no `max_response_bytes`.
+        assert!(
+            matches!(
+                accept[0].state,
+                TransportState::Https {
+                    max_response_bytes: 65_536,
+                    ..
+                }
+            ),
+            "{:?}",
+            accept[0].state
+        );
+    }
+
+    /// docs/adr/0109, D1 and D2: the accepting side's bounds on what a client
+    /// costs are read as written, a limiter left out keeps its default, and
+    /// `rate: none` turns every limiter off.
+    #[test]
+    fn an_https_server_binding_reads_its_bounds_and_rates() {
+        let accept = resolve_on(
+            "https",
+            "sender",
+            ", listen: \"0.0.0.0:8443\", authenticator: install, max_clients: 5, \
+             max_response_bytes: 4096, trusted_proxies: [\"10.0.0.0/8\", \"::1\"], \
+             rate: { address: { interval_ms: 100, burst: 3 }, new_names: none, \
+             max_tracked: 64 }",
+        )
+        .expect("a well-formed server binding");
+        match &accept[0].state {
+            TransportState::Https {
+                max_clients,
+                max_response_bytes,
+                rate,
+                trusted_proxies,
+                ..
+            } => {
+                assert_eq!(*max_clients, 5);
+                assert_eq!(*max_response_bytes, 4096);
+                assert_eq!(
+                    *rate,
+                    HttpsRates {
+                        address: Some(HttpsRate {
+                            interval_ms: 100,
+                            burst: 3
+                        }),
+                        new_names: None,
+                        max_tracked: 64,
+                        ..HttpsRates::DEFAULT
+                    }
+                );
+                assert_eq!(trusted_proxies, &["10.0.0.0/8", "::1"]);
+            }
+            other => panic!("expected TransportState::Https, got {other:?}"),
+        }
+        let off = resolve_on(
+            "https",
+            "sender",
+            ", listen: \"0.0.0.0:8443\", authenticator: bearer, rate: none",
+        )
+        .expect("a server binding whose edge limits nothing");
+        assert!(
+            matches!(
+                off[0].state,
+                TransportState::Https {
+                    rate: HttpsRates::NONE,
+                    ..
+                }
+            ),
+            "{:?}",
+            off[0].state
+        );
+    }
+
+    /// docs/adr/0109, D1 and D2: a bound or a limiter no server can hold is
+    /// refused by the field that names it, and so is one on the dialing side.
+    #[test]
+    fn an_https_server_binding_with_bounds_no_server_can_hold_is_refused() {
+        let accept = ", listen: \"0.0.0.0:8443\", authenticator: bearer";
+        let cases = [
+            (", max_clients: 0", "max_clients", "between 1"),
+            (", max_response_bytes: 0", "max_response_bytes", "positive"),
+            (", rate: off", "rate", "must be `none` or a map"),
+            (", rate: { everyone: none }", "rate", "no limiter"),
+            (
+                ", rate: { address: { interval_ms: 0, burst: 1 } }",
+                "rate",
+                "interval_ms",
+            ),
+            (
+                ", rate: { client: { interval_ms: 1, burst: 0 } }",
+                "rate",
+                "burst",
+            ),
+            (
+                ", rate: { client: { burst: 3 } }",
+                "rate",
+                "`client` must be",
+            ),
+            (
+                ", rate: { client: { interval_ms: 4611686018427387904, burst: 2 } }",
+                "rate",
+                "more than",
+            ),
+            (", rate: { max_tracked: 0 }", "rate", "max_tracked"),
+            (
+                ", trusted_proxies: \"10.0.0.0/8\"",
+                "trusted_proxies",
+                "a list",
+            ),
+            (
+                ", trusted_proxies: [\"10.0.0.0/33\"]",
+                "trusted_proxies",
+                "prefix",
+            ),
+            (
+                ", trusted_proxies: [\"proxy.example\"]",
+                "trusted_proxies",
+                "no IPv4",
+            ),
+        ];
+        for (fields, field, why) in cases {
+            let fields = format!("{accept}{fields}");
+            match resolve_on("https", "sender", &fields) {
+                Err(TopologyError::InvalidBindingField {
+                    field: refused,
+                    reason,
+                    ..
+                }) => {
+                    assert_eq!(refused, field, "{fields}");
+                    assert!(reason.contains(why), "{fields}: {reason}");
+                }
+                other => panic!("{fields}: expected InvalidBindingField, got {other:?}"),
+            }
+        }
+        match resolve_on(
+            "https",
+            "sender",
+            ", url: \"https://cal.example\", authenticator: bearer, rate: none",
+        ) {
+            Err(TopologyError::InvalidBindingField { field, reason, .. }) => {
+                assert_eq!(field, "rate");
+                assert!(reason.contains("other side"), "{reason}");
+            }
+            other => panic!("expected InvalidBindingField, got {other:?}"),
         }
     }
 

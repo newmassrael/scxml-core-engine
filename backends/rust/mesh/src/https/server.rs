@@ -14,9 +14,18 @@
 //! transport the host builds its endpoint on. A full mailbox refuses the envelope as a full queue
 //! ([`TransportFailure::queue_full`]), which the core raises as SCE_MESH.md section 16.7 row 9.
 //!
-//! The mailboxes of one server number in one incarnation, drawn when the server starts with its
-//! mailboxes empty and named on every `200` (`Sce-Mesh-Epoch`), so that a client tells a mailbox
-//! that numbers anew from one it knows. A host whose endpoint checkpoints (SCE_MESH.md section
+//! A mailbox numbers in an incarnation, drawn when its state starts empty and named on every `200`
+//! (`Sce-Mesh-Epoch`), so that a client tells a mailbox that numbers anew from one it knows.
+//!
+//! What a client costs the server is bounded (docs/adr/0109, D1): a client's entry is removed
+//! once it holds nothing (its mailbox empty, no exchange in flight, and not ready), so a name that
+//! makes one exchange and goes away is forgotten after `absence_ms`; at most `max_clients` entries
+//! are held, and an exchange for a name past it is answered `503`; a connection is closed at
+//! accept past `max_connections` or `max_connections_per_address`, and when its TLS handshake, its
+//! request head or its body takes longer than its bound; and a response carries at most
+//! `max_response_bytes` of the mailbox, the rest at the next exchange.
+//!
+//! A host whose endpoint checkpoints (SCE_MESH.md section
 //! 10.11) answers an exchange that carried envelopes only once a durable checkpoint holds them
 //! ([`ServerHost::deliver`], [`Durability`], [`HttpsServer::durable`]); a keyed pool reports it
 //! per exchange from the receipts of the envelopes it was handed ([`crate::pool::Receipt`]).
@@ -27,7 +36,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -38,7 +49,7 @@ use hyper::header::{
     HeaderValue, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE as CONTENT_TYPE_NAME,
 };
 use hyper::{Method, Request, Response, StatusCode};
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
@@ -72,7 +83,27 @@ pub struct ServerSettings {
     pub max_exchanges_per_client: usize,
     /// What a `429` or `503` asks the client to wait (`Retry-After`, in whole seconds).
     pub retry_after: Duration,
+    /// deploy.yaml's `max_clients`: the most client entries held in memory; an exchange for a name
+    /// past it is answered `503` (docs/adr/0109, D1).
+    pub max_clients: usize,
+    /// deploy.yaml's `max_response_bytes`: the most mailbox bytes one response carries; the rest
+    /// go at the next exchange (docs/adr/0109, D1).
+    pub max_response_bytes: usize,
+    /// The longest a TLS handshake may take; the connection is closed past it.
+    pub handshake_timeout: Duration,
+    /// The longest a request's head may take to arrive; the connection is closed past it.
+    pub header_timeout: Duration,
+    /// The longest a request's whole body may take to arrive; the exchange is answered `408`.
+    pub body_timeout: Duration,
+    /// The most connections open at once; one more is closed at accept.
+    pub max_connections: usize,
+    /// The most connections open at once from one address (an IPv4 address, an IPv6 /64); one
+    /// more is closed at accept.
+    pub max_connections_per_address: usize,
 }
+
+/// deploy.yaml's `max_clients` when the binding sets none (docs/adr/0109, D1).
+pub const DEFAULT_MAX_CLIENTS: usize = 100_000;
 
 impl Default for ServerSettings {
     fn default() -> Self {
@@ -87,6 +118,13 @@ impl Default for ServerSettings {
             // on that the server has not yet seen end.
             max_exchanges_per_client: 3,
             retry_after: Duration::from_secs(1),
+            max_clients: DEFAULT_MAX_CLIENTS,
+            max_response_bytes: super::DEFAULT_MAX_BODY_BYTES as usize,
+            handshake_timeout: Duration::from_secs(10),
+            header_timeout: Duration::from_secs(10),
+            body_timeout: Duration::from_secs(30),
+            max_connections: 20_000,
+            max_connections_per_address: 64,
         }
     }
 }
@@ -117,6 +155,9 @@ impl Listening {
                 max_body_bytes,
                 absence_ms,
                 mailbox,
+                max_clients,
+                max_response_bytes,
+                ..
             } = peer.link
             else {
                 continue;
@@ -129,6 +170,8 @@ impl Listening {
                 max_body_bytes: usize::try_from(max_body_bytes).unwrap_or(usize::MAX),
                 absence: Duration::from_millis(u64::from(absence_ms)),
                 mailbox: mailbox as usize,
+                max_clients: max_clients as usize,
+                max_response_bytes: usize::try_from(max_response_bytes).unwrap_or(usize::MAX),
                 ..ServerSettings::default()
             };
             if let Some(held) = found.as_mut() {
@@ -140,6 +183,9 @@ impl Listening {
                 settings.max_body_bytes = settings.max_body_bytes.min(declared.max_body_bytes);
                 settings.absence = settings.absence.min(declared.absence);
                 settings.mailbox = settings.mailbox.min(declared.mailbox);
+                settings.max_clients = settings.max_clients.min(declared.max_clients);
+                settings.max_response_bytes =
+                    settings.max_response_bytes.min(declared.max_response_bytes);
                 held.peers.push(peer.name);
             } else {
                 found = Some(Listening {
@@ -257,6 +303,9 @@ const HELD: &str = "the server's state is never left mid-update: nothing in it p
 
 /// One client's mailbox and presence.
 struct Client {
+    /// The incarnation this mailbox numbers in (section 22.3): drawn when the entry was made with
+    /// its mailbox empty, so an entry removed and made again numbers anew in another.
+    epoch: String,
     /// The envelopes not yet acknowledged, by number, oldest first; the numbers are consecutive.
     entries: VecDeque<(u64, Vec<u8>)>,
     /// The number the next envelope gets; the first is 1.
@@ -268,8 +317,9 @@ struct Client {
 }
 
 impl Client {
-    fn new() -> Self {
+    fn new(epoch: String) -> Self {
         Client {
+            epoch,
             entries: VecDeque::new(),
             next: 1,
             ready: false,
@@ -277,6 +327,27 @@ impl Client {
             last_seen: Instant::now(),
             arrived: Arc::new(Notify::new()),
         }
+    }
+
+    /// Whether the entry holds nothing the server owes or is doing for the client (docs/adr/0109,
+    /// D1): its mailbox is empty, no exchange of it is in flight, and it is not ready. Such an
+    /// entry is removed.
+    fn holds_nothing(&self) -> bool {
+        self.entries.is_empty() && self.in_flight == 0 && !self.ready
+    }
+
+    /// The numbered envelopes a response carries: the oldest first, as many as fit in `most`
+    /// bytes, and always the first, so that an envelope larger than the bound still leaves
+    /// (docs/adr/0109, D1). The rest go at the next exchange.
+    fn response(&self, most: usize) -> (Option<u64>, Vec<u8>) {
+        let mut body = Vec::new();
+        for (_, bytes) in &self.entries {
+            if !body.is_empty() && body.len().saturating_add(bytes.len()) > most {
+                break;
+            }
+            body.extend_from_slice(bytes);
+        }
+        (self.entries.front().map(|(number, _)| *number), body)
     }
 
     /// Drop what `ack` acknowledges (section 22.3), when `epoch`, the incarnation the request says
@@ -300,15 +371,47 @@ impl Client {
 /// Every client's mailbox, shared by the server and the transport the endpoint sends through.
 struct Mailboxes {
     capacity: usize,
-    /// The incarnation every mailbox here numbers in (section 22.3): drawn when the server started
-    /// with its mailboxes empty, and named on every `200`.
-    epoch: String,
+    /// The most entries held at once (deploy.yaml's `max_clients`).
+    max_clients: usize,
     clients: Mutex<HashMap<String, Client>>,
+}
+
+/// Why no entry could be made for a client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoEntry {
+    /// The server holds `max_clients` entries.
+    Full,
+    /// No incarnation could be drawn for the new mailbox.
+    Unrandom,
 }
 
 impl Mailboxes {
     fn lock(&self) -> MutexGuard<'_, HashMap<String, Client>> {
         self.clients.lock().expect(HELD)
+    }
+
+    /// `name`'s entry in `clients`, made with a fresh incarnation when there is none and fewer
+    /// than `max_clients` are held (docs/adr/0109, D1).
+    fn entry<'a>(
+        &self,
+        clients: &'a mut HashMap<String, Client>,
+        name: &str,
+    ) -> Result<&'a mut Client, NoEntry> {
+        let held = clients.len();
+        match clients.entry(name.to_string()) {
+            Entry::Occupied(found) => Ok(found.into_mut()),
+            Entry::Vacant(_) if held >= self.max_clients => Err(NoEntry::Full),
+            Entry::Vacant(vacant) => {
+                let epoch = draw_epoch().map_err(|_| NoEntry::Unrandom)?;
+                Ok(vacant.insert(Client::new(epoch)))
+            }
+        }
+    }
+
+    /// Remove every entry that holds nothing (docs/adr/0109, D1): what a client that made an
+    /// exchange and went away cost the server ends once it is absent.
+    fn sweep(&self) {
+        self.lock().retain(|_, client| !client.holds_nothing());
     }
 }
 
@@ -321,7 +424,25 @@ pub struct MailboxTransport {
 impl Transport for MailboxTransport {
     fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
         let mut clients = self.mailboxes.lock();
-        let client = clients.entry(peer.to_string()).or_insert_with(Client::new);
+        let client = match self.mailboxes.entry(&mut clients, peer) {
+            Ok(client) => client,
+            Err(why) => {
+                return Err(TransportFailure {
+                    retryable: false,
+                    message: Some(match why {
+                        NoEntry::Full => alloc::format!(
+                            "the server holds {} clients, the most it holds, and {peer} is not \
+                             one of them",
+                            self.mailboxes.max_clients
+                        ),
+                        NoEntry::Unrandom => alloc::format!(
+                            "no incarnation could be drawn for the mailbox of {peer}"
+                        ),
+                    }),
+                    queue_full: None,
+                })
+            }
+        };
         if client.entries.len() >= self.mailboxes.capacity {
             return Err(TransportFailure {
                 retryable: false,
@@ -350,6 +471,74 @@ struct Shared {
     /// an exchange waiting for one wakes on.
     durable_through: AtomicU64,
     durable_reported: Notify,
+    /// The connections open, and how many come from each address ([`address_key`]).
+    connections: Mutex<Connections>,
+}
+
+/// The connections a server holds open (docs/adr/0109, D1).
+#[derive(Default)]
+struct Connections {
+    open: usize,
+    by_address: HashMap<IpAddr, usize>,
+}
+
+/// The key a remote address is counted and limited by (docs/adr/0109, D1 and D2): an IPv4
+/// address as it is, an IPv6 address by its /64, the block one subscriber is given, so a client
+/// does not escape a bound by moving within its own block. An IPv4 address mapped into IPv6 is
+/// the IPv4 address.
+pub fn address_key(address: IpAddr) -> IpAddr {
+    match address {
+        IpAddr::V4(_) => address,
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let mut segments = v6.segments();
+                segments[4..].fill(0);
+                IpAddr::V6(std::net::Ipv6Addr::from(segments))
+            }
+        },
+    }
+}
+
+/// A connection counted open, released when it closes.
+struct Open {
+    shared: Arc<Shared>,
+    address: IpAddr,
+}
+
+impl Open {
+    /// Count a connection from `address` open, unless the server holds `max_connections`, or
+    /// `max_connections_per_address` from its address ([`address_key`]).
+    fn admit(shared: &Arc<Shared>, address: IpAddr) -> Option<Open> {
+        let settings = &shared.settings;
+        let address = address_key(address);
+        let mut connections = shared.connections.lock().expect(HELD);
+        let from_address = connections.by_address.get(&address).copied().unwrap_or(0);
+        if connections.open >= settings.max_connections
+            || from_address >= settings.max_connections_per_address
+        {
+            return None;
+        }
+        connections.open += 1;
+        connections.by_address.insert(address, from_address + 1);
+        Some(Open {
+            shared: Arc::clone(shared),
+            address,
+        })
+    }
+}
+
+impl Drop for Open {
+    fn drop(&mut self) {
+        let mut connections = self.shared.connections.lock().expect(HELD);
+        connections.open = connections.open.saturating_sub(1);
+        if let Entry::Occupied(mut count) = connections.by_address.entry(self.address) {
+            *count.get_mut() -= 1;
+            if *count.get() == 0 {
+                count.remove();
+            }
+        }
+    }
 }
 
 /// The server: its mailboxes, its authenticator, and the host it tells.
@@ -361,17 +550,20 @@ pub struct HttpsServer {
 impl HttpsServer {
     /// A server with `settings`, letting a client in by `authenticator` when `is_bound` names it
     /// (the machine has a binding to it), and telling `host` what happens. Its mailboxes start
-    /// empty, in an incarnation drawn from the operating system's random source; refused when the
-    /// source could not be read.
+    /// empty, each numbering in an incarnation drawn from the operating system's random source
+    /// when it is made; refused when the source could not be read now.
     pub fn new(
         settings: ServerSettings,
         authenticator: Authenticator,
         is_bound: impl Fn(&str) -> bool + Send + Sync + 'static,
         host: impl ServerHost,
     ) -> Result<Self, crate::tls::Error> {
+        // Every mailbox draws its incarnation from the source: one that cannot be read refuses
+        // the server now, not its first client.
+        draw_epoch()?;
         let mailboxes = Arc::new(Mailboxes {
             capacity: settings.mailbox,
-            epoch: draw_epoch()?,
+            max_clients: settings.max_clients,
             clients: Mutex::new(HashMap::new()),
         });
         Ok(HttpsServer {
@@ -385,6 +577,7 @@ impl HttpsServer {
                 exchanges: AtomicUsize::new(0),
                 durable_through: AtomicU64::new(0),
                 durable_reported: Notify::new(),
+                connections: Mutex::new(Connections::default()),
             }),
         })
     }
@@ -396,9 +589,19 @@ impl HttpsServer {
         }
     }
 
-    /// The incarnation the mailboxes number in (`Sce-Mesh-Epoch`, section 22.3).
-    pub fn epoch(&self) -> &str {
-        &self.shared.mailboxes.epoch
+    /// The incarnation `client`'s mailbox numbers in (`Sce-Mesh-Epoch`, section 22.3), while the
+    /// server holds an entry for it.
+    pub fn epoch_of(&self, client: &str) -> Option<String> {
+        self.shared
+            .mailboxes
+            .lock()
+            .get(client)
+            .map(|held| held.epoch.clone())
+    }
+
+    /// How many client entries the server holds (docs/adr/0109, D1).
+    pub fn clients(&self) -> usize {
+        self.shared.mailboxes.lock().len()
     }
 
     /// The host reported the checkpoint `through`, and every one before it, durable to its
@@ -414,6 +617,10 @@ impl HttpsServer {
 
     /// Accept on `listener` until it fails, with TLS from `tls` (or none, for a loopback test),
     /// serving each connection on a task of its own, and watch for absent clients meanwhile.
+    ///
+    /// A connection past `max_connections`, or past `max_connections_per_address` from its
+    /// address, is closed at accept, and one whose TLS handshake takes longer than
+    /// `handshake_timeout` is closed (docs/adr/0109, D1).
     pub async fn serve(
         &self,
         listener: TcpListener,
@@ -424,17 +631,26 @@ impl HttpsServer {
             async move { server.watch_absence().await }
         }));
         let acceptor = tls.map(tokio_rustls::TlsAcceptor::from);
+        let handshake_timeout = self.shared.settings.handshake_timeout;
         let error = loop {
-            let stream = match listener.accept().await {
-                Ok((stream, _)) => stream,
+            let (stream, remote) = match listener.accept().await {
+                Ok(accepted) => accepted,
                 Err(error) => break error,
+            };
+            let Some(open) = Open::admit(&self.shared, remote.ip()) else {
+                drop(stream);
+                continue;
             };
             let server = self.clone();
             let acceptor = acceptor.clone();
             tokio::spawn(async move {
+                // Held for as long as the connection is served.
+                let _open = open;
                 match acceptor {
                     Some(acceptor) => {
-                        let Ok(stream) = acceptor.accept(stream).await else {
+                        let handshake =
+                            tokio::time::timeout(handshake_timeout, acceptor.accept(stream)).await;
+                        let Ok(Ok(stream)) = handshake else {
                             return;
                         };
                         let certificate = stream
@@ -454,8 +670,10 @@ impl HttpsServer {
     }
 
     /// Serve the exchanges of one connection the host accepted (and, for TLS, already
-    /// handshook), whose client presented `certificate` (DER), until it closes. A host that
-    /// accepts itself runs [`watch_absence`](Self::watch_absence) beside it.
+    /// handshook), whose client presented `certificate` (DER), until it closes. A request head
+    /// that takes longer than `header_timeout` closes the connection (docs/adr/0109, D1). A host
+    /// that accepts itself runs [`watch_absence`](Self::watch_absence) beside it, and bounds its
+    /// connections and handshakes as [`serve`](Self::serve) does.
     pub async fn serve_connection<S>(&self, stream: S, certificate: Option<Vec<u8>>)
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -467,15 +685,19 @@ impl HttpsServer {
             let certificate = certificate.clone();
             async move { Ok::<_, Infallible>(exchange(shared, request, certificate).await) }
         });
-        let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+        let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+        builder
+            .http1()
+            .timer(TokioTimer::new())
+            .header_read_timeout(self.shared.settings.header_timeout);
         let _ = builder
             .serve_connection(TokioIo::new(stream), service)
             .await;
     }
 
     /// Tell the host, once per edge, of every ready client whose last exchange ended longer ago
-    /// than `absence` and that has none in flight: SCE_MESH.md section 16.7 row 1. Runs until
-    /// dropped.
+    /// than `absence` and that has none in flight: SCE_MESH.md section 16.7 row 1; then remove
+    /// every entry that holds nothing (docs/adr/0109, D1). Runs until dropped.
     pub async fn watch_absence(&self) {
         let absence = self.shared.settings.absence;
         let every = (absence / 4).clamp(Duration::from_millis(10), Duration::from_secs(1));
@@ -504,6 +726,9 @@ impl HttpsServer {
             if !lost.is_empty() {
                 tell(&self.shared, lost).await;
             }
+            // Under the telling lock, so that an entry is not removed between an exchange
+            // deciding a client ready and the host being told.
+            self.shared.mailboxes.sweep();
         }
     }
 }
@@ -744,7 +969,11 @@ async fn exchange(
 
     let in_flight = {
         let mut clients = shared.mailboxes.lock();
-        let client = clients.entry(name.clone()).or_insert_with(Client::new);
+        // docs/adr/0109, D1: a name past `max_clients` is load shed, and so is one whose mailbox
+        // could draw no incarnation.
+        let Ok(client) = shared.mailboxes.entry(&mut clients, &name) else {
+            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        };
         if client.in_flight >= settings.max_exchanges_per_client {
             return shed(StatusCode::TOO_MANY_REQUESTS, settings.retry_after);
         }
@@ -756,16 +985,21 @@ async fn exchange(
         }
     };
 
-    let body = match Limited::new(request.into_body(), settings.max_body_bytes)
-        .collect()
-        .await
-    {
-        Ok(collected) => collected.to_bytes(),
-        Err(error) if error.downcast_ref::<LengthLimitError>().is_some() => {
+    // docs/adr/0109, D1: a body that takes longer than `body_timeout` to arrive whole is answered
+    // `408` (RFC 9110, section 15.5.9), and its connection is free again.
+    let collected = tokio::time::timeout(
+        settings.body_timeout,
+        Limited::new(request.into_body(), settings.max_body_bytes).collect(),
+    )
+    .await;
+    let body = match collected {
+        Err(_) => return answer(StatusCode::REQUEST_TIMEOUT),
+        Ok(Ok(collected)) => collected.to_bytes(),
+        Ok(Err(error)) if error.downcast_ref::<LengthLimitError>().is_some() => {
             return answer(StatusCode::PAYLOAD_TOO_LARGE);
         }
         // The connection ended or broke before the body was whole; nobody reads the answer.
-        Err(_) => return answer(StatusCode::BAD_REQUEST),
+        Ok(Err(_)) => return answer(StatusCode::BAD_REQUEST),
     };
     if !body.is_empty() && typed.as_deref() != Some(CONTENT_TYPE) {
         return answer(StatusCode::UNSUPPORTED_MEDIA_TYPE);
@@ -783,8 +1017,12 @@ async fn exchange(
         let telling = shared.telling.lock().await;
         let (became_ready, arrived) = {
             let mut clients = shared.mailboxes.lock();
-            let client = clients.entry(name.clone()).or_insert_with(Client::new);
-            client.acknowledge(ack, acked_in.as_deref(), &shared.mailboxes.epoch);
+            // The exchange is in flight, so its entry is held: no sweep removes it.
+            let Ok(client) = shared.mailboxes.entry(&mut clients, &name) else {
+                return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+            };
+            let current = client.epoch.clone();
+            client.acknowledge(ack, acked_in.as_deref(), &current);
             let became_ready = !client.ready;
             client.ready = true;
             (became_ready, Arc::clone(&client.arrived))
@@ -844,22 +1082,29 @@ async fn exchange(
         }
     }
 
-    let (first, body) = {
+    // At most `max_response_bytes` of the mailbox (docs/adr/0109, D1); the rest at the next
+    // exchange, which section 22.3's numbering allows.
+    let (epoch, first, body) = {
         let clients = shared.mailboxes.lock();
         match clients.get(&name) {
-            Some(client) => (
-                client.entries.front().map(|(number, _)| *number),
-                super::join_sequence(client.entries.iter().map(|(_, bytes)| bytes.as_slice())),
-            ),
-            None => (None, Vec::new()),
+            Some(client) => {
+                let (first, body) = client.response(settings.max_response_bytes);
+                (Some(client.epoch.clone()), first, body)
+            }
+            None => (None, None, Vec::new()),
         }
     };
     drop(in_flight);
+    let Some(epoch) = epoch else {
+        // The entry an exchange in flight holds is never removed, so this is not reached; a
+        // response naming no incarnation would number nothing.
+        return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+    };
     let mut response = Response::new(Full::new(Bytes::from(body)));
     response
         .headers_mut()
         .insert(CONTENT_TYPE_NAME, HeaderValue::from_static(CONTENT_TYPE));
-    if let Ok(value) = HeaderValue::from_str(&shared.mailboxes.epoch) {
+    if let Ok(value) = HeaderValue::from_str(&epoch) {
         response.headers_mut().insert(EPOCH_HEADER, value);
     }
     if let Some(first) = first {
@@ -937,7 +1182,7 @@ mod tests {
     /// does not hold.
     #[test]
     fn an_acknowledgement_drops_what_it_names_in_this_incarnation_and_no_more() {
-        let mut client = Client::new();
+        let mut client = Client::new(EPOCH.to_string());
         for n in 0..5u8 {
             client.entries.push_back((client.next, alloc::vec![n]));
             client.next += 1;
@@ -961,7 +1206,7 @@ mod tests {
     fn a_full_mailbox_refuses_as_a_full_queue_with_its_depth() {
         let mailboxes = Arc::new(Mailboxes {
             capacity: 2,
-            epoch: EPOCH.to_string(),
+            max_clients: 2,
             clients: Mutex::new(HashMap::new()),
         });
         let mut transport = MailboxTransport {
@@ -977,6 +1222,102 @@ mod tests {
         let clients = mailboxes.lock();
         let numbers: Vec<u64> = clients["phone"].entries.iter().map(|(n, _)| *n).collect();
         assert_eq!(numbers, [1, 2]);
+        assert_ne!(
+            clients["phone"].epoch, clients["tablet"].epoch,
+            "each mailbox draws its own incarnation"
+        );
+    }
+
+    /// docs/adr/0109, D1: at `max_clients` entries a send to a client the server holds none for
+    /// is refused, not queued, and makes no entry. Red if the transport makes an entry past the
+    /// bound.
+    #[test]
+    fn a_send_to_a_client_past_max_clients_makes_no_entry() {
+        let mailboxes = Arc::new(Mailboxes {
+            capacity: 4,
+            max_clients: 1,
+            clients: Mutex::new(HashMap::new()),
+        });
+        let mut transport = MailboxTransport {
+            mailboxes: Arc::clone(&mailboxes),
+        };
+        transport.transmit("phone", &[1]).unwrap();
+        let refused = transport.transmit("tablet", &[1]).unwrap_err();
+        assert_eq!(refused.queue_full, None);
+        assert!(!refused.retryable);
+        assert_eq!(mailboxes.lock().len(), 1);
+        transport
+            .transmit("phone", &[2])
+            .expect("a held client is still sent to");
+    }
+
+    /// docs/adr/0109, D1: an entry that holds nothing (an empty mailbox, no exchange in flight,
+    /// not ready) is removed by a sweep, and one the server still owes envelopes, one with an
+    /// exchange in flight and one that is ready are kept. Red if the sweep keeps an entry that
+    /// holds nothing.
+    #[test]
+    fn a_sweep_removes_only_the_entries_that_hold_nothing() {
+        let mailboxes = Mailboxes {
+            capacity: 4,
+            max_clients: 8,
+            clients: Mutex::new(HashMap::new()),
+        };
+        {
+            let mut clients = mailboxes.lock();
+            for name in ["gone", "owed", "busy", "ready"] {
+                mailboxes.entry(&mut clients, name).expect("room");
+            }
+            clients
+                .get_mut("owed")
+                .unwrap()
+                .entries
+                .push_back((1, alloc::vec![1]));
+            clients.get_mut("busy").unwrap().in_flight = 1;
+            clients.get_mut("ready").unwrap().ready = true;
+        }
+        mailboxes.sweep();
+        let mut kept: Vec<String> = mailboxes.lock().keys().cloned().collect();
+        kept.sort_unstable();
+        assert_eq!(kept, ["busy", "owed", "ready"]);
+    }
+
+    /// docs/adr/0109, D1: a response carries the oldest envelopes that fit in
+    /// `max_response_bytes`, always at least one, and names the first it carries; the rest wait
+    /// for the next exchange. Red if a response carries the whole mailbox.
+    #[test]
+    fn a_response_carries_at_most_its_bound_of_the_mailbox() {
+        let mut client = Client::new(EPOCH.to_string());
+        for n in 1..=3u64 {
+            client.entries.push_back((n, alloc::vec![n as u8; 4]));
+        }
+        assert_eq!(
+            client.response(8),
+            (Some(1), alloc::vec![1, 1, 1, 1, 2, 2, 2, 2])
+        );
+        assert_eq!(client.response(7), (Some(1), alloc::vec![1, 1, 1, 1]));
+        assert_eq!(
+            client.response(2),
+            (Some(1), alloc::vec![1, 1, 1, 1]),
+            "an envelope larger than the bound still leaves, alone"
+        );
+        assert_eq!(client.response(usize::MAX).1.len(), 12);
+        client.acknowledge(1, Some(EPOCH), EPOCH);
+        assert_eq!(
+            client.response(8),
+            (Some(2), alloc::vec![2, 2, 2, 2, 3, 3, 3, 3])
+        );
+    }
+
+    /// docs/adr/0109, D1 and D2: an address is counted by the block one subscriber holds: IPv4
+    /// as it is, IPv6 by its /64, an IPv4 address mapped into IPv6 as IPv4.
+    #[test]
+    fn an_address_is_counted_by_its_ipv4_address_or_ipv6_block() {
+        let key = |text: &str| address_key(text.parse().expect("an address"));
+        assert_eq!(key("192.0.2.7"), key("192.0.2.7"));
+        assert_ne!(key("192.0.2.7"), key("192.0.2.8"));
+        assert_eq!(key("2001:db8:1:2:aaaa::1"), key("2001:db8:1:2:bbbb::2"));
+        assert_ne!(key("2001:db8:1:2::1"), key("2001:db8:1:3::1"));
+        assert_eq!(key("::ffff:192.0.2.7"), key("192.0.2.7"));
     }
 
     fn accepted(
@@ -1008,6 +1349,11 @@ mod tests {
                 max_body_bytes: 4096,
                 absence_ms: 60_000,
                 mailbox,
+                // Told apart per binding by its mailbox, so the smallest is seen to be taken.
+                max_clients: mailbox * 100,
+                max_response_bytes: u64::from(mailbox) * 64,
+                rate: crate::peers::EdgeRates::DEFAULT,
+                trusted_proxies: &[],
             },
         }
     }
@@ -1035,6 +1381,8 @@ mod tests {
         assert_eq!(listening.settings.max_hold, Duration::from_millis(20_000));
         assert_eq!(listening.settings.max_body_bytes, 4096);
         assert_eq!(listening.settings.absence, Duration::from_millis(60_000));
+        assert_eq!(listening.settings.max_clients, 1_600);
+        assert_eq!(listening.settings.max_response_bytes, 1_024);
         assert_eq!(
             Listening::on(&machine, "0.0.0.0:9443").map(|l| l.peers),
             Some(alloc::vec!["kiosk"])
@@ -1116,6 +1464,23 @@ mod tests {
     /// A server of `phone` on a loopback port, with `host` behind it, holding an exchange at most
     /// `max_hold`.
     fn serving(host: impl ServerHost, max_hold: Duration) -> Serving {
+        serving_with(
+            ServerSettings {
+                max_hold,
+                ..ServerSettings::default()
+            },
+            |name: &str| name == "phone",
+            host,
+        )
+    }
+
+    /// A server with `settings` on a loopback port, with `host` behind it, binding every name
+    /// `bound` names, each proving it with the token `t`.
+    fn serving_with(
+        settings: ServerSettings,
+        bound: impl Fn(&str) -> bool + Send + Sync + 'static,
+        host: impl ServerHost,
+    ) -> Serving {
         use super::super::adapter::{AdapterSettings, HyperTransport, ProxyPolicy};
 
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -1123,15 +1488,14 @@ mod tests {
             .enable_all()
             .build()
             .expect("a runtime");
+        let bound = Arc::new(bound);
+        let checked = Arc::clone(&bound);
         let server = HttpsServer::new(
-            ServerSettings {
-                max_hold,
-                ..ServerSettings::default()
-            },
-            Authenticator::Bearer(Arc::new(|name: &str, token: &str| {
-                name == "phone" && token == "t"
+            settings,
+            Authenticator::Bearer(Arc::new(move |name: &str, token: &str| {
+                checked(name) && token == "t"
             })),
-            |name| name == "phone",
+            move |name| bound(name),
             host,
         )
         .expect("a server");
@@ -1162,8 +1526,17 @@ mod tests {
 
     /// An exchange of `phone` with the server at `address`, carrying `body`, asking for no hold.
     fn request_to(address: std::net::SocketAddr, body: Vec<u8>) -> super::super::HttpsRequest {
+        request_as("phone", address, body)
+    }
+
+    /// An exchange of `name` with the server at `address`, carrying `body`, asking for no hold.
+    fn request_as(
+        name: &str,
+        address: std::net::SocketAddr,
+        body: Vec<u8>,
+    ) -> super::super::HttpsRequest {
         super::super::HttpsRequest {
-            url: alloc::format!("http://{address}/sce-mesh/1/phone"),
+            url: alloc::format!("http://{address}/sce-mesh/1/{name}"),
             headers: alloc::vec![
                 ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
                 (ACK_HEADER.to_string(), "0".to_string()),
@@ -1196,13 +1569,19 @@ mod tests {
             },
             Duration::from_secs(5),
         );
-        assert!(is_epoch(server.epoch()), "{}", server.epoch());
+        assert_eq!(
+            server.epoch_of("phone"),
+            None,
+            "no entry before an exchange"
+        );
 
         let poll = port
             .exchange(request_to(address, Vec::new()))
             .expect("a response");
         assert_eq!(poll.status, 200, "a poll waits for no checkpoint");
-        assert_eq!(poll.header(EPOCH_HEADER), Some(server.epoch()));
+        let epoch = server.epoch_of("phone").expect("an entry for the client");
+        assert!(is_epoch(&epoch), "{epoch}");
+        assert_eq!(poll.header(EPOCH_HEADER), Some(epoch.as_str()));
 
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn({
@@ -1226,7 +1605,7 @@ mod tests {
             .expect("answered once durable")
             .expect("a response");
         assert_eq!(answered.status, 200);
-        assert_eq!(answered.header(EPOCH_HEADER), Some(server.epoch()));
+        assert_eq!(answered.header(EPOCH_HEADER), Some(epoch.as_str()));
         assert_eq!(received.load(Ordering::SeqCst), 1);
     }
 
@@ -1256,7 +1635,10 @@ mod tests {
             .exchange(request_to(address, Vec::new()))
             .expect("a response");
         assert_eq!(poll.status, 200, "a poll waits for no checkpoint");
-        assert_eq!(poll.header(EPOCH_HEADER), Some(server.epoch()));
+        assert_eq!(
+            poll.header(EPOCH_HEADER),
+            server.epoch_of("phone").as_deref()
+        );
 
         for _ in 0..2 {
             let started = Instant::now();
@@ -1277,5 +1659,197 @@ mod tests {
             2,
             "each copy reached the host"
         );
+    }
+
+    /// Wait, at most five seconds, until `holds` is true of the server; whether it became so.
+    fn eventually(server: &HttpsServer, holds: impl Fn(&HttpsServer) -> bool) -> bool {
+        let until = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < until {
+            if holds(server) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        holds(server)
+    }
+
+    /// docs/adr/0109, D1: a server shown ten thousand names that each make one exchange and go
+    /// away holds none of them once they are absent: each entry is removed when it holds nothing.
+    /// Red if an entry is never removed: ten thousand stay.
+    #[test]
+    fn names_that_make_one_exchange_and_go_away_cost_nothing_once_absent() {
+        use super::super::HttpsTransport;
+
+        let Serving {
+            _runtime,
+            server,
+            address,
+            port,
+        } = serving_with(
+            ServerSettings {
+                absence: Duration::from_millis(100),
+                ..ServerSettings::default()
+            },
+            |name: &str| name.starts_with('n'),
+            |_: Vec<LinkEvent>| {},
+        );
+        for n in 0..10_000u32 {
+            let name = alloc::format!("n{n}");
+            let answered = port
+                .exchange(request_as(&name, address, Vec::new()))
+                .expect("a response");
+            assert_eq!(answered.status, 200, "{name}");
+        }
+        assert!(
+            eventually(&server, |server| server.clients() == 0),
+            "{} entries are still held",
+            server.clients()
+        );
+    }
+
+    /// docs/adr/0109, D1: at `max_clients` entries an exchange for a name the server holds none
+    /// for is answered `503` with `Retry-After`, and the names it holds are still served. Red if
+    /// an entry is made past the bound.
+    #[test]
+    fn an_exchange_for_a_name_past_max_clients_is_shed() {
+        use super::super::HttpsTransport;
+
+        let Serving {
+            _runtime,
+            server,
+            address,
+            port,
+        } = serving_with(
+            ServerSettings {
+                max_clients: 2,
+                ..ServerSettings::default()
+            },
+            |_: &str| true,
+            |_: Vec<LinkEvent>| {},
+        );
+        for name in ["a", "b"] {
+            let answered = port
+                .exchange(request_as(name, address, Vec::new()))
+                .expect("a response");
+            assert_eq!(answered.status, 200, "{name}");
+        }
+        let shed = port
+            .exchange(request_as("c", address, Vec::new()))
+            .expect("a response");
+        assert_eq!(shed.status, 503);
+        assert_eq!(shed.header("Retry-After"), Some("1"));
+        assert_eq!(server.clients(), 2);
+        let served = port
+            .exchange(request_as("a", address, Vec::new()))
+            .expect("a response");
+        assert_eq!(served.status, 200, "a held name is still served");
+    }
+
+    /// Bytes `request` written on a plain connection to `address`, and what the server sent back
+    /// until it closed the connection, sent a whole response head, or `wait` passed.
+    fn raw_exchange(address: std::net::SocketAddr, request: &[u8], wait: Duration) -> Vec<u8> {
+        use std::io::{Read, Write};
+
+        let mut stream = std::net::TcpStream::connect(address).expect("a connection");
+        stream.write_all(request).expect("written");
+        stream.set_read_timeout(Some(wait)).expect("a read timeout");
+        let mut answer = Vec::new();
+        let mut buffer = [0u8; 1024];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(read) => answer.extend_from_slice(&buffer[..read]),
+            }
+            if answer.windows(4).any(|end| end == b"\r\n\r\n") {
+                break;
+            }
+        }
+        answer
+    }
+
+    /// docs/adr/0109, D1: a client that sends a request's head too slowly has its connection
+    /// closed at `header_timeout`, and one that sends its body too slowly is answered `408` at
+    /// `body_timeout`. Red if either bound is not applied: the connection then stays open, unread,
+    /// until the test's wait of five seconds passes.
+    #[test]
+    fn a_slow_head_and_a_slow_body_are_cut_off_at_their_bounds() {
+        let Serving {
+            _runtime, address, ..
+        } = serving_with(
+            ServerSettings {
+                header_timeout: Duration::from_millis(200),
+                body_timeout: Duration::from_millis(200),
+                ..ServerSettings::default()
+            },
+            |name: &str| name == "phone",
+            |_: Vec<LinkEvent>| {},
+        );
+
+        let started = Instant::now();
+        let head = raw_exchange(
+            address,
+            b"POST /sce-mesh/1/phone HTTP/1.1\r\nHost: x\r\n",
+            Duration::from_secs(5),
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "a head that never ends is cut off: {:?}",
+            String::from_utf8_lossy(&head)
+        );
+
+        let started = Instant::now();
+        let body = raw_exchange(
+            address,
+            b"POST /sce-mesh/1/phone HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t\r\n\
+              Content-Type: application/cbor-seq\r\nContent-Length: 10\r\n\r\n",
+            Duration::from_secs(5),
+        );
+        assert!(
+            body.starts_with(b"HTTP/1.1 408"),
+            "{:?}",
+            String::from_utf8_lossy(&body)
+        );
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
+
+    /// docs/adr/0109, D1: a connection past `max_connections_per_address` from one address is
+    /// closed at accept; once the first closes, the address is served again. Red if the bound is
+    /// not applied: the second connection is then held open, unread, past the test's wait.
+    #[test]
+    fn a_connection_past_its_address_bound_is_closed_at_accept() {
+        use super::super::HttpsTransport;
+
+        let Serving {
+            _runtime,
+            address,
+            port,
+            ..
+        } = serving_with(
+            ServerSettings {
+                max_connections_per_address: 1,
+                ..ServerSettings::default()
+            },
+            |name: &str| name == "phone",
+            |_: Vec<LinkEvent>| {},
+        );
+        let first = std::net::TcpStream::connect(address).expect("a connection");
+        let started = Instant::now();
+        let second = raw_exchange(address, b"", Duration::from_secs(5));
+        assert!(second.is_empty());
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "the second connection was closed at accept"
+        );
+        drop(first);
+        let mut served = None;
+        let until = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < until {
+            if let Ok(answered) = port.exchange(request_to(address, Vec::new())) {
+                served = Some(answered.status);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(served, Some(200), "the address is served again");
     }
 }
