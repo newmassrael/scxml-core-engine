@@ -38,7 +38,9 @@ use sce_rust_mesh::endpoint::{
     EngineCall, Environment, Transport, MESH_ORIGIN_SCHEME, MESH_PROCESSOR_TYPE,
 };
 use sce_rust_mesh::inbound::Delivery;
-use sce_rust_mesh::peers::{HttpsAuthenticator, KeyFrom, Machine, Peer, PeerLink, Sessions};
+use sce_rust_mesh::peers::{
+    EdgeRates, HttpsAuthenticator, KeyFrom, Machine, Peer, PeerLink, Sessions,
+};
 use sce_rust_mesh::pool::{SessionEndpoint, SessionFactory, SessionMachine};
 use sce_rust_mesh::router::PeerConfig;
 use sce_rust_runtime::json::{self, Value};
@@ -108,6 +110,13 @@ pub const HTTPS: Binding = Binding {
         max_body_bytes: 1_048_576,
         absence_ms: 120_000,
         mailbox: 1_024,
+        max_clients: 100_000,
+        max_response_bytes: 1_048_576,
+        // The scenarios that run on this binding judge what the server keeps, at the rate a
+        // campaign drives it; the edge's limits are judged by their own scenario
+        // (tests/the_https_edge_limits_rate.rs), on a binding that names them.
+        rate: EdgeRates::NONE,
+        trusted_proxies: &[],
     },
 };
 

@@ -2440,6 +2440,11 @@ enum HostLinkContext {
         max_body_bytes: u64,
         absence_ms: u32,
         mailbox: u32,
+        /// What a client may cost the server (docs/adr/0109, D1 and D2).
+        max_clients: u32,
+        max_response_bytes: u64,
+        rate: crate::mesh::topology::HttpsRates,
+        trusted_proxies: Vec<String>,
     },
 }
 
@@ -2621,6 +2626,10 @@ fn generate_host_mesh(
                     max_body_bytes,
                     absence_ms,
                     mailbox,
+                    max_clients,
+                    max_response_bytes,
+                    rate,
+                    trusted_proxies,
                     ..
                 } => HostLinkContext::HttpsAccept {
                     listen: listen.clone(),
@@ -2629,6 +2638,10 @@ fn generate_host_mesh(
                     max_body_bytes: *max_body_bytes,
                     absence_ms: *absence_ms,
                     mailbox: *mailbox,
+                    max_clients: *max_clients,
+                    max_response_bytes: *max_response_bytes,
+                    rate: *rate,
+                    trusted_proxies: trusted_proxies.clone(),
                 },
                 TransportState::Https { .. } => unreachable!(
                     "generate_host_mesh: an https binding with neither `url` nor `listen` passed \

@@ -1432,9 +1432,11 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // not a missing setting. Which side dials is the presence of `url`.
         required_binding_fields: &[],
         // Dialing side: `url`, `hold_ms`. Accepting side: `listen`,
-        // `max_hold_ms`, `max_body_bytes`, `absence_ms`, `mailbox`. Both:
-        // `authenticator`. `topology::validate_https_extras_partial` refuses a
-        // key of one side on the other.
+        // `max_hold_ms`, `max_body_bytes`, `absence_ms`, `mailbox`, and what a
+        // client may cost the server (docs/adr/0109, D1 and D2):
+        // `max_clients`, `max_response_bytes`, `rate`, `trusted_proxies`.
+        // Both: `authenticator`. `topology::validate_https_extras_partial`
+        // refuses a key of one side on the other.
         optional_binding_fields: &[
             "url",
             "listen",
@@ -1444,6 +1446,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
             "max_body_bytes",
             "absence_ms",
             "mailbox",
+            "max_clients",
+            "max_response_bytes",
+            "rate",
+            "trusted_proxies",
         ],
         // What a lost response carried is carried again, and a request whose
         // exchange failed is sent again under a retry policy: the core's
@@ -1719,7 +1725,11 @@ mod tests {
                 "max_hold_ms",
                 "max_body_bytes",
                 "absence_ms",
-                "mailbox"
+                "mailbox",
+                "max_clients",
+                "max_response_bytes",
+                "rate",
+                "trusted_proxies"
             ]
         );
         // The first answered exchange is the ready edge.
@@ -1927,7 +1937,11 @@ mod tests {
                         "max_hold_ms",
                         "max_body_bytes",
                         "absence_ms",
-                        "mailbox"
+                        "mailbox",
+                        "max_clients",
+                        "max_response_bytes",
+                        "rate",
+                        "trusted_proxies"
                     ]
                 ),
             ]

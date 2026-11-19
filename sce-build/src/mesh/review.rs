@@ -313,6 +313,10 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             max_body_bytes,
             absence_ms,
             mailbox,
+            max_clients,
+            max_response_bytes,
+            rate,
+            trusted_proxies,
         } => {
             // Which side this is: exactly one of `url` and `listen` is set
             // (ADR 0107, D2), and an absent one is not a default.
@@ -332,6 +336,36 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             out.push(Fact::new(at("max-body-bytes"), max_body_bytes.to_string()));
             out.push(Fact::new(at("absence-ms"), absence_ms.to_string()));
             out.push(Fact::new(at("mailbox"), mailbox.to_string()));
+            // docs/adr/0109, D1 and D2: what a client may cost the server.
+            out.push(Fact::new(at("max-clients"), max_clients.to_string()));
+            out.push(Fact::new(
+                at("max-response-bytes"),
+                max_response_bytes.to_string(),
+            ));
+            for (name, limiter) in [
+                ("address", rate.address),
+                ("client", rate.client),
+                ("failed-auth", rate.failed_auth),
+                ("new-names", rate.new_names),
+            ] {
+                let said = limiter.map_or_else(
+                    || "none".to_string(),
+                    |r| format!("{} ms, burst {}", r.interval_ms, r.burst),
+                );
+                out.push(Fact::new(at(&format!("rate-{name}")), said));
+            }
+            out.push(Fact::new(
+                at("rate-max-tracked"),
+                rate.max_tracked.to_string(),
+            ));
+            out.push(Fact::new(
+                at("trusted-proxies"),
+                if trusted_proxies.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    trusted_proxies.join(", ")
+                },
+            ));
         }
         // Nothing to settle: the binding names the peer and no more (the key
         // is derived from the two machine names, and the router endpoints

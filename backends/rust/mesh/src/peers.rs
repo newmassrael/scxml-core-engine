@@ -60,7 +60,77 @@ pub enum PeerLink {
         absence_ms: u32,
         /// deploy.yaml's `mailbox`: the envelopes that wait for the peer at most.
         mailbox: u32,
+        /// deploy.yaml's `max_clients`: the client entries the server holds in memory at most
+        /// (docs/adr/0109, D1).
+        max_clients: u32,
+        /// deploy.yaml's `max_response_bytes`: the mailbox bytes one response carries at most
+        /// (docs/adr/0109, D1).
+        max_response_bytes: u64,
+        /// deploy.yaml's `rate:`: the edge's limiters (docs/adr/0109, D2).
+        rate: EdgeRates,
+        /// deploy.yaml's `trusted_proxies`: the CIDR blocks whose `Forwarded` header names the
+        /// client's address (docs/adr/0109, D2), each as written and checked by the build.
+        trusted_proxies: &'static [&'static str],
     },
+}
+
+/// One limiter of an HTTPS server's edge (docs/adr/0109, D2), judged by the generic cell rate
+/// algorithm of `sce:std/rate/gcra_admit`: one permit regenerates every `interval_ms`, and at
+/// most `burst` are held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EdgeRate {
+    pub interval_ms: u64,
+    pub burst: u32,
+}
+
+/// deploy.yaml's `rate:` of an HTTPS accepting binding (docs/adr/0109, D2): each limiter, `None`
+/// when the deployment turned it off, and the most keys each tracks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EdgeRates {
+    /// Every exchange, keyed by the remote address (an IPv4 address, an IPv6 /64).
+    pub address: Option<EdgeRate>,
+    /// Every exchange that authenticated, keyed by the client's name.
+    pub client: Option<EdgeRate>,
+    /// Each `401`, keyed by the name and by the address.
+    pub failed_auth: Option<EdgeRate>,
+    /// Each name pinned for the first time, keyed by the address.
+    pub new_names: Option<EdgeRate>,
+    /// The most keys each limiter tracks.
+    pub max_tracked: u32,
+}
+
+impl EdgeRates {
+    /// deploy.yaml's defaults: `address` 100 a second with a burst of 200, `client` 20 a second
+    /// with 40, `failed_auth` 10 a minute with 10, `new_names` 20 an hour with 20, each tracking
+    /// 100000 keys at most.
+    pub const DEFAULT: EdgeRates = EdgeRates {
+        address: Some(EdgeRate {
+            interval_ms: 10,
+            burst: 200,
+        }),
+        client: Some(EdgeRate {
+            interval_ms: 50,
+            burst: 40,
+        }),
+        failed_auth: Some(EdgeRate {
+            interval_ms: 6_000,
+            burst: 10,
+        }),
+        new_names: Some(EdgeRate {
+            interval_ms: 180_000,
+            burst: 20,
+        }),
+        max_tracked: 100_000,
+    };
+
+    /// `rate: none`: no limiter.
+    pub const NONE: EdgeRates = EdgeRates {
+        address: None,
+        client: None,
+        failed_auth: None,
+        new_names: None,
+        max_tracked: 100_000,
+    };
 }
 
 /// Who may claim a name on an HTTPS binding (SCE_MESH.md section 22.5): deploy.yaml's
@@ -259,6 +329,10 @@ mod tests {
                 max_body_bytes: 1_048_576,
                 absence_ms: 120_000,
                 mailbox: 1024,
+                max_clients: 100_000,
+                max_response_bytes: 1_048_576,
+                rate: EdgeRates::DEFAULT,
+                trusted_proxies: &[],
             },
         }],
         sessions: None,
