@@ -498,6 +498,15 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.apply(effects);
     }
 
+    /// An answer that arrived as `peer`'s did not prove it came from `peer`
+    /// (SCE_MESH.md section 22.9), and the link took nothing of it: the
+    /// machine is told, as section 16.7 row 19. Readiness, what waits and
+    /// what is queued are the link's to keep as they were, since nothing
+    /// of the answer is believed.
+    pub fn peer_unauthenticated(&mut self, peer: &str) {
+        self.raise(Some(peer), &Signal::ResponseUnauthenticated);
+    }
+
     /// Bind `peer` while the endpoint runs: a device a host learned of after it built its router (a
     /// person who joined a list). Replaces the binding when `peer` is bound already, and with it
     /// what that binding held.
@@ -989,6 +998,36 @@ mod tests {
             message: Some("reset".to_string()),
             queue_full: None,
         }
+    }
+
+    /// SCE_MESH.md section 22.9: an answer that did not verify is told to
+    /// the machine as row 19, naming the binding it arrived on, and leaves
+    /// the link as ready as it was. Red if `deliver` drops the event, or if
+    /// it ends readiness as row 1 would.
+    #[test]
+    fn an_answer_that_did_not_verify_is_row_19_and_leaves_the_link_ready() {
+        use crate::link::{deliver, LinkEvent};
+
+        let mut hmi = endpoint("ecu", "hmi", None);
+        deliver(
+            &mut hmi,
+            LinkEvent::Unauthenticated("hmi".to_string(), "no signature".to_string()),
+        );
+        let events = raised(&mut hmi);
+        let [event] = events.as_slice() else {
+            panic!("expected one error event, got {events:?}");
+        };
+        assert_eq!(event.name, "error.communication");
+        assert_eq!(
+            event.metadata.data,
+            r#"{"errorName":"communication","reason":"responseUnauthenticated","target":"hmi","transport":"wss"}"#
+        );
+        hmi.send(&send("note", "after"));
+        assert_eq!(
+            hmi.transport.sent.len(),
+            1,
+            "the link is still ready, so a send leaves at once"
+        );
     }
 
     /// What the machine is told when it sends to `target` and no binding for it is held: one

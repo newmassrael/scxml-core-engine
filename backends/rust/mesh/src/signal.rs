@@ -83,6 +83,11 @@ pub enum Signal {
     /// what `source` sent it after that checkpoint was durable may have been
     /// admitted and lost with the process (SCE_MESH.md section 10.11).
     Restored { source: String },
+    /// `responseUnauthenticated` (row 19): a binding that verifies what its
+    /// peer sends (an `https` client under `verify:`, SCE_MESH.md section
+    /// 22.9) was answered with a response whose signature did not verify,
+    /// and took nothing of it. Raised once per edge, on the dialing side.
+    ResponseUnauthenticated,
 }
 
 /// The deployment binding a row is observed on: the peer it names and the
@@ -113,6 +118,7 @@ impl Signal {
             Signal::InvokeChildLost { .. } => ErrorReason::InvokeChildLost,
             Signal::CausalViewMismatch { .. } => ErrorReason::CausalViewMismatch,
             Signal::Restored { .. } => ErrorReason::Restored,
+            Signal::ResponseUnauthenticated => ErrorReason::ResponseUnauthenticated,
         }
     }
 
@@ -148,7 +154,8 @@ impl Signal {
             | Signal::OutboundStaleDrop { .. }
             | Signal::TransportUnavailable
             | Signal::SendFailed { .. }
-            | Signal::DeliveryExhausted { .. } => (None, true, true),
+            | Signal::DeliveryExhausted { .. }
+            | Signal::ResponseUnauthenticated => (None, true, true),
             // Row 5 names its own `target` column below, after `invoke_id`,
             // where the C++ core's field order puts it.
             Signal::InvokeChildLost { .. } => (None, false, false),
@@ -212,7 +219,8 @@ impl Signal {
             }
             Signal::MissingSequence { .. }
             | Signal::TransportUnavailable
-            | Signal::Restored { .. } => {}
+            | Signal::Restored { .. }
+            | Signal::ResponseUnauthenticated => {}
         }
         json.finish()
     }
@@ -289,6 +297,21 @@ mod tests {
         assert_eq!(
             Signal::BackpressureDrop { depth: 4 }.event_data(WSS_TO_HMI),
             r#"{"errorName":"communication","reason":"backpressureDrop","target":"hmi","transport":"wss","queue_depth":4}"#
+        );
+    }
+
+    /// Row 19 names the binding the response arrived on, as row 1 does,
+    /// and nothing else. Red if it is rendered as a receiving row (a
+    /// `source` and no `target`).
+    #[test]
+    fn a_response_that_did_not_verify_names_its_target_then_its_transport() {
+        let https = Some(Binding {
+            peer: "cloud",
+            transport: Some("https"),
+        });
+        assert_eq!(
+            Signal::ResponseUnauthenticated.event_data(https),
+            r#"{"errorName":"communication","reason":"responseUnauthenticated","target":"cloud","transport":"https"}"#
         );
     }
 

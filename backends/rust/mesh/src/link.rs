@@ -8,7 +8,8 @@
 //! core: a peer became ready, bytes arrived from it, it was lost, an envelope was queued for it
 //! and never written; and, on a binding whose peer keeps what it sends until it is taken (the
 //! HTTPS mailbox, SCE_MESH.md section 22.3), the link was interrupted with nothing lost, or the
-//! peer started again without what it kept. The host feeds those, as [`LinkEvent`]s, to its
+//! peer started again without what it kept, or an answer did not prove it came from the peer
+//! (section 22.9). The host feeds those, as [`LinkEvent`]s, to its
 //! [`Endpoint`] with
 //! [`deliver`], on the thread that steps the engine. The WebSocket binding (`wss`) and the Zenoh
 //! binding (`zenoh_inbox`, SCE_MESH.md §mesh-20) differ in the medium and agree on this, so a host moves
@@ -40,6 +41,11 @@ pub enum LinkEvent {
     /// numbers in a new incarnation (SCE_MESH.md section 22.3). A request waiting on `peer` is
     /// sent again.
     Restarted(String),
+    /// What arrived as `peer`'s answer did not prove it came from `peer`: an HTTPS response whose
+    /// signature did not verify under the binding's `verify:` (SCE_MESH.md section 22.9). Nothing
+    /// of it was taken in; the words say why. Told once per edge, from the first such answer after
+    /// one that verified, and raised as section 16.7 row 19.
+    Unauthenticated(String, String),
 }
 
 /// Hand a link's event to the endpoint it concerns.
@@ -59,6 +65,7 @@ pub fn deliver<T: Transport, E: Environment>(endpoint: &mut Endpoint<T, E>, even
         LinkEvent::Lost(peer, _) => endpoint.peer_not_ready(&peer),
         LinkEvent::Interrupted(peer, _) => endpoint.peer_interrupted(&peer),
         LinkEvent::Restarted(peer) => endpoint.peer_restarted(&peer),
+        LinkEvent::Unauthenticated(peer, _) => endpoint.peer_unauthenticated(&peer),
     }
 }
 

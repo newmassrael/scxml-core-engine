@@ -99,6 +99,7 @@
       <sce:variant name="notificationDeadlineMissed" value="81"/>
       <sce:variant name="restored" value="82"/>
       <sce:variant name="causalViewMismatch" value="83"/>
+      <sce:variant name="responseUnauthenticated" value="84"/>
     </data>
   </datamodel>
 </scxml>

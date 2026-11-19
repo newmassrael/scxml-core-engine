@@ -643,6 +643,7 @@ impl Watched {
             | LinkEvent::Lost(named, _)
             | LinkEvent::Interrupted(named, _)
             | LinkEvent::Restarted(named)
+            | LinkEvent::Unauthenticated(named, _)
             | LinkEvent::Received(named, _)
             | LinkEvent::Unsent(named, _) => named == peer,
         })

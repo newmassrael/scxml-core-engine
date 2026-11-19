@@ -394,7 +394,10 @@ impl ClientSide {
                 match &event {
                     LinkEvent::Ready(_) => self.ready = true,
                     LinkEvent::Lost(..) | LinkEvent::Interrupted(..) => self.ready = false,
-                    LinkEvent::Received(..) | LinkEvent::Unsent(..) | LinkEvent::Restarted(_) => {}
+                    LinkEvent::Received(..)
+                    | LinkEvent::Unsent(..)
+                    | LinkEvent::Restarted(_)
+                    | LinkEvent::Unauthenticated(..) => {}
                 }
                 deliver(&mut self.endpoint, event);
             }
