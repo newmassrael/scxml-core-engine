@@ -72,6 +72,14 @@ namespace detail {
 inline constexpr std::uint8_t kSimpleFalse = 20;
 inline constexpr std::uint8_t kSimpleTrue = 21;
 
+/// The additional information of `null` (RFC 8949 section 3.3): an absent
+/// element of a list (docs/adr/0101 section 2.1).
+inline constexpr std::uint8_t kSimpleNull = 22;
+
+/// `null`'s one encoding, `f6`: the two-byte form of a simple value below 32
+/// is not well-formed.
+inline constexpr std::uint8_t kNull = static_cast<std::uint8_t>((kMajorSimple << 5) | kSimpleNull);
+
 /// The additional information of a half, a single and a double precision
 /// float.
 inline constexpr std::uint8_t kInfoHalf = 25;
@@ -304,6 +312,13 @@ inline constexpr std::uint16_t kNanHalf = 0x7e00;
         return e;
     }
     return write_text(w, name);
+}
+
+/// Write `null`, an absent element of a list (docs/adr/0101 section 2.1). An
+/// absent field of a record and an absent entry of the codec's own map are not
+/// written at all: their key is left out.
+[[nodiscard]] inline std::optional<CodecError> write_null(SceSink &w) noexcept {
+    return w.write_u8(detail::kNull);
 }
 
 // ── Reading ─────────────────────────────────────────────────────────────
@@ -595,6 +610,23 @@ namespace detail {
     return CodecError::CborUnknownVariant;
 }
 
+/// Take `null` where a list's element that may be absent stands
+/// (docs/adr/0101 section 2.1): whether the item there is `null`, which is
+/// then read. Any other item is left where it is, for the element's own read,
+/// which refuses what is no value of the element; an input that ends there is
+/// `NeedMoreBytes`.
+[[nodiscard]] inline Decoded<bool> take_null(SceCursor &c) noexcept {
+    const std::uint8_t *p = c.peek_slice(1);
+    if (p == nullptr) {
+        return CodecError::NeedMoreBytes;
+    }
+    if (*p != detail::kNull) {
+        return false;
+    }
+    (void)c.advance(1);
+    return true;
+}
+
 namespace detail {
 
 [[nodiscard]] inline Decoded<Skipped> skip_at(SceCursor &c, std::uint32_t depth) noexcept {
@@ -655,6 +687,28 @@ namespace detail {
 /// `CborMalformed`.
 [[nodiscard]] inline Decoded<Skipped> skip(SceCursor &c) noexcept {
     return detail::skip_at(c, 0);
+}
+
+/// Read the value of a union's case that holds no record: a map, the empty
+/// map as an encode writes it (docs/adr/0101 section 2.1). Read as a record's
+/// map is (section 3.2): every key a text string (`CborWrongType`), and each
+/// stepped over with its value, since the case declares none.
+[[nodiscard]] inline Decoded<Skipped> read_empty_case(SceCursor &c) noexcept {
+    const auto count = read_map_len(c);
+    if (!count) {
+        return count.error();
+    }
+    for (std::uint64_t i = 0; i < *count; ++i) {
+        const auto key = read_text(c, std::nullopt);
+        if (!key) {
+            return key.error();
+        }
+        const auto value = skip(c);
+        if (!value) {
+            return value.error();
+        }
+    }
+    return Skipped{};
 }
 
 }  // namespace SCE::Forge::Cbor

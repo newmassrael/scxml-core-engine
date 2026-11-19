@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "26f5f11",
+  "embed_version": "df7b945",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 615,
+  "symbol_count": 618,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3266,6 +3266,12 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::read_empty_case",
+      "signature": "Decoded<Skipped> SCE::Forge::Cbor::read_empty_case(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::read_float",
       "signature": "Decoded<double> SCE::Forge::Cbor::read_float(SceCursor &) noexcept"
     },
@@ -3326,6 +3332,12 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::take_null",
+      "signature": "Decoded<bool> SCE::Forge::Cbor::take_null(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::write_array_head",
       "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_array_head(SceSink &, std::uint64_t) noexcept"
     },
@@ -3364,6 +3376,12 @@
       "kind": "function",
       "name": "SCE::Forge::Cbor::write_map_head",
       "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_map_head(SceSink &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_null",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_null(SceSink &) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",

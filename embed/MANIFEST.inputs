@@ -9,7 +9,7 @@ b3714fc5eb802de049e503e6f9896d5ab50f656c backends/cpp/forge-runtime/include/sce/
 1e1ee298d0f54622c88c06e9efad2a82a134d8cb backends/cpp/forge-runtime/include/sce/forge/bounded.h
 af0a10b9f2ae3cb8206baf2c3768071fd70b9c39 backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h
 c89db24e1b5a3ae9d1137faa7c51f453c6c5259e backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h
-2ba9ad0282e0e9eec93cc61677397d1899a88bc1 backends/cpp/forge-runtime/include/sce/forge/cbor.h
+6971319e774cf47389520a77e1ca81174a4cfd62 backends/cpp/forge-runtime/include/sce/forge/cbor.h
 df49cb315049afd47c680a21357b52dd0f2727fc backends/cpp/forge-runtime/include/sce/forge/codec.h
 08ab6c0575ff13911cc6289749c2ce70be41d419 backends/cpp/forge-runtime/include/sce/forge/content_line.h
 f90a6703548dfa558d7559f82b5001233ab27405 backends/cpp/forge-runtime/include/sce/forge/filter.h
