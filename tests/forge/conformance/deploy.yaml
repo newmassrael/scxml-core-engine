@@ -7,15 +7,24 @@
 # whose bound no array of this run could hold, needs one. These are the
 # capacities of the conformance run: the sizes these fixtures held before
 # their documents moved to the protocol's bounds, so its storage is what it
-# was. A frame inside a field's bound and past its capacity is refused with
-# CapacityExceeded, which is this node's limit and not a malformed frame.
+# was, or more where the run states a case past that size. A frame inside a
+# field's bound and past its capacity is refused with CapacityExceeded, which
+# is this node's limit and not a malformed frame.
+#
+# This deployment exists for the run, so it holds every value the run states:
+# each byte string and list of a `sources` or `refused` case of
+# tests/forge/conformance/numerical_reference.json fits the capacity given
+# here, as the C11 harness holds the case in the value it encodes, and the
+# fold that writes the case refuses one that does not. The two-byte length of
+# a zbuf and of a value slice is pinned by a case of 200 bytes, so each holds
+# 256.
 #
 # A Rust tree takes no capacity (its profiles answer for each field), so only
 # the C11 build reads this file.
 codecs:
   codec_zenoh_ext_zbuf:
     capacity:
-      value: 32
+      value: 256
   codec_zenoh_init_body:
     capacity:
       cookie: 128
@@ -52,7 +61,7 @@ codecs:
       suffix: 128
   codec_zenoh_value_slice:
     capacity:
-      data: 16
+      data: 256
   codec_zenoh_value_zbuf:
     capacity:
       value: 32
