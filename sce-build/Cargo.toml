@@ -2048,5 +2048,12 @@ name = "a_child_that_is_refused_refuses_its_parent"
 path = "tests/a_child_that_is_refused_refuses_its_parent.rs"
 required-features = ["cli"]
 
+# A declared migration (docs/adr/0109, D11) planned from its shape files, through
+# `sce-codegen shape` and `generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_declared_migration_is_planned_from_its_shape_files"
+path = "tests/a_declared_migration_is_planned_from_its_shape_files.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
