@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A union of a case that holds no record (`idle`), a case that holds a byte
+  string (`card`) and a case that holds a list (`batch`): a CBOR codec writes a
+  value as a map of one entry keyed by its case's variant name, whose value is
+  the case's record or the empty map (docs/adr/0101, section 2.1).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="union"
+       name="cbor_composed_choice">
+  <sce:import kind="enum" src="cbor_composed_kind.scxml" as="Kind"/>
+  <sce:import kind="event-schema" src="cbor_composed_card.scxml" as="Card"/>
+  <sce:import kind="event-schema" src="cbor_composed_batch.scxml" as="Batch"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:Kind">
+      <sce:case variant="idle"/>
+      <sce:case variant="card" record="Card"/>
+      <sce:case variant="batch" record="Batch"/>
+    </data>
+  </datamodel>
+</scxml>

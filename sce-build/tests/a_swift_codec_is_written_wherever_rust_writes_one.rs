@@ -32,12 +32,21 @@ const CODEC_ROOTS: &[&str] = &[
 ];
 
 /// The codecs of the repository Rust writes and Swift does not, by path from `sce-build`, each
-/// with what its refusal names, in order: a field aligned to a DMA burst, which only an MCU-class
-/// backend writes (`codegen/mcu-class-kind-on-non-mcu-language`).
-const REFUSED: &[(&str, &str)] = &[(
-    "../tests/forge/resources/codec_dma_aligned_basic.scxml",
-    "CodegenMcuClassKindOnNonMcuLanguage",
-)];
+/// with what its refusal names, in order: the CBOR map of every constructor of the language, which
+/// Rust, the reference, prints and Swift does not yet (docs/adr/0101, Landing order steps 4a and
+/// 4g), and a field aligned to a DMA burst, which only an MCU-class backend writes
+/// (`codegen/mcu-class-kind-on-non-mcu-language`).
+const REFUSED: &[(&str, &str)] = &[
+    (
+        "../tests/forge/conformance/codec_cbor_composed/codec_cbor_composed.scxml",
+        "CBOR entry 'small' holds `int8`, a type of the language whose int8 the printer does not \
+         lower in a CBOR codec yet",
+    ),
+    (
+        "../tests/forge/resources/codec_dma_aligned_basic.scxml",
+        "CodegenMcuClassKindOnNonMcuLanguage",
+    ),
+];
 
 /// The fewest codecs the walk compares: a walk that stopped reading a root would compare fewer
 /// and pass on less.

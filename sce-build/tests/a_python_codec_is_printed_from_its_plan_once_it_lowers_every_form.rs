@@ -1593,8 +1593,14 @@ const REFUSED: &[(&str, &str)] = &[];
 
 /// The codecs of the repository outside the resources that the Python backend
 /// refuses, by path from `sce-build`, each with the clause it is refused by, in
-/// order. None: every one of them is printed.
-const REFUSED_ELSEWHERE: &[(&str, &str)] = &[];
+/// order: the CBOR map of every constructor of the language, whose entries
+/// beyond docs/adr/0085 Landing order step 3a the Python printer does not
+/// lower yet (docs/adr/0101, Landing order step 4e).
+const REFUSED_ELSEWHERE: &[(&str, &str)] = &[(
+    "../tests/forge/conformance/codec_cbor_composed/codec_cbor_composed.scxml",
+    "CBOR entry 'small' holds `int8`, a type of the language whose int8 the printer does not \
+     lower in a CBOR codec yet",
+)];
 
 /// The directories of the repository that hold codec documents beside the
 /// resources: the Rust conformance fixtures, the conformance contexts, the

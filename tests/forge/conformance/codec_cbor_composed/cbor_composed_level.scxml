@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A closed enum of a signed carrier with a negative variant: a CBOR codec
+  writes `fault` as the integer -1, major type 1 (docs/adr/0101, section 2.1).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="cbor_composed_level"
+       sce:underlying-type="int8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="nominal" value="0"/>
+      <sce:variant name="high" value="5"/>
+      <sce:variant name="fault" value="-1"/>
+    </data>
+  </datamodel>
+</scxml>

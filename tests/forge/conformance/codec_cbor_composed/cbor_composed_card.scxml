@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The record of the union's `card` case: a byte string, which a backend's unit
+  may hold in a type of no bound, so a codec's encode refuses one past it, and
+  a number.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cbor_composed_card"
+       sce:event-name="cbor.composed.card">
+  <datamodel>
+    <data id="token" sce:type="bytes[4]" sce:direction="in"/>
+    <data id="amount" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

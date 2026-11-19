@@ -297,6 +297,36 @@ fn main() {
         &options,
     );
 
+    // Step 7c': a CBOR map of an entry of every constructor of the language
+    // (docs/adr/0101, Landing order step 4a, "Conformance" item 1). The codec and
+    // the enums, records and union it reaches are the corpus's own documents,
+    // which no generated tree hashes. The codec names each of them through
+    // `use super::<module>;`, so all are generated beside it, and
+    // `forge_cbor_composed.rs` includes them as sibling modules and holds the
+    // codec to the corpus's cases, variants and rejects.
+    let composed_fixtures = Path::new(&manifest_dir)
+        .join("../../../tests/forge/conformance/codec_cbor_composed")
+        .canonicalize()
+        .expect("canonicalize tests/forge/conformance/codec_cbor_composed");
+    println!("cargo:rerun-if-changed={}", composed_fixtures.display());
+    generate_stripped_fixtures(
+        &[
+            "cbor_composed_level",
+            "cbor_composed_color",
+            "cbor_composed_code",
+            "cbor_composed_point",
+            "cbor_composed_reading",
+            "cbor_composed_card",
+            "cbor_composed_batch",
+            "cbor_composed_kind",
+            "cbor_composed_choice",
+            "codec_cbor_composed",
+        ],
+        &composed_fixtures,
+        &out_dir,
+        &options,
+    );
+
     // Step 7d: the CBOR codecs the pin of docs/adr/0101 step 0 captures
     // (tests/forge/cbor_pin), with every document they import, into a
     // directory of their own, where `forge_cbor_pin.rs` includes them as

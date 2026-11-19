@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A record that holds a list, an optional text, a nested record and an enum,
+  each named by the alias this document gives it: a CBOR codec writes it as a
+  map of its present fields keyed by their ids (docs/adr/0101, section 2.1),
+  `at` first and `samples` last, the order their keys' encodings sort in.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cbor_composed_reading"
+       sce:event-name="cbor.composed.reading">
+  <sce:import kind="event-schema" src="cbor_composed_point.scxml" as="Point"/>
+  <sce:import kind="enum" src="cbor_composed_color.scxml" as="Color"/>
+  <datamodel>
+    <data id="samples" sce:type="list&lt;uint8&gt;[3]" sce:direction="in"/>
+    <data id="label" sce:type="optional&lt;string[8]&gt;" sce:direction="in"/>
+    <data id="at" sce:type="record:Point" sce:direction="in"/>
+    <data id="color" sce:type="enum:Color" sce:direction="in"/>
+  </datamodel>
+</scxml>

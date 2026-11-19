@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A closed enum of an unsigned carrier, held by the codec's own map and by a
+  field of a record it holds: a number it does not declare is refused.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="cbor_composed_color"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="red" value="0"/>
+      <sce:variant name="green" value="1"/>
+      <sce:variant name="blue" value="2"/>
+    </data>
+  </datamodel>
+</scxml>
