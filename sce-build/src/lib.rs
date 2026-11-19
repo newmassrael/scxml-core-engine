@@ -5521,6 +5521,24 @@ pub fn compile_forge_from_parsed(
         named.extend(forge::algorithm_union::built_case_records(m, &import_ctx));
     }
     import_ctx.retain(|imp| named.contains(&imp.alias));
+    // ... and names an enum it may name only as the tag of such a local, which
+    // the renderer judges the tag's literal against and no generated line
+    // spells: the local is built as a case of the union's own unit, which
+    // names its tag's enum itself (`ImportContext::tag_only`).
+    if let forge::model::ForgeDocument::Algorithm(_) = document {
+        let scope = forge::generator::import_type_scope(&import_ctx);
+        let union_tag = |alias: &str| scope.unions.get(alias).map(|union| union.tag.clone());
+        let tag_only = forge::import_use::tag_only_aliases(
+            document,
+            &parsed.cycles,
+            &parsed.imports,
+            &union_tag,
+        )
+        .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+        for imp in import_ctx.iter_mut() {
+            imp.tag_only = tag_only.contains(&imp.alias);
+        }
+    }
 
     // A transform that reads a field through `previous()` is not callable as
     // the pure function a stateless import stands for: each of its output

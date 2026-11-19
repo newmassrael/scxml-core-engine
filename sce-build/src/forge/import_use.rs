@@ -66,7 +66,22 @@ pub(crate) fn named_aliases(
     cycles: &[Cycle],
     imports: &[ForgeImport],
 ) -> Result<BTreeSet<String>, ForgeError> {
-    let mut names = Names::default();
+    let names = names_of(document, cycles, None)?;
+    Ok(imports
+        .iter()
+        .filter(|imp| names.contains(imp.alias.as_str()))
+        .map(|imp| imp.alias.clone())
+        .collect())
+}
+
+/// Every name `document` and its `cycles` read, a union local's set of its
+/// tag skipped where `union_tag` names each union's tag ([`Names`]).
+fn names_of(
+    document: &ForgeDocument,
+    cycles: &[Cycle],
+    union_tag: Option<UnionTag<'_>>,
+) -> Result<BTreeSet<String>, ForgeError> {
+    let mut names = Names(BTreeSet::new(), union_tag);
     names.document(document)?;
     for cycle in cycles {
         names.name(&cycle.of);
@@ -74,11 +89,7 @@ pub(crate) fn named_aliases(
             names.opt_expr(step.when.as_deref(), None)?;
         }
     }
-    Ok(imports
-        .iter()
-        .filter(|imp| names.0.contains(imp.alias.as_str()))
-        .map(|imp| imp.alias.clone())
-        .collect())
+    Ok(names.0)
 }
 
 /// The names a codec mentions in every build of it: everything but the
@@ -89,7 +100,7 @@ pub(crate) fn named_aliases(
 /// the features drops its use of the import under the same features, and a
 /// build with none of them carries no import it does not read.
 pub(crate) fn codec_names_in_every_build(m: &CodecModel) -> BTreeSet<String> {
-    let mut names = Names::default();
+    let mut names = Names(BTreeSet::new(), None);
     names.codec(m, Arms::EveryBuild);
     names.0
 }
@@ -104,12 +115,39 @@ enum Arms {
     EveryBuild,
 }
 
-/// Every name the walk met — more than the aliases, which
-/// [`named_aliases`] keeps.
-#[derive(Default)]
-struct Names(BTreeSet<String>);
+/// The name of the tag of the union a document imports under an alias, as
+/// its enriched import reads it, or `None` for an alias of no union.
+pub(crate) type UnionTag<'t> = &'t dyn Fn(&str) -> Option<String>;
 
-impl Names {
+/// The aliases of `imports` that `document` names only as the tag of a union
+/// local it builds (`<sce:var type="union:U"><sce:set name="kind"
+/// expr="Kind.circle"/>`): an enum the build judges the tag's literal
+/// against, which no generated code spells, since every backend builds the
+/// local as a case of the union's own unit, which names its tag's enum
+/// itself (`generator::algorithm_union_case`, docs/adr/0092, section 6.1
+/// item 5). The renderer holds such an import, and no include, `use` or
+/// import line names it (`ImportContext::tag_only`), which Go refuses and
+/// Rust warns of as an unused import. `union_tag` names each union's tag.
+pub(crate) fn tag_only_aliases(
+    document: &ForgeDocument,
+    cycles: &[Cycle],
+    imports: &[ForgeImport],
+    union_tag: UnionTag<'_>,
+) -> Result<BTreeSet<String>, ForgeError> {
+    let named = named_aliases(document, cycles, imports)?;
+    let spelled = names_of(document, cycles, Some(union_tag))?;
+    Ok(named
+        .into_iter()
+        .filter(|alias| !spelled.contains(alias.as_str()))
+        .collect())
+}
+
+/// Every name the walk met — more than the aliases, which
+/// [`named_aliases`] keeps. Where the walk is told each union's tag, a union
+/// local's set of its tag reads nothing ([`tag_only_aliases`]).
+struct Names<'t>(BTreeSet<String>, Option<UnionTag<'t>>);
+
+impl Names<'_> {
     fn name(&mut self, name: &str) {
         self.0.insert(name.to_string());
     }
@@ -250,10 +288,22 @@ impl Names {
                 // builds is named by no expression, and is read from the
                 // union's cases where the imports are in hand
                 // ([`crate::forge::algorithm_union::built_case_records`]).
-                AlgorithmStmt::RecordVar { alias, fields, .. }
-                | AlgorithmStmt::UnionVar { alias, fields, .. } => {
+                AlgorithmStmt::RecordVar { alias, fields, .. } => {
                     self.name(alias);
                     for f in fields {
+                        self.expr(&f.expr, f.expr_spelling.as_ref())?;
+                    }
+                }
+                // ... and where the walk is told the union's tag, the set of
+                // the tag reads nothing: the case is built as the union's
+                // unit names it ([`tag_only_aliases`]).
+                AlgorithmStmt::UnionVar { alias, fields, .. } => {
+                    self.name(alias);
+                    let tag = self.1.and_then(|union_tag| union_tag(alias));
+                    for f in fields {
+                        if tag.as_deref() == Some(f.name.as_str()) {
+                            continue;
+                        }
                         self.expr(&f.expr, f.expr_spelling.as_ref())?;
                     }
                 }
@@ -681,6 +731,49 @@ mod tests {
                  </datamodel></scxml>"#
         ));
         assert_eq!(names, ["locator"]);
+    }
+
+    /// docs/adr/0092, section 6.1 item 5: a union local is built as a case of
+    /// its union's unit, so the enum the document names only as the local's
+    /// tag is held by the renderer and spelled by no generated line; one the
+    /// body names anywhere else is spelled there.
+    #[test]
+    fn an_enum_named_only_as_a_union_locals_tag_is_spelled_by_no_line() {
+        let document = |extra: &str| {
+            format!(
+                r#"{HEAD} sce:kind="algorithm" name="a">
+                 <sce:import kind="enum" src="k.scxml" as="Kind"/>
+                 <sce:import kind="union" src="u.scxml" as="Shape"/>
+                 <sce:signature>
+                   <sce:return type="union:Shape"/>
+                 </sce:signature>
+                 <sce:body>{extra}
+                   <sce:var name="s" type="union:Shape">
+                     <sce:set name="kind" expr="Kind.empty"/>
+                   </sce:var>
+                   <sce:return expr="s"/>
+                 </sce:body></scxml>"#
+            )
+        };
+        let tag = |alias: &str| (alias == "Shape").then(|| "kind".to_string());
+        let tag_only = |src: &str| {
+            let parsed = parse(src);
+            tag_only_aliases(&parsed.document, &parsed.cycles, &parsed.imports, &tag)
+                .expect("every expression reads")
+                .into_iter()
+                .collect::<Vec<_>>()
+        };
+        // The tag's literal names the enum, which the renderer judges it
+        // against, and no line spells it.
+        let only_tag = document("");
+        assert_eq!(named(&only_tag), ["Kind", "Shape"]);
+        assert_eq!(tag_only(&only_tag), ["Kind"]);
+        // An enum the body names anywhere else is spelled there.
+        let also_read = document(
+            r#"
+                   <sce:var name="k" type="enum:Kind" init="Kind.empty"/>"#,
+        );
+        assert!(tag_only(&also_read).is_empty());
     }
 
     #[test]

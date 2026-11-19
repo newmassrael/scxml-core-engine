@@ -387,6 +387,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub takes_map_seed: bool,
 
+    /// For an imported enum the document names only as the tag of a union
+    /// local it builds ([`crate::forge::import_use::tag_only_aliases`]): the
+    /// tag's literal is judged against it, so the renderer holds it, but no
+    /// backend's code spells it, since the local is built as a case of the
+    /// union's own unit, which names its tag's enum itself
+    /// ([`algorithm_union_case`]). No include, `use` or import line names it
+    /// ([`build_template_imports`]). `false` for every other import.
+    #[serde(skip)]
+    pub tag_only: bool,
+
     /// For an imported algorithm or enum, when the generation is for Swift: what of it
     /// the Swift backend does not write (`None` when it writes all of it), read where
     /// it is and, for an algorithm, through the algorithms it calls in turn. A caller
@@ -1593,12 +1603,17 @@ pub(crate) fn go_import_root(prefix: Option<&str>) -> Result<&str, GenerateError
 /// Build template-ready import data from resolved import contexts.
 /// Returns `(has_imports, all_imports_serialized, stateful_imports_serialized)`.
 ///
-/// - `all_imports`: every import (for include/import statements in templates)
+/// - `all_imports`: every import a generated line names (for include/import
+///   statements in templates)
 /// - `stateful_imports`: only struct-based kinds (for member variable declarations)
 fn build_template_imports(imports: &[ImportContext]) -> (bool, minijinja::Value, minijinja::Value) {
+    // An enum named only as a union local's tag is spelled by no generated
+    // code ([`ImportContext::tag_only`]), and an import of it would be an
+    // unused one, which Go refuses and Rust warns of.
+    let imports: Vec<&ImportContext> = imports.iter().filter(|i| !i.tag_only).collect();
     let has_imports = !imports.is_empty();
-    let all = minijinja::Value::from_serialize(imports);
-    let stateful: Vec<&ImportContext> = imports.iter().filter(|i| i.is_stateful).collect();
+    let all = minijinja::Value::from_serialize(&imports);
+    let stateful: Vec<&ImportContext> = imports.iter().copied().filter(|i| i.is_stateful).collect();
     let stateful_val = minijinja::Value::from_serialize(&stateful);
     (has_imports, all, stateful_val)
 }
@@ -1675,6 +1690,7 @@ fn resolve_single_import(
         record_slots: None,
         may_fail: false,
         takes_map_seed: false,
+        tag_only: false,
         swift_unlowered: None,
         member_field_types: Vec::new(),
         member_method_sigs: Vec::new(),
@@ -49660,35 +49676,7 @@ fn render_algorithm(
     // function emit doesn't store BC instances as members (they ride
     // through positional ref params), so the template consumes
     // `all_imports` for the include block and ignores `imports`.
-    //
-    // A Rust algorithm `use`s an enum's module only where its text names the
-    // module: an enum the document names only as the tag of a union local it
-    // builds is spelled nowhere, since the local is built as the case of the
-    // union's own unit, which names its tag's enum itself
-    // ([`algorithm_union_case`]), and the `use` would be an unused import,
-    // which `-D warnings` refuses.
-    let spelled_text = [
-        ctx.get("params_str")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default(),
-        ctx.get("return_type")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default(),
-        body.as_str(),
-        consts_prelude.as_str(),
-    ]
-    .concat();
-    let used_imports: Vec<ImportContext> = imports
-        .iter()
-        .filter(|imp| {
-            lang != Language::Rust
-                || imp.kind != "enum"
-                || spelled_text.contains(&format!("{}::", imp.namespace))
-        })
-        .cloned()
-        .collect();
-    let (has_imports, all_imports_val, stateful_imports_val) =
-        build_template_imports(&used_imports);
+    let (has_imports, all_imports_val, stateful_imports_val) = build_template_imports(imports);
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert(
         "imports".into(),
@@ -51799,6 +51787,7 @@ mod tests {
             record_slots: None,
             may_fail: false,
             takes_map_seed: false,
+            tag_only: false,
             swift_unlowered: None,
             member_field_types: Vec::new(),
             member_method_sigs: Vec::new(),
@@ -52733,6 +52722,7 @@ mod tests {
                 record_slots: None,
                 may_fail: false,
                 takes_map_seed: false,
+                tag_only: false,
                 swift_unlowered: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
@@ -52810,6 +52800,7 @@ mod tests {
                 record_slots: None,
                 may_fail: false,
                 takes_map_seed: false,
+                tag_only: false,
                 swift_unlowered: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
