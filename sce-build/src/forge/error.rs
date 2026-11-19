@@ -1576,7 +1576,8 @@ pub enum ValidationError {
     /// supplies (`<data sce:from="deployment">`), or a place inside one: an
     /// `<assign>`, an `<sce:append>`, an `<sce:clear>`, an `<sce:render>`, an
     /// `<sce:lift>`, a `<send>`'s or an `<invoke>`'s `idlocation`, a
-    /// `<foreach>`'s item or index. The machine reads such a value and never
+    /// `<foreach>`'s item or index, an `<sce:put>`'s or an `<sce:remove>`'s
+    /// target or outcome. The machine reads such a value and never
     /// writes it. `element` and `attr` name the statement and the attribute
     /// that names the place, `location` the place as written (the record's
     /// `actual`), `value` the deployment value it is in. No fix: whether the
