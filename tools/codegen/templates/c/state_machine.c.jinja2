@@ -6304,14 +6304,18 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
 {# The argument every entry but `_init_with_simulated_actions` gives the shared
    body for the opt-in: none. Empty for a machine that takes no opt-in. #}
 {% set simulated_refused = ', false' if takes_simulated_host else '' %}
-{# docs/adr/0108, D8: a machine that holds a map or a set has no source of
-   randomness of its own, so every construction of it takes the seed its maps
-   hash their keys under as its last argument, and hands it to the construction
-   they share, which starts each map under a seed drawn from it in declaration
-   order (`sce_map_seed_derive`). Kept in step with the same `set`s in
-   `state_machine.h.jinja2` and `saved.c.jinja2`. #}
-{% set ns_maps = namespace(any=false) %}
-{% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set ns_maps.any = true %}{% endif %}{% endfor %}
+{# docs/adr/0108, D8: a machine that holds a map or a set, or starts a child that
+   takes a seed, has no source of randomness of its own, so every construction of
+   it takes the seed its maps hash their keys under as its last argument, and
+   hands it to the construction they share, which keeps it, starts each map under
+   a seed drawn from it in declaration order (`sce_map_seed_derive`), and hands
+   each child it starts one derived from it (`sce_map_seed_of_child`). Kept in step
+   with the same `set`s in `state_machine.h.jinja2` and `saved.c.jinja2`. #}
+{% set ns_maps = namespace(any=false, holds=false) %}
+{% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set ns_maps.holds = true %}{% endif %}{% endfor %}
+{% for invoke_info in model.invokes | scxml %}{% if invoke_info.child_takes_map_seed %}{% set ns_maps.any = true %}{% endif %}{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}{% for candidate in invoke_info.candidates %}{% if candidate.child_takes_map_seed %}{% set ns_maps.any = true %}{% endif %}{% endfor %}{% endfor %}
+{% if ns_maps.holds %}{% set ns_maps.any = true %}{% endif %}
 {% set map_seed_param = ', sce_map_seed_t map_seed' if ns_maps.any else '' %}
 {% set map_seed_arg = ', map_seed' if ns_maps.any else '' %}
 {# The construction half of `_init`, shared with `_init_at`.
@@ -6397,6 +6401,11 @@ SCE_SM_FN static sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_cons
     memset(sm, 0, sizeof(*sm));
     build_inbox(sm);
 #endif
+{% if ns_maps.any %}
+    /* docs/adr/0108, D8: kept, after the memset, for the maps below and each child
+       this machine starts. */
+    sm->map_seed = map_seed;
+{% endif %}
 {% if has_native_actions %}
     /* Copied in before the entry walk, for the reason the host-processor
        registry below is: the first `<onentry>` body may already perform an
@@ -7760,9 +7769,15 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_parent({{ cs
                                        sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
                                        sce_clock_t clock,
-                                       const sce_handed_values_t *handed) {
+                                       const sce_handed_values_t *handed{{ map_seed_param }}) {
     memset(sm, 0, sizeof(*sm));
     build_inbox(sm);
+{% if ns_maps.any %}
+    /* docs/adr/0108, D8: this start is a script data model's, whose machine holds no map
+       (a `sce-static` child is begun by `_invoked_begin`, which starts its maps), so the
+       seed is kept only for the children this machine starts. */
+    sm->map_seed = map_seed;
+{% endif %}
 {% if model.needs_event_scheduler %}
     sm->clock = clock;
 {% else %}
@@ -8807,8 +8822,13 @@ SCE_SM_FN static void {{ P }}_component_start(sce_test_component_machine_t *self
        therefore refused only when it does not fit the bytes this build holds a session id or its
        location in: the run ends in error (P13), the reason in its log, and the machine is neither
        constructed nor entered, so its `release` tears down storage the construction never touched. */
+{% if ns_maps.any %}
+    /* docs/adr/0108, D8: the component's maps, and its children's, hash their keys under this
+       fixed seed, which the runner states and draws from no entropy: nothing a run observes
+       depends on it, and a component is a test's, which faces no peer that would flood a map. */
+{% endif %}
     const sce_start_refusal_t refused =
-        {{ P }}_init_construct(sm, false, sce_test_context_name(context){% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
+        {{ P }}_init_construct(sm, false, sce_test_context_name(context){% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %}{% if ns_maps.any %}, sce_map_seed_from_halves(UINT64_C(0x5f74657374696e67), UINT64_C(0x5f636f6d706f6e74)){% endif %});
     if (refused != SCE_START_REFUSAL_NONE) {
         sce_test_context_error(context, sce_start_refusal_text(refused));
         return;

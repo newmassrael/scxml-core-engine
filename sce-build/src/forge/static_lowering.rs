@@ -10158,6 +10158,37 @@ fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &s
     }
 }
 
+/// Whether a machine of `model` takes, at its start, the seed its maps hash
+/// their keys under, on a lane that draws none itself (C11, docs/adr/0108, D8):
+/// it is a `datamodel="sce-static"` document that holds a map or a set at any
+/// scope, or it starts a child, through an `<invoke type="scxml">` or as a
+/// candidate of a hybrid one, that takes one, whose seed it derives from its
+/// own. A child's answer is the one the parse recorded on its `<invoke>`
+/// ([`crate::model::InvokeSessionCommon::child_takes_map_seed`]), computed by
+/// this function when the child's document was parsed, so a grandchild is
+/// judged by the same rule without being read twice.
+pub(crate) fn takes_map_seed(model: &SCXMLModel) -> bool {
+    let holds = model.datamodel == crate::model::Datamodel::SceStatic
+        && model
+            .variables
+            .iter()
+            .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
+            .any(|v| v.value_type.as_ref().is_some_and(|t| t.map_key().is_some()));
+    holds
+        || model
+            .states
+            .values()
+            .flat_map(|state| state.invokes.iter())
+            .any(|invoke| match invoke {
+                crate::model::Invoke::Scxml(info) => info.common.child_takes_map_seed,
+                crate::model::Invoke::Hybrid(info) => {
+                    info.common.child_takes_map_seed
+                        || info.candidates.iter().any(|c| c.child_takes_map_seed)
+                }
+                crate::model::Invoke::MeshRpc(_) | crate::model::Invoke::Unsupported(_) => false,
+            })
+}
+
 /// Whether a saved state can hold the whole state of a machine of `model`, and
 /// of every session it can start (docs/adr/0045, "Which documents save"): the
 /// document is `datamodel="sce-static"`, it waits on no session outside its
@@ -17294,47 +17325,6 @@ impl StaticTarget for CTarget {
                         "record:{alias} with the field `{}` of type {}",
                         field.id,
                         field.sce_type.as_attr()
-                    ));
-                }
-            }
-        }
-        // docs/adr/0108, D8: a machine that holds a map takes the seed its maps
-        // hash their keys under from the host that constructs it. A test
-        // component is constructed by its runner, and a child by its parent,
-        // neither of which hands a C11 machine one yet, so neither holds a map.
-        let holds_a_map = |variables: &[crate::model::Variable]| {
-            variables
-                .iter()
-                .any(|v| v.value_type.as_ref().is_some_and(|t| t.map_key().is_some()))
-        };
-        if model.test_component.is_some() && holds_a_map(&scope.variables) {
-            return Some(format!(
-                "a map or a set in a test component, which its runner hands no seed ({})",
-                crate::forge::value_type::MAP_LANDING
-            ));
-        }
-        for state in model.states.values() {
-            for invoke in &state.invokes {
-                let children: Vec<&Option<Vec<crate::model::Variable>>> = match invoke {
-                    crate::model::Invoke::Scxml(info) => vec![&info.common.child_static_variables],
-                    crate::model::Invoke::Hybrid(info) => info
-                        .candidates
-                        .iter()
-                        .map(|candidate| &candidate.child_static_variables)
-                        .chain([&info.common.child_static_variables])
-                        .collect(),
-                    _ => Vec::new(),
-                };
-                if children
-                    .into_iter()
-                    .flatten()
-                    .any(|variables| holds_a_map(variables.as_slice()))
-                {
-                    return Some(format!(
-                        "an <invoke id=\"{}\"> of a child that holds a map or a set, which its \
-                         parent hands no seed ({})",
-                        invoke.base().invoke_id,
-                        crate::forge::value_type::MAP_LANDING
                     ));
                 }
             }

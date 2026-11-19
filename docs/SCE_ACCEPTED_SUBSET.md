@@ -6182,9 +6182,11 @@ has no entropy source of its own, so every start of a machine that holds a map
 (each `_init*`, `_init_at` and `_restore`) takes `sce_map_seed_t map_seed` as
 its last argument, and the machine starts each map under a seed drawn from it in
 declaration order; the generated header says that a fixed seed leaves the maps
-open to a peer that knows it. A parent and a test component's runner hand no
-seed yet, so an `<invoke>` of a child that holds a map, and a test component
-that holds one, are `generate/unsupported-feature` on C11, naming that record.
+open to a peer that knows it. A machine that starts a child that holds a map
+takes a seed too, though it holds none itself, keeps it, and hands each child a
+seed derived from it and the invoke's id (`sce_map_seed_of_child`, apart from
+every seed of its own maps); a test component's runner hands a fixed seed it
+states.
 `len(m)`, `has(m, k)` and `m[k]` are the header's `sce_map_count`,
 `sce_map_holds` and `sce_map_lookup`, each handed the map's address, a probe of
 the key and the function that writes the probe's canonical bytes, so a value of

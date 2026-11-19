@@ -529,6 +529,14 @@ static void the_seeds_of_a_machine_s_maps_are_drawn_apart(void) {
     expect(first.k0 != second.k0 || first.k1 != second.k1, "two ordinals draw two seeds");
     expect(first.k0 != SEED.k0 || first.k1 != SEED.k1, "a drawn seed is not the seed it is drawn from");
     expect(first.k0 == again.k0 && first.k1 == again.k1, "one ordinal draws one seed");
+    // A child's seed is drawn apart from the parent's own maps' and from another child's.
+    const sce_map_seed_t child = sce_map_seed_of_child(SEED, "faces");
+    const sce_map_seed_t sibling = sce_map_seed_of_child(SEED, "peers");
+    const sce_map_seed_t child_again = sce_map_seed_of_child(SEED, "faces");
+    expect(child.k0 != first.k0 || child.k1 != first.k1, "a child's seed is not the parent's first map's");
+    expect(child.k0 != sibling.k0 || child.k1 != sibling.k1, "two invokes draw two seeds");
+    expect(child.k0 == child_again.k0 && child.k1 == child_again.k1, "one invoke draws one seed");
+    expect(child.k0 != SEED.k0 || child.k1 != SEED.k1, "a child's seed is not its parent's");
 }
 
 int main(void) {

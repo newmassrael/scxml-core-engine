@@ -17,9 +17,10 @@
     parent's session id and the parent's dispatch), `invoke_id` the C expression of
     the id it is started under, and `clock` the expression of the clock it follows.
     The block of a `call` is what runs when a child declaring `<sce:action>`s was given
-    no complete host, so that nothing was begun.
+    no complete host, so that nothing was begun. `seed`, when not empty, is the
+    expression of the seed a child that takes one is begun with (docs/adr/0108, D8).
 #}
-{% macro begin_static_child(prefix, parent, slot, stem, host_call, declares_duties, sends_to_parent, invoke_id, clock) -%}
+{% macro begin_static_child(prefix, parent, slot, stem, host_call, declares_duties, sends_to_parent, invoke_id, clock, seed='') -%}
 {% if host_call %}
 if (!{{ prefix }}{{ stem }}_invoked_begin(
         &{{ slot }},
@@ -37,7 +38,8 @@ if (!{{ prefix }}{{ stem }}_invoked_begin(
         NULL,
 {% endif %}
         {{ invoke_id }},
-        {{ clock }})) {
+        {{ clock }}{% if seed %},
+        {{ seed }}{% endif %})) {
 {{ caller() }}
 }
 {% else %}
@@ -53,6 +55,7 @@ if (!{{ prefix }}{{ stem }}_invoked_begin(
     NULL,
 {% endif %}
     {{ invoke_id }},
-    {{ clock }});
+    {{ clock }}{% if seed %},
+    {{ seed }}{% endif %});
 {% endif %}
 {%- endmacro %}

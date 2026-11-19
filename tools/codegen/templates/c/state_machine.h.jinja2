@@ -35,11 +35,16 @@
 {% endfor %}
 {% endfor %}
 {% set takes_simulated_host = has_native_duties or host_duty_children.any %}
-{# docs/adr/0108, D8: a machine that holds a map or a set takes the seed its maps
-   hash their keys under as the last argument of every construction. Kept in step
-   with the same `set`s in `state_machine.c.jinja2` and `saved.c.jinja2`. #}
-{% set ns_maps = namespace(any=false) %}
-{% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set ns_maps.any = true %}{% endif %}{% endfor %}
+{# docs/adr/0108, D8: a machine that holds a map or a set, or starts a child that
+   takes a seed for its own, takes the seed its maps hash their keys under as the
+   last argument of every construction, and keeps it to derive each child's from.
+   Kept in step with the same `set`s in `state_machine.c.jinja2` and
+   `saved.c.jinja2`. #}
+{% set ns_maps = namespace(any=false, holds=false) %}
+{% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set ns_maps.holds = true %}{% endif %}{% endfor %}
+{% for invoke_info in model.invokes | scxml %}{% if invoke_info.child_takes_map_seed %}{% set ns_maps.any = true %}{% endif %}{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}{% for candidate in invoke_info.candidates %}{% if candidate.child_takes_map_seed %}{% set ns_maps.any = true %}{% endif %}{% endfor %}{% endfor %}
+{% if ns_maps.holds %}{% set ns_maps.any = true %}{% endif %}
 {% set map_seed_param = ', sce_map_seed_t map_seed' if ns_maps.any else '' %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 header. Module-level form is a comment, not the
@@ -67,11 +72,13 @@
    key, its value and its bound, which the policy below holds. #}
 #include "sce/forge/map.h"
 
-/* docs/adr/0108, D8: this machine holds a map or a set and has no source of
-   randomness of its own, so every start of it (each `_init*`, `_init_at`,
-   `_restore`, and the starts a parent gives it) takes `map_seed`, the 128-bit key
-   its maps hash their keys under, each map keyed by a seed of its own drawn from
-   it. Nothing a document or a host observes depends on the seed. A host with no
+/* docs/adr/0108, D8: this machine holds a map or a set, or starts a child that does,
+   and has no source of randomness of its own, so every start of it (each `_init*`,
+   `_init_at`, `_restore`, and the starts a parent gives it) takes `map_seed`, the
+   128-bit key its maps hash their keys under, each map keyed by a seed of its own
+   drawn from it, and each child it starts by one derived from it
+   (`sce_map_seed_of_child`). Nothing a document or a host observes depends on the
+   seed. A host with no
    entropy hands a fixed seed, and a map of this machine can then be flooded by a
    peer that knows that seed, every lookup a scan of the table: a deployment that
    faces peers it does not trust hands a seed drawn from entropy
@@ -1230,6 +1237,11 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     /* The machine's one scratch: the roles of its slot and the storage of its
        calls and loops (docs/adr/0086, section 8.5 (d); docs/adr/0082). */
     {{ csym_prefix }}{{ model.name }}_scratch_t scratch;
+{% if ns_maps.any %}
+    /* docs/adr/0108, D8: the seed this machine was started with, which each child it
+       starts is handed a seed derived from (`sce_map_seed_of_child`). */
+    sce_map_seed_t map_seed;
+{% endif %}
     {{ csym_prefix }}{{ model.name }}_policy_t policy;
     bool is_running;
     /* §scxml-D-enterStates: the top-level <final> the run ended in, valid
@@ -2032,7 +2044,7 @@ SCE_WARN_UNUSED
                                        sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
                                        sce_clock_t clock,
-                                       const sce_handed_values_t *handed);
+                                       const sce_handed_values_t *handed{{ map_seed_param }});
 {% endif %}
 {% if static_datamodel %}
 /* §scxml-6.4.1: the two steps a parent starts a `datamodel="sce-static"` child

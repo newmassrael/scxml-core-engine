@@ -9010,6 +9010,9 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
         && crate::forge::native_action::document_has_native_actions(child_model);
     common.child_declares_host_duties = common.child_declares_host_acts
         && crate::forge::native_action::document_has_duties(child_model);
+    // docs/adr/0108, D8: whether the child takes the seed of its maps at its
+    // start, read the way its own invokes already were.
+    common.child_takes_map_seed = crate::forge::static_lowering::takes_map_seed(child_model);
     // §scxml-6.2 (test187/207): mirror the child's own scheduler
     // requirement. The child's codegen emits `_tick` only when
     // its scheduler queue is non-empty; the parent's invoke driver
@@ -9176,6 +9179,7 @@ impl SCXMLParser {
         candidate.child_is_static = common.child_is_static;
         candidate.child_declares_host_acts = common.child_declares_host_acts;
         candidate.child_declares_host_duties = common.child_declares_host_duties;
+        candidate.child_takes_map_seed = common.child_takes_map_seed;
         candidate.child_has_send_to_parent = common.child_has_send_to_parent;
         candidate.child_ends_with_done_data = common.child_ends_with_done_data;
         candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;

@@ -412,12 +412,12 @@ fn c11_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
     }
 }
 
-/// docs/adr/0108, D8: a C11 machine holding a map takes its seed from the host
-/// that constructs it, and neither a parent nor a test component's runner hands
-/// one yet, so a document that invokes a child holding a map is refused by name
-/// on C11, naming the record.
+/// docs/adr/0108, D8: a C11 parent that starts a child holding a map takes a
+/// seed at its own start though it holds no map itself, keeps it, and hands the
+/// child a seed derived from it (`sce_map_seed_of_child`) where it begins the
+/// child; the child starts its maps from the seed it is begun with.
 #[test]
-fn c11_refuses_a_child_that_holds_a_map_by_name() {
+fn c11_hands_a_child_that_holds_a_map_a_seed_derived_from_its_own() {
     let dir = tempfile::tempdir().expect("a scratch directory");
     for name in SIBLINGS {
         std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a schema");
@@ -437,15 +437,45 @@ fn c11_refuses_a_child_that_holds_a_map_by_name() {
     let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
     let (ok, printed) = run(&["generate", "-l", "c11", "-o", out.as_str()], &path);
     assert!(
-        !ok,
+        ok,
         "C11 generates a parent of a child that holds a map:\n{printed}"
     );
+    let mut parent_code = String::new();
+    for entry in std::fs::read_dir(out_dir.path()).expect("read the output") {
+        let path = entry.expect("an output file").path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.starts_with("map_parent") && (name.ends_with(".h") || name.ends_with(".c")) {
+            parent_code.push_str(&std::fs::read_to_string(&path).expect("read a generated file"));
+        }
+    }
+    for held in [
+        "map_parent_init(map_parent_t *sm, sce_map_seed_t map_seed)",
+        "sce_map_seed_t map_seed;",
+        "sm->map_seed = map_seed;",
+        "sce_map_seed_of_child(sm->map_seed, p->invoke_id)",
+    ] {
+        assert!(
+            parent_code.contains(held),
+            "no `{held}` in the generated parent:\n{parent_code}"
+        );
+    }
+    // The parent holds no map: it starts none of its own.
     assert!(
-        printed.contains("\"code\":\"generate/unsupported-feature\"")
-            && printed.contains("of a child that holds a map or a set")
-            && printed.contains("(docs/adr/0108, D10)"),
-        "{printed}"
+        !parent_code.contains("sce_map_seed_derive(map_seed,"),
+        "the parent starts a map:\n{parent_code}"
     );
+    // The child is begun with the seed, and starts its maps from it.
+    let (ok, printed, child_code) = generate_c11(&faces());
+    assert!(ok, "C11 generates the child:\n{printed}");
+    for held in [
+        "sce_clock_t clock, sce_map_seed_t map_seed)",
+        "sce_map_seed_derive(map_seed, 0u)",
+    ] {
+        assert!(
+            child_code.contains(held),
+            "no `{held}` in the generated child:\n{child_code}"
+        );
+    }
 }
 
 /// docs/adr/0108, D2, D3 and D11: a map is read through `len`, `has` and the

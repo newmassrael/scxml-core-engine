@@ -2312,6 +2312,16 @@ pub struct InvokeSessionCommon {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_declares_host_duties: bool,
+    /// Codegen-internal: a machine of the child takes, at its start, the seed its
+    /// maps hash their keys under, on a lane that draws none itself (C11,
+    /// docs/adr/0108, D8): it holds a map or a set, or starts a child that takes
+    /// one ([`crate::forge::static_lowering::takes_map_seed`]). The parent hands
+    /// it a seed derived from its own. Derived beside
+    /// [`Self::child_declares_host_acts`], and outside the IR contract for the
+    /// reason [`Param::native_seed`] gives.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_takes_map_seed: bool,
     /// Codegen-internal: the call, in the target language, that answers the
     /// host the child is built with — the factory operation the parent's own host
     /// declares for this invoke. Empty for a child that declares no act. Set by
@@ -3072,6 +3082,12 @@ pub struct InvokeCandidate {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_declares_host_duties: bool,
+    /// Codegen-internal: the candidate takes a map seed at its start —
+    /// [`InvokeSessionCommon::child_takes_map_seed`], per candidate. Outside
+    /// the IR contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_takes_map_seed: bool,
     /// Codegen-internal: the call that answers the host THIS candidate is built
     /// with — [`InvokeSessionCommon::child_host_call`], per candidate. Empty for a
     /// candidate that declares no act. Outside the IR contract.

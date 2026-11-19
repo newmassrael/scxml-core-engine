@@ -841,7 +841,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                invocation starts — and copied before the entry walk. A host that has none to
                give, or an incomplete one, is an invocation that cannot start: it is reported
                and nothing is spawned, as an invoke of a type no invoker serves is. #}
-            {% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info.child_name, invoke_info.child_host_call, invoke_info.child_declares_host_duties, invoke_info.child_has_send_to_parent, 'p->invoke_id', child_clock_c) %}
+            {% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info.child_name, invoke_info.child_host_call, invoke_info.child_declares_host_duties, invoke_info.child_has_send_to_parent, 'p->invoke_id', child_clock_c, 'sce_map_seed_of_child(sm->map_seed, p->invoke_id)' if invoke_info.child_takes_map_seed else '') %}
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_CHILD_INIT_FAILED,
@@ -884,7 +884,8 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                     {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
                     p->invoke_id,
                     {{ child_clock_c }},
-                    {{ handed_arguments_ref(invoke_info, model) }});
+                    {{ handed_arguments_ref(invoke_info, model) }}{% if invoke_info.child_takes_map_seed %},
+                    sce_map_seed_of_child(sm->map_seed, p->invoke_id){% endif %});
             {% else %}
             /* §scxml-6.4: the child is started on this machine's clock, which
                its `<send delay>`s wait on, with the invoke's arguments taken
@@ -892,7 +893,8 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                inside this call, over what it was handed. */
             const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
                 {{ csym_prefix }}{{ invoke_info.child_name }}_init_invoked(&sm->child_{{ invoke_info.field_suffix }}, {{ child_clock_c }},
-                                                                        {{ handed_arguments_ref(invoke_info, model) }});
+                                                                        {{ handed_arguments_ref(invoke_info, model) }}{% if invoke_info.child_takes_map_seed %},
+                                                                        sce_map_seed_of_child(sm->map_seed, p->invoke_id){% endif %});
             {% endif %}
 {{ release_handed_arguments(invoke_info, model) }}
 {{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
@@ -1100,7 +1102,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {# docs/adr/0005, decision 6: a candidate that declares `<sce:action>`s is begun with the
    table the parent's own table answers for IT, and refused as the invoke above is when
    there is none to give. #}
-{% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->child_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), candidate.stem, candidate.child_host_call, candidate.child_declares_host_duties, candidate.child_has_send_to_parent, 'p->invoke_id', child_clock_c) %}
+{% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->child_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), candidate.stem, candidate.child_host_call, candidate.child_declares_host_duties, candidate.child_has_send_to_parent, 'p->invoke_id', child_clock_c, 'sce_map_seed_of_child(sm->map_seed, p->invoke_id)' if candidate.child_takes_map_seed else '') %}
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_CHILD_INIT_FAILED,
@@ -1134,7 +1136,8 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                         {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
                         p->invoke_id,
                         {{ child_clock_c }},
-                        {{ handed_arguments_ref(invoke_info, model) }});
+                        {{ handed_arguments_ref(invoke_info, model) }}{% if candidate.child_takes_map_seed %},
+                        sce_map_seed_of_child(sm->map_seed, p->invoke_id){% endif %});
 {{ release_handed_arguments(invoke_info, model) }}
 {{ refuse_unstarted_child(candidate.stem, 'sm->child_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), invoke_info, model, csym_prefix) }}
 {% endif %}
@@ -1206,7 +1209,8 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {{ hand_arguments(invoke_info, model, csym_prefix, true) }}
             const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
                 {{ csym_prefix }}{{ invoke_info.child_name }}_init_invoked(&sm->child_{{ invoke_info.field_suffix }}, {{ child_clock_c }},
-                                                                        {{ handed_arguments_ref(invoke_info, model) }});
+                                                                        {{ handed_arguments_ref(invoke_info, model) }}{% if invoke_info.child_takes_map_seed %},
+                                                                        sce_map_seed_of_child(sm->map_seed, p->invoke_id){% endif %});
 {{ release_handed_arguments(invoke_info, model) }}
 {{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
             sm->child_{{ invoke_info.field_suffix }}_active = true;

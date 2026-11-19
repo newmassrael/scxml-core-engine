@@ -204,6 +204,24 @@ static inline sce_map_seed_t sce_map_seed_derive(sce_map_seed_t seed, uint32_t o
     return sce_map_seed_from_halves(halves[0], halves[1]);
 }
 
+/* The seed a machine hands the child it starts under the invoke id `invoke_id`, from its own
+ * `seed`: two SipHash-1-3 values of the id under `seed`, each message opened by a tag
+ * (2 and 3) no seed of the machine's own maps opens its message with
+ * (`sce_map_seed_derive`, 0 and 1), so the child's maps are keyed apart from the parent's,
+ * and each child of one parent apart from the others. */
+static inline sce_map_seed_t sce_map_seed_of_child(sce_map_seed_t seed, const char *invoke_id) {
+    uint64_t halves[2];
+    for (unsigned side = 0u; side < 2u; ++side) {
+        sce_siphash_t sip;
+        const uint8_t tag = (uint8_t)(2u + side);
+        sce_siphash_begin(&sip, seed, 1u, 3u);
+        sce_siphash_write(&sip, &tag, 1u);
+        sce_siphash_write(&sip, (const uint8_t *)invoke_id, strlen(invoke_id));
+        halves[side] = sce_siphash_finish(&sip);
+    }
+    return sce_map_seed_from_halves(halves[0], halves[1]);
+}
+
 /* ── keys ──────────────────────────────────────────────────────────────────────── */
 
 /* Where a key writes its canonical bytes: the hash, or a comparison with another key.
