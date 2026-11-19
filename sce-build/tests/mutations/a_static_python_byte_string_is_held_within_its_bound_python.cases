@@ -24,8 +24,8 @@ mutation_oracles backends/python/tests/integration/static_datamodel/test_static_
 
 mutation_case "an assignment to a byte string is not held to its bound" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
-     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
+     "        } else if let Some(capacity) = self.bytes.get(location) {",
+     "        } else if let Some(capacity) = self.bytes.get(location).filter(|_| false) {")
 PY
 
 mutation_case "the helper that holds a value to its bound counts it as no bytes at all" <<'PY'

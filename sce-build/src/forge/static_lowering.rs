@@ -11695,6 +11695,28 @@ impl Rewrites<'_> {
         ordinal
     }
 
+    /// `value`, stored whole into the variable `location`: a text or a byte
+    /// string held to the bound the variable declares, whatever the value came
+    /// from, so past it the store fails as any other does, writing nothing and
+    /// ending its block (§scxml-4.9); any other value as it is. The one rule an
+    /// `<assign>` and the location of a `<sce:call>` store by.
+    fn held_to_bound(&self, location: &str, value: Receiving) -> Receiving {
+        if let Some(capacity) = self.strings.get(location) {
+            Receiving {
+                text: self.target.bounded_string(&value.text, *capacity),
+                can_fail: true,
+            }
+        } else if let Some(capacity) = self.bytes.get(location) {
+            // ... and so is a byte string, in bytes.
+            Receiving {
+                text: self.target.bounded_bytes(&value.text, *capacity),
+                can_fail: true,
+            }
+        } else {
+            value
+        }
+    }
+
     /// Take `data`, the most bytes of the JSON a `<send>` or a `<donedata>`
     /// (`element`) writes, into the machine's measure, and into the share it
     /// hands its parent where `to_parent` (docs/adr/0086, section 8.6 (c)).
@@ -23728,20 +23750,8 @@ fn lower_action(
                 _ => lower(&action.expr, slot)?,
             };
             // A string variable holds at most what it declared, whatever the
-            // value came from: past it the assignment fails as any other does,
-            // writing nothing and ending its block (§scxml-4.9).
-            if let Some(capacity) = rewrites.strings.get(location) {
-                value = Receiving {
-                    text: target.bounded_string(&value.text, *capacity),
-                    can_fail: true,
-                };
-            } else if let Some(capacity) = rewrites.bytes.get(location) {
-                // ... and so does a byte string, in bytes.
-                value = Receiving {
-                    text: target.bounded_bytes(&value.text, *capacity),
-                    can_fail: true,
-                };
-            }
+            // value came from ([`Rewrites::held_to_bound`]).
+            value = rewrites.held_to_bound(location, value);
             let construct = format!("<assign location='{location}'>");
             let record_field = field_location(location, rewrites);
             // A target that rewrites the document itself writes a record's
@@ -24286,7 +24296,7 @@ fn lower_action(
             } else {
                 crate::forge::expr::infer_expr_type(location, ctx).unwrap_or(InferredType::Unknown)
             };
-            let mut value = rewrites
+            let value = rewrites
                 .owned(written, &statement_ctx, renames, ty)
                 .map_err(|r| {
                     GenerateError::unsupported(format!(
@@ -24296,17 +24306,7 @@ fn lower_action(
                 })?;
             // A text or a byte string is held to the bound of the variable it is
             // stored into, as an `<assign>` holds it.
-            if let Some(capacity) = rewrites.strings.get(location) {
-                value = Receiving {
-                    text: target.bounded_string(&value.text, *capacity),
-                    can_fail: true,
-                };
-            } else if let Some(capacity) = rewrites.bytes.get(location) {
-                value = Receiving {
-                    text: target.bounded_bytes(&value.text, *capacity),
-                    can_fail: true,
-                };
-            }
+            let value = rewrites.held_to_bound(location, value);
             // Each map the call writes in place, in the order of the parameters
             // that take it, as the target names it and holds it.
             let mut lent_parts = Vec::new();
