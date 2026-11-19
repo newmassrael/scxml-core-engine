@@ -234,13 +234,14 @@ pub fn check(
         // it is declared: its type is judged, and its reads, statements and
         // loop where each is written.
         if let Some(ty) = var.value_type.as_ref() {
-            if judge.map_variable(var, ty, &records)? {
+            if judge.map_variable(var, ty, &records)? && !var.from_deployment {
                 continue;
             }
         }
         // A value the deployment supplies has no initial value of the
         // document's to judge (docs/adr/0109, D12): its type is judged as the
-        // one its reader reads.
+        // one its reader reads, which a map or a set, its key judged above,
+        // has none of.
         if var.from_deployment {
             judge.deployment_value(var)?;
             continue;
@@ -3120,6 +3121,16 @@ impl<'a> Judge<'a> {
             "foreach" => vec![
                 ("<foreach>", "item", action.item.as_str()),
                 ("<foreach>", "index", action.index.as_str()),
+            ],
+            // docs/adr/0108, D3 and D4: a map write, into its target, and the
+            // outcome it writes.
+            "sce_put" => vec![
+                ("<sce:put>", "target", action.location.as_str()),
+                ("<sce:put>", "outcome", action.outcome.as_str()),
+            ],
+            "sce_remove" => vec![
+                ("<sce:remove>", "target", action.location.as_str()),
+                ("<sce:remove>", "outcome", action.outcome.as_str()),
             ],
             _ => Vec::new(),
         };

@@ -6430,9 +6430,9 @@ neighbours in the same test hold this on the six backends.
 top-level variable whose value the machine's deployment gives it before it starts: a
 value of any type a payload schema states (docs/adr/0087, section 1), a record, a list,
 a union, an enum, an optional value or a scalar, every bound written in its type. A map
-or a set, which has no wire form yet, is refused as any map variable is, and a type
-with no payload schema (an open enum among them) is refused by name
-(`scxml/static-datamodel-rule`). The deployment is the one source `sce:from` names; the
+or a set, which has no wire form yet (docs/adr/0108, D7), has its key judged as any map
+variable's is and is then refused, as is any other type with no payload schema (an open
+enum among them), by name (`scxml/static-datamodel-rule`). The deployment is the one source `sce:from` names; the
 declaration takes no `expr`, no `<sce:set>` and no in-line content, since the document
 gives it no initial value, and no `sce:direction="out"`, since it is the host's input
 and not the machine's output; a test component, which the test system starts with the
@@ -6441,8 +6441,9 @@ Under any other data model the attribute is read by nothing and refused as unrea
 machine reads the value, in a guard, an expression and an initial value of a variable
 declared after it, and never writes it: an `<assign>`, an `<sce:append>`, an
 `<sce:clear>`, an `<sce:render>` or an `<sce:lift>` whose place is the value or inside
-it, a `<send>`'s or an `<invoke>`'s `idlocation` naming it, and a `<foreach>` whose item
-or index names it are refused at the element as `validation/deployment-value-assigned`,
+it, a `<send>`'s or an `<invoke>`'s `idlocation` naming it, an `<sce:put>` or an
+`<sce:remove>` whose target or outcome names it, and a `<foreach>` whose item or index
+names it are refused at the element as `validation/deployment-value-assigned`,
 the place as written its `actual`. A child session is started by its parent, which has
 no deployment value to give it, so an `<invoke>` of a child that declares one is
 refused at the invoke (`scxml/static-datamodel-rule`). The value is part of the

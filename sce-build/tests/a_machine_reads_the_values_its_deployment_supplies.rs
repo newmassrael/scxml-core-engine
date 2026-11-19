@@ -167,6 +167,11 @@ fn every_statement_that_writes_a_deployment_value_is_refused() {
         (r#"      <sce:append target="hosts" expr="'h'"/>"#, "hosts"),
         (r#"      <sce:clear target="hosts"/>"#, "hosts"),
         (
+            r#"      <sce:put target="hosts" key="1" expr="'h'"/>"#,
+            "hosts",
+        ),
+        (r#"      <sce:remove target="hosts" key="1"/>"#, "hosts"),
+        (
             r#"      <foreach array="hosts" item="limits"><assign location="count" expr="1"/></foreach>"#,
             "limits",
         ),
@@ -216,6 +221,18 @@ fn a_declaration_of_a_deployment_value_holds_its_rules() {
         "a deployment value built by <sce:set> is refused:\n{out}"
     );
     assert_refused_at(&out, "scxml/static-datamodel-rule", LIMITS_LINE);
+    // A map, which has no wire form a configuration could be read from
+    // (docs/adr/0108, D7).
+    let doc = statechart("sce-static", "", READS).replace(
+        r#"sce:type="record:Limits" sce:from="deployment""#,
+        r#"sce:type="map&lt;uint32, bool&gt;[4]" sce:from="deployment""#,
+    );
+    let (ok, out) = check(&["check"], &doc);
+    assert!(!ok, "a map the deployment would supply is refused:\n{out}");
+    assert!(
+        out.contains("\"code\":\"scxml/static-datamodel-rule\"") && out.contains("payload schema"),
+        "a map has no payload schema:\n{out}"
+    );
 }
 
 /// Under any other data model the attribute is read by nothing, and refused so.
