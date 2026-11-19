@@ -2076,11 +2076,20 @@ fn function_named<'f>(functions: &'f [syn::ItemFn], name: &str) -> &'f syn::Item
         .unwrap_or_else(|| panic!("no function `{name}` was generated"))
 }
 
-/// The adapter a machine declares for an algorithm call (`call___st<n>`).
+/// Whether `name` is the name of the adapter a Rust machine declares for a
+/// call of an algorithm with state in a slot: `call_` and the name the call's
+/// rewrite gives it, the callee's alias and the codes of its state arguments
+/// (`call_TakeGeneration__vpv`, `type_ctx::state_call_name`).
+fn is_adapter(name: &str) -> bool {
+    name.strip_prefix("call_")
+        .is_some_and(|coded| coded.contains("__"))
+}
+
+/// The adapter a machine declares for an algorithm call ([`is_adapter`]).
 fn adapter_of(functions: &[syn::ItemFn]) -> &syn::ItemFn {
     functions
         .iter()
-        .find(|function| function.sig.ident.to_string().starts_with("call___st"))
+        .find(|function| is_adapter(&function.sig.ident.to_string()))
         .expect("the machine declares the call's adapter")
 }
 
@@ -2145,7 +2154,7 @@ impl MethodCalls {
 }
 
 /// The arguments of each call a machine makes of the adapter of an algorithm
-/// call (`call___st<n>`), each as its tokens print.
+/// call ([`is_adapter`]), each as its tokens print.
 #[derive(Default)]
 struct AdapterCalls(Vec<Vec<String>>);
 
@@ -2157,7 +2166,7 @@ impl<'ast> syn::visit::Visit<'ast> for AdapterCalls {
                 .path
                 .segments
                 .last()
-                .is_some_and(|segment| segment.ident.to_string().starts_with("call___st"));
+                .is_some_and(|segment| is_adapter(&segment.ident.to_string()));
             if adapter {
                 self.0.push(
                     call.args
@@ -2234,6 +2243,17 @@ fn rust_lowers_an_algorithm_that_writes_a_map_it_is_lent_in_place() {
             .any(|(receiver, method)| receiver == "resets" && method == "put"),
         "the table is put into where it is lent: {:?}",
         methods.0
+    );
+    // The enum the document names only as the tag of the union locals it
+    // builds is spelled nowhere in the function, so its module is not `use`d:
+    // an unused import is refused under `-D warnings`.
+    let (_, text) = files
+        .iter()
+        .find(|(_, text)| text.contains("pub fn take_generation"))
+        .expect("the algorithm's file");
+    assert!(
+        !text.contains("use super::enum_take_kind;"),
+        "the tag's enum is imported though nothing names it:\n{text}"
     );
 }
 
