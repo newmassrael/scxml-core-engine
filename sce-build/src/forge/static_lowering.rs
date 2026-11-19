@@ -1078,6 +1078,13 @@ pub struct AdapterSpec<'a> {
     /// ([`SCXMLModel::held_enums`]): the variants a value of one crosses by
     /// ([`StaticTarget::enum_crossing`]).
     pub enums: &'a std::collections::BTreeMap<String, EnumModel>,
+    /// For each parameter of the callee, by its index, the type of the map of
+    /// the largest bound the machine holds that the parameter could be lent
+    /// (`StaticScope::map_argument`), for a target that holds a copy of a lent
+    /// map for a walk of the algorithm's whose body writes it (docs/adr/0108,
+    /// D6 item 3): storage of that bound holds a copy of any of them. `None`
+    /// for a parameter that takes no map, and where the machine holds none.
+    pub lent_map_storage: Vec<Option<String>>,
 }
 
 impl<'a> AdapterSpec<'a> {
@@ -9585,6 +9592,25 @@ pub fn lower(
                 },
             })
             .collect();
+        // The largest map of the machine each map parameter could be lent,
+        // whose storage holds a copy of any it is lent.
+        let lent_map_storage = value
+            .params
+            .iter()
+            .map(|slot| {
+                let StaticSlot::Map(map) = slot else {
+                    return None;
+                };
+                let map_types = rewrites.map_types.borrow();
+                scope
+                    .variables
+                    .iter()
+                    .filter(|var| scope.map_argument(map, &var.id).is_ok())
+                    .filter_map(|var| Some((var.capacity()?, map_types.get(&var.id)?.clone())))
+                    .max_by_key(|(capacity, _)| *capacity)
+                    .map(|(_, held)| held)
+            })
+            .collect();
         let spec = AdapterSpec {
             name: target.state_adapter_name(machine, callee, coded),
             machine,
@@ -9599,6 +9625,7 @@ pub fn lower(
             payload_events: &payload_events_by_alias,
             record_list_bounds: &record_list_bounds,
             enums: &held_enums,
+            lent_map_storage,
         };
         // What the adapter copies the machine's records into and has the algorithm write
         // its list into is the machine's, whatever the bound, and not the stack's.
@@ -17064,6 +17091,29 @@ pub(crate) fn c_bytes_storage_def(capacity: u32) -> String {
     )
 }
 
+/// The function that reads the buffer of [`c_bytes_storage_type`] at an
+/// address as the runtime's view of its bytes (`sce/forge/bytes.h`): what an
+/// algorithm, which holds a byte string as a view, reads a byte string a map
+/// holds as ([`c_bytes_storage_view_def`]).
+pub(crate) fn c_bytes_storage_view(capacity: u32) -> String {
+    format!("sce_static_bytes_{capacity}_view")
+}
+
+/// The declaration of [`c_bytes_storage_view`], under a guard named by it.
+pub(crate) fn c_bytes_storage_view_def(capacity: u32) -> String {
+    let view = c_bytes_storage_view(capacity);
+    let ty = c_bytes_storage_type(capacity);
+    let guard = view.to_uppercase();
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* The bytes of the `{ty}` at `held`, as a view of them. */\n\
+         static inline sce_forge_bytes_view_t {view}(const void *held) {{\n    \
+         const {ty} *bytes = (const {ty} *)held;\n    \
+         sce_forge_bytes_view_t view = {{ bytes->data, bytes->len }};\n    \
+         return view;\n}}\n#endif"
+    )
+}
+
 /// The word the type grammar spells the scalar a C11 machine holds in the C
 /// type `c_type` by (`uint8_t` is `uint8`, `double` is `float64`): what the name
 /// of a list of it and of the optional value of it are made of. `None` for a
@@ -17137,6 +17187,35 @@ pub(crate) fn c11_map_type(key: &str, value: Option<&str>, capacity: u32) -> Str
         Some(value) => format!("sce_static_map_{}_{}_{capacity}_t", word(key), word(value)),
         None => format!("sce_static_set_{}_{capacity}_t", word(key)),
     }
+}
+
+/// The function that writes the canonical bytes of a key of the C11 record type
+/// `ty` (docs/adr/0108, D1): each of `fields`, by the name the type gives it and
+/// of its type, in the order its schema declares them, as its type writes them
+/// (`sce/forge/map.h`). Under a guard of its name: the type a map holds a record
+/// key in is the record's unit's (D6 item 4), which every header of a program
+/// that holds such a map, a machine's or an algorithm's, makes a key alike.
+/// `None` for a field no key holds.
+pub(crate) fn c11_record_map_key_def(ty: &str, fields: &[(String, &SceType)]) -> Option<String> {
+    let feeds = fields
+        .iter()
+        .map(|(name, field)| {
+            c11_key_field_feed(field, &format!("record->{name}"), C11KeyHolder::Record)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let prefix = ty.trim_end_matches("_t");
+    let guard = format!("SCE_STATIC_MAP_KEY_{}", prefix.to_uppercase());
+    Some(format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* docs/adr/0108, D1: a `{ty}` is a key of a map by its fields, in the order its \
+         schema declares them. */\n\
+         static inline void {prefix}_map_key(const void *key, sce_map_sink_t *sink) {{\n    \
+         const {ty} *record = (const {ty} *)key;\n{}}}\n#endif",
+        feeds
+            .iter()
+            .map(|feed| format!("    {feed}\n"))
+            .collect::<String>()
+    ))
 }
 
 /// The C11 type a map or a set is lent to an algorithm in (docs/adr/0108, D6
@@ -17389,6 +17468,45 @@ fn c11_map_part_saved_read(
     })
 }
 
+/// The C11 map or set type `ty` ([`c11_map_type`]) of keys of the part `key`,
+/// held in the C type its first member names, of values held in the C type
+/// `value` (`None` for a set), bounded by `capacity` (docs/adr/0108, D8), under
+/// a guard of its name: the function that writes its key's canonical bytes and
+/// the runtime's declaration of the type over it (`sce/forge/map.h`). Every
+/// header that holds a map of the type writes this one text, a machine's
+/// ([`c11_map_type_def`]) and an algorithm's that holds one of its own alike.
+/// `None` for a key no map of C11 holds.
+pub(crate) fn c11_map_type_decl(
+    ty: &str,
+    key: (&str, &crate::forge::model::AlgorithmValueType),
+    value: Option<&str>,
+    capacity: u32,
+) -> Option<String> {
+    let prefix = ty.trim_end_matches("_t");
+    let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+    let held_key = key.0;
+    let feed = c11_map_key_feed(key)?;
+    let (declared, shape) = match value {
+        Some(value) => (
+            format!(
+                "SCE_MAP_DECLARE({prefix}, {held_key}, {value}, {capacity}u, {prefix}_key_feed)"
+            ),
+            "a `map` of",
+        ),
+        None => (
+            format!("SCE_SET_DECLARE({prefix}, {held_key}, {capacity}u, {prefix}_key_feed)"),
+            "a `set` of",
+        ),
+    };
+    Some(format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* SCE Accepted Subset §2.15 (docs/adr/0108, D8): {shape} at most {capacity} entries. */\n\
+         static inline void {prefix}_key_feed(const void *key, sce_map_sink_t *sink) {{\n    \
+         {feed}\n}}\n\n\
+         {declared}\n#endif"
+    ))
+}
+
 /// The declaration of the C11 map or set type `ty` ([`c11_map_type`]) of keys
 /// of the part `key`, values of the part `value` (`None` for a set), bounded by
 /// `capacity`, each part the C type the machine holds it in and the type the
@@ -17403,6 +17521,11 @@ fn c11_map_part_saved_read(
 /// or the host's, so a key held twice is found in one pass and nothing is kept.
 /// A record key is read at the revision `key_at` of its schema and a record
 /// value at `value_at` (docs/adr/0044). `None` for a part no map of C11 holds.
+///
+/// The type ([`c11_map_type_decl`]) and its saved form are under two guards, so
+/// an algorithm that holds a map of the same type, which declares the type
+/// alone and saves nothing, and a machine that holds it, which declares both,
+/// make one program whichever header comes first.
 fn c11_map_type_def(
     ty: &str,
     key: (&str, &crate::forge::model::AlgorithmValueType),
@@ -17412,16 +17535,11 @@ fn c11_map_type_def(
     let prefix = ty.trim_end_matches("_t");
     let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
     let held_key = key.0;
-    let feed = c11_map_key_feed(key)?;
-    let (declared, shape, local_value, put_args, entry_write, value_read) = match value {
+    let declared = c11_map_type_decl(ty, key, value.map(|part| part.0), capacity)?;
+    let (local_value, put_args, entry_write, value_read) = match value {
         Some(part) => {
             let read = c11_map_part_saved_read(part, "part", "part_what", "value", "value_at")?;
             (
-                format!(
-                    "SCE_MAP_DECLARE({prefix}, {held_key}, {}, {capacity}u, {prefix}_key_feed)",
-                    part.0
-                ),
-                "a `map` of",
                 format!("        {} value;\n", part.0),
                 "key, value",
                 format!(
@@ -17443,8 +17561,6 @@ fn c11_map_type_def(
             )
         }
         None => (
-            format!("SCE_SET_DECLARE({prefix}, {held_key}, {capacity}u, {prefix}_key_feed)"),
-            "a `set` of",
             String::new(),
             "key",
             c11_map_part_saved_write(key, "slot->key")?,
@@ -17464,11 +17580,7 @@ fn c11_map_type_def(
     };
     let read_key = c11_map_part_saved_read(key, "part", "part_what", "(*key)", "at")?;
     Some(format!(
-        "#ifndef {guard}\n#define {guard}\n\
-         /* SCE Accepted Subset §2.15 (docs/adr/0108, D8): {shape} at most {capacity} entries. */\n\
-         static inline void {prefix}_key_feed(const void *key, sce_map_sink_t *sink) {{\n    \
-         {feed}\n}}\n\n\
-         {declared}\n\n\
+        "{declared}\n\n#ifndef {guard}_SAVED\n#define {guard}_SAVED\n\
          /* The map as a saved state writes it: the array of its entries in its order. */\n\
          static inline void {ty}_saved_write(sce_jw_t *w, const {ty} *map) {{\n    \
          sce_jw_begin_array(w);\n    \
@@ -18186,6 +18298,21 @@ impl StaticTarget for CTarget {
                 _ => return None,
             }
         }
+        // docs/adr/0108, D4 "Storage", D6 item 3 and D8: the algorithm's maps of
+        // its own and the copies its writing walks walk are the machine's
+        // storage for the call ([`Self::adapter_storage`]), handed after the
+        // arguments, and the seed the machine's maps were started under follows
+        // where the algorithm keys its own under a seed it is handed.
+        let maps = &value.map_storage;
+        if maps.locals {
+            arguments.push("&s->maps".to_string());
+        }
+        for index in 0..maps.copies.len() {
+            arguments.push(format!("&s->w{index}.core"));
+        }
+        if maps.seeded {
+            arguments.push("seed".to_string());
+        }
         let call = format!("{}({})", spec.call, arguments.join(", "));
         let result_type = format!("{name}_result_t");
         // The storage the machine holds for the call, which the adapter is handed after
@@ -18193,6 +18320,11 @@ impl StaticTarget for CTarget {
         let storage = c11_adapter_storage_type(spec.machine, name);
         if self.adapter_storage(spec).is_some() {
             declarations.push(format!("{storage} *s"));
+        } else if !maps.is_empty() {
+            return None;
+        }
+        if maps.seeded {
+            declarations.push("sce_map_seed_t seed".to_string());
         }
         // An algorithm that returns nothing is called for the maps it writes in
         // place (docs/adr/0108, D6 item 2): the adapter hands it its arguments
@@ -18402,9 +18534,49 @@ impl StaticTarget for CTarget {
                 crate::forge::generator::c11_list_destination_type(&spec.call)
             ));
         }
+        // docs/adr/0108, D4 "Storage" and D6 item 3: the algorithm's maps of its
+        // own, the struct its unit declares, and for each walk of a map it is
+        // lent whose body writes it, storage of the largest such map the
+        // machine holds, which a copy of any it lends fits.
+        let maps = &value.map_storage;
+        if maps.locals {
+            members.push(format!(
+                "{} maps;",
+                crate::forge::generator::c11_algorithm_maps_type(&spec.call)
+            ));
+        }
+        for (index, copy) in maps.copies.iter().enumerate() {
+            let crate::forge::type_ctx::MapCopy::Lent(param) = copy else {
+                return None;
+            };
+            let held = spec.lent_map_storage.get(*param)?.as_deref()?;
+            members.push(format!("{held} w{index};"));
+        }
         (!members.is_empty()).then_some(members)
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+        // docs/adr/0108, D8: an algorithm that keys a map of its own under the
+        // seed its caller hands it is handed the seed the machine's own maps
+        // were started under, which a machine that holds no map does not take.
+        let holds_a_map = scope
+            .variables
+            .iter()
+            .any(|v| v.value_type.as_ref().is_some_and(|t| t.map_key().is_some()));
+        if let Some(callee) = scope.callees.iter().find(|callee| {
+            callee
+                .value
+                .as_ref()
+                .is_some_and(|value| value.map_storage.seeded)
+        }) {
+            if !holds_a_map {
+                return Some(format!(
+                    "a call of `{}`, an algorithm that keys a map of its own under the seed its \
+                     caller hands it, from a machine that holds no map and so is started under \
+                     no seed to hand it (docs/adr/0108, D8)",
+                    callee.alias
+                ));
+            }
+        }
         // The integers, the bool and an enum: a `bool`, a number and an
         // enumerated type are the values the checked helpers and the policy
         // hold without a length. A list of integers or bools too: it is a
@@ -19142,12 +19314,22 @@ impl StaticTarget for CTarget {
                 .params
                 .iter()
                 .any(|slot| matches!(slot, StaticSlot::RecordList(_)));
-            if !(returns_list || copies_records) {
+            // An algorithm's maps of its own and the copies its writing walks
+            // walk are the call's storage too (docs/adr/0108, D4 "Storage"), and
+            // one that keys its own under a seed it is handed is handed the seed
+            // the machine's maps were started under (D8).
+            let holds_maps = !value.map_storage.is_empty();
+            if !(returns_list || copies_records || holds_maps) {
                 continue;
             }
             let adapter = self.state_adapter_name(machine, callee, &call.name);
+            let seed = if value.map_storage.seeded {
+                format!(", {C11_MACHINE_SEED}")
+            } else {
+                String::new()
+            };
             if let Some(sig) = ctx.funcs.get_mut(call.name.as_str()) {
-                sig.storage = Some(format!("&{}", c11_scratch(&adapter)));
+                sig.storage = Some(format!("&{}{seed}", c11_scratch(&adapter)));
                 if returns_list {
                     sig.reading = CallReading::IntoDestination;
                 }
@@ -19721,33 +19903,12 @@ impl StaticTarget for CTarget {
         fields: &[String],
         schema: &EntrySchema,
     ) -> Option<String> {
-        let feeds = fields
+        let typed: Vec<(String, &SceType)> = fields
             .iter()
             .zip(&schema.fields)
-            .map(|(name, field)| {
-                c11_key_field_feed(
-                    field.sce_type.present_type(),
-                    &format!("record->{name}"),
-                    C11KeyHolder::Record,
-                )
-            })
-            .collect::<Option<Vec<_>>>()?;
-        // Under a guard of its name: the type a map holds a record key in is
-        // the record's unit's (docs/adr/0108, D6 item 4), which every machine
-        // of a program that holds such a map makes a key alike.
-        let prefix = ty.trim_end_matches("_t");
-        let guard = format!("SCE_STATIC_MAP_KEY_{}", prefix.to_uppercase());
-        Some(format!(
-            "#ifndef {guard}\n#define {guard}\n\
-             /* docs/adr/0108, D1: a `{ty}` is a key of a map by its fields, in the order its \
-             schema declares them. */\n\
-             static inline void {prefix}_map_key(const void *key, sce_map_sink_t *sink) {{\n    \
-             const {ty} *record = (const {ty} *)key;\n{}}}\n#endif",
-            feeds
-                .iter()
-                .map(|feed| format!("    {feed}\n"))
-                .collect::<String>()
-        ))
+            .map(|(name, field)| (name.clone(), field.sce_type.present_type()))
+            .collect();
+        c11_record_map_key_def(ty, &typed)
     }
     // ... and the payload's, its text a pointer into the machine's buffer and
     // its byte string an array with the length beside it
@@ -20605,6 +20766,11 @@ const C11_CALL_STORAGE: &str = "call";
 fn c11_scratch(member: &str) -> String {
     format!("sm->scratch.{C11_CALL_STORAGE}.{member}")
 }
+
+/// The seed a C11 machine started its maps under, which it keeps
+/// (`c/state_machine.h.jinja2`): what it hands an algorithm that keys a map of
+/// its own under a seed its caller hands it (docs/adr/0108, D8).
+const C11_MACHINE_SEED: &str = "sm->map_seed";
 
 /// The union of a C11 machine's `scratch` that holds the copies the `<foreach>` loops
 /// `depth` loops deep walk (docs/adr/0082, §scxml-4.6).
@@ -24050,6 +24216,14 @@ fn lower_action(
                     {
                         statement_ctx.insert_func(made.name.as_str(), sig.clone());
                     }
+                    // ... and is handed the storage the target holds for the
+                    // call, as one that returns a value is (docs/adr/0108, D4
+                    // "Storage", [`StaticTarget::hand_call_storage`]).
+                    rewrites.target.hand_call_storage(
+                        rewrites.scope,
+                        rewrites.machine,
+                        &mut statement_ctx,
+                    );
                 }
             }
             let ty = if location.is_empty() {

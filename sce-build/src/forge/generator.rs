@@ -41064,45 +41064,354 @@ fn reject_map_in_unsupported_lang(
     .into())
 }
 
-/// docs/adr/0108, D4 "Storage" and D8, on C11: an algorithm is lent each map
-/// it reads, or writes in place, by the address of its caller's storage
-/// ([`crate::forge::static_lowering::c11_lent_map_type`]), and holds no map of
-/// its own. A map local, and the map a body builds to return, would be the
-/// whole bound the local states in the algorithm's frame, which no C11 frame
-/// holds (docs/adr/0082: no frame grows with a bound), and a map keys its index
-/// under a seed its machine is started with, which reaches no algorithm. Each
-/// is refused by name, before any statement of the body is lowered.
-fn reject_c11_map_storage(m: &AlgorithmModel) -> Result<(), ForgeError> {
-    let local = m
-        .body_bindings()
+/// Each statement of `block` and of every block it holds, a statement before
+/// the ones its blocks hold, in the order the body states them.
+fn each_algorithm_statement<'a>(
+    block: &'a [AlgorithmStmt],
+    visit: &mut dyn FnMut(&'a AlgorithmStmt),
+) {
+    use crate::forge::narrowing::Statement;
+    for s in block {
+        visit(s);
+        for nested in s.blocks() {
+            each_algorithm_statement(nested, visit);
+        }
+    }
+}
+
+/// The map and set locals of `m`, by name, each with its type.
+fn map_locals(m: &AlgorithmModel) -> Vec<(&str, &AlgorithmValueType)> {
+    m.body_bindings()
         .into_iter()
-        .find_map(|binding| match binding {
+        .filter_map(|binding| match binding {
             crate::forge::model::AlgorithmBinding::Local { name, sce_type }
                 if sce_type.map_key().is_some() =>
             {
-                Some(format!("the local `{name}` of {}", sce_type.as_attr()))
+                Some((name, sce_type))
             }
             _ => None,
-        });
-    let returned = m
+        })
+        .collect()
+}
+
+/// docs/adr/0108, D6 item 3: each `<sce:foreach>` of `m` over a map or a set
+/// its body writes, which walks a copy of the map as it was when the loop
+/// began, with the name of the map it walks, in the order the body states the
+/// walks, an outer walk before the ones its body holds.
+fn writing_map_walks(m: &AlgorithmModel) -> Vec<(&AlgorithmStmt, &str)> {
+    let mut maps: Vec<&str> = m
         .signature
-        .return_type
-        .as_ref()
-        .filter(|ty| ty.map_key().is_some())
-        .map(|ty| format!("a return of {}", ty.as_attr()));
-    let Some(held) = local.or(returned) else {
-        return Ok(());
+        .params
+        .iter()
+        .filter(|p| p.sce_type.map_key().is_some())
+        .map(|p| p.name.as_str())
+        .collect();
+    maps.extend(map_locals(m).into_iter().map(|(name, _)| name));
+    let mut walks = Vec::new();
+    each_algorithm_statement(&m.body, &mut |s| {
+        if let AlgorithmStmt::Foreach { source, body, .. } = s {
+            let source = source.trim();
+            if maps.contains(&source)
+                && crate::forge::narrowing::Writes::of_block(body.as_slice()).reaches(source)
+            {
+                walks.push((s, source));
+            }
+        }
+    });
+    walks
+}
+
+/// The map local `m` returns, the one its first `<sce:return>` names, for an
+/// algorithm that returns a map or a set (docs/adr/0108, D5): the map its body
+/// builds in its caller's storage on a lane without a heap. `None` for one that
+/// returns no map.
+fn map_output(m: &AlgorithmModel) -> Option<&str> {
+    m.signature.return_type.as_ref()?.map_key()?;
+    let mut returned = None;
+    each_algorithm_statement(&m.body, &mut |s| {
+        if let AlgorithmStmt::Return { expr: Some(e), .. } = s {
+            returned.get_or_insert(e.trim());
+        }
+    });
+    returned
+}
+
+/// The storage `m`'s maps take from its caller on a lane without a heap
+/// (docs/adr/0108, D4 "Storage" and D6 item 3,
+/// [`crate::forge::type_ctx::MapStorage`]): its map
+/// locals, the one it returns aside, and the copy each writing walk walks, held
+/// with the locals where it walks one of them and handed by the caller where it
+/// walks a map the caller lends or takes back.
+pub(crate) fn algorithm_map_storage(m: &AlgorithmModel) -> crate::forge::type_ctx::MapStorage {
+    use crate::forge::type_ctx::{MapCopy, MapStorage};
+    let output = map_output(m);
+    let own: Vec<&str> = map_locals(m)
+        .into_iter()
+        .map(|(name, _)| name)
+        .filter(|name| Some(*name) != output)
+        .collect();
+    let lent = m
+        .signature
+        .params
+        .iter()
+        .any(|p| p.sce_type.map_key().is_some());
+    let mut storage = MapStorage {
+        locals: !own.is_empty(),
+        copies: Vec::new(),
+        seeded: !own.is_empty() && !lent && output.is_none(),
     };
-    Err(GenerateError::unsupported_at(
-        format!(
-            "algorithm '{}' holds {held}, a map of its own, and c11 lends an algorithm only \
-             the maps its caller holds: a map of its own would be its bound in the algorithm's \
-             frame, keyed under no seed its caller hands it (docs/adr/0108, D4 and D8)",
-            m.name
-        ),
-        m.source_location.clone(),
-    )
-    .into())
+    for (_, source) in writing_map_walks(m) {
+        if Some(source) == output {
+            storage.copies.push(MapCopy::Returned);
+        } else if let Some(index) = m.signature.params.iter().position(|p| p.name == source) {
+            storage.copies.push(MapCopy::Lent(index));
+        }
+    }
+    storage
+}
+
+/// How a C11 algorithm holds its maps (docs/adr/0108, D4 "Storage", D6 and
+/// D8; docs/adr/0082): every one is reached through an address in its caller's
+/// storage, so no frame holds more than one entry of any. A map parameter is
+/// the storage the caller lends
+/// ([`crate::forge::static_lowering::c11_lent_map_type`]). The map the
+/// algorithm returns is built in the caller's storage, the destination the call
+/// is handed, emptied where the local is declared, as a list return is; the
+/// call answers whether it built it, and its failure is the caller's. Every
+/// other map local, and the copy a walk of one whose body writes it walks, is a
+/// member of the struct `<symbol>_maps_t` the algorithm declares, which the
+/// caller holds whole and hands by its address; the copy a writing walk of a
+/// map the caller lends or takes back walks is storage the caller hands for it,
+/// of at least that map's bound. A local of its own is keyed under a seed
+/// derived, as a child machine's is (`sce_map_seed_of_child`), from the seed of
+/// a map the caller lends or takes back, or, in an algorithm that has neither,
+/// from the seed its caller hands it last, the one the caller's own maps were
+/// started under: never a fixed one.
+struct C11AlgorithmMaps<'a> {
+    /// The statement each map local's `<sce:var>` lowers to, by name.
+    starts: std::collections::HashMap<String, String>,
+    /// Each writing walk, with the address of the copy it walks.
+    copies: Vec<(&'a AlgorithmStmt, String)>,
+    /// How each map is named in an expression, by name.
+    renames: Vec<(String, String)>,
+    /// The parameters the storage takes after the declared ones.
+    params: Vec<String>,
+    /// The struct of the locals and the declarations of their types.
+    prelude: String,
+    /// The map returned, as the body names it.
+    output: Option<&'a str>,
+}
+
+/// The name of the C11 struct of the map locals the algorithm `symbol` holds in
+/// its caller's storage ([`C11AlgorithmMaps`]).
+pub(crate) fn c11_algorithm_maps_type(symbol: &str) -> String {
+    format!("{symbol}_maps_t")
+}
+
+/// What a C11 algorithm names the struct of its map locals by, the parameter
+/// that hands it.
+const C11_MAPS: &str = "sce_maps_";
+/// ... and the seed its caller hands it
+/// ([`crate::forge::type_ctx::MapStorage::seeded`]).
+const C11_SEED: &str = "sce_seed_";
+
+impl<'a> C11AlgorithmMaps<'a> {
+    fn of(
+        m: &'a AlgorithmModel,
+        l: &LangCtx,
+        imports: &[ImportContext],
+        symbol: &str,
+    ) -> Result<Self, ForgeError> {
+        let refused = |what: String| -> ForgeError {
+            GenerateError::unsupported_at(
+                format!("algorithm '{}' {what} (docs/adr/0108, D4 and D8)", m.name),
+                m.source_location.clone(),
+            )
+            .into()
+        };
+        let output = map_output(m);
+        if let Some(output) = output {
+            let mut every = Vec::new();
+            each_algorithm_statement(&m.body, &mut |s| {
+                if let AlgorithmStmt::Return { expr: Some(e), .. } = s {
+                    every.push(e.trim());
+                }
+            });
+            let local = map_locals(m).iter().any(|(name, _)| *name == output);
+            if !local || every.iter().any(|named| *named != output) {
+                return Err(refused(format!(
+                    "returns a map, and c11 builds the map an algorithm returns in its \
+                     caller's storage, so each <sce:return> names the one map local `{output}`, \
+                     the map built there"
+                )));
+            }
+        }
+        let mut renames = Vec::new();
+        let mut params = Vec::new();
+        let mut starts = std::collections::HashMap::new();
+        for p in m
+            .signature
+            .params
+            .iter()
+            .filter(|p| p.sce_type.map_key().is_some())
+        {
+            renames.push((p.name.clone(), c11_destination(&l.local_id(&p.name))));
+        }
+        // The seed a local of the algorithm's own is keyed under: the seed of a
+        // map the caller lends, or of the one it takes back, or, where it has
+        // neither, the one the caller hands it (`MapStorage::seeded`).
+        let seed = m
+            .signature
+            .params
+            .iter()
+            .find(|p| p.sce_type.map_key().is_some())
+            .map(|p| l.local_id(&p.name))
+            .or_else(|| output.map(|name| l.local_id(name)))
+            .map_or_else(|| C11_SEED.to_string(), |lent| format!("{lent}->seed"));
+        let seeded = algorithm_map_storage(m).seeded;
+        let mut members = Vec::new();
+        let mut declarations = Vec::new();
+        for (name, ty) in map_locals(m) {
+            let local = l.local_id(name);
+            if Some(name) == output {
+                renames.push((name.to_string(), c11_destination(&local)));
+                starts.insert(name.to_string(), format!("sce_map_clear({local});"));
+                continue;
+            }
+            let held = c11_algorithm_map_held(l, imports, name, ty)?;
+            members.push(format!("    {} {local};", held.ty));
+            declarations.push(held.declaration);
+            renames.push((name.to_string(), format!("({C11_MAPS}->{local})")));
+            starts.insert(
+                name.to_string(),
+                format!(
+                    "{}_start(&{C11_MAPS}->{local}, sce_map_seed_of_child({seed}, \
+                     \"{symbol}.{name}\"));",
+                    held.ty.trim_end_matches("_t")
+                ),
+            );
+        }
+        let mut copies = Vec::new();
+        let mut handed = Vec::new();
+        for (index, (walk, source)) in writing_map_walks(m).into_iter().enumerate() {
+            let copy = format!("sce_walk_{index}_");
+            let own = map_locals(m)
+                .into_iter()
+                .find(|(name, _)| *name == source && Some(*name) != output);
+            match own {
+                Some((name, ty)) => {
+                    let held = c11_algorithm_map_held(l, imports, name, ty)?;
+                    members.push(format!("    {} {copy};", held.ty));
+                    copies.push((walk, format!("&{C11_MAPS}->{copy}")));
+                }
+                None => {
+                    handed.push(format!("sce_map_core_t *{copy}"));
+                    copies.push((walk, copy));
+                }
+            }
+        }
+        let mut prelude = String::new();
+        if !members.is_empty() {
+            let maps = c11_algorithm_maps_type(symbol);
+            for declaration in declarations {
+                prelude.push_str(&declaration);
+                prelude.push_str("\n\n");
+            }
+            prelude.push_str(&format!(
+                "/* docs/adr/0108, D4 \"Storage\": the maps `{symbol}` holds of its own, held \
+                 by its caller, whose storage is where\n   a map's bound is. */\n\
+                 typedef struct {{\n{}\n}} {maps};\n\n",
+                members.join("\n")
+            ));
+            params.push(format!("{maps} *{C11_MAPS}"));
+        }
+        params.extend(handed);
+        if seeded {
+            params.push(format!("sce_map_seed_t {C11_SEED}"));
+        }
+        Ok(Self {
+            starts,
+            copies,
+            renames,
+            params,
+            prelude,
+            output,
+        })
+    }
+}
+
+/// A map local of a C11 algorithm's own ([`C11AlgorithmMaps`]): the type it is
+/// held in, the one a machine names for a map of the same parts and bound
+/// ([`crate::forge::static_lowering::c11_map_type`]), and that type's
+/// declaration with the key's ([`crate::forge::static_lowering::c11_map_type_decl`]),
+/// each under the guard every header that holds it shares.
+struct C11MapHeld {
+    ty: String,
+    declaration: String,
+}
+
+fn c11_algorithm_map_held(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    name: &str,
+    ty: &AlgorithmValueType,
+) -> Result<C11MapHeld, ForgeError> {
+    use crate::forge::static_lowering::{c11_map_type, c11_map_type_decl, c11_record_map_key_def};
+    let unbounded = || -> ForgeError {
+        GenerateError::InvalidConfig(format!(
+            "the map local `{name}` of {} states no bound — the parser refuses this before \
+             codegen",
+            ty.as_attr()
+        ))
+        .into()
+    };
+    let capacity = ty
+        .stated_outer_bound()
+        .map(|bound| bound.max)
+        .ok_or_else(unbounded)?;
+    let part_of = |part: &AlgorithmValueType| -> Result<String, ForgeError> {
+        let bounded = part.clone().bounded().map_err(|_| unbounded())?;
+        c11_map_part_type(l, imports, name, &bounded)
+    };
+    let key = ty.map_key().ok_or_else(unbounded)?;
+    let value = match ty {
+        AlgorithmValueType::Map { value, .. } => Some(&**value),
+        _ => None,
+    };
+    let key_held = part_of(key)?;
+    let value_held = value.map(part_of).transpose()?;
+    let held = c11_map_type(&key_held, value_held.as_deref(), capacity);
+    let unspelled = || -> ForgeError {
+        GenerateError::unsupported(format!(
+            "the map local `{name}` of {}, whose key c11 writes the bytes of in no way ({})",
+            ty.as_attr(),
+            crate::forge::value_type::MAP_LANDING
+        ))
+        .into()
+    };
+    let mut declaration = String::new();
+    if let AlgorithmValueType::Record { alias } = key {
+        let record = resolve_record(imports, alias, None, &format!("the map local `{name}`"))?;
+        let fields: Vec<(String, &SceType)> = record
+            .fields
+            .iter()
+            .map(|field| match &field.ty {
+                EntryType::Scalar(scalar) => Some((field.id.clone(), scalar)),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(unspelled)?;
+        declaration.push_str(&c11_record_map_key_def(&key_held, &fields).ok_or_else(unspelled)?);
+        declaration.push_str("\n\n");
+    }
+    declaration.push_str(
+        &c11_map_type_decl(&held, (&key_held, key), value_held.as_deref(), capacity)
+            .ok_or_else(unspelled)?,
+    );
+    Ok(C11MapHeld {
+        ty: held,
+        declaration,
+    })
 }
 
 /// The C type a C11 algorithm names a key or a value of the type `part` of the
@@ -41111,11 +41420,12 @@ fn reject_c11_map_storage(m: &AlgorithmModel) -> Result<(), ForgeError> {
 /// the map holds it with nothing crossing. A number, a `bool` and a value of an
 /// enum are the types they are on both sides (an enum the typedef its document
 /// declares, which the machine's name for it aliases); a text is the buffer of
-/// its bound ([`crate::forge::static_lowering::c_string_storage_type`]); a
-/// record is the type its schema's unit declares, the one a machine's map holds
-/// it in. A byte string, which an algorithm holds as a view and a map as the
-/// buffer of its bound, and every part no map of C11 holds, are refused by
-/// name.
+/// its bound ([`crate::forge::static_lowering::c_string_storage_type`]), and a
+/// byte string the buffer of its bound and its length
+/// ([`crate::forge::static_lowering::c_bytes_storage_type`]), which the
+/// algorithm reads as a view of the bytes; a record is the type its schema's
+/// unit declares, the one a machine's map holds it in. Every part no map of
+/// C11 holds is refused by name.
 fn c11_map_part_type(
     l: &LangCtx,
     imports: &[ImportContext],
@@ -41127,7 +41437,6 @@ fn c11_map_part_type(
         ValueType::Scalar(
             SceType::String | SceType::Bytes | SceType::Float32 | SceType::Float64,
         )
-        | ValueType::Bytes { .. }
         | ValueType::Optional { .. }
         | ValueType::Union { .. }
         | ValueType::List { .. }
@@ -41142,6 +41451,9 @@ fn c11_map_part_type(
         ValueType::Text { max } => Ok(crate::forge::static_lowering::c_string_storage_type(
             max.max,
         )),
+        ValueType::Bytes { max } => {
+            Ok(crate::forge::static_lowering::c_bytes_storage_type(max.max))
+        }
         ValueType::Record { alias } => {
             Ok(
                 resolve_record(imports, alias, None, &format!("the map `{map}`"))?
@@ -42616,6 +42928,7 @@ struct AlgorithmBodyCfg<'a> {
     absences: &'a TypedAbsences,
     channel: ReturnChannel<'a>,
     unions: &'a crate::forge::algorithm_union::AlgorithmUnions<'a>,
+    c11_maps: Option<&'a C11AlgorithmMaps<'a>>,
 }
 
 /// Lower an algorithm body into a multi-line code string in the target
@@ -42658,6 +42971,7 @@ fn lower_algorithm_body(
         absences: cfg.absences,
         channel: cfg.channel,
         unions: cfg.unions,
+        c11_maps: cfg.c11_maps,
     };
     lower_algorithm_block(
         stmts,
@@ -42790,6 +43104,10 @@ struct AlgorithmLowerCtx<'a> {
     /// The unions the body's parameters and locals hold (docs/adr/0092,
     /// Landing order step 5): what a union local's case is read from.
     unions: &'a crate::forge::algorithm_union::AlgorithmUnions<'a>,
+    /// Where a C11 body holds its maps (docs/adr/0108, D4 and D6,
+    /// [`C11AlgorithmMaps`]); `None` on every other backend and in a body that
+    /// holds none.
+    c11_maps: Option<&'a C11AlgorithmMaps<'a>>,
 }
 
 /// Lower one statement ([`lower_algorithm_stmt`]) and the return of any
@@ -42913,7 +43231,7 @@ fn c11_whole_optional(
 /// value (`None` for a set), each the type the machine that lends it holds the
 /// part in ([`c11_map_part_type`]): what a statement and a walk of it name.
 struct C11LentMap {
-    /// The pointer it is lent by, the parameter of its name.
+    /// The address of the storage it is held in.
     at: String,
     place: crate::forge::value_path::Place,
     key: String,
@@ -42921,9 +43239,8 @@ struct C11LentMap {
 }
 
 impl C11LentMap {
-    /// The map the statement names `map`, read where `type_ctx` holds: on C11 a
-    /// map is a parameter, lent by the address of its caller's storage
-    /// ([`reject_c11_map_storage`] refuses one of the algorithm's own).
+    /// The map the statement names `map`, read where `type_ctx` holds: on C11
+    /// every map is in its caller's storage ([`C11AlgorithmMaps`]).
     fn of(
         ctx: &AlgorithmLowerCtx<'_>,
         type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -42947,8 +43264,19 @@ impl C11LentMap {
             GenerateError::InvalidConfig(format!("the map `{map}` has no key type"))
         })?;
         let value = part(place.map_value())?;
+        // Every map is reached through an address in its caller's storage
+        // ([`C11AlgorithmMaps`]), which its name in an expression reads through.
+        let at = ctx
+            .renames
+            .get(map)
+            .map(|reached| format!("&{reached}"))
+            .ok_or_else(|| {
+                GenerateError::InvalidConfig(format!(
+                    "the map `{map}` is reached through no storage of c11's"
+                ))
+            })?;
         Ok(Self {
-            at: ctx.l.local_id(map),
+            at,
             place,
             key,
             value,
@@ -42959,8 +43287,9 @@ impl C11LentMap {
 /// `written`, a key or a value of type `ty` a `<sce:put>` or a `<sce:remove>`
 /// hands a C11 map (docs/adr/0108, D3), as the slot of that part holds it: a
 /// record by the name of the parameter, local or loop item that holds it, a
-/// text in the buffer of its bound, and a number, a `bool` and a value of an
-/// enum as the expression it is. Read where `type_ctx` holds.
+/// text in the buffer of its bound, a byte string, which the algorithm holds as
+/// a view, in the buffer of its bound with its length, and a number, a `bool`
+/// and a value of an enum as the expression it is. Read where `type_ctx` holds.
 fn c11_algorithm_map_part_value(
     ctx: &AlgorithmLowerCtx<'_>,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -43006,9 +43335,13 @@ fn c11_algorithm_map_part_value(
             crate::forge::static_lowering::c_string_storage_of(max.max),
             lowered(InferredType::Str)?
         )),
+        ValueType::Bytes { max } => Ok(format!(
+            "{}({})",
+            crate::forge::static_lowering::c_bytes_storage_of(max.max),
+            lowered(InferredType::Bytes)?
+        )),
         ValueType::Scalar(scalar) => lowered(InferredType::from_sce_type(scalar)),
-        ValueType::Bytes { .. }
-        | ValueType::Optional { .. }
+        ValueType::Optional { .. }
         | ValueType::Union { .. }
         | ValueType::List { .. }
         | ValueType::Map { .. }
@@ -43209,9 +43542,9 @@ fn c11_algorithm_map_write(
 /// to its key) and the key to a copy of its key, one entry, a text as the text
 /// of its buffer. A body that writes nothing of the map walks it with no copy,
 /// since nothing in it can change the map. One that writes it walks the map as
-/// it was when the loop began (docs/adr/0108, D5), a copy of the map's whole bound,
-/// which only its caller holds storage for and no call hands an algorithm, and
-/// is refused by name.
+/// it was when the loop began (docs/adr/0108, D5), a copy taken as the loop
+/// begins into storage its caller holds ([`C11AlgorithmMaps`]), so no frame
+/// holds more than one entry.
 fn lower_c11_map_walk(
     s: &AlgorithmStmt,
     ctx: &AlgorithmLowerCtx<'_>,
@@ -43236,36 +43569,59 @@ fn lower_c11_map_walk(
         .into());
     };
     let source = source.trim();
-    if crate::forge::narrowing::Writes::of_block(body.as_slice()).reaches(source) {
-        return Err(GenerateError::unsupported(format!(
-            "<sce:foreach in=\"{source}\">, a walk of a map its body writes, which walks a copy \
-             of the map as it was when the loop began: c11 lends an algorithm no storage of the \
-             map's bound to copy it into ({})",
-            crate::forge::value_type::MAP_LANDING
+    let map = C11LentMap::of(ctx, type_ctx, source)?;
+    // A body that writes the map walks the copy of it its caller holds the
+    // storage of ([`C11AlgorithmMaps`]), taken as the loop begins.
+    let copy = ctx.c11_maps.and_then(|maps| {
+        maps.copies
+            .iter()
+            .find(|(walk, _)| std::ptr::eq(*walk, s))
+            .map(|(_, copy)| copy.as_str())
+    });
+    if copy.is_none() && crate::forge::narrowing::Writes::of_block(body.as_slice()).reaches(source)
+    {
+        return Err(GenerateError::InvalidConfig(format!(
+            "<sce:foreach in=\"{source}\"> writes the map it walks, and its algorithm holds no \
+             copy of it"
         ))
         .into());
     }
-    let map = C11LentMap::of(ctx, type_ctx, source)?;
+    if let Some(copy) = copy {
+        out.push_str(&format!(
+            "{pad}sce_map_copy_for_walk({copy}, {});\n",
+            map.at
+        ));
+    }
     let it = ctx.l.local_id(item);
     let at = format!("sce_at_{it}_");
-    let walked = &map.at;
+    let walked = copy.unwrap_or(map.at.as_str());
     // Each part of the entry at `at`, read where the map holds it: a text as
-    // its buffer's text, any other a copy of the value.
+    // its buffer's text, a byte string as the view of its buffer an algorithm
+    // holds one as, any other a copy of the value.
     let bind =
         |local: &str, held: &str, part: Option<crate::forge::value_path::Place>, read: &str| {
-            let text = part.is_some_and(|part| matches!(part.ty, ValueType::Text { .. }));
-            if text {
-                format!(
-                "{pad}    const char *{local} = ((const {held} *){read}({walked}, {at}))->{};\n\
-                 {pad}    (void){local};\n",
-                crate::forge::expr::C_BUFFER_TEXT
-            )
-            } else {
-                format!(
-                    "{pad}    const {held} {local} = *(const {held} *){read}({walked}, {at});\n\
-                 {pad}    (void){local};\n"
+            let read_at = format!("{read}({walked}, {at})");
+            let bound = match part.map(|part| part.ty) {
+                Some(ValueType::Text { .. }) => format!(
+                    "const char *{local} = ((const {held} *){read_at})->{};",
+                    crate::forge::expr::C_BUFFER_TEXT
+                ),
+                Some(ValueType::Bytes { max }) => format!(
+                    "const sce_forge_bytes_view_t {local} = {}({read_at});",
+                    crate::forge::static_lowering::c_bytes_storage_view(max.max)
+                ),
+                Some(
+                    ValueType::Scalar(_)
+                    | ValueType::Optional { .. }
+                    | ValueType::Record { .. }
+                    | ValueType::Union { .. }
+                    | ValueType::List { .. }
+                    | ValueType::Map { .. }
+                    | ValueType::Set { .. },
                 )
-            }
+                | None => format!("const {held} {local} = *(const {held} *){read_at};"),
+            };
+            format!("{pad}    {bound}\n{pad}    (void){local};\n")
         };
     let mut head = format!(
         "{pad}for (uint32_t {at} = sce_map_first({walked}); {at} != SCE_MAP_NO_ENTRY; \
@@ -43356,6 +43712,7 @@ fn lower_algorithm_stmt(
         absences,
         channel,
         unions,
+        c11_maps,
     } = ctx;
     // The statement's expressions are read where `proven` holds: a `.value` the
     // narrowing admitted is a proven read here too.
@@ -43367,6 +43724,17 @@ fn lower_algorithm_stmt(
         &proving
     };
     match s {
+        // docs/adr/0108, D4 "Storage" on C11: a map local is in its caller's
+        // storage, started empty under its seed where it is declared, or the
+        // caller's destination emptied there ([`C11AlgorithmMaps`]).
+        AlgorithmStmt::Var { name, .. }
+            if c11_maps.is_some_and(|maps| maps.starts.contains_key(name.as_str())) =>
+        {
+            let start = c11_maps
+                .and_then(|maps| maps.starts.get(name.as_str()))
+                .expect("guarded by the arm");
+            out.push_str(&format!("{pad}{start}\n"));
+        }
         AlgorithmStmt::Var {
             name,
             sce_type,
@@ -44986,6 +45354,12 @@ fn lower_algorithm_stmt(
             expr_spelling,
         } => {
             let line = match e {
+                // A map returned on C11 is the caller's destination the body
+                // built (docs/adr/0108, D5, [`C11AlgorithmMaps`]), which every
+                // `<sce:return>` names: the return says only that it was built.
+                Some(_) if c11_maps.is_some_and(|maps| maps.output.is_some()) => {
+                    channel.value(pad, "", true)
+                }
                 // `null` given whole to a return of an element whose type an
                 // expression cannot name is the return's own absent value
                 // ([`TypedAbsences`]).
@@ -47834,11 +48208,20 @@ fn render_algorithm(
     reject_may_fail_in_unsupported_lang(m, lang)?;
     reject_union_in_unsupported_lang(m, lang)?;
     reject_map_in_unsupported_lang(m, lang)?;
-    if lang == Language::C11 {
-        reject_c11_map_storage(m)?;
-    }
     let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
+    // docs/adr/0108, D4 "Storage" and D6 on C11: every map the algorithm holds
+    // is in its caller's storage ([`C11AlgorithmMaps`]).
+    let c11_maps = if lang == Language::C11 && m.first_map().is_some() {
+        Some(C11AlgorithmMaps::of(
+            m,
+            &l,
+            imports,
+            &forge_algorithm_symbol(&m.name, lang),
+        )?)
+    } else {
+        None
+    };
 
     // RFC §synth-5-F: lower every `<sce:const>` declaration into the target
     // language's const-prelude. Two shapes share one prelude:
@@ -48010,51 +48393,65 @@ fn render_algorithm(
             .unit_unions
             .insert(alias, algorithm_union_type(&l, imports, alias)?);
     }
-    // docs/adr/0108, D6 items 1 and 4: a C11 map parameter is the address of
-    // the caller's storage, which names no type of its bound, so a read at a key
-    // of it names the type of the value ([`TypeCtx::lent_map_values`]). Each part
-    // is judged here, and a text part's buffer is declared beside the function,
-    // under the guard every header that holds a text of that bound shares.
+    // docs/adr/0108, D6 items 1 and 4: every C11 map is reached through an
+    // address in its caller's storage, which names no type of a parameter's
+    // bound, so a read at a key of it names the type of the value
+    // ([`TypeCtx::lent_map_values`]). Each part is judged here, and the buffer
+    // of a text or a byte string part, with the view a byte string is read as,
+    // is declared beside the function under the guard every header that holds
+    // one of that bound shares.
     let mut map_texts = std::collections::BTreeSet::new();
+    let mut map_bytes = std::collections::BTreeSet::new();
     if lang == Language::C11 {
-        for p in m
+        let slots = m
             .signature
             .params
             .iter()
-            .filter(|p| p.sce_type.map_key().is_some())
-        {
+            .map(|p| (p.name.as_str(), &p.sce_type))
+            .chain(map_locals(m))
+            .filter(|(_, ty)| ty.map_key().is_some());
+        for (name, ty) in slots {
             let place = type_ctx
-                .value_of(&p.name)
+                .value_of(name)
                 .filter(crate::forge::value_path::Place::is_keyed)
                 .ok_or_else(|| {
                     GenerateError::InvalidConfig(format!(
-                        "algorithm '{}' parameter '{}' is {}, which its types do not hold as a \
+                        "algorithm '{}' holds `{name}` of {}, which its types do not hold as a \
                          map",
                         m.name,
-                        p.name,
-                        p.sce_type.as_attr()
+                        ty.as_attr()
                     ))
                 })?;
             for part in place.map_key().into_iter().chain(place.map_value()) {
-                c11_map_part_type(&l, imports, &p.name, &part.ty)?;
+                c11_map_part_type(&l, imports, name, &part.ty)?;
                 if let crate::forge::value_type::ValueType::Text { max } = &part.ty {
                     map_texts.insert(max.max);
+                } else if let crate::forge::value_type::ValueType::Bytes { max } = &part.ty {
+                    map_bytes.insert(max.max);
                 }
             }
             if let Some(value) = place.map_value() {
-                let held = c11_map_part_type(&l, imports, &p.name, &value.ty)?;
-                type_ctx.lent_map_values.insert(p.name.clone(), held);
+                let held = c11_map_part_type(&l, imports, name, &value.ty)?;
+                type_ctx.lent_map_values.insert(name.to_string(), held);
             }
         }
     }
     let map_texts: String = map_texts
         .into_iter()
-        .map(|capacity| {
-            format!(
-                "{}\n\n",
-                crate::forge::static_lowering::c_string_storage_def(capacity)
-            )
-        })
+        .map(crate::forge::static_lowering::c_string_storage_def)
+        .chain(map_bytes.into_iter().flat_map(|capacity| {
+            [
+                crate::forge::static_lowering::c_bytes_storage_def(capacity),
+                crate::forge::static_lowering::c_bytes_storage_view_def(capacity),
+            ]
+        }))
+        .chain(
+            c11_maps
+                .iter()
+                .map(|maps| maps.prelude.trim_end().to_string()),
+        )
+        .filter(|def| !def.is_empty())
+        .map(|def| format!("{def}\n\n"))
         .collect();
     let unions = types.union_rules();
 
@@ -48134,9 +48531,14 @@ fn render_algorithm(
         .filter(|imp| imp.kind == "bounded-collection")
         .map(|imp| algorithm_format_bc_import_param(lang, imp))
         .collect();
+    // docs/adr/0108, D4 "Storage": the storage of a C11 algorithm's own maps
+    // and of the copies its writing walks walk, and the seed its locals are
+    // keyed under where nothing it is lent carries one, after the declared
+    // parameters ([`C11AlgorithmMaps`]).
     let mut params_str = declared_params
         .iter()
         .chain(bc_import_params.iter())
+        .chain(c11_maps.iter().flat_map(|maps| maps.params.iter()))
         .cloned()
         .collect::<Vec<_>>()
         .join(", ");
@@ -48222,6 +48624,24 @@ fn render_algorithm(
             };
         }
     }
+    // A map a C11 algorithm returns is built in the caller's storage, the
+    // destination it is handed last with the caller's failure record, as a list
+    // is (docs/adr/0082; docs/adr/0108, D5): a map of the caller's bound and seed,
+    // reached by its core, which the local the body returns names. The call
+    // answers whether it built it, and a map return declares may-fail.
+    let c11_map_output = c11_maps.as_ref().and_then(|maps| maps.output);
+    if let Some(output) = c11_map_output {
+        let parameter = format!(
+            "{} {}, sce_forge_algorithm_failure_t *{C11_CALLER_FAILURE}",
+            crate::forge::static_lowering::c11_lent_map_type(true),
+            l.local_id(output)
+        );
+        params_str = if params_str.is_empty() {
+            parameter
+        } else {
+            format!("{params_str}, {parameter}")
+        };
+    }
     // A record return (SCE_FORGE.md §4.12) is the imported payload struct,
     // by value on every backend.
     let return_record = match declared_return.and_then(|t| t.record_alias()) {
@@ -48244,6 +48664,9 @@ fn render_algorithm(
         .transpose()?;
     let may_fail = m.signature.may_fail;
     let return_type = match (return_scalar, lang) {
+        // The map is in the caller's destination: the call answers whether it
+        // built it.
+        (_, Language::C11) if c11_map_output.is_some() => "bool".to_string(),
         (
             _,
             Language::Rust
@@ -48353,7 +48776,8 @@ fn render_algorithm(
         may_fail,
         value_type: &value_type,
         c11_result: &c11_result_name,
-        c11_destination: lang == Language::C11 && destination_buffer.is_some(),
+        c11_destination: lang == Language::C11
+            && (destination_buffer.is_some() || c11_map_output.is_some()),
     };
     // Kotlin and C++ wrap every return, a buffer's included — their buffers
     // grow and have no failure of their own (§4.12).
@@ -48367,7 +48791,9 @@ fn render_algorithm(
         Language::Cpp if may_fail => channel.cpp_result(),
         // A buffer return answers `bool` and its failure goes into the caller's
         // record (docs/adr/0082).
-        Language::C11 if may_fail && !returns_buffer => c11_result_name.clone(),
+        Language::C11 if may_fail && !returns_buffer && c11_map_output.is_none() => {
+            c11_result_name.clone()
+        }
         // Named, so a failure returns the value's zero (`ReturnChannel::check`).
         Language::Go if may_fail => format!("(sceValue {return_type}, sceErr error)"),
         // A may-fail Swift algorithm `throws` its failure, so its return is the value
@@ -48464,6 +48890,9 @@ fn render_algorithm(
                 c11_bytes_destination_type(&primary_symbol)
             )
         }
+        // A map returned is in the caller's destination, which needs no type of
+        // the algorithm's (docs/adr/0108, D5).
+        (_, Language::C11) if c11_map_output.is_some() => String::new(),
         // SCE_FORGE.md §3.4.1: a `may-fail` scalar or record return rides in
         // a result struct of its own, as a buffer's does — with the one
         // unwrapping of it a `may-fail` caller passes the failure on through
@@ -48572,17 +49001,11 @@ fn render_algorithm(
     if let (Language::C11, Some(name)) = (lang, destination_buffer.as_ref()) {
         const_renames_owned.push((name.clone(), c11_destination(&l.local_id(name))));
     }
-    // ... and a map parameter through the address of the caller's storage
-    // (docs/adr/0108, D6 items 1 and 4): `len(m)` is `sce_map_count(&(*m))`.
-    if lang == Language::C11 {
-        for p in m
-            .signature
-            .params
-            .iter()
-            .filter(|p| p.sce_type.map_key().is_some())
-        {
-            const_renames_owned.push((p.name.clone(), c11_destination(&l.local_id(&p.name))));
-        }
+    // ... and each map through the address in its caller's storage it is held
+    // at (docs/adr/0108, D4 and D6, [`C11AlgorithmMaps`]): `len(m)` is
+    // `sce_map_count(&(*m))`.
+    if let Some(maps) = &c11_maps {
+        const_renames_owned.extend(maps.renames.iter().cloned());
     }
     let const_renames: std::collections::HashMap<&str, &str> = const_renames_owned
         .iter()
@@ -48628,6 +49051,7 @@ fn render_algorithm(
             absences: &absences,
             channel,
             unions: &unions,
+            c11_maps: c11_maps.as_ref(),
         },
         body_indent,
     )?;

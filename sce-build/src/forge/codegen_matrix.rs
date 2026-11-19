@@ -478,10 +478,10 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
 /// lowering lowers both, the first lane to (D10), and is no [`Language`]: its
 /// target answers for itself.
 ///
-/// C11 lends a map by the address of the caller's storage and holds none of
-/// its own: a map local, a map return and a walk of a map its body writes are
-/// refused there by name, each being a map's whole bound the caller holds no
-/// storage of for the call (docs/adr/0108, D4 "Storage").
+/// C11 reaches every map through an address in its caller's storage: a map
+/// lent, a map returned, built in the caller's destination, and a map local or
+/// the copy a writing walk walks, held where the caller holds a call's storage
+/// (docs/adr/0108, D4 "Storage"), so no frame holds more than one entry.
 pub const ALGORITHM_MAP_BACKENDS: &[Language] = &[Language::C11];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
