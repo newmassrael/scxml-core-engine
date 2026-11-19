@@ -27,16 +27,15 @@
 // could not prove safe, and every one it does not report is proven safe.
 //
 // It judges each expression against the same typed tree the emitters lower
-// (`expr::resolve` + `expr::infer_types` over the algorithm's own scope), so
-// the width an operation is judged at is the width it is emitted at.
+// (`expr::judged` over the algorithm's own scope, landed in the place the
+// value is stored in), so the width an operation is judged at is the width it
+// is emitted at.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
 
 use crate::attribute_spelling::AttributeSpelling;
-use crate::forge::expr::{
-    infer_types, judge_into, resolve, BinOp, Expected, ExprKind, TypedExpr, UnaryOp,
-};
+use crate::forge::expr::{judged, BinOp, Expected, ExprKind, TypedExpr, UnaryOp};
 use crate::forge::model::{AlgorithmStmt, AlgorithmValueType};
 use crate::forge::narrowing::{
     after_algorithm_statement, loop_entry, proves_written, Chain, Facts,
@@ -362,7 +361,7 @@ impl Analysis<'_, '_> {
                 cond,
                 cond_spelling,
             } => {
-                let tree = self.typed(cond);
+                let tree = self.typed(cond, Some(InferredType::Bool));
                 if let Some(tree) = &tree {
                     self.eval(tree, cond, cond_spelling.as_ref(), env);
                 }
@@ -499,7 +498,7 @@ impl Analysis<'_, '_> {
                 then_body,
                 else_body,
             } => {
-                let tree = self.typed(cond);
+                let tree = self.typed(cond, Some(InferredType::Bool));
                 if let Some(tree) = &tree {
                     self.eval(tree, cond, cond_spelling.as_ref(), env);
                 }
@@ -527,7 +526,7 @@ impl Analysis<'_, '_> {
                 let outer = self.proven.clone();
                 let turn = loop_entry(&outer, body);
                 self.proven = turn.clone();
-                let tree = self.typed(cond);
+                let tree = self.typed(cond, Some(InferredType::Bool));
                 self.proven = turn.and(&proves_written(cond, true));
                 let head = self.fixed_point(env, |this, head| {
                     let mut inner = this.narrowed(tree.as_ref(), head, true);
@@ -549,7 +548,7 @@ impl Analysis<'_, '_> {
                 // The item holds any element of the source; how many there
                 // are is the caller's, so the body runs any number of times.
                 let item_range = self
-                    .typed(&format!("{source}[0]"))
+                    .typed(&format!("{source}[0]"), None)
                     .and_then(|t| type_range(t.ty))
                     .or(Some(Interval { lo: 0, hi: 255 }));
                 // A fact holds in the body only where nothing in it ends it.
@@ -676,7 +675,7 @@ impl Analysis<'_, '_> {
         env: &Env,
         place: Option<InferredType>,
     ) -> Option<Interval> {
-        let tree = self.typed(expr)?;
+        let tree = self.typed(expr, place)?;
         let value = self.eval(&tree, expr, spelling, env);
         self.fits(&tree, expr, spelling, value, place);
         value
@@ -716,12 +715,17 @@ impl Analysis<'_, '_> {
     /// typed pipeline refuses — that refusal is reported where it is lowered.
     ///
     /// Refused is what the validator path refuses before any backend lowers
-    /// it ([`judge_into`]): a name nothing declares, and a literal the type it
+    /// it ([`judged`]): a name nothing declares, and a literal the type it
     /// takes cannot hold. Either is a refusal of its own, and read as a value
     /// it would make the analysis report an operation it only failed to read
     /// (`reading + 300` is a literal out of `uint8`'s range, not an
     /// overflow).
-    fn typed(&self, expr: &str) -> Option<TypedExpr> {
+    ///
+    /// `place` is the type the value lands in, as it is where the value is
+    /// lowered: an operation of literals takes its type from there
+    /// (`expr::land_integers`), so `(1 << m) - 1` stored in a `uint64` is a
+    /// `uint64` subtraction here as it is in every backend.
+    fn typed(&self, expr: &str, place: Option<InferredType>) -> Option<TypedExpr> {
         // Where the body has proven a value present, the expression is typed
         // with that fact ([`Self::proven`]); a scope that proves nothing is the
         // algorithm's own, read as it is.
@@ -732,13 +736,14 @@ impl Analysis<'_, '_> {
             proving = self.ctx.proving(self.proven.clone());
             &proving
         };
-        let judged = judge_into(expr, ctx, Expected::Hint(InferredType::Unknown));
-        let (Ok(_), Ok(mut tree)) = (judged, resolve(expr, ctx)) else {
-            self.untyped.set(true);
-            return None;
-        };
-        infer_types(&mut tree, ctx);
-        Some(tree)
+        let landing = Expected::Hint(place.unwrap_or(InferredType::Unknown));
+        match judged(expr, ctx, landing) {
+            Ok(tree) => Some(tree),
+            Err(_) => {
+                self.untyped.set(true);
+                None
+            }
+        }
     }
 
     fn hazard(
@@ -1065,7 +1070,7 @@ impl Analysis<'_, '_> {
     /// holding of `name`.
     fn relate_store(&mut self, env: &mut Env, name: &str, expr: &str) {
         let facts = self
-            .typed(expr)
+            .typed(expr, self.declared_type(name))
             .map(|tree| self.length_relations(&tree, env))
             .unwrap_or_default();
         env.forget_relations(name);
@@ -1918,6 +1923,29 @@ mod tests {
         // width's meaning, not an overflow.
         let body = [ret("(crc << 1) ^ 4129")];
         assert!(analyse(&[("crc", SceType::Uint16)], &[], &body).is_empty());
+    }
+
+    /// An operation of literals is judged at the type of the place it is
+    /// stored in, as every backend computes it (SCE_FORGE.md §3.4.1, "The
+    /// width of a shift"): `(1 << m) - 1` stored in a `uint64` is a `uint64`
+    /// subtraction from a shift that may be 0, and so may fail, where the
+    /// bitwise `prev | (1 << m)` never does.
+    #[test]
+    fn an_operation_of_literals_is_judged_in_the_place_it_is_stored() {
+        let u64t = || AlgorithmValueType::Scalar(SceType::Uint64);
+        let body = [
+            var("low", u64t(), "(1 << m) - 1"),
+            var("set", u64t(), "prev | (1 << m)"),
+            ret("set"),
+        ];
+        assert_eq!(
+            analyse(
+                &[("prev", SceType::Uint64), ("m", SceType::Uint8)],
+                &[("low", SceType::Uint64), ("set", SceType::Uint64)],
+                &body
+            ),
+            vec![("(1 << m) - 1".to_string(), HazardKind::Overflow)]
+        );
     }
 
     #[test]

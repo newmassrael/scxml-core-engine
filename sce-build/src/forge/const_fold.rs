@@ -682,7 +682,7 @@ fn eval_stmt(
             else_body,
             ..
         } => {
-            let c = eval_expr(cond, scope)?.to_bool()?;
+            let c = eval_expr(cond, scope, InferredType::Bool)?.to_bool()?;
             if c {
                 eval_stmts(then_body, scope, budget)?;
             } else if let Some(eb) = else_body {
@@ -698,7 +698,7 @@ fn eval_stmt(
         } => {
             let cap = max_iter.unwrap_or(u32::MAX);
             let mut ticks = 0u32;
-            while eval_expr(cond, scope)?.to_bool()? {
+            while eval_expr(cond, scope, InferredType::Bool)?.to_bool()? {
                 if ticks >= cap {
                     return Err(ConstFoldKind::NotFoldable(format!(
                         "while loop exceeded max-iter={cap} \
@@ -773,24 +773,33 @@ fn eval_expr_typed(
     scope: &Scope,
     expected: &SceType,
 ) -> Result<ConstValue, ConstFoldKind> {
-    let value = eval_expr(expr_text, scope)?;
+    let value = eval_expr(expr_text, scope, InferredType::from_sce_type(expected))?;
     coerce_to_const(value, expected, expr_text.trim())
 }
 
 /// Evaluate an expression to a wide [`EvalValue`] without type
 /// coercion. Used at every site that does not store the result
 /// (If.cond, While.cond) and as the inner step of
-/// [`eval_expr_typed`].
+/// [`eval_expr_typed`]. `context` is the type the value lands in.
 ///
 /// The tree is typed as the emitters type it before it is evaluated, so an
-/// integer operation computes at the width it has at runtime. Typing
-/// refuses nothing here: a name out of scope keeps its fold-specific
-/// refusal in [`eval_node`].
-fn eval_expr(expr_text: &str, scope: &Scope) -> Result<EvalValue, ConstFoldKind> {
+/// integer operation computes at the width it has at runtime — an operation
+/// of literals at the type its context gives it, as every backend computes
+/// it (`expr::type_integers_in`). Typing refuses nothing here but what has no
+/// width at all (a shift of a literal that nothing types): a name out of
+/// scope keeps its fold-specific refusal in [`eval_node`], and a value its
+/// place cannot hold is refused where it is stored.
+fn eval_expr(
+    expr_text: &str,
+    scope: &Scope,
+    context: InferredType,
+) -> Result<EvalValue, ConstFoldKind> {
     let text = expr_text.trim();
     let mut ast = expr::parse_to_ast(text).map_err(|refusal| map_expr_err(refusal.error))?;
     expr::infer_types(&mut ast, &scope.type_ctx());
     expr::reject_ill_typed_total_operations(&ast, text)
+        .map_err(|refusal| map_expr_err(refusal.error))?;
+    expr::type_integers_in(&mut ast, context, text)
         .map_err(|refusal| map_expr_err(refusal.error))?;
     eval_node(&ast, scope, text)
 }
@@ -1652,6 +1661,30 @@ mod tests {
             out,
             vec![ConstValue::I8(0x0F)],
             "`>>>` shifts the width's bits"
+        );
+    }
+
+    /// A shift of a literal takes the width of the place its value is stored
+    /// in (SCE_FORGE.md §3.4.1, "The width of a shift"), and wraps there as it
+    /// does at runtime: in a `uint64`, `(1 << 63) << i` loses its bit from
+    /// `i = 1`, where a fold that left the literal untyped computed `2^64`
+    /// exactly and shifted it back down.
+    #[test]
+    fn a_shifted_literal_wraps_at_the_width_of_its_place() {
+        let out = evaluate_fold(
+            &fold_of(SceType::Uint64, 4, "((1 << 63) << i) >> 63"),
+            &mut Budget::default(),
+            TEST_SITE,
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                ConstValue::U64(1),
+                ConstValue::U64(0),
+                ConstValue::U64(0),
+                ConstValue::U64(0)
+            ]
         );
     }
 

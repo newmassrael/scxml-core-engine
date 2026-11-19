@@ -1094,8 +1094,24 @@ fn join_numeric_base(a: NumericBaseType, b: NumericBaseType) -> NumericBaseType 
     }
 }
 
-/// Integer-only join, used for bitwise ops and shifts. Non-integer operands
-/// poison the result to `Unknown` (bitwise on floats/bools/strings is nonsense).
+/// Shift join: the type of `left << count`, `left >> count` and
+/// `left >>> count` (SCE_FORGE.md §3.4.1, "The width of a shift"). It is the
+/// type of the left operand: the count says how far to shift, an integer of
+/// any width, and does not widen what it shifts, as it does not in any
+/// backend's own shift. A literal left operand leaves the shift untyped
+/// (`UntypedInt`), to take the type of the place it lands in; a count or a
+/// left operand that is no integer poisons the result to `Unknown`, as
+/// [`join_int`] does.
+pub fn join_shift(left: InferredType, count: InferredType) -> InferredType {
+    match join_int(count, InferredType::UntypedInt) {
+        InferredType::Unknown => InferredType::Unknown,
+        _ => join_int(left, InferredType::UntypedInt),
+    }
+}
+
+/// Integer-only join, used for the bitwise operations `& | ^` (a shift is
+/// [`join_shift`]). Non-integer operands poison the result to `Unknown`
+/// (bitwise on floats/bools/strings is nonsense).
 ///
 /// `Quantity` operands strip their unit annotation here: bit-twiddling on
 /// a unit-annotated raw value carries no physical interpretation, so the
@@ -1956,6 +1972,23 @@ mod tests {
     #[test]
     fn int_widening_prefers_signed() {
         assert_eq!(join_int(int(false, 16), int(true, 8)), int(true, 16));
+    }
+
+    // ── join_shift ──────────────────────────────────────────────
+
+    /// A shift is as wide as what it shifts: a count of another width does
+    /// not widen it, and a literal left operand leaves it to its context.
+    #[test]
+    fn a_shift_is_typed_by_its_left_operand_alone() {
+        assert_eq!(join_shift(int(false, 8), int(true, 64)), int(false, 8));
+        assert_eq!(join_shift(int(false, 64), int(false, 8)), int(false, 64));
+        assert_eq!(
+            join_shift(InferredType::UntypedInt, int(false, 8)),
+            InferredType::UntypedInt,
+            "a literal shifted by a uint8 is not a uint8"
+        );
+        assert_eq!(join_shift(int(true, 32), float(64)), InferredType::Unknown);
+        assert_eq!(join_shift(float(64), int(true, 32)), InferredType::Unknown);
     }
 
     // ── TypeCtx ─────────────────────────────────────────────────

@@ -246,7 +246,10 @@ pub(super) fn emit(expr: &TypedExpr, expected: InferredType) -> Result<String, R
             }
         }
     }
-    let raw = emit_node(expr)?;
+    let raw = match typed_integer_literal(ExprTarget::Swift, expr) {
+        Some(literal) => literal,
+        None => emit_node(expr)?,
+    };
     Ok(coerce(raw, expr.ty, expected, expr))
 }
 
@@ -506,17 +509,12 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         }
         // SCE_FORGE.md §3.4.1: the helper of the operation, generic in the width it
         // is called at, so both operands are spelled at the operation's own type.
+        // The helper takes the width from its arguments, and an operation of
+        // literals alone has its literals named at its type already: its context
+        // gave them that type (`land_integers`), which `typed_integer_literal`
+        // writes.
         ExprKind::Checked { op, left, right } => {
-            let mut first = emit(left, expr.ty)?;
-            // The helper is generic in the width, which its arguments give it, and
-            // literals alone give it `Int`: one of them is named at the type.
-            let literal = |node: &TypedExpr| matches!(node.kind, ExprKind::NumberLit(_));
-            if literal(left) && right.as_deref().is_none_or(literal) {
-                if let InferredType::Int { signed, bits } = expr.ty {
-                    first = format!("{}({first})", int_type(signed, bits));
-                }
-            }
-            let mut operands = vec![first];
+            let mut operands = vec![emit(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit(right, expr.ty)?);
             }
@@ -586,13 +584,8 @@ fn binary(op: BinOp, left: &TypedExpr, right: &TypedExpr) -> Result<String, Refu
     let operand_ty = binary_operand_type(op, left.ty, right.ty);
     // A shift's count is any integer in Swift, so it is not converted to the width
     // of what is shifted.
-    let count_ty = if matches!(op, BinOp::Shl | BinOp::Shr | BinOp::UShr) {
-        InferredType::Unknown
-    } else {
-        operand_ty
-    };
     let l_raw = emit(left, operand_ty)?;
-    let r_raw = emit(right, count_ty)?;
+    let r_raw = emit(right, right_operand_type(op, operand_ty))?;
     // `>>>` is a logical shift: made in the unsigned type of the width, which is
     // where Swift's own `>>` is one.
     if op == BinOp::UShr {

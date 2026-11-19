@@ -61,7 +61,9 @@
 use crate::forge::error::{ExprError, Spanned};
 use crate::forge::ring_ops::{self, OverflowRule, RingOp};
 use crate::forge::rust_optional;
-use crate::forge::types::{join_arith, join_int, CallReading, InferredType, OptionalElem, TypeCtx};
+use crate::forge::types::{
+    join_arith, join_int, join_shift, CallReading, InferredType, OptionalElem, TypeCtx,
+};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -522,7 +524,7 @@ fn lower_at(
     // leaving each TypedExpr's `ty` slot intact (which is exactly what the
     // `Raw` arm of `infer_types` already documents).
     resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
-    judge_value(&ast, slot, expr)?;
+    judge_value(&mut ast, slot, expr)?;
     land_reals_in_slot(&mut ast, expected);
     if matches!(position, Position::Owned | Position::Copied) && expected == InferredType::Bytes {
         land_strings_in_bytes_slot(&mut ast, expr)?;
@@ -795,7 +797,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
 
     let mut ast = parse_to_ast(expr)?;
     resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, lowerings, expr)?;
-    judge_value(&ast, expected, expr)?;
+    judge_value(&mut ast, expected, expr)?;
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected.ty());
         check_integer_indexing(&mut ast);
@@ -2669,10 +2671,11 @@ fn type_mismatch(slot: InferredType, value: &TypedExpr, source: &str) -> Refusal
 /// The whole expression judged against what `expected` says about the place
 /// it lands in: refused when a declared slot does not admit its kind
 /// ([`slot_admits`] — a hint declares nothing), and wherever an integer
-/// literal in it takes a type that cannot hold it
-/// ([`reject_out_of_range_literals`] — a hint's type is the one the literal
-/// is emitted in, so it counts).
-fn judge_value(ast: &TypedExpr, expected: Expected, source: &str) -> Result<(), Refusal> {
+/// literal in it takes a type that cannot hold it, or a shift or a `~` of
+/// literals takes none ([`land_integers`] — a hint's type is the one the
+/// literal is emitted in, so it counts). Landing the value also types every
+/// operation of literals in it, which is why the tree is mutable.
+fn judge_value(ast: &mut TypedExpr, expected: Expected, source: &str) -> Result<(), Refusal> {
     if let Expected::Slot(slot) = expected {
         if !slot_admits(slot, ast.ty) {
             return Err(type_mismatch(slot, ast, source));
@@ -2680,35 +2683,128 @@ fn judge_value(ast: &TypedExpr, expected: Expected, source: &str) -> Result<(), 
     }
     // A literal where an optional value is expected is a present value, held to
     // the type it holds when present (docs/adr/0055).
-    reject_out_of_range_literals(ast, expected.ty().unwrap_optional(), source)
+    land_integers(
+        ast,
+        expected.ty().unwrap_optional(),
+        Adopts::No,
+        LiteralFit::Judged,
+        source,
+    )
 }
 
-/// Refuse an integer literal the type it takes cannot hold
-/// ([`ExprError::LiteralOutOfRange`]). `context` is the type the value lands
-/// in. A literal takes the type the emitters give it: its partner's in a
-/// binary operation (the context's when both are literals), its parameter's
-/// as an argument, the place's otherwise — which is the type Rust and Go
-/// infer for it, and refuse it in.
-fn reject_out_of_range_literals(
-    ast: &TypedExpr,
+/// [`land_integers`] for a tree whose literals are held to their types
+/// elsewhere: a build-time fold, which computes each value exactly and refuses
+/// one its place cannot hold where it stores it (`algorithm/const-integer-failure`),
+/// and so needs the types the emitters give its operations and nothing more.
+pub(crate) fn type_integers_in(
+    ast: &mut TypedExpr,
     context: InferredType,
     source: &str,
 ) -> Result<(), Refusal> {
-    match &ast.kind {
-        ExprKind::NumberLit(text) if !is_float_literal_text(text) => {
-            literal_fits(ast, text, false, context, source)
+    land_integers(
+        ast,
+        context.unwrap_optional(),
+        Adopts::No,
+        LiteralFit::Unjudged,
+        source,
+    )
+}
+
+/// Whether [`land_integers`] holds each integer literal to the type it takes
+/// ([`ExprError::LiteralOutOfRange`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiteralFit {
+    Judged,
+    Unjudged,
+}
+
+/// Whether the node [`land_integers`] is handed is an operand of an operation
+/// that took its type from its context: a literal there takes that type too,
+/// as the operation's other operands do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Adopts {
+    Yes,
+    No,
+}
+
+/// Land every integer of `ast` in the type it takes (SCE_FORGE.md §3.4,
+/// "Typing convention"; §3.4.1, "The width of a shift"), once, before any
+/// backend spells it. `context` is the type the value lands in.
+///
+/// A literal takes the type of the operand it meets in a binary operation, of
+/// the parameter it is passed to, or of the place it lands in. An integer
+/// operation none of whose operands has a declared type (`65536 * 65536`,
+/// `~0`, a shift of a literal, which its count does not type) takes the type
+/// of its context, and so do its literal operands: their node's type is set,
+/// and every emitter spells such a literal in it ([`typed_integer_literal`]),
+/// where its language would otherwise compute the operation in its own
+/// default width (`1 << m` an `i32` in Rust, an `int` in C, an `Int` in
+/// Kotlin). A literal that meets a declared operand keeps no type of its own:
+/// every backend gives it its partner's.
+///
+/// A shift of a literal, and a `~` of one, have no width until their context
+/// gives one, and their value depends on it; where it gives none — compared
+/// with another literal, an index, a real, no declared place — they are
+/// refused (`expression/type-mismatch`), at the operand that has no type.
+///
+/// With [`LiteralFit::Judged`], a literal its type cannot hold is refused
+/// ([`ExprError::LiteralOutOfRange`]) — the type Rust and Go would infer for
+/// it, and refuse it in.
+fn land_integers(
+    ast: &mut TypedExpr,
+    context: InferredType,
+    adopts: Adopts,
+    fit: LiteralFit,
+    source: &str,
+) -> Result<(), Refusal> {
+    let place = context.strip_quantity();
+    let width = matches!(place, InferredType::Int { .. }).then_some(place);
+    // The minus belongs to the literal: `-128` fits an `int8`.
+    if let Some((text, negated)) = integer_literal_parts(ast) {
+        if let (Adopts::Yes, Some(width)) = (adopts, width) {
+            ast.ty = width;
         }
-        // The minus belongs to the literal: `-128` fits an `int8`.
-        ExprKind::Unary {
-            op: UnaryOp::Neg,
-            operand,
-        } => match &operand.kind {
-            ExprKind::NumberLit(text) if !is_float_literal_text(text) => {
-                literal_fits(ast, text, true, context, source)
+        return match fit {
+            LiteralFit::Judged => literal_fits(ast, &text, negated, context, source),
+            LiteralFit::Unjudged => Ok(()),
+        };
+    }
+    let unwidened = |what: String, operand: &TypedExpr| {
+        ExprError::TypeMismatch {
+            expected: what,
+            got: operand.ty.describe(),
+            observed: operand
+                .span
+                .clone()
+                .and_then(|span| source.get(span))
+                .map(str::to_string),
+        }
+        .at(operand.span.clone())
+    };
+    match &mut ast.kind {
+        ExprKind::Unary { op, operand } => {
+            let op = *op;
+            let mut inner = (context, Adopts::No);
+            if ast.ty == InferredType::UntypedInt && op != UnaryOp::Not {
+                match width {
+                    Some(width) => {
+                        ast.ty = width;
+                        inner = (width, Adopts::Yes);
+                    }
+                    None if op == UnaryOp::BitNot => {
+                        return Err(unwidened(
+                            "an operand of `~` of a declared integer type, or a declared \
+                             integer place it is stored into or compared with, which gives \
+                             it its width"
+                                .to_string(),
+                            &**operand,
+                        ));
+                    }
+                    None => {}
+                }
             }
-            _ => reject_out_of_range_literals(operand, context, source),
-        },
-        ExprKind::Unary { operand, .. } => reject_out_of_range_literals(operand, context, source),
+            land_integers(operand, inner.0, inner.1, fit, source)
+        }
         // `x ?? d`: the default takes the type `x` holds when present
         // (docs/adr/0055).
         ExprKind::Binary {
@@ -2716,49 +2812,82 @@ fn reject_out_of_range_literals(
             left,
             right,
         } => {
-            reject_out_of_range_literals(left, InferredType::Unknown, source)?;
-            reject_out_of_range_literals(right, left.ty.unwrap_optional(), source)
+            land_integers(left, InferredType::Unknown, Adopts::No, fit, source)?;
+            let held = left.ty.unwrap_optional();
+            land_integers(right, held, Adopts::No, fit, source)
         }
         ExprKind::Binary { op, left, right } => {
+            let op = *op;
             // An optional operand of `===` meets a literal as the value it
             // holds when present.
-            let operand = match binary_operand_type(
-                *op,
-                left.ty.unwrap_optional(),
-                right.ty.unwrap_optional(),
-            ) {
-                InferredType::UntypedInt if op.is_arith() || op.is_bitwise() => context,
-                joined => joined,
+            let joined =
+                binary_operand_type(op, left.ty.unwrap_optional(), right.ty.unwrap_optional());
+            let operation = op.is_arith() || op.is_bitwise();
+            let (operand, operands_adopt) = match joined {
+                InferredType::UntypedInt if operation => match width {
+                    Some(width) => {
+                        ast.ty = width;
+                        (width, Adopts::Yes)
+                    }
+                    None if op.is_shift() => {
+                        return Err(unwidened(
+                            format!(
+                                "a left operand of `{}` of a declared integer type, or a \
+                                 declared integer place the shift is stored into or compared \
+                                 with, which gives it its width",
+                                op.token()
+                            ),
+                            &**left,
+                        ));
+                    }
+                    None => (context, Adopts::No),
+                },
+                joined => (joined, Adopts::No),
             };
-            reject_out_of_range_literals(left, operand, source)?;
-            reject_out_of_range_literals(right, operand, source)
+            // The count of a shift is an integer of its own, which takes no type
+            // from what it shifts.
+            let (count, count_adopts) = if op.is_shift() {
+                (InferredType::Unknown, Adopts::No)
+            } else {
+                (operand, operands_adopt)
+            };
+            land_integers(left, operand, operands_adopt, fit, source)?;
+            land_integers(right, count, count_adopts, fit, source)
         }
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
         } => {
-            reject_out_of_range_literals(condition, InferredType::Bool, source)?;
-            reject_out_of_range_literals(consequent, context, source)?;
-            reject_out_of_range_literals(alternate, context, source)
+            land_integers(condition, InferredType::Bool, Adopts::No, fit, source)?;
+            // A conditional of literals that is an operand of such an operation
+            // is one of its operands: `(c ? 1 : 2) << m`.
+            let mut branches = (context, Adopts::No);
+            if let (Adopts::Yes, Some(width), InferredType::UntypedInt) = (adopts, width, ast.ty) {
+                ast.ty = width;
+                branches = (width, Adopts::Yes);
+            }
+            land_integers(consequent, branches.0, branches.1, fit, source)?;
+            land_integers(alternate, branches.0, branches.1, fit, source)
         }
         ExprKind::Call { args, params, .. } => {
-            for (i, arg) in args.iter().enumerate() {
-                reject_out_of_range_literals(arg, argument_type(params, i), source)?;
+            for (i, arg) in args.iter_mut().enumerate() {
+                let param = argument_type(params.as_slice(), i);
+                land_integers(arg, param, Adopts::No, fit, source)?;
             }
             Ok(())
         }
         ExprKind::Index { object, index } => {
-            reject_out_of_range_literals(object, InferredType::Unknown, source)?;
-            reject_out_of_range_literals(index, InferredType::Unknown, source)
+            land_integers(object, InferredType::Unknown, Adopts::No, fit, source)?;
+            land_integers(index, InferredType::Unknown, Adopts::No, fit, source)
         }
         ExprKind::Member { object, .. } => {
-            reject_out_of_range_literals(object, InferredType::Unknown, source)
+            land_integers(object, InferredType::Unknown, Adopts::No, fit, source)
         }
         ExprKind::BytesView { source: of, len } => {
-            reject_out_of_range_literals(of, InferredType::Unknown, source)?;
+            land_integers(of, InferredType::Unknown, Adopts::No, fit, source)?;
             match len {
-                Some(len) => reject_out_of_range_literals(len, InferredType::Unknown, source),
+                Some(len) => land_integers(len, InferredType::Unknown, Adopts::No, fit, source),
                 None => Ok(()),
             }
         }
@@ -2766,9 +2895,10 @@ fn reject_out_of_range_literals(
         // operation's literal takes the type of its other operand, which is
         // the operation's.
         ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
-            reject_out_of_range_literals(left, ast.ty, source)?;
+            let own = ast.ty;
+            land_integers(left, own, Adopts::No, fit, source)?;
             match right {
-                Some(right) => reject_out_of_range_literals(right, ast.ty, source),
+                Some(right) => land_integers(right, own, Adopts::No, fit, source),
                 None => Ok(()),
             }
         }
@@ -2779,6 +2909,23 @@ fn reject_out_of_range_literals(
         | ExprKind::NullLit
         | ExprKind::Ident(_)
         | ExprKind::Raw(_) => Ok(()),
+    }
+}
+
+/// `node` as an integer literal as written — its text, and whether a minus
+/// leads it (SCE_FORGE.md §3.4: the minus is part of the literal) — or `None`
+/// for anything else.
+fn integer_literal_parts(node: &TypedExpr) -> Option<(String, bool)> {
+    match &node.kind {
+        ExprKind::NumberLit(text) if !is_float_literal_text(text) => Some((text.clone(), false)),
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => match &operand.kind {
+            ExprKind::NumberLit(text) if !is_float_literal_text(text) => Some((text.clone(), true)),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -2836,7 +2983,7 @@ fn integer_literal_value(text: &str) -> Option<u64> {
 }
 
 /// An integer literal no bare spelling carries into C, C++ or Kotlin: its
-/// size passes `i64::MAX`. [`reject_out_of_range_literals`] has held every
+/// size passes `i64::MAX`. [`land_integers`] has held every
 /// literal to its type, so there are exactly two — a `uint64` value above
 /// `i64::MAX`, and `int64`'s minimum, the negation of `2^63`.
 ///
@@ -2917,6 +3064,76 @@ fn c_family_wide_literal(raw: &str, to: InferredType, node: &TypedExpr) -> Optio
     }
     // C and C++ spell both the same way; either names the family.
     wide_literal_spelling(crate::generator::Language::C11, wide_literal(node)?, raw)
+}
+
+/// `node`, an integer literal whose context gave it its type
+/// ([`land_integers`]: an operand of an operation none of whose operands has a
+/// declared type), written in that type for `target`: `1u64`, `UINT64_C(1)`,
+/// `std::uint64_t{1}`, `uint64(1)`, `1uL`, `UInt64(1)`. `None` for any other
+/// node, and for a target whose bare literal already has that type: Python's
+/// integers have no width (its operations are reduced to theirs), and the
+/// Interpreter's library takes the type from the operation it is called for.
+///
+/// A [`WideLiteral`] keeps its own spelling in C, C++ and Kotlin
+/// ([`wide_literal_spelling`]), which their coercions write and which is
+/// already of the 64-bit type.
+///
+/// ⚠ Until 2026-11-19 such a literal was written bare, so it was the
+/// language's default integer: `prev | (1 << m)` with `prev` a `uint64` and
+/// `m` a `uint8` typed the shift as `m`'s `uint8`, and Rust wrote
+/// `(1 << m) as u64`, an `i32` shift that panics in a debug build from
+/// `m = 32` and sets the wrong bits from `m = 31`; C shifted an `int`, Kotlin
+/// an `Int`, Swift a literal its type checker typed, Python masked the shift
+/// to 8 bits and the Interpreter wrapped it at 8.
+fn typed_integer_literal(target: ExprTarget, node: &TypedExpr) -> Option<String> {
+    let InferredType::Int { signed, bits } = node.ty else {
+        return None;
+    };
+    let (text, negated) = integer_literal_parts(node)?;
+    let digits = portable_number_literal(&text);
+    let written = if negated {
+        format!("-{digits}")
+    } else {
+        digits
+    };
+    let wide = wide_literal(node).is_some();
+    Some(match target {
+        ExprTarget::Rust => format!("{written}{}", rust_int_type(signed, bits)),
+        ExprTarget::Go => format!("{}({written})", go_int_type(signed, bits)),
+        ExprTarget::Swift => format!("{}({written})", swift::int_type(signed, bits)),
+        ExprTarget::C | ExprTarget::Cpp | ExprTarget::Kotlin if wide => return None,
+        ExprTarget::C => format!("{}INT{bits}_C({written})", if signed { "" } else { "U" }),
+        ExprTarget::Cpp => format!(
+            "std::{}int{bits}_t{{{written}}}",
+            if signed { "" } else { "u" }
+        ),
+        ExprTarget::Kotlin => kotlin_typed_literal(&written, negated, signed, bits),
+        ExprTarget::Python | ExprTarget::Js => return None,
+    })
+}
+
+/// [`typed_integer_literal`] for Kotlin: a suffix where the type has one
+/// (`1L`, `1u`, `1uL`, and an `Int` bare), and the conversion of the `Int`
+/// literal to a type that has none (`1.toUByte()`, `(-1).toShort()`).
+fn kotlin_typed_literal(written: &str, negated: bool, signed: bool, bits: u8) -> String {
+    match (signed, bits) {
+        (true, 32) => written.to_string(),
+        (true, 64) => format!("{written}L"),
+        (false, 32) => format!("{written}u"),
+        (false, 64) => format!("{written}uL"),
+        _ => {
+            let ctor = if signed {
+                kotlin_signed_ctor(bits)
+            } else {
+                kotlin_unsigned_ctor(bits)
+            };
+            if negated {
+                format!("({written}).{ctor}()")
+            } else {
+                format!("{written}.{ctor}()")
+            }
+        }
+    }
 }
 
 /// Refuse a call of a function `ctx` registers — an imported function, a
@@ -3028,7 +3245,8 @@ pub(crate) fn resolve(expr: &str, ctx: &TypeCtx<'_>) -> Result<TypedExpr, Refusa
 /// [`resolve`], then judged against what `expected` says about the place
 /// the value lands in, exactly as [`transpile_expecting`] judges it — for a
 /// validator that refuses a document before any backend lowers it. Returns
-/// the value's type.
+/// the value's type, as inference gives it: landing the value types only the
+/// operations among its literals ([`land_integers`]).
 ///
 /// Emitter-specific refusals are not reached: they belong to the backend
 /// that lowers the expression, and a backend that does not lower the
@@ -3039,9 +3257,25 @@ pub(crate) fn judge_into(
     expected: Expected,
 ) -> Result<InferredType, Refusal> {
     let expr = expr.trim();
-    let ast = resolve(expr, ctx)?;
-    judge_value(&ast, expected, expr)?;
-    Ok(ast.ty)
+    let mut ast = resolve(expr, ctx)?;
+    let ty = ast.ty;
+    judge_value(&mut ast, expected, expr)?;
+    Ok(ty)
+}
+
+/// [`judge_into`]'s tree rather than its type: resolved, judged, and typed
+/// as the emitters lower it — an operation of literals at the type its
+/// context gives it ([`land_integers`]) — for an analysis that has to judge
+/// each operation at the width it is emitted at.
+pub(crate) fn judged(
+    expr: &str,
+    ctx: &TypeCtx<'_>,
+    expected: Expected,
+) -> Result<TypedExpr, Refusal> {
+    let expr = expr.trim();
+    let mut ast = resolve(expr, ctx)?;
+    judge_value(&mut ast, expected, expr)?;
+    Ok(ast)
 }
 
 /// The rules of the narrowing alone, over `expr` read in `ctx` — whose
@@ -3932,7 +4166,13 @@ pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredT
             }
         }
     }
-    if float_context || !matches!(node.ty, InferredType::Int { .. }) {
+    // A negative literal is a value, not an operation (SCE_FORGE.md §3.4: the
+    // minus is part of the literal), though it has a type where its context
+    // gave it one ([`land_integers`]).
+    if float_context
+        || !matches!(node.ty, InferredType::Int { .. })
+        || integer_literal_parts(node).is_some()
+    {
         return;
     }
     let placeholder = ExprKind::NullLit;
@@ -4218,6 +4458,11 @@ impl BinOp {
             self,
             Self::BitAnd | Self::BitOr | Self::BitXor | Self::Shl | Self::Shr | Self::UShr
         )
+    }
+    /// `<<`, `>>` and `>>>`: typed by the left operand alone ([`join_shift`]),
+    /// the count an integer of its own.
+    fn is_shift(self) -> bool {
+        matches!(self, Self::Shl | Self::Shr | Self::UShr)
     }
 }
 
@@ -6513,6 +6758,8 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 join_arith(left.ty, right.ty)
             } else if op.is_comparison() || op.is_logical() {
                 InferredType::Bool
+            } else if op.is_shift() {
+                join_shift(left.ty, right.ty)
             } else if op.is_bitwise() {
                 join_int(left.ty, right.ty)
             } else {
@@ -7036,6 +7283,10 @@ fn wrap_postfix(expr: &TypedExpr, emitted: String) -> String {
 /// Compute the type both operands of a binary node should be coerced to
 /// before the operator executes. For arithmetic and comparison this is the
 /// lattice join; for bitwise it is the int join; for logical it is Bool.
+///
+/// For a shift it is the type of the left operand ([`join_shift`]), which only
+/// the left operand is coerced to: the count is an integer of its own, and
+/// each emitter writes it at its own type ([`right_operand_type`]).
 fn binary_operand_type(op: BinOp, left: InferredType, right: InferredType) -> InferredType {
     if op.is_arith() {
         join_arith(left, right)
@@ -7044,10 +7295,26 @@ fn binary_operand_type(op: BinOp, left: InferredType, right: InferredType) -> In
         join_arith(left, right)
     } else if op.is_logical() {
         InferredType::Bool
+    } else if op.is_shift() {
+        join_shift(left, right)
     } else if op.is_bitwise() {
         join_int(left, right)
     } else {
         InferredType::Unknown
+    }
+}
+
+/// The type the right operand of a binary node is written at, given the
+/// `operand_ty` both operands share ([`binary_operand_type`]): that type, but
+/// for the count of a shift, which is written at its own. Converting a count
+/// to the type of what it shifts makes no shift right, and could only turn a
+/// count past the width into one inside it. Kotlin, whose shifts take an
+/// `Int` count, converts the count to that instead.
+fn right_operand_type(op: BinOp, operand_ty: InferredType) -> InferredType {
+    if op.is_shift() {
+        InferredType::Unknown
+    } else {
+        operand_ty
     }
 }
 
@@ -8806,7 +9073,10 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
     if matches!(expr.kind, ExprKind::NullLit) && expected.is_optional() {
         return Ok("std::nullopt".to_string());
     }
-    let raw = cpp_emit_node(expr)?;
+    let raw = match typed_integer_literal(ExprTarget::Cpp, expr) {
+        Some(literal) => literal,
+        None => cpp_emit_node(expr)?,
+    };
     Ok(cpp_coerce(raw, expr.ty, expected, expr))
 }
 
@@ -8974,7 +9244,7 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_cpp(left, operand_ty)?;
-            let r_raw = emit_cpp(right, operand_ty)?;
+            let r_raw = emit_cpp(right, right_operand_type(*op, operand_ty))?;
             let l = if child_needs_parens(left, *op, true, ecma_precedence)
                 || c_family_clarity_parens(left, *op)
             {
@@ -9468,7 +9738,10 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
             });
         }
     }
-    let raw = kotlin_emit_node(expr)?;
+    let raw = match typed_integer_literal(ExprTarget::Kotlin, expr) {
+        Some(literal) => literal,
+        None => kotlin_emit_node(expr)?,
+    };
     Ok(kotlin_coerce(raw, expr.ty, expected, expr))
 }
 
@@ -9494,7 +9767,7 @@ fn kotlin_narrow_unsigned_operation(expr: &TypedExpr) -> Option<InferredType> {
     }
     if op.is_bitwise() {
         Some(kotlin_narrow_unsigned_domain(
-            join_int(left.ty, right.ty),
+            binary_operand_type(*op, left.ty, right.ty),
             InferredType::Int {
                 signed: true,
                 bits: 32,
@@ -10382,7 +10655,10 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
             }
         }
     }
-    let raw = rust_emit_node(expr)?;
+    let raw = match typed_integer_literal(ExprTarget::Rust, expr) {
+        Some(literal) => literal,
+        None => rust_emit_node(expr)?,
+    };
     rust_coerce(raw, expr.ty, expected, expr)
 }
 
@@ -10817,7 +11093,7 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_rust(left, operand_ty)?;
-            let r_raw = emit_rust(right, operand_ty)?;
+            let r_raw = emit_rust(right, right_operand_type(*op, operand_ty))?;
             let l = rust_left_operand(left, *op, l_raw);
             let r = if child_needs_parens(right, *op, false, rust_precedence) {
                 format!("({r_raw})")
@@ -11316,7 +11592,10 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
             }
         }
     }
-    let raw = go_emit_node(expr)?;
+    let raw = match typed_integer_literal(ExprTarget::Go, expr) {
+        Some(literal) => literal,
+        None => go_emit_node(expr)?,
+    };
     Ok(go_coerce(raw, expr.ty, expected, expr))
 }
 
@@ -11406,7 +11685,7 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_go(left, operand_ty)?;
-            let r_raw = emit_go(right, operand_ty)?;
+            let r_raw = emit_go(right, right_operand_type(*op, operand_ty))?;
             let l = if child_needs_parens(left, *op, true, go_precedence) {
                 format!("({l_raw})")
             } else {
@@ -12041,7 +12320,7 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_python(left, operand_ty)?;
-            let r_raw = emit_python(right, operand_ty)?;
+            let r_raw = emit_python(right, right_operand_type(*op, operand_ty))?;
             if let Some(lowered) = python_integer_div_rem(*op, operand_ty, &l_raw, &r_raw) {
                 return Ok(lowered);
             }
@@ -12071,16 +12350,24 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // 0xFF` on a body whose authors already wrote a
             // bit-mask, keeping the Python emit close to the
             // hand-authored shape on existing fixtures.
-            let needs_mask = matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Shl);
-            if needs_mask {
+            //
+            // A left shift wraps at its width whatever the width and sign
+            // (SCE_FORGE.md §3.4.1, "The width of a shift"): until 2026-11-19
+            // only an unsigned one of at most 32 bits was reduced, so a
+            // `uint64` or a signed shift kept every bit it shifted out.
+            if *op == BinOp::Shl {
+                if let InferredType::Int { signed, bits } = expr.ty {
+                    return Ok(python_reduce(raw, signed, bits));
+                }
+            }
+            if matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul) {
                 if let InferredType::Int {
                     signed: false,
                     bits,
                 } = expr.ty
                 {
                     if bits <= 32 {
-                        let mask: u64 = (1u64 << bits) - 1;
-                        return Ok(format!("({raw}) & 0x{mask:X}"));
+                        return Ok(python_reduce(raw, false, bits));
                     }
                 }
             }
@@ -12098,10 +12385,24 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 UnaryOp::Not => "not ",
                 UnaryOp::BitNot => "~",
             };
-            if wrap {
+            let spelled = if wrap {
                 format!("{prefix}({inner})")
             } else {
                 format!("{prefix}{inner}")
+            };
+            // Python's `~x` is `-x - 1`, a negative number for every `x` at
+            // least 0, where an unsigned type holds the complement of `x`'s
+            // bits: it is reduced into the type, as a whole, so the operator
+            // around it sees one value.
+            match (op, expr.ty) {
+                (
+                    UnaryOp::BitNot,
+                    InferredType::Int {
+                        signed: false,
+                        bits,
+                    },
+                ) => format!("({})", python_reduce(spelled, false, bits)),
+                _ => spelled,
             }
         }
         ExprKind::Conditional {
@@ -12370,6 +12671,12 @@ fn python_wrap_int(raw: String, from: (bool, u8), to: (bool, u8)) -> String {
     if holds_every_value {
         return raw;
     }
+    python_reduce(raw, signed, bits)
+}
+
+/// `raw`, any Python integer, reduced modulo 2^bits into the integer type of
+/// that width and sign — its two's-complement value for a signed one.
+fn python_reduce(raw: String, signed: bool, bits: u8) -> String {
     let mask: u128 = (1u128 << bits) - 1;
     if signed {
         let half: u128 = 1u128 << (bits - 1);
@@ -12981,7 +13288,10 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
             }
         }
     }
-    let raw = c_emit_node(expr)?;
+    let raw = match typed_integer_literal(ExprTarget::C, expr) {
+        Some(literal) => literal,
+        None => c_emit_node(expr)?,
+    };
     Ok(c_coerce(raw, expr.ty, expected, expr))
 }
 
@@ -13225,7 +13535,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_c(left, operand_ty)?;
-            let r_raw = emit_c(right, operand_ty)?;
+            let r_raw = emit_c(right, right_operand_type(*op, operand_ty))?;
             let l = if child_needs_parens(left, *op, true, ecma_precedence)
                 || c_family_clarity_parens(left, *op)
             {
@@ -14909,6 +15219,153 @@ mod tests {
         );
     }
 
+    /// The places the literal-width tests below read: a `uint64` `prev`, a
+    /// `uint8` count `m` and an `int32` `s`.
+    fn literal_width_ctx() -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("prev", int(false, 64));
+        ctx.insert_var("m", int(false, 8));
+        ctx.insert_var("s", int(true, 32));
+        ctx
+    }
+
+    /// `expr` lowered for `target` into a place declared `slot`.
+    fn landed(expr: &str, target: ExprTarget, slot: InferredType) -> String {
+        transpile_into(expr, target, &literal_width_ctx(), &empty_renames(), slot)
+            .unwrap_or_else(|e| panic!("{expr} lowers for {target:?}: {e:?}"))
+    }
+
+    /// SCE_FORGE.md §3.4.1, "The width of a shift": the shift is as wide as
+    /// its left operand, and a literal there takes the `uint64` of the place
+    /// the value lands in, which every backend writes (`land_integers`,
+    /// `typed_integer_literal`). The count `m`, a `uint8`, types nothing.
+    ///
+    /// Before the rule the shift took `m`'s `uint8`, and Rust wrote
+    /// `prev | (1 << m) as u64`, an `i32` shift.
+    #[test]
+    fn a_shifted_literal_is_written_in_the_type_its_context_gives_it() {
+        let u64t = int(false, 64);
+        let source = "prev | (1 << m)";
+        assert_eq!(landed(source, ExprTarget::Rust, u64t), "prev | 1u64 << m");
+        assert_eq!(
+            landed(source, ExprTarget::C, u64t),
+            "prev | UINT64_C(1) << m"
+        );
+        assert_eq!(
+            landed(source, ExprTarget::Cpp, u64t),
+            "prev | std::uint64_t{1} << m"
+        );
+        assert_eq!(
+            landed(source, ExprTarget::Go, u64t),
+            "prev | uint64(1) << m"
+        );
+        assert_eq!(
+            landed(source, ExprTarget::Kotlin, u64t),
+            "prev or (1uL shl m.toInt())"
+        );
+        assert_eq!(
+            landed(source, ExprTarget::Swift, u64t),
+            "prev | (UInt64(1) << m)"
+        );
+        // Python's literal has no width; the shift is reduced to its 64 bits.
+        assert_eq!(
+            landed(source, ExprTarget::Python, u64t),
+            "prev | (1 << m) & 0xFFFFFFFFFFFFFFFF"
+        );
+        // The Interpreter's library takes the width from the operation.
+        let js = landed(source, ExprTarget::Js, u64t);
+        assert!(
+            js.contains("SceStatic.U64.or(prev, SceStatic.U64.shl(1, m))"),
+            "{js}"
+        );
+    }
+
+    /// A shift with a declared left operand is that operand's width, and its
+    /// count is written at its own type: converting it to the type it shifts
+    /// (`prev >> m as u64`, `uint64(m)`) makes no shift right.
+    #[test]
+    fn a_shift_count_is_written_at_its_own_type() {
+        let u64t = int(false, 64);
+        assert_eq!(landed("prev >> m", ExprTarget::Rust, u64t), "prev >> m");
+        assert_eq!(landed("prev >> m", ExprTarget::Go, u64t), "prev >> m");
+        assert_eq!(landed("prev >> m", ExprTarget::C, u64t), "prev >> m");
+        assert_eq!(
+            landed("prev >> m", ExprTarget::Kotlin, u64t),
+            "prev shr m.toInt()"
+        );
+    }
+
+    /// An operation of literals alone takes the type of the place it lands in,
+    /// and its literals are written in it, so `65536 * 65536` is `2^32` and
+    /// not a 32-bit product that overflows.
+    #[test]
+    fn an_operation_of_literals_alone_takes_the_type_of_its_place() {
+        let u64t = int(false, 64);
+        let source = "prev + 65536 * 65536";
+        assert_eq!(
+            landed(source, ExprTarget::Rust, u64t),
+            "prev + 65536u64 * 65536u64"
+        );
+        assert_eq!(
+            landed(source, ExprTarget::C, u64t),
+            "prev + UINT64_C(65536) * UINT64_C(65536)"
+        );
+        assert_eq!(
+            landed(source, ExprTarget::Kotlin, u64t),
+            "prev + 65536uL * 65536uL"
+        );
+        assert_eq!(
+            landed(source, ExprTarget::Swift, u64t),
+            "prev + UInt64(65536) * UInt64(65536)"
+        );
+        // A literal that meets a declared operand keeps no type of its own.
+        assert_eq!(landed("prev + 1", ExprTarget::Rust, u64t), "prev + 1");
+    }
+
+    /// Python's integers have no width: a left shift is reduced to its type at
+    /// every width and sign, and a `~` of an unsigned value to the complement
+    /// of its bits, not the negative number Python's `~` makes.
+    #[test]
+    fn python_reduces_a_shift_and_a_complement_to_their_width() {
+        assert_eq!(
+            landed("s << 3", ExprTarget::Python, int(true, 32)),
+            "(((s << 3) + 0x80000000) & 0xFFFFFFFF) - 0x80000000"
+        );
+        assert_eq!(
+            landed("~(1 << m)", ExprTarget::Python, int(false, 64)),
+            "((~((1 << m) & 0xFFFFFFFFFFFFFFFF)) & 0xFFFFFFFFFFFFFFFF)"
+        );
+    }
+
+    /// A shift or a `~` of a literal that nothing gives a width is refused at
+    /// the literal, naming what would give it one: compared with another
+    /// literal, or lowered where no type is declared.
+    #[test]
+    fn a_shifted_literal_with_no_width_is_refused() {
+        let ctx = literal_width_ctx();
+        for (source, slot) in [
+            ("(1 << m) === 0", InferredType::Bool),
+            ("1 << m", InferredType::Unknown),
+            ("~0", InferredType::Unknown),
+        ] {
+            let refusal = transpile_typed(source, ExprTarget::Rust, &ctx, &empty_renames(), slot)
+                .expect_err(source);
+            assert!(
+                matches!(
+                    &refusal.error,
+                    ExprError::TypeMismatch { got, observed: Some(o), .. }
+                        if got == "integer literal" && (o == "1" || o == "0")
+                ),
+                "{source}: {refusal:?}"
+            );
+        }
+        // Compared with a declared value, the shift takes its type.
+        assert_eq!(
+            landed("prev === (1 << m)", ExprTarget::Rust, InferredType::Bool),
+            "prev == 1u64 << m"
+        );
+    }
+
     /// `==` gives a Kotlin literal no type to adapt to, so an untyped operand
     /// compared with a `Long`/`Short`/`Byte` is spelled in that type —
     /// `Long == Int` does not compile. `Int` and ordering comparisons, which
@@ -14932,7 +15389,9 @@ mod tests {
         };
         assert_eq!(kt("week % 7 === 0"), "week % 7 == 0L");
         assert_eq!(kt("0 !== week"), "0L != week");
-        assert_eq!(kt("week === 1 + 2"), "week == (1 + 2).toLong()");
+        // An operation of literals takes the type it is compared with, so its
+        // literals are written in it (`land_integers`).
+        assert_eq!(kt("week === 1 + 2"), "week == 1L + 2L");
         assert_eq!(kt("s === 3"), "s == 3.toShort()");
         assert_eq!(kt("b === 3"), "b == 3.toByte()");
         assert_eq!(kt("n === 3"), "n == 3");
