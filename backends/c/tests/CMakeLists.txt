@@ -2982,6 +2982,25 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                    event_shapes_rows.scxml shape_held.scxml event_shape_held.scxml
                    shape_board.scxml event_shape_boarded.scxml
     )
+    # A map and a set variable (docs/adr/0108): put, read, asked, removed, walked and full, keyed
+    # by a number, a record of two 64-bit halves and a text, each value a number or a record, so
+    # the staging carries the schema of each event's payload and of each record beside the machine.
+    foreach(_STATIC_MAP_MACHINE static_map:schema_entry static_map_full:schema_entry
+                                static_map_record:schema_map_face
+                                static_map_composite_key:schema_map_peer static_set:schema_labelled)
+        string(REPLACE ":" ";" _STATIC_MAP_PARTS "${_STATIC_MAP_MACHINE}")
+        list(GET _STATIC_MAP_PARTS 0 _STATIC_MAP_STEM)
+        list(GET _STATIC_MAP_PARTS 1 _STATIC_MAP_SCHEMA)
+        sce_generate_static_integration_c_test(${_STATIC_MAP_STEM}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_MAP_STEM}.scxml"
+            STAGE_ALSO ${_STATIC_MAP_SCHEMA}.scxml
+        )
+    endforeach()
+    sce_generate_static_integration_c_test(static_map_order
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_map_order.scxml"
+    )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
@@ -3268,6 +3287,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_lift_SOURCES}
         ${INTEGRATION_C_TEST_static_lift_list_SOURCES}
         ${INTEGRATION_C_TEST_static_union_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_full_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_record_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_order_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_composite_key_SOURCES}
+        ${INTEGRATION_C_TEST_static_set_SOURCES}
     )
     sce_c_link_runtime(sce_c_integration_static_scalars EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_scalars PRIVATE

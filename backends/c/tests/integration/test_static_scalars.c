@@ -182,6 +182,11 @@
 #include "static_list_call_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
+#include "static_map_composite_key_sm.h"
+#include "static_map_full_sm.h"
+#include "static_map_order_sm.h"
+#include "static_map_record_sm.h"
+#include "static_map_sm.h"
 #include "static_optional_record_sm.h"
 #include "static_optional_sm.h"
 #include "static_optional_widened_sm.h"
@@ -212,6 +217,7 @@
 #include "static_send_params_sm.h"
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
+#include "static_set_sm.h"
 #include "static_state_algorithm_enum_sm.h"
 #include "static_state_algorithm_optional_sm.h"
 #include "static_state_algorithm_sm.h"
@@ -3614,6 +3620,108 @@ static int a_payload_enum_field_is_written_as_the_name_its_enum_declares(void) {
     return bad;
 }
 
+// The maps and sets (docs/adr/0108): a map or a set variable is the type `sce/forge/map.h`
+// declares for its key, its value and its bound, which no reader of this file walks, so each
+// variable a step states is read out of the machine's saved state, the text every backend writes
+// it by its type in: the array of its entries in the order its keys were first put, each
+// `[key, value]`, and a set's each its key.
+//
+//   * `static_map`: a put of a key that is absent goes last and one that is present replaces its
+//     value where it stands; `has` asks whether a key is held; a read of a key that is absent fails,
+//     raising error.execution and ending its block; a remove says what it did where it names an
+//     outcome, and `<sce:clear>` empties the map.
+//   * `static_map_full`: a put into a full map answers `full` and leaves the map as it was, and one
+//     that names no outcome raises error.execution and ends its block.
+//   * `static_map_record`: a map of records, read a field at a time and taken whole into a record
+//     variable, which a later write leaves the map's own record as it was.
+//   * `static_map_order`: a walk meets the entries in the order their keys were first put, and a
+//     walk whose body removes each entry walks the map as it was when the walk began.
+//   * `static_map_composite_key`: a key of two 64-bit halves, looked up by the payload taken whole.
+//   * `static_set`: a set of texts, put, asked, walked and removed from, and full.
+//
+// Every machine is started under one fixed seed, which nothing a scenario observes depends on.
+#define MAP_SCENARIO_SEED sce_map_seed_from_halves(UINT64_C(0x0123456789abcdef), UINT64_C(0xfedcba9876543210))
+
+// Saved with no delayed send to carry, so the wall clock it is saved at changes nothing it holds.
+#define MAP_SAVED_AT_MS INT64_C(1700000000000)
+
+// The saved text of the map machine `M`, ended by its terminator, or NULL for one it could not
+// save.
+#define MAP_SAVED(M)                                                                                                   \
+    static const char *M##_saved(void *sm) {                                                                           \
+        static char text[16384];                                                                                       \
+        size_t len = 0u;                                                                                               \
+        sce_saved_error_t err;                                                                                         \
+        if (!M##_save((const M##_t *)sm, MAP_SAVED_AT_MS, text, sizeof(text) - 1u, &len, &err)) {                      \
+            (void)fprintf(stderr, #M ": the machine was not saved: %s\n", err.message);                                \
+            return NULL;                                                                                               \
+        }                                                                                                              \
+        text[len] = '\0';                                                                                              \
+        return text;                                                                                                   \
+    }
+
+// A map machine, started under the scenarios' seed, every variable read out of its saved state.
+#define MAP_SCENARIO(M, STATES, VARIABLES, STARTED)                                                                    \
+    MAP_SAVED(M)                                                                                                       \
+    STATIC_SCENARIO_CORE_SAVED(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL,               \
+                               REQUIRE_STARTED(M##_init(&sm, MAP_SCENARIO_SEED), STARTED), NULL, NULL, NULL, NULL,     \
+                               NULL, NULL, NULL, M##_saved)
+
+VARIABLE_READER(static_map, held)
+static const name_value_t map_states[] = {
+    {"counting", STATIC_MAP_STATE_COUNTING},
+};
+static const variable_t map_variables[] = {
+    {"held", static_map_read_held},
+};
+MAP_SCENARIO(static_map, map_states, map_variables, STATIC_MAP_START_OK)
+
+VARIABLE_READER(static_map_full, refused)
+static const name_value_t map_full_states[] = {
+    {"filling", STATIC_MAP_FULL_STATE_FILLING},
+};
+static const variable_t map_full_variables[] = {
+    {"refused", static_map_full_read_refused},
+};
+MAP_SCENARIO(static_map_full, map_full_states, map_full_variables, STATIC_MAP_FULL_START_OK)
+
+VARIABLE_READER(static_map_record, errors)
+static const name_value_t map_record_states[] = {
+    {"open", STATIC_MAP_RECORD_STATE_OPEN},
+};
+static const variable_t map_record_variables[] = {
+    {"errors", static_map_record_read_errors},
+};
+MAP_SCENARIO(static_map_record, map_record_states, map_record_variables, STATIC_MAP_RECORD_START_OK)
+
+VARIABLE_READER(static_map_order, lastAt)
+static const name_value_t map_order_states[] = {
+    {"ordering", STATIC_MAP_ORDER_STATE_ORDERING},
+};
+static const variable_t map_order_variables[] = {
+    {"lastAt", static_map_order_read_lastAt},
+};
+MAP_SCENARIO(static_map_order, map_order_states, map_order_variables, STATIC_MAP_ORDER_START_OK)
+
+VARIABLE_READER(static_map_composite_key, hits)
+static const name_value_t map_composite_key_states[] = {
+    {"watching", STATIC_MAP_COMPOSITE_KEY_STATE_WATCHING},
+};
+static const variable_t map_composite_key_variables[] = {
+    {"hits", static_map_composite_key_read_hits},
+};
+MAP_SCENARIO(static_map_composite_key, map_composite_key_states, map_composite_key_variables,
+             STATIC_MAP_COMPOSITE_KEY_START_OK)
+
+VARIABLE_READER(static_set, count)
+static const name_value_t set_states[] = {
+    {"tagging", STATIC_SET_STATE_TAGGING},
+};
+static const variable_t set_variables[] = {
+    {"count", static_set_read_count},
+};
+MAP_SCENARIO(static_set, set_states, set_variables, STATIC_SET_START_OK)
+
 int main(void) {
     int bad = 0;
     // Each scenario file by its name, and the steps it has at the least.
@@ -3645,6 +3753,12 @@ int main(void) {
     bad |= static_lift_scenario("static_lift", 37);
     bad |= static_lift_list_scenario("static_lift_list", 25);
     bad |= static_union_scenario("static_union", 47);
+    bad |= static_map_scenario("static_map", 14);
+    bad |= static_map_full_scenario("static_map_full", 9);
+    bad |= static_map_record_scenario("static_map_record", 10);
+    bad |= static_map_order_scenario("static_map_order", 11);
+    bad |= static_map_composite_key_scenario("static_map_composite_key", 7);
+    bad |= static_set_scenario("static_set", 14);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
