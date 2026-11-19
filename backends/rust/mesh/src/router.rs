@@ -292,6 +292,17 @@ struct Persist {
     durable_through: u64,
 }
 
+impl Persist {
+    /// Whether `envelope`, written for `peer`, was produced and is not yet
+    /// released: open, or sealed into a checkpoint not yet durable.
+    fn holds(&self, peer: &str, envelope: &[u8]) -> bool {
+        self.open
+            .iter()
+            .chain(self.sealed.iter().flat_map(|(_, batch)| batch.iter()))
+            .any(|unreleased| unreleased.peer == peer && unreleased.envelope.as_slice() == envelope)
+    }
+}
+
 /// A causal peer's layer and when it last announced its vector.
 struct Causal {
     layer: CausalLayer<Vec<u8>>,
@@ -994,7 +1005,7 @@ impl Router {
             self.persist.as_mut(),
             peer_name,
             peer,
-            bytes,
+            bytes.clone(),
             sequence,
             now_ms,
         );
@@ -1007,6 +1018,7 @@ impl Router {
                 responders,
                 expires_ms: deadline_ms
                     .map(|ms| now_ms.saturating_add(i64::try_from(ms).unwrap_or(i64::MAX))),
+                request: bytes,
             },
         );
         Ok(Invoked::Started(effects))
@@ -1063,37 +1075,83 @@ impl Router {
         Ok(effects)
     }
 
-    /// `peer`'s transport stopped being ready.
+    /// `peer`'s transport stopped being ready, and the link is lost: what
+    /// `peer` held for this machine cannot reach it any more.
     ///
     /// A request waiting on the link can no longer be answered over it: it is
     /// forgotten, as a cancel forgets it, and each is §mesh-16.7 row 5 — the
     /// peer-down path the C++ core takes for the same requests.
     pub fn peer_not_ready(&mut self, peer: &str) -> Result<Vec<Effect>, RouterError> {
-        let bound = self
-            .peers
-            .get_mut(peer)
-            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
-        let raise = |signal| Effect::Raise {
-            peer: Some(peer.to_string()),
-            signal,
-        };
-        let mut effects: Vec<Effect> = bound
-            .outbound
-            .mark_not_ready()
-            .map(raise)
-            .into_iter()
-            .collect();
+        let mut effects = self.peer_interrupted(peer)?;
         effects.extend(
             self.requests
                 .forget_sent_to(peer)
                 .into_iter()
-                .map(|wire_id| {
-                    raise(Signal::InvokeChildLost {
+                .map(|wire_id| Effect::Raise {
+                    peer: Some(peer.to_string()),
+                    signal: Signal::InvokeChildLost {
                         invoke_id: rpc::uuid_text(&wire_id),
                         target: peer.to_string(),
-                    })
+                    },
                 }),
         );
+        Ok(effects)
+    }
+
+    /// `peer`'s transport stopped being ready while `peer` keeps what it holds
+    /// for this machine, which reaches this machine once the link is ready
+    /// again: an exchange of the HTTPS binding that failed, its server keeping
+    /// the client's mailbox (SCE_MESH.md section 22.4).
+    ///
+    /// The readiness edge is all it is: what the machine sends waits as it
+    /// waits for any peer that is not ready (§mesh-10.10), and the edge is
+    /// §mesh-16.7 row 1 once. A request waiting on `peer` stays waiting, since
+    /// its reply still reaches this machine; its reply, its deadline or its
+    /// cancel ends it.
+    pub fn peer_interrupted(&mut self, peer: &str) -> Result<Vec<Effect>, RouterError> {
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        Ok(bound
+            .outbound
+            .mark_not_ready()
+            .map(|signal| Effect::Raise {
+                peer: Some(peer.to_string()),
+                signal,
+            })
+            .into_iter()
+            .collect())
+    }
+
+    /// `peer` started again without what it held for this machine: the
+    /// mailbox of an HTTPS server now numbers in another incarnation
+    /// (SCE_MESH.md section 22.3), so a reply it held is gone, at `now_ms`.
+    ///
+    /// Each request still waiting on `peer` is sent again, its envelope as it
+    /// was written and so under its own ids: the peer's §mesh-10.5 window
+    /// answers a copy of a request it took with the reply the first copy
+    /// produced, drops one it is still handling, and takes one it never saw as
+    /// new, so the request is answered once whichever it was. A copy of one
+    /// this machine's transport still carries is dropped the same way. A
+    /// request a checkpoint not yet durable still holds has not left, and
+    /// leaves when that checkpoint is durable (SCE_MESH.md section 10.11).
+    pub fn peer_restarted(&mut self, peer: &str, now_ms: i64) -> Result<Vec<Effect>, RouterError> {
+        let persist = self.persist.as_ref();
+        let again: Vec<Vec<u8>> = self
+            .requests
+            .sent_to(peer)
+            .filter(|request| !persist.is_some_and(|persist| persist.holds(peer, request)))
+            .map(<[u8]>::to_vec)
+            .collect();
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        let mut effects = Vec::new();
+        for request in again {
+            effects.extend(dispatch(peer, bound, request, now_ms));
+        }
         Ok(effects)
     }
 
@@ -2890,6 +2948,123 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(ecu.tick(1000).unwrap().is_empty());
+    }
+
+    /// SCE_MESH.md section 22.4: an HTTPS exchange that failed interrupts the
+    /// link and loses nothing, since the server keeps the reply in the
+    /// client's mailbox. The edge is row 1 and not row 5, the request stays
+    /// waiting, and the reply that reaches the client afterwards ends it
+    /// once. Red if an interruption forgets the request as a lost link does:
+    /// the reply then finds nothing waiting and the invocation never ends.
+    #[test]
+    fn an_interrupted_link_keeps_the_request_and_its_later_reply_ends_it_once() {
+        let mut ecu = requester(None);
+        assert!(ecu.peer_ready("hmi", 0).unwrap().is_empty());
+        started(&mut ecu, None);
+        assert_eq!(
+            ecu.peer_interrupted("hmi").unwrap(),
+            alloc::vec![Effect::Raise {
+                peer: Some("hmi".to_string()),
+                signal: Signal::TransportUnavailable,
+            }]
+        );
+        assert!(ecu.awaits_reply(&WIRE));
+        assert!(
+            ecu.peer_interrupted("hmi").unwrap().is_empty(),
+            "row 1 once per edge"
+        );
+        let answer = reply(2, Some(RpcStatus::Ok), None, r#"{"force":12}"#);
+        assert_eq!(
+            ecu.receive("hmi", answer.clone(), 20).unwrap(),
+            alloc::vec![Effect::Complete {
+                invoke_id: "ask".to_string(),
+                token: 7,
+                data: r#"{"force":12}"#.to_string(),
+                source: "hmi".to_string(),
+            }]
+        );
+        assert!(
+            ecu.receive("hmi", answer, 30).unwrap().is_empty(),
+            "the mailbox's copy of the same reply ends nothing"
+        );
+        assert!(!ecu.awaits_reply(&WIRE));
+    }
+
+    /// SCE_MESH.md section 22.3: the server started again with an empty
+    /// mailbox, and the reply it held for the request is gone. The request is
+    /// sent again as it was written; the responder's §mesh-10.5 window answers
+    /// the copy with the reply its first copy produced, and that reply ends
+    /// the request once. Red if a restart sends nothing again (the request
+    /// then waits for a reply that no longer exists) or forgets the request
+    /// (the cached reply then ends nothing).
+    #[test]
+    fn a_restarted_peer_is_asked_again_and_answers_from_its_reply_cache_once() {
+        let mut ecu = requester(None);
+        let mut hmi = responder();
+        assert!(ecu.peer_ready("hmi", 0).unwrap().is_empty());
+        let asked = started(&mut ecu, None);
+        assert_eq!(hmi.receive("ecu", asked.clone(), 0).unwrap().len(), 1);
+        let first = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 0));
+
+        // The reply went to the mailbox the restart emptied.
+        let again = transmitted(ecu.peer_restarted("hmi", 40));
+        assert_eq!(
+            again, asked,
+            "the request as it was written, under its own ids"
+        );
+        let cached = sent_to_ecu(hmi.receive("ecu", again, 50));
+        assert_eq!(cached, first);
+        assert_eq!(
+            ecu.receive("hmi", cached.clone(), 60).unwrap(),
+            alloc::vec![Effect::Complete {
+                invoke_id: "ask".to_string(),
+                token: 7,
+                data: r#"{"force":12}"#.to_string(),
+                source: "hmi".to_string(),
+            }]
+        );
+        assert!(ecu.receive("hmi", cached, 70).unwrap().is_empty());
+        assert!(
+            ecu.peer_restarted("hmi", 80).unwrap().is_empty(),
+            "nothing waits to be asked again"
+        );
+    }
+
+    /// SCE_MESH.md section 10.11: a request a checkpoint not yet durable
+    /// holds has not left, and a restart of its peer does not send it ahead
+    /// of that checkpoint; once released it is sent again as any is. Red if
+    /// the restart ignores what the checkpoint holds.
+    #[test]
+    fn a_request_a_checkpoint_still_holds_is_not_sent_again_before_it_leaves() {
+        let mut ecu = requester(None);
+        ecu.enable_checkpoints();
+        assert!(ecu.peer_ready("hmi", 0).unwrap().is_empty());
+        match ecu.invoke(&ask("#hmi", None), WIRE, [1; 16], 10, 1000) {
+            Ok(Invoked::Started(effects)) => assert!(effects.is_empty(), "{effects:?}"),
+            other => panic!("expected the request to start, got {other:?}"),
+        }
+        assert!(ecu.peer_restarted("hmi", 20).unwrap().is_empty());
+        ecu.seal(
+            1,
+            Clocks {
+                monotonic_ms: 20,
+                wall_ms: 2000,
+            },
+        )
+        .unwrap();
+        assert!(ecu.peer_restarted("hmi", 25).unwrap().is_empty());
+        let asked = transmitted(ecu.durable(1, 30));
+        assert_eq!(transmitted(ecu.peer_restarted("hmi", 40)), asked);
+    }
+
+    /// A restart or an interruption of a peer the host never bound is the
+    /// host's error, as a lost link of one is.
+    #[test]
+    fn an_unbound_peer_is_neither_interrupted_nor_restarted() {
+        let mut ecu = requester(None);
+        let unknown = Err(RouterError::UnknownPeer("nobody".to_string()));
+        assert_eq!(ecu.peer_interrupted("nobody"), unknown);
+        assert_eq!(ecu.peer_restarted("nobody", 0), unknown);
     }
 
     #[test]

@@ -6,7 +6,10 @@
 //!
 //! A binding keeps no decision. It moves envelope bytes and readiness between a medium and the
 //! core: a peer became ready, bytes arrived from it, it was lost, an envelope was queued for it
-//! and never written. The host feeds those, as [`LinkEvent`]s, to its [`Endpoint`] with
+//! and never written; and, on a binding whose peer keeps what it sends until it is taken (the
+//! HTTPS mailbox, SCE_MESH.md section 22.3), the link was interrupted with nothing lost, or the
+//! peer started again without what it kept. The host feeds those, as [`LinkEvent`]s, to its
+//! [`Endpoint`] with
 //! [`deliver`], on the thread that steps the engine. The WebSocket binding (`wss`) and the Zenoh
 //! binding (`zenoh_inbox`, SCE_MESH.md §mesh-20) differ in the medium and agree on this, so a host moves
 //! from one to the other by changing what produces the events.
@@ -25,8 +28,18 @@ pub enum LinkEvent {
     Received(String, Vec<u8>),
     /// An envelope queued for `peer` that the link closed before writing.
     Unsent(String, Vec<u8>),
-    /// The link to `peer` closed, failed, or stopped answering; the words say which.
+    /// The link to `peer` closed, failed, or stopped answering; the words say which. What `peer`
+    /// held for this machine cannot reach it any more, so a request waiting on `peer` is lost.
     Lost(String, String),
+    /// The link to `peer` stopped being ready while `peer` keeps what it holds for this machine,
+    /// which reaches it once the link is ready again: an HTTPS exchange that failed at the
+    /// transport (SCE_MESH.md section 22.4); the words say how. A request waiting on `peer` stays
+    /// waiting.
+    Interrupted(String, String),
+    /// `peer` started again without what it held for this machine: the HTTPS server's mailbox
+    /// numbers in a new incarnation (SCE_MESH.md section 22.3). A request waiting on `peer` is
+    /// sent again.
+    Restarted(String),
 }
 
 /// Hand a link's event to the endpoint it concerns.
@@ -44,6 +57,8 @@ pub fn deliver<T: Transport, E: Environment>(endpoint: &mut Endpoint<T, E>, even
             },
         ),
         LinkEvent::Lost(peer, _) => endpoint.peer_not_ready(&peer),
+        LinkEvent::Interrupted(peer, _) => endpoint.peer_interrupted(&peer),
+        LinkEvent::Restarted(peer) => endpoint.peer_restarted(&peer),
     }
 }
 

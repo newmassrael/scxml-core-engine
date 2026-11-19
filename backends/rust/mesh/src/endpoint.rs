@@ -475,9 +475,26 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.apply(effects);
     }
 
-    /// `peer`'s transport stopped being ready.
+    /// `peer`'s transport stopped being ready, and the link is lost: each
+    /// request waiting on it is forgotten ([`Router::peer_not_ready`]).
     pub fn peer_not_ready(&mut self, peer: &str) {
         let effects = self.router.peer_not_ready(peer);
+        self.apply(effects);
+    }
+
+    /// `peer`'s transport stopped being ready while `peer` keeps what it holds
+    /// for this machine: a request waiting on it stays waiting
+    /// ([`Router::peer_interrupted`]).
+    pub fn peer_interrupted(&mut self, peer: &str) {
+        let effects = self.router.peer_interrupted(peer);
+        self.apply(effects);
+    }
+
+    /// `peer` started again without what it held for this machine: each
+    /// request waiting on it is sent again ([`Router::peer_restarted`]).
+    pub fn peer_restarted(&mut self, peer: &str) {
+        let now = self.environment.now_ms();
+        let effects = self.router.peer_restarted(peer, now);
         self.apply(effects);
     }
 
@@ -1168,6 +1185,112 @@ mod tests {
         assert!(!buffered.is_quiet(), "a send is buffered");
         buffered.peer_ready("hmi");
         assert!(buffered.is_quiet());
+    }
+
+    /// The order an HTTPS exchange that lost its response hands the client its events in
+    /// (SCE_MESH.md section 22.4): the exchange that carried a request fails after the server
+    /// took it, so the request comes back unsent and the link is interrupted, and only then does
+    /// the reply arrive, from the mailbox or answering the copy sent again. Handed to the
+    /// endpoint as the binding hands them, the request stays waiting through the failure, its
+    /// copy goes again under the retry policy, and the reply ends the invocation once. Red if an
+    /// interrupted link is applied as a lost one: the reply then finds nothing waiting, and the
+    /// invocation never ends.
+    #[test]
+    fn a_reply_after_an_interrupted_exchange_ends_the_request_once() {
+        use crate::link::{deliver, LinkEvent};
+
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_backoff_ms: 10,
+            backoff_multiplier: 1.0,
+            max_backoff_ms: 10,
+            jitter_pct: 0,
+        };
+        let mut ecu = endpoint("ecu", "hmi", Some(policy));
+        let mut params = std::collections::HashMap::new();
+        params.insert(
+            crate::rpc::MESH_EVENT_PARAM.to_string(),
+            vec!["service.request.force".to_string()],
+        );
+        let started = ecu.invoke(&HostInvokeRequest {
+            processor_type: MESH_RPC_INVOKE_TYPE.to_string(),
+            invoke_id: "ask".to_string(),
+            src: "#hmi".to_string(),
+            params,
+            token: 1,
+            ..HostInvokeRequest::default()
+        });
+        assert!(started.refusal.is_none(), "{started:?}");
+        let (_, request) = ecu.transport.sent.pop().unwrap();
+        let envelope = crate::generated::envelope::Envelope::decode(
+            &mut sce_forge_runtime::codec::SceCursor::new(&request),
+        )
+        .unwrap();
+        let wire: [u8; 16] = envelope.invoke_id.unwrap().into();
+
+        // The server's machine took the request and answered it.
+        let mut hmi = Endpoint::new(
+            Router::new("hmi", 8, 50).unwrap(),
+            Recorder::default(),
+            Fixed::default(),
+        );
+        hmi.add_peer(
+            "ecu",
+            PeerConfig {
+                reply_events: &["service.response.force"],
+                ..config("ecu", None)
+            },
+        );
+        hmi.peer_ready("ecu");
+        hmi.receive("ecu", request.clone());
+        assert_eq!(raised(&mut hmi).len(), 1, "the request reached the machine");
+        hmi.send(&HostSendRequest {
+            target: "#ecu".to_string(),
+            invoke_id: crate::rpc::uuid_text(&wire),
+            ..send("service.response.force", "")
+        });
+        let (_, answer) = hmi.transport.sent.pop().unwrap();
+
+        // The response that would have carried it was lost.
+        deliver(
+            &mut ecu,
+            LinkEvent::Unsent("hmi".to_string(), request.clone()),
+        );
+        deliver(
+            &mut ecu,
+            LinkEvent::Interrupted("hmi".to_string(), "the connection closed".to_string()),
+        );
+        let edge = raised(&mut ecu);
+        assert_eq!(edge.len(), 1, "{edge:?}");
+        assert!(
+            edge[0].metadata.data.contains("transportUnavailable"),
+            "row 1, and no row 5: {}",
+            edge[0].metadata.data
+        );
+        assert!(ecu.awaits_reply(&wire), "the request still waits");
+
+        ecu.environment.now = 10;
+        ecu.tick();
+        assert_eq!(
+            ecu.transport.sent.pop(),
+            Some(("hmi".to_string(), request)),
+            "the copy goes again"
+        );
+        deliver(&mut ecu, LinkEvent::Ready("hmi".to_string()));
+        deliver(
+            &mut ecu,
+            LinkEvent::Received("hmi".to_string(), answer.clone()),
+        );
+        deliver(&mut ecu, LinkEvent::Received("hmi".to_string(), answer));
+        let ended: Vec<EngineCall> = ecu.take_calls();
+        assert!(
+            matches!(
+                ended.as_slice(),
+                [EngineCall::EndInvoke { invoke_id, failed: false, .. }] if invoke_id == "ask"
+            ),
+            "{ended:?}"
+        );
+        assert!(!ecu.awaits_reply(&wire));
     }
 
     #[test]

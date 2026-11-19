@@ -294,7 +294,9 @@ async fn run_relay(address: &str) {
                         let _ = transport.transmit(other, &bytes);
                     }
                 }
-                LinkEvent::Unsent(_, _) => {}
+                // A WebSocket link is ready or lost; it is never interrupted with what its peer
+                // keeps for this machine, nor told its peer started again without it.
+                LinkEvent::Unsent(_, _) | LinkEvent::Interrupted(..) | LinkEvent::Restarted(_) => {}
             },
             line = commands.recv() => {
                 let Some(line) = line else { break };

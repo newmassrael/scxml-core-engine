@@ -387,8 +387,8 @@ impl ClientSide {
             if let Ok(event) = self.events.recv_timeout(Duration::from_millis(20)) {
                 match &event {
                     LinkEvent::Ready(_) => self.ready = true,
-                    LinkEvent::Lost(..) => self.ready = false,
-                    LinkEvent::Received(..) | LinkEvent::Unsent(..) => {}
+                    LinkEvent::Lost(..) | LinkEvent::Interrupted(..) => self.ready = false,
+                    LinkEvent::Received(..) | LinkEvent::Unsent(..) | LinkEvent::Restarted(_) => {}
                 }
                 deliver(&mut self.endpoint, event);
             }

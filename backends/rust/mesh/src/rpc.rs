@@ -40,6 +40,9 @@ pub(crate) struct Pending {
     pub responders: &'static [&'static str],
     /// The monotonic time it stops waiting, if it has a deadline.
     pub expires_ms: Option<i64>,
+    /// The request envelope as it was written, what is sent again when the
+    /// peer it waits on started again without the reply it held.
+    pub request: Vec<u8>,
 }
 
 /// Every request this router has sent and not yet retired, keyed by the
@@ -114,6 +117,15 @@ impl Correlation {
             self.pending.remove(id);
         }
         lost
+    }
+
+    /// The envelope of every request still waiting on `peer`, in wire-id
+    /// order.
+    pub fn sent_to<'a>(&'a self, peer: &'a str) -> impl Iterator<Item = &'a [u8]> + 'a {
+        self.pending
+            .values()
+            .filter(move |p| p.target == peer)
+            .map(|p| p.request.as_slice())
     }
 
     /// Retire every request whose deadline is at or before `now_ms`, in
@@ -249,7 +261,29 @@ mod tests {
             target: "cloud".into(),
             responders: &["cloud"],
             expires_ms,
+            request: invoke_id.as_bytes().to_vec(),
         }
+    }
+
+    /// What is sent again when a peer started again is the envelope of each
+    /// request waiting on that peer, and only of those.
+    #[test]
+    fn the_requests_sent_to_a_peer_are_its_own() {
+        let mut table = Correlation::default();
+        let mut other = WIRE;
+        other[15] = 0xac;
+        table.register(WIRE, pending("ask", 1, None));
+        table.register(
+            other,
+            Pending {
+                target: "hmi".into(),
+                ..pending("look", 2, None)
+            },
+        );
+        let to_cloud: Vec<&[u8]> = table.sent_to("cloud").collect();
+        assert_eq!(to_cloud, [b"ask".as_slice()]);
+        assert!(table.retire(&WIRE).is_some());
+        assert_eq!(table.sent_to("cloud").count(), 0);
     }
 
     /// §mesh-16.7 row 5: a lost link forgets what was sent on it, and only

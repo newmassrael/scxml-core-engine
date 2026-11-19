@@ -144,7 +144,9 @@ fn peer_of(event: &LinkEvent) -> &str {
         LinkEvent::Ready(p)
         | LinkEvent::Received(p, _)
         | LinkEvent::Unsent(p, _)
-        | LinkEvent::Lost(p, _) => p,
+        | LinkEvent::Lost(p, _)
+        | LinkEvent::Interrupted(p, _)
+        | LinkEvent::Restarted(p) => p,
     }
 }
 

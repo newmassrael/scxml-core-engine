@@ -20,7 +20,10 @@
 //!   behaviour.
 //!
 //! What the binding hands its host is the [`LinkEvent`]s every binding hands it: a peer became
-//! ready, bytes arrived from it, an envelope was not written, it was lost.
+//! ready, bytes arrived from it, an envelope was not written, it was lost. The client hands two
+//! more, since its server keeps a mailbox: the link was interrupted with nothing lost (an
+//! exchange failed at the transport), and the server started again without the mailbox (a
+//! response of a new incarnation).
 
 pub mod adapter;
 pub mod client;

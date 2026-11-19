@@ -13,8 +13,10 @@
 //! The binding keeps no decision of the core's. What it hands its host is [`LinkEvent`]s: the
 //! server is ready (from the first exchange answered `200`), bytes arrived, an envelope the
 //! exchange could not deliver (handed back as [`LinkEvent::Unsent`], which the core sends again
-//! under the binding's retry policy or raises as SCE_MESH.md section 16.7 row 2 or row 3), and
-//! the server was lost (an exchange failed at the transport).
+//! under the binding's retry policy or raises as SCE_MESH.md section 16.7 row 2 or row 3), the
+//! link was interrupted (an exchange failed at the transport, while the server keeps the mailbox
+//! and so every reply in it), the server started again without the mailbox (a response of a new
+//! incarnation), and the server was lost (the client stopped, and takes nothing in any more).
 
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
@@ -240,9 +242,12 @@ fn take_outcome(
             for envelope in carried {
                 (state.events)(LinkEvent::Unsent(server.clone(), envelope));
             }
+            // A failure at the transport ends readiness and loses nothing (section 22.4): the
+            // server keeps the mailbox, a reply to a request this client waits on among it, and
+            // a later exchange carries it, so the link is interrupted, not lost.
             if state.ready {
                 state.ready = false;
-                (state.events)(LinkEvent::Lost(server, failure.to_string()));
+                (state.events)(LinkEvent::Interrupted(server, failure.to_string()));
             }
             let wait = shared.settings.backoff.delay(*failures);
             *failures = failures.saturating_add(1);
@@ -263,7 +268,11 @@ fn take_outcome(
 ///   handed on, the section 10.5 window dropping what reached the core before, and the client's
 ///   acknowledgement stays with the newer incarnation;
 /// * any other: a mailbox that numbers anew (a server that started again with its mailboxes
-///   empty). The acknowledgement starts over at 0 in it, so all of the response is new.
+///   empty). The acknowledgement starts over at 0 in it, so all of the response is new. When it
+///   replaces an incarnation the client knew, what that mailbox held is gone, a reply among it:
+///   the host is told the server restarted ([`LinkEvent::Restarted`]) before the response's
+///   envelopes, so the core asks again what it waits on. The first incarnation the client learns
+///   replaces none.
 ///
 /// A response that names no incarnation says nothing of what its numbers count in, and a body
 /// without a first number cannot be acknowledged: what a server that breaks the binding sends is
@@ -281,10 +290,14 @@ fn take_mailbox(state: &mut State, server: &str, sent: &Mark, response: &HttpsRe
     } else if sent.epoch.as_deref() == Some(epoch) {
         false
     } else {
+        let replaced = state.mark.epoch.is_some();
         state.mark = Mark {
             ack: 0,
             epoch: Some(epoch.to_string()),
         };
+        if replaced {
+            (state.events)(LinkEvent::Restarted(server.to_string()));
+        }
         true
     };
     let envelopes = split_sequence(&response.body);
@@ -397,8 +410,9 @@ impl HttpsClient {
     }
 
     /// Stop the client: no exchange is begun after this, what waits in the outbox is handed back
-    /// as [`LinkEvent::Unsent`], and a ready server is lost. Returns once both threads ended, which
-    /// is once the exchange each has in flight ended.
+    /// as [`LinkEvent::Unsent`], and the server is lost, ready or interrupted, since nothing it
+    /// keeps for this machine is taken in any more. Returns once both threads ended, which is once
+    /// the exchange each has in flight ended.
     pub fn stop(mut self) {
         self.signal_stop();
         for thread in self.threads.drain(..) {
@@ -417,13 +431,13 @@ impl HttpsClient {
         for envelope in left {
             (state.events)(LinkEvent::Unsent(server.clone(), envelope));
         }
-        if state.ready {
-            state.ready = false;
-            (state.events)(LinkEvent::Lost(
-                server,
-                "the HTTPS client stopped".to_string(),
-            ));
-        }
+        // A request waiting on the server can be answered only by an exchange this client makes,
+        // and it makes none from now on: the link is lost whether or not it was ready.
+        state.ready = false;
+        (state.events)(LinkEvent::Lost(
+            server,
+            "the HTTPS client stopped".to_string(),
+        ));
         self.shared.wake.notify_all();
     }
 }
@@ -710,13 +724,21 @@ mod tests {
     /// numbers are below what the client acknowledged. The other thread's response to a request
     /// sent in the earlier incarnation, answered in the new one, is taken from where the new
     /// numbering stands; one answered in the earlier incarnation is handed on above what its
-    /// request acknowledged, and leaves the acknowledgement in the new one.
+    /// request acknowledged, and leaves the acknowledgement in the new one. The host is told the
+    /// server restarted once, when the new incarnation replaces the one the client knew, and
+    /// before what it sends: neither the other thread's response in the new one nor the late one
+    /// in the earlier one is a restart.
     #[test]
     fn a_new_incarnation_starts_the_acknowledgement_over() {
         let (mut state, rx) = state();
         state.mark = mark(57, Some(EARLIER));
         let sent = state.mark.clone();
         take_mailbox(&mut state, "cloud", &sent, &ok(Some(1), three()));
+        assert_eq!(
+            rx.try_recv().ok(),
+            Some(LinkEvent::Restarted("cloud".to_string())),
+            "the mailbox the client knew is gone"
+        );
         assert_eq!(received(&rx), [[1], [2], [3]]);
         assert_eq!(state.mark, mark(3, Some(EPOCH)));
 
@@ -869,8 +891,9 @@ mod tests {
             .expect("a link event within five seconds")
     }
 
-    /// The first exchange answered `200` makes the server ready, a transport failure loses it and
-    /// hands back what the failed exchange carried, and the next `200` makes it ready again.
+    /// The first exchange answered `200` makes the server ready, a transport failure interrupts
+    /// it (section 22.4: the mailbox and every reply in it stay on the server, so it is not lost)
+    /// and hands back what the failed exchange carried, and the next `200` makes it ready again.
     #[test]
     fn readiness_follows_the_exchanges_and_a_failure_hands_back_what_it_carried() {
         let port = Arc::new(Scripted::default());
@@ -885,7 +908,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
-        assert!(matches!(next(&rx), LinkEvent::Lost(peer, _) if peer == "cloud"));
+        assert!(matches!(next(&rx), LinkEvent::Interrupted(peer, _) if peer == "cloud"));
         assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
         assert_eq!(
             next(&rx),
@@ -918,6 +941,42 @@ mod tests {
             .contains(&(ACK_HEADER.to_string(), "1".to_string()))));
     }
 
+    /// A client that stops makes no exchange any more, so nothing the server keeps for it is
+    /// taken in: its server is lost though the link was only interrupted when it stopped, and a
+    /// request the core still waits on is let go. Red if a stop loses only a ready server.
+    #[test]
+    fn a_client_that_stops_while_interrupted_loses_its_server() {
+        let port = Arc::new(Scripted::default());
+        port.polls
+            .lock()
+            .unwrap()
+            .extend([Ok(ok(None, Vec::new())), Err(HttpsFailure::Connect)]);
+        let (tx, rx) = mpsc::channel();
+        // A long backoff after the failure, so no poll makes the server ready again before the
+        // stop; the stop cuts the wait short.
+        let slow = ClientSettings {
+            backoff: Backoff {
+                initial: Duration::from_secs(60),
+                max: Duration::from_secs(60),
+                factor: 1,
+                jitter: false,
+            },
+            ..settings()
+        };
+        let client = HttpsClient::start(slow, port, move |event| {
+            let _ = tx.send(event);
+        })
+        .unwrap();
+        assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
+        assert!(matches!(next(&rx), LinkEvent::Interrupted(peer, _) if peer == "cloud"));
+        client.stop();
+        assert!(matches!(next(&rx), LinkEvent::Lost(peer, _) if peer == "cloud"));
+        assert!(
+            rx.recv_timeout(Duration::from_millis(100)).is_err(),
+            "lost once"
+        );
+    }
+
     /// A server that started again names a new incarnation: the client's acknowledgement starts
     /// over in it, the first envelope of the new numbering reaches the core though its number is
     /// one the client acknowledged before, a response that carries it again does not hand it on a
@@ -940,6 +999,7 @@ mod tests {
             next(&rx),
             LinkEvent::Received("cloud".to_string(), alloc::vec![0x05])
         );
+        assert_eq!(next(&rx), LinkEvent::Restarted("cloud".to_string()));
         assert_eq!(
             next(&rx),
             LinkEvent::Received("cloud".to_string(), alloc::vec![0x06])

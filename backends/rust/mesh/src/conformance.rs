@@ -627,7 +627,7 @@ impl Watched {
                 LinkEvent::Ready(peer) => {
                     ready.insert(peer.as_str());
                 }
-                LinkEvent::Lost(peer, _) => {
+                LinkEvent::Lost(peer, _) | LinkEvent::Interrupted(peer, _) => {
                     ready.remove(peer.as_str());
                 }
                 _ => {}
@@ -641,6 +641,8 @@ impl Watched {
         self.log[mark..].iter().find(|event| match event {
             LinkEvent::Ready(named)
             | LinkEvent::Lost(named, _)
+            | LinkEvent::Interrupted(named, _)
+            | LinkEvent::Restarted(named)
             | LinkEvent::Received(named, _)
             | LinkEvent::Unsent(named, _) => named == peer,
         })

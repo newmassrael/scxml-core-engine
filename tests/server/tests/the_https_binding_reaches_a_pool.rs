@@ -148,8 +148,11 @@ impl ServerHost for PoolHost {
                     key.into_iter().collect()
                 }
                 // The accepting side hands back nothing it could not write: what the pool sends
-                // waits in the client's mailbox.
-                LinkEvent::Unsent(..) => Vec::new(),
+                // waits in the client's mailbox. Nor does it tell an interruption or a restart,
+                // which are what a client observes of its server.
+                LinkEvent::Unsent(..) | LinkEvent::Interrupted(..) | LinkEvent::Restarted(_) => {
+                    Vec::new()
+                }
             };
             for key in run {
                 pool.run(&key);
@@ -345,6 +348,13 @@ struct Client {
     host_errors: Vec<String>,
     /// What the server's pool told its host, as words ([`Served`]).
     server_errors: Arc<Mutex<Vec<String>>>,
+    /// While `Some`, what arrives from the server is held back here, in order, until a failed
+    /// exchange has been applied whole: the envelope it hands back, and the end of readiness it
+    /// brings when the link was ready. A scenario that loses a response sets it, so the client
+    /// machine is told of the failure before any reply, whichever the network delivered first.
+    held: Option<Vec<LinkEvent>>,
+    /// Whether an exchange handed an envelope back while arrivals were held.
+    failed: bool,
 }
 
 impl Client {
@@ -404,6 +414,38 @@ impl Client {
             token: 0,
             host_errors: Vec::new(),
             server_errors: Arc::clone(&served.errors),
+            held: None,
+            failed: false,
+        }
+    }
+
+    /// Hold back what arrives from the server until an exchange has failed and its failure has
+    /// been applied (see [`Client::held`]).
+    fn hold_arrivals_until_a_failure(&mut self) {
+        self.held = Some(Vec::new());
+        self.failed = false;
+    }
+
+    /// Hand `event` to the client machine, or hold it back while [`Client::held`] says so.
+    fn hand_on(&mut self, event: LinkEvent) {
+        let Some(held) = self.held.as_mut() else {
+            deliver(&mut self.endpoint, event);
+            return;
+        };
+        if matches!(event, LinkEvent::Received(..)) {
+            held.push(event);
+            return;
+        }
+        let failure = matches!(event, LinkEvent::Unsent(..));
+        let edge = matches!(event, LinkEvent::Interrupted(..) | LinkEvent::Lost(..));
+        deliver(&mut self.endpoint, event);
+        self.failed |= failure;
+        // Applied whole: the envelope handed back, then the end of readiness, which follows it
+        // at once when the link was ready and does not come when it was not.
+        if self.failed && (edge || (failure && !self.ready)) {
+            for arrived in self.held.take().unwrap_or_default() {
+                deliver(&mut self.endpoint, arrived);
+            }
         }
     }
 
@@ -451,10 +493,10 @@ impl Client {
             if let Ok(event) = self.events.recv_timeout(Duration::from_millis(20)) {
                 match &event {
                     LinkEvent::Ready(_) => self.ready = true,
-                    LinkEvent::Lost(..) => self.ready = false,
-                    LinkEvent::Received(..) | LinkEvent::Unsent(..) => {}
+                    LinkEvent::Lost(..) | LinkEvent::Interrupted(..) => self.ready = false,
+                    LinkEvent::Received(..) | LinkEvent::Unsent(..) | LinkEvent::Restarted(_) => {}
                 }
-                deliver(&mut self.endpoint, event);
+                self.hand_on(event);
             }
             self.endpoint.tick();
             self.host_errors.extend(
@@ -609,6 +651,13 @@ fn a_pool_answers_through_a_proxy_that_inspects_tls() {
 /// in and saved it. The client sends the request again under its retry policy; the session's
 /// duplicate window knows it and answers it with the reply its first copy made (docs/adr/0107,
 /// D4), so the session takes it once, and the client's machine sees one answer.
+///
+/// The reply reaches the client by the held poll, from the mailbox, or answering the copy, and
+/// the network decides which comes before the failure of the exchange whose response was
+/// dropped. The client machine is always told of the failure first (the request handed back,
+/// the link interrupted) and of the reply after it, the order in which a link loss once let the
+/// request go: the failed exchange interrupts the link and loses nothing, since the server keeps
+/// the reply (SCE_MESH.md section 22.4), so the reply still ends the request.
 #[test]
 fn a_response_lost_after_the_pool_took_its_request_is_answered_once() {
     let served = Served::start("lost-response");
@@ -630,6 +679,7 @@ fn a_response_lost_after_the_pool_took_its_request_is_answered_once() {
     };
     let mut client = Client::start(&served, adapter(&[inspector.der()], proxy), Some(retry));
     client.until("the server to be ready", |client| client.ready);
+    client.hold_arrivals_until_a_failure();
     let asked = [("k1", "k1.lost")];
     client.ask(asked[0].0, asked[0].1);
     client.until("the answer", |client| !client.ended.is_empty());
