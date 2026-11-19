@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "forms_configuration.h"
+#include "replays_every_form.h"
 #include "replays_every_unionless_form.h"
 #include "saved/SavedJson.h"
 #include "test/Suite.h"
