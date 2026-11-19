@@ -1573,6 +1573,40 @@ pub struct TypeCtx<'a> {
     /// ⚠ `None` everywhere but a transition of a C11 statechart whose payload
     /// is of the schema of a record a map is keyed by.
     pub payload_key_feed: Option<String>,
+    /// Each record a map holds as its key or its value in the type the
+    /// record's own unit declares (docs/adr/0108, D6 item 4), by the alias the
+    /// statechart imports its schema under, with the functions a read crosses
+    /// it by ([`UnitHeldRecord`]), for a target that holds one there
+    /// ([`crate::forge::static_lowering::StaticTarget::unit_held_record`]).
+    ///
+    /// ⚠ Empty everywhere but a C11 statechart whose map holds a record, and
+    /// emptiness is what keeps every other read of a map exactly what it was.
+    pub unit_records: HashMap<String, UnitHeldRecord>,
+    /// Each name of [`TypeCtx::values`] bound to a record where a map holds it,
+    /// in the type of [`TypeCtx::unit_records`]: the item or the key of a
+    /// `<foreach>` over such a map. A field of one is read where it stands,
+    /// and the name read whole is the machine's own record built from it.
+    ///
+    /// ⚠ Empty everywhere but the body of such a loop.
+    pub unit_held_names: std::collections::HashSet<&'a str>,
+}
+
+/// How a target that holds a map's record key or value in the type the
+/// record's own unit declares (docs/adr/0108, D6 item 4) crosses one record
+/// of a schema between that type and the machine's own record type
+/// ([`TypeCtx::unit_records`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitHeldRecord {
+    /// The type the unit declares (C11 `<Schema>Payload_t`).
+    pub ty: String,
+    /// The function that builds the machine's own record from one of
+    /// [`Self::ty`]: what a read of a map's record whole is.
+    pub from_unit: String,
+    /// The function that writes the canonical bytes (D1) of the machine's
+    /// own record as a key: what a read hands a map's lookup with a key the
+    /// machine holds in its own record, the map's own feed being of
+    /// [`Self::ty`].
+    pub machine_feed: String,
 }
 
 /// How the arguments of one call, and the value it answers, cross between a
@@ -1641,6 +1675,22 @@ impl<'a> TypeCtx<'a> {
             place_items: std::collections::HashSet::new(),
             unit_unions: HashMap::new(),
             payload_key_feed: None,
+            unit_records: HashMap::new(),
+            unit_held_names: std::collections::HashSet::new(),
+        }
+    }
+
+    /// How the name `name` crosses to the machine's own record, where a walk
+    /// binds it to a record a map holds in the type the record's unit declares
+    /// ([`TypeCtx::unit_held_names`], docs/adr/0108, D6 item 4); `None` for any
+    /// other name.
+    pub fn unit_held_name(&self, name: &str) -> Option<&UnitHeldRecord> {
+        if !self.unit_held_names.contains(name) {
+            return None;
+        }
+        match self.value_of(name)?.ty {
+            crate::forge::value_type::ValueType::Record { alias } => self.unit_records.get(&alias),
+            _ => None,
         }
     }
 

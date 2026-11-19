@@ -2688,12 +2688,16 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_call.scxml"
         STAGE_ALSO schema_entry.scxml algorithm_ledger_has.scxml algorithm_ids_above.scxml
     )
+    # The two schemas the map machines below hold records of are here too: a map holds
+    # a record key or value in the type the record's unit declares (docs/adr/0108, D6
+    # item 4), whose header the machine's includes.
     set(_STATE_ALGORITHM_HEADERS "")
     foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids
                           ledger_larger ledger_has ids_above
                           schema_item enum_item_status item_status_set item_status_count item_status_of
                           schema_goal goal_earliest goal_until goal_undated goal_day_sum
-                          schema_item_pick item_pick_first)
+                          schema_item_pick item_pick_first
+                          schema_map_face schema_map_peer)
         if(_STATE_HEADER MATCHES "^(schema|enum)_")
             set(_STATE_SOURCE
                 "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_HEADER}.scxml")

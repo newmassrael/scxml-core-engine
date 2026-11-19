@@ -972,9 +972,12 @@ impl LoopVariables {
     }
 
     /// The loop's variables added to `inner`: the item, its index, and the key
-    /// a loop over a map binds ([`Self::with_key`]).
+    /// a loop over a map binds ([`Self::with_key`]). A name of an enclosing
+    /// loop's that held a map's record where the map holds it
+    /// ([`TypeCtx::unit_held_names`]) is hidden by it too.
     fn bind_into<'s>(&'s self, inner: &mut TypeCtx<'s>) {
         inner.place_items.remove(self.item.as_str());
+        inner.unit_held_names.remove(self.item.as_str());
         match &self.place {
             // Its fields are read through its type, and are the whole of what
             // it may be asked for.

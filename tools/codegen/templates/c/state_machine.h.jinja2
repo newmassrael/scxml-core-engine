@@ -104,10 +104,12 @@
    below hold. #}
 {{ static_optional_include }}
 {% endif %}
-{% for line in static_scratch_imports %}
+{% for line in static_header_imports %}
 {# docs/adr/0082: the machine holds the storage its calls of an algorithm write
    their list into and copy its records into, of the algorithm's own types, which
-   the algorithm's header declares. #}
+   the algorithm's header declares; and docs/adr/0108, D6 item 4: a map holds a
+   record as its key or its value in the type the record's unit declares, which
+   that unit's header declares. #}
 {{ line }}
 {% endfor %}
 {% for line in host_invoker_includes %}
