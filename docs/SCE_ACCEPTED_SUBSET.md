@@ -6288,6 +6288,43 @@ one. A host reads a published map through the type's
 view: its slots, the position of its first entry and how many it holds, each
 entry naming the one after it.
 
+**An algorithm's map slot.** An algorithm takes a `map<K, T>` or `set<K>` slot,
+a parameter that is a view of its argument and states no bound
+(`<sce:param name="faces" type="map&lt;record:Zid, record:Face&gt;"/>`), and may
+declare a map local and a map return, each of which states its bound
+(docs/adr/0108, D5). A key and a value are held as every slot holds them, so a
+map inside a map, a list or an optional value is refused by name. The body reads a
+map slot with `len(m)`, `has(m, k)` and `m[k]`, judged as a statechart's map is
+read (Reading a map, above), walks it with
+`<sce:foreach in="faces" item="v" key="k">` in the order its keys were first put
+(over a set the item is each key, and `key` is refused, as it is over any other
+source), and writes a local, or a parameter declared `inout="true"`, with the
+`<sce:put>`, `<sce:remove>` and `<sce:clear>` above, the same outcomes named by a
+local of the standard enum. A statement of a map whose `target` names no map or
+set local or `inout` parameter, a put into a map with no `expr` or into a set
+with one, a remove with an `expr`, and an `outcome` that names no local of its
+statement's standard enum are `validation/attribute-rule-violated`, and a write
+of a parameter not declared `inout` is `algorithm/lvalue-unsupported`. `inout`
+stands only on a map or a set parameter, and only on an algorithm that does not
+declare `may-fail` (D6 item 2): one that does is refused as
+`algorithm/inout-on-may-fail`, since a failure would leave the map half written,
+and in one that does not every put names an `outcome`, since a put with none
+fails on a full map. A read `m[k]` in such an algorithm is proven inside the map
+where a guard holds `has(m, k)` and nothing between writes the map or the key, as
+an index is proven below a length; any other is an operation the analysis cannot
+prove (`algorithm/undeclared-integer-failure`). A map return declares `may-fail`
+(`validation/attribute-rule-violated` otherwise). The document is judged alike
+wherever it is read, and no backend lowers an algorithm's map yet ("Order of
+work", step 7): each refuses such an algorithm as
+`generate/unsupported-feature`, naming the slot and that record, before any
+statement of its body is lowered, and a statechart hands no algorithm a map yet,
+refused where the import is read. `sce-build/tests/fixtures/static_datamodel/algorithm_take_generation.scxml`
+keeps each peer's latest generation in an `inout` map keyed by a record of two
+`uint64` halves and answers a union of `taken`, `duplicate` (the last generation)
+and `no_room`, and
+`sce-build/tests/a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_lower_it.rs`
+holds what is accepted and each refusal.
+
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports
 (`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge
 kind does, `DaysInMonth(shown.year, shown.month)`, in a guard, an assignment
@@ -8479,9 +8516,12 @@ generated backend, but a `sce-static` statechart has no variable of that kind,
 so nothing could hand the Interpreter's copy of such an algorithm a collection
 to loop over; lowering it would be code no statechart reaches. It is refused with
 `generate/unsupported-feature` naming the loop and this reason
-(`an_algorithm_looping_over_a_bounded_collection_is_refused_by_name`). The
-decision is reopened by the change that lets a statechart hold a
-bounded-collection, and the lowering of the loop belongs to that change.
+(`an_algorithm_looping_over_a_bounded_collection_is_refused_by_name`). A statechart
+does not hold a bounded-collection, whose handle is an identity and not a value
+(docs/adr/0108, D9 and "Alternatives rejected" 2): the table a statechart holds by
+key is a map (Map and set variables, above; docs/adr/0108), and an algorithm walks
+it through a map slot, `<sce:foreach in="<slot>" item="v" key="k">` (An algorithm's
+map slot, below; D5).
 
 ### §2.16 A closed interface — `sce:interface="closed"`
 
