@@ -3565,6 +3565,11 @@ impl SCXMLParser {
             crate::scxml_interface::validate(&model, dir, diag_label)?;
             model.imported_callees =
                 crate::forge::static_imports::resolve(&model, dir, diag_label)?;
+            // Each `<sce:call>` names the arguments its algorithm writes in
+            // place, read from the callee just resolved, so what the statement
+            // writes is the callee's wherever it is walked (docs/adr/0108, D6
+            // items 2 and 3).
+            crate::forge::static_imports::name_in_place_arguments(&mut model);
             // The enums the document imports, kept on the model: an `enum:<alias>`
             // variable is declared from one, and a backend that lowers the document
             // declares its type from the same model.

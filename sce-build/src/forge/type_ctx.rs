@@ -177,6 +177,38 @@ pub struct StaticCallee {
     pub unlowered_by: Vec<(crate::generator::Language, String)>,
 }
 
+impl StaticCallee {
+    /// The arguments the call `expr` of this callee hands it to write in place
+    /// (docs/adr/0108, D6 items 2 and 3): each argument in a parameter declared
+    /// `inout` ([`MapSlot::inout`]), written as a bare name, which the judge
+    /// holds to the name of a map variable. What a `<sce:call>` writes beside
+    /// its location, and nothing it hands over to be read. Empty for an
+    /// expression that is no call of this callee, a call of another number of
+    /// arguments, and a callee that writes nothing in place.
+    pub fn in_place_arguments(&self, expr: &str) -> Vec<String> {
+        let Some(value) = self.value.as_ref() else {
+            return Vec::new();
+        };
+        let Some(site) = crate::forge::expr::call_sites(expr, &|name| name == self.alias)
+            .ok()
+            .and_then(|sites| sites.into_iter().next())
+            .filter(|site| site.args.len() == value.params.len())
+        else {
+            return Vec::new();
+        };
+        value
+            .params
+            .iter()
+            .zip(site.args)
+            .filter(|(slot, _)| slot.written_in_place())
+            .filter_map(|(_, arg)| match arg.shape {
+                crate::forge::expr::ArgShape::Name(name) => Some(name),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
 /// What a `sce-static` statechart's imported callee is, as a target spells a call
 /// of it (docs/adr/0048).
 #[derive(Debug, Clone, PartialEq, Eq)]
