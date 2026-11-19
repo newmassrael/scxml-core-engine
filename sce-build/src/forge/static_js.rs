@@ -3581,10 +3581,24 @@ mod tests {
     /// body reads the key and the value out of the entry and which names no key
     /// itself. What it lowers to is a document of the data model it runs under,
     /// which lowering again leaves as it is.
+    ///
+    /// Lowered as a set held in memory ([`lower_documents`]), which resolves the
+    /// standard library's outcome enum the document imports; a text parsed on
+    /// its own ([`lower_source`]) resolves no import at all.
     #[test]
     fn a_map_is_held_as_the_array_of_its_entries_and_read_through_the_library() {
-        let out =
-            lower_source(COUNTS, "counts").unwrap_or_else(|e| panic!("does not lower: {e:?}"));
+        let lowered = |text: &str| {
+            let held = BTreeMap::from([("counts.scxml".to_string(), text.to_string())]);
+            let documents = lower_documents("counts.scxml", &held)
+                .unwrap_or_else(|e| panic!("does not lower: {e:?}"));
+            assert_eq!(documents.len(), 1, "the document starts no other");
+            documents
+                .into_iter()
+                .next()
+                .map(|document| document.text)
+                .unwrap_or_default()
+        };
+        let out = lowered(COUNTS);
         for held in [
             r#"<data id="counts" expr="[]"/>"#,
             r#"<data id="seen" expr="[]"/>"#,
@@ -3611,7 +3625,7 @@ mod tests {
             "a statement of a map is left as written:\n{out}"
         );
         assert_eq!(
-            lower_source(&out, "counts").expect("lowers again"),
+            lowered(&out),
             out,
             "a lowered document is lowered again as it is"
         );
