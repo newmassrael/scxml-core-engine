@@ -347,8 +347,8 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
 1. This record, reviewed against the consumer's tables, accepted. (Landed 2026-11-19.)
 2. (Landed 2026-11-19.) The grammar: `map` and `set` in `value_type.rs`, the key judgment, the positions of D7. Tests:
    `a_map_key_is_a_type_with_exact_equality`, `a_map_is_refused_in_a_wire_position`.
-3. The `sce-static` checker: the statements, reads and loop of D3–D5, the standard outcome enums in
-   `stdlib/collection`, the codes of D11 in the appendix.
+3. (Landed 2026-11-19.) The `sce-static` checker: the statements, reads and loop of D3–D5, the standard outcome
+   enums in `stdlib/collection`, the codes of D11 in the appendix.
 4. The Interpreter's lowering, with `scenarios/static_map.json`, `static_map_full.json` (outcome and
    `error.execution`), `static_map_record.json`, `static_map_composite_key.json`, `static_set.json` and
    `static_map_order.json` (replace in place, remove and put again goes last).
