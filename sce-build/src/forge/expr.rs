@@ -7134,12 +7134,33 @@ fn keyed_builtin(
 /// ([`crate::forge::static_js::map_descriptor`]): `has(m, k)` is a call of its
 /// `mapHas`, and `m[k]` of its `mapGet`, which fails `out-of-range` for a key
 /// that is absent, as an index outside a list does, and so is a call that can
-/// fail. `len(m)` is the length of the array, as a list's is, and is left as it
-/// is. Run after the reads are judged and before any rename, while each map is
-/// the place the author named; a scope that holds no map holds no such read.
+/// fail. `len(m)` is the `length` of the array, as a list's is: written as that
+/// read here, since the emitter spells `len` as a length only of a value whose
+/// type it knows as measured ([`is_len_builtin`]), and a map is typed by no
+/// lattice type. Run after the reads are judged and before any rename, while
+/// each map is the place the author named; a scope that holds no map holds no
+/// such read.
 fn lower_keyed_reads_for_js(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
     for child in expr.children_mut() {
         lower_keyed_reads_for_js(child, ctx)?;
+    }
+    let measures_a_map = matches!(
+        &expr.kind,
+        ExprKind::Call { callee, args, .. }
+            if matches!(keyed_builtin(callee, args, ctx), Some((KeyedBuiltin::Len, _)))
+    );
+    if measures_a_map {
+        if let ExprKind::Call { mut args, .. } =
+            std::mem::replace(&mut expr.kind, ExprKind::NullLit)
+        {
+            if let Some(map) = args.pop() {
+                expr.kind = ExprKind::Member {
+                    object: Box::new(map),
+                    property: "length".to_string(),
+                };
+            }
+        }
+        return Ok(());
     }
     let (helper, held, fails) = match &expr.kind {
         ExprKind::Index { object, .. } => match keyed_place(object, ctx) {
