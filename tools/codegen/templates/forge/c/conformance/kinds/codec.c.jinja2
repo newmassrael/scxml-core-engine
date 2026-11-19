@@ -81,15 +81,13 @@ static void test_{{ f.name }}(void) {
 {% endif %}
 {% if field.optional and c.decoded[field.name] is none %}
 {# Absent: the value member stays zero-initialised. #}
-{% elif field.type == "bytes" %}
+{# A byte string's or a text's length is its length in bytes, a text's that of
+   its UTF-8 (`byte_len`): the template's own `length` counts characters, which
+   a text past ASCII holds fewer of than bytes. #}
+{% elif field.type == "bytes" or field.type == "string" %}
             .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
 {% if not sibling_owns_len %}
-            .input_{{ field.name | to_snake_case }}_len = {{ c.decoded[field.name] | length }},
-{% endif %}
-{% elif field.type == "string" %}
-            .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
-{% if not sibling_owns_len %}
-            .input_{{ field.name | to_snake_case }}_len = {{ c.decoded[field.name] | length }},
+            .input_{{ field.name | to_snake_case }}_len = {{ c.decoded[field.name] | byte_len }},
 {% endif %}
 {% else %}
             .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
