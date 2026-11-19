@@ -22,7 +22,7 @@ struct Unreachable;
 
 impl Transport for Unreachable {
     fn exchange(&mut self, _: &HttpRequest) -> Result<Option<HttpResponse>, TransportFailure> {
-        Err(TransportFailure)
+        Err(TransportFailure::Network)
     }
 }
 
