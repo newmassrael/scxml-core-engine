@@ -308,6 +308,39 @@ pub use sce_portable_bytes::BoundedList;
 /// this crate's root, whose own `SceString` is the engine's event text.
 pub use sce_portable_bytes as portable;
 
+/// The value of a `map<K, V>[N]` and of a `set<K>[N]` (docs/adr/0108, D8), in
+/// which a generated machine holds a map variable, with what a put and a remove
+/// answer and the canonical bytes a key hashes and compares by. The reads an
+/// expression lowers to are `portable::map`'s functions.
+pub use sce_portable_bytes::{
+    BoundedMap, BoundedSet, FromSeed, KeyFeed, MapCursor, MapKey, MapSeed, MapSeeds, PutOutcome,
+    RemoveOutcome,
+};
+
+/// A seed for the maps of one machine, drawn from the operating system's
+/// randomness by way of `std`'s `RandomState`, which draws its keys from it once
+/// per thread and moves them on for each value it builds (docs/adr/0108, D8):
+/// two values the state hashes under its own keys are the seed's halves, so no
+/// two seeds drawn here are alike and none is known outside the process. Where
+/// the target has no randomness `RandomState` reads (`wasm32-unknown-unknown`),
+/// its keys are fixed and each seed differs from the last by that move alone;
+/// a host there that faces peers it does not trust builds its machine from a
+/// seed of its own.
+///
+/// `std` only: without it a machine that holds a map takes its seed from the
+/// host that builds it.
+#[cfg(feature = "std")]
+pub fn map_seed() -> MapSeed {
+    use std::hash::{BuildHasher, Hasher};
+    let state = std::collections::hash_map::RandomState::new();
+    let half = |side: u8| {
+        let mut hasher = state.build_hasher();
+        hasher.write_u8(side);
+        hasher.finish()
+    };
+    MapSeed::from_halves(half(0), half(1))
+}
+
 /// Convert a borrowed `&str` into an owned [`SceString`].
 ///
 /// Under std this is `s.to_string()`. Under no_std this is
