@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use rusqlite::{Connection, TransactionBehavior};
 use sce_rust_session_store::{
-    AcquireError, Due, Held, KeyRow, KeyState, KeyStore, KeyUse, SessionStore, SqliteStore, Stored,
-    WriteError, LATEST_MOMENT,
+    AcquireError, CredentialStore, Due, Held, KeyRow, KeyState, KeyStore, KeyUse, PinStore,
+    SessionStore, SqliteStore, Stored, TokenRow, TokenStore, WriteError, LATEST_MOMENT,
 };
 
 use common::Scratch;
@@ -42,10 +42,11 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
     PRAGMA user_version = 1;
 ";
 
-/// ADR 0109, Open question 1: a file of layout 1 is brought to layout 2 when it is opened, its
-/// sessions and its counter kept, and the keys of layout 2 are then kept in it.
+/// ADR 0109, Open question 1: a file of layout 1 is brought to this build's layout when it is
+/// opened, its sessions and its counter kept, and the keys of layout 2 and the credentials of
+/// layout 3 are then kept in it.
 #[test]
-fn a_file_of_layout_1_is_brought_to_layout_2_with_its_sessions() {
+fn a_file_of_layout_1_is_brought_to_layout_3_with_its_sessions() {
     let scratch = Scratch::new("layout-1");
     Connection::open(scratch.database())
         .expect("a database of a build of layout 1")
@@ -64,7 +65,7 @@ fn a_file_of_layout_1_is_brought_to_layout_2_with_its_sessions() {
         .expect("a second connection")
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("its layout");
-    assert_eq!(layout, 2, "the file was brought to layout 2");
+    assert_eq!(layout, 3, "the file was brought to layout 3");
     let lease = store.acquire("k", "a", 1_000, 0).expect("a lease");
     assert!(
         lease.fence > 1,
@@ -74,6 +75,108 @@ fn a_file_of_layout_1_is_brought_to_layout_2_with_its_sessions() {
         .ids()
         .expect("the keys of an upgraded file")
         .is_empty());
+    assert!(store
+        .tokens()
+        .expect("the tokens of an upgraded file")
+        .is_empty());
+}
+
+/// ADR 0109, D3: a file of layout 2 is brought to layout 3 when it is opened, its keys kept, and
+/// the credentials of layout 3 are then kept in it.
+#[test]
+fn a_file_of_layout_2_is_brought_to_layout_3_with_its_keys() {
+    let scratch = Scratch::new("layout-2");
+    let kept = KeyRow {
+        id: "generated:02".to_string(),
+        key_use: KeyUse::Mac,
+        algorithm: "HMAC-SHA-256".to_string(),
+        wrapped: vec![0x5A; 72],
+        label: "of layout 2".to_string(),
+        created_ms: 1_000,
+        state: KeyState::Active,
+    };
+    {
+        let store = SqliteStore::open(scratch.database()).expect("making the store");
+        store.insert(&kept, None).expect("keeping a key");
+    }
+    // What a build of layout 2 left: its tables and its number, and none of layout 3's.
+    Connection::open(scratch.database())
+        .expect("a connection of a build of layout 2")
+        .execute_batch(
+            "DROP INDEX credential_tokens_by_name; DROP TABLE credential_tokens; \
+             DROP TABLE credential_pins; PRAGMA user_version = 2;",
+        )
+        .expect("the file as layout 2 left it");
+    let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 2");
+    let layout: i64 = Connection::open(scratch.database())
+        .expect("a second connection")
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .expect("its layout");
+    assert_eq!(layout, 3, "the file was brought to layout 3");
+    assert_eq!(store.key("generated:02").expect("its key"), Some(kept));
+    assert_eq!(
+        store
+            .pin("phone", &[1; 32])
+            .expect("a pin in the upgraded file"),
+        [1; 32]
+    );
+}
+
+/// ADR 0109, D3: the pins and tokens kept in the file are there when it is opened again, as a
+/// server process that stops and starts again finds them, revocations included; a second secret
+/// is still refused and an expired token is still expired.
+#[test]
+fn the_credentials_a_store_kept_are_there_when_its_file_is_opened_again() {
+    let scratch = Scratch::new("credentials-reopen");
+    let live = TokenRow {
+        digest: [0x11; 32],
+        name: "phone".to_string(),
+        issued_ms: 1_000,
+        expires_ms: 61_000,
+        revoked: false,
+    };
+    let revoked = TokenRow {
+        digest: [0x22; 32],
+        name: "tablet".to_string(),
+        ..live.clone()
+    };
+    {
+        let store = SqliteStore::open(scratch.database()).expect("making the store");
+        store.pin("phone", &[0xA1; 32]).expect("phone's pin");
+        store.pin("tablet", &[0xB2; 32]).expect("tablet's pin");
+        store.issue(&live).expect("phone's token");
+        store.issue(&revoked).expect("tablet's token");
+        assert_eq!(
+            store.revoke("tablet").expect("revoking tablet").count(),
+            2,
+            "tablet's token and its pin"
+        );
+    }
+    let store = SqliteStore::open(scratch.database()).expect("opening the store again");
+    assert_eq!(
+        store.pinned("phone").expect("phone's pin"),
+        Some([0xA1; 32])
+    );
+    assert_eq!(
+        store.pin("phone", &[0xFF; 32]).expect("a second secret"),
+        [0xA1; 32],
+        "the pin kept before the restart refuses a second secret after it"
+    );
+    assert_eq!(store.pinned("tablet").expect("tablet's pin"), None);
+    let held = store
+        .token(&[0x11; 32])
+        .expect("phone's token")
+        .expect("phone's token is kept");
+    assert_eq!(held, live);
+    assert!(held.live_at(60_999) && !held.live_at(61_000));
+    assert_eq!(
+        store.token(&[0x22; 32]).expect("tablet's token"),
+        Some(TokenRow {
+            revoked: true,
+            ..revoked
+        }),
+        "a revocation is kept across the restart"
+    );
 }
 
 /// The keys kept in the file are there when it is opened again, their generations and the naming
@@ -269,7 +372,7 @@ fn a_file_that_is_not_a_session_store_is_not_taken_for_one() {
     drop(SqliteStore::open(later.database()).expect("making the store"));
     Connection::open(later.database())
         .expect("a connection of a later build")
-        .pragma_update(None, "user_version", 3)
+        .pragma_update(None, "user_version", 4)
         .expect("a layout of a later build");
     assert!(
         SqliteStore::open(later.database()).is_err(),

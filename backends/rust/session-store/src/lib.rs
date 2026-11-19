@@ -40,6 +40,11 @@
 //! (ADR 0109, D7; module [`keys`]): [`MemoryKeys`] in memory, and `SqliteStore` in the same file
 //! as the sessions, held to [`key_conformance`].
 //!
+//! The credentials a server checks a client's name by, the installation pins of the `install`
+//! authenticator and the bearer tokens its host issues, are kept behind [`CredentialStore`] (ADR
+//! 0109, D3; module [`credentials`]), each as the SHA-256 of its secret: [`MemoryCredentials`] in
+//! memory, and `SqliteStore` in the same file (layout 3), held to [`credential_conformance`].
+//!
 //! # Building the SQLite store
 //!
 //! The reference store links the system's SQLite (3.14 or later), found through `pkg-config`, or
@@ -65,6 +70,8 @@ use std::error::Error;
 use std::fmt;
 
 pub mod conformance;
+pub mod credential_conformance;
+pub mod credentials;
 pub mod key_conformance;
 pub mod keys;
 mod memory;
@@ -72,6 +79,9 @@ mod rules;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
+pub use credentials::{
+    CredentialStore, Digest, MemoryCredentials, PinStore, Revoked, TokenRow, TokenStore,
+};
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use memory::MemoryStore;
 #[cfg(feature = "sqlite")]

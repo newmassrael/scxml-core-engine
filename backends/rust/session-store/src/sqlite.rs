@@ -9,6 +9,9 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
+use crate::credentials::{
+    CredentialStore, Digest, PinStore, Revoked, TokenRow, TokenStore, DIGEST_BYTES,
+};
 use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
 use crate::rules::{self, Holding};
 use crate::{
@@ -18,7 +21,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 2;
+const LAYOUT_VERSION: i64 = 3;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -69,6 +72,25 @@ const LAYOUT_2: &str = "
         id INTEGER PRIMARY KEY CHECK (id = 0),
         wrapped BLOB NOT NULL
     );
+";
+
+/// What layout 3 adds to layout 2: the credentials of [`CredentialStore`] (ADR 0109, D3), each the
+/// SHA-256 of its secret and never the secret. A pin is a name to the digest of its installation
+/// secret; a token is found by the digest of its text, and the tokens of a name by the index on
+/// it, which revocation reads.
+const LAYOUT_3: &str = "
+    CREATE TABLE credential_pins (
+        name TEXT PRIMARY KEY NOT NULL,
+        digest BLOB NOT NULL
+    );
+    CREATE TABLE credential_tokens (
+        digest BLOB PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        issued_ms INTEGER NOT NULL,
+        expires_ms INTEGER NOT NULL,
+        revoked INTEGER NOT NULL
+    );
+    CREATE INDEX credential_tokens_by_name ON credential_tokens (name);
 ";
 
 /// A session store in one SQLite database file.
@@ -149,8 +171,8 @@ impl SqliteStore {
     }
 }
 
-/// Make the tables in a database that has none, bring one of layout 1 to [`LAYOUT_VERSION`], or
-/// check that the ones there are this store's. A database is changed in one transaction, so a
+/// Make the tables in a database that has none, bring one of layout 1 or 2 to [`LAYOUT_VERSION`],
+/// or check that the ones there are this store's. A database is changed in one transaction, so a
 /// failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     let transaction = begin(connection)?;
@@ -168,8 +190,13 @@ fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
             }
             transaction.execute_batch(LAYOUT_1)?;
             transaction.execute_batch(LAYOUT_2)?;
+            transaction.execute_batch(LAYOUT_3)?;
         }
-        1 => transaction.execute_batch(LAYOUT_2)?,
+        1 => {
+            transaction.execute_batch(LAYOUT_2)?;
+            transaction.execute_batch(LAYOUT_3)?;
+        }
+        2 => transaction.execute_batch(LAYOUT_3)?,
         _ => {
             return Err(Failure::new(format!(
                 "the database is laid out as session store {layout}, which this build does not know"
@@ -514,6 +541,159 @@ impl KeyStore for SqliteStore {
             .execute((wrapped,))?;
         transaction.commit()?;
         Ok(changed == 1)
+    }
+}
+
+/// A digest as a column holds it, refused when it is not [`DIGEST_BYTES`] long: a row this build
+/// did not write.
+fn digest_of(column: Vec<u8>) -> Result<Digest, Failure> {
+    Digest::try_from(column.as_slice()).map_err(|_| {
+        Failure::new(format!(
+            "a credential's digest is {} bytes, not {DIGEST_BYTES}",
+            column.len()
+        ))
+    })
+}
+
+/// The columns of a token row as SQLite gives them, before its digest is read.
+type TokenColumns = (Vec<u8>, String, u64, u64, bool);
+
+/// A token row from its columns.
+fn token_row(
+    (digest, name, issued_ms, expires_ms, revoked): TokenColumns,
+) -> Result<TokenRow, Failure> {
+    Ok(TokenRow {
+        digest: digest_of(digest)?,
+        name,
+        issued_ms,
+        expires_ms,
+        revoked,
+    })
+}
+
+/// The columns of a token row, read in the order [`TokenColumns`] names.
+fn token_columns(row: &rusqlite::Row<'_>) -> rusqlite::Result<TokenColumns> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+    ))
+}
+
+/// The token whose digest is `digest` in `connection`, if it holds one.
+fn token_of(connection: &Connection, digest: &Digest) -> Result<Option<TokenRow>, Failure> {
+    let columns = connection
+        .prepare_cached(
+            "SELECT digest, name, issued_ms, expires_ms, revoked FROM credential_tokens \
+             WHERE digest = ?1",
+        )?
+        .query_row((&digest[..],), token_columns)
+        .optional()?;
+    columns.map(token_row).transpose()
+}
+
+/// The digest `name` is pinned to in `connection`, if it is pinned.
+fn pin_of(connection: &Connection, name: &str) -> Result<Option<Digest>, Failure> {
+    let column: Option<Vec<u8>> = connection
+        .prepare_cached("SELECT digest FROM credential_pins WHERE name = ?1")?
+        .query_row((name,), |row| row.get(0))
+        .optional()?;
+    column.map(digest_of).transpose()
+}
+
+impl PinStore for SqliteStore {
+    fn pinned(&self, name: &str) -> Result<Option<Digest>, Failure> {
+        pin_of(&self.connection(), name)
+    }
+
+    fn pin(&self, name: &str, digest: &Digest) -> Result<Digest, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        if let Some(held) = pin_of(&transaction, name)? {
+            return Ok(held);
+        }
+        transaction
+            .prepare_cached("INSERT INTO credential_pins (name, digest) VALUES (?1, ?2)")?
+            .execute((name, &digest[..]))?;
+        transaction.commit()?;
+        Ok(*digest)
+    }
+
+    fn unpin(&self, name: &str) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let removed = transaction
+            .prepare_cached("DELETE FROM credential_pins WHERE name = ?1")?
+            .execute((name,))?;
+        transaction.commit()?;
+        Ok(removed == 1)
+    }
+}
+
+impl TokenStore for SqliteStore {
+    fn token(&self, digest: &Digest) -> Result<Option<TokenRow>, Failure> {
+        token_of(&self.connection(), digest)
+    }
+
+    fn issue(&self, row: &TokenRow) -> Result<TokenRow, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        if let Some(held) = token_of(&transaction, &row.digest)? {
+            return Ok(held);
+        }
+        let kept = TokenRow {
+            issued_ms: moment(row.issued_ms),
+            expires_ms: moment(row.expires_ms),
+            ..row.clone()
+        };
+        transaction
+            .prepare_cached(
+                "INSERT INTO credential_tokens (digest, name, issued_ms, expires_ms, revoked) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?
+            .execute((
+                &kept.digest[..],
+                &kept.name,
+                kept.issued_ms,
+                kept.expires_ms,
+                kept.revoked,
+            ))?;
+        transaction.commit()?;
+        Ok(kept)
+    }
+
+    fn tokens(&self) -> Result<Vec<TokenRow>, Failure> {
+        let connection = self.connection();
+        let mut statement = connection.prepare_cached(
+            "SELECT digest, name, issued_ms, expires_ms, revoked FROM credential_tokens \
+             ORDER BY digest",
+        )?;
+        let columns = statement
+            .query_map([], token_columns)?
+            .collect::<rusqlite::Result<Vec<TokenColumns>>>()?;
+        columns.into_iter().map(token_row).collect()
+    }
+}
+
+impl CredentialStore for SqliteStore {
+    fn revoke(&self, name: &str) -> Result<Revoked, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let tokens = transaction
+            .prepare_cached(
+                "UPDATE credential_tokens SET revoked = 1 WHERE name = ?1 AND revoked = 0",
+            )?
+            .execute((name,))?;
+        let pins = transaction
+            .prepare_cached("DELETE FROM credential_pins WHERE name = ?1")?
+            .execute((name,))?;
+        transaction.commit()?;
+        Ok(Revoked {
+            tokens: u32::try_from(tokens).unwrap_or(u32::MAX),
+            pin: pins == 1,
+        })
     }
 }
 
