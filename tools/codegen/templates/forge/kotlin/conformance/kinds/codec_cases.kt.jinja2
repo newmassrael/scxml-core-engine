@@ -1,0 +1,106 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# The byte cases of a codec (docs/adr/0081 §5) and its decode-rejection
+   vectors, each a private function of the test class, which the fixture's test
+   method (kinds/codec.kt.jinja2) calls in order. The harness writes this
+   fragment after that method, for a codec that is not a content-line one.
+
+   The code of one JVM method is at most 65,535 bytes (JVM Specification,
+   section 4.7.3), and kotlinc refuses a longer one with
+   `MethodTooLargeException`. A case is a value made by the printed data class's
+   constructor and a check for each element its decode presents, several
+   kilobytes for a codec that holds others, so a test method that held every
+   case inline grew with the fixture's cases past the limit
+   (codec_zenoh_network_envelope, eight cases). A function per case holds what
+   one case writes, and the test method one call per case. #}
+{% set camel = f.name | to_camel_case %}
+{% set pascal = f.name | to_pascal_case %}
+{# Byte cases stated as the codec's interface presents the value
+   (docs/adr/0081 §5), the same cases the Rust, C++ and Python fragments run,
+   for a codec the Kotlin backend prints from its plan: each `source` is the
+   printed data class, made by its constructor from the case, written by the
+   generator from the codec's plan, and its bytes were computed by an
+   independent model. The value is encoded by the companion's `encodeSource`
+   and compared with the bytes (law 4 of docs/adr/0058 §5), and the bytes are
+   decoded and what the decode presents compared with the value, element by
+   element (law 1). Independent of `oracle_eligible`, which speaks of the
+   `cases`. #}
+{% for s in f.sources %}
+
+    private fun {{ camel }}Source{{ loop.index0 }}() {
+        val value = {{ s.literal }}
+        val sink = mutableListOf<Byte>()
+        assertTrue(
+            {{ pascal }}.encodeSource(value, com.sce.forge.runtime.MutableListSink(sink){% for i in s.encode_inputs %}, {{ i }}{% endfor %}) == null,
+            "{{ f.name }} source {{ loop.index0 }}: the encode answered an error: {{ s.note }}",
+        )
+        val expected = byteArrayOf({% for b in s.encoded %}{{ b }}.toByte(){% if not loop.last %}, {% endif %}{% endfor %})
+        assertTrue(
+            sink.toByteArray().contentEquals(expected),
+            "{{ f.name }} source {{ loop.index0 }}: actual=${sink.joinToString()} expected=${expected.joinToString()}: {{ s.note }}",
+        )
+        val cursor = com.sce.forge.runtime.SceCursor(expected)
+{% if s.checks %}
+        val decoded = {{ pascal }}.decode(cursor{% for i in s.inputs %}, {{ i }}{% endfor %})
+            .valueOr { refused -> error("{{ f.name }} source {{ loop.index0 }}: decode refused as ${refused.error}: {{ s.note }}") }
+{% else %}
+        {# A codec that presents no element has nothing to compare. #}
+        val read = {{ pascal }}.decode(cursor{% for i in s.inputs %}, {{ i }}{% endfor %})
+        assertTrue(
+            read is com.sce.forge.runtime.Decoded.Ok,
+            "{{ f.name }} source {{ loop.index0 }}: decode refused as ${read.errorOrNull()}: {{ s.note }}",
+        )
+{% endif %}
+        assertEquals(
+            0,
+            cursor.remaining(),
+            "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread",
+        )
+{% for c in s.checks %}
+        assertTrue(
+            {{ c.holds }},
+            "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ c.element }}",
+        )
+{% endfor %}
+    }
+{% endfor %}
+{# Refused cases (docs/adr/0081 §5): each `source` is a value of the codec's
+   interface its encode refuses, made as a source is, and the encode answers
+   exactly the refusal the case names, the runtime's `CodecError` object,
+   before it writes a byte, so the sink is left empty. #}
+{% for r in f.refused %}
+
+    private fun {{ camel }}Refused{{ loop.index0 }}() {
+        val value = {{ r.literal }}
+        val sink = mutableListOf<Byte>()
+        val refused = {{ pascal }}.encodeSource(value, com.sce.forge.runtime.MutableListSink(sink){% for i in r.encode_inputs %}, {{ i }}{% endfor %})
+        assertTrue(
+            refused == {{ r.symbol }},
+            "{{ f.name }} refused {{ loop.index0 }}: the encode answers {{ r.error }}, not $refused: {{ r.note }}",
+        )
+        assertEquals(
+            0,
+            sink.size,
+            "{{ f.name }} refused {{ loop.index0 }}: the encode wrote bytes before it refused",
+        )
+    }
+{% endfor %}
+{# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
+   shape. A Kotlin decode answers `Decoded.Refused` with the kind that refused
+   the frame (docs/adr/0099, amendment of 2026-11-16), and `r.symbol` is that
+   kind, so the vector asserts the kind and not only that the decode refused.
+   Byte literals go through `.toByte()` because Kotlin's Byte is signed and a
+   header with the high bit set does not fit an unsuffixed literal. #}
+{% for r in f.rejects %}
+
+    private fun {{ camel }}Reject{{ loop.index0 }}() {
+        val rejectBytes = byteArrayOf({% for b in r.encoded %}{{ b }}.toByte(){% if not loop.last %}, {% endif %}{% endfor %})
+        val rejectCursor = com.sce.forge.runtime.SceCursor(rejectBytes)
+        assertEquals(
+            com.sce.forge.runtime.Decoded.Refused(com.sce.forge.runtime.{{ r.symbol }}),
+            {{ pascal }}.decode(rejectCursor),
+            "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}",
+        )
+    }
+{% endfor %}

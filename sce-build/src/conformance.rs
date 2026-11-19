@@ -5694,6 +5694,98 @@ mod tests {
         assert!(!folded && value.get("sources").is_none());
     }
 
+    /// No method of the Kotlin harness holds more than one codec byte case.
+    ///
+    /// The code of one JVM method is at most
+    /// [`crate::kotlin::JVM_METHOD_CODE_BYTES`] (JVM Specification, section
+    /// 4.7.3), and kotlinc refuses a longer one with `MethodTooLargeException`.
+    /// A byte case of a codec that holds others is several kilobytes of code:
+    /// the test method of codec_zenoh_network_envelope, which held its eight
+    /// source cases inline, did not compile. Each case is a private function of
+    /// the class (`forge/kotlin/conformance/kinds/codec_cases.kt.jinja2`), which
+    /// the test method calls. No JVM runs here, so a case is read by the one
+    /// line each kind of case writes: the `encodeSource(` call of a source or a
+    /// refused case, and the byte literal of a reject vector.
+    ///
+    /// Turns red where `kinds/codec.kt.jinja2` writes a case's body into the
+    /// test method again, or `kinds/codec_cases.kt.jinja2` writes two cases
+    /// into one function.
+    #[test]
+    fn no_kotlin_harness_method_holds_more_than_one_codec_byte_case() {
+        fn cases_in(body: &[&str]) -> usize {
+            body.iter()
+                .filter(|line| {
+                    line.contains(".encodeSource(")
+                        || line.contains("val rejectBytes = byteArrayOf(")
+                })
+                .count()
+        }
+
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let kotlin = render_harness(&manifest, Language::Kotlin, &template_base, &resource_dir)
+            .expect("the Kotlin harness renders")
+            .source;
+
+        // A member function of the class begins at its declaration, indented
+        // one level; every line up to the next declaration is its body.
+        let mut methods: Vec<(&str, Vec<&str>)> = Vec::new();
+        for line in kotlin.lines() {
+            if let Some(header) = line
+                .strip_prefix("    fun ")
+                .or_else(|| line.strip_prefix("    private fun "))
+            {
+                methods.push((header, Vec::new()));
+            } else if let Some((_, body)) = methods.last_mut() {
+                body.push(line);
+            }
+        }
+
+        let mut held = 0;
+        for (header, body) in &methods {
+            let cases = cases_in(body);
+            assert!(
+                cases <= 1,
+                "the Kotlin harness method `{header}` holds {cases} codec byte cases; \
+                 each is a function of its own"
+            );
+            held += cases;
+        }
+        assert!(
+            held > 0,
+            "the Kotlin harness holds no codec byte case, so nothing above was read"
+        );
+
+        let envelope = methods
+            .iter()
+            .find(|(header, _)| header.starts_with("codecZenohNetworkEnvelopeMatchesReference("))
+            .expect("the Kotlin harness tests codec_zenoh_network_envelope");
+        assert_eq!(
+            cases_in(&envelope.1),
+            0,
+            "the test method of codec_zenoh_network_envelope holds a byte case inline"
+        );
+        assert!(
+            envelope
+                .1
+                .iter()
+                .any(|line| line.trim() == "codecZenohNetworkEnvelopeSource0()"),
+            "the test method of codec_zenoh_network_envelope does not call its first \
+             source case"
+        );
+        assert!(
+            methods.iter().any(|(header, body)| {
+                header.starts_with("codecZenohNetworkEnvelopeSource0(") && cases_in(body) == 1
+            }),
+            "no function of the Kotlin harness holds the first source case of \
+             codec_zenoh_network_envelope"
+        );
+    }
+
     /// The byte case `case` of the codec fixture `name`, folded for the
     /// harness of `language` as a codec its backend prints, as the render would
     /// fold it: what the fragment renders the case from.
