@@ -2700,6 +2700,13 @@
               "description": "Whether a `<send>` of this document may address its parent session (§scxml-6.2.4, §scxml-C-1): a literal `target=\"#_parent\"`, or a `targetexpr` whose processor may be the SCXML one — its value is only known when the send is performed, and may be `#_parent` as a literal may.\n\nNot [`Self::has_parent_communication`], which answers for the literal alone and which the C11 backend reads as \"this machine is only ever invoked\". A `targetexpr` says nothing about that, so a machine with one keeps its standalone entry points and gains the invoked one besides. The invoking parent reads this same answer off the child as [`InvokeSessionCommon::child_has_send_to_parent`], so both ends of the link are decided by one predicate.",
               "type": "boolean"
             },
+            "migrations": {
+              "description": "Each `<sce:migration>` on the document root, in document order: the steps a state saved by an earlier version of the document is carried to this one by (docs/adr/0109, D11), each shape file it names read beside the document. Judged and planned where the machine is built ([`crate::forge::saved_migration::plan`]), against the shape the machine is bound to. Empty for a document that declares none.",
+              "items": {
+                "$ref": "#/definitions/Migration"
+              },
+              "type": "array"
+            },
             "name": {
               "type": "string"
             },
@@ -6034,6 +6041,220 @@
         }
       ]
     },
+    "Migration": {
+      "description": "A `<sce:migration from to>`: one step from the shape of one released version of the document to the next.",
+      "properties": {
+        "changes": {
+          "description": "What the step does, in document order.",
+          "items": {
+            "$ref": "#/definitions/MigrationChange"
+          },
+          "type": "array"
+        },
+        "from": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ShapeFile"
+            }
+          ],
+          "description": "The shape a state the step starts from was saved under."
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the `<sce:migration>` element is written."
+        },
+        "to": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ShapeFile"
+            }
+          ],
+          "description": "The shape the step carries such a state to."
+        }
+      },
+      "required": [
+        "changes",
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "MigrationChange": {
+      "description": "One child of a `<sce:migration>`.",
+      "properties": {
+        "op": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/MigrationOp"
+            }
+          ],
+          "description": "What it does."
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where it is written."
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "type": "object"
+    },
+    "MigrationOp": {
+      "description": "What a child of a `<sce:migration>` does to a state saved under the step's `from`.",
+      "oneOf": [
+        {
+          "description": "`<sce:rename kind from to>`: a state, history, variable or invocation of the old shape is the new shape's `to`, or a waiting send's event is now `to`.",
+          "properties": {
+            "element": {
+              "enum": [
+                "rename"
+              ],
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/definitions/RenameKind"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "element",
+            "from",
+            "kind",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:map-state from to>`: a configuration that holds `from`, a state the new shape no longer holds, holds `to` in its place.",
+          "properties": {
+            "element": {
+              "enum": [
+                "map-state"
+              ],
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "element",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:drop-data id>`: a variable of the old shape the new one does not carry.",
+          "properties": {
+            "element": {
+              "enum": [
+                "drop-data"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "element",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:add-data id expr>`: a variable of the new shape, given the constant `expr`; in the last step a variable whose `<data>` initialiser is a constant may leave `expr` out.",
+          "properties": {
+            "element": {
+              "enum": [
+                "add-data"
+              ],
+              "type": "string"
+            },
+            "expr": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "element",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:convert data algorithm>`: the variable `data` of the new shape is the pure algorithm `algorithm` (an import's alias) of the old value.",
+          "properties": {
+            "algorithm": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            },
+            "element": {
+              "enum": [
+                "convert"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "algorithm",
+            "data",
+            "element"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:drop-invoke id>`: an invocation the new document no longer runs ends without a start.",
+          "properties": {
+            "element": {
+              "enum": [
+                "drop-invoke"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "element",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "MissPolicy": {
       "description": "Miss-handling policy for `sce:kind=\"lookup\"`. Captured from the `sce:on-miss` attribute on the mapping `<data>` element, with `sce:default` implied as `Default`. These are two orthogonal codegen strategies, not two different kinds — see SCE_FORGE.md Section 4.9.\n\n`Default(fallback)`: total function — every input produces an output, and the fallback string is the value returned when no entry key matches. Used by symbolic dispatch (gear positions, engine status, etc.).\n\n`Error`: partial function — the generated `lookup(x)` returns `Option<V>` / `std::optional<V>` / `optional.Of[V]` / `V?` depending on the target language. Callers must handle the miss case explicitly. Used by numeric data tables where an unknown key is a bug, not a fallback case.",
       "oneOf": [
@@ -6845,6 +7066,17 @@
       ],
       "type": "object"
     },
+    "RenameKind": {
+      "description": "What a `<sce:rename>` renames.",
+      "enum": [
+        "state",
+        "history",
+        "data",
+        "invoke",
+        "event"
+      ],
+      "type": "string"
+    },
     "RenderSet": {
       "description": "One `<sce:set name expr>` of a `<sce:render>` (docs/adr/0087, section 3.1, item 6): the hole `name` of the template is given the value of `expr`.",
       "properties": {
@@ -6932,6 +7164,19 @@
           "type": "string"
         }
       ]
+    },
+    "ShapeFile": {
+      "description": "A shape file a `<sce:migration>` names, as the document writes its path, and its text as the parse read it beside the document.",
+      "properties": {
+        "path": {
+          "description": "The path as the document writes it, relative to the document's directory.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
     },
     "SourceLocation": {
       "description": "Source location attached to an error for machine-readable diagnostics.\n\nCarried by the [`Located`] wrapper struct (below) to answer *where* an error was raised. The leaf error enums stay focused on *what* is wrong — identity, expected/actual values, stage — and remain orthogonal to position.\n\nSCE Protocol-Synthesis RFC §synth-5-O: also reused as the per-IR-node provenance record. Every emission-eligible node carries an `Option<SourceLocation>` so codegen templates can emit per-backend SCE-MAP markers (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`) above the function header that node lowers to. Serialised so minijinja templates can `{% if state.source_location %}{{ ... }}{% endif %}`.",
