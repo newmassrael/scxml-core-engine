@@ -18,6 +18,11 @@
   built in the Rust host core leave the list, which names what a server still
   lacks and points to the runbook, `docs/SCE_SERVER_DEPLOY.md`; the Swift item
   narrowed to iOS, since the Swift lane serves sections 2 to 6.
+- Amended by: ADR 0109 (D5 to D7): new sections 11 (random bytes), 12 (keyed
+  digests) and 13 (keys), served by the Rust and C++ reference hosts; section
+  10, a derived key named by what derived it, a key of the key ring signing and
+  sealing beside the configured ones, and `key_retired`; sections 7 to 9 name
+  them where they list the types, the scenarios and what is not provided.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -362,7 +367,8 @@ once. Not provided here: any binding to a real provider.
   `<invoke>` of it as `codegen/standard-host-type-not-served`, on that
   `<invoke>`, naming the type, the lane and the lanes that serve it; a child the
   document carries is held to the same lane. Every type of sections 2 to 6 is
-  served on every lane; the types of section 10 are served on Rust and C++.
+  served on every lane; the types of sections 10 to 13 are served on Rust and
+  C++ (docs/adr/0109, D0).
   That every lane serves every type stays the goal, and is
   not a precondition of adding one: a type is added with the lanes whose
   reference host it lands in, and a lane joins its entry in the change that
@@ -408,7 +414,7 @@ was asked:
 
 | Member | What it says |
 |---|---|
-| `host` | directives applied before the step: `clock` (`utc_ms`, `monotonic_ms`, `zone_id`, `utc_offset_s`, each optional), `permission` (what the platform says), `user_decision` (what the user would choose if asked: `granted`, `denied`, `none`), `fail` (operation type to the failure code it fails with; an empty object ends them), `quota` (the most keys the store holds), `http` (what the transport answers: `status`, `headers` as name and value pairs, and `body` as text, `body_hex` as bytes or `body_repeat` as a text and a count; or `fail`, a transport failure; or `hold`, which does not answer), `model` (what the scripted provider is like, each member optional: `answers`, the answers it gives, one a start, in order, each `text` or `text_repeat` (a text and a count) with `finish` (`stop` when not written), replacing those not given yet; `constrained`, whether it decodes under a grammar; `name`, what it says answered; `context`, the most tokens a prompt and `max_tokens` may take together; `hold`, true for a provider that does not answer), `cose_keys` (the keys of section 10, replacing those configured before: `sign`, a key id to the hexadecimal 32-byte seed of an Ed25519 key; `aead`, a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key; `trust`, a trust set's name to the ids of `sign` keys of the same directive, whose public keys it holds; a table not named is empty, and the keys the host derived are kept) |
+| `host` | directives applied before the step: `clock` (`utc_ms`, `monotonic_ms`, `zone_id`, `utc_offset_s`, each optional), `permission` (what the platform says), `user_decision` (what the user would choose if asked: `granted`, `denied`, `none`), `fail` (operation type to the failure code it fails with; an empty object ends them), `quota` (the most keys the store holds), `http` (what the transport answers: `status`, `headers` as name and value pairs, and `body` as text, `body_hex` as bytes or `body_repeat` as a text and a count; or `fail`, a transport failure; or `hold`, which does not answer), `model` (what the scripted provider is like, each member optional: `answers`, the answers it gives, one a start, in order, each `text` or `text_repeat` (a text and a count) with `finish` (`stop` when not written), replacing those not given yet; `constrained`, whether it decodes under a grammar; `name`, what it says answered; `context`, the most tokens a prompt and `max_tokens` may take together; `hold`, true for a provider that does not answer), `cose_keys` (the keys of sections 10 and 12, replacing those configured before: `sign`, a key id to the hexadecimal 32-byte seed of an Ed25519 key; `aead`, a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key; `mac`, a key id to a hexadecimal HMAC-SHA-256 key of any length; `trust`, a trust set's name to the ids of `sign` keys of the same directive, whose public keys it holds; a table not named is empty, and the keys the host generated and derived are kept), `random` (hexadecimal bytes the host's random source gives next, before the operating system's: a draw, a generation, the naming key of the first derivation and a seal's nonce take them in the order the host draws, section 13) |
 | `advance_ms` | moves the engine's manual clock on, which is how a deadline passes |
 | `event`, `data` | an external event and its payload |
 | `expect.state` | the atomic state the machine is in |
@@ -549,7 +555,8 @@ These are not built, and nothing here stands in for them:
   policy on a server, no delivery of notifications, no durable keeping of the
   `install` authenticator's pins (the server has only `MemoryPins`, SCE_MESH.md
   section 22.5), and no orderly stop of a pool that saves every session it holds
-  as a clean checkpoint.
+  as a clean checkpoint. The keys of section 13 are kept in the session store's
+  file (`SqliteStore` is a `KeyStore` too, layout 2).
 - **A durable key-value store.** The reference stores of section 3 are in memory
   on every lane, and so is the table of first results by which each answers a
   put-if repeated under one identity (section 8): a host that stops forgets
@@ -567,9 +574,11 @@ These are not built, and nothing here stands in for them:
 - **Delivery of a scheduled notification while the application is not running**,
   and any user interface for a permission request. A reference host answers the
   permission as the scenario sets it.
-- **Signing and sealing on the lanes other than Rust and C++** (section 10). Each
-  is a later step of docs/adr/0107; until it lands, a build for that lane refuses a
-  machine that asks for one of the operations (section 7).
+- **Signing and sealing, random bytes, keyed digests and keys on the lanes other
+  than Rust and C++** (sections 10 to 13). Each is a later step of docs/adr/0107
+  and docs/adr/0109 (D0), taken when a consumer needs it; until it lands, a build
+  for that lane refuses a machine that asks for one of the operations, by name
+  (section 7).
 - **The COSE structures as codec documents** (docs/adr/0107, D9). A CBOR codec
   writes one map whose keys are unsigned integers of one head byte and whose
   entries hold no signed integer (SCE_FORGE.md section 4.6.1; docs/adr/0101's
@@ -604,18 +613,24 @@ These are not built, and nothing here stands in for them:
   (Rust `sce_rust_runtime::event_payload`, C++ `common/EventPayloadLift.h`); and
   a completion that carries the record read or its refusal, a result record the
   build derives from the library's.
-- **A key store.** The Rust and C++ reference hosts keep the keys they are given
-  and those they derive in memory, for their own life rather than a session's,
-  and each numbers its derived keys from 1 (section 10, "Derive"): a
-  `derived:<n>` id a saved session holds names no key, or another key, in the
-  process that restores it. The Rust host zeroes none of its keys when it drops
-  them.
+- **A durable key store for C++.** The Rust host keeps the keys it generates and
+  derives in a key store it is given (section 13), durable on SQLite, its
+  material wrapped under a key-encryption key; the C++ reference host keeps them
+  in memory, for its own life, each wiped when it is dropped. A key a C++ host
+  generated is gone with its process; a derived key's id is computed from what
+  derived it on both hosts, so a C++ host that derives the same key again after
+  a restart names it as before only when its naming key is the same, which a
+  host in memory draws anew.
+- **Rotation of a key, and its destruction.** A key is retired by a statechart
+  and stays (section 13); no operation makes a successor to a retired key or
+  destroys one, which is the operator's.
 
 ## 10. Signing and sealing
 
 A host signs and seals documents as COSE objects (RFC 9052), and verifies and
 opens them, with keys it holds. No key enters a statechart: a signing key, a
-symmetric key and a trust set are the host's configuration, and a statechart
+symmetric key and a trust set are the host's configuration, or a key of the
+host's key ring, which it generated or derived (section 13), and a statechart
 names each by its id. Served by the Rust and C++ reference hosts (section 7;
 docs/adr/0107, D7).
 
@@ -631,9 +646,12 @@ A byte string travels, in a request and in a result, as its byte-exact Latin-1
 text (SCE Accepted Subset §2.12): each byte the character of that code point.
 
 Failure codes: `unknown_key` for all five (the signing key, the trust set, the
-symmetric key or the input key the request names is not one the host holds), and
-`unavailable` (the host's key service cannot be reached, or, for a seal, the
-operating system gave no random nonce).
+symmetric key or the input key the request names is not one the host holds, or
+is a key of the key ring of a use the operation does not take, section 13),
+`key_retired` for a signing, a seal and a derivation (the key of the key ring
+the request names is retired: it still verifies and opens, and makes nothing
+new), and `unavailable` (the host's key service cannot be reached, or the random
+source gave no nonce for a seal or no naming key for a derivation).
 
 Refusal (`invalid_argument`): an empty `key_id` (sign, seal, open) or
 `trust_set` (verify); a derivation given both a `secret` and an `input_key_id`, or
@@ -678,25 +696,33 @@ that is not 24, a nonce that is not 12 bytes, a partial nonce (label 6), a heade
 label given twice or in both headers, a `crit` header, a detached ciphertext, and
 a plaintext past 4352 bytes.
 
-**Derive.** The input keying material is `secret` or the symmetric key
-`input_key_id` names, configured or derived; a signing key is not one. An empty
-`salt` is no salt. The host keeps the derived key and answers its id,
-`derived:<n>`, numbering from 1 the keys it derived, in order; a derivation that
-is refused or fails takes no number. Deriving the same material twice gives two
-ids that hold one key. A derived key is a symmetric key from then on: sealing,
-opening and a further derivation take it by its id, and a configured key never
-has an id beginning `derived:`.
+**Derive.** The input keying material is `secret` or the key `input_key_id`
+names: a configured symmetric key, a derived key, or a generated key of use
+`derive` (section 13); a signing key is not one. An empty `salt` is no salt. The
+host keeps the derived key in its key ring and answers its id, named by what
+derived it (docs/adr/0109, D7): `derived:` and the first 16 bytes, in lowercase
+hexadecimal, of the HMAC-SHA-256 under the key ring's naming key of the
+deterministic CBOR array `[input, salt, info]`, the input the text of
+`input_key_id` or the byte string of the SHA-256 of `secret`. The naming key is
+32 bytes the key ring keeps, drawn from the host's random source at its first
+derivation. Deriving the same material again is the same id, and the key ring
+keeps one key under it; a `derived:` id a saved session holds names the same
+key in any process that shares the key store. A derivation that is refused or
+fails keeps nothing. A derived key is a symmetric key from then on: sealing,
+opening and a further derivation take it by its id, and no configured key has an
+id beginning `derived:` or `generated:`.
 
 Signing, verifying and opening change nothing, and repeated give the same
 answer. A seal draws a new nonce each time, so two seals of one plaintext are two
-objects. A derivation keeps a new key each time.
+objects. A derivation repeated answers the id it answered the first time.
 
-Left to the host: where its keys come from and how they are stored, how long a
-derived key lives (at least as long as the session that derived it), and whether
+Left to the host: where its configured keys come from and how they are stored,
+the key store its key ring keeps its keys in (section 13), and whether
 `unavailable` is ever answered for a key service it does not have.
 
-The reference hosts are Rust's `sce_rust_host_features::cose` on the RustCrypto
-crates, its keys given by `ReferenceHost::set_cose_keys`, and C++'s on libsodium.
+The reference hosts are Rust's `sce_rust_host_features::cose` over the objects of
+`sce_rust_crypto::cose`, on the RustCrypto crates, its keys given by
+`ReferenceHost::set_cose_keys`, and C++'s on libsodium.
 `static_host_cose` and its scenario hold both to the objects of the COSE working
 group's examples for these algorithms (`eddsa-examples/eddsa-sig-01.json`,
 `chacha-poly-examples/chacha-poly-enc-01.json`; the second's
@@ -714,9 +740,156 @@ opens every object of it: Rust in
 (`tests/integration/AStandardHostCoseTest.cpp`). An object either host signs or
 seals is then one the other verifies or opens, in either direction. The file's
 objects were computed by an implementation that shares nothing with either
-host. A seal's nonce comes from the host's random source, the operating system's
-unless the embedding gives another, which is how a test fixes it: Rust's
+host. A seal's nonce comes from the host's random source (section 11), the
+operating system's unless the embedding gives another, which is how a test fixes
+it: Rust's `ReferenceHost::set_random_source`, or a source of nonces alone,
 `ReferenceHost::set_nonce_source` (a `NonceSource`; `SystemNonces` is the
 operating system's), C++'s `CoseCrypto::random`. A source that gives one nonce
 twice under one key gives both plaintexts away, so one that is not random is for
 such a test.
+
+## 11. Random bytes
+
+A host draws random bytes for a statechart (docs/adr/0109, D5). A machine is a
+function of its inputs, and a random value is one of them, as the time of
+section 2 is: it is asked of the host, so a scenario, a replay and the judge see
+it as an input. Served by the Rust and C++ reference hosts (section 7).
+
+| Operation | `type` | Request | Result |
+|---|---|---|---|
+| Draw | `sce-host-random-bytes` | `random_bytes_request`: `length` uint16 | `random_bytes_result`: `bytes` bytes (`random_bytes`=256) |
+
+Failure code: `unavailable` (the random source gave no bytes).
+
+Refusal (`invalid_argument`): a `length` of 0, or past the bound of `bytes`.
+
+- `bytes` holds `length` bytes from the host's random source: the operating
+  system's cryptographic generator (RFC 4086; `getrandom(2)`,
+  `BCryptGenRandom`, libsodium's `randombytes_buf`) unless the embedding gives
+  another, which is how a test fixes them.
+- Not idempotent: a draw repeated draws again. An invocation a restore starts
+  again draws again, which no one can tell, since a completion the machine took
+  is in its saved state and one it did not take was seen by nothing.
+- The bound of `bytes` is the named bound `random_bytes`, which `--limit` moves.
+
+The same source gives the host's other draws: the id and the material of a
+generated key, the naming key of the key ring, and, unless the embedding gives a
+source of nonces of its own, a seal's nonce (section 10). The reference hosts
+are Rust's `ReferenceHost::set_random_source` (a `RandomSource` of
+`sce_rust_crypto::random`; `SystemRandom` is the operating system's,
+`ScriptedRandom` gives a test's bytes first) and C++'s `CoseCrypto::random`.
+
+## 12. Keyed digests
+
+A host tags a message with a key it holds and verifies a tag
+(docs/adr/0109, D6). A statechart compares no secret: where it would compare a
+tag, it asks the host that holds the key to verify it, and the host compares in
+time that does not depend on where two tags differ. Served by the Rust and C++
+reference hosts (section 7).
+
+| Operation | `type` | Request | Result |
+|---|---|---|---|
+| Tag | `sce-host-mac` | `mac_request`: `key_id` (64), `message` bytes (`mac_message`=4096) | `mac_result`: `tag` bytes (32) |
+| Verify | `sce-host-mac-verify` | `mac_verify_request`: `key_id` (64), `message` bytes (`mac_message`=4096), `tag` bytes (32) | `mac_verify_result`: `valid` bool |
+
+Failure codes: `unknown_key` (the key `key_id` names is not a MAC key the host
+holds), `key_retired` (a tag under a retired key of the key ring, which still
+verifies), and `unavailable`.
+
+Refusal (`invalid_argument`): an empty `key_id`, or a value past its field's
+bound.
+
+- The digest is HMAC-SHA-256 (RFC 2104, FIPS 198-1), the whole 32-byte tag; no
+  truncated tag is made or verified.
+- `valid` is true when `tag` is the tag of `message` under the key. A tag that
+  does not verify, a tag of another length included, is an answer, `valid`
+  false, as a signature that does not verify is in section 10.
+- A MAC key is a configured one, an HMAC key of any length, or a key of the key
+  ring of use `mac` (section 13). A sealing or a signing key does not tag.
+- Both operations change nothing, and repeated give the same answer.
+- An unkeyed digest is a pure function, and belongs to the standard library,
+  not here.
+
+Every comparison of a tag, a digest or another secret in the reference hosts is
+one helper of each language: Rust's `sce_rust_crypto::equal::same_secret` (on
+`subtle`'s `ConstantTimeEq`), C++'s `CoseCrypto::sameSecret` (on libsodium's
+`sodium_memcmp`). The two hosts are held to RFC 4231's test cases 1 to 4, 6
+and 7 (case 5 truncates its tag, which this operation does not) by
+`tests/host_features/keys_cross_language.json`.
+
+## 13. Keys
+
+A host generates keys, exports a signing key's public key, and retires a key,
+for the statechart that names it (docs/adr/0109, D7). The keys a host generates
+and derives are its **key ring**'s; the keys of its configuration (section 10)
+are not, and keep their meaning. Served by the Rust and C++ reference hosts
+(section 7).
+
+| Operation | `type` | Request | Result |
+|---|---|---|---|
+| Generate | `sce-host-key-generate` | `key_generate_request`: `key_use` (8), `label` (64) | `key_generate_result`: `key_id` string (64) |
+| Export | `sce-host-key-public` | `key_public_request`: `key_id` (64) | `key_public_result`: `cose_key` bytes (128) |
+| Retire | `sce-host-key-retire` | `key_retire_request`: `key_id` (64) | `key_retire_result`: `retired` bool |
+
+Failure codes: `unknown_key` (export: the key is no signing key the host holds;
+retire: the key is no key of the key ring, a configured key included) and
+`unavailable` (the key store, the key-encryption key or the random source could
+not be used).
+
+Refusal (`invalid_argument`): a `key_use` that is not `sign`, `seal`, `mac` or
+`derive`; an empty `key_id`; a value past its field's bound. `key_use` is a text
+of that closed set, as an HTTP method of section 5 is, judged by the host.
+
+**One use.** A generated key has the one use it was generated for (key
+separation, NIST SP 800-57 Part 1): a `sign` key signs and exports (section 10),
+a `seal` key seals and opens, a `mac` key tags and verifies (section 12), a
+`derive` key is the input of a derivation. A key of the key ring asked for
+another use is `unknown_key`, as a signing key is when it is asked to seal. A
+derived key seals, opens and derives (section 10).
+
+**Generate.** The host draws, in one draw from its random source (section 11),
+16 bytes and then 32: the id is `generated:` and the 16 in lowercase hexadecimal,
+the key the 32 (an Ed25519 seed, a ChaCha20/Poly1305 key, an HMAC key or input
+keying material, by its use). The key ring keeps the key with its use, its
+algorithm, the `label`, the moment it was made and its state, and keeps the
+identity of the invocation (section 1) with it in one transaction: a generation
+repeated under one identity, as a restore starts it again, answers the id of the
+key it generated the first time and draws nothing.
+
+**Export.** `cose_key` is the public key of the signing key `key_id` names,
+configured or generated, retired or not, as a `COSE_Key` (RFC 9052 section 7;
+RFC 9053 section 7.2) in its deterministic encoding: the map `{1: 1, 2: kid,
+-1: 6, -2: x}`, key type OKP, the key id as the bytes of its text, curve
+Ed25519 and the 32-byte public key. It is what a trust set of another host is
+made of, and changes nothing.
+
+**Retire.** `retired` is true when the key was active and is retired now, false
+when it was retired already. A retired key verifies, opens and exports, and no
+longer signs, seals, tags or derives (`key_retired`). Destroying a key is the
+operator's. A retirement repeated changes nothing more.
+
+**The key ring.** A key's material is never in a statechart, in a log or in what
+a debugger prints of the host's types. The Rust host keeps its key ring
+(`sce_rust_crypto::keyring::Keyring`) in a key store
+(`sce_rust_session_store::KeyStore`): in memory unless the embedding gives
+another with `ReferenceHost::set_keyring`; the reference durable store is the
+session store's SQLite file (`SqliteStore`, layout 2). Each key's material is
+kept wrapped under a key-encryption key the store never holds, bound to the
+key's id and use, so a file read without that key holds no key and a row's
+material moved to another row does not unwrap. The program supplies the
+key-encryption key through `KeyWrap`, whose reference adapter
+(`KeyEncryptionKey`) reads 32 bytes from a file or a variable the operator names
+and wraps with XChaCha20-Poly1305 under a 192-bit random nonce; rotating it
+rewraps every key (`Keyring::rewrap_all`). Material is unwrapped for each use
+into memory that is wiped when it is dropped (`zeroize`), as the configured keys
+are held. The C++ host keeps its key ring in memory, for its own life, each key
+wiped with `sodium_memzero` when it is dropped (section 9).
+
+The two hosts agree byte for byte on `tests/host_features/keys_cross_language.json`:
+every tag of RFC 4231, every derived key's id and key under the file's naming
+key, every generated key's id, `COSE_Key`, signature and tag from the file's
+random bytes, and every configured signing key's `COSE_Key`: Rust in
+`backends/rust/host-features/tests/keys_cross_language.rs`, C++ in
+`AStandardHostKeys.KeysAndTagsCrossBetweenTheHosts`
+(`tests/integration/AStandardHostKeysTest.cpp`). `static_host_cose` and its
+scenario hold both hosts to sections 10 to 13 through a machine.
