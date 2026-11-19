@@ -30,7 +30,7 @@
 use std::path::Path;
 
 use crate::forge::error::{ForgeError, GenerateError, Located, SourceLocation, ValidationError};
-use crate::forge::model::ForgeKind;
+use crate::forge::model::{ForgeKind, SceType};
 use crate::generator::Language;
 use crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
 use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
@@ -384,6 +384,63 @@ pub fn refuse_unserved_in(
 /// [`validate`] does not know the lane.
 pub fn refuse_unserved(model: &SCXMLModel, lane: HostLane) -> Result<(), GenerateError> {
     refuse_unserved_in(model, lane, TYPES)
+}
+
+/// The lanes whose build reads an enum field of a typed host-run request
+/// (SCE Accepted Subset §2.12; docs/adr/0109, D0 and step 4 of its order of
+/// work): Rust and C++, whose request records hold the field in the machine's
+/// own enum and whose adapters read it back by the name it crosses as. Every
+/// other lane refuses such a request by name ([`refuse_enum_request_fields`]);
+/// a lane joins this list in the change that lands that reading on it.
+pub const ENUM_REQUEST_FIELD_LANES: &[HostLane] = &[
+    HostLane::Generated(Language::Rust),
+    HostLane::Generated(Language::Cpp),
+];
+
+/// Refuse `model` for `lane` when the lane is not one of
+/// [`ENUM_REQUEST_FIELD_LANES`] and a host-run `<invoke>` of `model` names a
+/// request record with an enum field: the first such `<invoke>`, in document
+/// order, as `generate/unsupported-feature`, naming the invoke, the field, the
+/// lane and the lanes that read one (docs/adr/0109, D0). Asked where
+/// [`refuse_unserved`] is, so a standard type a lane does not serve is refused
+/// as that first; this refuses a request of any other type, a document's own.
+pub fn refuse_enum_request_fields(model: &SCXMLModel, lane: HostLane) -> Result<(), GenerateError> {
+    if ENUM_REQUEST_FIELD_LANES.contains(&lane) {
+        return Ok(());
+    }
+    let records = model.entry_records();
+    for info in host_invokes(model) {
+        let Some(request) = records.get(&info.request_schema) else {
+            continue;
+        };
+        let Some(field) = request
+            .fields
+            .iter()
+            .find(|f| matches!(f.sce_type.present_type(), SceType::Enum(_)))
+        else {
+            continue;
+        };
+        let readers: Vec<&str> = ENUM_REQUEST_FIELD_LANES
+            .iter()
+            .map(|reader| reader.wire_name())
+            .collect();
+        return Err(GenerateError::unsupported_at(
+            format!(
+                "<invoke id=\"{}\"> names the request record '{}', whose field '{}' is {}: the {} \
+                 lane does not read an enum field of a typed host-run request; it is read on {}",
+                info.base.invoke_id,
+                info.request_schema,
+                field.id,
+                field.sce_type.as_attr(),
+                lane.wire_name(),
+                readers.join(", ")
+            ),
+            info.request_schema_at
+                .clone()
+                .or_else(|| info.base.source_location.clone()),
+        ));
+    }
+    Ok(())
 }
 
 /// Hold every `<invoke>` of a standard type to the interface the library gives

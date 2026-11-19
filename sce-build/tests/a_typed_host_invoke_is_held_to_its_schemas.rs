@@ -208,13 +208,12 @@ fn a_text_literal_for_a_field_that_is_not_text_is_refused_on_its_row() {
     );
 }
 
-/// An enumeration has no text spelling all six backends share, so a
-/// host-run record carries scalar fields only.
-#[test]
-fn a_record_with_an_enum_typed_field_is_refused() {
+/// A directory of its own for `case`, holding an enum and a record whose one
+/// field holds it, `perm_outcome.scxml`.
+fn enum_case(case: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join("a_typed_host_invoke_is_held_to_its_schemas")
-        .join("enum_field");
+        .join(case);
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     std::fs::write(
         dir.join("outcome.scxml"),
@@ -240,9 +239,40 @@ fn a_record_with_an_enum_typed_field_is_refused() {
 </scxml>"#,
     )
     .expect("write schema");
+    dir
+}
+
+/// `statechart`, written as `asking.scxml` in `dir` beside the enum and the
+/// record, parsed and refused: the refusal's code, what it names, its row and
+/// its sentence.
+fn refused_in(dir: &std::path::Path, statechart: &str) -> (String, String, Option<u32>, String) {
     let path = dir.join("asking.scxml");
-    std::fs::write(
-        &path,
+    std::fs::write(&path, statechart).expect("write statechart");
+    let refusal = SCXMLParser::new()
+        .parse_file(path.to_str().expect("utf-8 path"))
+        .map(|_| ())
+        .expect_err("refused");
+    let diagnostic = &refusal.error.to_diagnostics()[0];
+    (
+        serde_json::to_value(diagnostic.code)
+            .expect("code serializes")
+            .as_str()
+            .expect("code is a string")
+            .to_string(),
+        diagnostic.actual.clone().unwrap_or_default(),
+        refusal.location.line,
+        diagnostic.message.clone(),
+    )
+}
+
+/// A result is completed with its record's JSON, which the payload lift that
+/// reads a completion reads no enum from, so a host-run result holds no enum
+/// field.
+#[test]
+fn a_record_with_an_enum_typed_field_is_refused() {
+    let dir = enum_case("enum_field");
+    let (code, actual, line, message) = refused_in(
+        &dir,
         r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        name="asking" version="1.0" initial="asking" datamodel="ecmascript">
   <sce:import kind="event-schema" src="perm_outcome.scxml" as="PermOutcome"/>
@@ -250,23 +280,39 @@ fn a_record_with_an_enum_typed_field_is_refused() {
     <invoke type="x-app-host" id="perm" sce:result="PermOutcome"/>
   </state>
 </scxml>"#,
-    )
-    .expect("write statechart");
-    let refusal = SCXMLParser::new()
-        .parse_file(path.to_str().expect("utf-8 path"))
-        .map(|_| ())
-        .expect_err("refused");
-    let diagnostic = &refusal.error.to_diagnostics()[0];
-    assert_eq!(
-        serde_json::to_value(diagnostic.code).expect("code serializes"),
-        "validation/typed-invoke-schema"
     );
-    assert_eq!(diagnostic.actual.as_deref(), Some("PermOutcome"));
-    assert_eq!(
-        refusal.location.line,
-        Some(5),
-        "reported on the attribute's row"
+    assert_eq!(code, "validation/typed-invoke-schema");
+    assert_eq!(actual, "PermOutcome");
+    assert_eq!(line, Some(5), "reported on the attribute's row");
+    assert!(
+        message.contains("host-run result carries no enum field"),
+        "{message}"
     );
+}
+
+/// A request's enum field takes a value of the machine's own enum, which only
+/// `datamodel="sce-static"` holds (docs/adr/0109, step 4 of its order of work):
+/// under any other data model there is no such value to send, and the request
+/// is refused where it names its record.
+#[test]
+fn a_request_with_an_enum_field_outside_sce_static_is_refused() {
+    let dir = enum_case("enum_request_field");
+    let (code, actual, line, message) = refused_in(
+        &dir,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       name="asking" version="1.0" initial="asking" datamodel="ecmascript">
+  <sce:import kind="event-schema" src="perm_outcome.scxml" as="PermOutcome"/>
+  <state id="asking">
+    <invoke type="x-app-host" id="perm" sce:request="PermOutcome">
+      <param name="outcome" expr="'granted'"/>
+    </invoke>
+  </state>
+</scxml>"#,
+    );
+    assert_eq!(code, "validation/typed-invoke-schema");
+    assert_eq!(actual, "PermOutcome");
+    assert_eq!(line, Some(5), "reported on the attribute's row");
+    assert!(message.contains("datamodel=\"sce-static\""), "{message}");
 }
 
 /// A statechart whose one state runs `invoke`, importing the schema whose

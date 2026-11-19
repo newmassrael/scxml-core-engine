@@ -3291,6 +3291,14 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
     };
     let native = crate::forge::native_action::render(&mut lowered, &native_name, language);
     let mut out = native.interface_def.clone();
+    // A machine a lane refuses for an enum field of a typed request is never
+    // generated there (docs/adr/0109, D0), so no interface of it is emitted, and
+    // the lane's renderer, which holds no such field, is not asked for one.
+    let emits_interface = crate::forge::standard_host::refuse_enum_request_fields(
+        &model,
+        crate::forge::standard_host::HostLane::Generated(language),
+    )
+    .is_ok();
     match language {
         Language::Rust => {
             let payload = crate::forge::generator::build_rust_event_payload(
@@ -3305,13 +3313,16 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             for part in [payload.defs, payload.entries, payload.lift] {
                 out.push_str(&part);
             }
-            out.push_str(&crate::forge::host_invoker_interface::render_rust(
-                &model,
-                &machine_name,
-                "",
-                "",
-                false,
-            ));
+            if let Some(static_enums) = request_field_enums(&model, &machine_name, language) {
+                out.push_str(&crate::forge::host_invoker_interface::render_rust(
+                    &model,
+                    &machine_name,
+                    "",
+                    "",
+                    false,
+                    &static_enums,
+                ));
+            }
         }
         Language::Cpp => {
             let payload = crate::forge::generator::build_cpp_event_payload(
@@ -3322,9 +3333,11 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             for part in [payload.defs, payload.policy_members, payload.inject_methods] {
                 out.push_str(&part);
             }
-            let host = crate::forge::host_invoker_interface::render_cpp(&model);
-            out.push_str(&host.defs);
-            out.push_str(&host.members);
+            if let Some(static_enums) = request_field_enums(&model, &machine_name, language) {
+                let host = crate::forge::host_invoker_interface::render_cpp(&model, &static_enums);
+                out.push_str(&host.defs);
+                out.push_str(&host.members);
+            }
         }
         Language::C11 => {
             let payload = crate::forge::generator::build_c11_event_payload(
@@ -3346,11 +3359,13 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             // A record the render refuses (an optional text with no bound) is
             // refused again where the machine is generated, so nothing is
             // reserved for an interface that is never emitted.
-            if let Ok(host) = crate::forge::host_invoker_interface::render_c11(
-                &model,
-                &model.name,
-                &crate::forge::generator::c11_data_len("", &model.name),
-            ) {
+            if let Some(Ok(host)) = emits_interface.then(|| {
+                crate::forge::host_invoker_interface::render_c11(
+                    &model,
+                    &model.name,
+                    &crate::forge::generator::c11_data_len("", &model.name),
+                )
+            }) {
                 out.push_str(&host.decls);
                 out.push_str(&host.defs);
             }
@@ -3369,10 +3384,12 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             ] {
                 out.push_str(&part);
             }
-            out.push_str(&crate::forge::host_invoker_interface::render_go(
-                &model,
-                &machine_name,
-            ));
+            if emits_interface {
+                out.push_str(&crate::forge::host_invoker_interface::render_go(
+                    &model,
+                    &machine_name,
+                ));
+            }
         }
         Language::Kotlin => {
             // The render's payload events are the native actions' and the
@@ -3400,9 +3417,12 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             ] {
                 out.push_str(&part);
             }
-            let host = crate::forge::host_invoker_interface::render_kotlin(&model, &machine_name);
-            out.push_str(&host.defs);
-            out.push_str(&host.members);
+            if emits_interface {
+                let host =
+                    crate::forge::host_invoker_interface::render_kotlin(&model, &machine_name);
+                out.push_str(&host.defs);
+                out.push_str(&host.members);
+            }
         }
         Language::Python => {
             let payload = crate::forge::generator::build_python_event_payload(
@@ -3413,13 +3433,39 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             for part in [payload.defs, payload.init, payload.populate, payload.inject] {
                 out.push_str(&part);
             }
-            out.push_str(&crate::forge::host_invoker_interface::render_python(&model));
+            if emits_interface {
+                out.push_str(&crate::forge::host_invoker_interface::render_python(&model));
+            }
         }
         // The Swift machine declares everything it needs in the templates' own
         // text; nothing is emitted ahead of them yet.
         Language::Swift => {}
     }
     out
+}
+
+/// The enums [`emitted_beside_templates`] hands the Rust or C++ host interface
+/// ([`crate::forge::host_invoker_interface::render_rust`],
+/// [`crate::forge::host_invoker_interface::render_cpp`]): those the static
+/// lowering of `language` declares, read only for a machine whose typed
+/// request holds an enum field, the one record that names them; empty for any
+/// other. `None` when that lowering refuses the machine, which its render
+/// refuses as well, so no interface of it is ever emitted.
+fn request_field_enums(
+    model: &SCXMLModel,
+    machine_name: &str,
+    language: Language,
+) -> Option<Vec<crate::forge::static_lowering::StaticEnumType>> {
+    if !crate::forge::host_invoker_interface::requests_hold_an_enum(model) {
+        return Some(Vec::new());
+    }
+    let mut lowered = model.clone();
+    let lowering = match language {
+        Language::Rust => crate::forge::static_lowering::lower_rust(&mut lowered, machine_name),
+        Language::Cpp => crate::forge::static_lowering::lower_cpp(&mut lowered, machine_name),
+        _ => return Some(Vec::new()),
+    };
+    lowering.ok().map(|lowering| lowering.enums)
 }
 
 /// The machine's table of answer schemas (docs/adr/0087, section 4.1, item 2)
@@ -3573,6 +3619,7 @@ fn render_rust(
         &policy_generics_decl,
         &policy_generics_use,
         options.no_std,
+        &static_lowering.enums,
     );
     let host_invoke_request_checks =
         crate::forge::host_invoker_interface::rust_request_checks(model);
@@ -3838,7 +3885,8 @@ fn render_cpp(
         .collect();
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
-    let host_invoker = crate::forge::host_invoker_interface::render_cpp(model);
+    let host_invoker =
+        crate::forge::host_invoker_interface::render_cpp(model, &static_lowering.enums);
     let host_invoke_request_checks =
         crate::forge::host_invoker_interface::cpp_request_checks(model);
 

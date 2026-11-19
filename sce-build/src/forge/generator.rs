@@ -6185,8 +6185,11 @@ fn rust_record_present_type(l: &LangCtx, f: &EntryField) -> String {
 /// The enum a `sce-static` machine declares for the alias a payload field is
 /// typed with. A document whose payload names an enum it does not import is
 /// refused where it is lowered ([`crate::forge::static_lowering::lower`]), so a
-/// field that reaches a builder without one is a routing defect.
-fn static_enum_of<'e>(
+/// field that reaches a builder without one is a routing defect. A typed
+/// host-run request's enum field is declared by the same lowering, and its
+/// record is built from the same list
+/// ([`crate::forge::host_invoker_interface::render_rust`]).
+pub(crate) fn static_enum_of<'e>(
     enums: &'e [crate::forge::static_lowering::StaticEnumType],
     alias: &str,
 ) -> &'e crate::forge::static_lowering::StaticEnumType {

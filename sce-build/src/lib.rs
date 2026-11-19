@@ -2133,6 +2133,14 @@ pub fn emit_model_artifacts(
         forge::standard_host::HostLane::Generated(language),
     )
     .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
+    // docs/adr/0109, D0: an enum field of a typed host-run request is read on
+    // the lanes that build it, and refused by name on every other, here for
+    // the same reason the refusal above is.
+    forge::standard_host::refuse_enum_request_fields(
+        model,
+        forge::standard_host::HostLane::Generated(language),
+    )
+    .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
     // docs/SCE_TEST_PROFILE.md §11.9: a `test-component` is read and checked
     // on every backend, and a backend generates one only once the profile's
     // runtime lands there (`codegen_matrix::TEST_COMPONENT_BACKENDS`); every

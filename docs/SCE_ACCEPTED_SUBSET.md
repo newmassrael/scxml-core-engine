@@ -3107,6 +3107,12 @@ driven on the six AOT channels.
 
 #### Typed interface — `sce:request` / `sce:result`
 
+- Amended by: ADR 0109 (step 4 of its order of work): an enum field in a
+  `sce:request` record, under `datamodel="sce-static"`, held to a value of its
+  own enum where it is written, crossing as the name its enum declares and read
+  back by that name on the Rust and C++ lanes; every other lane refuses it by
+  name (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`).
+
 A host-run invoke may name the records its request and its completion
 carry, each an alias of an imported event schema:
 
@@ -3184,16 +3190,36 @@ untyped one, so a key that is not there already means that and the carrier has n
 spelling of absence left. The field is declared as its present type and the
 `<param>` writes `x ?? d`.
 
+**An enum field of a request** (docs/adr/0109, step 4 of its order of work). A
+`sce:request` schema's field may be `enum:E`, under `datamodel="sce-static"`. The
+`<param>` that supplies it is held to a value of that enum where it is written
+(`scxml/static-datamodel-rule`): a variant (`E.<variant>`, through the document's
+own import of the enum document the record imports, under any alias) or a
+variable of it; a text, a value of another enum and a value that may be absent are
+refused, and a text literal is refused at parse as a literal of any field that
+holds no text is. The value crosses to the host as the name its enum declares for
+it, which is what a host that reads the request untyped reads. The Rust and C++
+records hold the field in the machine's own type for the enum (no default is
+derived for a Rust record that holds one), and their adapters read it back by
+that name (`from_sce_name` and `FromStr` in Rust, `<type>FromSceName` in C++).
+Every other lane, the Interpreter included, refuses the machine by name where it
+is written for that lane: `generate/unsupported-feature`, naming the invoke, the
+field and the lanes that read one. A `sce:result` schema still holds no enum
+field: the completion's record is read by a payload lift that reads none.
+
 Refused at parse, on the row that shows the problem:
 
 - `validation/typed-invoke-schema` — the attribute sits on an invoke SCE
   runs itself (`scxml`, `sce:mesh-rpc`) or one whose type is `typeexpr`;
   the invoke has no `id` (the generated interface is named after it); the
   attribute is empty; the alias names no imported event schema; the
-  schema has an enum-typed field, an optional one included, which has no
-  text spelling every backend shares — declare it as its underlying integer
-  type; or the schema is a `sce:request` and has a field that may be
-  absent, which a text carrier has no spelling for (naming `??`).
+  schema is a `sce:result` and has an enum-typed field, an optional one
+  included, which the completion's payload lift does not read — declare it
+  as its underlying integer type; the schema is a `sce:request` with an
+  enum-typed field and the document's data model is not `sce-static`, which
+  alone holds a value of the machine's own enum; or the schema is a
+  `sce:request` and has a field that may be absent, which a text carrier has
+  no spelling for (naming `??`).
 - `validation/typed-invoke-request` — a `<param>` the schema lacks, a field
   no `<param>` supplies, a name given twice, a `namelist` / `<content>`
   beside the typed request, or a string literal its field cannot hold (a
