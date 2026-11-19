@@ -586,23 +586,36 @@ fn a_body_that_can_refuse_is_counted_before_the_first_byte() {
 
 /// A body a gate decides, of a codec the C11 backend prints, is a form the
 /// printer lowers: a codec that holds one beside a list of printed entries is
-/// printed whole, and one that holds one beside a chain of entries the C11
-/// backend does not print names no form of the body and waits on the chain.
+/// printed whole, and so is one that holds one beside a chain of entries that
+/// are each a variant of printed arms. Its encode sets the flag that gates the
+/// body from whether the source presents the body, and writes the body by its
+/// codec's encode over that source where it is there.
 ///
-/// Turns red where `c11_source::positional_forms` names a gated body or a list
-/// of a printed codec, or where `codec_zenoh_msg_del` stops holding a chain of
-/// unprinted entries, which would leave the census with nothing to say.
+/// Turns red where `c11_source::positional_forms` names a gated body, a list
+/// of a printed codec or a chain of a printed variant, or where
+/// `encode_source` stops deriving the body's flag from its presence or stops
+/// writing the body through its codec's encode.
 #[test]
 fn a_gated_body_of_a_printed_codec_is_no_form_the_printer_leaves() {
     assert!(unlowered("codec_origin_envelope").is_empty());
     let forms = unlowered("codec_zenoh_msg_del");
     assert!(
-        !forms.iter().any(|f| f.starts_with("field 'timestamp'")),
-        "codec_zenoh_msg_del: the gated body `timestamp` is lowered ({forms:?})"
+        forms.is_empty(),
+        "codec_zenoh_msg_del: the gated body `timestamp` and the chain of printed \
+         variants beside it are lowered ({forms:?})"
     );
-    assert!(
-        forms.iter().any(|f| f.contains("a list of")),
-        "codec_zenoh_msg_del: the codec waits on its chain ({forms:?})"
+    let text = resource_header("codec_zenoh_msg_del");
+    holds(
+        "codec_zenoh_msg_del",
+        &text,
+        &[
+            "    _f_header = (_f_header & ~0x20ull) | ((uint64_t)(_e_timestamp.present) << 5);\n",
+            "    if (_e_timestamp.present) {\n        \
+             SCE_FORGE_TRY_WRITE(codec_zenoh_timestamp_encode_source(_e_timestamp.value.table, \
+             _e_timestamp.value.ctx, w));\n",
+            "SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode_source_overriding(\
+             _e_extensions.value.entry, _at, w, _o));\n",
+        ],
     );
 }
 
