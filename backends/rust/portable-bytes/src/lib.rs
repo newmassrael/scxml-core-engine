@@ -14,7 +14,9 @@
 //!   one of its type. Where an allocator is available the elements live on the
 //!   heap, and inline (`heapless`) where none is; the storage decides where,
 //!   never how many. A statechart's variables, records and payloads, a schema
-//!   unit's fields and an algorithm's slots hold these.
+//!   unit's fields and an algorithm's slots hold these. A map of at most `N`
+//!   entries by key and a set of at most `N` keys, [`BoundedMap`] and
+//!   [`BoundedSet`] (docs/adr/0108), are the [`map`] module's.
 //! * **A codec's storage profiles** ([`HeapList`] / [`InlineList`],
 //!   [`HeapStr`] / [`InlineStr`]): the containers a decoded frame of a protocol
 //!   SCE does not own is held in, whose heap form's `N` is advisory, as the
@@ -51,6 +53,13 @@
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+
+pub mod map;
+
+pub use map::{
+    BoundedMap, BoundedSet, FromSeed, KeyFeed, MapCursor, MapKey, MapSeed, MapSeeds, PutOutcome,
+    RemoveOutcome,
+};
 
 /// Returned by `from_slice` / `push` / `extend_from_slice` when a copy would
 /// exceed a fixed capacity `N`. The growable profile has no such bound and
@@ -719,6 +728,22 @@ impl<const N: usize> PartialEq<SceString<N>> for str {
 impl<const N: usize> PartialEq<SceString<N>> for &str {
     fn eq(&self, other: &SceString<N>) -> bool {
         *self == other.as_str()
+    }
+}
+
+/// A text lent where it is held, beside one held: a walk of a map lends its
+/// body each text key and value where the map holds it (docs/adr/0108, D6),
+/// and the body compares it with a text of its own as it compares two texts.
+impl<const N: usize, const M: usize> PartialEq<SceString<M>> for &SceString<N> {
+    fn eq(&self, other: &SceString<M>) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+/// ... and a text held beside one lent.
+impl<const N: usize, const M: usize> PartialEq<&SceString<M>> for SceString<N> {
+    fn eq(&self, other: &&SceString<M>) -> bool {
+        self.as_str() == other.as_str()
     }
 }
 
