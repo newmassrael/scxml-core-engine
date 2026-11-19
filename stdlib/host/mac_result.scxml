@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/mac_result.scxml — the answer of `sce-host-mac`
+  (docs/SCE_HOST_FEATURES.md, "Keyed digests"): `tag` is the whole 32-byte
+  HMAC-SHA-256 of the message under the key the request names.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="mac_result"
+       sce:event-name="host.mac.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="tag" sce:type="bytes[32]" sce:direction="in"/>
+  </datamodel>
+</scxml>

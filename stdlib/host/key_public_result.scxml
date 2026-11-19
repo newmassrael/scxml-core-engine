@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/key_public_result.scxml — the answer of `sce-host-key-public`
+  (docs/SCE_HOST_FEATURES.md, "Keys"): `cose_key` is the public key of the
+  signing key as a COSE_Key (RFC 9052 section 7) in its deterministic
+  encoding, the map {1: 1, 2: kid, -1: 6, -2: x} of key type OKP, the key's
+  id, curve Ed25519 and the public key; what a trust set of another host is
+  made of.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="key_public_result"
+       sce:event-name="host.key.public.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="cose_key" sce:type="bytes[128]" sce:direction="in"/>
+  </datamodel>
+</scxml>

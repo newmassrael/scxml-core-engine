@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/mac_verify_request.scxml — the request of
+  `sce-host-mac-verify` (docs/SCE_HOST_FEATURES.md, "Keyed digests").
+
+  `key_id` names a MAC key the host holds, `message` the bytes the tag claims
+  to cover (the named bound `mac_message`) and `tag` the tag to verify. The
+  host compares the tag in constant time: a statechart compares no secret.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="mac_verify_request"
+       sce:event-name="host.mac.verify.request">
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="message" sce:type="bytes[mac_message=4096]" sce:direction="in"/>
+    <data id="tag" sce:type="bytes[32]" sce:direction="in"/>
+  </datamodel>
+</scxml>

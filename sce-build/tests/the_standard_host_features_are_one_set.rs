@@ -334,6 +334,142 @@ fn signing_is_served_on_rust_and_cpp_and_refused_on_every_other_lane() {
     );
 }
 
+// ── Random bytes, keyed digests and keys (docs/SCE_HOST_FEATURES.md, sections 11 to 13) ──
+
+/// A `sce-static` statechart that runs `invoke_type` with the library's records
+/// `request` and `result`, each request field given from a variable of the
+/// field's own type: `(field, type, initial value)`.
+fn host_operation(
+    invoke_type: &str,
+    request: &str,
+    result: &str,
+    fields: &[(&str, &str, &str)],
+) -> String {
+    let variables: String = fields
+        .iter()
+        .map(|(name, ty, init)| {
+            format!("    <data id=\"{name}\" sce:type=\"{ty}\" expr=\"{init}\"/>\n")
+        })
+        .collect();
+    let params: String = fields
+        .iter()
+        .map(|(name, _, _)| format!("      <param name=\"{name}\" expr=\"{name}\"/>\n"))
+        .collect();
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="probe">
+  <sce:import kind="event-schema" src="sce:std/host/{request}.scxml" as="Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/{result}.scxml" as="Result"/>
+  <datamodel>
+{variables}    <data id="failed" sce:type="string[24]" expr="''" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="asking"/>
+  </state>
+  <state id="asking">
+    <invoke type="{invoke_type}" id="op" sce:request="Request" sce:result="Result">
+{params}    </invoke>
+    <transition event="done.invoke.op" target="idle">
+      <assign location="failed" expr="_event.data.error"/>
+    </transition>
+  </state>
+</scxml>
+"#
+    )
+}
+
+/// docs/adr/0109, D0: random bytes, keyed digests and keys are built for Rust
+/// and C++, and a build for every other emitting lane refuses a machine that
+/// asks for one by name, `codegen/standard-host-type-not-served`, naming the
+/// two lanes that serve it; never a machine that silently asks a host that
+/// cannot answer.
+#[test]
+fn random_bytes_keyed_digests_and_keys_are_served_on_rust_and_cpp_and_refused_elsewhere() {
+    let key_id = ("key_id", "string[64]", "'k'");
+    let message = ("message", "bytes[mac_message=4096]", "'m'");
+    let operations = [
+        (
+            "sce-host-random-bytes",
+            "random_bytes_request",
+            "random_bytes_result",
+            vec![("length", "uint16", "16")],
+        ),
+        (
+            "sce-host-mac",
+            "mac_request",
+            "mac_result",
+            vec![key_id, message],
+        ),
+        (
+            "sce-host-mac-verify",
+            "mac_verify_request",
+            "mac_verify_result",
+            vec![key_id, message, ("tag", "bytes[32]", "''")],
+        ),
+        (
+            "sce-host-key-generate",
+            "key_generate_request",
+            "key_generate_result",
+            vec![
+                ("key_use", "string[8]", "'mac'"),
+                ("label", "string[64]", "''"),
+            ],
+        ),
+        (
+            "sce-host-key-public",
+            "key_public_request",
+            "key_public_result",
+            vec![key_id],
+        ),
+        (
+            "sce-host-key-retire",
+            "key_retire_request",
+            "key_retire_result",
+            vec![key_id],
+        ),
+    ];
+    let lanes = languages();
+    let others = lanes
+        .iter()
+        .filter(|language| !matches!(**language, "rust" | "cpp"))
+        .count();
+    assert!(
+        others > 0,
+        "no emitting lane but rust and cpp: the refusal is held on none"
+    );
+    for (invoke_type, request, result, fields) in &operations {
+        let doc = host_operation(invoke_type, request, result, fields);
+        let mut refused_on = 0;
+        for &language in &lanes {
+            let (ok, text) = run(&["check", "-l", language], &doc, &[]);
+            if matches!(language, "rust" | "cpp") {
+                assert!(ok, "{language} refused {invoke_type}: {text}");
+                assert!(
+                    text.contains(&format!(r#""host_invoker_types":["{invoke_type}"]"#)),
+                    "{language}: {invoke_type} was not served: {text}"
+                );
+            } else {
+                assert!(
+                    !ok,
+                    "{language} took a machine its host cannot answer {invoke_type} for: {text}"
+                );
+                assert!(
+                    text.contains("codegen/standard-host-type-not-served")
+                        && text.contains(*invoke_type)
+                        && text.contains("rust, cpp"),
+                    "{language}: {text}"
+                );
+                refused_on += 1;
+            }
+        }
+        assert_eq!(
+            refused_on, others,
+            "{invoke_type} was refused on {refused_on} of the {others} lanes that do not serve it"
+        );
+    }
+}
+
 // ── A model's generation and its answer schema (docs/adr/0087, section 4) ──
 
 /// The answer schema the probes below name: a title and a slot.

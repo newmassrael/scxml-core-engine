@@ -3,32 +3,39 @@
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
 <!--
   datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15; the
-  standard host features, docs/SCE_HOST_FEATURES.md, "Signing and sealing"):
-  one machine that asks its host to sign, verify, seal and open COSE objects
-  and to derive keys, one operation at a time, and publishes each answer. No
-  key enters the machine: it names each by the id its host gave it.
+  standard host features, docs/SCE_HOST_FEATURES.md, "Signing and sealing",
+  "Random bytes", "Keyed digests" and "Keys"): one machine that asks its host
+  to sign, verify, seal and open COSE objects, to derive, generate, export and
+  retire keys, to draw random bytes and to tag and verify messages, one
+  operation at a time, and publishes each answer. No key enters the machine:
+  it names each by the id its host gave it.
 
   Each request record of the library is also the event that asks for it
   (`host.cose.sign1.request`, ...). `cose.held.open` opens the object the
-  machine sealed last, which it keeps in `sealed_object`, since a seal draws a nonce
-  no scenario knows in advance.
+  machine sealed last, which it keeps in `sealed_object`, for a seal whose
+  nonce the scenario does not fix.
 
-    outcome    `done` when the host answered (a signature that does not
-               verify and an object that does not open included), the failure
-               code (`unknown_key`, `unavailable`) when its answer is a
-               failure, `refused` when it declined to start
+    outcome    `done` when the host answered (a signature or a tag that does
+               not verify and an object that does not open included), the
+               failure code (`unknown_key`, `key_retired`, `unavailable`) when
+               its answer is a failure, `refused` when it declined to start
     signed_object   the object the last signing gave
     valid, signer, payload       the last verification's answer
     sealed_object   the object the last seal gave
     opened, plaintext            the last opening's answer
     derived    the id of the key the last derivation gave
+    drawn      the bytes the last draw gave
+    tag, tag_valid               the last tag, the last verification of one
+    generated  the id of the key the last generation gave
+    cose_key   the COSE_Key the last export gave
+    retired    the last retirement's answer
 
   Only `outcome` is written by a failure or a refusal; what an earlier
   operation published stays.
 
   The operations are served by the Rust and C++ reference hosts
-  (docs/adr/0107, D7 and D8), and a build for any other lane refuses this
-  machine on its first `<invoke>`.
+  (docs/adr/0107, D7 and D8; docs/adr/0109, D0), and a build for any other
+  lane refuses this machine on its first `<invoke>`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_host_cose">
@@ -42,6 +49,18 @@
   <sce:import kind="event-schema" src="sce:std/host/cose_decrypt0_result.scxml" as="Decrypt0Result"/>
   <sce:import kind="event-schema" src="sce:std/host/key_derive_request.scxml" as="KeyDeriveRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/key_derive_result.scxml" as="KeyDeriveResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/random_bytes_request.scxml" as="RandomBytesRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/random_bytes_result.scxml" as="RandomBytesResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/mac_request.scxml" as="MacRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/mac_result.scxml" as="MacResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/mac_verify_request.scxml" as="MacVerifyRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/mac_verify_result.scxml" as="MacVerifyResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/key_generate_request.scxml" as="KeyGenerateRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/key_generate_result.scxml" as="KeyGenerateResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/key_public_request.scxml" as="KeyPublicRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/key_public_result.scxml" as="KeyPublicResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/key_retire_request.scxml" as="KeyRetireRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/key_retire_result.scxml" as="KeyRetireResult"/>
   <sce:import kind="event-schema" src="schema_cose_held.scxml" as="HeldOpen"/>
   <datamodel>
     <!-- The arguments of the operation the machine is asking for. -->
@@ -61,6 +80,14 @@
     <data id="input_key" sce:type="string[64]" expr="''"/>
     <data id="salt" sce:type="bytes[64]" expr="''"/>
     <data id="info" sce:type="bytes[256]" expr="''"/>
+    <data id="draw_length" sce:type="uint16" expr="0"/>
+    <data id="tag_key" sce:type="string[64]" expr="''"/>
+    <data id="tag_message" sce:type="bytes[mac_message=4096]" expr="''"/>
+    <data id="tag_given" sce:type="bytes[32]" expr="''"/>
+    <data id="key_use" sce:type="string[8]" expr="''"/>
+    <data id="key_label" sce:type="string[64]" expr="''"/>
+    <data id="export_key" sce:type="string[64]" expr="''"/>
+    <data id="retire_key" sce:type="string[64]" expr="''"/>
     <!-- What the machine publishes. -->
     <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
     <data id="signed_object" sce:type="bytes[4352]" expr="''" sce:direction="out"/>
@@ -71,6 +98,12 @@
     <data id="opened" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="plaintext" sce:type="bytes[4352]" expr="''" sce:direction="out"/>
     <data id="derived" sce:type="string[64]" expr="''" sce:direction="out"/>
+    <data id="drawn" sce:type="bytes[random_bytes=256]" expr="''" sce:direction="out"/>
+    <data id="tag" sce:type="bytes[32]" expr="''" sce:direction="out"/>
+    <data id="tag_valid" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="generated" sce:type="string[64]" expr="''" sce:direction="out"/>
+    <data id="cose_key" sce:type="bytes[128]" expr="''" sce:direction="out"/>
+    <data id="retired" sce:type="bool" expr="false" sce:direction="out"/>
   </datamodel>
 
   <state id="idle">
@@ -104,6 +137,28 @@
       <assign location="input_key" expr="_event.data.input_key_id"/>
       <assign location="salt" expr="_event.data.salt"/>
       <assign location="info" expr="_event.data.info"/>
+    </transition>
+    <transition event="host.random.bytes.request" target="drawing">
+      <assign location="draw_length" expr="_event.data.length"/>
+    </transition>
+    <transition event="host.mac.request" target="tagging">
+      <assign location="tag_key" expr="_event.data.key_id"/>
+      <assign location="tag_message" expr="_event.data.message"/>
+    </transition>
+    <transition event="host.mac.verify.request" target="checking">
+      <assign location="tag_key" expr="_event.data.key_id"/>
+      <assign location="tag_message" expr="_event.data.message"/>
+      <assign location="tag_given" expr="_event.data.tag"/>
+    </transition>
+    <transition event="host.key.generate.request" target="generating">
+      <assign location="key_use" expr="_event.data.key_use"/>
+      <assign location="key_label" expr="_event.data.label"/>
+    </transition>
+    <transition event="host.key.public.request" target="exporting">
+      <assign location="export_key" expr="_event.data.key_id"/>
+    </transition>
+    <transition event="host.key.retire.request" target="retiring">
+      <assign location="retire_key" expr="_event.data.key_id"/>
     </transition>
   </state>
 
@@ -194,6 +249,106 @@
       <assign location="outcome" expr="'done'"/>
     </transition>
     <transition event="done.invoke.derive" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="drawing">
+    <invoke type="sce-host-random-bytes" id="draw" sce:request="RandomBytesRequest" sce:result="RandomBytesResult">
+      <param name="length" expr="draw_length"/>
+    </invoke>
+    <transition event="done.invoke.draw" cond="_event.data.error === ''" target="idle">
+      <assign location="drawn" expr="_event.data.bytes"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.draw" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="tagging">
+    <invoke type="sce-host-mac" id="mac" sce:request="MacRequest" sce:result="MacResult">
+      <param name="key_id" expr="tag_key"/>
+      <param name="message" expr="tag_message"/>
+    </invoke>
+    <transition event="done.invoke.mac" cond="_event.data.error === ''" target="idle">
+      <assign location="tag" expr="_event.data.tag"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.mac" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="checking">
+    <invoke type="sce-host-mac-verify" id="mac_verify" sce:request="MacVerifyRequest" sce:result="MacVerifyResult">
+      <param name="key_id" expr="tag_key"/>
+      <param name="message" expr="tag_message"/>
+      <param name="tag" expr="tag_given"/>
+    </invoke>
+    <transition event="done.invoke.mac_verify" cond="_event.data.error === ''" target="idle">
+      <assign location="tag_valid" expr="_event.data.valid"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.mac_verify" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="generating">
+    <invoke type="sce-host-key-generate" id="key_generate" sce:request="KeyGenerateRequest" sce:result="KeyGenerateResult">
+      <param name="key_use" expr="key_use"/>
+      <param name="label" expr="key_label"/>
+    </invoke>
+    <transition event="done.invoke.key_generate" cond="_event.data.error === ''" target="idle">
+      <assign location="generated" expr="_event.data.key_id"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.key_generate" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="exporting">
+    <invoke type="sce-host-key-public" id="key_public" sce:request="KeyPublicRequest" sce:result="KeyPublicResult">
+      <param name="key_id" expr="export_key"/>
+    </invoke>
+    <transition event="done.invoke.key_public" cond="_event.data.error === ''" target="idle">
+      <assign location="cose_key" expr="_event.data.cose_key"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.key_public" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="retiring">
+    <invoke type="sce-host-key-retire" id="key_retire" sce:request="KeyRetireRequest" sce:result="KeyRetireResult">
+      <param name="key_id" expr="retire_key"/>
+    </invoke>
+    <transition event="done.invoke.key_retire" cond="_event.data.error === ''" target="idle">
+      <assign location="retired" expr="_event.data.retired"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.key_retire" target="idle">
       <assign location="outcome" expr="_event.data.error"/>
     </transition>
     <transition event="error.execution" target="idle">

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/random_bytes_request.scxml — the request of
+  `sce-host-random-bytes` (docs/SCE_HOST_FEATURES.md, "Random bytes").
+
+  `length` is how many bytes to draw: at least 1 and at most the bound of the
+  result's `bytes` (`random_bytes`, 256 unless a build moves it).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="random_bytes_request"
+       sce:event-name="host.random.bytes.request">
+  <datamodel>
+    <data id="length" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+</scxml>
