@@ -3067,6 +3067,118 @@ mod tests {
         assert_eq!(ecu.peer_restarted("nobody", 0), unknown);
     }
 
+    /// `ecu` asking `hmi` over an ordered binding (§mesh-10.6): every
+    /// envelope stamped, every arrival ordered, nothing held for readiness.
+    fn ordered_requester() -> Router {
+        let mut ecu = Router::new("ecu", 8, 50).unwrap();
+        ecu.add_peer(
+            "hmi",
+            PeerConfig {
+                buffer: None,
+                ..ORDERED
+            },
+        );
+        ecu
+    }
+
+    /// `hmi` answering `ecu` over the same ordered binding.
+    fn ordered_responder() -> Router {
+        let mut hmi = Router::new("hmi", 8, 50).unwrap();
+        hmi.add_peer(
+            "ecu",
+            PeerConfig {
+                buffer: None,
+                responders: &["ecu"],
+                reply_events: &["service.response.force"],
+                ..ORDERED
+            },
+        );
+        hmi
+    }
+
+    /// SCE_MESH.md section 10.6.4 after a restart: the copy of a request sent again carries
+    /// its first sequence number, below what the responder now expects. The
+    /// responder's duplicate window sees it before its ordering does
+    /// (§mesh-10.5), so the copy is answered from the reply cache and never
+    /// reaches the ordering buffer: it is neither a stale envelope dropped
+    /// unanswered nor a gap that holds back the requester's next envelope,
+    /// which is delivered at once. Red if ordering ran before the duplicate
+    /// window: the copy would then be dropped as stale and never answered.
+    #[test]
+    fn a_request_sent_again_on_an_ordered_binding_is_answered_once_and_holds_nothing_back() {
+        let mut ecu = ordered_requester();
+        let mut hmi = ordered_responder();
+        assert!(ecu.peer_ready("hmi", 0).unwrap().is_empty());
+        let asked = started(&mut ecu, None);
+        let stamped = Envelope::decode(&mut SceCursor::new(&asked))
+            .unwrap()
+            .sequence_no;
+        assert!(stamped.is_some(), "an ordered binding stamps the request");
+        assert_eq!(
+            events(&hmi.receive("ecu", asked.clone(), 0).unwrap()),
+            ["service.request.force"]
+        );
+        let first = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 0));
+
+        // The reply went to the mailbox the restart emptied.
+        let again = transmitted(ecu.peer_restarted("hmi", 10));
+        assert_eq!(
+            Envelope::decode(&mut SceCursor::new(&again))
+                .unwrap()
+                .sequence_no,
+            stamped,
+            "the copy keeps its first sequence number"
+        );
+        assert_eq!(sent_to_ecu(hmi.receive("ecu", again, 20)), first);
+
+        let next = transmitted(ecu.send(&request("#hmi", "status.changed", ""), [2; 16], 30));
+        assert_eq!(
+            events(&hmi.receive("ecu", next, 30).unwrap()),
+            ["status.changed"],
+            "the next envelope is not held behind the copy"
+        );
+        assert_eq!(
+            ecu.receive("hmi", first.clone(), 40).unwrap(),
+            alloc::vec![Effect::Complete {
+                invoke_id: "ask".to_string(),
+                token: 7,
+                data: r#"{"force":12}"#.to_string(),
+                source: "hmi".to_string(),
+            }]
+        );
+        assert!(ecu.receive("hmi", first, 50).unwrap().is_empty());
+    }
+
+    /// The same copy reaching a responder that started again with no state
+    /// for `ecu` (no checkpoint restored its window): it is the first envelope
+    /// that responder hears from `ecu`, so it anchors the ordering there
+    /// (SCE_MESH.md section 10.6.4) and is taken as new, and the requester's next envelope
+    /// follows on from it without waiting.
+    #[test]
+    fn a_request_sent_again_to_a_responder_without_state_anchors_its_ordering() {
+        let mut ecu = ordered_requester();
+        assert!(ecu.peer_ready("hmi", 0).unwrap().is_empty());
+        started(&mut ecu, None);
+        let again = transmitted(ecu.peer_restarted("hmi", 10));
+
+        let mut fresh = ordered_responder();
+        assert_eq!(
+            events(&fresh.receive("ecu", again, 20).unwrap()),
+            ["service.request.force"]
+        );
+        let next = transmitted(ecu.send(&request("#hmi", "status.changed", ""), [2; 16], 30));
+        assert_eq!(
+            events(&fresh.receive("ecu", next, 30).unwrap()),
+            ["status.changed"]
+        );
+        let reply =
+            sent_to_ecu(fresh.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 40));
+        assert!(matches!(
+            ecu.receive("hmi", reply, 50).unwrap().as_slice(),
+            [Effect::Complete { invoke_id, .. }] if invoke_id == "ask"
+        ));
+    }
+
     #[test]
     fn uuid_text_reads_back_what_it_wrote_in_either_case_and_nothing_else() {
         assert_eq!(rpc::parse_uuid_text(&rpc::uuid_text(&WIRE)), Some(WIRE));
