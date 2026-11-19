@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A rule over a table (docs/adr/0108, D6 item 2): `resets` holds the latest
+  generation of each peer, keyed by the peer's 128-bit id held as its low and
+  high halves (D1). A generation newer than the one held, or the first of a
+  peer, is put into the table in place and taken; one the table already holds,
+  or an older one, is a duplicate of the last; a new peer the full table has no
+  room for is refused. The table is an inout slot, written where it stands, so
+  the algorithm declares no may-fail: every operation of it is proven, the put
+  names its outcome, and the value read at the peer's key is read where `has`
+  proves the key present.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="take_generation"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_map_peer.scxml" as="Zid"/>
+  <sce:import kind="enum" src="enum_take_kind.scxml" as="TakeKind"/>
+  <sce:import kind="event-schema" src="schema_take_duplicate.scxml" as="Duplicate"/>
+  <sce:import kind="union" src="union_take_result.scxml" as="TakeResult"/>
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <sce:signature>
+    <sce:param name="resets" type="map&lt;record:Zid, uint64&gt;" inout="true"/>
+    <sce:param name="peer" type="record:Zid"/>
+    <sce:param name="generation" type="uint64"/>
+    <sce:return type="union:TakeResult"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="has(resets, peer) &amp;&amp; resets[peer] &gt;= generation">
+      <sce:var name="duplicate" type="union:TakeResult">
+        <sce:set name="kind" expr="TakeKind.duplicate"/>
+        <sce:set name="last" expr="resets[peer]"/>
+      </sce:var>
+      <sce:return expr="duplicate"/>
+    </sce:if>
+    <sce:var name="stored" type="enum:PutOutcome" init="PutOutcome.inserted"/>
+    <sce:put target="resets" key="peer" expr="generation" outcome="stored"/>
+    <sce:if cond="stored === PutOutcome.full">
+      <sce:var name="no_room" type="union:TakeResult">
+        <sce:set name="kind" expr="TakeKind.no_room"/>
+      </sce:var>
+      <sce:return expr="no_room"/>
+    </sce:if>
+    <sce:var name="taken" type="union:TakeResult">
+      <sce:set name="kind" expr="TakeKind.taken"/>
+    </sce:var>
+    <sce:return expr="taken"/>
+  </sce:body>
+</scxml>

@@ -961,6 +961,22 @@ impl Body<'_> {
                         .join(" ")
                 )
             }
+            // A map's statements, and a walk that binds a map's keys, stand
+            // only where the algorithm holds a map, which this lowering
+            // refuses where its slot is met (docs/adr/0108, D10).
+            AlgorithmStmt::Put { target, .. }
+            | AlgorithmStmt::Remove { target, .. }
+            | AlgorithmStmt::Clear { target, .. } => {
+                return Err(refusal(
+                    self.algorithm,
+                    format!(
+                        "the write of the map `{}`, which the Interpreter does not lower in an \
+                         algorithm yet ({})",
+                        target.trim(),
+                        crate::forge::value_type::MAP_LANDING
+                    ),
+                ));
+            }
             // The body goes on only where the condition holds, and fails
             // `precondition` where it does not (SCE_FORGE.md §3.4.1).
             AlgorithmStmt::Require { cond, .. } => format!(
@@ -1025,8 +1041,9 @@ fn holds(ty: &AlgorithmValueType) -> bool {
         // A union is the plain object of its wire form (docs/adr/0092, section
         // 7, the Interpreter row), held whole.
         AlgorithmValueType::Union { .. } => true,
-        // No algorithm's slot holds a map yet (docs/adr/0108, D10): refused by
-        // the view above, and named here too.
+        // An algorithm's map or set (docs/adr/0108, D5) is judged where its
+        // document is read, and this lowering holds none yet (D10): refused
+        // by name where it is met.
         AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => false,
         // A value that may be absent is `null` or its present value
         // (docs/adr/0055): a number, a `bool`, a text, a value of an enum (its

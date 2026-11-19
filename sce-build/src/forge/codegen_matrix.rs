@@ -460,6 +460,18 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
     Language::C11,
 ];
 
+/// The backends that lower an algorithm over a map or a set (docs/adr/0108,
+/// D5, D6 and "Order of work" step 7): a parameter that views the caller's map
+/// with no copy, one declared `inout` and written in place, a local and a
+/// return, read by `len`, `has` and `m[k]`, written by `<sce:put>`,
+/// `<sce:remove>` and `<sce:clear>` and walked by `<sce:foreach key>`. A
+/// backend joins this list in the change that gives it those spellings; a
+/// backend not listed refuses such an algorithm by name
+/// (`generate/unsupported-feature`) where it renders it, before any statement
+/// of its body is lowered, and the algorithm is judged alike on every backend
+/// before that, where its document is read.
+pub const ALGORITHM_MAP_BACKENDS: &[Language] = &[];
+
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
 /// §11.9, §12.6): a unit that declares the template's `match` and, for a
 /// specific template, its `value`, over the record types the backend's event

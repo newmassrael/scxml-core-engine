@@ -322,6 +322,8 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
                 name: "b".to_string(),
                 sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
                 type_spelling: None,
+                inout: false,
+                inout_spelling: None,
             }],
             return_type: Some(AlgorithmValueType::Bytes {
                 max: Some(Bound::of(4)),

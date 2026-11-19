@@ -416,8 +416,21 @@ impl Statement for Action {
 impl Statement for AlgorithmStmt {
     fn writes(&self, into: &mut Writes) {
         match self {
-            AlgorithmStmt::Assign { target, .. } | AlgorithmStmt::Append { target, .. } => {
-                into.write(target)
+            AlgorithmStmt::Assign { target, .. }
+            | AlgorithmStmt::Append { target, .. }
+            | AlgorithmStmt::Clear { target, .. } => into.write(target),
+            // A put and a remove write their map, and their outcome where they
+            // name one (docs/adr/0108, D3 and D4).
+            AlgorithmStmt::Put {
+                target, outcome, ..
+            }
+            | AlgorithmStmt::Remove {
+                target, outcome, ..
+            } => {
+                into.write(target);
+                if let Some(outcome) = outcome {
+                    into.write(outcome);
+                }
             }
             AlgorithmStmt::Var { name, .. }
             | AlgorithmStmt::RecordVar { name, .. }
@@ -452,6 +465,9 @@ impl Statement for AlgorithmStmt {
             | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
+            | AlgorithmStmt::Clear { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => Vec::new(),
@@ -1050,6 +1066,26 @@ impl AlgorithmWalk<'_, '_> {
                 expr_spelling,
                 ..
             } => self.judge(expr, expr_spelling.as_ref(), hint, proven),
+            // A map's key and value are read where the statement stands, as an
+            // append's value is (docs/adr/0108, D3); which map, key and value
+            // fit is the judge of the map's statements' own.
+            AlgorithmStmt::Put {
+                key,
+                key_spelling,
+                expr,
+                expr_spelling,
+                ..
+            } => {
+                self.judge(key, key_spelling.as_ref(), hint, proven)?;
+                match expr {
+                    Some(expr) => self.judge(expr, expr_spelling.as_ref(), hint, proven),
+                    None => Ok(()),
+                }
+            }
+            AlgorithmStmt::Remove {
+                key, key_spelling, ..
+            } => self.judge(key, key_spelling.as_ref(), hint, proven),
+            AlgorithmStmt::Clear { .. } => Ok(()),
             AlgorithmStmt::If {
                 cond,
                 cond_spelling,

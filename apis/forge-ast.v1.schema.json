@@ -448,6 +448,10 @@
     "AlgorithmParam": {
       "description": "One parameter of an algorithm signature. Parameters are by-value scalars, by-reference slices for `bytes`, by-value records (`record:<alias>`, SCE_FORGE.md §4.12), or read-only views of a `list<T>`. Read-only in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).",
       "properties": {
+        "inout": {
+          "description": "`<sce:param inout=\"true\">` (docs/adr/0108, D6 item 2): a map or a set the algorithm writes in place with `<sce:put>`, `<sce:remove>` and `<sce:clear>`, each write seen by the caller when the call returns. Only a map or a set is written so, and only by an algorithm that does not declare `may-fail`, which the parser holds; every other parameter is a read-only view of its argument.",
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
@@ -755,7 +759,7 @@
           "type": "object"
         },
         {
-          "description": "`<sce:foreach item=\"b\" in=\"data\">...</sce:foreach>` — iterate over a collection. Lowers to a counted byte-loop on `bytes`-typed sources.",
+          "description": "`<sce:foreach item=\"b\" in=\"data\">...</sce:foreach>` — iterate over a collection. Lowers to a counted byte-loop on `bytes`-typed sources. Over a map, `item` is each value and `key` each key, in the order the keys were first put; over a set, `item` is each key and no `key` is bound (docs/adr/0108, D5).",
           "properties": {
             "body": {
               "items": {
@@ -765,6 +769,13 @@
             },
             "item": {
               "type": "string"
+            },
+            "key": {
+              "description": "`key`: the name each entry's key of a map is bound to.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "source": {
               "type": "string"
@@ -781,6 +792,89 @@
             "item",
             "source",
             "stmt"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:put target=\"m\" key=\"k\" expr=\"v\" outcome=\"o\"/>` — set the value at `key` of the map local or `inout` map parameter `target`, putting the key last where it is absent; on a set, `expr` is absent (docs/adr/0108, D3 and D5). `outcome` names a local of the standard enum `sce:std/collection/put_outcome.scxml` the put writes what it did to, `full` among it, which leaves the map as it was; a put with no `outcome` fails on a full map, so an algorithm that does not declare `may-fail` names one on every put (D6 item 2).",
+          "properties": {
+            "expr": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key": {
+              "type": "string"
+            },
+            "outcome": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stmt": {
+              "enum": [
+                "put"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "stmt",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:remove target=\"m\" key=\"k\" outcome=\"o\"/>` — remove the entry at `key` of the map local or `inout` map parameter `target` (docs/adr/0108, D3); `outcome` names a local of the standard enum `sce:std/collection/remove_outcome.scxml`. A remove of an absent key with no `outcome` does nothing.",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "outcome": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stmt": {
+              "enum": [
+                "remove"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "stmt",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:clear target=\"m\"/>` — empty the map local or `inout` map parameter `target` (docs/adr/0108, D3).",
+          "properties": {
+            "stmt": {
+              "enum": [
+                "clear"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "stmt",
+            "target"
           ],
           "type": "object"
         },

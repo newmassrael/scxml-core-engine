@@ -1076,7 +1076,12 @@ fn render_algorithm(m: &AlgorithmModel) -> Vec<Node> {
         .signature
         .params
         .iter()
-        .map(|p| format!("{}: {}", text(&p.name), p.sce_type.as_attr()))
+        .map(|p| {
+            // A map or a set written in place is marked as such
+            // (docs/adr/0108, D6).
+            let inout = if p.inout { "inout " } else { "" };
+            format!("{inout}{}: {}", text(&p.name), p.sce_type.as_attr())
+        })
         .collect();
     // ⚠ The signature stays ONE text part. Its parentheses and commas
     // are this construct's punctuation and its parameter list is a
@@ -1315,6 +1320,44 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
         AlgorithmStmt::Append { target, expr, .. } => {
             out.line(&format!("append {} <- {}", text(target), text(expr)));
         }
+        // A map's statements (docs/adr/0108, D3): the map on the head line,
+        // and each free-text value on a line of its own beneath it, as a
+        // call's arguments are, so no value decides where another splits.
+        AlgorithmStmt::Put {
+            target,
+            key,
+            expr,
+            outcome,
+            ..
+        } => {
+            out.line(&format!("put {}:", text(target)));
+            out.nested(|out| {
+                out.line(&format!("key {}", text(key)));
+                if let Some(expr) = expr {
+                    out.line(&format!("value {}", text(expr)));
+                }
+                if let Some(outcome) = outcome {
+                    out.line(&format!("outcome {}", text(outcome)));
+                }
+            });
+        }
+        AlgorithmStmt::Remove {
+            target,
+            key,
+            outcome,
+            ..
+        } => {
+            out.line(&format!("remove {}:", text(target)));
+            out.nested(|out| {
+                out.line(&format!("key {}", text(key)));
+                if let Some(outcome) = outcome {
+                    out.line(&format!("outcome {}", text(outcome)));
+                }
+            });
+        }
+        AlgorithmStmt::Clear { target, .. } => {
+            out.line(&format!("clear {}", text(target)));
+        }
         AlgorithmStmt::If {
             cond,
             then_body,
@@ -1371,11 +1414,22 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             });
         }
         AlgorithmStmt::Foreach {
-            item, source, body, ..
+            item,
+            source,
+            key,
+            body,
+            ..
         } => {
+            // A walk over a map names each entry's key after its item
+            // (docs/adr/0108, D5); the two are names, so neither splits the
+            // other.
+            let item = match key {
+                Some(key) => format!("{} key {}", text(item), text(key)),
+                None => text(item).into_owned(),
+            };
             out.line_of(vec![
                 Part::Word(Word::Foreach),
-                Part::Text(text(item).into_owned()),
+                Part::Text(item),
                 Part::Word(Word::In),
                 Part::Text(text(source).into_owned()),
                 Part::Glued(":".into()),

@@ -10669,6 +10669,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `algorithm/append-type-mismatch` | Validation |
 | `algorithm/undeclared-integer-failure` | Validation |
 | `algorithm/require-without-may-fail` | Validation |
+| `algorithm/inout-on-may-fail` | Validation |
 | `codec/undeclared-encode-refusal` | Validation |
 | `codec/encode-may-fail-without-refusal` | Validation |
 | `codec/capacity-invalid` | Validation |

@@ -1916,6 +1916,30 @@ pub enum ValidationError {
     )]
     AlgorithmRequireWithoutMayFail { algorithm: String, cond: String },
 
+    /// docs/adr/0108, D6 item 2: an `inout` map or set parameter on an
+    /// algorithm that declares `<sce:return may-fail="true">`. A failure ends
+    /// a statechart's statement with its state as it was, and a call that had
+    /// already written half a table could not keep that promise, so a slot
+    /// written in place is given only to an algorithm proven never to fail.
+    /// `value` is the `inout` attribute's value, the record's `actual`.
+    ///
+    /// No `fix`: two repairs are right and the record cannot choose — drop
+    /// `may-fail` where the analysis proves the body cannot fail, or return
+    /// the new map from the `may-fail` algorithm instead.
+    ///
+    /// Wire code: `algorithm/inout-on-may-fail`.
+    #[error(
+        "algorithm '{algorithm}': <sce:param name=\"{param}\" inout=\"{value}\"> is written in \
+         place, and the algorithm declares <sce:return may-fail=\"true\"> — a failure would \
+         leave the map half written, so an inout slot is given only to an algorithm that \
+         cannot fail: drop may-fail, or return the new map instead (docs/adr/0108, D6)"
+    )]
+    AlgorithmInoutOnMayFail {
+        algorithm: String,
+        param: String,
+        value: String,
+    },
+
     /// SCE_FORGE.md §4.6, docs/adr/0065 §3: a codec that does not declare
     /// `sce:encode-may-fail="true"` states that its encode is total, and the
     /// encode refuses a value its source admits at `element`. Reported once

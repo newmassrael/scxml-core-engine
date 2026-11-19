@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What taking a peer's generation into a table of each peer's latest one did
+  (docs/adr/0108, D6 item 2): the generation was taken, it was a duplicate of
+  one already held or older, or the table had no room for a new peer. The tag
+  of `union_take_result.scxml`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="take_kind"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="taken" value="0"/>
+      <sce:variant name="duplicate" value="1"/>
+      <sce:variant name="no_room" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

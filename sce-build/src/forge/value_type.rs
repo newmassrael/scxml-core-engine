@@ -1804,10 +1804,28 @@ impl WrittenType {
     /// one (docs/adr/0086, section 7.3). Which backend lowers an algorithm's
     /// union is said where the algorithm is rendered
     /// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]).
+    ///
+    /// A `map<K, V>` and a `set<K>` are held whole too (docs/adr/0108, D5): a
+    /// parameter that views a statechart's map, read by `len`, `has`, `m[k]`
+    /// and `<sce:foreach>`, written in place where it is `inout`, a local and a
+    /// return. Its key and its value are held as every slot holds them
+    /// ([`Self::slot_view`]), so a map inside a map, a list or an optional value
+    /// is a composition no algorithm holds, refused by name. Which backend
+    /// lowers an algorithm's map is said where the algorithm is rendered
+    /// ([`crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS`]).
     pub fn algorithm_view(&self) -> Result<&Self, Composition> {
         match self {
             Self::Union { .. } => Ok(self),
             Self::List { elem, .. } if matches!(**elem, Self::Union { .. }) => Ok(self),
+            Self::Map { key, value, .. } => {
+                key.slot_view()?;
+                value.slot_view()?;
+                Ok(self)
+            }
+            Self::Set { key, .. } => {
+                key.slot_view()?;
+                Ok(self)
+            }
             _ => self.slot_view(),
         }
     }
@@ -8109,8 +8127,10 @@ mod tests {
         );
     }
 
-    /// No slot holds a map or a set yet, at any depth (docs/adr/0108, D10):
-    /// each refusal names the type and the record that lands it.
+    /// No slot of a statechart's lowering holds a map or a set through the one
+    /// view of a slot, at any depth (docs/adr/0108, D10), and an algorithm's
+    /// slot holds one whole and none inside another type (D5): each refusal
+    /// names the type and the record that lands it.
     #[test]
     fn a_map_is_held_by_no_slot_yet_and_names_its_landing() {
         for (text, place, constructor) in [
@@ -8126,9 +8146,17 @@ mod tests {
             };
             assert_eq!(written.slot_view(), Err(refused.clone()), "{text}");
             assert_eq!(written.variable_view(true), Err(refused.clone()), "{text}");
-            assert_eq!(written.algorithm_view(), Err(refused.clone()), "{text}");
             assert_eq!(WrittenType::from_attr(text), None, "{text}");
-            assert_eq!(WrittenType::algorithm_from_attr(text), None, "{text}");
+            // An algorithm's slot holds a map or a set whole (docs/adr/0108,
+            // D5), and none inside another type.
+            let whole = written.keyed().is_some_and(|map| *map == written);
+            if whole {
+                assert!(written.algorithm_view().is_ok(), "{text}");
+                assert!(WrittenType::algorithm_from_attr(text).is_some(), "{text}");
+            } else {
+                assert_eq!(written.algorithm_view(), Err(refused.clone()), "{text}");
+                assert_eq!(WrittenType::algorithm_from_attr(text), None, "{text}");
+            }
             assert_eq!(
                 written.keyed().map(ToString::to_string),
                 Some(place.to_string())

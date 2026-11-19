@@ -746,6 +746,13 @@ fn eval_stmt(
              (fold scope contains only scalar locals; building a runtime byte \
              buffer is not a fold-time value)"
         ))),
+        AlgorithmStmt::Put { target, .. }
+        | AlgorithmStmt::Remove { target, .. }
+        | AlgorithmStmt::Clear { target, .. } => Err(ConstFoldKind::NotFoldable(format!(
+            "a write of the map `{target}` is forbidden inside a fold body \
+             (fold scope contains only scalar locals; a map is no fold-time value, \
+             docs/adr/0108)"
+        ))),
         AlgorithmStmt::Require { cond, .. } => Err(ConstFoldKind::NotFoldable(format!(
             "<sce:require cond=\"{cond}\"> is forbidden inside a fold body \
              (a precondition hands its failure to an algorithm's caller, and a \

@@ -1197,6 +1197,11 @@ pub enum DiagnosticCode {
     // `may-fail`, which has no failure to hand its caller.
     #[serde(rename = "algorithm/require-without-may-fail")]
     AlgorithmRequireWithoutMayFail,
+    // An `inout` map or set parameter on an algorithm that declares
+    // `may-fail` (docs/adr/0108, D6), whose failure would leave the map half
+    // written.
+    #[serde(rename = "algorithm/inout-on-may-fail")]
+    AlgorithmInoutOnMayFail,
     // ── A codec's statement of its encode's totality (SCE_FORGE.md §4.6,
     //    docs/adr/0065): the statement disagrees with the refusals the
     //    build finds. ───────────────────────────────────────────────────
@@ -4128,6 +4133,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Integer arithmetic contract (SCE_FORGE.md §3.4.1)
         AlgorithmUndeclaredIntegerFailure,
         AlgorithmRequireWithoutMayFail,
+        // An inout slot only where nothing can fail (docs/adr/0108, D6)
+        AlgorithmInoutOnMayFail,
         // A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065)
         CodecUndeclaredEncodeRefusal,
         CodecEncodeMayFailWithoutRefusal,
@@ -5056,6 +5063,9 @@ impl DiagnosticCode {
             | AlgorithmConstIntegerFailure
             | AlgorithmRequireWithoutMayFail => Some("SCE Forge §3.4.1"),
 
+            // ── An inout slot of an algorithm (docs/adr/0108, D6) ──
+            AlgorithmInoutOnMayFail => Some("ADR 0108 D6"),
+
             // ── A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065) ──
             CodecCapacityInvalid => Some("ADR 0077 §7"),
             CodecUndeclaredEncodeRefusal
@@ -5895,6 +5905,7 @@ impl DiagnosticCode {
             | AlgorithmAppendTypeMismatch
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
+            | AlgorithmInoutOnMayFail
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid
@@ -6449,6 +6460,7 @@ impl DiagnosticCode {
             AlgorithmAppendTypeMismatch => "algorithm/append-type-mismatch",
             AlgorithmUndeclaredIntegerFailure => "algorithm/undeclared-integer-failure",
             AlgorithmRequireWithoutMayFail => "algorithm/require-without-may-fail",
+            AlgorithmInoutOnMayFail => "algorithm/inout-on-may-fail",
             CodecUndeclaredEncodeRefusal => "codec/undeclared-encode-refusal",
             CodecEncodeMayFailWithoutRefusal => "codec/encode-may-fail-without-refusal",
             CodecCapacityInvalid => "codec/capacity-invalid",
@@ -9255,6 +9267,22 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // names neither.
             fix: None,
             key_fragments: vec![algorithm.clone(), cond.clone()],
+        },
+        ValidationError::AlgorithmInoutOnMayFail {
+            algorithm,
+            param,
+            value,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmInoutOnMayFail,
+            stage: Stage::Validation,
+            expected: None,
+            // The declaration as written is what the author keeps or drops.
+            actual: Some(value.clone()),
+            // Two repairs are right — drop `may-fail` where the body cannot
+            // fail, or return the new map instead — so the record names
+            // neither.
+            fix: None,
+            key_fragments: vec![algorithm.clone(), param.clone()],
         },
         ValidationError::CodecVariantArmUnreachable {
             codec,
@@ -17563,6 +17591,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:fcf5d2957a0327ef","code":"algorithm/require-without-may-fail","stage":"validation","spec":"SCE Forge §3.4.1","message":"algorithm 'days_in_month': <sce:require cond=\"month >= 1\"> fails to the caller, and the algorithm does not declare <sce:return may-fail=\"true\"> — declare it, or drop the precondition","actual":"month >= 1"}"#,
             ),
+            // ── An inout slot of an algorithm (docs/adr/0108, D6) ─
+            (
+                "forge/algorithm-inout-on-may-fail",
+                ValidationError::AlgorithmInoutOnMayFail {
+                    algorithm: "take_generation".into(),
+                    param: "resets".into(),
+                    value: "true".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:81e9bfbb8aab747e","code":"algorithm/inout-on-may-fail","stage":"validation","spec":"ADR 0108 D6","message":"algorithm 'take_generation': <sce:param name=\"resets\" inout=\"true\"> is written in place, and the algorithm declares <sce:return may-fail=\"true\"> — a failure would leave the map half written, so an inout slot is given only to an algorithm that cannot fail: drop may-fail, or return the new map instead (docs/adr/0108, D6)","actual":"true"}"#,
+            ),
             // ── A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065) ─
             (
                 "forge/codec-undeclared-encode-refusal",
@@ -21195,6 +21234,7 @@ mod tests {
             | ValidationMigrationChainBroken
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
+            | AlgorithmInoutOnMayFail
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid
@@ -22340,6 +22380,7 @@ mod tests {
                 | AlgorithmAppendTypeMismatch
                 | AlgorithmUndeclaredIntegerFailure
                 | AlgorithmRequireWithoutMayFail
+                | AlgorithmInoutOnMayFail
                 | CodecUndeclaredEncodeRefusal
                 | CodecEncodeMayFailWithoutRefusal
                 | CodecCapacityInvalid
@@ -22742,9 +22783,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            551,
+            552,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 551 distinct variants to match the DiagnosticCode \
+             expected 552 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23458,6 +23499,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | AlgorithmAppendTypeMismatch
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
+            | AlgorithmInoutOnMayFail
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid

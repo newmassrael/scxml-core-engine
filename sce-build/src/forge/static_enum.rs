@@ -705,6 +705,42 @@ impl AlgorithmWalk<'_, '_> {
                 let slot = self.buffer_element(target.trim());
                 self.expect(expr, expr_spelling.as_ref(), &slot)
             }
+            // A map's key and value each stand in a place of the map's key and
+            // value type (docs/adr/0108, D3); a set's put names no value.
+            AlgorithmStmt::Put {
+                target,
+                key,
+                key_spelling,
+                expr,
+                expr_spelling,
+                ..
+            } => {
+                let map = self.map_type(target.trim());
+                let key_slot = map
+                    .and_then(|ty| ty.map_key())
+                    .map_or(Slot::Scalar, Slot::of);
+                self.expect(key, key_spelling.as_ref(), &key_slot)?;
+                match (expr, map) {
+                    (Some(expr), Some(AlgorithmValueType::Map { value, .. })) => {
+                        self.expect(expr, expr_spelling.as_ref(), &Slot::of(value))
+                    }
+                    (Some(expr), _) => self.expect(expr, expr_spelling.as_ref(), &Slot::Scalar),
+                    (None, _) => Ok(()),
+                }
+            }
+            AlgorithmStmt::Remove {
+                target,
+                key,
+                key_spelling,
+                ..
+            } => {
+                let key_slot = self
+                    .map_type(target.trim())
+                    .and_then(|ty| ty.map_key())
+                    .map_or(Slot::Scalar, Slot::of);
+                self.expect(key, key_spelling.as_ref(), &key_slot)
+            }
+            AlgorithmStmt::Clear { .. } => Ok(()),
             AlgorithmStmt::If {
                 cond,
                 cond_spelling,
@@ -784,6 +820,32 @@ impl AlgorithmWalk<'_, '_> {
                 _ => None,
             })
             .unwrap_or(Slot::Scalar)
+    }
+
+    /// The type of the map or set parameter or local `target` names
+    /// (docs/adr/0108, D5), whose key and value a statement of it writes.
+    fn map_type(&self, target: &str) -> Option<&AlgorithmValueType> {
+        use crate::forge::model::AlgorithmBinding;
+        let param = self
+            .m
+            .signature
+            .params
+            .iter()
+            .find(|p| p.name == target)
+            .map(|p| &p.sce_type);
+        param
+            .or_else(|| {
+                self.m
+                    .body_bindings()
+                    .into_iter()
+                    .find_map(|binding| match binding {
+                        AlgorithmBinding::Local { name, sce_type } if name == target => {
+                            Some(sce_type)
+                        }
+                        _ => None,
+                    })
+            })
+            .filter(|ty| ty.map_key().is_some())
     }
 
     /// `expr`, written at `spelling`, held to the place `slot` it stands in.

@@ -771,6 +771,7 @@ references against a real document and drift silently.
 | `algorithm/const-yield-type-mismatch` | `generate` | no | SCE Protocol-Synthesis RFC §5.F |
 | `algorithm/foreach-source-bc-with-bytes-item-type` | `validation` | no | SCE Protocol-Synthesis RFC §5.A + §5.L |
 | `algorithm/foreach-source-not-iterable` | `validation` | no | SCE Protocol-Synthesis RFC §5.A + §5.L |
+| `algorithm/inout-on-may-fail` | `validation` | no | ADR 0108 D6 |
 | `algorithm/local-shadows-param` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/lvalue-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/require-without-may-fail` | `validation` | no | SCE Forge §3.4.1 |

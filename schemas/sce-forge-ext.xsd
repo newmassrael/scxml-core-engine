@@ -1945,6 +1945,10 @@
            `list<T>` is admitted lexically so the parser's v1 refusal of a
            list parameter (SCE_FORGE.md §4.12) is the diagnostic an author sees. -->
       <xs:attribute name="type" type="sce:algorithmValueType"/>
+      <!-- docs/adr/0108, D6 item 2: a map or a set parameter the algorithm
+           writes in place, on an algorithm that does not declare may-fail
+           (the parser's rules). -->
+      <xs:attribute name="inout" type="xs:boolean"/>
     </xs:complexType>
   </xs:element>
 
@@ -2130,7 +2134,8 @@
 
   <!--
     Put an entry into a `sce-static` statechart's map or set variable
-    (docs/adr/0108, D3 and D4). `target` names the variable; `key` the key, an
+    (docs/adr/0108, D3 and D4), or into an algorithm's map or set local or
+    `inout` parameter (D5). `target` names the variable; `key` the key, an
     expression for a key of a number, a bool, an enum, a text or a byte string
     and the name of a record for a record key; `expr` the value, required of a
     map and refused on a set (the parser's rule); `outcome`, when written, a
@@ -2232,6 +2237,10 @@
       </xs:sequence>
       <xs:attribute name="item" type="xs:NCName" use="required"/>
       <xs:attribute name="in" type="xs:string" use="required"/>
+      <!-- docs/adr/0108, D5: over a map, the name each entry's key is bound
+           to; refused over a set and over any other source (the parser's
+           rule). -->
+      <xs:attribute name="key" type="xs:NCName"/>
     </xs:complexType>
   </xs:element>
 
