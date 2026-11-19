@@ -5957,6 +5957,99 @@ array the list is, with its body lowered as every other expression is.
 `scenarios/static_foreach.json` holds this on every engine that runs the
 model.
 
+**Map and set variables.** `sce:type="map<K, T>[N]"` (in XML
+`map&lt;K, T&gt;[N]`) holds at most `N` entries, each a key of `K` and a value
+of `T`, no two keys equal; `sce:type="set<K>[N]"` holds at most `N` keys, a map
+whose entries carry no value (docs/adr/0108, D1). A key is a fixed-width
+integer, a `bool`, an enum, a text or a byte string of a stated bound, or a
+record of an imported event-schema whose every field is a key, compared field
+by field; any other key is `validation/map-key-type`, naming the field of a
+record key that is not one. A value read here is a number, a `bool`, an enum, a
+text, a byte string or a record; a map of any other value, and a map held inside
+another type (a list's element, an optional value), is the language's and is
+`generate/unsupported-feature` by name. A map starts empty and takes no `expr`,
+as a list does, and its entries are in the order their keys were first put
+(D2). A map is no operand and two maps are not compared: a map read as a value
+(in an expression or a host action's argument) is
+`expression/unsupported-construct`, and so is a whole-map `<assign>` from
+anything but another map variable whose type it fits, which copies it whole.
+**No lane generates a map yet** (docs/adr/0108, D10): `check` judges a
+document that declares one, and every backend's `generate` and the Interpreter's
+lowering refuse it as `generate/unsupported-feature`, naming the type and that
+record, until the step that lands the lane.
+
+**Reading a map.** `len(m)` is the number of entries, a `uint32` as a list's
+length is; `has(m, k)` is `true` when `k` is one of its keys; `m[k]` is the
+value at `k`, read as an element of a list is read by its index and standing
+wherever a value of its type does, and `m[k].field` a field of a record value,
+typed by its schema (a field the schema does not declare is refused). The key is
+judged against `K` as a value assigned to a place of that type is: a value of
+its kind for a number, a `bool`, a text or a byte string, and never a value of
+an enum there; a variant or a place of the key's enum for an enum key; and, for
+a record key, the name of a record of its schema (a record variable, the item or
+key of a `<foreach>`, the payload, or a field that holds one). Anything else is
+`expression/unsupported-construct` or `expression/type-mismatch`. A key that is
+absent fails the read as an index outside a list does: `error.execution` is
+raised and the block ends, so a guard asks `has(m, k)` first. A set holds no
+value at a key: `s[k]` is `expression/unsupported-construct`, and `has(s, k)`
+asks whether it holds `k`. The value of a map of records at a key is taken whole
+only into a record variable of its schema, as an element taken whole is
+(`<assign location="last" expr="faces[peer]"/>`), copied field by field with
+its key read once for each, so the key may not name the record being written
+(`last = byId[last.id]` is `scxml/static-datamodel-rule`). An entry is written
+only by the statements below: `<assign location="m[k]">` is refused.
+
+**Writing a map: `<sce:put>` and `<sce:remove>`.** Three statements write a map
+or a set, each naming it by `target` as `<sce:append>` names a list
+(docs/adr/0108, D3 and D4):
+
+```xml
+<sce:put    target="faces" key="peer" expr="face" outcome="putResult"/>
+<sce:remove target="faces" key="peer" outcome="removeResult"/>
+<sce:clear  target="faces"/>
+<sce:put    target="seen" key="_event.data.id"/>   <!-- a set: no expr -->
+```
+
+`<sce:put>` sets the value at `key` to `expr`, putting the key last when it is
+absent and replacing its value where it stands when it is present. `key` is a
+scalar expression for a key of a number, a `bool`, an enum, a text or a byte
+string, and the name of a record for a record key; `expr` is a scalar expression
+for such a value and the name of a record for a record value, as `<sce:append>`
+takes a record. A put into a map names its value and a put into a set names
+none. `<sce:remove>` removes the entry at `key`; an absent key is removed by
+nothing. `<sce:clear>` empties a map or a set as it empties a list. `outcome`,
+when written, names a variable of the standard enum
+`sce:std/collection/put_outcome.scxml` (`inserted`, `replaced`, `full`) for a
+put, or `sce:std/collection/remove_outcome.scxml` (`removed`, `absent`) for a
+remove, imported as any enum is: the statement writes what it did there, and a
+`full` put leaves the map as it was and raises nothing, so the document branches
+on it and counts it. A put with no outcome that finds the map full raises
+`error.execution` and ends the block, as an append to a full list does. A limit
+the machine reads at run time is the document's own variable, tested before the
+put (`len(faces) < maxSessions`), and the bound in the type, readable as
+`_x.limits.<name>`, is how much the map can ever hold. A `target` that names no
+map or set, an `expr` on a set's put or none on a map's, an `expr` on a remove,
+and an `outcome` that names no variable of the statement's standard enum are
+`scxml/static-datamodel-rule`, each naming what is accepted, and so is either
+statement under any other data model.
+
+**Iterating a map.** `<foreach array="faces" item="v" sce:key="k" index="i">`
+walks a map variable in the order its keys were first put: `item` is each
+value, `sce:key` (which may be left out) its key and `index`, which may be left
+out, its position from 0, a `uint32` (docs/adr/0108, D5). Over a set `item` is
+each key, and `sce:key` is refused, as it is over a list. The key is held to the
+rules the item and the index keep (a code identifier no backend reserves, not
+beginning `sce_`, meaning nothing in scope, apart from the item's and the
+index's names), and is read and never written; a record key or value is a
+closed record of its schema, read typed and handed whole as a loop's record item
+is. The walk is of the map as it was when the loop began, as a list's is, so a
+body that writes the map writes the machine's map and not the walk.
+`sce:key` is refused under any other data model.
+`sce-build/tests/fixtures/map/map_faces.scxml` writes every read, statement
+and loop above, and
+`sce-build/tests/a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane.rs`
+holds what is accepted and each refusal.
+
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports
 (`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge
 kind does, `DaysInMonth(shown.year, shown.month)`, in a guard, an assignment
