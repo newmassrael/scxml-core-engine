@@ -13,8 +13,8 @@
   rows while one is left, and counts a refusal once none is.
 
   The values reach the machine as one JSON object, the configuration of its deployment:
-  `deployment/deploy.yaml` writes it under the machine, which `generate --deploy` checks
-  and writes as `deployment/static_deployment.config.json`; `deployment/from_file.json`
+  `deployment/deploy.yaml` writes it under the machine, which `sce-codegen generate`, given
+  the deployment, checks and writes as `deployment/static_deployment.config.json`; `deployment/from_file.json`
   is a file a host would name with `config_file:`; the other files of `deployment/` are
   configurations the machine's reader refuses. Rust and C++ build the machine from them
   (backends/rust/tests/tests/a_machine_reads_its_deployments_values.rs,
