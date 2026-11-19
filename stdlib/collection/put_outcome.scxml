@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/collection/put_outcome.scxml — what an <sce:put> into a map or a set
+  did (docs/adr/0108, D4), written to the variable its `outcome` names:
+
+  - `inserted`: the key was absent, and the entry is put last in the map's order;
+  - `replaced`: the key was present, and its value is replaced where it stands
+    (a set's key is left as it was);
+  - `full`: the key was absent and the map holds as many entries as its bound,
+    so the map is left as it was and nothing is raised.
+
+  A put that names no outcome and finds its map full raises error.execution and
+  ends its block, as an append to a full list does.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="put_outcome" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="inserted" value="0"/>
+      <sce:variant name="replaced" value="1"/>
+      <sce:variant name="full" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

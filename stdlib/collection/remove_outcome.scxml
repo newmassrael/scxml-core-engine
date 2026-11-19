@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/collection/remove_outcome.scxml — what an <sce:remove> from a map or a
+  set did (docs/adr/0108, D4), written to the variable its `outcome` names:
+
+  - `removed`: the key was present, and its entry is gone from the map's order;
+  - `absent`: the key was not present, and the map is left as it was.
+
+  A remove that names no outcome and finds its key absent does nothing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="remove_outcome" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="removed" value="0"/>
+      <sce:variant name="absent" value="1"/>
+    </data>
+  </datamodel>
+</scxml>
