@@ -470,6 +470,13 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
 /// (`generate/unsupported-feature`) where it renders it, before any statement
 /// of its body is lowered, and the algorithm is judged alike on every backend
 /// before that, where its document is read.
+///
+/// A statechart on a backend listed here lends an imported algorithm its map
+/// (`StaticTarget::lends_maps`, the `<sce:call>` statement of D6 item 2); on
+/// any other the call is refused by name first
+/// (`static_lowering::lent_map_unlowered`). The Interpreter's ECMAScript
+/// lowering lowers both, the first lane to (D10), and is no [`Language`]: its
+/// target answers for itself.
 pub const ALGORITHM_MAP_BACKENDS: &[Language] = &[];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md

@@ -1173,6 +1173,86 @@ pub struct CrossedCase {
     pub to: String,
 }
 
+/// A `<sce:call>` statement (docs/adr/0108, D6 item 2) as the walk lowered its
+/// parts, for a target to spell ([`StaticTarget::in_place_call`]): one call of
+/// an imported algorithm that writes the maps `lent` in place, its answer
+/// stored into `store` or dropped.
+///
+/// The call is lowered by the walk that lowers every call of an algorithm with
+/// state in a slot ([`StaticTarget::state_argument`],
+/// [`StaticTarget::state_adapter`]), so a target spells the loan of a map the
+/// way it spells a record argument: a map lent to be read
+/// (`StaticSlot::Map` with `inout` false) as a view of the variable, and a map
+/// lent to be written ([`StateArg::slot`]`.written_in_place()`) as the access
+/// the algorithm writes it through. What the target adds here is the
+/// statement: the call, each lent map holding what the algorithm left in it,
+/// and the answer stored, all once the call has returned and in that order.
+/// The algorithm declares no `may-fail` (`algorithm/inout-on-may-fail`), so
+/// the call itself cannot fail, and nothing between the writes and the store
+/// can: what can fail is only an argument the walk computed before the call
+/// (`can_fail`), which then ends the statement before anything is written
+/// (§scxml-4.9).
+pub struct InPlaceCall<'a> {
+    /// The call, lowered as an expression of the type of the place it is
+    /// stored into (an untyped one where the statement stores nothing): the
+    /// algorithm's adapter called ([`StaticTarget::state_adapter_name`]), or
+    /// the algorithm itself on a target that has none
+    /// ([`StaticTarget::has_state_adapters`]), each map argument spelled by
+    /// [`StaticTarget::state_argument`], and its answer converted as the
+    /// place takes it (a text held to the place's bound).
+    pub call: &'a str,
+    /// The type [`Self::call`] is lowered as, the type of the place it is
+    /// stored into (`InferredType::Unknown` where it is stored nothing, and for
+    /// a record or a union), what [`StaticTarget::receiving_write`] reads.
+    pub ty: InferredType,
+    /// Whether computing [`Self::call`] can fail, an argument of it the walk
+    /// computed: the statement is then written as a target writes a statement
+    /// that can fail ([`StaticTarget::receiving_write`] where it stores the
+    /// answer, [`StaticTarget::receiving_statement`] where it does not), with
+    /// `failed`.
+    pub can_fail: bool,
+    /// What a target that raises `error.execution` itself raises where the call
+    /// fails ([`MapWrite::failed`]).
+    pub failed: &'a str,
+    /// Each map or set variable the call writes in place, in the order of the
+    /// parameters that take them; none is named twice (the judge refuses it).
+    pub lent: &'a [LentMap<'a>],
+    /// Where the answer goes, or `None` for a call that drops it (no
+    /// `location`, or an algorithm that returns nothing).
+    pub store: Option<CallStore<'a>>,
+}
+
+/// A map or a set variable a `<sce:call>` lends to be written in place
+/// ([`InPlaceCall::lent`]).
+pub struct LentMap<'a> {
+    /// The variable, as the target names it.
+    pub map: &'a str,
+    /// The placeholder its argument took in the call
+    /// ([`crate::forge::type_ctx::STATE_PLACEHOLDERS`]), the one
+    /// [`StateArg::placeholder`] holds where [`StaticTarget::state_argument`]
+    /// spelled it: what a target whose loan is a holder of its own, which the
+    /// statement reads back after the call, names that holder by.
+    pub placeholder: &'a str,
+    /// The type the machine holds it in ([`MapWrite::ty`]); empty for a target
+    /// that does not type its maps.
+    pub ty: &'a str,
+    /// The most entries it holds, as the build resolved its bound: what a put
+    /// of the algorithm into it is held to, since the parameter states no bound
+    /// of its own (docs/adr/0108, D5).
+    pub capacity: u32,
+}
+
+/// The place a `<sce:call>` stores its answer into ([`InPlaceCall::store`]):
+/// a variable, as an `<assign>` of the call to it writes it.
+pub struct CallStore<'a> {
+    /// The variable, as the target names it.
+    pub location: &'a str,
+    /// The statement that writes a value into it, as the walk writes an
+    /// `<assign>` to it ([`StaticTarget::assign`] and the bounded writes of a
+    /// text and a byte string): `write(v)` for the value spelled `v`.
+    pub write: &'a dyn Fn(&str) -> String,
+}
+
 /// Which way a value of an enum crosses an adapter (docs/SCE_ACCEPTED_SUBSET.md
 /// §2.15): from the machine's own type for the enum into the type the enum document's
 /// generation declares, which the algorithm's records and parameters hold, or back.
@@ -1229,10 +1309,11 @@ fn crossing_records(slot: &StaticSlot) -> Vec<&str> {
 }
 
 /// What a refusal of a `<sce:call>` names (docs/adr/0108, D6 item 2): the
-/// statement, a call of an algorithm that writes a map in place, which no lane
-/// lowers until the step that lowers a map slot
-/// ([`crate::forge::value_type::MAP_CALL_LANDING`]). One wording for the walk
-/// of every target, the Interpreter's among them.
+/// statement, a call of an algorithm that writes a map in place, which a lane
+/// lowers in the step that lends it a map slot
+/// ([`crate::forge::value_type::MAP_CALL_LANDING`],
+/// [`StaticTarget::in_place_call`]). One wording for the walk of every target
+/// that does not.
 pub(crate) fn sce_call_unlowered(action: &Action) -> String {
     format!(
         "<sce:call expr=\"{}\">, a call of an algorithm that writes a map in place ({}),",
@@ -1244,11 +1325,14 @@ pub(crate) fn sce_call_unlowered(action: &Action) -> String {
 /// The refusal of a statechart whose scope calls an imported algorithm that
 /// takes a map or a set, on the lane `lane` (docs/adr/0108, D6 items 1, 2 and
 /// 4): the map is lent whole, the map itself where the algorithm writes it in
-/// place, and no lane lowers the loan yet. The one refusal every lane asks
-/// first, where its lowering of a `sce-static` document begins, before it reads
-/// the document's maps or lowers the algorithms it imports, so that a document
-/// that makes such a call is refused for the call on every lane, the
-/// Interpreter's among them. `Ok` for a scope that lends no map.
+/// place, which a lane lowers in the step that lends it one. The one refusal
+/// every lane that does not ([`StaticTarget::lends_maps`],
+/// [`crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS`]) asks first, where
+/// its lowering of a `sce-static` document begins, before it reads the
+/// document's maps or lowers the algorithms it imports, so that a document
+/// that makes such a call is refused for the call on every such lane. The
+/// caller asks whether its lane lends a map; this answers for the scope. `Ok`
+/// for a scope that lends no map.
 pub(crate) fn lent_map_unlowered(scope: &StaticScope, lane: &str) -> Result<(), GenerateError> {
     let lent_map = scope.callees.iter().find_map(|callee| {
         callee.value.as_ref()?.params.iter().find_map(|slot| {
@@ -1850,6 +1934,14 @@ pub trait StaticTarget {
     /// `held`: how this target spells the variable, payload or loop item that
     /// holds it — the field a variable renames to, the payload accessor, the
     /// loop's item.
+    ///
+    /// A map or a set (`arg.slot` a `StaticSlot::Map`) is lent whole and never
+    /// copied (docs/adr/0108, D6 items 1 and 4): read-only, as the view the
+    /// algorithm's read-only slot takes of it (Rust `&` the map, C11 a `const`
+    /// pointer to it), and written in place where `arg.slot.written_in_place()`,
+    /// as the access the algorithm writes it through (Rust `&mut`, C11 a
+    /// pointer), which only a `<sce:call>` hands ([`Self::in_place_call`]).
+    /// Asked only of a target that [`Self::lends_maps`].
     fn state_argument(&self, _machine: &str, _arg: &StateArg, _held: &str) -> String {
         unreachable!("asked of a target that lowers_state_calls() refused")
     }
@@ -1888,6 +1980,53 @@ pub trait StaticTarget {
     /// declaration of a member, in the target's own language. `None` for a target
     /// whose adapter holds no storage, and for a call whose adapter needs none.
     fn adapter_storage(&self, _spec: &AdapterSpec<'_>) -> Option<Vec<String>> {
+        None
+    }
+    /// Whether this target lends an imported algorithm a map or a set
+    /// (docs/adr/0108, D6 items 1, 2 and 4): a read-only map slot of a call in
+    /// an expression, spelled by [`Self::state_argument`] and, on a target with
+    /// adapters, an arm of [`Self::state_adapter`] for `AdapterParam::State`
+    /// over `StaticSlot::Map` that declares the parameter as the view and hands
+    /// it on as it is; and an `inout` slot, lent by the `<sce:call>` statement
+    /// [`Self::in_place_call`] spells, the adapter then declaring the access
+    /// the algorithm writes through. A target that does not refuses the
+    /// document that makes such a call by name
+    /// ([`lent_map_unlowered`]), before it reads the maps the document holds.
+    /// A generated backend answers by
+    /// [`crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS`], the list its
+    /// algorithm's own map lowering is held to, so a machine lends a map only
+    /// to an algorithm its backend generates; the Interpreter, which is no
+    /// [`Language`], answers for itself.
+    fn lends_maps(&self) -> bool {
+        use crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS;
+        self.expr_target()
+            .language()
+            .is_some_and(|lang| ALGORITHM_MAP_BACKENDS.contains(&lang))
+    }
+    /// The statement a `<sce:call>` lowers to (docs/adr/0108, D6 item 2,
+    /// [`InPlaceCall`]): `call.call` run once, then each map of `call.lent`
+    /// holding what the algorithm left in it, then the answer written by
+    /// `call.store`, where it names a place, nothing written where the
+    /// arguments of the call fail (`call.can_fail`).
+    ///
+    /// A target whose algorithm writes the lent map where it stands (Rust
+    /// through `&mut`, C11 through a pointer) has nothing to write back: the
+    /// statement is `store.write(call)`, or the call alone where it stores
+    /// nothing, received where `call.can_fail` as [`Self::receiving_write`]
+    /// and [`Self::receiving_statement`] receive a statement that can fail.
+    /// The adapter of such a call takes each inout map as the access it is
+    /// lent by and hands it to the algorithm as it is: the map holds its
+    /// entries in the types the algorithm's slot holds them in (docs/adr/0108,
+    /// D6 item 4, [`Self::map_unit`]), so nothing crosses but the call's other
+    /// arguments and its answer.
+    ///
+    /// A target whose maps are values never changed in place (the
+    /// Interpreter's array of entries, docs/adr/0108, D10) lends a holder of
+    /// its own, named by each [`LentMap::placeholder`], spells the argument as
+    /// that holder ([`Self::state_argument`]), and writes each variable from
+    /// it after the call. `None` for a target with no such lowering, which
+    /// refuses the statement by name.
+    fn in_place_call(&self, _call: &InPlaceCall<'_>) -> Option<String> {
         None
     }
     /// The line that brings the generated unit of the event-schema document
@@ -7933,7 +8072,9 @@ pub fn lower(
     }
     // Asked again of a target lowered on its own, before any adapter is asked
     // for a map slot; each lane's entry asks it first ([`lent_map_unlowered`]).
-    lent_map_unlowered(&scope, lang)?;
+    if !target.lends_maps() {
+        lent_map_unlowered(&scope, lang)?;
+    }
     // A call that hands an algorithm a record or a list, or takes one back, needs
     // the target's adapter for it; a target without one refuses the document by
     // name instead of leaving the call undefined where the machine runs.
@@ -23534,15 +23675,157 @@ fn lower_action(
             rewrites.note_element(action.spellings.get("target"), &action.native_code);
         }
         // docs/adr/0108, D6 item 2: a call of an algorithm that writes a map in
-        // place, which no target lowers until the step that lends a map
-        // ([`sce_call_unlowered`]). A document that calls one is refused before
-        // this walk, where the algorithm it calls is ([`lower`]); this arm is
-        // what a target reaches with no such callee in scope.
+        // place, its answer stored where `location` names a variable. The call
+        // is lowered as every call of an algorithm with state in a slot is
+        // (`Rewrites::owned`), each map argument spelled as the target lends
+        // it ([`StaticTarget::state_argument`]), and the target writes the
+        // statement ([`StaticTarget::in_place_call`]). A target that lends no
+        // map refused the document before this walk ([`lent_map_unlowered`]);
+        // this arm refuses it by the same name where the target spells no
+        // statement.
         "sce_call" => {
-            return Err(GenerateError::unsupported(format!(
-                "{} has no {lang} lowering yet",
-                sce_call_unlowered(action)
-            )));
+            reads_payload = reads(&action.expr);
+            let written = action.expr.trim();
+            let location = action.location.trim();
+            let refused = format!("{} has no {lang} lowering yet", sce_call_unlowered(action));
+            let unlowered = || GenerateError::unsupported(refused.clone());
+            // The judge held the location to a variable an `<assign>` of the
+            // call's answer writes whole (D6 item 2): a part of one is no place
+            // this statement writes.
+            if location.contains(['.', '[']) {
+                return Err(GenerateError::unsupported(format!(
+                    "{}: its location `{location}` is a part of a variable, and the answer of \
+                     the call is stored into a variable whole",
+                    sce_call_unlowered(action)
+                )));
+            }
+            let rewrite = rewrites.rewrite_state_calls(written).map_err(|refusal| {
+                GenerateError::unsupported(format!(
+                    "{}: a call of `{}`: {}",
+                    sce_call_unlowered(action),
+                    refusal.callee,
+                    refusal.reason
+                ))
+            })?;
+            let callee = rewrite
+                .calls
+                .first()
+                .and_then(|coded| rewrites.scope.state_call(coded))
+                .and_then(|call| rewrites.scope.value_callee(&call.alias))
+                .ok_or_else(unlowered)?;
+            // An algorithm that returns nothing is called as the statement
+            // drops what it answers, as the judge read it
+            // ([`crate::forge::type_ctx::statement_sig`]); one that returns a
+            // value is typed by its own signature already.
+            let mut statement_ctx = ctx.clone();
+            if callee
+                .value
+                .as_ref()
+                .is_some_and(|value| value.ret.is_none())
+            {
+                if let Some(sig) = crate::forge::type_ctx::statement_sig(callee) {
+                    for made in rewrites
+                        .scope
+                        .state_calls()
+                        .iter()
+                        .filter(|made| made.alias == callee.alias)
+                    {
+                        statement_ctx.insert_func(made.name.as_str(), sig.clone());
+                    }
+                }
+            }
+            let ty = if location.is_empty() {
+                InferredType::Unknown
+            } else {
+                crate::forge::expr::infer_expr_type(location, ctx).unwrap_or(InferredType::Unknown)
+            };
+            let mut value = rewrites
+                .owned(written, &statement_ctx, renames, ty)
+                .map_err(|r| {
+                    GenerateError::unsupported(format!(
+                        "`{written}` has no {lang} lowering: {}",
+                        r.error
+                    ))
+                })?;
+            // A text or a byte string is held to the bound of the variable it is
+            // stored into, as an `<assign>` holds it.
+            if let Some(capacity) = rewrites.strings.get(location) {
+                value = Receiving {
+                    text: target.bounded_string(&value.text, *capacity),
+                    can_fail: true,
+                };
+            } else if let Some(capacity) = rewrites.bytes.get(location) {
+                value = Receiving {
+                    text: target.bounded_bytes(&value.text, *capacity),
+                    can_fail: true,
+                };
+            }
+            // Each map the call writes in place, in the order of the parameters
+            // that take it, as the target names it and holds it.
+            let mut lent_parts = Vec::new();
+            for arg in rewrite
+                .args
+                .iter()
+                .filter(|arg| arg.slot.written_in_place())
+            {
+                let map = arg.written.as_str();
+                let capacity = rewrites
+                    .scope
+                    .map_variable(map)
+                    .and_then(|(var, _)| var.capacity())
+                    .ok_or_else(unlowered)?;
+                let held = rewrites
+                    .map_types
+                    .borrow()
+                    .get(map)
+                    .cloned()
+                    .unwrap_or_default();
+                lent_parts.push((
+                    renames.get(map).copied().unwrap_or(map),
+                    arg.placeholder.as_str(),
+                    held,
+                    capacity,
+                ));
+            }
+            let lent: Vec<LentMap<'_>> = lent_parts
+                .iter()
+                .map(|(map, placeholder, held, capacity)| LentMap {
+                    map,
+                    placeholder,
+                    ty: held,
+                    capacity: *capacity,
+                })
+                .collect();
+            let name = renames.get(location).copied().unwrap_or(location);
+            let is_string = rewrites.strings.contains_key(location);
+            let is_bytes = rewrites.bytes.contains_key(location);
+            let write = |v: &str| {
+                if is_string {
+                    target.assign_string(name, v)
+                } else if is_bytes {
+                    target.assign_bytes(name, v)
+                } else {
+                    target.assign(name, v)
+                }
+            };
+            let failed = failed(format!("<sce:call expr='{written}'>"));
+            let call = InPlaceCall {
+                call: &value.text,
+                ty,
+                can_fail: value.can_fail,
+                failed: &failed,
+                lent: &lent,
+                store: (!location.is_empty()).then_some(CallStore {
+                    location: name,
+                    write: &write,
+                }),
+            };
+            action.native_code = target.in_place_call(&call).ok_or_else(unlowered)?;
+            action.native_fails = value.can_fail;
+            // The whole element, for a target that rewrites the document
+            // itself: its statement is the element that makes the call and
+            // holds its arguments, so the call is not noted beside it.
+            rewrites.note_element(action.spellings.get("expr"), &action.native_code);
         }
         // docs/adr/0108, D3 and D4: an entry of a map or a set put or removed at
         // its key, and what the statement did written where `outcome` names. A
