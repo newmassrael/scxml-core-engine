@@ -1,0 +1,4 @@
+{
+  "limits": { "max_rows": 1, "label": "x" },
+  "hosts": ["a.example", "b.example", "c.example", "d.example", "e.example"]
+}

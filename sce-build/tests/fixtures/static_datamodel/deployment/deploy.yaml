@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The deployment of `static_deployment.scxml` (docs/adr/0109, D12;
+# docs/SCE_ACCEPTED_SUBSET.md §2.8.4): its configuration written under the machine,
+# the record's fields and the deployment's keys in an order of their own.
+# `generate --deploy` checks it against the values the document declares and writes
+# it beside the machine as `static_deployment.config.json`, which this directory keeps
+# as the text the build writes and the Rust and C++ machines read.
+version: "1.0"
+topology:
+  server:
+    machines:
+      static_deployment:
+        source: ../static_deployment.scxml
+        config:
+          hosts: [a.example, b.example]
+          limits: { label: main, max_rows: 2 }

@@ -1,0 +1,5 @@
+{
+  "hosts": ["c.example"],
+  "limits": { "label": "file", "max_rows": 5 },
+  "note": "a member the machine declares no value of is stepped over"
+}
