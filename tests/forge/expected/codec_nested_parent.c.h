@@ -21,7 +21,6 @@
 
 typedef struct {
     uint8_t hdr;
-    uint8_t m;
     /* RFC §synth-5-B embed: nested codec_nested_body_t struct (no length prefix on the wire) */
     codec_nested_body_t required_body;
     /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
@@ -55,10 +54,11 @@ static inline sce_forge_codec_status_t codec_nested_parent_decode(sce_forge_curs
         out->hdr = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    uint8_t _d_m;
     {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->m = raw[0];
+        _d_m = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     {
@@ -72,10 +72,10 @@ static inline sce_forge_codec_status_t codec_nested_parent_decode(sce_forge_curs
         out->optional_body.present = true;
     }
     {
-        if (out->m > 4) {
+        if (_d_m > 4) {
             return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
         }
-        size_t _n = (size_t)out->m;
+        size_t _n = (size_t)_d_m;
         for (size_t _i = 0; _i < _n; ++_i) {
             sce_forge_codec_status_t _st = codec_nested_body_decode(cursor, &out->body_list[_i]);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
@@ -85,38 +85,188 @@ static inline sce_forge_codec_status_t codec_nested_parent_decode(sce_forge_curs
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The `body_list` element of codec_nested_parent_t: a list of 0 to 4 entries of codec_nested_body_t,
+ * walked where it is held, which outlives the list. A list is made by
+ * codec_nested_parent_body_list_list_make, which walks it once, counts its entries and refuses one
+ * outside the bound, so every list holds it (docs/adr/0081 §2) and the
+ * encode over a source writes its `count` entries, refusing nothing of
+ * the count. */
+typedef struct {
+    const sce_forge_walk_t *walk;
+    const void *ctx;
+    const codec_nested_body_source_t *entry;
+    size_t count;
+} codec_nested_parent_body_list_list_t;
+
+/* Make `*out` the list `walk` presents over `ctx`, each entry a source of
+ * codec_nested_body_t by `entry`: SCE_FORGE_CODEC_OK, or the refusal of a list
+ * outside its bound, `*out` then as it was. */
+static inline sce_forge_codec_status_t codec_nested_parent_body_list_list_make(codec_nested_parent_body_list_list_t *out, const sce_forge_walk_t *walk, const void *ctx, const codec_nested_body_source_t *entry) {
+    size_t count = 0;
+    for (const void *at = walk->begin(ctx); at != NULL; at = walk->next(ctx, at)) {
+        ++count;
+        if (!sce_forge_length_within_bound(count, 4)) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
+    }
+    out->walk = walk;
+    out->ctx = ctx;
+    out->entry = entry;
+    out->count = count;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The elements a value of codec_nested_parent_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_nested_parent_t is a source by the table
+ * codec_nested_parent_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*hdr)(const void *ctx);
+    codec_nested_body_source_ref_t (*required_body)(const void *ctx);
+    codec_nested_body_source_ref_optional_t (*optional_body)(const void *ctx);
+    codec_nested_parent_body_list_list_t (*body_list)(const void *ctx);
+} codec_nested_parent_source_t;
+
+/* A source of codec_nested_parent_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_nested_parent_source_t *table;
+    const void *ctx;
+} codec_nested_parent_source_ref_t;
+
+/* A source of codec_nested_parent_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_nested_parent_source_ref_optional, codec_nested_parent_source_ref_t)
+
+/* The `hdr` of the codec_nested_parent_t at `ctx`. */
+static inline uint8_t codec_nested_parent_value_hdr(const void *ctx) {
+    return ((const codec_nested_parent_t *)ctx)->hdr;
+}
+
+/* The `required_body` of the codec_nested_parent_t at `ctx`. */
+static inline codec_nested_body_source_ref_t codec_nested_parent_value_required_body(const void *ctx) {
+    const codec_nested_parent_t *self = (const codec_nested_parent_t *)ctx;
+    codec_nested_body_source_ref_t body;
+    body.table = codec_nested_body_value_source();
+    body.ctx = &self->required_body;
+    return body;
+}
+
+/* The `optional_body` of the codec_nested_parent_t at `ctx`. */
+static inline codec_nested_body_source_ref_optional_t codec_nested_parent_value_optional_body(const void *ctx) {
+    const codec_nested_parent_t *self = (const codec_nested_parent_t *)ctx;
+    if (!self->optional_body.present) {
+        return codec_nested_body_source_ref_optional_none();
+    }
+    codec_nested_body_source_ref_t body;
+    body.table = codec_nested_body_value_source();
+    body.ctx = &self->optional_body.value;
+    return codec_nested_body_source_ref_optional_some(body);
+}
+
+/* The first entry of the `body_list` of the codec_nested_parent_t at `ctx`, or NULL where
+ * it holds none. */
+static inline const void *codec_nested_parent_value_body_list_begin(const void *ctx) {
+    const codec_nested_parent_t *self = (const codec_nested_parent_t *)ctx;
+    return self->body_list_len > 0u ? (const void *)&self->body_list[0] : NULL;
+}
+
+/* The entry after `entry` of the `body_list` of the codec_nested_parent_t at `ctx`, or
+ * NULL where `entry` is its last. */
+static inline const void *codec_nested_parent_value_body_list_next(const void *ctx, const void *entry) {
+    const codec_nested_parent_t *self = (const codec_nested_parent_t *)ctx;
+    const codec_nested_body_t *at = (const codec_nested_body_t *)entry + 1;
+    return at < self->body_list + self->body_list_len ? (const void *)at : NULL;
+}
+
+/* The `body_list` of the codec_nested_parent_t at `ctx`. */
+static inline codec_nested_parent_body_list_list_t codec_nested_parent_value_body_list(const void *ctx) {
+    static const sce_forge_walk_t walk = {
+        codec_nested_parent_value_body_list_begin,
+        codec_nested_parent_value_body_list_next,
+    };
+    const codec_nested_parent_t *self = (const codec_nested_parent_t *)ctx;
+    codec_nested_parent_body_list_list_t list;
+    list.walk = &walk;
+    list.ctx = ctx;
+    list.entry = codec_nested_body_value_source();
+    list.count = self->body_list_len;
+    return list;
+}
+
+/* The table that presents a value of codec_nested_parent_t as a source of it, its
+ * context a `const codec_nested_parent_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_nested_parent_source_t *codec_nested_parent_value_source(void) {
+    static const codec_nested_parent_source_t table = {
+        codec_nested_parent_value_hdr,
+        codec_nested_parent_value_required_body,
+        codec_nested_parent_value_optional_body,
+        codec_nested_parent_value_body_list,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_nested_parent_encode_source(const codec_nested_parent_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint8_t _e_hdr = src->hdr(ctx);
+    const codec_nested_body_source_ref_t _e_required_body = src->required_body(ctx);
+    const codec_nested_body_source_ref_optional_t _e_optional_body = src->optional_body(ctx);
+    const codec_nested_parent_body_list_list_t _e_body_list = src->body_list(ctx);
+    const uint8_t _d_m = (uint8_t)(_e_body_list.count);
+    uint64_t _f_hdr = (uint64_t)_e_hdr;
+    _f_hdr = (_f_hdr & ~0x1ull) | (uint64_t)(_e_optional_body.present);
+    const uint8_t _c_hdr = (uint8_t)_f_hdr;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_hdr));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _d_m));
+    SCE_FORGE_TRY_WRITE(codec_nested_body_encode_source(_e_required_body.table, _e_required_body.ctx, w));
+    if (_e_optional_body.present) {
+        SCE_FORGE_TRY_WRITE(codec_nested_body_encode_source(_e_optional_body.value.table, _e_optional_body.value.ctx, w));
+    }
+    {
+        const void *_at = _e_body_list.walk->begin(_e_body_list.ctx);
+        for (size_t _i = 0; _i < _e_body_list.count && _at != NULL; ++_i) {
+            SCE_FORGE_TRY_WRITE(codec_nested_body_encode_source(_e_body_list.entry, _at, w));
+            _at = _e_body_list.walk->next(_e_body_list.ctx, _at);
+        }
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Whether `self` is a value of codec_nested_parent_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_nested_parent_check_value(const codec_nested_parent_t *self) {
+    SCE_FORGE_TRY_WRITE(codec_nested_body_check_value(&self->required_body));
+    if (self->optional_body.present) {
+        SCE_FORGE_TRY_WRITE(codec_nested_body_check_value(&self->optional_body.value));
+    }
+    if (!sce_forge_length_within_bound(self->body_list_len, 4)) {
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+    }
+    for (size_t _i = 0; _i < self->body_list_len; ++_i) {
+        SCE_FORGE_TRY_WRITE(codec_nested_body_check_value(&self->body_list[_i]));
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_NESTED_PARENT_MAX_BYTES bytes and use
  * `codec_nested_parent_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_nested_parent_encode(const codec_nested_parent_t *self, sce_forge_writer_t *w) {
-    /* A byte string, text, list or chain above the bound of the array that
-     * holds it is refused before the first byte is written: the array cannot
-     * hold that many, and a frame of fewer is not the value given. */
-    if (!sce_forge_length_within_bound(self->body_list_len, 4)) {
-        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
-    }
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->hdr));
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->m));
-    SCE_FORGE_TRY_WRITE(codec_nested_body_encode(&self->required_body, w));
-    if (self->optional_body.present) {
-        SCE_FORGE_TRY_WRITE(codec_nested_body_encode(&self->optional_body.value, w));
-    }
-    for (size_t _ri = 0; _ri < self->body_list_len; ++_ri) {
-        SCE_FORGE_TRY_WRITE(codec_nested_body_encode(&self->body_list[_ri], w));
-    }
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_nested_parent_check_value(self));
+    return codec_nested_parent_encode_source(codec_nested_parent_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`

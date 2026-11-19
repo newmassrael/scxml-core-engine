@@ -17,12 +17,39 @@
 #define CODEC_CHAIN_FLAG_ENTRY_MIN_BYTES 4
 #define CODEC_CHAIN_FLAG_ENTRY_MAX_BYTES 4
 
+/* The arms of the `wide` group of codec_chain_flag_entry_t (docs/adr/0065 §6 R4). */
+typedef enum {
+    CODEC_CHAIN_FLAG_ENTRY_WIDE_WIDE,
+    CODEC_CHAIN_FLAG_ENTRY_WIDE_NOT_WIDE,
+} codec_chain_flag_entry_wide_kind_t;
+
+/* The `wide` group of codec_chain_flag_entry_t where `wide` holds: the members present
+ * then. */
+typedef struct {
+    uint16_t long_value;
+} codec_chain_flag_entry_wide_wide_t;
+
+/* The `wide` group of codec_chain_flag_entry_t where `wide` does not hold: the members present
+ * then. */
+typedef struct {
+    uint8_t short_value;
+} codec_chain_flag_entry_wide_not_wide_t;
+
+/* The `wide` group of codec_chain_flag_entry_t: the arm the value holds, which `kind`
+ * names, each the members present while the gates hold its values
+ * (docs/adr/0065 §6 R4). */
+typedef struct {
+    codec_chain_flag_entry_wide_kind_t kind;
+    union {
+        codec_chain_flag_entry_wide_wide_t wide;
+        codec_chain_flag_entry_wide_not_wide_t not_wide;
+    } arm;
+} codec_chain_flag_entry_wide_t;
+
+
 typedef struct {
     uint8_t header;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint8_t short_value;
-    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_uint16_t long_value;
+    codec_chain_flag_entry_wide_t wide;
 } codec_chain_flag_entry_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -53,22 +80,134 @@ static inline sce_forge_codec_status_t codec_chain_flag_entry_decode(sce_forge_c
         out->header = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    uint8_t _d_short_value = 0;
     if ((wide & 0x01) == 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->short_value = sce_optional_uint8_some((uint8_t)(raw[0]));
+        _d_short_value = (uint8_t)(raw[0]);
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->short_value = sce_optional_uint8_none();
     }
+    uint16_t _d_long_value = 0;
     if ((wide & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->long_value = sce_optional_uint16_some((uint16_t)(((uint16_t)raw[0] << 8) | raw[1]));
+        _d_long_value = (uint16_t)(((uint16_t)raw[0] << 8) | raw[1]);
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->long_value = sce_optional_uint16_none();
     }
+    /* The `wide` group the gates the decode read select (docs/adr/0065
+     * §6 R4). */
+    memset(&out->wide, 0, sizeof out->wide);
+    if ((wide != 0)) {
+        out->wide.kind = CODEC_CHAIN_FLAG_ENTRY_WIDE_WIDE;
+        out->wide.arm.wide.long_value = _d_long_value;
+    } else {
+        out->wide.kind = CODEC_CHAIN_FLAG_ENTRY_WIDE_NOT_WIDE;
+        out->wide.arm.not_wide.short_value = _d_short_value;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The elements a value of codec_chain_flag_entry_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_chain_flag_entry_t is a source by the table
+ * codec_chain_flag_entry_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*header)(const void *ctx);
+    codec_chain_flag_entry_wide_t (*wide)(const void *ctx);
+} codec_chain_flag_entry_source_t;
+
+/* A source of codec_chain_flag_entry_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_chain_flag_entry_source_t *table;
+    const void *ctx;
+} codec_chain_flag_entry_source_ref_t;
+
+/* A source of codec_chain_flag_entry_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_chain_flag_entry_source_ref_optional, codec_chain_flag_entry_source_ref_t)
+
+/* The `header` of the codec_chain_flag_entry_t at `ctx`. */
+static inline uint8_t codec_chain_flag_entry_value_header(const void *ctx) {
+    return ((const codec_chain_flag_entry_t *)ctx)->header;
+}
+
+/* The `wide` group of the codec_chain_flag_entry_t at `ctx`. */
+static inline codec_chain_flag_entry_wide_t codec_chain_flag_entry_value_wide(const void *ctx) {
+    return ((const codec_chain_flag_entry_t *)ctx)->wide;
+}
+
+/* The table that presents a value of codec_chain_flag_entry_t as a source of it, its
+ * context a `const codec_chain_flag_entry_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_chain_flag_entry_source_t *codec_chain_flag_entry_value_source(void) {
+    static const codec_chain_flag_entry_source_t table = {
+        codec_chain_flag_entry_value_header,
+        codec_chain_flag_entry_value_wide,
+    };
+    return &table;
+}
+
+/* One-bit flags of codec_chain_flag_entry_t a parent may set in place of the ones a value
+ * presents, such as the flag a chain whose entries are codec_chain_flag_entry_t ends them
+ * on, which the chain derives from where each entry stands. A flag absent
+ * here is the value's own. */
+typedef struct {
+    /* The `Z` flag of `header`, where a parent sets it. */
+    sce_optional_bool_t header_z;
+} codec_chain_flag_entry_overrides_t;
+
+/* The overrides that set no flag. */
+static inline codec_chain_flag_entry_overrides_t codec_chain_flag_entry_overrides_none(void) {
+    codec_chain_flag_entry_overrides_t none;
+    none.header_z = sce_optional_bool_none();
+    return none;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_chain_flag_entry_encode_source_overriding(const codec_chain_flag_entry_source_t *src, const void *ctx, sce_forge_writer_t *w, codec_chain_flag_entry_overrides_t overrides) {
+    const uint8_t _e_header = src->header(ctx);
+    const codec_chain_flag_entry_wide_t _e_wide = src->wide(ctx);
+    const sce_optional_uint16_t _e_long_value = (_e_wide.kind == CODEC_CHAIN_FLAG_ENTRY_WIDE_WIDE ? sce_optional_uint16_some(_e_wide.arm.wide.long_value) : sce_optional_uint16_none());
+    const sce_optional_uint8_t _e_short_value = (_e_wide.kind == CODEC_CHAIN_FLAG_ENTRY_WIDE_NOT_WIDE ? sce_optional_uint8_some(_e_wide.arm.not_wide.short_value) : sce_optional_uint8_none());
+    uint64_t _f_header = (uint64_t)_e_header;
+    if (overrides.header_z.present) {
+        _f_header = (_f_header & ~0x80ull) | ((uint64_t)overrides.header_z.value << 7);
+    }
+    const uint8_t _c_header = (uint8_t)_f_header;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_header));
+    if (_e_short_value.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _e_short_value.value));
+    }
+    if (_e_long_value.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_e_long_value.value >> 8) & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(_e_long_value.value & 0xFF)));
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* codec_chain_flag_entry_encode_source_overriding with no flag set in place of the
+ * value's: the encode every caller but a parent that sets one calls. */
+static inline sce_forge_codec_status_t codec_chain_flag_entry_encode_source(const codec_chain_flag_entry_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    return codec_chain_flag_entry_encode_source_overriding(src, ctx, w, codec_chain_flag_entry_overrides_none());
+}
+
+/* The flag input `wide` a source of codec_chain_flag_entry_t says, which its encode is
+ * not handed (docs/adr/0065 §6 R4a). */
+static inline uint8_t codec_chain_flag_entry_input_wide(const codec_chain_flag_entry_source_t *src, const void *ctx) {
+    return (uint8_t)((src->wide(ctx).kind == CODEC_CHAIN_FLAG_ENTRY_WIDE_WIDE) ? 1u : 0u);
+}
+
+/* Whether `self` is a value of codec_chain_flag_entry_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_chain_flag_entry_check_value(const codec_chain_flag_entry_t *self) {
+    (void)self;
     return SCE_FORGE_CODEC_OK;
 }
 
@@ -77,34 +216,13 @@ static inline sce_forge_codec_status_t codec_chain_flag_entry_decode(sce_forge_c
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_CHAIN_FLAG_ENTRY_MAX_BYTES bytes and use
  * `codec_chain_flag_entry_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
-static inline sce_forge_codec_status_t codec_chain_flag_entry_encode(const codec_chain_flag_entry_t *self, sce_forge_writer_t *w, uint8_t wide) {
-    /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
-    (void)wide;
-    if ((wide & 0x01) == 0) {
-        if (!self->short_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->short_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    if ((wide & 0x01) != 0) {
-        if (!self->long_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->long_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    if (self->short_value.present) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->short_value.value));
-    }
-    if (self->long_value.present) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->long_value.value >> 8) & 0xFF)));
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->long_value.value & 0xFF)));
-    }
-    return SCE_FORGE_CODEC_OK;
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
+static inline sce_forge_codec_status_t codec_chain_flag_entry_encode(const codec_chain_flag_entry_t *self, sce_forge_writer_t *w) {
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_chain_flag_entry_check_value(self));
+    return codec_chain_flag_entry_encode_source(codec_chain_flag_entry_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
@@ -114,9 +232,9 @@ static inline sce_forge_codec_status_t codec_chain_flag_entry_encode(const codec
  * was insufficient for this codec's wire bytes. Worst-case bound is
  * `CODEC_CHAIN_FLAG_ENTRY_MAX_BYTES` — callers sizing `buf` accordingly never
  * see overflow. */
-static inline sce_forge_codec_status_t codec_chain_flag_entry_encode_to_buf(const codec_chain_flag_entry_t *self, uint8_t *buf, size_t cap, size_t *out_len, uint8_t wide) {
+static inline sce_forge_codec_status_t codec_chain_flag_entry_encode_to_buf(const codec_chain_flag_entry_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
     sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
-    sce_forge_codec_status_t _st = codec_chain_flag_entry_encode(self, &_w, wide);
+    sce_forge_codec_status_t _st = codec_chain_flag_entry_encode(self, &_w);
     *out_len = _w.pos;
     return _st;
 }

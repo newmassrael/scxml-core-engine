@@ -93,36 +93,131 @@ static inline sce_forge_codec_status_t codec_zenoh_scout_decode(sce_forge_cursor
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The `zid` element of codec_zenoh_scout_t: a byte string of 1 to 16 bytes, viewed where it
+ * is held, which outlives the view. A view is made by codec_zenoh_scout_zid_bytes_make, which
+ * refuses one outside the bound, so every view holds it (docs/adr/0081 §2)
+ * and the encode over a source writes it whole, refusing nothing of it. */
+typedef struct {
+    const uint8_t *data;
+    size_t len;
+} codec_zenoh_scout_zid_bytes_t;
+
+/* Make `*out` a view of the `len` bytes at `data`: SCE_FORGE_CODEC_OK, or
+ * the refusal of a byte string outside its bound, `*out` then as it was. */
+static inline sce_forge_codec_status_t codec_zenoh_scout_zid_bytes_make(codec_zenoh_scout_zid_bytes_t *out, const uint8_t *data, size_t len) {
+    if (len < 1u || !sce_forge_length_within_bound(len, 16)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    out->data = data;
+    out->len = len;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* A view of codec_zenoh_scout_zid_bytes_t that may be absent: absent where the gate leaves the
+ * element out. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_scout_zid_bytes_optional, codec_zenoh_scout_zid_bytes_t)
+
+/* The elements a value of codec_zenoh_scout_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_zenoh_scout_t is a source by the table
+ * codec_zenoh_scout_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*version)(const void *ctx);
+    uint8_t (*cbyte)(const void *ctx);
+    codec_zenoh_scout_zid_bytes_optional_t (*zid)(const void *ctx);
+} codec_zenoh_scout_source_t;
+
+/* A source of codec_zenoh_scout_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_zenoh_scout_source_t *table;
+    const void *ctx;
+} codec_zenoh_scout_source_ref_t;
+
+/* A source of codec_zenoh_scout_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_zenoh_scout_source_ref_optional, codec_zenoh_scout_source_ref_t)
+
+/* The `version` of the codec_zenoh_scout_t at `ctx`. */
+static inline uint8_t codec_zenoh_scout_value_version(const void *ctx) {
+    return ((const codec_zenoh_scout_t *)ctx)->version;
+}
+
+/* The `cbyte` of the codec_zenoh_scout_t at `ctx`. */
+static inline uint8_t codec_zenoh_scout_value_cbyte(const void *ctx) {
+    return ((const codec_zenoh_scout_t *)ctx)->cbyte;
+}
+
+/* The `zid` of the codec_zenoh_scout_t at `ctx`. */
+static inline codec_zenoh_scout_zid_bytes_optional_t codec_zenoh_scout_value_zid(const void *ctx) {
+    const codec_zenoh_scout_t *self = (const codec_zenoh_scout_t *)ctx;
+    if (!self->zid.present) {
+        return codec_zenoh_scout_zid_bytes_optional_none();
+    }
+    codec_zenoh_scout_zid_bytes_t view;
+    view.data = self->zid.value.data;
+    view.len = self->zid.value.len;
+    return codec_zenoh_scout_zid_bytes_optional_some(view);
+}
+
+/* The table that presents a value of codec_zenoh_scout_t as a source of it, its
+ * context a `const codec_zenoh_scout_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_zenoh_scout_source_t *codec_zenoh_scout_value_source(void) {
+    static const codec_zenoh_scout_source_t table = {
+        codec_zenoh_scout_value_version,
+        codec_zenoh_scout_value_cbyte,
+        codec_zenoh_scout_value_zid,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_zenoh_scout_encode_source(const codec_zenoh_scout_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint8_t _e_version = src->version(ctx);
+    const uint8_t _e_cbyte = src->cbyte(ctx);
+    const codec_zenoh_scout_zid_bytes_optional_t _e_zid = src->zid(ctx);
+    uint64_t _f_cbyte = (uint64_t)_e_cbyte;
+    _f_cbyte = (_f_cbyte & ~0x8ull) | ((uint64_t)(_e_zid.present) << 3);
+    if (_e_zid.present) {
+        _f_cbyte = (_f_cbyte & ~0xF0ull) | ((uint64_t)(_e_zid.value.len - 1u) << 4);
+    }
+    const uint8_t _c_cbyte = (uint8_t)_f_cbyte;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _e_version));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _c_cbyte));
+    if (_e_zid.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, _e_zid.value.data, _e_zid.value.len));
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Whether `self` is a value of codec_zenoh_scout_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_zenoh_scout_check_value(const codec_zenoh_scout_t *self) {
+    if (self->zid.present && (self->zid.value.len < 1u || !sce_forge_length_within_bound(self->zid.value.len, 16))) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_SCOUT_MAX_BYTES bytes and use
  * `codec_zenoh_scout_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_zenoh_scout_encode(const codec_zenoh_scout_t *self, sce_forge_writer_t *w) {
-    /* A byte string, text, list or chain above the bound of the array that
-     * holds it is refused before the first byte is written: the array cannot
-     * hold that many, and a frame of fewer is not the value given. */
-    if (self->zid.present && !sce_forge_length_within_bound(self->zid.value.len, 16)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
-    }
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->version));
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->cbyte));
-    if (self->zid.present) {
-        size_t _n = self->zid.value.len;
-        if (_n > (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1)) _n = (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1);
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid.value.data, _n));
-    }
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_zenoh_scout_check_value(self));
+    return codec_zenoh_scout_encode_source(codec_zenoh_scout_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`

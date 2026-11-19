@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 #include "codec_zenoh_locator.h"
 
 #define CODEC_EMBED_BASIC_MIN_BYTES 1
@@ -54,25 +55,85 @@ static inline sce_forge_codec_status_t codec_embed_basic_decode(sce_forge_cursor
     return SCE_FORGE_CODEC_OK;
 }
 
+/* The elements a value of codec_embed_basic_t presents, which its encode reads
+ * (docs/adr/0081 §2): one function for each, handed the context the
+ * table is passed with. A value of codec_embed_basic_t is a source by the table
+ * codec_embed_basic_value_source() answers, its context the value; any other type
+ * that presents the elements is one by a table of its own. The encode
+ * derives every other element of the frame. */
+typedef struct {
+    uint8_t (*tag)(const void *ctx);
+    codec_zenoh_locator_source_ref_t (*locator)(const void *ctx);
+} codec_embed_basic_source_t;
+
+/* A source of codec_embed_basic_t: the table of its elements and the context the
+ * table is handed, as a codec that holds one presents it to its encode. */
+typedef struct {
+    const codec_embed_basic_source_t *table;
+    const void *ctx;
+} codec_embed_basic_source_ref_t;
+
+/* A source of codec_embed_basic_t that may be absent. */
+SCE_OPTIONAL_DECLARE_NAMED(codec_embed_basic_source_ref_optional, codec_embed_basic_source_ref_t)
+
+/* The `tag` of the codec_embed_basic_t at `ctx`. */
+static inline uint8_t codec_embed_basic_value_tag(const void *ctx) {
+    return ((const codec_embed_basic_t *)ctx)->tag;
+}
+
+/* The `locator` of the codec_embed_basic_t at `ctx`. */
+static inline codec_zenoh_locator_source_ref_t codec_embed_basic_value_locator(const void *ctx) {
+    const codec_embed_basic_t *self = (const codec_embed_basic_t *)ctx;
+    codec_zenoh_locator_source_ref_t body;
+    body.table = codec_zenoh_locator_value_source();
+    body.ctx = &self->locator;
+    return body;
+}
+
+/* The table that presents a value of codec_embed_basic_t as a source of it, its
+ * context a `const codec_embed_basic_t *`. One table for every value, in read-only
+ * memory. */
+static inline const codec_embed_basic_source_t *codec_embed_basic_value_source(void) {
+    static const codec_embed_basic_source_t table = {
+        codec_embed_basic_value_tag,
+        codec_embed_basic_value_locator,
+    };
+    return &table;
+}
+
+/* Write the source `src` presents over `ctx` into `w`, each element read
+ * once and written where the codec's encode plan lays it out
+ * (docs/adr/0081). It refuses no value: it returns SCE_FORGE_CODEC_OK, or
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW where `w` has no room left. */
+static inline sce_forge_codec_status_t codec_embed_basic_encode_source(const codec_embed_basic_source_t *src, const void *ctx, sce_forge_writer_t *w) {
+    const uint8_t _e_tag = src->tag(ctx);
+    const codec_zenoh_locator_source_ref_t _e_locator = src->locator(ctx);
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _e_tag));
+    SCE_FORGE_TRY_WRITE(codec_zenoh_locator_encode_source(_e_locator.table, _e_locator.ctx, w));
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Whether `self` is a value of codec_embed_basic_t: SCE_FORGE_CODEC_OK, or the
+ * refusal of an array past the bound of its element's view or list or of a
+ * text no UTF-8 holds, in it or in a body or an entry it holds
+ * (docs/adr/0081 §2). */
+static inline sce_forge_codec_status_t codec_embed_basic_check_value(const codec_embed_basic_t *self) {
+    SCE_FORGE_TRY_WRITE(codec_zenoh_locator_check_value(&self->locator));
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_EMBED_BASIC_MAX_BYTES bytes and use
  * `codec_embed_basic_encode_to_buf` (below), or run the writer themselves
- * for coalesced-send paths. */
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
 static inline sce_forge_codec_status_t codec_embed_basic_encode(const codec_embed_basic_t *self, sce_forge_writer_t *w) {
-    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
-     * Mirrors the streaming decode: every field appends its own bytes in
-     * declaration order through the per-field encode blocks, so a gated
-     * field skips its append when the carrier flag bit is clear, and a
-     * fixed field after a variable-length payload lands after the payload
-     * (the positional path appends variable fields last, placing it ahead
-     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
-     * route to their dedicated helpers; everything else uses
-     * `present_if_encode_block`. */
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->tag));
-    SCE_FORGE_TRY_WRITE(codec_zenoh_locator_encode(&self->locator, w));
-    return SCE_FORGE_CODEC_OK;
+    /* The value within its bounds before the first byte (docs/adr/0081 §2). */
+    SCE_FORGE_TRY_WRITE(codec_embed_basic_check_value(self));
+    return codec_embed_basic_encode_source(codec_embed_basic_value_source(), self, w);
 }
 
 /* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
