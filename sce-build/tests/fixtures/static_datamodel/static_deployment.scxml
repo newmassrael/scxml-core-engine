@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A value the deployment
+  supplies"; docs/adr/0109, D12): a machine built from the values its deployment supplies,
+  a record and a list, which it reads in initial values, in a loop, in a guard and in an
+  assignment, and never writes.
+
+  `limits` is a record of `schema_server_limits.scxml` and `hosts` a list of at most four
+  texts. The machine starts with `remaining` at the record's `max_rows` and `host_count`
+  at the length of the list, each an initial value that reads a deployment value, and
+  writes `label` as the record's `label` and `first_host` as the list's first element
+  when the state is entered. Each `row.taken` takes one of the remaining
+  rows while one is left, and counts a refusal once none is.
+
+  The values reach the machine as one JSON object, the configuration of its deployment:
+  `deployment/deploy.yaml` writes it under the machine, which `generate --deploy` checks
+  and writes as `deployment/static_deployment.config.json`; `deployment/from_file.json`
+  is a file a host would name with `config_file:`; the other files of `deployment/` are
+  configurations the machine's reader refuses. Rust and C++ build the machine from them
+  (backends/rust/tests/tests/a_machine_reads_its_deployments_values.rs,
+  tests/integration/AMachineReadsItsDeploymentsValuesTest.cpp); every other backend
+  refuses the `<data>` by name.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="serving" datamodel="sce-static" name="static_deployment">
+  <sce:import kind="event-schema" src="schema_server_limits.scxml" as="ServerLimits"/>
+  <datamodel>
+    <data id="limits" sce:type="record:ServerLimits" sce:from="deployment"/>
+    <data id="hosts" sce:type="list&lt;string[32]&gt;[4]" sce:from="deployment"/>
+    <data id="remaining" sce:type="uint32" expr="limits.max_rows" sce:direction="out"/>
+    <data id="host_count" sce:type="uint32" expr="len(hosts)" sce:direction="out"/>
+    <data id="label" sce:type="string[16]" expr="''" sce:direction="out"/>
+    <data id="first_host" sce:type="string[32]" expr="''" sce:direction="out"/>
+    <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="serving">
+    <onentry>
+      <assign location="label" expr="limits.label"/>
+      <foreach array="hosts" item="host" index="i">
+        <if cond="i === 0">
+          <assign location="first_host" expr="host"/>
+        </if>
+      </foreach>
+    </onentry>
+    <transition event="row.taken" cond="remaining &gt; 0" type="internal">
+      <assign location="remaining" expr="remaining - 1"/>
+    </transition>
+    <transition event="row.taken" type="internal">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+  </state>
+</scxml>

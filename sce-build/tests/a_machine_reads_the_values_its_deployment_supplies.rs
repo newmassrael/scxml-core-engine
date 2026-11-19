@@ -447,3 +447,47 @@ fn each_refusal_of_a_configuration_has_its_own_code() {
         assert!(config.is_none(), "a refused configuration is not written");
     }
 }
+
+/// The directory of the statechart fixtures, where `static_deployment.scxml` and its
+/// `deployment/` stand.
+fn fixtures() -> PathBuf {
+    repo_root().join("sce-build/tests/fixtures/static_datamodel")
+}
+
+/// The configuration `deployment/deploy.yaml` writes under `static_deployment` is the
+/// text the Rust and C++ machines are built from in their own tests
+/// (`a_machine_reads_its_deployments_values.rs`,
+/// `AMachineReadsItsDeploymentsValuesTest.cpp`): what the build writes beside each
+/// machine is the committed `deployment/static_deployment.config.json`, byte for byte.
+#[test]
+fn the_build_writes_the_configuration_the_machines_read() {
+    let kept = std::fs::read_to_string(fixtures().join("deployment/static_deployment.config.json"))
+        .expect("the committed configuration");
+    for language in ["rust", "cpp"] {
+        let dir = tempdir().expect("tempdir");
+        let out = Command::new(sce_codegen_bin())
+            .arg("--workspace-root")
+            .arg(repo_root())
+            .arg("--error-format=json")
+            .arg("generate")
+            .arg("-l")
+            .arg(language)
+            .arg("-o")
+            .arg(dir.path())
+            .arg("--no-format")
+            .arg("--deploy")
+            .arg(fixtures().join("deployment/deploy.yaml"))
+            .arg(fixtures().join("static_deployment.scxml"))
+            .output()
+            .expect("invoke sce-codegen");
+        let said = String::from_utf8_lossy(&out.stderr).into_owned()
+            + &String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{language}:\n{said}");
+        let written = std::fs::read_to_string(dir.path().join("static_deployment.config.json"))
+            .unwrap_or_else(|e| panic!("{language} wrote no configuration ({e}):\n{said}"));
+        assert_eq!(
+            written, kept,
+            "{language}: the build writes the committed text"
+        );
+    }
+}
