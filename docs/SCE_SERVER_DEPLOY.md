@@ -21,6 +21,7 @@ says of "the program" is what such a program must do.
 | The keyed pool of sessions | `sce_rust_mesh::pool` (`backends/rust/mesh/src/pool.rs`) | SCE_MESH.md section 14.4, "Keyed session pool" |
 | The session store contract, with lease and fence | `sce-rust-session-store` (`backends/rust/session-store/src/lib.rs`) | ADR 0107, D6 |
 | The reference session store | `SqliteStore`, feature `sqlite` of `sce-rust-session-store` | ADR 0107, D6 |
+| The credential store: installation pins and bearer tokens, each as its digest | `CredentialStore` of `sce-rust-session-store`, durable in `SqliteStore`; the `bearer` check `StoredTokens` of `sce-rust-crypto` | ADR 0109, D3; SCE_MESH.md section 22.5 |
 | The checkpoint of a session | `sce_rust_mesh::checkpoint`, schema `schemas/sce-mesh-checkpoint.v1.schema.json` | SCE_MESH.md section 10.11 |
 | The `https` server | `sce_rust_mesh::https::server::HttpsServer`, feature `https` | SCE_MESH.md section 22 |
 | The `https` client, Rust | `sce_rust_mesh::https::client::HttpsClient` over `HyperTransport` | SCE_MESH.md sections 22.6 and 22.8 |
@@ -37,8 +38,8 @@ Not built, and a server must not count on them:
   unknown. A keyed pool checkpoints its sessions without them, and its bindings take `receipt: transport`
   (SCE_MESH.md section 14.4, "What a pool does not keep").
 - A client of the `https` binding on the Kotlin and Swift host cores (SCE_MESH.md section 22.8).
-- An orderly stop of a pool that saves every session it holds as a clean checkpoint, and a durable store of the
-  `install` authenticator's pins (sections 3 and 5).
+- An orderly stop of a pool that saves every session it holds as a clean checkpoint (section 4).
+- The removal of expired and revoked tokens from the credential store (section 5).
 
 ## 1. What the program supplies
 
@@ -48,7 +49,7 @@ Not built, and a server must not count on them:
 | How a session's machine is started and restored (`SessionFactory`, `SessionMachine`) | `Pool::new` | `pool.rs` |
 | Its name as the holder of leases, the lease's length and its renewal period (`PoolConfig`: `owner`, `lease_ttl_ms`, `renew_every_ms`) | `Pool::new` | section 4 |
 | The session store, opened on a file | `Pool::new` | section 3 |
-| The authenticator's check (`BearerCheck`, a `PinStore`, or `CertificateCheck`) | `HttpsServer::new` | section 5 |
+| The authenticator's check (`StoredTokens` or a `BearerCheck`, a `PinStore`, or `CertificateCheck`), and the credential store it and the machine's host share | `HttpsServer::new`, `ReferenceHost::set_credentials` | section 5 |
 | The server's certificate chain and key, and for `mtls` the client authorities | `server_tls` | section 5 |
 | The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, sleeping until `Pool::next_wake_ms` between them, and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation |
 | The checkpoint each exchange waits for: `ServerHost::deliver` answers the endpoint's `sealed_through()`, and `HttpsServer::durable` is told each checkpoint reported durable | the server | SCE_MESH.md section 22.8 |
@@ -195,21 +196,23 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   system, never a network one. Beside `<file>` SQLite keeps `<file>-wal` and `<file>-shm`; all three are the store.
 - **Waiting for a lock.** A call that finds the database locked by another connection's write waits 5 s
   (`SqliteStore::BUSY_TIMEOUT`, or the bound given to `open_with_busy_timeout`) before it fails.
-- **Its layout.** The database's `user_version` names the layout, `2` today. A file of layout `1` is brought to `2`
-  when it is opened, in one transaction, its sessions and leases kept. A file of a layout this build does not know,
-  or one that holds tables the store did not make, is refused. A later build that changes the layout makes a
-  rollback to an earlier build refuse the file.
+- **Its layout.** The database's `user_version` names the layout, `3` today. A file of layout `1` or `2` is brought
+  to `3` when it is opened, in one transaction, its sessions, leases and keys kept. A file of a layout this build
+  does not know, or one that holds tables the store did not make, is refused. A later build that changes the layout
+  makes a rollback to an earlier build refuse the file.
 - **Not encrypted.** A session's row is its checkpoint as plain `sce-mesh-checkpoint` JSON, and the saved state in it
   holds the document's values in the clear. SCE_MESH.md section 10.11 asks the host to store a checkpoint encrypted at
   rest; with the reference store that is the encryption of the volume the file is on, or a `SessionStore` of the
   program's own that encrypts before it writes.
 
-The tables (`LAYOUT_1` and `LAYOUT_2` in `sqlite.rs`): `sessions` (`session`, `state`, `version`, `earliest_due`),
+The tables (`LAYOUT_1` to `LAYOUT_3` in `sqlite.rs`): `sessions` (`session`, `state`, `version`, `earliest_due`),
 `leases` (`session`, `owner`, `fence`, `expires_ms`), and `numbers`, the one counter versions and fences are drawn
 from; and the keys a host generates and derives (`KeyStore`, docs/SCE_HOST_FEATURES.md section 13): `keys` (`id`,
 `key_use`, `algorithm`, `wrapped`, `label`, `created_ms`, `state`), each key's material wrapped under a
 key-encryption key the file never holds, `key_generations` (which key each generation made) and `key_naming` (the
-wrapped naming key of derived keys). Every moment is milliseconds since the Unix epoch.
+wrapped naming key of derived keys); and the credentials of section 5 (`CredentialStore`): `credential_pins` (`name`,
+`digest`) and `credential_tokens` (`digest`, `name`, `issued_ms`, `expires_ms`, `revoked`), each digest the SHA-256
+of a secret the file never holds. Every moment is milliseconds since the Unix epoch.
 
 ## 4. What a restart does
 
@@ -239,9 +242,9 @@ leaves before the checkpoint that holds it is durable. So, when the process stop
   refuses its previous life's writes (`SessionStore::acquire`). A process under another name waits for the old leases
   to run out, `lease_ttl_ms` after their last renewal; until then a request for such a key is answered
   `RpcStatus::Unavailable` (section 6).
-- **In-memory host state is gone.** Installation pins kept by `MemoryPins` (section 5), the reference hosts' key-value
-  stores and their first results of a put-if, and the COSE keys a host derived (`docs/SCE_HOST_FEATURES.md` section 9):
-  a `derived:<n>` id a restored session holds names no key, or another one.
+- **In-memory host state is gone.** Pins and tokens kept by `MemoryCredentials` (section 5), the reference hosts'
+  key-value stores and their first results of a put-if, and the COSE keys a host derived (`docs/SCE_HOST_FEATURES.md`
+  section 9): a `derived:<n>` id a restored session holds names no key, or another one.
 
 ## 5. Authentication and TLS on the server
 
@@ -249,13 +252,32 @@ Every binding names one of three authenticators (SCE_MESH.md section 22.5; `Auth
 
 | `authenticator` | The client sends | The server's program gives | After a restart |
 |---|---|---|---|
-| `bearer` | `Authorization: Bearer <token>` | a `BearerCheck`, `(client name, token)` to whether the token proves the name; issuing tokens is the program's | as before: the check is the program's |
-| `install` | `Authorization: SCE-Install <secret>`, a 256-bit secret the client drew at its first run and keeps, in base64url | a `PinStore`: the server pins a name to the SHA-256 of the first secret it answers `200` and refuses any other with `401` | with `MemoryPins`, every pin is forgotten and the next secret a name brings is pinned |
+| `bearer` | `Authorization: Bearer <token>` | `Authenticator::stored_tokens(StoredTokens::new(store))` over the credential store its machine issues tokens into; or a `BearerCheck` of its own, `(client name, token)` to whether the token proves the name | with the store on the session store's file, every token as before |
+| `install` | `Authorization: SCE-Install <secret>`, a 256-bit secret the client drew at its first run and keeps, in base64url | a `PinStore`: the server pins a name to the SHA-256 of the first secret it answers `200` and refuses any other with `401` | with the store on the session store's file, every pin as before; with `MemoryCredentials`, every pin is forgotten and the next secret a name brings is pinned |
 | `mtls` | a TLS client certificate | client authorities to `server_tls`, and a `CertificateCheck`, `(client name, certificate DER)` to whether it names the client | as before |
 
-- **`install` and the pin store.** SCE has `MemoryPins` only. With it, after each restart the first client to post
-  under a name owns it. A server whose names matter keeps its pins in a `PinStore` of its own on durable storage.
-  A client that lost its secret (reinstalled) is refused `401` until its pin is removed from that store.
+- **The credential store** (ADR 0109, D3). `SqliteStore`, opened on the session store's file (section 3), is a
+  `CredentialStore`: the pins of `install` and the tokens of `bearer`, each kept as the SHA-256 of its secret, never
+  the secret, in the file's layout 3. The program opens the store once and hands the same `Arc<SqliteStore>` to the
+  server's authenticator (`Authenticator::Install(store.clone())`, or `Authenticator::stored_tokens`) and to the
+  reference host of its machine (`ReferenceHost::set_credentials`), so a token the machine issued is the one the
+  server takes and a revocation the machine made is the one the server reads. `MemoryCredentials` keeps them in
+  memory, for a test or a server whose names do not outlive it. A store that cannot be read answers the exchange
+  `503` with `Retry-After`, as load shed, rather than `401`.
+- **Tokens.** A machine issues a token with `sce-host-credential-issue` (docs/SCE_HOST_FEATURES.md section 14): `sce1.`
+  and 43 base64url digits, the keyed digest of the invocation's identity and the name under the key ring's issuing
+  key, so the same invocation repeated after a restore issues the same token. The machine sends it to its client
+  once; the store keeps its digest, the name, the moment it was issued and its expiry. `StoredTokens` takes a token
+  for the name the path claims until its expiry, and not after it is revoked. The issuing key is a key of the key
+  ring (`issuing:credentials`, docs/SCE_HOST_FEATURES.md section 13), wrapped under the key-encryption key in the
+  same file: issuing needs that key, and checking does not, since a presented token is compared by its digest.
+- **Revocation.** `sce-host-credential-revoke` revokes a name's tokens and removes its pin in one transaction. A
+  revoked token stays in the store as revoked, so a repeat of the issue that made it answers it revoked. The
+  operator removes a pin by hand with `PinStore::unpin(name)`: a client that lost its secret (reinstalled) is refused
+  `401` until then. Expired and revoked tokens stay in the store; no call of the store removes them yet.
+- **One comparison.** Every comparison of a secret or a digest (a pin, a token's name, a relay token's tag) is
+  `sce_rust_crypto::equal::same_secret`, in time that does not depend on where the two differ. A `BearerCheck` of
+  the program's own compares its secret with it too.
 - **TLS.** `server_tls(chain, key, client_authorities)` builds the server's TLS: `chain` each certificate in DER, the
   server's own first; `key` in DER as PKCS#8, PKCS#1 or SEC1; `client_authorities`, each DER, for `mtls` only. It
   offers HTTP/2 and HTTP/1.1 (ALPN) on rustls with `ring`. `HttpsServer::serve(listener, None)` serves without TLS,
@@ -323,12 +345,13 @@ inspecting proxy is a machine that does not trust the proxy's authority, and `Pr
 |---|---|---|
 | The session store: `<file>`, with its `-wal` and `-shm` | every session, its replies and its timers | a consistent copy while the server runs, by SQLite's own backup (the `sqlite3` shell's `.backup`, or `VACUUM INTO` on SQLite 3.27 or later); a plain file copy only while no process has the store open. The store has no backup command of its own. |
 | The server's TLS key and certificate chain | the clients' trust in the server | as the program keeps them |
-| The client authorities of `mtls`, the material a `BearerCheck` verifies with, and a durable `PinStore` | who may claim a name | as the program keeps them |
+| The client authorities of `mtls`, and the material a `BearerCheck` of the program's own verifies with | who may claim a name | as the program keeps them; the pins and tokens of the credential store are in the session store's file, backed up with it |
+| The key-encryption key of the key ring | the issuing key of tokens, and the keys a host generated and derived | apart from the store, which holds none of them in the clear |
 | The COSE keys the host is configured with: signing seeds, sealing keys, trust sets (`docs/SCE_HOST_FEATURES.md` section 10) | what the machine signs and opens | as the program keeps them; never in the store, since a checkpoint holds no key (SCE_MESH.md section 10.11) |
 | deploy.yaml, the documents, and the build of the program | what the store's checkpoints are a state of | with the release |
 
-Nothing else of a server outlives its process: its mailboxes, `MemoryPins`, and the keys its hosts derived are in
-memory (section 4).
+Nothing else of a server outlives its process: its mailboxes, `MemoryCredentials`, and the keys a host keeps in a key
+ring in memory are in memory (section 4).
 
 Restoring a copy of the store moves every session back to the moment of the copy. Stop every process that uses the
 store first, and start them after: a process left running holds leases and fences from the newer store, and the copy's

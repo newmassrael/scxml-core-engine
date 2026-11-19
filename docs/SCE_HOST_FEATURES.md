@@ -33,6 +33,11 @@
   library's enum `key_use`, refused where it is written; section 5, `method`
   stays a text the host judges, because the operation is served on every lane
   and only the Rust and C++ lanes read an enum field of a request yet.
+- Amended by: ADR 0109 (D3): new section 14 (credentials), served by the Rust
+  and C++ reference hosts; section 13, the key ring's issuing key; section 8,
+  the scenario's `credentials` host state; sections 7 and 9 name them where they
+  list the lanes and what is not provided, and section 9 no longer lists the
+  durable keeping of the `install` authenticator's pins.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -429,7 +434,7 @@ once. Not provided here: any binding to a real provider.
   `<invoke>` of it as `codegen/standard-host-type-not-served`, on that
   `<invoke>`, naming the type, the lane and the lanes that serve it; a child the
   document carries is held to the same lane. Every type of sections 2 to 6 is
-  served on every lane; the types of sections 10 to 13 are served on Rust and
+  served on every lane; the types of sections 10 to 14 are served on Rust and
   C++ (docs/adr/0109, D0).
   That every lane serves every type stays the goal, and is
   not a precondition of adding one: a type is added with the lanes whose
@@ -482,7 +487,7 @@ was asked:
 | `expect.state` | the atomic state the machine is in |
 | `expect.variables` | what the machine published |
 | `expect.host_invokes` | the operations the host was started with in this step, refused ones included, oldest first: `{"type", "id", "request"}`, the request as the record |
-| `expect.host_state` | what the host holds afterwards, for the members named: `store` (key to value), `waiting` and `shown` (the notification ids, in the order posted), `http` (what the transport was given in all: method, URL, request header lines as name and value, body), `cancelled` (the invocations the host was told to stop) |
+| `expect.host_state` | what the host holds afterwards, for the members named: `store` (key to value), `waiting` and `shown` (the notification ids, in the order posted), `http` (what the transport was given in all: method, URL, request header lines as name and value, body), `cancelled` (the invocations the host was told to stop), `credentials` (each name the host issued a token for, to its tokens as `issued_ms`, `expires_ms` and `revoked`, in the order of those three; a token's own bytes depend on the session's id, which differs by lane, section 14) |
 
 **The reference stores' versions.** Every lane's store numbers versions from one
 counter of the store, which starts at `0`: each put, each put-if that wrote and
@@ -631,11 +636,11 @@ These are not built, and nothing here stands in for them:
   `docs/SCE_SERVER_DEPLOY.md` is the runbook for a program built from them. No
   such program is built here: each deployment writes the program that joins them
   to its machine, its keys and its credentials. Beside it there is still no
-  quota policy, no delivery of notifications, no durable keeping of the
-  `install` authenticator's pins (the server has only `MemoryPins`, SCE_MESH.md
-  section 22.5), and no orderly stop of a pool that saves every session it holds
-  as a clean checkpoint. The keys of section 13 are kept in the session store's
-  file (`SqliteStore` is a `KeyStore` too, layout 2).
+  quota policy, no delivery of notifications, and no orderly stop of a pool that
+  saves every session it holds as a clean checkpoint. The keys of section 13 and
+  the credentials of section 14, the `install` authenticator's pins among them
+  (SCE_MESH.md section 22.5), are kept in the session store's file
+  (`SqliteStore` is a `KeyStore` and a `CredentialStore` too, layout 3).
 - **A durable key-value store.** The reference stores of section 3 are in memory
   on every lane, and so is the table of first results by which each answers a
   put-if repeated under one identity (section 8): a host that stops forgets
@@ -655,11 +660,11 @@ These are not built, and nothing here stands in for them:
 - **Delivery of a scheduled notification while the application is not running**,
   and any user interface for a permission request. A reference host answers the
   permission as the scenario sets it.
-- **Signing and sealing, random bytes, keyed digests and keys on the lanes other
-  than Rust and C++** (sections 10 to 13). Each is a later step of docs/adr/0107
-  and docs/adr/0109 (D0), taken when a consumer needs it; until it lands, a build
-  for that lane refuses a machine that asks for one of the operations, by name
-  (section 7).
+- **Signing and sealing, random bytes, keyed digests, keys and credentials on
+  the lanes other than Rust and C++** (sections 10 to 14). Each is a later step
+  of docs/adr/0107 and docs/adr/0109 (D0), taken when a consumer needs it; until
+  it lands, a build for that lane refuses a machine that asks for one of the
+  operations, by name (section 7).
 - **The COSE structures as codec documents** (docs/adr/0107, D9). A CBOR codec
   writes one map whose keys are unsigned integers of one head byte and whose
   entries hold no signed integer (SCE_FORGE.md section 4.6.1; docs/adr/0101's
@@ -702,6 +707,14 @@ These are not built, and nothing here stands in for them:
   derived it on both hosts, so a C++ host that derives the same key again after
   a restart names it as before only when its naming key is the same, which a
   host in memory draws anew.
+- **A durable credential store for C++.** The C++ reference host keeps the
+  tokens it issues in memory, for its own life, under an issuing key it draws
+  anew (section 14); it keeps no installation pin, since the `https` server is
+  the Rust host core's, so its revocation counts tokens only.
+- **The removal of expired and revoked tokens.** A credential store keeps every
+  token it was given, a revoked one as revoked, so that an issue repeated under
+  its identity cannot make it live again; no operation and no call of the store
+  removes one yet.
 - **Rotation of a key, and its destruction.** A key is retired by a statechart
   and stays (section 13); no operation makes a successor to a retired key or
   destroys one, which is the operator's.
@@ -972,7 +985,7 @@ a debugger prints of the host's types. The Rust host keeps its key ring
 (`sce_rust_crypto::keyring::Keyring`) in a key store
 (`sce_rust_session_store::KeyStore`): in memory unless the embedding gives
 another with `ReferenceHost::set_keyring`; the reference durable store is the
-session store's SQLite file (`SqliteStore`, layout 2). Each key's material is
+session store's SQLite file (`SqliteStore`, layout 3). Each key's material is
 kept wrapped under a key-encryption key the store never holds, bound to the
 key's id and use, so a file read without that key holds no key and a row's
 material moved to another row does not unwrap. The program supplies the
@@ -984,6 +997,15 @@ into memory that is wiped when it is dropped (`zeroize`), as the configured keys
 are held. The C++ host keeps its key ring in memory, for its own life, each key
 wiped with `sodium_memzero` when it is dropped (section 9).
 
+**The issuing key.** Beside the keys a statechart generates and derives, the key
+ring holds the key the host issues bearer tokens under (section 14): a MAC key
+of the id `issuing:credentials`, 32 bytes drawn from the host's random source
+at the first issue and kept as any key of the ring is, wrapped under the
+key-encryption key, so that every process that shares the store issues the same
+token for the same invocation. No statechart names it: an id a statechart gives
+reaches the key ring only when it is `generated:` or `derived:`. Retired by the
+operator, it issues nothing more (`key_retired`).
+
 The two hosts agree byte for byte on `tests/host_features/keys_cross_language.json`:
 every tag of RFC 4231, every derived key's id and key under the file's naming
 key, every generated key's id, `COSE_Key`, signature and tag from the file's
@@ -991,4 +1013,72 @@ random bytes, and every configured signing key's `COSE_Key`: Rust in
 `backends/rust/host-features/tests/keys_cross_language.rs`, C++ in
 `AStandardHostKeys.KeysAndTagsCrossBetweenTheHosts`
 (`tests/integration/AStandardHostKeysTest.cpp`). `static_host_cose` and its
-scenario hold both hosts to sections 10 to 13 through a machine.
+scenario hold both hosts to sections 10 to 14 through a machine.
+
+## 14. Credentials
+
+A statechart decides who gets a bearer token and whose credentials are taken
+away; its host keeps them (docs/adr/0109, D3). The authority is the document's
+and the storage the host's: the host keeps each credential as the SHA-256 of its
+secret, never the secret, in the credential store the server of the `https`
+binding reads (SCE_MESH.md section 22.5), so a token a statechart issued is the
+one the server takes. Served by the Rust and C++ reference hosts (section 7).
+
+| Operation | `type` | Request | Result |
+|---|---|---|---|
+| Issue | `sce-host-credential-issue` | `credential_issue_request`: `name` (256), `ttl_s` uint32 | `credential_issue_result`: `token` string (64) |
+| Revoke | `sce-host-credential-revoke` | `credential_revoke_request`: `name` (256) | `credential_revoke_result`: `revoked` uint32 |
+
+Failure codes: `unavailable` (the credential store, the key ring, the random
+source or the clock could not be used) and, for an issue, `key_retired` (the
+operator retired the issuing key, section 13).
+
+Refusal (`invalid_argument`): an empty `name`, or one past its bound; a
+`ttl_s` of 0.
+
+**Issue.** `token` is `sce1.` followed by the base64url (RFC 4648 section 5),
+without padding, of the HMAC-SHA-256, under the key ring's issuing key, of the
+deterministic CBOR array `[session id, invoke id, start, name]`: the identity of
+the invocation (section 1) and the name. It is 48 bytes of text. The host keeps
+the SHA-256 of the text with the name, the moment the host's clock read
+(`issued_ms`) and the moment `ttl_s` seconds later (`expires_ms`), not revoked.
+The token passes through the statechart once, to be sent to its client, and so
+through that session's checkpoint and the client's outbox: a deployment that
+issues tokens this way stores those encrypted (docs/adr/0109, D8).
+
+- An issue repeated under one identity, as a restore starts the invocation
+  again, answers the same token, and keeps the row of the first issue: its
+  expiry, and its revocation if it was revoked since. The host keeps no token in
+  the clear to answer it with: the token is the tag of the identity.
+- Another start of the `<invoke>`, or another name, is another token. A name may
+  hold several tokens at once.
+- The name is part of the tag, so a token issued for one name is never the token
+  of another, whatever the identity.
+
+**Revoke.** `revoked` is how many credentials of `name` the revocation took
+away: its tokens not revoked before, which are kept as revoked, and its
+installation pin, which is removed, so that the next secret the name brings is
+pinned. Both are one transaction of the store. A revocation repeated takes
+nothing more and answers 0. The C++ host keeps no pin (section 9), and counts
+tokens only.
+
+**Checking a token.** A server's `bearer` check over the store
+(`StoredTokens`, `sce_rust_crypto::credential`) digests a presented token, finds
+the row of its digest, compares the row's name with the name the request claims
+in constant time, and takes it before `expires_ms` and only while it is not
+revoked; anything else is `401`. A statechart compares no token: where it would,
+the host that holds the store does (section 12).
+
+**The store.** The Rust host keeps its credentials in a credential store
+(`sce_rust_session_store::CredentialStore`): in memory (`MemoryCredentials`)
+unless the embedding gives another with `ReferenceHost::set_credentials`; the
+reference durable store is the session store's SQLite file (`SqliteStore`,
+layout 3), which the server's authenticator is given too. The C++ host keeps its
+tokens in memory, for its own life (`CredentialFeature`, host/CredentialHost.h).
+A token's text is written in time that does not depend on its bytes (`base64ct`
+in Rust, libsodium's `sodium_bin2base64` in C++), since a token is a secret.
+
+The two hosts agree byte for byte on the token of one identity and name under
+one issuing key: Rust in `backends/rust/host-features/tests/credentials.rs`, C++
+in `AStandardHostCredentials.ATokenIsTheTagOfTheIdentityAndTheNameUnderTheIssuingKey`
+(`tests/integration/AStandardHostCredentialsTest.cpp`).

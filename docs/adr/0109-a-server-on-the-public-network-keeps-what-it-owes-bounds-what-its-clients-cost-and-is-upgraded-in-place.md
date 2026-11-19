@@ -308,7 +308,9 @@ Two exceptions land on every backend that has the surface or the path:
 
 - **The store.** A credential contract in `sce-rust-session-store`, with a memory and a SQLite implementation and a
   conformance kit: pins (a name to the SHA-256 of an installation secret, or to a public key under D9's `key`
-  authenticator), and tokens. `PinStore` gains `unpin(name)`; `SqlitePins` is the durable implementation.
+  authenticator), and tokens. `PinStore` gains `unpin(name)`; the durable implementation is `SqliteStore`, in the
+  session store's file (layout 3), as D7's key store is, and `MemoryCredentials` the one in memory. The store keeps
+  rows and compares no secret: `pin` answers the digest a name is pinned to, which its caller compares.
 - **Tokens.** `StoredTokens` is the reference `BearerCheck`: a token is `sce1.` followed by the base64url of 32
   bytes; the store keeps its SHA-256 with the name, the moment it was issued, its expiry and whether it is revoked; a
   presented token is digested, looked up by its digest, and its name compared in constant time; an expired or revoked
@@ -321,12 +323,17 @@ Two exceptions land on every backend that has the surface or the path:
   | Issue | `sce-host-credential-issue` | `name` (256), `ttl_s` uint32 (at least 1) | `token` string (64) |
   | Revoke | `sce-host-credential-revoke` | `name` (256) | `revoked` uint32 (the tokens and pin removed) |
 
-  A token is the HMAC-SHA-256, under the host's issuing key (D7), of the invocation's identity (ADR 0107 D4), so a
-  repeat under one identity gives the same token without the host keeping it in the clear. The token passes through
+  A token is the HMAC-SHA-256, under the host's issuing key (D7), of the invocation's identity (ADR 0107 D4) and the
+  name, the deterministic CBOR array `[session id, invoke id, start, name]`, so a repeat under one identity gives the
+  same token without the host keeping it in the clear, and a token is bound to its name by the tag itself. The
+  issuing key is a MAC key of the key ring (`issuing:credentials`), drawn at the store's first issue. A revoked token
+  is kept as revoked, so a repeated issue cannot make it live again. The token passes through
   the document once, to be sent to its client, and so through that session's checkpoint and the client's outbox: a
   deployment that issues tokens this way stores under D8.
 - **One constant-time comparison.** Every comparison of a secret or a digest in SCE's code calls one helper per
-  language (`subtle::ConstantTimeEq` in Rust, `sodium_memcmp` in C++); `same_digest` becomes a call of it.
+  language (`subtle::ConstantTimeEq` in Rust, `sodium_memcmp` in C++); `same_digest` becomes a call of it, and so
+  does the relay's own `equal`. A token's text is written and read in constant time too (`base64ct`,
+  `sodium_bin2base64`).
 - **Spec:** §22.5 and a new section "Credentials" of `docs/SCE_HOST_FEATURES.md`; `docs/SCE_SERVER_DEPLOY.md`
   section 5.
 - **Tested by:** the conformance kit on both implementations (pin, unpin, a second secret refused, expiry, revocation,
