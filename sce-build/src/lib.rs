@@ -8162,6 +8162,11 @@ fn validate_and_enrich_imports(
                 }
                 ctx.enum_slots =
                     algorithm_enum_slots(am, &parsed.imports, &callee_base, &own_enums);
+                // docs/adr/0108, D8: whether the callee takes its caller's map
+                // seed, the fixed point over the algorithms it calls, read from
+                // where it is, as a statechart's callee answers it.
+                ctx.takes_map_seed =
+                    forge::static_imports::takes_map_seed(&doc, &parsed.imports, &callee_base);
                 // A Swift caller names the unit the callee is written as, which is
                 // written only when the callee is lowered for Swift, itself read through
                 // the algorithms it calls.
@@ -8255,12 +8260,6 @@ fn validate_and_enrich_imports(
                 // no scalar (a union parameter is filled, a union return is not).
                 ctx.host_only = call_refusal.or(sig.host_only);
                 ctx.may_fail = sig.may_fail;
-                // docs/adr/0108, D8: an algorithm that builds a map local with
-                // no map it is lent or returns takes its caller's seed.
-                ctx.takes_map_seed = matches!(
-                    &doc,
-                    forge::model::ForgeDocument::Algorithm(algorithm) if algorithm.takes_map_seed()
-                );
             } else {
                 // Qualify every discovered field key with the import's alias
                 // so the typed expression pipeline can look it up via the

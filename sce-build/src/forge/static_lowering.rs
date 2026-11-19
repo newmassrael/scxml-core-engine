@@ -274,10 +274,11 @@ pub struct StaticLowering {
     /// invocation, which the reason a deadline the machine cannot read quotes;
     /// `None` for a machine none of whose invocations carries one.
     pub deadline_text: Option<u64>,
-    /// Whether the machine calls an algorithm that builds a map local with no
-    /// map to draw its seed from, which it hands the seed it drew for its
-    /// algorithms where it was built (docs/adr/0108, D8,
-    /// [`StaticTarget::algorithm_seed`]): what a target keeps that seed for.
+    /// Whether the machine imports an algorithm that takes its caller's seed
+    /// ([`StaticCallee::takes_map_seed`]), which it hands the seed it keeps
+    /// for its algorithms from where it was built (docs/adr/0108, D8,
+    /// [`StaticTarget::algorithm_seed`]): what a target keeps that seed for,
+    /// whether or not the machine holds a map of its own.
     pub seeds_algorithms: bool,
 }
 
@@ -1029,6 +1030,10 @@ pub enum ListCall<'a> {
 pub enum ScratchSite {
     /// A call of the algorithm `symbol` by its own name, which writes its list there.
     Direct { symbol: String },
+    /// A call of the algorithm `symbol` by its own name, which holds the maps of
+    /// its own there (docs/adr/0108, D4 "Storage", the struct its unit declares):
+    /// one that takes its caller's seed.
+    Maps { symbol: String },
     /// A call through the adapter `adapter`, whose storage has the members `members`
     /// ([`StaticTarget::adapter_storage`]).
     Adapter {
@@ -2088,14 +2093,14 @@ pub trait StaticTarget {
     fn in_place_call(&self, _call: &InPlaceCall<'_>) -> Option<String> {
         None
     }
-    /// The seed a call of an algorithm that builds a map local with no map to
-    /// draw its seed from is handed, as its last argument (docs/adr/0108, D8,
-    /// [`crate::forge::model::AlgorithmModel::takes_map_seed`]): one the
-    /// machine drew from the seed of its own maps where it was built, which
-    /// the machine keeps when it makes such a call
-    /// ([`StaticLowering::seeds_algorithms`]). `None` for a target that hands
-    /// none, on which a machine that lends maps and makes such a call is
-    /// refused by name.
+    /// How the machine supplies the seed a call of an algorithm that takes its
+    /// caller's is handed, after the arguments it is written with
+    /// (docs/adr/0108, D8, [`StaticCallee::takes_map_seed`],
+    /// [`crate::forge::types::TypeCtx::seeded_calls`]): the seed the machine
+    /// keeps for it from where it was built, whether or not it holds a map
+    /// ([`StaticLowering::seeds_algorithms`]). `None` for a target whose
+    /// algorithms take no seed: the Interpreter's, whose maps hash as its
+    /// engine does (D8), and every target that lowers no algorithm's map.
     fn algorithm_seed(&self) -> Option<String> {
         None
     }
@@ -8503,21 +8508,11 @@ pub fn lower(
     if !target.lends_maps() {
         lent_map_unlowered(&scope, lang)?;
     }
-    // docs/adr/0108, D8: an algorithm that builds a map local with no map to
-    // draw its seed from takes its caller's, which a target that lends maps
-    // hands it from the machine's own; one that does not hand it yet refuses
-    // the document by the callee's name.
-    let seeds_algorithms = scope.callees.iter().any(|c| c.takes_map_seed);
-    if seeds_algorithms && target.lends_maps() && target.algorithm_seed().is_none() {
-        if let Some(callee) = scope.callees.iter().find(|c| c.takes_map_seed) {
-            return Err(GenerateError::unsupported(format!(
-                "`{}(…)`: an algorithm that builds a map local with no map to draw its seed \
-                 from takes the seed of the machine that calls it, which {lang} does not hand \
-                 one yet (docs/adr/0108, D8)",
-                callee.alias
-            )));
-        }
-    }
+    // docs/adr/0108, D8: an algorithm that takes its caller's seed is handed
+    // the one the machine keeps for it, on a target whose algorithms take one
+    // ([`StaticTarget::algorithm_seed`]).
+    let seeds_algorithms =
+        target.algorithm_seed().is_some() && scope.callees.iter().any(|c| c.takes_map_seed);
     // A call that hands an algorithm a record or a list, or takes one back, needs
     // the target's adapter for it; a target without one refuses the document by
     // name instead of leaving the call undefined where the machine runs.
@@ -9809,6 +9804,17 @@ pub fn lower(
     }) {
         scratch_imports.extend(callee_import(callee));
     }
+    // docs/adr/0108, D4 "Storage" and D8: an algorithm called by its own name
+    // that takes its caller's seed holds maps of its own, in storage a lane
+    // without a heap holds for the call ([`called_by_name_with_maps`]).
+    for callee in called_by_name_with_maps(&scope) {
+        if let Some(reached) = target.callee(callee) {
+            scratch_sites.push(ScratchSite::Maps {
+                symbol: reached.call,
+            });
+            scratch_imports.extend(callee_import(callee));
+        }
+    }
     let adapted: Vec<String> = if target.has_state_adapters() {
         rewrites.state_calls.borrow().iter().cloned().collect()
     } else {
@@ -10015,7 +10021,7 @@ pub fn lower(
         elements: rewrites.elements.into_inner(),
         keyed_loops: rewrites.keyed_loops.into_inner(),
         logs_a_value: rewrites.logs_a_value.get(),
-        seeds_algorithms: seeds_algorithms && target.algorithm_seed().is_some(),
+        seeds_algorithms,
     })
 }
 
@@ -11409,32 +11415,85 @@ fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &s
 /// Whether a machine of `model` takes, at its start, the seed its maps hash
 /// their keys under, on a lane that draws none itself (C11, docs/adr/0108, D8):
 /// it is a `datamodel="sce-static"` document that holds a map or a set at any
-/// scope, or it starts a child, through an `<invoke type="scxml">` or as a
-/// candidate of a hybrid one, that takes one, whose seed it derives from its
-/// own. A child's answer is the one the parse recorded on its `<invoke>`
+/// scope, or imports an algorithm that takes its caller's seed, read from
+/// `dir` ([`crate::forge::static_imports::imports_one_that_takes_map_seed`],
+/// whose seed it keeps as [`StaticLowering::seeds_algorithms`] says), or it
+/// starts a child, through an `<invoke type="scxml">` or as a candidate of a
+/// hybrid one, that takes one, whose seed it derives from its own. A child's
+/// answer is the one the parse recorded on its `<invoke>`
 /// ([`crate::model::InvokeSessionCommon::child_takes_map_seed`]), computed by
 /// this function when the child's document was parsed, so a grandchild is
 /// judged by the same rule without being read twice.
-pub(crate) fn takes_map_seed(model: &SCXMLModel) -> bool {
-    let holds = model.datamodel == crate::model::Datamodel::SceStatic
+pub(crate) fn takes_map_seed(model: &SCXMLModel, dir: Option<&std::path::Path>) -> bool {
+    holds_map(model)
+        || dir.is_some_and(|dir| {
+            crate::forge::static_imports::imports_one_that_takes_map_seed(model, dir)
+        })
+        || starts_child(model, &|common| common.child_takes_map_seed, &|candidate| {
+            candidate.child_takes_map_seed
+        })
+}
+
+/// Whether a judge of a saved state of a machine of `model` puts the entries
+/// of a map somewhere to find a key held twice (C11, docs/adr/0108, D8): it is
+/// a `datamodel="sce-static"` document that holds a map or a set at any scope,
+/// or it starts a child that does, whose saved state it judges with its own. A
+/// machine that takes a seed only for an algorithm it calls holds no map a
+/// saved state could hold, and judges none. A child's answer is the one the
+/// parse recorded on its `<invoke>`
+/// ([`crate::model::InvokeSessionCommon::child_judges_saved_maps`]), as
+/// [`takes_map_seed`]'s is.
+pub(crate) fn judges_saved_maps(model: &SCXMLModel) -> bool {
+    holds_map(model)
+        || starts_child(
+            model,
+            &|common| common.child_judges_saved_maps,
+            &|candidate| candidate.child_judges_saved_maps,
+        )
+}
+
+/// Each algorithm `scope` imports that takes its caller's map seed and is
+/// called by its own name rather than through an adapter
+/// ([`crate::forge::type_ctx::StaticValueSignature::adapted`]). It is lent no
+/// map, so it takes its caller's seed exactly where it holds maps of its own,
+/// which a lane that holds an algorithm's maps in its caller's storage holds
+/// for the call (docs/adr/0108, D4 "Storage" and D8).
+fn called_by_name_with_maps(scope: &StaticScope) -> impl Iterator<Item = &StaticCallee> {
+    scope.callees.iter().filter(|callee| {
+        callee.takes_map_seed && !callee.value.as_ref().is_some_and(|value| value.adapted())
+    })
+}
+
+/// Whether `model` is a `datamodel="sce-static"` document that holds a map or
+/// a set at any scope.
+fn holds_map(model: &SCXMLModel) -> bool {
+    model.datamodel == crate::model::Datamodel::SceStatic
         && model
             .variables
             .iter()
             .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
-            .any(|v| v.value_type.as_ref().is_some_and(|t| t.map_key().is_some()));
-    holds
-        || model
-            .states
-            .values()
-            .flat_map(|state| state.invokes.iter())
-            .any(|invoke| match invoke {
-                crate::model::Invoke::Scxml(info) => info.common.child_takes_map_seed,
-                crate::model::Invoke::Hybrid(info) => {
-                    info.common.child_takes_map_seed
-                        || info.candidates.iter().any(|c| c.child_takes_map_seed)
-                }
-                crate::model::Invoke::MeshRpc(_) | crate::model::Invoke::Unsupported(_) => false,
-            })
+            .any(|v| v.value_type.as_ref().is_some_and(|t| t.map_key().is_some()))
+}
+
+/// Whether `model` starts a child, through an `<invoke type="scxml">` or as a
+/// candidate of a hybrid one, of which `child` (or, for a candidate,
+/// `candidate`) holds.
+fn starts_child(
+    model: &SCXMLModel,
+    child: &dyn Fn(&crate::model::InvokeSessionCommon) -> bool,
+    candidate: &dyn Fn(&crate::model::InvokeCandidate) -> bool,
+) -> bool {
+    model
+        .states
+        .values()
+        .flat_map(|state| state.invokes.iter())
+        .any(|invoke| match invoke {
+            crate::model::Invoke::Scxml(info) => child(&info.common),
+            crate::model::Invoke::Hybrid(info) => {
+                child(&info.common) || info.candidates.iter().any(candidate)
+            }
+            crate::model::Invoke::MeshRpc(_) | crate::model::Invoke::Unsupported(_) => false,
+        })
 }
 
 /// Whether a saved state can hold the whole state of a machine of `model`, and
@@ -18278,6 +18337,11 @@ impl StaticTarget for CTarget {
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
     }
+    // The seed the machine was started with, which it keeps whether or not it
+    // holds a map (`c/state_machine.h.jinja2`), handed to each call as it is.
+    fn algorithm_seed(&self) -> Option<String> {
+        Some(C11_MACHINE_SEED.to_string())
+    }
     // The algorithm writes each map it is lent where the machine holds it, through
     // the address of its storage ([`Self::state_argument`]), so the statement is the
     // call, its answer stored where `location` names a variable, and nothing is
@@ -18512,20 +18576,22 @@ impl StaticTarget for CTarget {
                 _ => return None,
             }
         }
-        // docs/adr/0108, D4 "Storage", D6 item 3 and D8: the algorithm's maps of
-        // its own and the copies its writing walks walk are the machine's
-        // storage for the call ([`Self::adapter_storage`]), handed after the
-        // arguments, and the seed the machine's maps were started under follows
-        // where the algorithm keys its own under a seed it is handed.
+        // docs/adr/0108, D4 "Storage", D6 item 3 and D8: the seed an algorithm
+        // that takes its caller's is handed, the one the machine keeps
+        // ([`Self::algorithm_seed`]), follows the arguments, and the algorithm's
+        // maps of its own and the copies its writing walks walk, the machine's
+        // storage for the call ([`Self::adapter_storage`]), follow it, as the
+        // algorithm declares them and the statement hands them the adapter.
         let maps = &value.map_storage;
+        if spec.callee.takes_map_seed {
+            declarations.push("sce_map_seed_t seed".to_string());
+            arguments.push("seed".to_string());
+        }
         if maps.locals {
             arguments.push("&s->maps".to_string());
         }
         for index in 0..maps.copies.len() {
             arguments.push(format!("&s->w{index}.core"));
-        }
-        if maps.seeded {
-            arguments.push("seed".to_string());
         }
         let call = format!("{}({})", spec.call, arguments.join(", "));
         let result_type = format!("{name}_result_t");
@@ -18536,9 +18602,6 @@ impl StaticTarget for CTarget {
             declarations.push(format!("{storage} *s"));
         } else if !maps.is_empty() {
             return None;
-        }
-        if maps.seeded {
-            declarations.push("sce_map_seed_t seed".to_string());
         }
         // An algorithm that returns nothing is called for the maps it writes in
         // place (docs/adr/0108, D6 item 2): the adapter hands it its arguments
@@ -18769,28 +18832,6 @@ impl StaticTarget for CTarget {
         (!members.is_empty()).then_some(members)
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
-        // docs/adr/0108, D8: an algorithm that keys a map of its own under the
-        // seed its caller hands it is handed the seed the machine's own maps
-        // were started under, which a machine that holds no map does not take.
-        let holds_a_map = scope
-            .variables
-            .iter()
-            .any(|v| v.value_type.as_ref().is_some_and(|t| t.map_key().is_some()));
-        if let Some(callee) = scope.callees.iter().find(|callee| {
-            callee
-                .value
-                .as_ref()
-                .is_some_and(|value| value.map_storage.seeded)
-        }) {
-            if !holds_a_map {
-                return Some(format!(
-                    "a call of `{}`, an algorithm that keys a map of its own under the seed its \
-                     caller hands it, from a machine that holds no map and so is started under \
-                     no seed to hand it (docs/adr/0108, D8)",
-                    callee.alias
-                ));
-            }
-        }
         // The integers, the bool and an enum: a `bool`, a number and an
         // enumerated type are the values the checked helpers and the policy
         // hold without a length. A list of integers or bools too: it is a
@@ -19513,6 +19554,19 @@ impl StaticTarget for CTarget {
                 sig.storage = Some(format!("&{}", c11_scratch(&c11_direct_storage(&symbol))));
             }
         }
+        // docs/adr/0108, D4 "Storage": the maps of its own an algorithm called
+        // by its own name holds ([`ScratchSite::Maps`]), handed after the seed
+        // and before any list's destination, as its parameters are declared.
+        for callee in called_by_name_with_maps(scope) {
+            let symbol = generated_callee(Language::C11, callee, None).call;
+            if let Some(sig) = ctx.funcs.get_mut(callee.alias.as_str()) {
+                let maps = format!("&{}", c11_scratch(&c11_direct_maps(&symbol)));
+                sig.storage = Some(match sig.storage.take() {
+                    Some(destination) => format!("{maps}, {destination}"),
+                    None => maps,
+                });
+            }
+        }
         for call in scope.state_calls() {
             let Some(callee) = scope.value_callee(&call.alias) else {
                 continue;
@@ -19529,21 +19583,16 @@ impl StaticTarget for CTarget {
                 .iter()
                 .any(|slot| matches!(slot, StaticSlot::RecordList(_)));
             // An algorithm's maps of its own and the copies its writing walks
-            // walk are the call's storage too (docs/adr/0108, D4 "Storage"), and
-            // one that keys its own under a seed it is handed is handed the seed
-            // the machine's maps were started under (D8).
+            // walk are the call's storage too (docs/adr/0108, D4 "Storage"); the
+            // seed one that takes its caller's is handed comes before it, as every
+            // lane hands it ([`StaticTarget::algorithm_seed`]).
             let holds_maps = !value.map_storage.is_empty();
             if !(returns_list || copies_records || holds_maps) {
                 continue;
             }
             let adapter = self.state_adapter_name(machine, callee, &call.name);
-            let seed = if value.map_storage.seeded {
-                format!(", {C11_MACHINE_SEED}")
-            } else {
-                String::new()
-            };
             if let Some(sig) = ctx.funcs.get_mut(call.name.as_str()) {
-                sig.storage = Some(format!("&{}{seed}", c11_scratch(&adapter)));
+                sig.storage = Some(format!("&{}", c11_scratch(&adapter)));
                 if returns_list {
                     sig.reading = CallReading::IntoDestination;
                 }
@@ -19594,6 +19643,11 @@ impl StaticTarget for CTarget {
                     "{} {};",
                     crate::forge::generator::c11_list_destination_type(symbol),
                     c11_direct_storage(symbol)
+                )),
+                ScratchSite::Maps { symbol } => calls.push(format!(
+                    "{} {};",
+                    crate::forge::generator::c11_algorithm_maps_type(symbol),
+                    c11_direct_maps(symbol)
                 )),
                 ScratchSite::Adapter { adapter, members } => {
                     let ty = c11_adapter_storage_type(machine, adapter);
@@ -21002,6 +21056,13 @@ fn c11_loop_member(list_ty: &str) -> String {
 /// with `call_` ([`StaticTarget::state_adapter_name`]), so the two never meet.
 fn c11_direct_storage(symbol: &str) -> String {
     format!("into_{symbol}")
+}
+
+/// The member of a C11 machine's `scratch` a call of the algorithm `symbol` by its own
+/// name holds the maps of its own in (docs/adr/0108, D4 "Storage",
+/// [`ScratchSite::Maps`]), apart from [`c11_direct_storage`] and an adapter's.
+fn c11_direct_maps(symbol: &str) -> String {
+    format!("maps_{symbol}")
 }
 
 /// The type of the storage a C11 machine `machine` holds for the calls through its

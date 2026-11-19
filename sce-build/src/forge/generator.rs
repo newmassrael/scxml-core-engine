@@ -379,11 +379,12 @@ pub struct ImportContext {
     #[serde(skip)]
     pub may_fail: bool,
 
-    /// For an imported algorithm that builds a map local and is lent no map
-    /// and returns none: each call hands it the seed of that local's keys
-    /// (docs/adr/0108, D8,
-    /// [`crate::forge::model::AlgorithmModel::takes_map_seed`]). `false` for
-    /// every other import.
+    /// For an imported algorithm that takes its caller's map seed: it is lent
+    /// no map and returns none, and builds one or calls an algorithm that
+    /// takes one, the fixed point over the algorithms its calls reach
+    /// (docs/adr/0108, D8, [`crate::forge::static_imports::takes_map_seed`]).
+    /// Each call hands it a seed derived from the caller's. `false` for every
+    /// other import.
     #[serde(skip)]
     pub takes_map_seed: bool,
 
@@ -41166,24 +41167,21 @@ fn map_output(m: &AlgorithmModel) -> Option<&str> {
 /// [`crate::forge::type_ctx::MapStorage`]): its map
 /// locals, the one it returns aside, and the copy each writing walk walks, held
 /// with the locals where it walks one of them and handed by the caller where it
-/// walks a map the caller lends or takes back.
-pub(crate) fn algorithm_map_storage(m: &AlgorithmModel) -> crate::forge::type_ctx::MapStorage {
+/// walks a map the caller lends or takes back. Where `calls_seeded`, it calls an
+/// algorithm that takes its caller's seed, whose own maps the struct of its
+/// locals holds too ([`C11AlgorithmMaps`]).
+pub(crate) fn algorithm_map_storage(
+    m: &AlgorithmModel,
+    calls_seeded: bool,
+) -> crate::forge::type_ctx::MapStorage {
     use crate::forge::type_ctx::{MapCopy, MapStorage};
     let output = map_output(m);
-    let own: Vec<&str> = map_locals(m)
+    let own = map_locals(m)
         .into_iter()
-        .map(|(name, _)| name)
-        .filter(|name| Some(*name) != output)
-        .collect();
-    let lent = m
-        .signature
-        .params
-        .iter()
-        .any(|p| p.sce_type.map_key().is_some());
+        .any(|(name, _)| Some(name) != output);
     let mut storage = MapStorage {
-        locals: !own.is_empty(),
+        locals: own || calls_seeded,
         copies: Vec::new(),
-        seeded: !own.is_empty() && !lent && output.is_none(),
     };
     for (_, source) in writing_map_walks(m) {
         if Some(source) == output {
@@ -41207,11 +41205,16 @@ pub(crate) fn algorithm_map_storage(m: &AlgorithmModel) -> crate::forge::type_ct
 /// member of the struct `<symbol>_maps_t` the algorithm declares, which the
 /// caller holds whole and hands by its address; the copy a writing walk of a
 /// map the caller lends or takes back walks is storage the caller hands for it,
-/// of at least that map's bound. A local of its own is keyed under a seed
-/// derived, as a child machine's is (`sce_map_seed_of_child`), from the seed of
-/// a map the caller lends or takes back, or, in an algorithm that has neither,
-/// from the seed its caller hands it last, the one the caller's own maps were
-/// started under: never a fixed one.
+/// of at least that map's bound. An algorithm it calls that takes its caller's
+/// seed holds maps of its own in a struct of its own, which is a member of this
+/// one, handed to each call of it. A local of its own, and each such call, is
+/// keyed under a seed derived, as a child machine's is
+/// (`sce_map_seed_of_child`), under its name from the seed of a map the caller
+/// lends or takes back, or, in an algorithm that has neither, from the seed its
+/// caller hands it after the declared parameters
+/// ([`crate::forge::model::AlgorithmModel::takes_map_seed`]), the one the
+/// caller's own maps were started under or one derived from it: never a fixed
+/// one.
 struct C11AlgorithmMaps<'a> {
     /// The statement each map local's `<sce:var>` lowers to, by name.
     starts: std::collections::HashMap<String, String>,
@@ -41219,12 +41222,19 @@ struct C11AlgorithmMaps<'a> {
     copies: Vec<(&'a AlgorithmStmt, String)>,
     /// How each map is named in an expression, by name.
     renames: Vec<(String, String)>,
-    /// The parameters the storage takes after the declared ones.
+    /// The parameters the storage takes after the declared ones: the seed,
+    /// the struct of the maps of its own, and each copy the caller hands.
     params: Vec<String>,
     /// The struct of the locals and the declarations of their types.
     prelude: String,
     /// The map returned, as the body names it.
     output: Option<&'a str>,
+    /// Each algorithm the body calls that takes its caller's seed, by its
+    /// alias, with the seed the body hands it.
+    call_seeds: std::collections::HashMap<String, String>,
+    /// ... and the address of the struct of that algorithm's own maps, a
+    /// member of this one.
+    call_storage: std::collections::HashMap<String, String>,
 }
 
 /// The name of the C11 struct of the map locals the algorithm `symbol` holds in
@@ -41237,15 +41247,20 @@ pub(crate) fn c11_algorithm_maps_type(symbol: &str) -> String {
 /// that hands it.
 const C11_MAPS: &str = "sce_maps_";
 /// ... and the seed its caller hands it
-/// ([`crate::forge::type_ctx::MapStorage::seeded`]).
+/// ([`crate::forge::model::AlgorithmModel::takes_map_seed`]).
 const C11_SEED: &str = "sce_seed_";
 
 impl<'a> C11AlgorithmMaps<'a> {
+    /// The maps `m`, the algorithm `symbol`, holds. `takes_seed` is whether it
+    /// takes its caller's seed, and `seeded` each algorithm it calls that
+    /// takes one.
     fn of(
         m: &'a AlgorithmModel,
         l: &LangCtx,
         imports: &[ImportContext],
         symbol: &str,
+        takes_seed: bool,
+        seeded: &[&ImportContext],
     ) -> Result<Self, ForgeError> {
         let refused = |what: String| -> ForgeError {
             GenerateError::unsupported_at(
@@ -41282,9 +41297,10 @@ impl<'a> C11AlgorithmMaps<'a> {
         {
             renames.push((p.name.clone(), c11_destination(&l.local_id(&p.name))));
         }
-        // The seed a local of the algorithm's own is keyed under: the seed of a
-        // map the caller lends, or of the one it takes back, or, where it has
-        // neither, the one the caller hands it (`MapStorage::seeded`).
+        // The seed a local of the algorithm's own, and each call that takes
+        // one, is keyed under: the seed of a map the caller lends, or of the
+        // one it takes back, or, where it has neither, the one the caller hands
+        // it (`takes_seed`).
         let seed = m
             .signature
             .params
@@ -41293,7 +41309,6 @@ impl<'a> C11AlgorithmMaps<'a> {
             .map(|p| l.local_id(&p.name))
             .or_else(|| output.map(|name| l.local_id(name)))
             .map_or_else(|| C11_SEED.to_string(), |lent| format!("{lent}->seed"));
-        let seeded = algorithm_map_storage(m).seeded;
         let mut members = Vec::new();
         let mut declarations = Vec::new();
         for (name, ty) in map_locals(m) {
@@ -41335,6 +41350,29 @@ impl<'a> C11AlgorithmMaps<'a> {
                 }
             }
         }
+        // Each algorithm the body calls that takes its caller's seed holds maps
+        // of its own in the struct its unit declares, which is a member of this
+        // one, and is handed a seed derived under its alias.
+        let mut call_seeds = std::collections::HashMap::new();
+        let mut call_storage = std::collections::HashMap::new();
+        for (index, callee) in seeded.iter().enumerate() {
+            let member = format!("sce_call_{index}_");
+            members.push(format!(
+                "    {} {member};",
+                c11_algorithm_maps_type(&callee.qualified_call)
+            ));
+            call_storage.insert(callee.alias.clone(), format!("&{C11_MAPS}->{member}"));
+            call_seeds.insert(
+                callee.alias.clone(),
+                format!(
+                    "sce_map_seed_of_child({seed}, \"{symbol}.{}\")",
+                    callee.alias
+                ),
+            );
+        }
+        if takes_seed {
+            params.push(format!("sce_map_seed_t {C11_SEED}"));
+        }
         let mut prelude = String::new();
         if !members.is_empty() {
             let maps = c11_algorithm_maps_type(symbol);
@@ -41351,9 +41389,6 @@ impl<'a> C11AlgorithmMaps<'a> {
             params.push(format!("{maps} *{C11_MAPS}"));
         }
         params.extend(handed);
-        if seeded {
-            params.push(format!("sce_map_seed_t {C11_SEED}"));
-        }
         Ok(Self {
             starts,
             copies,
@@ -41361,6 +41396,8 @@ impl<'a> C11AlgorithmMaps<'a> {
             params,
             prelude,
             output,
+            call_seeds,
+            call_storage,
         })
     }
 }
@@ -43236,6 +43273,29 @@ impl<'a> HeldMaps<'a> {
         match self {
             Self::C11(maps) => maps.params.clone(),
             Self::Rust(maps) => maps.seed_parameter().into_iter().collect(),
+        }
+    }
+
+    /// The seed the body hands each call of the algorithm `alias`, one that
+    /// takes its caller's (docs/adr/0108, D8): derived from the body's own
+    /// seed, on Rust by its number after the locals' (`derive`,
+    /// `derived_seed`), on C11 under the alias (`sce_map_seed_of_child`).
+    fn call_seed(self, alias: &str) -> Option<String> {
+        match self {
+            Self::C11(maps) => maps.call_seeds.get(alias).cloned(),
+            Self::Rust(maps) => maps.call_seeds().get(alias).cloned(),
+        }
+    }
+
+    /// The storage the body hands each call of the algorithm `alias`, one
+    /// that takes its caller's seed, after the seed (docs/adr/0108, D4
+    /// "Storage"): on C11 the address of the struct of that algorithm's own
+    /// maps, a member of this one's; nothing on Rust, whose algorithm holds
+    /// its own maps in its frame.
+    fn call_storage(self, alias: &str) -> Option<String> {
+        match self {
+            Self::C11(maps) => maps.call_storage.get(alias).cloned(),
+            Self::Rust(_) => None,
         }
     }
 
@@ -46143,16 +46203,18 @@ fn lower_algorithm_stmt(
                     .map_err(|refusal| site.place(refusal))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            // docs/adr/0108, D8: an algorithm that takes its caller's seed is
-            // handed the one this body draws for it, last, as the expression
-            // form hands it ([`crate::forge::types::TypeCtx::seeded_calls`]).
+            // docs/adr/0108, D4 "Storage" and D8: an algorithm that takes its
+            // caller's seed is handed the one this body derives for it, and on
+            // C11 the storage of its own maps after it, as the expression form
+            // hands them ([`crate::forge::types::TypeCtx::seeded_calls`],
+            // [`crate::forge::types::FuncSig::storage`]).
             if let CallTarget::Algorithm(imp) = &callee {
-                if let Some(seed) = maps
-                    .and_then(HeldMaps::rust)
-                    .and_then(|maps| maps.call_seeds().get(&imp.alias).cloned())
-                {
-                    lowered_args.push(seed);
-                }
+                lowered_args.extend(type_ctx.seeded_calls.get(imp.alias.as_str()).cloned());
+                lowered_args.extend(
+                    type_ctx
+                        .lookup_func(imp.alias.as_str())
+                        .and_then(|sig| sig.storage.clone()),
+                );
             }
             let call = match callee {
                 // The symbol the expression form calls, so the two forms
@@ -48744,12 +48806,24 @@ fn render_algorithm(
     let mut ctx = l.base_context(&m.name);
     // docs/adr/0108, D4 "Storage" and D6 on C11: every map the algorithm holds
     // is in its caller's storage ([`C11AlgorithmMaps`]).
-    let c11_maps = if lang == Language::C11 && m.first_map().is_some() {
+    // docs/adr/0108, D8: each algorithm the body may call that takes its
+    // caller's seed (the fixed point its import carries,
+    // [`ImportContext::takes_map_seed`]), and so whether this one takes one,
+    // by the one rule ([`AlgorithmModel::takes_map_seed`]).
+    let seeded: Vec<&ImportContext> = imports
+        .iter()
+        .filter(|imp| imp.takes_map_seed && imp.is_callable_algorithm())
+        .collect();
+    let takes_seed = m.takes_map_seed(|| !seeded.is_empty());
+    let holds_maps = m.first_map().is_some() || !seeded.is_empty();
+    let c11_maps = if lang == Language::C11 && holds_maps {
         Some(C11AlgorithmMaps::of(
             m,
             &l,
             imports,
             &forge_algorithm_symbol(&m.name, lang),
+            takes_seed,
+            &seeded,
         )?)
     } else {
         None
@@ -48994,12 +49068,7 @@ fn render_algorithm(
     // the leaf crate that declares it.
     // ... and each imported algorithm it may call that builds a map local with
     // no map to draw its seed from, which it hands a seed (D8).
-    let seeded: Vec<&str> = imports
-        .iter()
-        .filter(|imp| imp.takes_map_seed && imp.is_callable_algorithm())
-        .map(|imp| imp.alias.as_str())
-        .collect();
-    let rust_maps = if lang == Language::Rust && (m.first_map().is_some() || !seeded.is_empty()) {
+    let rust_maps = if lang == Language::Rust && holds_maps {
         let part = |part: &AlgorithmValueType| -> Result<Option<String>, ForgeError> {
             Ok(match part {
                 AlgorithmValueType::Record { alias } => Some(
@@ -49023,21 +49092,13 @@ fn render_algorithm(
             })
         };
         let local = |name: &str| l.local_id(name);
-        let maps =
-            crate::forge::rust_algorithm_map::RustAlgorithmMaps::of(m, &part, &local, &seeded)?;
+        let aliases: Vec<&str> = seeded.iter().map(|imp| imp.alias.as_str()).collect();
+        let maps = crate::forge::rust_algorithm_map::RustAlgorithmMaps::of(
+            m, &part, &local, takes_seed, &aliases,
+        )?;
         type_ctx.algorithm_maps = Some(crate::forge::types::AlgorithmMapReads::Rust(
             crate::forge::rust_algorithm_map::RUST_ALGORITHM_MAP_READS,
         ));
-        for imp in imports
-            .iter()
-            .filter(|imp| seeded.contains(&imp.alias.as_str()))
-        {
-            if let Some(seed) = maps.call_seeds().get(&imp.alias) {
-                type_ctx
-                    .seeded_calls
-                    .insert(imp.alias.as_str(), seed.clone());
-            }
-        }
         Some(maps)
     } else {
         None
@@ -49046,6 +49107,24 @@ fn render_algorithm(
         .as_ref()
         .map(HeldMaps::C11)
         .or_else(|| rust_maps.as_ref().map(HeldMaps::Rust));
+    // docs/adr/0108, D8: each call of an algorithm that takes its caller's
+    // seed is handed the one this body derives for it from its own, after the
+    // arguments it is written with, by the expression form and the statement
+    // form alike ([`crate::forge::types::TypeCtx::seeded_calls`]), as a machine
+    // hands one the seed it keeps; on C11 the struct of that algorithm's own
+    // maps, a member of this one's, follows it ([`HeldMaps::call_storage`]).
+    if let Some(maps) = held_maps {
+        for imp in seeded.iter().copied() {
+            if let Some(seed) = maps.call_seed(&imp.alias) {
+                type_ctx.seeded_calls.insert(imp.alias.as_str(), seed);
+            }
+            if let Some(storage) = maps.call_storage(&imp.alias) {
+                if let Some(sig) = type_ctx.funcs.get_mut(imp.alias.as_str()) {
+                    sig.storage = Some(storage);
+                }
+            }
+        }
+    }
 
     // Per-RFC §synth-5-J-5 signature emit (item C7 lowering, 2026-05-13):
     // each `<sce:import kind="bounded-collection">` adds a
@@ -49720,11 +49799,8 @@ fn render_algorithm(
     ctx.insert("needs_span".into(), needs_span.into());
     // C11 reads and writes a map it is lent through the functions of
     // `sce/forge/map.h` (docs/adr/0108, D8), the header the core it is lent by
-    // is declared in.
-    ctx.insert(
-        "needs_map".into(),
-        (lang == Language::C11 && m.first_map().is_some()).into(),
-    );
+    // and the seed it derives one from are declared in.
+    ctx.insert("needs_map".into(), c11_maps.is_some().into());
     // C11 compares a record's text with `strcmp`.
     ctx.insert(
         "needs_string_h".into(),

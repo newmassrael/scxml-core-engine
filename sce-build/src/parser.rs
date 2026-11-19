@@ -6048,7 +6048,7 @@ impl SCXMLParser {
             // document, as an in-line one does, with the `src` that names it
             // as the site it was reached from.
             if let Some(inline_model) = scxml_info.inline_child.as_deref() {
-                populate_child_metadata_from_model(inline_model, &mut scxml_info.common);
+                populate_child_metadata_from_model(inline_model, base_dir, &mut scxml_info.common);
             } else if let (true, Some(written)) = (
                 base_dir.is_some() || !self.candidate_roots.is_empty(),
                 scxml_info.child_document_path(),
@@ -9145,7 +9145,13 @@ fn child_has_delayed_send(child_model: &SCXMLModel) -> bool {
 /// / `child_needs_event_scheduler` from the same walker. Which handed names a
 /// child under a script-engine data model takes is the child's own answer
 /// (docs/adr/0098), so no list of its names is carried to the parent.
-fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut InvokeSessionCommon) {
+/// `child_dir` is where the child's own imports are read from, `None` where
+/// nothing is read from disk.
+fn populate_child_metadata_from_model(
+    child_model: &SCXMLModel,
+    child_dir: Option<&Path>,
+    common: &mut InvokeSessionCommon,
+) {
     common.child_needs_script_engine = child_model.needs_script_engine;
     // §scxml-6.4: whether the child has done data for the parent to ask it
     // for when it ends; where the child holds it is the child's own answer.
@@ -9166,7 +9172,9 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
         && crate::forge::native_action::document_has_duties(child_model);
     // docs/adr/0108, D8: whether the child takes the seed of its maps at its
     // start, read the way its own invokes already were.
-    common.child_takes_map_seed = crate::forge::static_lowering::takes_map_seed(child_model);
+    common.child_takes_map_seed =
+        crate::forge::static_lowering::takes_map_seed(child_model, child_dir);
+    common.child_judges_saved_maps = crate::forge::static_lowering::judges_saved_maps(child_model);
     // §scxml-6.2 (test187/207): mirror the child's own scheduler
     // requirement. The child's codegen emits `_tick` only when
     // its scheduler queue is non-empty; the parent's invoke driver
@@ -9306,7 +9314,7 @@ impl SCXMLParser {
             .map_err(|refusal| {
                 refusal.reached_through(named_at.location.clone(), named_at.actual.clone())
             })?;
-        populate_child_metadata_from_model(&child_model, common);
+        populate_child_metadata_from_model(&child_model, child_path.parent(), common);
         Ok(())
     }
 
@@ -9334,6 +9342,7 @@ impl SCXMLParser {
         candidate.child_declares_host_acts = common.child_declares_host_acts;
         candidate.child_declares_host_duties = common.child_declares_host_duties;
         candidate.child_takes_map_seed = common.child_takes_map_seed;
+        candidate.child_judges_saved_maps = common.child_judges_saved_maps;
         candidate.child_has_send_to_parent = common.child_has_send_to_parent;
         candidate.child_ends_with_done_data = common.child_ends_with_done_data;
         candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;

@@ -101,14 +101,17 @@ if (({{ expr }}).present) {
 {% endfor %}
 {% set takes_simulated_host = has_native_duties or host_duty_children.any %}
 {% set saved_restore_args = model.needs_event_scheduler or model.host_processor_types or model.host_invoker_types or has_native_actions %}
-{# docs/adr/0108, D8: a machine that holds a map or a set, or starts a child that takes
-   a seed, is constructed by a restore with the seed its maps hash their keys under, as
-   every other construction of it is. Kept in step with the same `set`s in
-   `state_machine.h.jinja2`. #}
-{% set saved_maps = namespace(any=false) %}
-{% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set saved_maps.any = true %}{% endif %}{% endfor %}
-{% for invoke_info in model.invokes | scxml %}{% if invoke_info.child_takes_map_seed %}{% set saved_maps.any = true %}{% endif %}{% endfor %}
-{% for invoke_info in model.invokes | hybrid %}{% for candidate in invoke_info.candidates %}{% if candidate.child_takes_map_seed %}{% set saved_maps.any = true %}{% endif %}{% endfor %}{% endfor %}
+{# docs/adr/0108, D8: a machine that holds a map or a set, calls an algorithm that
+   takes its caller's seed, or starts a child that takes a seed, is constructed by a
+   restore with the seed its maps hash their keys under, as every other construction
+   of it is (`seed`). A judge of its saved state puts a map's entries somewhere
+   (`judges`) only where it holds a map or starts a child that judges one. Kept in step
+   with the same `set`s in `state_machine.h.jinja2`. #}
+{% set saved_maps = namespace(seed=false, judges=false) %}
+{% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set saved_maps.judges = true %}{% endif %}{% endfor %}
+{% for invoke_info in model.invokes | scxml %}{% if invoke_info.child_takes_map_seed %}{% set saved_maps.seed = true %}{% endif %}{% if invoke_info.child_judges_saved_maps %}{% set saved_maps.judges = true %}{% endif %}{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}{% for candidate in invoke_info.candidates %}{% if candidate.child_takes_map_seed %}{% set saved_maps.seed = true %}{% endif %}{% if candidate.child_judges_saved_maps %}{% set saved_maps.judges = true %}{% endif %}{% endfor %}{% endfor %}
+{% if saved_maps.judges or static_seeds_algorithms %}{% set saved_maps.seed = true %}{% endif %}
 {% set n_records = static_saved_shape.records | length %}
 {% set n_enums = static_saved_shape.enums | length %}
 {% set n_histories = model.history_states | length %}
@@ -315,17 +318,17 @@ SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const cha
 
 {% endfor %}
 /* Every variable of `s`, read as the value of its type, or the refusal that names the first that
-   is not one. `policy` is where they are kept, NULL to judge them and keep none.{% if saved_maps.any %}
+   is not one. `policy` is where they are kept, NULL to judge them and keep none.{% if saved_maps.judges %}
    A map is judged, with `policy` NULL, in `check`, the machine's scratch (docs/adr/0108, D8).{% endif %} */
 SCE_SM_FN static bool {{ _t }}_saved_read_variables(const sce_saved_session_t *s, const unsigned *record_at,
-                                                  {{ _t }}_policy_t *policy{% if saved_maps.any %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
+                                                  {{ _t }}_policy_t *policy{% if saved_maps.judges %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
     sce_jv_t v;
     (void)s;
     (void)err;
     (void)record_at;
     (void)policy;
     (void)v;
-{% if saved_maps.any %}
+{% if saved_maps.judges %}
     (void)check;
 {% endif %}
 {% for field in static_fields %}
@@ -1032,24 +1035,24 @@ SCE_SM_FN static bool {{ _t }}_saved_host_invokes(const sce_saved_session_t *s, 
 /* Refuse `child`, the `index`-th running child of the session being judged, unless its session is a
    state of the document it names, to any depth (docs/adr/0045, section 3, step 1). Builds
    nothing. */
-SCE_SM_FN static bool {{ _t }}_saved_judge_child(const sce_saved_child_t *child, size_t index{% if saved_maps.any %},
+SCE_SM_FN static bool {{ _t }}_saved_judge_child(const sce_saved_child_t *child, size_t index{% if saved_maps.judges %},
                                                {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
     char path[SCE_SAVED_WHAT_LEN];
     char id[SCE_SAVED_QUOTE_LEN];
     char document[SCE_SAVED_QUOTE_LEN];
     (void)snprintf(path, sizeof(path), "invokes[%lu].session", (unsigned long)index);
-{% if saved_maps.any %}
+{% if saved_maps.judges %}
     (void)check;
 {% endif %}
 {% for inv in family %}
 {% for target in (inv.candidates if inv.candidates else []) %}
     if (sce_jv_string_is(child->id, "{{ inv.invoke_id | escape_c }}") && sce_jv_string_is(child->document, "{{ target.stem | escape_c }}")) {
-        return {{ csym_prefix }}{{ target.stem }}_judge_members(child->session, child->format{% if target.child_takes_map_seed %}, check != NULL ? &check->of_child_{{ inv.field_suffix | candidate_identifier(target.stem) }} : NULL{% endif %}, err) || sce_saved_within(err, path);
+        return {{ csym_prefix }}{{ target.stem }}_judge_members(child->session, child->format{% if target.child_judges_saved_maps %}, check != NULL ? &check->of_child_{{ inv.field_suffix | candidate_identifier(target.stem) }} : NULL{% endif %}, err) || sce_saved_within(err, path);
     }
 {% endfor %}
 {% if not inv.candidates and inv.kind == 'Scxml' %}
     if (sce_jv_string_is(child->id, "{{ inv.invoke_id | escape_c }}") && sce_jv_string_is(child->document, "{{ inv.child_name | escape_c }}")) {
-        return {{ csym_prefix }}{{ inv.child_name }}_judge_members(child->session, child->format{% if inv.child_takes_map_seed %}, check != NULL ? &check->of_child_{{ inv.field_suffix }} : NULL{% endif %}, err) || sce_saved_within(err, path);
+        return {{ csym_prefix }}{{ inv.child_name }}_judge_members(child->session, child->format{% if inv.child_judges_saved_maps %}, check != NULL ? &check->of_child_{{ inv.field_suffix }} : NULL{% endif %}, err) || sce_saved_within(err, path);
     }
 {% endif %}
 {% endfor %}
@@ -1150,7 +1153,7 @@ SCE_SM_FN static void {{ _t }}_saved_restart_invoke({{ _t }}_t *sm, sce_jv_t id)
    id is the session's and the id it was started under (docs/adr/0045, section 3). `held` is the
    saved configuration as a bitmap. */
 SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint32_t held, {{ _t }}_t *sm,
-                                           int64_t wall_now_ms{% if saved_maps.any %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
+                                           int64_t wall_now_ms{% if saved_maps.judges %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
     sce_jiter_t it;
     sce_jv_t item;
     char quoted[SCE_SAVED_QUOTE_LEN];
@@ -1242,7 +1245,7 @@ SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint3
                                         "invokes[%lu].session's id is '%s', and a child of '%s' started under '%s' is '%s'",
                                         (unsigned long)at, child_session, parent_session, started_under, derived);
             }
-            if (!{{ _t }}_saved_judge_child(&child, at{% if saved_maps.any %}, check{% endif %}, err)) {
+            if (!{{ _t }}_saved_judge_child(&child, at{% if saved_maps.judges %}, check{% endif %}, err)) {
                 return false;
             }
         }
@@ -1288,7 +1291,7 @@ typedef struct {
 /* Refuse `s` unless it can be a state of this document, building nothing (docs/adr/0045,
    section 3, step 1): the features it was taken with, its shape and the revision of each schema,
    its histories and variables, its configuration, its queue and its waiting sends. */
-SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s, {{ _t }}_saved_judged_t *judged{% if saved_maps.any %},
+SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s, {{ _t }}_saved_judged_t *judged{% if saved_maps.judges %},
                                                  {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
     sce_jiter_t it;
     sce_jv_t item;
@@ -1315,7 +1318,7 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
                                 quoted);
     }
 {% endif %}
-    if (!{{ _t }}_saved_read_variables(s, judged->record_at, NULL{% if saved_maps.any %}, check{% endif %}, err)) {
+    if (!{{ _t }}_saved_read_variables(s, judged->record_at, NULL{% if saved_maps.judges %}, check{% endif %}, err)) {
         return false;
     }
     /* The configuration, then the current state, as the document names them. */
@@ -1390,7 +1393,7 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
     }
 {% endif %}
 {% if family %}
-    if (!{{ _t }}_saved_invokes(s, judged->active, NULL, 0{% if saved_maps.any %}, check{% endif %}, err)) {
+    if (!{{ _t }}_saved_invokes(s, judged->active, NULL, 0{% if saved_maps.judges %}, check{% endif %}, err)) {
         return false;
     }
 {% else %}
@@ -1841,7 +1844,7 @@ SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_sessi
         (void)sce_jv_string(session->session_id, sm->session_id, sizeof(sm->session_id), NULL);
         (void)sce_scxml_location(sm->scxml_location, sizeof(sm->scxml_location), sm->session_id);
     }
-    if (!{{ _t }}_saved_read_variables(session, judged->record_at, &sm->policy{% if saved_maps.any %}, NULL{% endif %}, err)) {
+    if (!{{ _t }}_saved_read_variables(session, judged->record_at, &sm->policy{% if saved_maps.judges %}, NULL{% endif %}, err)) {
         return false;
     }
 {% if model.has_history_states %}
@@ -1881,7 +1884,7 @@ SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_sessi
 {% endif %}
 {% if family %}
     /* Children last, so what one sends as it is resumed stands behind what was already waiting. */
-    if (!{{ _t }}_saved_invokes(session, judged->active, sm, wall_now_ms{% if saved_maps.any %}, &sm->scratch.saved_check{% endif %}, err)) {
+    if (!{{ _t }}_saved_invokes(session, judged->active, sm, wall_now_ms{% if saved_maps.judges %}, &sm->scratch.saved_check{% endif %}, err)) {
         return false;
     }
 {% endif %}
@@ -1889,11 +1892,11 @@ SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_sessi
     return true;
 }
 
-bool {{ _t }}_judge_members(sce_jv_t members, int form{% if saved_maps.any %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
+bool {{ _t }}_judge_members(sce_jv_t members, int form{% if saved_maps.judges %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
     return sce_saved_session_read(members, form, &session, err) &&
-           {{ _t }}_saved_judge_session(&session, &judged{% if saved_maps.any %}, check{% endif %}, err);
+           {{ _t }}_saved_judge_session(&session, &judged{% if saved_maps.judges %}, check{% endif %}, err);
 }
 
 bool {{ _t }}_resume({{ _t }}_t *sm, sce_jv_t members, int form, int64_t wall_now_ms, sce_saved_error_t *err) {
@@ -1903,7 +1906,7 @@ bool {{ _t }}_resume({{ _t }}_t *sm, sce_jv_t members, int form, int64_t wall_no
         return sce_saved_refuse(err, "there is no machine to resume");
     }
     if (!sce_saved_session_read(members, form, &session, err) ||
-        !{{ _t }}_saved_judge_session(&session, &judged{% if saved_maps.any %}, &sm->scratch.saved_check{% endif %}, err)) {
+        !{{ _t }}_saved_judge_session(&session, &judged{% if saved_maps.judges %}, &sm->scratch.saved_check{% endif %}, err)) {
         return false;
     }
     return {{ _t }}_saved_apply(sm, &session, &judged, wall_now_ms, err);
@@ -1928,19 +1931,19 @@ bool {{ _t }}_bind_session_id({{ _t }}_t *sm, const char *parent_id, const char 
     return true;
 }
 
-bool {{ _t }}_judge(const char *text, size_t len{% if saved_maps.any %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
+bool {{ _t }}_judge(const char *text, size_t len{% if saved_maps.judges %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
-{% if saved_maps.any %}
+{% if saved_maps.judges %}
     if (check == NULL) {
         return sce_saved_refuse(err, "there is no storage to judge the maps of the saved state in");
     }
 {% endif %}
-    return sce_saved_read(text, len, &session, err) && {{ _t }}_saved_judge_session(&session, &judged{% if saved_maps.any %}, check{% endif %}, err);
+    return sce_saved_read(text, len, &session, err) && {{ _t }}_saved_judge_session(&session, &judged{% if saved_maps.judges %}, check{% endif %}, err);
 }
 
 bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall_now_ms{% if saved_restore_args %},
-                      const {{ _t }}_restore_args_t *args{% endif %}{% if saved_maps.any %}, sce_map_seed_t map_seed{% endif %}, sce_saved_error_t *err) {
+                      const {{ _t }}_restore_args_t *args{% endif %}{% if saved_maps.seed %}, sce_map_seed_t map_seed{% endif %}, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
 {% if saved_restore_args %}
@@ -1949,7 +1952,7 @@ bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall
     if (sm == NULL) {
         return sce_saved_refuse(err, "there is no machine to restore into");
     }
-{% if saved_maps.any %}
+{% if saved_maps.judges %}
     /* Every value is read and the state judged before the machine is touched, so a refused
        restore leaves the caller's storage as it was, but for the machine's scratch, which holds
        nothing from one call to the next and in which each map's entries are judged with no key
@@ -1973,7 +1976,7 @@ bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall
 {% endif %}
     /* Constructed with no id given: a tree's state then binds the id it was saved with
        (`_saved_apply`), and a format-1 state, which holds none, keeps the one drawn here. */
-    const sce_start_refusal_t refused = {{ _t }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %}{% if saved_maps.any %}, map_seed{% endif %});
+    const sce_start_refusal_t refused = {{ _t }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %}{% if saved_maps.seed %}, map_seed{% endif %});
     if (refused != SCE_START_REFUSAL_NONE) {
         /* The act table, or (docs/adr/0096) a script session that cannot be
            established, each in the words of the runtime's refusal. */

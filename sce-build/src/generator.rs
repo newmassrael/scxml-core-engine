@@ -4309,6 +4309,9 @@ fn render_c11(
         static_imports => &static_lowering.imports,
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
         static_saved_shape => &static_saved_shape,
+        // docs/adr/0108, D8: the machine keeps its seed for the algorithms it
+        // calls that take their caller's, whether or not it holds a map.
+        static_seeds_algorithms => static_lowering.seeds_algorithms,
         module_parameter_starts => &module_parameter_starts,
         // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
         // reaches its runtime through, which the component the runtime drives
@@ -4365,6 +4368,7 @@ fn render_c11(
             .unwrap_or_default(),
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_saved_shape,
+        static_seeds_algorithms => static_lowering.seeds_algorithms,
         static_done_data => static_done_data,
         ends_with_done_data => ends_with_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,

@@ -27,8 +27,9 @@
 //!   by its number among such locals, from the seed of a map the algorithm was
 //!   lent or the destination it writes (the runtime's `derived_seed`): the
 //!   caller's entropy, as each map of a machine draws its seed from the
-//!   machine's (D8). An algorithm that is lent no map and returns none takes
-//!   the seed as a parameter of its own after the declared ones, `sce_map_seed`
+//!   machine's (D8). An algorithm that is lent no map and returns none, and
+//!   builds a map or calls an algorithm that takes a seed, takes the seed as
+//!   a parameter of its own after the declared ones, `sce_map_seed`
 //!   ([`crate::forge::model::AlgorithmModel::takes_map_seed`]), which its
 //!   caller hands it, and draws each local's from that. An algorithm that
 //!   calls one hands it a seed drawn from its own, after its locals'.
@@ -199,15 +200,17 @@ impl RustAlgorithmMaps {
     /// The maps `m` holds. `part` spells a key or a value of a map that is no
     /// text and no byte string as a Rust type, or answers `None` for a part no
     /// Rust algorithm's map holds; `local` spells a name as the body does;
-    /// `seeded` are the aliases of the imported algorithms the body may call
-    /// that take their caller's seed. Refused by name: a part `part` does not
-    /// spell, a map local whose text or byte string states no bound, a map
-    /// return that is not one local returned by its name, and a call of an
-    /// algorithm that takes a seed from a body that holds none to hand it.
+    /// `takes_seed` is whether the algorithm takes its caller's seed
+    /// ([`AlgorithmModel::takes_map_seed`]), and `seeded` are the aliases of
+    /// the imported algorithms the body may call that take one. Refused by
+    /// name: a part `part` does not spell, a map local whose text or byte
+    /// string states no bound, and a map return that is not one local
+    /// returned by its name.
     pub(crate) fn of(
         m: &AlgorithmModel,
         part: PartSpelling<'_>,
         local: &dyn Fn(&str) -> String,
+        takes_seed: bool,
         seeded: &[&str],
     ) -> Result<Self, ForgeError> {
         let mut maps = Self::default();
@@ -333,17 +336,20 @@ impl RustAlgorithmMaps {
         if maps.seed_source.is_none() {
             maps.seed_source = maps.output.as_deref().map(local);
         }
-        // D8: a body with no map to draw a seed from takes its caller's, which
-        // the rule of the document decides, so a statechart that calls it hands
-        // it one by the same rule.
-        maps.seed_param = m.takes_map_seed();
+        // D8: a body with no map to draw a seed from takes its caller's, by the
+        // one rule every caller judges it by, so a statechart or an algorithm
+        // that calls it hands it one; it hands each algorithm it calls that
+        // takes one a seed drawn from its own after its locals'. The rule gives
+        // every body that calls such an algorithm a seed of its own.
+        maps.seed_param = takes_seed;
         for (offset, alias) in (0u32..).zip(seeded) {
-            let seed = maps.seed(ordinal + offset).ok_or_else(|| {
-                refused(format!(
-                    "calls `{alias}`, which builds a map local and takes its caller's seed for \
-                     it, and is lent no map, returns none and builds none to draw one from \
-                     (D8)"
+            let seed = maps.seed(ordinal + offset).ok_or_else(|| -> ForgeError {
+                GenerateError::InvalidConfig(format!(
+                    "algorithm '{}' calls `{alias}`, which takes its caller's seed, and has none \
+                     of its own to hand it, which the rule of D8 rules out",
+                    m.name
                 ))
+                .into()
             })?;
             maps.call_seeds.insert((*alias).to_string(), seed);
         }

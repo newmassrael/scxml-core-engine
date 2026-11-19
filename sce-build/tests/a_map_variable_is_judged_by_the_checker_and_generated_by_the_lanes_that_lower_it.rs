@@ -1586,13 +1586,27 @@ fn an_algorithm_map_statement_is_refused_naming_what_it_takes() {
 /// passed, what it printed, and every header and source it wrote, in the order
 /// of their names.
 fn generate_c11_beside(name: &str, document: &str, siblings: &[&str]) -> (bool, String, String) {
+    let mut documents: Vec<(&str, String)> = siblings
+        .iter()
+        .map(|sibling| {
+            let text = std::fs::read_to_string(static_fixtures().join(sibling))
+                .unwrap_or_else(|e| panic!("read {sibling}: {e}"));
+            (*sibling, text)
+        })
+        .collect();
+    documents.push((name, document.to_string()));
+    generate_c11_among(&documents, name)
+}
+
+/// What `generate -l c11` of `main`, written in a scratch directory beside
+/// `documents`, prints and writes: whether it passed, what it printed, and
+/// every header and source it wrote, in the order of their names.
+fn generate_c11_among(documents: &[(&str, String)], main: &str) -> (bool, String, String) {
     let dir = tempfile::tempdir().expect("a scratch directory");
-    for sibling in siblings {
-        std::fs::copy(static_fixtures().join(sibling), dir.path().join(sibling))
-            .expect("copy an import");
+    for (name, text) in documents {
+        std::fs::write(dir.path().join(name), text).expect("write a document");
     }
-    let path = dir.path().join(name);
-    std::fs::write(&path, document).expect("write the document");
+    let path = dir.path().join(main);
     let out_dir = tempfile::tempdir().expect("an output directory");
     let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
     let (ok, printed) = run(&["generate", "-l", "c11", "-o", out.as_str()], &path);
@@ -1788,7 +1802,8 @@ fn a_c11_walk_that_writes_its_map_walks_a_copy_its_caller_holds() {
 /// header that holds one shares. It is started where it is declared under a
 /// seed derived, as a child machine's is, from the seed of the map the
 /// algorithm is lent, and where it is lent none and returns none, from the seed
-/// its caller hands it last: never a fixed one.
+/// its caller hands it after the declared parameters, before the struct of its
+/// maps: never a fixed one.
 #[test]
 fn a_c11_map_local_is_held_in_its_callers_storage_under_a_derived_seed() {
     let holds_its_own = edited_algorithm(
@@ -1842,10 +1857,14 @@ fn a_c11_map_local_is_held_in_its_callers_storage_under_a_derived_seed() {
         "C11 generates a map local of an algorithm lent none:\n{printed}"
     );
     let line = c11_definition(&code, " count_distinct(");
+    let parameters = c11_parameters(line);
     assert_eq!(
-        c11_parameters(line).last().map(String::as_str),
-        Some("sce_map_seed_t sce_seed_"),
-        "an algorithm lent no map is handed the seed last: {line}"
+        &parameters[parameters.len().saturating_sub(2)..],
+        [
+            "sce_map_seed_t sce_seed_",
+            "count_distinct_maps_t *sce_maps_"
+        ],
+        "an algorithm lent no map is handed the seed after its arguments: {line}"
     );
     assert!(
         code.contains(
@@ -2711,4 +2730,123 @@ fn a_rust_machine_hands_its_seed_to_an_algorithm_that_builds_a_map() {
         machine.contains("sce_algorithm_seed: sce_map_seeds.draw(),"),
         "the machine draws its algorithms' seed where it is built:\n{machine}"
     );
+}
+
+/// An algorithm that puts two numbers into a set of its own and answers how
+/// many distinct ones it holds, lent no map and returning none: it takes its
+/// caller's seed for its own map.
+const DISTINCT_PAIR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="distinct_pair"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="a" type="uint32"/>
+    <sce:param name="b" type="uint32"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="seen" type="set&lt;uint32&gt;[2]"/>
+    <sce:put target="seen" key="a"/>
+    <sce:put target="seen" key="b"/>
+    <sce:return expr="len(seen)"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An algorithm that builds no map and is lent none, and answers what
+/// `DistinctPair` answers: it takes its caller's seed all the same, since an
+/// algorithm it calls does.
+const DISTINCT_THROUGH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="distinct_through"
+       version="1.0">
+  <sce:import kind="algorithm" src="algorithm_distinct_pair.scxml" as="DistinctPair"/>
+  <sce:signature>
+    <sce:param name="a" type="uint32"/>
+    <sce:param name="b" type="uint32"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="DistinctPair(a, b)"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// docs/adr/0108, D8: whether an algorithm takes its caller's seed is a fixed
+/// point over the algorithms it calls. `DistinctThrough` builds no map, is
+/// lent none and returns none, and calls `DistinctPair`, which builds a set,
+/// so both take a seed after their declared parameters, and the caller hands
+/// the callee one derived from its own: on Rust `sce_map_seed.derive(..)`; on
+/// C11 `sce_map_seed_of_child` of its `sce_seed_` under the callee's alias,
+/// followed by the struct of the callee's own maps, a member of the caller's.
+#[test]
+fn an_algorithm_that_calls_one_that_takes_a_seed_takes_one_itself() {
+    let documents = [
+        ("algorithm_distinct_pair.scxml", DISTINCT_PAIR.to_string()),
+        (
+            "algorithm_distinct_through.scxml",
+            DISTINCT_THROUGH.to_string(),
+        ),
+    ];
+    let mut functions = Vec::new();
+    for (main, name) in [
+        ("algorithm_distinct_pair.scxml", "distinct_pair"),
+        ("algorithm_distinct_through.scxml", "distinct_through"),
+    ] {
+        let (ok, printed, files) = generate_rust_beside(&documents, main, false);
+        assert!(ok, "Rust generates `{name}`:\n{printed}");
+        functions.extend(functions_of(&files));
+        let (_, inputs) = signature_of(function_named(&functions, name));
+        assert_eq!(
+            inputs.last().map(String::as_str),
+            Some(":: sce_portable_bytes :: MapSeed"),
+            "`{name}` takes no seed from its caller: {inputs:?}"
+        );
+    }
+    let mut methods = MethodCalls::default();
+    syn::visit::Visit::visit_item_fn(&mut methods, function_named(&functions, "distinct_through"));
+    assert!(
+        methods
+            .0
+            .iter()
+            .any(|(receiver, method)| receiver == "sce_map_seed" && method == "derive"),
+        "the call is handed no seed derived from the caller's: {:?}",
+        methods.0
+    );
+
+    let (ok, printed, code) = generate_c11_among(&documents, "algorithm_distinct_pair.scxml");
+    assert!(ok, "C11 generates the callee:\n{printed}");
+    let line = c11_definition(&code, " distinct_pair(");
+    let parameters = c11_parameters(line);
+    assert_eq!(
+        &parameters[parameters.len().saturating_sub(2)..],
+        [
+            "sce_map_seed_t sce_seed_",
+            "distinct_pair_maps_t *sce_maps_"
+        ],
+        "the callee takes no seed before the struct of its maps: {line}"
+    );
+    let (ok, printed, code) = generate_c11_among(&documents, "algorithm_distinct_through.scxml");
+    assert!(ok, "C11 generates the caller:\n{printed}");
+    let line = c11_definition(&code, " distinct_through(");
+    let parameters = c11_parameters(line);
+    assert_eq!(
+        &parameters[parameters.len().saturating_sub(2)..],
+        [
+            "sce_map_seed_t sce_seed_",
+            "distinct_through_maps_t *sce_maps_"
+        ],
+        "the caller takes no seed though it calls one that does: {line}"
+    );
+    for held in [
+        "    distinct_pair_maps_t sce_call_0_;\n} distinct_through_maps_t;",
+        "distinct_pair(a, b, sce_map_seed_of_child(sce_seed_, \
+         \"distinct_through.DistinctPair\"), &sce_maps_->sce_call_0_)",
+    ] {
+        assert!(code.contains(held), "no `{held}` in the caller:\n{code}");
+    }
 }

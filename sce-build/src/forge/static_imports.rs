@@ -183,6 +183,118 @@ fn record_schema(
 /// read without end.
 const CALLEE_DEPTH: usize = 16;
 
+/// Whether the document `document`, an algorithm whose own imports are `imports`,
+/// written relative to `base_dir`, takes the seed its own maps are keyed under
+/// from its caller (docs/adr/0108, D8,
+/// [`crate::forge::model::AlgorithmModel::takes_map_seed`]): the one answer a
+/// statechart's callee ([`StaticCallee::takes_map_seed`]) and an algorithm's
+/// import ([`crate::forge::generator::ImportContext::takes_map_seed`]) carry.
+/// `false` for any other document.
+///
+/// Whether it takes one turns on whether an algorithm it calls does, so the
+/// answer is the least fixed point over the algorithms the call reaches: each
+/// callee it names is answered first, read from where it is, and a callee the
+/// walk is already inside answers `false`, as a cycle of calls adds no map
+/// none of its algorithms builds.
+pub(crate) fn takes_map_seed(
+    document: &ForgeDocument,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+) -> bool {
+    takes_map_seed_within(document, imports, base_dir, &mut Vec::new())
+}
+
+/// Whether the algorithm `document` calls an algorithm that takes its caller's
+/// seed ([`takes_map_seed`]): what a lane that holds an algorithm's maps in its
+/// caller's storage holds a callee's storage for too (docs/adr/0108, D4
+/// "Storage"). `false` for any other document.
+pub(crate) fn calls_one_that_takes_map_seed(
+    document: &ForgeDocument,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+) -> bool {
+    calls_one_that_takes_map_seed_within(document, imports, base_dir, &mut Vec::new())
+}
+
+/// Whether the `sce-static` statechart `model` imports an algorithm that takes
+/// its caller's map seed ([`takes_map_seed`]), read from `base_dir`: a machine
+/// keeps a seed for such a callee where it is started, whether or not it holds
+/// a map of its own (docs/adr/0108, D8), as the callees
+/// [`resolve`] reads answer it too.
+pub(crate) fn imports_one_that_takes_map_seed(model: &SCXMLModel, base_dir: &Path) -> bool {
+    model.datamodel == Datamodel::SceStatic
+        && model
+            .forge_imports
+            .iter()
+            .filter(|import| import.kind == ForgeKind::Algorithm)
+            .any(|import| {
+                let Ok(source) = crate::forge::import_source::ImportSource::read(base_dir, import)
+                else {
+                    return false;
+                };
+                let Ok(Some(parsed)) = source.parse() else {
+                    return false;
+                };
+                takes_map_seed(
+                    &parsed.document,
+                    &parsed.imports,
+                    source.path.parent().unwrap_or(base_dir),
+                )
+            })
+}
+
+/// [`takes_map_seed`], with `within` the documents the walk is inside.
+fn takes_map_seed_within(
+    document: &ForgeDocument,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    within: &mut Vec<std::path::PathBuf>,
+) -> bool {
+    let ForgeDocument::Algorithm(algorithm) = document else {
+        return false;
+    };
+    algorithm.takes_map_seed(|| {
+        calls_one_that_takes_map_seed_within(document, imports, base_dir, within)
+    })
+}
+
+/// [`calls_one_that_takes_map_seed`], with `within` the documents the walk is
+/// inside. The callees are the algorithms the document names
+/// ([`crate::forge::import_use::named_aliases`]), the ones its generated unit
+/// calls; one that cannot be read is one the resolution of its import refuses.
+fn calls_one_that_takes_map_seed_within(
+    document: &ForgeDocument,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    within: &mut Vec<std::path::PathBuf>,
+) -> bool {
+    if !matches!(document, ForgeDocument::Algorithm(_)) {
+        return false;
+    }
+    let named = crate::forge::import_use::named_aliases(document, &[], imports).unwrap_or_default();
+    imports
+        .iter()
+        .filter(|import| import.kind == ForgeKind::Algorithm && named.contains(&import.alias))
+        .any(|import| {
+            let Ok(source) = crate::forge::import_source::ImportSource::read(base_dir, import)
+            else {
+                return false;
+            };
+            if within.contains(&source.path) {
+                return false;
+            }
+            let Ok(Some(parsed)) = source.parse() else {
+                return false;
+            };
+            let callee_base = source.path.parent().unwrap_or(base_dir);
+            within.push(source.path.clone());
+            let takes =
+                takes_map_seed_within(&parsed.document, &parsed.imports, callee_base, within);
+            within.pop();
+            takes
+        })
+}
+
 /// What of the algorithm `document` (whose own imports are `imports`, written relative
 /// to `base_dir`) the Swift backend does not write, as the clause a caller's refusal
 /// names it by — `holds a <sce:return> of …` — or `None` when it writes all of it.
@@ -602,7 +714,9 @@ fn crossable_enum<'d>(
 /// the record's schema ([`crossing_union`]). A list
 /// returned is held to `may-fail` and `returns-max-size`, the two things that let a
 /// statechart receive a list that could not be built and know how much room it needs
-/// (the rule a list of numbers is already held to).
+/// (the rule a list of numbers is already held to). `calls_seeded` is whether the
+/// algorithm calls one that takes its caller's map seed
+/// ([`calls_one_that_takes_map_seed`]), whose storage its own holds.
 fn value_signature(
     algorithm: &AlgorithmModel,
     callee_imports: &[ForgeImport],
@@ -610,6 +724,7 @@ fn value_signature(
     own: &HashMap<RecordId, String>,
     own_enums: &BTreeMap<String, EnumDocument>,
     own_unions: &HashMap<String, String>,
+    calls_seeded: bool,
 ) -> Result<Option<StaticValueSignature>, String> {
     let signature = &algorithm.signature;
     let holds_enum = |t: &AlgorithmValueType| matches!(t.scalar(), Some(SceType::Enum(_)));
@@ -783,7 +898,7 @@ fn value_signature(
         params,
         ret,
         max_size,
-        map_storage: crate::forge::generator::algorithm_map_storage(algorithm),
+        map_storage: crate::forge::generator::algorithm_map_storage(algorithm, calls_seeded),
     }))
 }
 
@@ -924,6 +1039,11 @@ pub(crate) fn resolve(
         // is the statechart's reading of that, and replaces the host-only refusal
         // when it holds. When it does not, the reason is added to the refusal.
         let callee_base = source.path.parent().unwrap_or(base_dir);
+        // docs/adr/0108, D4 "Storage" and D8: whether it calls an algorithm that
+        // takes its caller's seed, whose storage a lane that holds an algorithm's
+        // maps in its caller's storage holds too, and so whether it takes one.
+        let calls_seeded =
+            calls_one_that_takes_map_seed(&parsed.document, &parsed.imports, callee_base);
         let (value, host_only, refused_why) = match value_signature(
             algorithm,
             &parsed.imports,
@@ -931,6 +1051,7 @@ pub(crate) fn resolve(
             &own,
             &own_enums,
             &own_unions,
+            calls_seeded,
         ) {
             Ok(Some(value)) => (Some(value), None, None),
             Ok(None) => (None, signature.host_only, None),
@@ -957,7 +1078,7 @@ pub(crate) fn resolve(
             ret_bound: returned_length(&algorithm.signature),
             host_only,
             may_fail: signature.may_fail,
-            takes_map_seed: algorithm.takes_map_seed(),
+            takes_map_seed: algorithm.takes_map_seed(|| calls_seeded),
             // A list of numbers returned by an algorithm that takes a value of an enum
             // is taken through the adapter that maps the enum, by the signature above,
             // and not as the scalars-only list it would otherwise be.
