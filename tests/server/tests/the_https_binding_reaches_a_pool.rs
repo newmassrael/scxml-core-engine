@@ -125,6 +125,9 @@ struct PoolHost {
     pool: Arc<OnceLock<HttpsPool>>,
     /// How many envelopes the binding handed the pool.
     received: Arc<AtomicUsize>,
+    /// What the pool told its host it could not act on, a session's endpoint's errors among it
+    /// (a source its link does not name, SCE_MESH.md section 10.9, invariant 10), as words.
+    errors: Arc<Mutex<Vec<String>>>,
 }
 
 impl ServerHost for PoolHost {
@@ -152,6 +155,10 @@ impl ServerHost for PoolHost {
                 pool.run(&key);
             }
         }
+        self.errors
+            .lock()
+            .expect("the server's errors")
+            .extend(pool.take_errors().iter().map(|error| format!("{error:?}")));
         // Each session the envelopes named has run, and its run settled what it took in: held by
         // a durable checkpoint, or lost or still unwritten, which no `200` may acknowledge.
         if receipts
@@ -173,6 +180,8 @@ struct Served {
     address: SocketAddr,
     /// How many envelopes the binding handed the pool.
     received: Arc<AtomicUsize>,
+    /// What the pool told its host it could not act on, as words.
+    errors: Arc<Mutex<Vec<String>>>,
     store: Arc<Refusing>,
     // Last, so that the store's directory is removed after everything that holds the store.
     _scratch: Scratch,
@@ -197,9 +206,11 @@ impl Served {
 
         let pool: Arc<OnceLock<HttpsPool>> = Arc::new(OnceLock::new());
         let received = Arc::new(AtomicUsize::new(0));
+        let errors = Arc::new(Mutex::new(Vec::new()));
         let host = PoolHost {
             pool: Arc::clone(&pool),
             received: Arc::clone(&received),
+            errors: Arc::clone(&errors),
         };
         let server = HttpsServer::new(
             ServerSettings {
@@ -240,6 +251,7 @@ impl Served {
             authority,
             address,
             received,
+            errors,
             store,
             _scratch: scratch,
         }
@@ -328,14 +340,21 @@ struct Client {
     ready: bool,
     ended: Vec<Ended>,
     token: u64,
+    /// What the client's endpoint told its host it could not act on, and the rows it raised for
+    /// its machine, as words.
+    host_errors: Vec<String>,
+    /// What the server's pool told its host, as words ([`Served`]).
+    server_errors: Arc<Mutex<Vec<String>>>,
 }
 
 impl Client {
+    /// A client of `served`'s server, through `port`.
     fn start(
-        base: String,
+        served: &Served,
         port: impl HttpsTransport + 'static,
         retry: Option<RetryPolicy>,
     ) -> Client {
+        let base = served.base();
         let (tx, events) = mpsc::channel();
         let settings = ClientSettings {
             hold: Duration::from_secs(1),
@@ -383,7 +402,23 @@ impl Client {
             ready: false,
             ended: Vec::new(),
             token: 0,
+            host_errors: Vec::new(),
+            server_errors: Arc::clone(&served.errors),
         }
+    }
+
+    /// Every host error either side was told, so that a scenario that stalls names its cause:
+    /// the client's endpoint's, then the server's pool's.
+    fn errors(&self) -> Vec<String> {
+        let mut errors = self.host_errors.clone();
+        errors.extend(
+            self.server_errors
+                .lock()
+                .expect("the server's errors")
+                .iter()
+                .cloned(),
+        );
+        errors
     }
 
     /// Ask the session `key` to take `tag`, under the invoke id `tag`.
@@ -408,7 +443,11 @@ impl Client {
     fn until(&mut self, what: &str, done: impl Fn(&Client) -> bool) {
         let deadline = Instant::now() + PATIENCE;
         while !done(self) {
-            assert!(Instant::now() < deadline, "waited too long for {what}");
+            assert!(
+                Instant::now() < deadline,
+                "waited too long for {what}; host errors: {:?}",
+                self.errors()
+            );
             if let Ok(event) = self.events.recv_timeout(Duration::from_millis(20)) {
                 match &event {
                     LinkEvent::Ready(_) => self.ready = true,
@@ -418,19 +457,29 @@ impl Client {
                 deliver(&mut self.endpoint, event);
             }
             self.endpoint.tick();
+            self.host_errors.extend(
+                self.endpoint
+                    .take_host_errors()
+                    .iter()
+                    .map(|error| format!("{error:?}")),
+            );
             for call in self.endpoint.take_calls() {
-                if let EngineCall::EndInvoke {
-                    invoke_id,
-                    failed,
-                    data,
-                    ..
-                } = call
-                {
-                    self.ended.push(Ended {
+                match call {
+                    EngineCall::EndInvoke {
                         invoke_id,
                         failed,
                         data,
-                    });
+                        ..
+                    } => self.ended.push(Ended {
+                        invoke_id,
+                        failed,
+                        data,
+                    }),
+                    // A row the client's machine is told (a lost link, a request it lost with
+                    // it), kept beside the host errors so that a stall names its cause.
+                    EngineCall::Raise(event) => self
+                        .host_errors
+                        .push(format!("raised {}: {}", event.name, event.metadata.data)),
                 }
             }
         }
@@ -503,11 +552,7 @@ fn a_pool_answers_through_an_explicit_proxy() {
     let served = Served::start("explicit-proxy");
     let log = Arc::new(Mutex::new(ProxyLog::default()));
     let proxy = tunnelling_proxy(&served.runtime, Arc::clone(&log));
-    let mut client = Client::start(
-        served.base(),
-        adapter(&[served.authority.der()], proxy),
-        None,
-    );
+    let mut client = Client::start(&served, adapter(&[served.authority.der()], proxy), None);
     client.until("the server to be ready", |client| client.ready);
     for (key, tag) in ASKED {
         client.ask(key, tag);
@@ -542,7 +587,7 @@ fn a_pool_answers_through_a_proxy_that_inspects_tls() {
         false,
         Arc::clone(&log),
     );
-    let mut client = Client::start(served.base(), adapter(&[inspector.der()], proxy), None);
+    let mut client = Client::start(&served, adapter(&[inspector.der()], proxy), None);
     client.until("the server to be ready", |client| client.ready);
     for (key, tag) in ASKED {
         client.ask(key, tag);
@@ -583,11 +628,7 @@ fn a_response_lost_after_the_pool_took_its_request_is_answered_once() {
         max_backoff_ms: 1_000,
         jitter_pct: 0,
     };
-    let mut client = Client::start(
-        served.base(),
-        adapter(&[inspector.der()], proxy),
-        Some(retry),
-    );
+    let mut client = Client::start(&served, adapter(&[inspector.der()], proxy), Some(retry));
     client.until("the server to be ready", |client| client.ready);
     let asked = [("k1", "k1.lost")];
     client.ask(asked[0].0, asked[0].1);
@@ -596,6 +637,14 @@ fn a_response_lost_after_the_pool_took_its_request_is_answered_once() {
         served.received() >= 2
     });
     client.settle(Duration::from_millis(500));
+    // Both sides name the machine at the other end of the link as the source of what they send
+    // (SCE_MESH.md section 22.1): a reply carried again, from the mailbox or the reply cache, is
+    // still the server machine's, and a request carried again is still the client's.
+    let errors = client.errors();
+    assert!(
+        !errors.iter().any(|error| error.contains("SourceNotLink")),
+        "{errors:?}"
+    );
     let ended = client.stop();
 
     assert!(
@@ -625,7 +674,7 @@ fn a_request_whose_checkpoint_the_store_refused_is_answered_once_it_is_durable()
         tag: asked[0].1,
         answers: Arc::clone(&answers),
     };
-    let mut client = Client::start(served.base(), port, None);
+    let mut client = Client::start(&served, port, None);
     client.until("the server to be ready", |client| client.ready);
 
     served.refuse_writes(true);
