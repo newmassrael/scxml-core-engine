@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 451ed84f90f73b42f48909eca6f7a302d6cb0b852dd68c846f5e713406957876
+// source-hash: ffaccc84c5109acb797ef9f96f66211c2ea59fe0a393779364fe2a3bdbc13238
+// source: sce:std/merge/merkle_prune.scxml
 // SCE-MAP: merkle_prune.scxml:26 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

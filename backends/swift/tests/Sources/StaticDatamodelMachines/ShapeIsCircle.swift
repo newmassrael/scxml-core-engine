@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 4fc3202cd282b89817f9b6bc17d27c57e6f71fb81651493178a84da56c1cae6a
+// source-hash: 1d76ef255d3d86edf4cec4c93463e144da84aa054b85961fd15df768184d8194
+// source: shape_is_circle.scxml
 // SCE-MAP: shape_is_circle.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")

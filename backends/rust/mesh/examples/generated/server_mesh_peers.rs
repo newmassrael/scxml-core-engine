@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: da24085fe06f94f61466f2d529c0aacec24fac38de0680c7b04dbb0aacaaa1cd
+// source-hash: eaccd41058b2ed213063400e5e2b275768fef0f4c77f95e769cf365a5aa72682
+// source: server.scxml
 
 #![doc = "SCE-MAP: server.scxml:14 :: _machine"]
 // SCE-MAP: server.scxml:14 :: _machine

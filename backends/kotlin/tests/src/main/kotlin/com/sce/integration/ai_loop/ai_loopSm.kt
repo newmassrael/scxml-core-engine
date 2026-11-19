@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 321b42acfe8cb266c51aff87d805eb471548c8d5250d5f0a5214385ef864d6e9
+// source: ai_loop.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: examples/ai_loop/ai_loop.scxml

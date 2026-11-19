@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
+// source: autoforward_internal_queue.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_internal_queue/autoforward_internal_queue.scxml

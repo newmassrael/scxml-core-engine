@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3862752ac9ccab5eefa2c5b6f8d90f0288b61c11fb1e80be71091ff4f67fcf6d
+// source-hash: 02adaafa0792f63058539be94114b73db781d48032e02bada12e15df066d4aad
+// source: sce:std/lift/refusal_code.scxml
 // SCE-MAP: refusal_code.scxml:34 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

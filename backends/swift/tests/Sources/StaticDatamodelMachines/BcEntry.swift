@@ -1,5 +1,8 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4287da083ec5d997a88fc05438a17f332e7cee73dc1a7ecda505005ac5b92936
+// source: bc_entry.scxml
+// source: bc_indexed_table.scxml
+// source: bc_recent_table.scxml
 // SCE-MAP: bc_entry.scxml:5 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")

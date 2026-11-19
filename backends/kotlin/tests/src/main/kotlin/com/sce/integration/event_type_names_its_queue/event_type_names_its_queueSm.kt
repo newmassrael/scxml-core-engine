@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0e632ea18e896bea24cf74313657aba02d906a276b3b64be501fc7738588903c
+// source: event_type_names_its_queue.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/event_type_names_its_queue/event_type_names_its_queue.scxml

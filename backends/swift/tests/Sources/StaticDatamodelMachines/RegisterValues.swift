@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 79bd488e080bbb06d64d257e2fbd5255070d9d17deefefd2dca818e62be7e33d
+// source-hash: c049f9e40916e16b06b717a8e9b8fc796be1c39444464936659498869422faa9
+// source: sce:std/shared/register_values.scxml
 // SCE-MAP: register_values.scxml:21 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

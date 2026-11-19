@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 451ed84f90f73b42f48909eca6f7a302d6cb0b852dd68c846f5e713406957876
+// source-hash: b1def00e3ac7bf977af90754a215f733bf46d6b4b3ae8ee00f9b3f1cb9fe9e11
+// source: sce:std/merge/merkle_insert.scxml
 // SCE-MAP: merkle_insert.scxml:33 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c39067aa383d615204755340a5be95d22b2cb7f22bae673ca1ae1c99211df076
+// source: flat_lifecycle.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/flat_lifecycle/flat_lifecycle.scxml

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f01c184986658113c3d88b7783aaf923ed4e30d14575633fec8ae3793b107abd
+// source-hash: f2dc9b546278dd4f9277d3c405c0ac8cdb862aa90d388af32b4ac463d4fad15a
+// source: outbound_stale.scxml
 // SCE-MAP: outbound_stale.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

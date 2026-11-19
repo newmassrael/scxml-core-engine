@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d7a9764edbc3c62648b57fd440c3eed4e401e25a63b873b4e90fad2c675a4c34
+// source-hash: ad19513287fa2df91645bb9947891de6570f24b9a2235e946aeca85ff6cd6a16
+// source: statechart_bytes.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/event_schema/statechart_bytes.scxml

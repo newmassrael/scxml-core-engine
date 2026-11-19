@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1c418d46a68c5397364cc0ec51e4f76987276c6c6be13f06fa56c7db7b51179f
+// source: an_origin_is_the_address_its_sender_published.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/an_origin_is_the_address_its_sender_published/an_origin_is_the_address_its_sender_published.scxml#kid

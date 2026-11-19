@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d4646eb3233d0326b8220cebf3753ec7bf14af5b5faee8ffa467c7536202f42b
+// source-hash: a6dc9d4b8a8cd6d133008746a173d430a88860b8fae4210b5546c08546f023d1
+// source: card_payment.scxml
 // SCE-MAP: card_payment.scxml:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +29,7 @@ const SchemaID string = "urn:sce:schema:card_payment:1"
 
 // JSONSchema is the payload as a JSON Schema (2020-12): one spelling of each value, every
 // bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-const JSONSchema string = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:card_payment:1\",\"x-sce-source-hash\":\"d4646eb3233d0326b8220cebf3753ec7bf14af5b5faee8ffa467c7536202f42b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"last4\":{\"type\":\"string\",\"maxLength\":4,\"x-sce-max-bytes\":4},\"amount\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"last4\",\"amount\"],\"additionalProperties\":false}"
+const JSONSchema string = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:card_payment:1\",\"x-sce-source-hash\":\"a6dc9d4b8a8cd6d133008746a173d430a88860b8fae4210b5546c08546f023d1\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"last4\":{\"type\":\"string\",\"maxLength\":4,\"x-sce-max-bytes\":4},\"amount\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"last4\",\"amount\"],\"additionalProperties\":false}"
 
 type CardPaymentPayload struct {
 	Last4 string

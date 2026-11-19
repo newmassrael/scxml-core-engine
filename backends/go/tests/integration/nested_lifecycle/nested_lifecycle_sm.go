@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 239a1140d1db8dfa52f222a8f17ddb51efb6fc1d0cddb120dc5b4b0ee2173ab0
+// source: nested_lifecycle.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

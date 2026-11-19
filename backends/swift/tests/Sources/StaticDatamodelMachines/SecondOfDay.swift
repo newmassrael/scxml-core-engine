@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3f51ae17d132a35fd3a1ecd1d4b65de1ff71b9a382e0fdbb0ba786d0f4532e45
+// source-hash: 6100ee202dd150e3023add2108fbc53698e27c26e1c79779acd4b9abed44fe02
+// source: sce:std/time/second_of_day.scxml
 // SCE-MAP: second_of_day.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

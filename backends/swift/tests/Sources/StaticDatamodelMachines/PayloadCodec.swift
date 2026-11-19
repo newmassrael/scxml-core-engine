@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 228574de0bc19d5365ce601baf2f5ab947df25fe447cdc72ac9bd281728c1abf
+// source-hash: 2b737c0ba2ca4bc4376feed6b0285c74d3f25b031953ab781649a902d351a1e6
+// source: sce:std/mesh/payload_codec.scxml
 // SCE-MAP: payload_codec.scxml:6 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

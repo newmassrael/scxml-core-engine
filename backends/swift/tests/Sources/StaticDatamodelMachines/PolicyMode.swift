@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
+// source-hash: 91777514784ff049197bb4be13d8217c48c06091dd66e59ef0127df9e6b93b19
+// source: policy_mode.scxml
 // SCE-MAP: policy_mode.scxml:11 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

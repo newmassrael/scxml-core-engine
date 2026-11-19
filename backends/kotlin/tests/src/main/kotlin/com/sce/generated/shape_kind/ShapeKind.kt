@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5ba52a313a5f53415f5c7e49a957fa6eb851fa976ae81a41db1540add4319d51
+// source-hash: c8dbd7025e6276c104b2cdfc73ad2f4136c50815d80807258fdeded7459f2b79
+// source: shape_kind.scxml
 // SCE-MAP: shape_kind.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

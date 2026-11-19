@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e5548947e3fe62fc18267f5ce82579d67ee63288a124cd0286aaf18eeec15ba7
+// source: jvm_method_size_static.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: backends/kotlin/method-size/fixtures/jvm_method_size_static.scxml

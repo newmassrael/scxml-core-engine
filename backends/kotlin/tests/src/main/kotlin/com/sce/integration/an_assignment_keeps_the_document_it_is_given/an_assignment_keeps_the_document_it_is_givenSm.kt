@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c528e32056e8246a79a9ab2618a850432ee939729f1f4a5827caa0163fd4cba3
+// source: an_assignment_keeps_the_document_it_is_given.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/an_assignment_keeps_the_document_it_is_given/an_assignment_keeps_the_document_it_is_given.scxml

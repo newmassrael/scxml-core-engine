@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 451ed84f90f73b42f48909eca6f7a302d6cb0b852dd68c846f5e713406957876
+// source-hash: b2df42e0f17f5ee4abac1f15e81d26147398511889a9002b5b80cbdc20deacdf
+// source: sce:std/merge/orset_observed.scxml
 // SCE-MAP: orset_observed.scxml:15 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

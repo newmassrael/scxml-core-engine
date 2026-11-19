@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3f51ae17d132a35fd3a1ecd1d4b65de1ff71b9a382e0fdbb0ba786d0f4532e45
+// source-hash: 6d94d023931b3109f4ca833cb7800a8487423fcd3fc7438400b53ed04d07bc75
+// source: sce:std/time/date_weekday.scxml
 // SCE-MAP: date_weekday.scxml:10 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +29,7 @@ public enum DateWeekday {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:date_weekday:1\",\"x-sce-source-hash\":\"3f51ae17d132a35fd3a1ecd1d4b65de1ff71b9a382e0fdbb0ba786d0f4532e45\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"weekday\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}},\"required\":[\"weekday\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:date_weekday:1\",\"x-sce-source-hash\":\"6d94d023931b3109f4ca833cb7800a8487423fcd3fc7438400b53ed04d07bc75\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"weekday\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}},\"required\":[\"weekday\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built

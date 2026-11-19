@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 451ed84f90f73b42f48909eca6f7a302d6cb0b852dd68c846f5e713406957876
+// source-hash: 2bb0efdf4c49cba16891afcd8fa6d28ec26e10e5cb60b4e26e18ddf0238b7d94
+// source: sce:std/merge/merkle_diff.scxml
 // SCE-MAP: merkle_diff.scxml:39 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

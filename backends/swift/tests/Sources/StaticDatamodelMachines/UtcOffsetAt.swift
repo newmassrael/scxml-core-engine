@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3f51ae17d132a35fd3a1ecd1d4b65de1ff71b9a382e0fdbb0ba786d0f4532e45
+// source-hash: e30390dfcd2f687a20294ef4a4ce5b83cb20cb383eeee76cfaf21fc512615e7a
+// source: sce:std/time/utc_offset_at.scxml
 // SCE-MAP: utc_offset_at.scxml:25 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7c5ed4658dd0e6b785296d3c9c5b5736e40be15bd60bff7f86e7f7d0542bd240
+// source-hash: 81778f1ba5d1a60010c0d578ad78167ec1bf7db230f17460d4c63287489c2743
+// source: bare.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

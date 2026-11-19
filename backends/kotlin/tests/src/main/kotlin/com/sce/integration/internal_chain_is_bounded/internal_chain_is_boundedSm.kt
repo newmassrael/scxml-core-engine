@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 5eba0d45073fc837c42ae33f20795f0ee658705613f4c4e42a59b557f47ce142
+// source: internal_chain_is_bounded.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/internal_chain_is_bounded/internal_chain_is_bounded.scxml

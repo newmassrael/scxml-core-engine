@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 3862752ac9ccab5eefa2c5b6f8d90f0288b61c11fb1e80be71091ff4f67fcf6d
+// source: sce:std/lift/refusal.scxml
 // SCE-MAP: refusal.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")

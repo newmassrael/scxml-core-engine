@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 228574de0bc19d5365ce601baf2f5ab947df25fe447cdc72ac9bd281728c1abf
+// source-hash: 828c981ef176c004f9b2a50e715e24fc02170ce678e1d651076f5581f418e25e
+// source: sce:std/mesh/ordering_prune.scxml
 // SCE-MAP: ordering_prune.scxml:11 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

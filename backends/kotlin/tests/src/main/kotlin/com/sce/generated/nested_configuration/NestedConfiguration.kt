@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 12a7dc72335a819ac5590a1b6b46aee0f5b664147671271baaaa11524ee4c7b9
+// source-hash: 25ebe488469c1d86ad54f3ceaa395c31758a02ed0bbf1796b63a4b9071dab03f
+// source: nested_configuration.scxml
 // SCE-MAP: nested_configuration.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-configuration")

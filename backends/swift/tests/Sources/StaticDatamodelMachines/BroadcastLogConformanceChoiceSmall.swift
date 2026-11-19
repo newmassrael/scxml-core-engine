@@ -1,5 +1,11 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 6d95af6fbc211ea1c5b1e249d16b701ebad41657a9f4b213349f1c668ce4ccbb
+// source: broadcast_log_conformance_choice.scxml
+// source: broadcast_log_conformance_choice_large.scxml
+// source: broadcast_log_conformance_choice_small.scxml
+// source: broadcast_log_conformance_chosen.scxml
+// source: broadcast_log_conformance_flagged.scxml
+// source: broadcast_log_conformance_flagged_event.scxml
 // SCE-MAP: broadcast_log_conformance_choice_small.scxml:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")

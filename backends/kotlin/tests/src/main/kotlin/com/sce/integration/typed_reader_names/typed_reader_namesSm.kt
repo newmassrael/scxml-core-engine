@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ad1361e94d67f726f5c91c69814d48fdfcdb6d67d776abb066def82fa6e8186b
+// source: typed_reader_names.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/typed_reader_names/typed_reader_names.scxml

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 451ed84f90f73b42f48909eca6f7a302d6cb0b852dd68c846f5e713406957876
+// source-hash: 0fbddaacb0929e8ad90869b26ffa965fb426df54d709f78595861c487419adf5
+// source: sce:std/merge/lww_write.scxml
 // SCE-MAP: lww_write.scxml:24 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

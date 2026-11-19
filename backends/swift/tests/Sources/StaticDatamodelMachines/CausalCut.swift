@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 228574de0bc19d5365ce601baf2f5ab947df25fe447cdc72ac9bd281728c1abf
+// source-hash: bec55a739a978393373f092e4359b5baae882ff212aa68565192d826d6196642
+// source: sce:std/mesh/causal_cut.scxml
 // SCE-MAP: causal_cut.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

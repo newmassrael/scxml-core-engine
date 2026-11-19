@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5ba52a313a5f53415f5c7e49a957fa6eb851fa976ae81a41db1540add4319d51
+// source-hash: 36bc789449b31a6d535c5d6a78cbcd904f941f1d8c77cee48d7954e6b732b6d1
+// source: shape_rect_minimal.scxml
 // SCE-MAP: shape_rect_minimal.scxml:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -25,7 +26,7 @@ const SchemaID string = "urn:sce:schema:shape_rect_minimal:1"
 
 // JSONSchema is the payload as a JSON Schema (2020-12): one spelling of each value, every
 // bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-const JSONSchema string = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:shape_rect_minimal:1\",\"x-sce-source-hash\":\"5ba52a313a5f53415f5c7e49a957fa6eb851fa976ae81a41db1540add4319d51\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"width\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"height\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"width\",\"height\"],\"additionalProperties\":false}"
+const JSONSchema string = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:shape_rect_minimal:1\",\"x-sce-source-hash\":\"36bc789449b31a6d535c5d6a78cbcd904f941f1d8c77cee48d7954e6b732b6d1\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"width\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"height\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"width\",\"height\"],\"additionalProperties\":false}"
 
 type ShapeRectMinimalPayload struct {
 	Width uint16

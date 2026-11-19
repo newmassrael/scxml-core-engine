@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f576ad10a806b284571c9123127c92b949bc019c71120be9972de65e7a576d15
+// source: an_event_no_processor_delivered_has_no_origin.scxml
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial

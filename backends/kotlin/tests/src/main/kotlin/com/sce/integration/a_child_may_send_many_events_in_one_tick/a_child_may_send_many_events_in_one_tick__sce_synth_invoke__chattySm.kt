@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8127f9886416636d06d894fac0be36c9fa1ea112226dc4621acfcba18ed7e87c
+// source: a_child_may_send_many_events_in_one_tick.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick.scxml#chatty

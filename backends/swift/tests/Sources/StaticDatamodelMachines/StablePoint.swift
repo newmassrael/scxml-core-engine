@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 451ed84f90f73b42f48909eca6f7a302d6cb0b852dd68c846f5e713406957876
+// source-hash: 61656e86d01d1e5e7ddec5f81a1066adefda759dfa20991a07594bf3faeb68d6
+// source: sce:std/merge/stable_point.scxml
 // SCE-MAP: stable_point.scxml:33 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

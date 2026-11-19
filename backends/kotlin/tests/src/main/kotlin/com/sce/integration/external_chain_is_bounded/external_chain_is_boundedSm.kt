@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9bcde893aca9b8bd0b4481ded56da43b529733ffefb711be8f993d5a07ed257a
+// source-hash: ebdc2337e10c77a33c7d9e7bbbf6fc472336a54703b927d3d92677c174290f70
+// source: external_chain_is_bounded.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: tests/integration/external_chain_is_bounded.scxml

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 79bd488e080bbb06d64d257e2fbd5255070d9d17deefefd2dca818e62be7e33d
+// source-hash: b87546ebc420a9249cfc45646de1afd3c761f6fbf2621f6aaf91fd1fae6ac28f
+// source: sce:std/shared/record_list.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce:std/shared/record_list.scxml

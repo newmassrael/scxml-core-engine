@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 982a23a5ec15b8216f29e9e8e4ba6c1047dee0d66671c7835c2776a4de5a13d2
+// source-hash: 3f07cb01aecace47d954fb98fd440e9fe0933cedeb33f75c177718596532e7b1
+// source: boundary_suite.scxml
 // SCE-MAP: boundary_suite.scxml:7 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-suite")

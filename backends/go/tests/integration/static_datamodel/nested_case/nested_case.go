@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 12a7dc72335a819ac5590a1b6b46aee0f5b664147671271baaaa11524ee4c7b9
+// source-hash: 1e281a8396692195e709bec100279034d644b5bab0a3c6d9b461fbae9b46fce6
+// source: nested_case.scxml
 // SCE-MAP: nested_case.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-case")

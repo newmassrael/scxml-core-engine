@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 228574de0bc19d5365ce601baf2f5ab947df25fe447cdc72ac9bd281728c1abf
+// source-hash: b5f9cfc92fc5f4c1ca653bf939e1ba4400e9c3522cf68095a5df349717e365b2
+// source: sce:std/mesh/rpc_status.scxml
 // SCE-MAP: rpc_status.scxml:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

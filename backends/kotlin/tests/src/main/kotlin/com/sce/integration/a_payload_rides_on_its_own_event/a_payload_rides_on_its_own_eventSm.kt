@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: aba7884293df72194a909ee8240f8376d0d98958e0d17eb2bec8d76ccd227f77
+// source: a_payload_rides_on_its_own_event.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_payload_rides_on_its_own_event/a_payload_rides_on_its_own_event.scxml

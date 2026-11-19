@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 228574de0bc19d5365ce601baf2f5ab947df25fe447cdc72ac9bd281728c1abf
+// source-hash: 9b55615d2cdbf1471373f08712a1d87146b31e2994549c34f53ec6d4da092d81
+// source: sce:std/mesh/causal_admission.scxml
 // SCE-MAP: causal_admission.scxml:11 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

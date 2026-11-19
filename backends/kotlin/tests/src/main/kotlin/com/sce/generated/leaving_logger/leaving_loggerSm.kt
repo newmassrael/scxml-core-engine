@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 982a23a5ec15b8216f29e9e8e4ba6c1047dee0d66671c7835c2776a4de5a13d2
+// source-hash: 7dafe1d5fad80f4f556fdd9d5dbf037d9f08d80b2548680f42dd939faeec728c
+// source: leaving_logger.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/test_profile/boundary/leaving_logger.scxml

@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 228574de0bc19d5365ce601baf2f5ab947df25fe447cdc72ac9bd281728c1abf
+// source-hash: 985a6d4930b4e050c1aabfd2a9bb101d85bd80aeeb3da8f8fee994553fd54d09
+// source: sce:std/mesh/outbound_stale.scxml
 // SCE-MAP: outbound_stale.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
