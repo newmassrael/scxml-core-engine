@@ -17,9 +17,9 @@
     store and the `key` authenticator, D3, D9), §22.8 (the host contract delivers per client, D15), and a new §22.9
     for message signatures (D9);
   - `docs/SCE_HOST_FEATURES.md` section 3 (a durable reference store, D13), section 5 (the destination policy of a
-    server's transport and its failure code, D4; `method` an enum, step 4 of "Order of work"), section 9 (what this
-    record builds leaves the list), section 10 (keys generated, exported and named stably, and named bounds, D7,
-    D17), and new sections for random bytes (D5), keyed digests (D6), keys (D7; `key_use` an enum, step 4),
+    server's transport and its failure code, D4; why `method` stays a text, step 4 of "Order of work"), section 9
+    (what this record builds leaves the list), section 10 (keys generated, exported and named stably, and named
+    bounds, D7, D17), and new sections for random bytes (D5), keyed digests (D6), keys (D7; `key_use` an enum, step 4),
     credentials (D3) and the audit log (D14);
   - `docs/SCE_ACCEPTED_SUBSET.md` §2.15 "Saving and restoring" (a declared migration, D11) and a new paragraph of
     §2.15 for a value the deployment supplies (D12); §2.8 (the deploy keys D1, D2, D9, D10 and D12 add); §2.12
@@ -698,9 +698,13 @@ Security and correctness first, then durability, then operability. Every step is
 3. D5, D6 and D7: random bytes, keyed digests and the key store, with the shared crypto crate D9 needs.
 4. Enum fields in a typed host-run request: `typed_invoke::validate` admits an enum field in a request (not yet in
    a result), the Rust and C++ adapters read it by its declared name, every other lane refuses it by name;
-   `sce-host-http-fetch`'s `method` and `sce-host-key-generate`'s `key_use` become enums; SCE_ACCEPTED_SUBSET.md
-   §2.12 amended. A general capability of the build, which D7's `key_use` is the first to need (step 3 lands it as
-   a text the host judges). What changes:
+   `sce-host-key-generate`'s `key_use` becomes an enum; SCE_ACCEPTED_SUBSET.md §2.12 amended. A general capability
+   of the build, which D7's `key_use` is the first to need (step 3 lands it as a text the host judges).
+   `sce-host-http-fetch`'s `method` stays a text the host judges, by D0's first exception: the operation is served
+   on every lane, its request record is a surface every lane shares, and an enum field there while only Rust and
+   C++ read one would take HTTP from Kotlin, Go, Python, Swift, C11 and the Interpreter. It becomes an enum only in
+   a later step that gives every lane serving `sce-host-http-fetch` enum fields in a request, so that no lane loses
+   the operation. What changes:
    1. `typed_invoke::validate` keeps refusing an enum field in a result, which the payload lift cannot read, and
       admits one in a request; a build for a lane other than Rust and C++ refuses a typed request with an enum field
       as `generate/unsupported-feature`, beside `standard_host::refuse_unserved` (D0).
@@ -713,11 +717,12 @@ Security and correctness first, then durability, then operability. Every step is
       of the other renderers stay unreachable behind the refusal of item 1.
    4. A machine imports the enum its request's record names (`sce:std/host/key_use.scxml`, beside the record in
       `stdlib/host`, which `the_standard_host_features_are_one_set` admits as an enum a record of the table
-      imports); the Rust tree generates the enum's unit beside the machine and the C++ test build generates it for
-      `standard_host_scenario_test`.
+      imports). The record is typed with the machine's own type for the enum, which the static lowering declares
+      in the machine as it does for an enum a variable or a payload field holds, so no unit of the enum document
+      is generated beside the machine for it, in the Rust tree or for `standard_host_scenario_test`.
    5. The records, the reference hosts (which still read the declared name), the scenarios, a build test that
-      refuses a wrong value of each field, docs/SCE_HOST_FEATURES.md sections 5 and 13 and SCE Accepted Subset
-      §2.12 (an "Amended by: ADR 0109" line).
+      refuses a wrong value of `key_use`, docs/SCE_HOST_FEATURES.md sections 5 (why `method` stays a text) and 13
+      and SCE Accepted Subset §2.12 (an "Amended by: ADR 0109" line).
 5. D3: the credential store, `StoredTokens`, the two operations; the constant-time helper replacing every comparison.
 6. D8: `Sealed` and the keyed index; the runbook's sections 3, 8 and 9.
 7. D4: the Rust network transport and the C++ libcurl adapter with the destination policy.
