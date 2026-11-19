@@ -7,8 +7,9 @@
 //! the checker reads once), and refuses each read, statement and loop that is
 //! no use of a map by the code D11 names, saying what is accepted. The
 //! Interpreter's lowering, the first to hold a map ("Order of work", step 4),
-//! lowers the document, and every generated lane's `generate` refuses it by
-//! name, naming the record that lands a map lane by lane (D10).
+//! lowers the document, Rust's `generate`, the second (step 5), generates it,
+//! and every other generated lane's `generate` refuses it by name, naming the
+//! record that lands a map lane by lane (D10).
 //!
 //! Each refusal is the well-formed document with one thing changed, so the
 //! refusal is the change's and nothing else's.
@@ -85,7 +86,7 @@ fn refused(document: &str, code: &str, part: &str) {
 
 /// docs/adr/0108, D3 to D5 and D10: the document that writes every read,
 /// statement and loop of a map the checker reads is accepted by `check`,
-/// refused by every lane that generates a statechart by name, and lowered by
+/// refused by name by every lane that generates a statechart but Rust, and lowered by
 /// the Interpreter's lowering, every statement of a map replaced and every read
 /// of one a call of the library.
 #[test]
@@ -98,6 +99,10 @@ fn a_map_document_is_checked_and_refused_by_every_lane_by_name() {
 
     let place = "`map<record:PeerKey, record:Face>[face_max=4]` in a statechart's variable";
     for &language in sce_build::generator::Language::ALL {
+        // Rust holds a map ("Order of work", step 5), as the test below holds.
+        if language == sce_build::generator::Language::Rust {
+            continue;
+        }
         let lane = language.canonical_name();
         let out_dir = tempfile::tempdir().expect("an output directory");
         let out_dir = out_dir.path().to_str().expect("a utf-8 path").to_string();
@@ -153,6 +158,95 @@ fn a_map_document_is_checked_and_refused_by_every_lane_by_name() {
             name.name()
         );
     }
+}
+
+/// The Rust lowering of `document`, written beside the schemas it imports:
+/// whether `generate` passed, what it printed, and every Rust file it wrote,
+/// joined.
+fn generate_rust(document: &str) -> (bool, String, String) {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for name in SIBLINGS {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a schema");
+    }
+    let path = dir.path().join("map_faces.scxml");
+    std::fs::write(&path, document).expect("write the statechart");
+    let out_dir = tempfile::tempdir().expect("an output directory");
+    let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
+    let (ok, printed) = run(&["generate", "-l", "rust", "-o", out.as_str()], &path);
+    let mut code = String::new();
+    for entry in std::fs::read_dir(out_dir.path()).expect("read the output") {
+        let path = entry.expect("an output file").path();
+        if path.extension().is_some_and(|ext| ext == "rs") {
+            code.push_str(&std::fs::read_to_string(&path).expect("read a generated file"));
+        }
+    }
+    (ok, printed, code)
+}
+
+/// docs/adr/0108, "Order of work", step 5: Rust generates the document, each
+/// map held in the runtime's `BoundedMap` or `BoundedSet` built under a seed,
+/// each read a call of `portable::map`'s, each record key and the payload a key
+/// is looked up by made a key, and each statement a write of the map. D6 item 3:
+/// a `<foreach>` whose body does not write the map it walks walks the map
+/// itself, and one whose body does walks a copy.
+#[test]
+fn rust_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
+    let (ok, printed, code) = generate_rust(&faces());
+    assert!(ok, "Rust generates a map:\n{printed}");
+    for held in [
+        "::sce_rust_runtime::BoundedMap<",
+        "::sce_rust_runtime::BoundedSet<u32, 4>",
+        "::sce_rust_runtime::MapSeeds::new(::sce_rust_runtime::map_seed())",
+        "::sce_rust_runtime::FromSeed::from_seed(sce_map_seeds.draw())",
+        "::sce_rust_runtime::portable::map::holds(",
+        "::sce_rust_runtime::portable::map::count(",
+        "::sce_rust_runtime::portable::map::value(",
+        "::sce_rust_runtime::portable::map::value_cloned(",
+        "::sce_rust_runtime::BoundedMap::widened_map(",
+        "impl ::sce_rust_runtime::MapKey for",
+        "::sce_rust_runtime::PutOutcome::Full",
+        "::sce_rust_runtime::RemoveOutcome::Removed",
+        ".first();",
+        ".next_after(",
+    ] {
+        assert!(
+            code.contains(held),
+            "no `{held}` in the generated Rust:\n{code}"
+        );
+    }
+    // No loop of the document writes the map it walks.
+    assert!(!code.contains("sce_walk_"), "a loop copies a map:\n{code}");
+
+    // The walk of `seen` that removes each key it meets walks a copy of it.
+    let writes_its_map = edited(
+        &faces(),
+        "<sce:put target=\"counts\" key=\"s\" expr=\"total\"/>",
+        "<sce:remove target=\"seen\" key=\"s\"/>",
+    );
+    let (ok, printed, code) = generate_rust(&writes_its_map);
+    assert!(ok, "Rust generates a loop that writes its map:\n{printed}");
+    assert!(
+        code.contains("let sce_walk_0 = self.seen.clone();"),
+        "the loop that writes `seen` walks no copy of it:\n{code}"
+    );
+}
+
+/// docs/adr/0108, D8: a map of Rust holds no byte string as a key or a value
+/// yet, and refuses one by name.
+#[test]
+fn rust_refuses_a_map_of_byte_strings_by_name() {
+    let document = edited(
+        &faces(),
+        "<data id=\"order\"",
+        "<data id=\"blobs\" sce:type=\"map&lt;uint8, bytes[4]&gt;[2]\"/>\n    <data id=\"order\"",
+    );
+    let (ok, printed, _) = generate_rust(&document);
+    assert!(!ok, "Rust holds no byte string in a map:\n{printed}");
+    assert!(
+        printed.contains("\"code\":\"generate/unsupported-feature\"")
+            && printed.contains("holds no byte string as a key or a value"),
+        "{printed}"
+    );
 }
 
 /// docs/adr/0108, D2, D3 and D11: a map is read through `len`, `has` and the

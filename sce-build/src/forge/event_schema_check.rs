@@ -346,9 +346,12 @@ impl ComposedLowering {
             ..none
         };
         match language {
+            // A map or a set variable is held in the runtime's `BoundedMap` and
+            // `BoundedSet` (docs/adr/0108, "Order of work", step 5).
             Language::Rust => Self {
                 unions: true,
                 records: true,
+                maps: true,
                 ..walks
             },
 
@@ -2783,11 +2786,13 @@ mod tests {
     }
 
     /// docs/adr/0108, D10: a statechart's map or set variable passes the gate
-    /// every route asks and the Interpreter's lowering, the first to hold one
-    /// ("Order of work", step 4), and is refused by name, naming the record, by
-    /// every generated backend, none of whose rows holds one yet.
+    /// every route asks, the Interpreter's lowering, the first to hold one
+    /// ("Order of work", step 4), and Rust's, the second (step 5), and is
+    /// refused by name, naming the record, by every other generated backend,
+    /// none of whose rows holds one yet.
     #[test]
     fn a_map_variable_passes_the_gate_and_is_refused_by_each_lowering_that_holds_none() {
+        use crate::generator::Language;
         let mut model = SCXMLModel {
             datamodel: crate::model::Datamodel::SceStatic,
             ..SCXMLModel::default()
@@ -2799,7 +2804,10 @@ mod tests {
         });
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_none());
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ECMASCRIPT).is_none());
-        for language in crate::generator::Language::ALL {
+        assert!(
+            first_unlowered_composed_use(&model, ComposedLowering::of(Language::Rust)).is_none()
+        );
+        for language in Language::ALL.iter().filter(|l| **l != Language::Rust) {
             let lowering = ComposedLowering::of(*language);
             assert!(
                 !lowering.maps,
@@ -2821,6 +2829,9 @@ mod tests {
             crate::forge::model::AlgorithmValueType::read("list<set<uint8>[2]>[3]").ok();
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_some());
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ECMASCRIPT).is_some());
+        assert!(
+            first_unlowered_composed_use(&model, ComposedLowering::of(Language::Rust)).is_some()
+        );
     }
 
     /// Each backend's row says what its machine spells, no more and no less:

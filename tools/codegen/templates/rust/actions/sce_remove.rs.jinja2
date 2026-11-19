@@ -1,0 +1,11 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# docs/adr/0108, D3 and D4: remove an entry of a sce-static map or set by its
+   key. The statement — the outcome it writes, and the error arm of a key that
+   fails — is lowered ahead of the template by `forge::static_lowering` and
+   stored on `action.native_code`. A failure ends its block as any element
+   that raised does (W3C SCXML 4.9). #}
+{% import 'actions/_native_statement.rs.jinja2' as native %}
+// docs/adr/0108: <sce:remove target="{{ action.location }}">
+{{ native.emit(action, in_action_block is defined and in_action_block) }}

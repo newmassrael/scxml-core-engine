@@ -867,6 +867,9 @@ fn resolve_then_rename(
     if matches!(target, ExprTarget::Js) {
         lower_keyed_reads_for_js(ast, ctx)?;
     }
+    if matches!(target, ExprTarget::Rust) {
+        lower_keyed_reads_for_rust(ast, ctx);
+    }
     // docs/adr/0092, section 6.1: a read of a union's member, judged above
     // where its case is proven, spelled by the cases the facts leave, on the
     // backend whose machine holds a union.
@@ -7212,6 +7215,151 @@ fn lower_keyed_reads_for_js(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(
         storage: None,
     };
     Ok(())
+}
+
+/// The runtime module whose functions the reads of a Rust machine's map or set
+/// lower to (docs/adr/0108, D3): `count`, `holds`, `value` and
+/// `value_cloned`, each handed the map and the key lent.
+pub(crate) const RUST_MAP_READS: &str = "::sce_rust_runtime::portable::map";
+
+/// Each read of a map or a set of `expr` (docs/adr/0108, D3), spelled for a
+/// Rust machine, which holds one in the runtime's `BoundedMap` or `BoundedSet`
+/// and reads it through [`RUST_MAP_READS`]'s functions, each handed the map and
+/// the key lent: `len(m)` is its `count`, a `uint32` as a list's length is;
+/// `has(m, k)` its `holds`; `m[k]` its `value_cloned`, the copy the place it
+/// is written to takes; and `m[k].f` a field of its `value`, lent where the map
+/// holds it, so a read copies no more than the field. A value read at a key
+/// that is absent is none, which `found` fails `out-of-range` as an index
+/// outside a list fails, and so is a call that can fail. A key is looked up by
+/// its canonical bytes (the runtime's `MapKey`), so a value of another width, a
+/// text slice and a payload taken whole each find the key they write the bytes
+/// of; an integer literal is written at the key's own type, which its value is
+/// held to where it is judged. Run after the reads are judged and before any
+/// rename, while each map is the place the author named.
+fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    // `m[k].f`: the field of the value the map lends.
+    if let ExprKind::Member { object, .. } = &mut expr.kind {
+        if rust_keyed_value(object, ctx, "value") {
+            return;
+        }
+    }
+    if rust_keyed_value(expr, ctx, "value_cloned") {
+        return;
+    }
+    let builtin = match &expr.kind {
+        ExprKind::Call { callee, args, .. } => keyed_builtin(callee, args, ctx),
+        _ => None,
+    };
+    for child in expr.children_mut() {
+        lower_keyed_reads_for_rust(child, ctx);
+    }
+    let Some((builtin, held)) = builtin else {
+        return;
+    };
+    let ExprKind::Call { callee, args, .. } = &mut expr.kind else {
+        return;
+    };
+    let function = match builtin {
+        KeyedBuiltin::Len => "count",
+        KeyedBuiltin::Has => "holds",
+    };
+    *callee = Box::new(TypedExpr::new(ExprKind::Raw(format!(
+        "{RUST_MAP_READS}::{function}"
+    ))));
+    for (position, arg) in args.iter_mut().enumerate() {
+        if position == 1 {
+            rust_typed_key_literal(arg, &held);
+        }
+        let ty = arg.ty;
+        wrap_in_call(arg, "&", ty);
+    }
+}
+
+/// `node`, when it reads the value at a key of a map (`m[k]`), as the read of
+/// it through `function` of [`RUST_MAP_READS`] that `found` fails where the
+/// key is absent ([`lower_keyed_reads_for_rust`]), its key's own reads lowered
+/// first; `false`, and `node` as it was, for any other node.
+fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> bool {
+    let held = match &node.kind {
+        ExprKind::Index { object, .. } => keyed_place(object, ctx),
+        _ => None,
+    };
+    let Some(held) = held else {
+        return false;
+    };
+    let ExprKind::Index { object, index } = std::mem::replace(&mut node.kind, ExprKind::NullLit)
+    else {
+        return false;
+    };
+    let (mut map, mut key) = (*object, *index);
+    lower_keyed_reads_for_rust(&mut key, ctx);
+    rust_typed_key_literal(&mut key, &held);
+    let (map_ty, key_ty) = (map.ty, key.ty);
+    wrap_in_call(&mut map, "&", map_ty);
+    wrap_in_call(&mut key, "&", key_ty);
+    let lookup = TypedExpr::new(ExprKind::Call {
+        callee: Box::new(TypedExpr::new(ExprKind::Raw(format!(
+            "{RUST_MAP_READS}::{function}"
+        )))),
+        args: vec![map, key],
+        params: Vec::new(),
+        fails: false,
+        into_destination: false,
+        storage: None,
+    });
+    let found = found_wrapper(ExprTarget::Rust).unwrap_or("sce_forge_runtime::algorithm::found");
+    node.kind = ExprKind::Call {
+        callee: Box::new(TypedExpr::new(ExprKind::Raw(found.to_string()))),
+        args: vec![lookup],
+        params: vec![InferredType::Unknown],
+        fails: true,
+        into_destination: false,
+        storage: None,
+    };
+    true
+}
+
+/// An integer literal `key` of the map or the set `held` written at the
+/// type of its key (`7u32`, `-2i32`): a key is looked up by any value whose
+/// canonical bytes are a key's, and a bare literal would take the type Rust
+/// gives one it cannot infer, which may not hold it. Any other key is left as
+/// it is.
+fn rust_typed_key_literal(key: &mut TypedExpr, held: &crate::forge::value_path::Place) {
+    use crate::forge::model::SceType;
+    use crate::forge::value_type::ValueType;
+    let Some(ValueType::Scalar(scalar)) = held.map_key().map(|key| key.ty) else {
+        return;
+    };
+    if !matches!(
+        scalar,
+        SceType::Uint8
+            | SceType::Uint16
+            | SceType::Uint32
+            | SceType::Uint64
+            | SceType::Int8
+            | SceType::Int16
+            | SceType::Int32
+            | SceType::Int64
+    ) {
+        return;
+    }
+    let suffix = crate::forge::generator::rust_type(&scalar);
+    let typed = match &key.kind {
+        ExprKind::NumberLit(text) if !is_float_literal_text(text) => {
+            format!("{}{suffix}", portable_number_literal(text))
+        }
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => match &operand.kind {
+            ExprKind::NumberLit(text) if !is_float_literal_text(text) => {
+                format!("-{}{suffix}", portable_number_literal(text))
+            }
+            _ => return,
+        },
+        _ => return,
+    };
+    key.kind = ExprKind::Raw(typed);
 }
 
 /// Where the key of a read at a key of the map `map` names stands
