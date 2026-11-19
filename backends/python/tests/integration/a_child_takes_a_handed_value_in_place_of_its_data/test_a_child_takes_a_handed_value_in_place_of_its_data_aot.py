@@ -19,8 +19,7 @@ says what each phase asks.
 Fixture: ``integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem a_child_takes_a_handed_value_in_place_of_its_data`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

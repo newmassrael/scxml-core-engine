@@ -10,7 +10,7 @@ import XCTest
 // docs/SCE_TTCN3_LANE.md §12, §13.1 S2: every trace of a suite of the corpus replays, through the suite's
 // runner (`runRunner`, the program of §4 run in place), to its expected log, byte for byte. The suites are
 // the ones sce-codegen writes into the target `StaticDatamodelMachines` (regen:
-// `scripts/regen_static_datamodel_swift.sh`); runtime_suite's own traces are replayed by
+// `scripts/materialize.sh swift-static-datamodel`); runtime_suite's own traces are replayed by
 // `ATestSuiteRunsThroughItsRunnerTests.swift`, beside the rest of what that suite is held to.
 //
 // The expected logs are the files every backend is held to, the canonical logs a reviewed run of the Rust

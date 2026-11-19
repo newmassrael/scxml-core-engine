@@ -4,7 +4,7 @@
 replays, through the suite's runner (``run_runner``, the program of §4 run in
 place), to its expected log, byte for byte. The suites are the ones sce-codegen
 writes into a module each beside this file (regen:
-``scripts/regen_static_datamodel_python.sh``; the modules are not committed);
+``scripts/materialize.sh python-static-datamodel``; the modules are not committed);
 runtime_suite's own traces are replayed by
 ``test_a_test_suite_runs_through_its_runner.py``, beside the rest of what that
 suite is held to.
