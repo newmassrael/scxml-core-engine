@@ -2797,7 +2797,7 @@ fn land_integers(
                              integer place it is stored into or compared with, which gives \
                              it its width"
                                 .to_string(),
-                            &**operand,
+                            operand,
                         ));
                     }
                     None => {}
@@ -2837,7 +2837,7 @@ fn land_integers(
                                  with, which gives it its width",
                                 op.token()
                             ),
-                            &**left,
+                            left,
                         ));
                     }
                     None => (context, Adopts::No),
