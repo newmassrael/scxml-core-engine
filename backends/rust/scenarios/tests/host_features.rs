@@ -61,7 +61,10 @@ impl Transport for Scripted {
     ) -> Result<Option<HttpResponse>, TransportFailure> {
         let mut script = self.0.lock().expect("the script is not left mid-update");
         script.log.push(request.clone());
-        script.answer.clone().unwrap_or(Err(TransportFailure))
+        script
+            .answer
+            .clone()
+            .unwrap_or(Err(TransportFailure::Network))
     }
 }
 
@@ -85,7 +88,7 @@ fn answer(directive: &Value) -> Result<Option<HttpResponse>, TransportFailure> {
         return Ok(None);
     }
     if directive.get("fail").is_some() {
-        return Err(TransportFailure);
+        return Err(TransportFailure::Network);
     }
     let body = if let Some(text) = directive.get("body").and_then(Value::as_str) {
         text.as_bytes().to_vec()

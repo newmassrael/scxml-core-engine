@@ -173,7 +173,7 @@ pub struct NoNetwork;
 
 impl HttpTransport for NoNetwork {
     fn exchange(&mut self, _request: &HttpRequest) -> Result<Option<HttpResponse>, HttpFailure> {
-        Err(HttpFailure)
+        Err(HttpFailure::Network)
     }
 }
 

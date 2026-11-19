@@ -15,7 +15,16 @@ struct Unreachable;
 
 impl Transport for Unreachable {
     fn exchange(&mut self, _: &HttpRequest) -> Result<Option<HttpResponse>, TransportFailure> {
-        Err(TransportFailure)
+        Err(TransportFailure::Network)
+    }
+}
+
+/// A transport that fails every exchange as it was told.
+struct Failing(TransportFailure);
+
+impl Transport for Failing {
+    fn exchange(&mut self, _: &HttpRequest) -> Result<Option<HttpResponse>, TransportFailure> {
+        Err(self.0)
     }
 }
 
@@ -109,6 +118,34 @@ fn a_put_if_keeps_its_failure_and_not_its_refusal() {
     let again = done(host.start("sce-host-kv-put-if", &failed, &put_if("k", "a", "0")));
     assert_eq!(again, first, "the repeat is answered with the failure");
     assert!(host.store_entries().is_empty());
+}
+
+/// docs/SCE_HOST_FEATURES.md, section 5: each failure a transport reports is
+/// the code of the operation's closed set it names, with every other field at
+/// its zero (docs/adr/0109, D4, for `destination_refused`).
+#[test]
+fn a_transport_failure_is_answered_with_its_own_code() {
+    for (why, code) in [
+        (TransportFailure::Network, "network"),
+        (TransportFailure::DestinationRefused, "destination_refused"),
+        (TransportFailure::ResponseTooLarge, "response_too_large"),
+    ] {
+        let mut host = ReferenceHost::new(Box::new(ScriptedClock::new()), Failing(why));
+        let request: Params = [
+            ("method".to_string(), "GET".to_string()),
+            (
+                "url".to_string(),
+                "https://api.example.com/items".to_string(),
+            ),
+            ("headers".to_string(), String::new()),
+            ("body".to_string(), String::new()),
+        ]
+        .into();
+        let answered = done(host.start("sce-host-http-fetch", &invocation("fetch"), &request));
+        assert_eq!(answered["error"], code, "{why:?}");
+        assert_eq!(answered["status"], 0, "{why:?}");
+        assert_eq!(answered["body"], "", "{why:?}");
+    }
 }
 
 /// The system clock's monotonic reading never goes below one already answered.
