@@ -52,6 +52,14 @@ const INFO_DOUBLE: u8 = 27;
 /// section 9.2).
 const NAN: [u8; 3] = [(MAJOR_SIMPLE << 5) | INFO_HALF, 0x7e, 0x00];
 
+/// The simple value `null` (RFC 8949 §3.3): an absent element of a list
+/// (docs/adr/0101 §2.1).
+const SIMPLE_NULL: u8 = 22;
+
+/// `null`'s one encoding, `f6`: the two-byte form of a simple value below 32
+/// is not well-formed.
+const NULL: u8 = (MAJOR_SIMPLE << 5) | SIMPLE_NULL;
+
 /// The deepest an unknown entry's value may nest before a skip refuses it
 /// (SCE_FORGE.md §4.6.1).
 pub const MAX_SKIP_DEPTH: u32 = 16;
@@ -195,6 +203,13 @@ pub fn write_map_head<S: SceSink + ?Sized>(w: &mut S, entries: u64) -> Result<()
 pub fn write_variant<S: SceSink + ?Sized>(w: &mut S, name: &str) -> Result<(), S::Error> {
     write_map_head(w, 1)?;
     write_text(w, name)
+}
+
+/// Write `null`, an absent element of a list (docs/adr/0101 §2.1). An absent
+/// field of a record and an absent entry of the codec's own map are not
+/// written at all: their key is left out.
+pub fn write_null<S: SceSink + ?Sized>(w: &mut S) -> Result<(), S::Error> {
+    w.write_u8(NULL)
 }
 
 // ── Reading ─────────────────────────────────────────────────────────────
@@ -425,6 +440,32 @@ pub fn read_variant(c: &mut SceCursor<'_>, names: &[&str]) -> Result<usize, Code
         .iter()
         .position(|candidate| *candidate == name)
         .ok_or(CodecError::CborUnknownVariant)
+}
+
+/// Read the value of a union's case that holds no record: a map, the empty
+/// map as an encode writes it (docs/adr/0101 §2.1). Read as a record's map is
+/// (§3.2): every key a text string ([`CodecError::CborWrongType`]), and each
+/// stepped over with its value, since the case declares none.
+pub fn read_empty_case(c: &mut SceCursor<'_>) -> Result<(), CodecError> {
+    let count = read_map_len(c)?;
+    for _ in 0..count {
+        read_text(c, None)?;
+        skip(c)?;
+    }
+    Ok(())
+}
+
+/// Take `null` where a list's element that may be absent stands
+/// (docs/adr/0101 §2.1): whether the item there is `null`, which is then read.
+/// Any other item is left where it is, for the element's own read, which
+/// refuses what is no value of the element.
+pub fn take_null(c: &mut SceCursor<'_>) -> Result<bool, CodecError> {
+    if c.peek_slice(1)?[0] == NULL {
+        c.advance(1)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
 
 /// Skip one item — the value of a key the codec does not declare — and
@@ -855,6 +896,50 @@ mod tests {
         assert_eq!(
             read_variant(&mut SceCursor::new(&[0x81, 0xa0]), &PAYMENT),
             Err(CodecError::CborWrongType)
+        );
+    }
+
+    #[test]
+    fn a_case_that_holds_no_record_is_read_from_any_map_of_text_keys() {
+        // The empty map an encode writes, and a map of keys the case does not
+        // declare, each stepped over with its value: both are the case.
+        // The second is followed by a 7 the read leaves.
+        for (bytes, left) in [
+            (&[0xa0][..], 0),
+            (&[0xa1, 0x61, b'x', 0x82, 0x01, 0x02, 0x07][..], 1),
+        ] {
+            let mut c = SceCursor::new(bytes);
+            assert_eq!(read_empty_case(&mut c), Ok(()), "{bytes:02x?}");
+            assert_eq!(c.remaining(), left, "{bytes:02x?}");
+        }
+        // A key that is no text, and `null` or an array where the map stands.
+        for bytes in [&[0xa1, 0x01, 0x01][..], &[0xf6][..], &[0x80][..]] {
+            assert_eq!(
+                read_empty_case(&mut SceCursor::new(bytes)),
+                Err(CodecError::CborWrongType),
+                "{bytes:02x?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_absent_element_is_null_and_a_present_one_is_left_for_its_read() {
+        let mut buf = [0u8; 1];
+        let mut sink = SliceSink::new(&mut buf);
+        write_null(&mut sink).expect("writes");
+        assert_eq!(sink.into_written().to_vec(), [0xf6]);
+        // `null`, then the element 7: the first is taken, the second left.
+        let bytes = [0xf6, 0x07];
+        let mut c = SceCursor::new(&bytes);
+        assert_eq!(take_null(&mut c), Ok(true));
+        assert_eq!(take_null(&mut c), Ok(false));
+        assert_eq!(c.remaining(), 1);
+        assert_eq!(read_uint(&mut c), Ok(7));
+        // `false` is no `null`, and nothing at all is an input that ended.
+        assert_eq!(take_null(&mut SceCursor::new(&[0xf4])), Ok(false));
+        assert_eq!(
+            take_null(&mut SceCursor::new(&[])),
+            Err(CodecError::NeedMoreBytes)
         );
     }
 
