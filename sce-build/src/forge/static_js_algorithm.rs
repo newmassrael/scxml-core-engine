@@ -1806,6 +1806,45 @@ mod tests {
         }
     }
 
+    /// docs/adr/0108, D1 and D3: a map keyed by a record is read and written
+    /// at the record named whole, `has(m, r)`, `m[r]` and `<sce:put key="r">`,
+    /// each handed to the library with the key's type, the record's fields in
+    /// its schema's order, which writes the key's canonical text as a
+    /// statechart's map does (`keyText`). The algorithm that keeps each peer's
+    /// latest generation, keyed by a record of two `uint64` halves, is judged
+    /// and lowered from beside the documents it imports.
+    #[test]
+    fn a_map_keyed_by_a_record_is_read_and_written_at_the_record_named_whole() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/static_datamodel");
+        let text = std::fs::read_to_string(dir.join("algorithm_take_generation.scxml"))
+            .expect("read the algorithm");
+        let parsed = crate::forge::parser::parse_forge_with_imports(
+            &text,
+            crate::DocumentLabel::symmetric("algorithm_take_generation"),
+        )
+        .unwrap_or_else(|e| panic!("the algorithm does not parse: {e:?}"))
+        .expect("an algorithm document");
+        let ForgeDocument::Algorithm(algorithm) = &parsed.document else {
+            panic!("the document is not an algorithm");
+        };
+        let imports = Imports::resolve(&algorithm.name, &parsed.imports, &dir)
+            .unwrap_or_else(|e| panic!("the imports resolve: {e}"));
+        judge(algorithm, &imports).unwrap_or_else(|e| panic!("the body is judged: {e}"));
+        let function = lower(algorithm, &imports).unwrap_or_else(|e| panic!("lowers: {e}"));
+        let key = "{key: {record: [['low', 'integer'], ['high', 'integer']]}}";
+        for part in [
+            format!("SceStatic.mapHas(resets, {key}, peer)"),
+            format!("SceStatic.mapGet(resets, {key}, peer)"),
+            format!(
+                "{{ var __wrote = SceStatic.mapPut(resets, {key}, __lent0.capacity, peer, \
+                 generation); resets = __wrote.map; stored = __wrote.outcome; }}"
+            ),
+        ] {
+            assert!(function.contains(&part), "`{part}` in {function}");
+        }
+    }
+
     /// A construct with no lowering yet is named, and the algorithm is not
     /// passed on half lowered.
     #[test]

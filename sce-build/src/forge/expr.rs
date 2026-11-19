@@ -928,7 +928,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_misdirected_indexing(ast, ctx, source)?;
     reject_misread_keys(ast, ctx, source)?;
     reject_unreadable_element_fields(ast, ctx, source)?;
-    reject_records_as_operands(ast, source, RecordPlace::Whole)?;
+    reject_records_as_operands(ast, ctx, source, RecordPlace::Whole)?;
     reject_record_text_misuse(ast, ctx, source, false)?;
     reject_buffers_as_values(ast, source)?;
     reject_optional_misuse(ast, &ctx.proven, source)?;
@@ -1949,24 +1949,30 @@ enum RecordPlace {
     Whole,
     /// A call's argument: a record may be passed here by name.
     Argument,
+    /// The key a value of a map is read at, `m[k]` (docs/adr/0108, D3): a
+    /// record key is handed to the lookup whole by its name, as an argument
+    /// of `has(m, k)` is.
+    Key,
     /// Anywhere else — an operand, an index, a member's object.
     Operand,
 }
 
 /// Refuse a record anywhere but where it is passed whole (SCE_FORGE.md
-/// §4.12): a record NAME as a call's argument, and a CALL returning a
-/// record as the whole expression a record local is initialised from. A
-/// record is no operand — backends do not compare or combine structs alike —
-/// and its fields are read by `r.<field>`, which types each field instead.
+/// §4.12): a record NAME as a call's argument or as the key of a map's read
+/// (docs/adr/0108, D3, [`keyed_place`]), and a CALL returning a record as the
+/// whole expression a record local is initialised from. A record is no
+/// operand — backends do not compare or combine structs alike — and its
+/// fields are read by `r.<field>`, which types each field instead.
 fn reject_records_as_operands(
     expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
     source: &str,
     place: RecordPlace,
 ) -> Result<(), Refusal> {
     if matches!(expr.ty, InferredType::Record(_)) {
         let admitted = matches!(
             (&expr.kind, place),
-            (ExprKind::Ident(_), RecordPlace::Argument)
+            (ExprKind::Ident(_), RecordPlace::Argument | RecordPlace::Key)
                 | (ExprKind::Call { .. }, RecordPlace::Whole)
         );
         if !admitted {
@@ -1985,16 +1991,22 @@ fn reject_records_as_operands(
         }
     }
     match &expr.kind {
-        ExprKind::Call { args, .. } => args
-            .iter()
-            .try_for_each(|arg| reject_records_as_operands(arg, source, RecordPlace::Argument)),
+        ExprKind::Call { args, .. } => args.iter().try_for_each(|arg| {
+            reject_records_as_operands(arg, ctx, source, RecordPlace::Argument)
+        }),
         // `r.<field>` reads a field of the record `r` names: the object is
         // the record's name, which is how a field is read.
         ExprKind::Member { object, .. } if matches!(object.kind, ExprKind::Ident(_)) => Ok(()),
-        _ => expr
-            .children()
-            .into_iter()
-            .try_for_each(|child| reject_records_as_operands(child, source, RecordPlace::Operand)),
+        // `m[k]` of a map reads the value at the key `k`, which the lookup
+        // takes whole; the key was held to the map's key type where it was
+        // judged ([`reject_misread_keys`]).
+        ExprKind::Index { object, index } if keyed_place(object, ctx).is_some() => {
+            reject_records_as_operands(object, ctx, source, RecordPlace::Operand)?;
+            reject_records_as_operands(index, ctx, source, RecordPlace::Key)
+        }
+        _ => expr.children().into_iter().try_for_each(|child| {
+            reject_records_as_operands(child, ctx, source, RecordPlace::Operand)
+        }),
     }
 }
 
