@@ -497,6 +497,11 @@ impl<'m> Analysis<'m> {
             // A lift writes a record or a refusal and raises nothing
             // (docs/adr/0087, section 2.1): `actions/sce_lift.rs.jinja2`.
             "sce_lift" => Ok(Cost::NONE),
+            // A call of an algorithm that writes a map in place raises nothing:
+            // the algorithm declares no `may-fail`, so the call cannot fail, and
+            // its writes and the store into its location happen together when
+            // it returns (docs/adr/0108, D6 item 2).
+            "sce_call" => Ok(Cost::NONE),
             // A test component's statements raise nothing: a verdict is the
             // component's own, and a timer's expiry is seen on a snapshot of
             // a later round, not on the internal queue
@@ -1558,6 +1563,25 @@ mod tests {
             .entry("a", vec![keyed("sce_put")])
             .entry("a", vec![keyed("sce_remove")]);
         assert_eq!(two_blocks.bound(), chain(2, 0));
+    }
+
+    /// A call of an algorithm that writes a map in place raises nothing, even
+    /// where the document names `error.execution`: the algorithm cannot fail
+    /// (docs/adr/0108, D6 item 2), so a `<raise>` beside it is the block's one
+    /// event.
+    #[test]
+    fn a_call_that_writes_a_map_in_place_raises_nothing() {
+        let call = Action {
+            action_type: "sce_call".to_string(),
+            expr: "Take(resets, peer, 3)".to_string(),
+            location: "took".to_string(),
+            ..Action::default()
+        };
+        let doc = Doc::new()
+            .names("error.execution")
+            .state("a", None)
+            .entry("a", vec![call, raise("note")]);
+        assert_eq!(doc.bound(), chain(1, 0));
     }
 
     /// A `<cancel>` whose id cannot be computed raises its error and ends the

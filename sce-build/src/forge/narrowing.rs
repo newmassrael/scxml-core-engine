@@ -395,6 +395,29 @@ impl Statement for Action {
                 into.write(&self.location);
                 into.write(&self.lift_refusal);
             }
+            // A call of an algorithm that writes a map in place writes its
+            // location, and each map it hands over to be written (docs/adr/0108,
+            // D6 items 2 and 3). Which parameters are written is the callee's,
+            // which this reading of a statement alone does not hold, so every
+            // argument written as a bare name is taken as written: each map the
+            // call writes is among them, since the judge holds every such
+            // argument to the name of a map variable. A call that does not
+            // parse may write anything.
+            "sce_call" => {
+                into.write(&self.location);
+                match crate::forge::expr::call_sites(&self.expr, &|_| true) {
+                    // The outermost call, the statement's own, is the first.
+                    Ok(sites) => {
+                        let args = sites.into_iter().next().map(|site| site.args);
+                        for arg in args.unwrap_or_default() {
+                            if let crate::forge::expr::ArgShape::Name(name) = arg.shape {
+                                into.write(&name);
+                            }
+                        }
+                    }
+                    Err(_) => into.anything(),
+                }
+            }
             "send" => into.write(&self.idlocation),
             "script" => into.anything(),
             _ => {}
@@ -1462,6 +1485,26 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(held.after(&Writes::of(&remove)), facts(&["sid"]));
+    }
+
+    /// docs/adr/0108, D6 items 2 and 3: a `<sce:call>` writes its location and
+    /// each argument it names bare, so a loop whose body hands the map it walks
+    /// to such a call walks a copy of it; an argument that reads a part of a
+    /// value is no map the call writes.
+    #[test]
+    fn a_call_that_writes_in_place_reaches_each_map_it_names() {
+        let call = Action {
+            action_type: "sce_call".to_string(),
+            expr: "Take(resets, peer.low, 3)".to_string(),
+            location: "took".to_string(),
+            ..Default::default()
+        };
+        let writes = Writes::of(&call);
+        assert!(writes.reaches("resets"));
+        assert!(writes.reaches("took"));
+        assert!(!writes.reaches("peer"));
+        assert!(!writes.reaches("faces"));
+        assert_eq!(facts(&["took", "sid"]).after(&writes), facts(&["sid"]));
     }
 
     /// docs/adr/0108, D6 item 3: a block reaches a map where a statement at any
