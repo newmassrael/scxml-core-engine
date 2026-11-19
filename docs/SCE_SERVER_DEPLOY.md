@@ -141,17 +141,21 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   system, never a network one. Beside `<file>` SQLite keeps `<file>-wal` and `<file>-shm`; all three are the store.
 - **Waiting for a lock.** A call that finds the database locked by another connection's write waits 5 s
   (`SqliteStore::BUSY_TIMEOUT`, or the bound given to `open_with_busy_timeout`) before it fails.
-- **Its layout.** The database's `user_version` names the layout, `1` today. A file of a layout this build does not
-  know, or one that holds tables the store did not make, is refused. A later build that changes the layout makes a
+- **Its layout.** The database's `user_version` names the layout, `2` today. A file of layout `1` is brought to `2`
+  when it is opened, in one transaction, its sessions and leases kept. A file of a layout this build does not know,
+  or one that holds tables the store did not make, is refused. A later build that changes the layout makes a
   rollback to an earlier build refuse the file.
 - **Not encrypted.** A session's row is its checkpoint as plain `sce-mesh-checkpoint` JSON, and the saved state in it
   holds the document's values in the clear. SCE_MESH.md section 10.11 asks the host to store a checkpoint encrypted at
   rest; with the reference store that is the encryption of the volume the file is on, or a `SessionStore` of the
   program's own that encrypts before it writes.
 
-The tables (`LAYOUT` in `sqlite.rs`): `sessions` (`session`, `state`, `version`, `earliest_due`), `leases` (`session`,
-`owner`, `fence`, `expires_ms`), and `numbers`, the one counter versions and fences are drawn from. Every moment is
-milliseconds since the Unix epoch.
+The tables (`LAYOUT_1` and `LAYOUT_2` in `sqlite.rs`): `sessions` (`session`, `state`, `version`, `earliest_due`),
+`leases` (`session`, `owner`, `fence`, `expires_ms`), and `numbers`, the one counter versions and fences are drawn
+from; and the keys a host generates and derives (`KeyStore`, docs/SCE_HOST_FEATURES.md section 13): `keys` (`id`,
+`key_use`, `algorithm`, `wrapped`, `label`, `created_ms`, `state`), each key's material wrapped under a
+key-encryption key the file never holds, `key_generations` (which key each generation made) and `key_naming` (the
+wrapped naming key of derived keys). Every moment is milliseconds since the Unix epoch.
 
 ## 4. What a restart does
 

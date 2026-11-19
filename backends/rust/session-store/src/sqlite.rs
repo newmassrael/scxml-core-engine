@@ -9,21 +9,23 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
+use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
 use crate::rules::{self, Holding};
 use crate::{
     moment, AcquireError, Due, Failure, Lease, LeaseError, SessionStore, Stored, WriteError,
 };
 
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
-/// later build wrote is refused rather than read as this one.
-const LAYOUT_VERSION: i64 = 1;
+/// later build wrote is refused rather than read as this one, and one of an earlier layout is
+/// brought to this one when it is opened, in one transaction.
+const LAYOUT_VERSION: i64 = 2;
 
-/// The tables of [`LAYOUT_VERSION`]. A session's state, version and earliest due are one row, so
+/// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
 /// disagree with the states. A lease is a row of its own, outliving a deleted session; the numbers
 /// handed out come from the one row of `numbers`, so that a version or a fence is never given
 /// twice, even for a key whose session or lease was removed and made again.
-const LAYOUT: &str = "
+const LAYOUT_1: &str = "
     CREATE TABLE sessions (
         session TEXT PRIMARY KEY NOT NULL,
         state BLOB NOT NULL,
@@ -43,6 +45,30 @@ const LAYOUT: &str = "
         issued INTEGER NOT NULL
     );
     INSERT INTO numbers (id, issued) VALUES (0, 0);
+";
+
+/// What layout 2 adds to layout 1: the keys of [`KeyStore`] (ADR 0109, D7), each row its material
+/// wrapped under a key-encryption key the file never holds; which key each generation made, so a
+/// generation repeated under its identity answers its first key; and the one wrapped naming key
+/// a derived key's id is computed under.
+const LAYOUT_2: &str = "
+    CREATE TABLE keys (
+        id TEXT PRIMARY KEY NOT NULL,
+        key_use TEXT NOT NULL,
+        algorithm TEXT NOT NULL,
+        wrapped BLOB NOT NULL,
+        label TEXT NOT NULL,
+        created_ms INTEGER NOT NULL,
+        state TEXT NOT NULL
+    );
+    CREATE TABLE key_generations (
+        generation TEXT PRIMARY KEY NOT NULL,
+        key TEXT NOT NULL REFERENCES keys (id)
+    );
+    CREATE TABLE key_naming (
+        id INTEGER PRIMARY KEY CHECK (id = 0),
+        wrapped BLOB NOT NULL
+    );
 ";
 
 /// A session store in one SQLite database file.
@@ -123,26 +149,33 @@ impl SqliteStore {
     }
 }
 
-/// Make the tables in a database that has none, or check that the ones there are this store's.
+/// Make the tables in a database that has none, bring one of layout 1 to [`LAYOUT_VERSION`], or
+/// check that the ones there are this store's. A database is changed in one transaction, so a
+/// failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if layout == LAYOUT_VERSION {
-        return Ok(());
+    match layout {
+        LAYOUT_VERSION => return Ok(()),
+        0 => {
+            let tables: i64 =
+                transaction
+                    .query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))?;
+            if tables != 0 {
+                return Err(Failure::new(
+                    "the database holds tables a session store did not make",
+                ));
+            }
+            transaction.execute_batch(LAYOUT_1)?;
+            transaction.execute_batch(LAYOUT_2)?;
+        }
+        1 => transaction.execute_batch(LAYOUT_2)?,
+        _ => {
+            return Err(Failure::new(format!(
+                "the database is laid out as session store {layout}, which this build does not know"
+            )))
+        }
     }
-    if layout != 0 {
-        return Err(Failure::new(format!(
-            "the database is laid out as session store {layout}, which this build does not know"
-        )));
-    }
-    let tables: i64 =
-        transaction.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))?;
-    if tables != 0 {
-        return Err(Failure::new(
-            "the database holds tables a session store did not make",
-        ));
-    }
-    transaction.execute_batch(LAYOUT)?;
     transaction.pragma_update(None, "user_version", LAYOUT_VERSION)?;
     transaction.commit()?;
     Ok(())
@@ -309,6 +342,178 @@ impl SessionStore for SqliteStore {
             .execute((key,))?;
         transaction.commit()?;
         Ok(())
+    }
+}
+
+/// The columns of a key row as SQLite gives them, before their names are read.
+type KeyColumns = (String, String, String, Vec<u8>, String, u64, String);
+
+/// The key `id` names in `connection`, if it holds one.
+fn key_of(connection: &Connection, id: &str) -> Result<Option<KeyRow>, Failure> {
+    let columns: Option<KeyColumns> = connection
+        .prepare_cached(
+            "SELECT id, key_use, algorithm, wrapped, label, created_ms, state FROM keys \
+             WHERE id = ?1",
+        )?
+        .query_row((id,), |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+            ))
+        })
+        .optional()?;
+    columns.map(key_row).transpose()
+}
+
+/// A key row from its columns, refused when a name in it is none this build writes.
+fn key_row(
+    (id, key_use, algorithm, wrapped, label, created_ms, state): KeyColumns,
+) -> Result<KeyRow, Failure> {
+    let key_use = KeyUse::from_name(&key_use).ok_or_else(|| {
+        Failure::new(format!(
+            "the key {id} is of the use '{key_use}', which this build does not know"
+        ))
+    })?;
+    let state = KeyState::from_name(&state).ok_or_else(|| {
+        Failure::new(format!(
+            "the key {id} is in the state '{state}', which this build does not know"
+        ))
+    })?;
+    Ok(KeyRow {
+        id,
+        key_use,
+        algorithm,
+        wrapped,
+        label,
+        created_ms,
+        state,
+    })
+}
+
+/// The wrapped naming key `connection` holds, if it holds one.
+fn naming_key_of(connection: &Connection) -> rusqlite::Result<Option<Vec<u8>>> {
+    connection
+        .prepare_cached("SELECT wrapped FROM key_naming WHERE id = 0")?
+        .query_row([], |row| row.get(0))
+        .optional()
+}
+
+impl KeyStore for SqliteStore {
+    fn key(&self, id: &str) -> Result<Option<KeyRow>, Failure> {
+        key_of(&self.connection(), id)
+    }
+
+    fn ids(&self) -> Result<Vec<String>, Failure> {
+        let connection = self.connection();
+        let mut statement = connection.prepare_cached("SELECT id FROM keys ORDER BY id")?;
+        let ids = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        Ok(ids)
+    }
+
+    fn generated_by(&self, generation: &str) -> Result<Option<String>, Failure> {
+        let connection = self.connection();
+        let made = connection
+            .prepare_cached("SELECT key FROM key_generations WHERE generation = ?1")?
+            .query_row((generation,), |row| row.get(0))
+            .optional()?;
+        Ok(made)
+    }
+
+    fn insert(&self, row: &KeyRow, generation: Option<&str>) -> Result<KeyRow, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        if let Some(generation) = generation {
+            let made: Option<String> = transaction
+                .prepare_cached("SELECT key FROM key_generations WHERE generation = ?1")?
+                .query_row((generation,), |row| row.get(0))
+                .optional()?;
+            if let Some(made) = made {
+                if let Some(held) = key_of(&transaction, &made)? {
+                    return Ok(held);
+                }
+            }
+        }
+        if let Some(held) = key_of(&transaction, &row.id)? {
+            return Ok(held);
+        }
+        transaction
+            .prepare_cached(
+                "INSERT INTO keys (id, key_use, algorithm, wrapped, label, created_ms, state) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )?
+            .execute((
+                &row.id,
+                row.key_use.name(),
+                &row.algorithm,
+                &row.wrapped,
+                &row.label,
+                moment(row.created_ms),
+                row.state.name(),
+            ))?;
+        if let Some(generation) = generation {
+            transaction
+                .prepare_cached("INSERT INTO key_generations (generation, key) VALUES (?1, ?2)")?
+                .execute((generation, &row.id))?;
+        }
+        transaction.commit()?;
+        Ok(row.clone())
+    }
+
+    fn retire(&self, id: &str) -> Result<Option<bool>, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let Some(held) = key_of(&transaction, id)? else {
+            return Ok(None);
+        };
+        transaction
+            .prepare_cached("UPDATE keys SET state = ?2 WHERE id = ?1")?
+            .execute((id, KeyState::Retired.name()))?;
+        transaction.commit()?;
+        Ok(Some(held.state == KeyState::Active))
+    }
+
+    fn rewrap(&self, id: &str, wrapped: &[u8]) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let changed = transaction
+            .prepare_cached("UPDATE keys SET wrapped = ?2 WHERE id = ?1")?
+            .execute((id, wrapped))?;
+        transaction.commit()?;
+        Ok(changed == 1)
+    }
+
+    fn naming_key(&self) -> Result<Option<Vec<u8>>, Failure> {
+        Ok(naming_key_of(&self.connection())?)
+    }
+
+    fn keep_naming_key(&self, wrapped: &[u8]) -> Result<Vec<u8>, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        if let Some(held) = naming_key_of(&transaction)? {
+            return Ok(held);
+        }
+        transaction
+            .prepare_cached("INSERT INTO key_naming (id, wrapped) VALUES (0, ?1)")?
+            .execute((wrapped,))?;
+        transaction.commit()?;
+        Ok(wrapped.to_vec())
+    }
+
+    fn rewrap_naming_key(&self, wrapped: &[u8]) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let changed = transaction
+            .prepare_cached("UPDATE key_naming SET wrapped = ?1 WHERE id = 0")?
+            .execute((wrapped,))?;
+        transaction.commit()?;
+        Ok(changed == 1)
     }
 }
 
