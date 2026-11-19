@@ -773,6 +773,7 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
                 }],
             }],
             features: None,
+            migrations: &[],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

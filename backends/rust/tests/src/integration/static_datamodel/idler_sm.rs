@@ -344,6 +344,7 @@ impl IdlerPersist for Engine<IdlerPolicy> {
             records: &[],
             enums: &[],
             features: None,
+            migrations: &[],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

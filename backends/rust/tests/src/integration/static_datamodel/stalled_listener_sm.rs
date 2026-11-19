@@ -345,6 +345,7 @@ impl StalledListenerPersist for Engine<StalledListenerPolicy> {
             records: &[],
             enums: &[],
             features: None,
+            migrations: &[],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

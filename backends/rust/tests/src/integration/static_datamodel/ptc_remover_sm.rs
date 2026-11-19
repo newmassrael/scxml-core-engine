@@ -353,6 +353,7 @@ impl PtcRemoverPersist for Engine<PtcRemoverPolicy> {
             records: &[],
             enums: &[],
             features: None,
+            migrations: &[],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

@@ -556,6 +556,7 @@ impl ImportLifePersist for Engine<ImportLifePolicy> {
                 }],
             }],
             features: None,
+            migrations: &[],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<

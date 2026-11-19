@@ -231,6 +231,8 @@ pub mod static_list_index_sm;
 pub mod static_list_sm;
 pub mod static_mesh_relay__sce_synth_invoke__inner_sm;
 pub mod static_mesh_relay_sm;
+pub mod static_migration_1_sm;
+pub mod static_migration_2_sm;
 pub mod static_model_harness_sm;
 pub mod static_optional_record_sm;
 pub mod static_optional_sm;

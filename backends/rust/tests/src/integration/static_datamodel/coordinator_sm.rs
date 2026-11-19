@@ -397,6 +397,7 @@ impl CoordinatorPersist for Engine<CoordinatorPolicy> {
             records: &[],
             enums: &[],
             features: None,
+            migrations: &[],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
