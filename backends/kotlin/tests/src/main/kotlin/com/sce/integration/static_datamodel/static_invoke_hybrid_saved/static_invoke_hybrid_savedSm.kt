@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee
+// source-hash: 7865cbba1437ac62a7413296a819ae1327237e7cf001f33e7509925ac699e3b6
+// source: static_invoke_hybrid_saved.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid_saved.scxml

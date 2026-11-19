@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee
+// source-hash: f2f60deb89ed7b69cba4afcef1ab39ad6aa127caba76051d45b1772ec243105d
+// source: static_state_algorithm_enum.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_state_algorithm_enum.scxml

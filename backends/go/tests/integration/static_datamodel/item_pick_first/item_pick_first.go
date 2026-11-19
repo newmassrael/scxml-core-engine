@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee
+// source-hash: 201c2cab5ec09a038ee2711905bb9880b83643fb3a8f60755c85d8c1bcc38efa
+// source: algorithm_item_pick_first.scxml
 // SCE-MAP: algorithm_item_pick_first.scxml:9 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

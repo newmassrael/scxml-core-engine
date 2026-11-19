@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee
+// source-hash: b16744d0912b7100dc6711c5146cef046c18a63781489e59626a440916ec336d
+// source: algorithm_goal_day_sum.scxml
 // SCE-MAP: algorithm_goal_day_sum.scxml:8 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

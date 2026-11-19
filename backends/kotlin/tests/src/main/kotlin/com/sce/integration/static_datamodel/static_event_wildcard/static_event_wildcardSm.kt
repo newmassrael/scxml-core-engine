@@ -1,5 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee
+// source-hash: 149f46c7f9914e6cf0e2e9d0bcc1a9af0e290ed7bbf4685ef7fff3d524579ece
+// source: static_event_wildcard.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_event_wildcard.scxml
