@@ -74,12 +74,20 @@ impl SourceCase {
 /// the struct holds it, the arm the source states and each member in it. A
 /// source that states an element the value does not present or leaves out one
 /// it does is refused by name.
+///
+/// `capacities` are what the deployment the harness's C11 tree is generated
+/// with gives each codec (docs/adr/0077 §7): the struct holds a byte string, a
+/// text or a list in an array of its capacity, so a source that states more
+/// bytes or entries of one than its capacity is refused by name, the codec,
+/// the element and the capacity named, before any compiler is handed the
+/// case.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     source: &serde_json::Value,
     inputs: &serde_json::Value,
     tag: &serde_json::Value,
     held: &mut dyn HeldCodecs,
+    capacities: &crate::forge::model::CodecCapacities,
 ) -> Result<SourceCase, String> {
     let snake = filters::to_snake_case(plan.model.name.clone());
     let mut args = Vec::new();
@@ -114,7 +122,7 @@ pub(crate) fn source_case(
         encode_inputs: given,
         ..SourceCase::empty()
     };
-    members(plan, source, "", "", held, &mut case)?;
+    members(plan, source, "", "", held, capacities, &mut case)?;
     case.checks.extend(said);
     if let Some(tag) = tag {
         case.checks.push((
@@ -131,13 +139,16 @@ pub(crate) fn source_case(
 /// `"list[0]."` or `"list.value.data[0]."` for an entry of a list it holds,
 /// `"body.arm.<arm>."` for the body of its variant's arm), and the check of
 /// each, by its id after `id_at`. A body, each entry of a list and the arm of
-/// a variant are set member by member in turn, as the struct holds them.
+/// a variant are set member by member in turn, as the struct holds them, each
+/// byte string, text and list within the capacity `capacities` give it
+/// ([`within_capacity`]).
 fn members(
     plan: &EncodePlan<'_>,
     source: &serde_json::Value,
     at: &str,
     id_at: &str,
     held: &mut dyn HeldCodecs,
+    capacities: &crate::forge::model::CodecCapacities,
     case: &mut SourceCase,
 ) -> Result<(), String> {
     let object = source_members(plan, source)?;
@@ -190,6 +201,8 @@ fn members(
             // it, the length member the C11 struct names `{member}_len`, or
             // the value of the optional one a gate decides.
             Value::Bytes(_) | Value::Text(_) => {
+                let stated = stated_bytes(&element.value, json, &id)?.len();
+                within_capacity(plan, declared, &id, stated, "bytes", capacities)?;
                 let (set, holds) = bytes_stated(&element.value, json, &id, &data, &len)?;
                 statements.extend(set);
                 checks.push((id.clone(), check(holds)));
@@ -202,7 +215,7 @@ fn members(
                 } else {
                     format!("{member}.")
                 };
-                let body = body_stated(codec, json, &inner_at, &id, held)?;
+                let body = body_stated(codec, json, &inner_at, &id, held, capacities)?;
                 if gated {
                     checks.push((id.clone(), format!("{DECODED}.{member}.present")));
                 }
@@ -235,7 +248,10 @@ fn members(
                     }
                     entries
                 };
-                let (count, holds, entries) = list_stated(codec, rows, &id, &data, &len, held)?;
+                let stated = entry_rows(rows).map_err(|e| format!("`{id}`: {e}"))?.len();
+                within_capacity(plan, declared, &id, stated, "entries", capacities)?;
+                let (count, holds, entries) =
+                    list_stated(codec, rows, &id, &data, &len, held, capacities)?;
                 statements.push(count);
                 checks.push((id.clone(), check(holds)));
                 statements.extend(entries.statements);
@@ -286,6 +302,8 @@ fn members(
             match plan.value(field) {
                 // The bytes into the buffer the arm holds them in.
                 value @ (Value::Bytes(_) | Value::Text(_)) => {
+                    let n = stated_bytes(&value, stated, &member_id)?.len();
+                    within_capacity(plan, member, &member_id, n, "bytes", capacities)?;
                     let (set, holds) = bytes_stated(
                         &value,
                         stated,
@@ -298,7 +316,14 @@ fn members(
                 }
                 // The members of the body the arm holds.
                 Value::Body { codec } => {
-                    let body = body_stated(codec, stated, &format!("{path}."), &member_id, held)?;
+                    let body = body_stated(
+                        codec,
+                        stated,
+                        &format!("{path}."),
+                        &member_id,
+                        held,
+                        capacities,
+                    )?;
                     statements.extend(body.statements);
                     checks.extend(body.checks);
                 }
@@ -311,6 +336,10 @@ fn members(
                              as a C11 value: the C11 printer prints no codec that holds one"
                         ));
                     }
+                    let n = entry_rows(stated)
+                        .map_err(|e| format!("`{member_id}`: {e}"))?
+                        .len();
+                    within_capacity(plan, member, &member_id, n, "entries", capacities)?;
                     let (count, holds, entries) = list_stated(
                         codec,
                         stated,
@@ -318,6 +347,7 @@ fn members(
                         &format!("{path}.data"),
                         &format!("{path}.len"),
                         held,
+                        capacities,
                     )?;
                     statements.push(count);
                     checks.push((member_id, holds));
@@ -363,7 +393,10 @@ fn members(
         let inner_id = format!("{id}.");
         let mut arm = SourceCase::empty();
         held.read(chosen.codec, &mut |arm_plan, _path, held| {
-            members(arm_plan, body, &inner_at, &inner_id, held, &mut arm).map(|()| String::new())
+            members(
+                arm_plan, body, &inner_at, &inner_id, held, capacities, &mut arm,
+            )
+            .map(|()| String::new())
         })
         .map_err(|e| format!("`{id}`: {e}"))?;
         statements.extend(arm.statements);
@@ -372,10 +405,50 @@ fn members(
     Ok(())
 }
 
+/// Whether `stated`, the count of `unit` (bytes or entries) a source states of
+/// the element `id`, the field `field` of the codec `plan`, fits the capacity
+/// `capacities` give that field (docs/adr/0077 §7): the struct the harness
+/// holds the case in holds it in an array of that capacity, so a case past it
+/// is refused by name here rather than written past the array. This is the
+/// capacity a deployment gives; a field it gives none is held at the bound its
+/// document states.
+fn within_capacity(
+    plan: &EncodePlan<'_>,
+    field: &str,
+    id: &str,
+    stated: usize,
+    unit: &str,
+    capacities: &crate::forge::model::CodecCapacities,
+) -> Result<(), String> {
+    let codec = &plan.model.name;
+    match capacities.get(codec).and_then(|held| held.get(field)) {
+        Some(&most) if stated > most as usize => Err(format!(
+            "`{id}` states {stated} {unit}, past the capacity of {most} the deployment gives \
+             `{field}` of `{codec}`: the C11 struct the case is held in holds no more, so the \
+             deployment the harness is generated with gives it room for every case the run \
+             states"
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// The bytes of a byte string or a text `value` a source states as `json`, for
+/// the element `id`: a text as the bytes of its UTF-8, as the decode holds it.
+fn stated_bytes(value: &Value<'_>, json: &serde_json::Value, id: &str) -> Result<Vec<u8>, String> {
+    match value {
+        Value::Text(_) => Ok(json
+            .as_str()
+            .ok_or_else(|| format!("`{id}`: text is a JSON string"))?
+            .as_bytes()
+            .to_vec()),
+        _ => byte_values(json).map_err(|e| format!("`{id}`: {e}")),
+    }
+}
+
 /// The statements that set a byte string or a text `value` a source states as
 /// `json` into the array at the member path `data` and its count into `len`,
-/// and what holds when a decode presents the same, for the element `id`. A
-/// text is held as the bytes of its UTF-8, as the decode holds it.
+/// and what holds when a decode presents the same, for the element `id`
+/// ([`stated_bytes`]).
 fn bytes_stated(
     value: &Value<'_>,
     json: &serde_json::Value,
@@ -383,14 +456,7 @@ fn bytes_stated(
     data: &str,
     len: &str,
 ) -> Result<(Vec<String>, String), String> {
-    let bytes = match value {
-        Value::Text(_) => json
-            .as_str()
-            .ok_or_else(|| format!("`{id}`: text is a JSON string"))?
-            .as_bytes()
-            .to_vec(),
-        _ => byte_values(json).map_err(|e| format!("`{id}`: {e}"))?,
-    };
+    let bytes = stated_bytes(value, json, id)?;
     let mut statements = Vec::new();
     if !bytes.is_empty() {
         let listed: Vec<String> = bytes.iter().map(|b| format!("0x{b:02X}")).collect();
@@ -419,11 +485,12 @@ fn body_stated(
     at: &str,
     id: &str,
     held: &mut dyn HeldCodecs,
+    capacities: &crate::forge::model::CodecCapacities,
 ) -> Result<SourceCase, String> {
     let inner_id = format!("{id}.");
     let mut body = SourceCase::empty();
     held.read(codec, &mut |body_plan, _path, held| {
-        members(body_plan, json, at, &inner_id, held, &mut body).map(|()| String::new())
+        members(body_plan, json, at, &inner_id, held, capacities, &mut body).map(|()| String::new())
     })
     .map_err(|e| format!("`{id}`: {e}"))?;
     Ok(body)
@@ -441,6 +508,7 @@ fn list_stated(
     data: &str,
     len: &str,
     held: &mut dyn HeldCodecs,
+    capacities: &crate::forge::model::CodecCapacities,
 ) -> Result<(String, String, SourceCase), String> {
     let rows = entry_rows(json).map_err(|e| format!("`{id}`: {e}"))?;
     let mut entries = SourceCase::empty();
@@ -448,8 +516,16 @@ fn list_stated(
         let inner_at = format!("{data}[{i}].");
         let inner_id = format!("{id}[{i}].");
         held.read(codec, &mut |entry_plan, _path, held| {
-            members(entry_plan, row, &inner_at, &inner_id, held, &mut entries)
-                .map(|()| String::new())
+            members(
+                entry_plan,
+                row,
+                &inner_at,
+                &inner_id,
+                held,
+                capacities,
+                &mut entries,
+            )
+            .map(|()| String::new())
         })
         .map_err(|e| format!("`{id}`: {e}"))?;
     }
