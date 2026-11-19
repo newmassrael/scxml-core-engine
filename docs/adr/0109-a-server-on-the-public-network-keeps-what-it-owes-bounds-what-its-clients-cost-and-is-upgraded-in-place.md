@@ -17,11 +17,13 @@
     store and the `key` authenticator, D3, D9), §22.8 (the host contract delivers per client, D15), and a new §22.9
     for message signatures (D9);
   - `docs/SCE_HOST_FEATURES.md` section 3 (a durable reference store, D13), section 5 (the destination policy of a
-    server's transport and its failure code, D4), section 9 (what this record builds leaves the list), section 10
-    (keys generated, exported and named stably, and named bounds, D7, D17), and new sections for random bytes (D5),
-    keyed digests (D6), keys (D7), credentials (D3) and the audit log (D14);
+    server's transport and its failure code, D4; `method` an enum, step 4 of "Order of work"), section 9 (what this
+    record builds leaves the list), section 10 (keys generated, exported and named stably, and named bounds, D7,
+    D17), and new sections for random bytes (D5), keyed digests (D6), keys (D7; `key_use` an enum, step 4),
+    credentials (D3) and the audit log (D14);
   - `docs/SCE_ACCEPTED_SUBSET.md` §2.15 "Saving and restoring" (a declared migration, D11) and a new paragraph of
-    §2.15 for a value the deployment supplies (D12); §2.8 (the deploy keys D1, D2, D9, D10 and D12 add); the
+    §2.15 for a value the deployment supplies (D12); §2.8 (the deploy keys D1, D2, D9, D10 and D12 add); §2.12
+    (an enum field in a typed host-run request, read by its declared name, step 4 of "Order of work"); the
     appendix (every diagnostic code this record adds, each with its row);
   - `SCE_WIRE_CONTRACTS.md`: the surfaces this record adds, each `pre-release` (the shape file of D11, the sealed
     row of D8, the audit entry and its signed checkpoint of D14, the signature profile of D9);
@@ -388,9 +390,16 @@ not) on Rust and C++; a scenario that tags in one host and verifies in the other
 
   | Operation | `type` | Request | Result |
   |---|---|---|---|
-  | Generate | `sce-host-key-generate` | `use` enum (`sign`, `seal`, `mac`, `derive`), `label` (64) | `key_id` (64) |
+  | Generate | `sce-host-key-generate` | `key_use` (8): `sign`, `seal`, `mac` or `derive`; `label` (64) | `key_id` (64) |
   | Export | `sce-host-key-public` | `key_id` (64) | `cose_key` bytes (128): a COSE_Key (RFC 9052 section 7), `kty` OKP, `crv` Ed25519, `x`, `kid` |
   | Retire | `sce-host-key-retire` | `key_id` (64) | `retired` bool |
+
+  The use is named `key_use`, which every target language can spell as a field (`use` is a keyword of Rust). Until
+  step 4 of "Order of work" lands, it is a text of at most 8 bytes that the host judges: any other text is refused
+  (`invalid_argument`, the refusal of docs/SCE_HOST_FEATURES.md section 1: `error.execution`, and nothing is
+  generated), as an HTTP request's `method` is. The build refuses a host-run record with an enum field
+  (`typed_invoke::validate`, SCE Accepted Subset §2.12), so the closed set is a value the host checks when the
+  invocation starts rather than a type the build checks; step 4 makes it the enum D7 means, the same set.
 
   A generated key's id is drawn at random (D5's source) and is the same in every process that shares the store. A
   repeat of a generation under one identity answers the first id (the store keeps the identity in the generation's
@@ -687,19 +696,41 @@ Security and correctness first, then durability, then operability. Every step is
 2. D1 and D2: the bounds and the rate limits in the Rust server and pool, their deploy keys, and D1's window bound on
    every Mesh core (D0, exception 2), after `mesh-source-bound-to-link` lands.
 3. D5, D6 and D7: random bytes, keyed digests and the key store, with the shared crypto crate D9 needs.
-4. D3: the credential store, `StoredTokens`, the two operations; the constant-time helper replacing every comparison.
-5. D8: `Sealed` and the keyed index; the runbook's sections 3, 8 and 9.
-6. D4: the Rust network transport and the C++ libcurl adapter with the destination policy.
-7. D9: §22.9, response and request signatures in the Rust server and client and the C++ client, the `key`
+4. Enum fields in a typed host-run request: `typed_invoke::validate` admits an enum field in a request (not yet in
+   a result), the Rust and C++ adapters read it by its declared name, every other lane refuses it by name;
+   `sce-host-http-fetch`'s `method` and `sce-host-key-generate`'s `key_use` become enums; SCE_ACCEPTED_SUBSET.md
+   §2.12 amended. A general capability of the build, which D7's `key_use` is the first to need (step 3 lands it as
+   a text the host judges). What changes:
+   1. `typed_invoke::validate` keeps refusing an enum field in a result, which the payload lift cannot read, and
+      admits one in a request; a build for a lane other than Rust and C++ refuses a typed request with an enum field
+      as `generate/unsupported-feature`, beside `standard_host::refuse_unserved` (D0).
+   2. `static_datamodel::request_field_value` holds the `<param>` of an enum field to a value of that field's own
+      enum, so a wrong value is refused where it is written.
+   3. `host_invoker_interface`: an enum field is held at the start site to the declared name it crosses as; the
+      Rust and C++ record structs type it with the machine's enum (the `StaticEnumType` list handed to
+      `render_rust` and `render_cpp` at both their call sites), and each adapter reads it back by its declared
+      name, which needs a name-to-variant function beside the generated `declared_name`. The `unreachable!` arms
+      of the other renderers stay unreachable behind the refusal of item 1.
+   4. A machine imports the enum its request's record names (`sce:std/host/key_use.scxml`, beside the record in
+      `stdlib/host`, which `the_standard_host_features_are_one_set` admits as an enum a record of the table
+      imports); the Rust tree generates the enum's unit beside the machine and the C++ test build generates it for
+      `standard_host_scenario_test`.
+   5. The records, the reference hosts (which still read the declared name), the scenarios, a build test that
+      refuses a wrong value of each field, docs/SCE_HOST_FEATURES.md sections 5 and 13 and SCE Accepted Subset
+      §2.12 (an "Amended by: ADR 0109" line).
+5. D3: the credential store, `StoredTokens`, the two operations; the constant-time helper replacing every comparison.
+6. D8: `Sealed` and the keyed index; the runbook's sections 3, 8 and 9.
+7. D4: the Rust network transport and the C++ libcurl adapter with the destination policy.
+8. D9: §22.9, response and request signatures in the Rust server and client and the C++ client, the `key`
    authenticator, row 19. The record-level half after ADR 0101's steps 4a and 4b.
-8. D10: the parser's `persistence:` and `receipt:`, the outbox in the store, backpressure, expiry, the orderly stop.
-9. D11: shape files, the migration grammar and checks, the plan, the Rust and C++ `upgrade` steps.
-10. D12: deployment values in the grammar, the deploy parser, the manifest and the Rust and C++ readers.
-11. D13 and D14: the durable key-value store and the audit log.
-12. D15: the committer, `put_many`, the per-client delivery.
-13. D16 and D17: the metrics port and the named bounds.
-14. `docs/SCE_SERVER_DEPLOY.md` and `docs/SCE_HOST_FEATURES.md` section 9 brought to what landed.
-15. D18, only on measured need.
+9. D10: the parser's `persistence:` and `receipt:`, the outbox in the store, backpressure, expiry, the orderly stop.
+10. D11: shape files, the migration grammar and checks, the plan, the Rust and C++ `upgrade` steps.
+11. D12: deployment values in the grammar, the deploy parser, the manifest and the Rust and C++ readers.
+12. D13 and D14: the durable key-value store and the audit log.
+13. D15: the committer, `put_many`, the per-client delivery.
+14. D16 and D17: the metrics port and the named bounds.
+15. `docs/SCE_SERVER_DEPLOY.md` and `docs/SCE_HOST_FEATURES.md` section 9 brought to what landed.
+16. D18, only on measured need.
 
 Kotlin, Go, Python, Swift and C11 take each facility when a consumer needs it, a step of its own per backend and
 facility, and refuse it by name until then (D0).
