@@ -61,6 +61,25 @@ pub struct Surface {
     pub states: Vec<String>,
     /// Every `<data>` id the document declares.
     pub data: Vec<String>,
+    /// The values the machine's deployment supplies
+    /// (`<data sce:from="deployment">`, docs/adr/0109, D12), each with its
+    /// type as the document writes it, in declaration order: the machine's
+    /// interface to its deployment, which a configuration is checked against.
+    /// Omitted when the document declares none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deployment: Vec<DeploymentValue>,
+}
+
+/// One value a machine's deployment supplies, as the surface names it
+/// ([`Surface::deployment`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentValue {
+    /// The `<data>` id, the key of the value in the machine's configuration.
+    pub id: String,
+    /// The type, as the document's `sce:type` spells it in the type grammar.
+    #[serde(rename = "type")]
+    pub ty: String,
 }
 
 impl Surface {
@@ -104,6 +123,19 @@ impl Surface {
                 .map(|variable| variable.id.clone())
                 .collect::<BTreeSet<_>>()
                 .into_iter()
+                .collect(),
+            deployment: model
+                .variables
+                .iter()
+                .filter(|variable| variable.from_deployment)
+                .map(|variable| DeploymentValue {
+                    id: variable.id.clone(),
+                    ty: variable
+                        .value_type
+                        .as_ref()
+                        .map(|written| written.to_string())
+                        .unwrap_or_default(),
+                })
                 .collect(),
         }
     }
@@ -404,6 +436,29 @@ mod tests {
         assert!(found.outputs.is_empty(), "{found:?}");
     }
 
+    /// docs/adr/0109, D12: the values a deployment supplies are the machine's
+    /// interface to it, each with its type as the document writes it, in
+    /// declaration order; a variable of the machine's own is not one.
+    #[test]
+    fn a_value_the_deployment_supplies_is_listed_with_its_type() {
+        let found = Surface::of(&model(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                    version="1.0" datamodel="sce-static" initial="a">
+                <datamodel>
+                  <data id="limit" sce:type="uint32" sce:from="deployment"/>
+                  <data id="hosts" sce:type="list&lt;string[32]&gt;[4]" sce:from="deployment"/>
+                  <data id="count" sce:type="uint32" expr="0"/>
+                </datamodel>
+                <state id="a"/>
+              </scxml>"#,
+        ));
+        let ids: Vec<&str> = found.deployment.iter().map(|v| v.id.as_str()).collect();
+        assert_eq!(ids, ["limit", "hosts"], "{found:?}");
+        assert_eq!(found.deployment[0].ty, "uint32");
+        assert!(found.deployment[1].ty.starts_with("list<"), "{found:?}");
+        assert!(found.data.iter().any(|id| id == "count"), "{found:?}");
+    }
+
     #[test]
     fn a_transition_on_the_wildcard_takes_any_input() {
         let found = Surface::of(&model(
@@ -442,6 +497,11 @@ mod tests {
         let mut full = surface(&["coin"], &["dispense"], &["idle"], &["credit"]);
         full.takes_any_input = true;
         full.computed_outputs = true;
+        // docs/adr/0109, D12: a value the deployment supplies, with its type.
+        full.deployment = vec![DeploymentValue {
+            id: "limits".to_string(),
+            ty: "record:Limits".to_string(),
+        }];
         let wrapper = serde_json::json!({
             "definitions": serde_json::from_str::<serde_json::Value>(MANIFEST_SCHEMA)
                 .expect("a schema")["definitions"],

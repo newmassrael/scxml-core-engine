@@ -3085,6 +3085,38 @@ pub struct MachineConfig {
     /// [`crate::mesh::topology::resolve_keyed_pool`].
     #[serde(default)]
     pub sessions: Option<SessionsConfig>,
+    /// The values the machine's deployment supplies (docs/adr/0109, D12), by
+    /// the id of the `<data sce:from="deployment">` that declares each in the
+    /// machine's document. Checked against the document's declarations when
+    /// the machine is generated with this deployment
+    /// ([`crate::mesh::deploy_config::check_machine_config`]): a value the
+    /// document declares and this leaves out, a key it does not declare, and a
+    /// value that is no value of its type by the type's payload schema are
+    /// each refused. The build writes what it accepted as the JSON the
+    /// machine's generated reader reads at start.
+    ///
+    /// ```yaml
+    /// machines:
+    ///   calendar:
+    ///     source: calendar.scxml
+    ///     config:
+    ///       limits: { max_rows: 200, label: "main" }
+    ///       hosts: [ "a.example", "b.example" ]
+    /// ```
+    ///
+    /// At most one of `config` and [`Self::config_file`] is written
+    /// ([`validate_machine_config_sources`]).
+    #[serde(default)]
+    pub config: Option<BTreeMap<String, serde_yaml_ng::Value>>,
+    /// The file the host reads the machine's configuration from when it starts
+    /// the machine (docs/adr/0109, D12): one JSON object of the values the
+    /// document declares, by id, read through the machine's generated reader
+    /// with the lift's refusals, so a file that does not read refuses the
+    /// machine's start and tells the host why. The path is the operator's, as
+    /// the host resolves it; the build checks that the document declares a
+    /// value for it to supply, and cannot see the file's content.
+    #[serde(default)]
+    pub config_file: Option<String>,
     /// Author-pinned §mesh-9.6 SOMEIP scxml-invoke service ID (RFC F.X-1
     /// hybrid allocator). Optional — when present, the hybrid allocator
     /// reserves this ID for the machine and skips it during counter
@@ -3977,6 +4009,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_stage_pool_transport(&cfg)?;
     validate_outbound_buffer(&cfg)?;
     validate_sessions(&cfg)?;
+    validate_machine_config_sources(&cfg)?;
     validate_retry_policy(&cfg)?;
     validate_auth_policy(&cfg)?;
     validate_discovery_not_supported(&cfg)?;
@@ -4003,6 +4036,45 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_dds_qos(&cfg)?;
 
     Ok(cfg)
+}
+
+/// docs/adr/0109, D12: what the deployment alone says of a machine's
+/// configuration, read before any document is: its values come from one
+/// source, `config:` or `config_file:`, and a file is named by a path that is
+/// not empty. Whether the values are the document's is judged against the
+/// document when the machine is generated
+/// ([`crate::mesh::deploy_config::check_machine_config`]).
+fn validate_machine_config_sources(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use crate::mesh::error::ConfigSource;
+    let mut machines: Vec<(&String, &MachineConfig)> = cfg
+        .topology
+        .values()
+        .flat_map(|device| device.machines.iter())
+        .collect();
+    // In name order, so the first refusal of several is the same every run.
+    machines.sort_by(|a, b| a.0.cmp(b.0));
+    for (machine_name, machine) in machines {
+        let refuse = |reason: String| DeployError::ConfigInvalid {
+            machine: machine_name.clone(),
+            place: ConfigSource::File,
+            pointer: String::new(),
+            reason,
+        };
+        if machine.config.is_some() && machine.config_file.is_some() {
+            return Err(refuse(crate::mesh::deploy_config::two_sources_reason()));
+        }
+        if machine
+            .config_file
+            .as_deref()
+            .is_some_and(|path| path.trim().is_empty())
+        {
+            return Err(refuse(
+                "names no file: the path the host reads the configuration from is empty"
+                    .to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Reject per-binding keys that neither the typed schema nor the bound
@@ -13544,5 +13616,90 @@ topology:
         // not a duplicate diagnostic.
         validate_stage_pool_references(&cfg, &registry)
             .expect("co-pass invariant: cross-ref skips when transport gate already rejected");
+    }
+
+    /// The machine `calendar` with `lines` added to its entry.
+    fn configured(lines: &str) -> String {
+        format!(
+            r#"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      calendar:
+        source: calendar.scxml
+{lines}"#
+        )
+    }
+
+    /// docs/adr/0109, D12: a machine's values are written under it, any value
+    /// of YAML as the author wrote it, or named by the file the host reads.
+    #[test]
+    fn a_machine_takes_its_configuration_written_or_from_a_file() {
+        let cfg = parse_deploy_str(&configured(
+            "        config:\n          limits: { max_rows: 200, label: main }\n          hosts: [a.example, b.example]",
+        ))
+        .expect("parse");
+        let entry = &cfg.topology["cloud"].machines["calendar"];
+        let config = entry.config.as_ref().expect("written");
+        assert_eq!(
+            config.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["hosts", "limits"]
+        );
+        assert!(config["hosts"].is_sequence());
+        assert!(entry.config_file.is_none());
+
+        let cfg = parse_deploy_str(&configured(
+            "        config_file: /etc/calendar/config.json",
+        ))
+        .expect("parse");
+        let entry = &cfg.topology["cloud"].machines["calendar"];
+        assert_eq!(
+            entry.config_file.as_deref(),
+            Some("/etc/calendar/config.json")
+        );
+        assert!(entry.config.is_none());
+
+        // Neither: a machine that reads no configuration, or one whose
+        // document the generation holds to the values it declares.
+        let cfg = parse_deploy_str(&configured("")).expect("parse");
+        let entry = &cfg.topology["cloud"].machines["calendar"];
+        assert!(entry.config.is_none() && entry.config_file.is_none());
+    }
+
+    /// A machine's values come from one source, and a file is named by a path.
+    #[test]
+    fn a_configuration_of_two_sources_or_of_no_file_is_refused() {
+        for (lines, said) in [
+            (
+                "        config: { limit: 1 }\n        config_file: config.json",
+                "both `config:` and `config_file:`",
+            ),
+            ("        config_file: \"  \"", "names no file"),
+        ] {
+            match parse_deploy_str(&configured(lines)) {
+                Err(DeployError::ConfigInvalid {
+                    machine,
+                    place,
+                    reason,
+                    ..
+                }) => {
+                    assert_eq!(machine, "calendar");
+                    assert_eq!(place, crate::mesh::error::ConfigSource::File);
+                    assert!(reason.contains(said), "{reason}");
+                }
+                other => panic!("{lines}: expected ConfigInvalid, got {other:?}"),
+            }
+        }
+    }
+
+    /// A key the entry's schema does not know beside them is still refused by
+    /// the schema: `deny_unknown_fields` closes the entry.
+    #[test]
+    fn a_misspelled_configuration_key_is_refused_by_the_schema() {
+        assert!(matches!(
+            parse_deploy_str(&configured("        configs: { limit: 1 }")),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 }

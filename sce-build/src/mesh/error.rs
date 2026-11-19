@@ -746,6 +746,50 @@ impl std::fmt::Display for ChildEntryFault {
     }
 }
 
+/// The key of a machine entry a refusal of its configuration stands on
+/// (docs/adr/0109, D12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigSource {
+    /// `config:`, the values written in the deployment.
+    Inline,
+    /// `config_file:`, the file the host reads the values from.
+    File,
+}
+
+impl ConfigSource {
+    /// The key as deploy.yaml spells it.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Inline => "config",
+            Self::File => "config_file",
+        }
+    }
+}
+
+/// The values a document declares, as a refusal lists them: each in
+/// backticks, or `none` for a document that declares none.
+fn declared_values(declared: &[String]) -> String {
+    if declared.is_empty() {
+        "none".to_string()
+    } else {
+        declared
+            .iter()
+            .map(|value| format!("`{value}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// The place inside a configuration a refusal names, after the key it stands
+/// on: ` at '<pointer>'`, or nothing for the configuration whole.
+fn pointer_clause(pointer: &str) -> String {
+    if pointer.is_empty() {
+        String::new()
+    } else {
+        format!(" at '{pointer}'")
+    }
+}
+
 /// Why the field a keyed pool reads its key from is not a key of the requests
 /// the machine serves (SCE_MESH.md §mesh-14.4, "Keyed session pool").
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1098,6 +1142,53 @@ pub enum DeployError {
         machine: String,
         field: String,
         fault: SessionKeyFault,
+    },
+
+    /// A value the machine's document declares its deployment supplies
+    /// (`<data sce:from="deployment">`, docs/adr/0109, D12) that the
+    /// deployment gives no value: the machine's `config:` leaves it out, or
+    /// the entry writes neither `config:` nor `config_file:`. Judged against
+    /// the machine's document, when it is generated.
+    #[error(
+        "machine '{machine}': its document declares `{value}`, a value of `{written_type}` the \
+         deployment supplies, and the deployment gives it none. Write it under the machine's \
+         `config:`, or name the `config_file:` the host reads it from."
+    )]
+    ConfigMissing {
+        machine: String,
+        value: String,
+        written_type: String,
+    },
+
+    /// A key of the machine's `config:` that names no value its document
+    /// declares the deployment supplies (docs/adr/0109, D12): a value the
+    /// machine would never read. `declared` is every value the document
+    /// declares, in declaration order. Judged against the machine's
+    /// document, when it is generated.
+    #[error(
+        "machine '{machine}': `config:` gives '{key}', which the machine's document declares no \
+         value of (it declares {}). Remove it, or declare it as a `<data sce:from=\"deployment\">`.",
+        declared_values(declared)
+    )]
+    ConfigUnknown {
+        machine: String,
+        key: String,
+        declared: Vec<String>,
+    },
+
+    /// A machine's configuration that the deployment cannot supply as it is
+    /// written (docs/adr/0109, D12): a value of its `config:` that is no
+    /// value of the type its document declares, judged by the type's payload
+    /// schema at the strict RFC 6901 pointer `pointer`; both `config:` and
+    /// `config_file:` written; or a `config_file:` for a machine whose
+    /// document declares no value to read from it. `place` is the key the
+    /// refusal stands on.
+    #[error("machine '{machine}': `{}`{}: {reason}.", place.key(), pointer_clause(pointer))]
+    ConfigInvalid {
+        machine: String,
+        place: ConfigSource,
+        pointer: String,
+        reason: String,
     },
 
     /// A `retry:` section on a transport binding violates the
@@ -2942,6 +3033,26 @@ impl DeployError {
             Self::SessionKeyNotInRequest { machine, .. } => {
                 P::machine(machine).key("sessions").key("key_from")
             }
+            // A value missing from `config:` stands on the deepest key written
+            // above it: the value's own key, `config:`, or the machine.
+            Self::ConfigMissing { machine, value, .. } => {
+                P::machine(machine).key("config").key(value)
+            }
+            Self::ConfigUnknown { machine, key, .. } => P::machine(machine).key("config").key(key),
+            // The value the pointer's first token names, under `config:`; the
+            // key itself for a refusal of the configuration whole.
+            Self::ConfigInvalid {
+                machine,
+                place,
+                pointer,
+                ..
+            } => {
+                let at = P::machine(machine).key(place.key());
+                match crate::mesh::deploy_config::first_token(pointer) {
+                    Some(value) if *place == ConfigSource::Inline => at.key(&value),
+                    _ => at,
+                }
+            }
             Self::InvalidRetryPolicy {
                 machine, target, ..
             } => binding(machine, target).key("retry"),
@@ -4230,6 +4341,56 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 fragments.extend(fault.key_fragments());
                 fragments
             },
+        },
+        // docs/adr/0109, D12: the value left out is `actual`; its value is the
+        // operator's, so no fix is offered.
+        DeployError::ConfigMissing {
+            machine,
+            value,
+            written_type: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployConfigMissing,
+            stage: Stage::MeshDeploy,
+            actual: Some(value.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), value.clone()],
+        },
+        // The key no value is declared for is `actual`; the values the
+        // document declares are the candidates, closest first being the
+        // author's to choose, so no fix is offered.
+        DeployError::ConfigUnknown {
+            machine,
+            key,
+            declared,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployConfigUnknown,
+            stage: Stage::MeshDeploy,
+            actual: Some(key.clone()),
+            expected: (!declared.is_empty()).then(|| declared.clone()),
+            fix: None,
+            key_fragments: vec![machine.clone(), key.clone()],
+        },
+        // The place refused is `actual`, as a strict RFC 6901 pointer below
+        // the key the refusal stands on; the repair is a value of the type,
+        // which the operator chooses.
+        DeployError::ConfigInvalid {
+            machine,
+            place,
+            pointer,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployConfigInvalid,
+            stage: Stage::MeshDeploy,
+            actual: Some(format!("{}{pointer}", place.key())),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                place.key().to_string(),
+                pointer.clone(),
+                reason.clone(),
+            ],
         },
         DeployError::InvalidRetryPolicy {
             machine,

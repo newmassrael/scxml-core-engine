@@ -13,6 +13,7 @@
 
 pub mod codegen;
 pub mod deploy;
+pub mod deploy_config;
 pub mod deploy_marks;
 pub mod distributability;
 pub mod error;

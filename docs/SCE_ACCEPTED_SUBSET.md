@@ -1683,6 +1683,51 @@ The Rust generator also refuses a variant in which every arm whose body
 borrows from the frame names a feature: a build without the feature
 would declare a lifetime its variant enum does not use.
 
+#### §2.8.4 A machine's configuration: `config:` and `config_file:` (docs/adr/0109, D12)
+
+A machine entry gives the values its document declares the deployment supplies
+(§2.15, "A value the deployment supplies"), in one of two places:
+
+```yaml
+topology:
+  host:
+    machines:
+      calendar:
+        source: calendar.scxml
+        config:
+          limits: { max_rows: 200, label: main }
+          hosts: [a.example, b.example]
+      reminder:
+        source: reminder.scxml
+        config_file: /etc/reminder/config.json
+```
+
+`config:` maps each value's `<data>` id to its value, written as YAML. It is checked
+against the machine's document when the machine is generated with the deployment
+(`generate --deploy`): a value the document declares and `config:` leaves out, and an
+entry that writes neither key for a machine that declares one, is
+`mesh/deploy-config-missing`; a key the document declares no value of is
+`mesh/deploy-config-unknown`, with the values it does declare as `expected`; a value that
+is no value of its type by the type's payload schema (docs/adr/0087, section 1: every
+bound held, an integer in its type's range, a 64-bit one written as a YAML integer or as
+the text of its digits, a byte string as the text of its bytes, an enum value by its
+variant's name, a record by every field it declares and no other key, an absent
+optional value written `null`) is `mesh/deploy-config-invalid`, its `actual` the key
+and the strict RFC 6901 pointer of the place (`config/limits/max_rows`). What is
+accepted is written beside the machine as `<machine>.config.json`: one JSON object of
+the values by id, in declaration order, each record's fields in the order its schema
+declares them, the text the machine's `<Machine>Deployment::read` reads.
+
+`config_file:` names a file the host reads at start and hands to the same reader, which
+holds it to the lift's refusals (docs/adr/0087, section 2.3): a file that does not read
+leaves the host the refusal, which names the place and the code, and no machine. The
+build cannot see the file; it refuses a `config_file:` of a machine whose document
+declares no value (`mesh/deploy-config-invalid`). A machine writes at most one of the
+two, and a `config_file:` names a path: both, or an empty path, is
+`mesh/deploy-config-invalid` where the deployment is read. The build's manifest lists
+each value with its type (`surface.deployment`). A changed configuration takes effect at
+the machine's next start; a saved state holds none of it.
+
 ### §2.9 Composition extensions — `<sce:template>`
 
 `<sce:template>` / `<sce:use>` / `<sce:param>` add parameterised XML
@@ -10447,7 +10492,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (552 codes)
+## Appendix — `DiagnosticCode` index (555 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10865,6 +10910,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-outbound-buffer` | Mesh Deploy |
 | `mesh/deploy-invalid-sessions` | Mesh Deploy |
 | `mesh/deploy-sessions-key-not-in-request` | Mesh Deploy |
+| `mesh/deploy-config-missing` | Mesh Deploy |
+| `mesh/deploy-config-unknown` | Mesh Deploy |
+| `mesh/deploy-config-invalid` | Mesh Deploy |
 | `mesh/deploy-invalid-retry-policy` | Mesh Deploy |
 | `mesh/deploy-invalid-auth-policy` | Mesh Deploy |
 | `mesh/deploy-discovery-not-supported` | Mesh Deploy |
