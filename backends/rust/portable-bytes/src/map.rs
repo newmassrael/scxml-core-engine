@@ -259,6 +259,13 @@ impl MapKey for [u8] {
     }
 }
 
+/// A byte-string literal (`b"ab"`), as the slice of its bytes.
+impl<const L: usize> MapKey for [u8; L] {
+    fn feed_key(&self, into: &mut dyn KeyFeed) {
+        self.as_slice().feed_key(into);
+    }
+}
+
 impl MapKey for str {
     fn feed_key(&self, into: &mut dyn KeyFeed) {
         self.as_bytes().feed_key(into);
@@ -1194,6 +1201,11 @@ mod tests {
         assert!(same_key(&held, "red"));
         assert!(!same_key(&held, "re"));
         assert!(!same_key(&held, "redd"));
+        // A byte string, held or written as a literal, is the key of its bytes.
+        let bytes = BoundedList::<u8, 4>::from_slice(&[0x00, 0xff]).expect("fits");
+        assert!(same_key(&bytes, b"\x00\xff"));
+        assert!(same_key(&bytes, &[0x00u8, 0xff][..]));
+        assert!(!same_key(&bytes, b"\x00\xff\x00"));
         assert!(same_key(&true, &true));
         assert!(!same_key(&true, &false));
         assert_eq!(hash_of(&SEED, &held), hash_of(&SEED, "red"));
