@@ -248,6 +248,25 @@ pub enum StaticSlot {
     /// taken back whole into one, mapped case by case between the machine's own
     /// sum and the type the union's unit declares, which the algorithm holds.
     Union(UnionSlot),
+    /// `map<K, V>` or `set<K>` (docs/adr/0108, D5 and D6), a parameter only: a
+    /// map the statechart holds in a variable of its own, lent whole by the name
+    /// of that variable and never copied (D6 items 1 and 4).
+    Map(MapSlot),
+}
+
+/// A map or a set an imported algorithm's parameter takes ([`StaticSlot::Map`]):
+/// its type, its key and its value named by the aliases the STATECHART imports
+/// their documents under, and whether the algorithm writes it in place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapSlot {
+    /// The parameter's type, which states no bound of its own: the map lent is
+    /// the argument's, whatever bound its variable states.
+    pub ty: AlgorithmValueType,
+    /// `<sce:param inout="true">` (docs/adr/0108, D6 item 2): the algorithm
+    /// writes the map it is lent, and the caller sees each write when the call
+    /// returns. A call of such an algorithm is a `<sce:call>` statement, never
+    /// a value of an expression.
+    pub inout: bool,
 }
 
 /// A union an imported algorithm's slot holds, as the statechart that calls it
@@ -282,8 +301,9 @@ pub struct UnionSlotCase {
 
 impl StaticSlot {
     /// Whether the slot holds a value the statechart keeps in a variable of its own
-    /// (a record, a union or a list) and so passes by the name of that variable. A
-    /// value that may be absent is a value, passed by any expression of its type.
+    /// (a record, a union, a list or a map) and so passes by the name of that
+    /// variable. A value that may be absent is a value, passed by any expression
+    /// of its type.
     pub fn is_state(&self) -> bool {
         !matches!(self, Self::Scalar(_) | Self::Optional(_))
     }
@@ -299,6 +319,12 @@ impl StaticSlot {
             }
             _ => None,
         }
+    }
+
+    /// Whether the slot is a map or a set the algorithm writes in place
+    /// ([`MapSlot::inout`]).
+    pub fn written_in_place(&self) -> bool {
+        matches!(self, Self::Map(slot) if slot.inout)
     }
 }
 
@@ -328,6 +354,13 @@ impl StaticValueSignature {
             || self.ret.as_ref().is_some_and(|slot| {
                 slot.enum_alias().is_some() || matches!(slot, StaticSlot::Union(_))
             })
+    }
+
+    /// Whether a parameter is a map or a set the algorithm writes in place
+    /// (docs/adr/0108, D6 item 2): a call of it is a `<sce:call>` statement,
+    /// and no expression calls it, since an expression has no effect.
+    pub fn writes_in_place(&self) -> bool {
+        self.params.iter().any(StaticSlot::written_in_place)
     }
 }
 
@@ -1162,6 +1195,21 @@ pub struct StateContext<'a> {
 /// before the call is judged, and was checked against the slot when it was), a scalar
 /// slot as the algorithm declares it, and the return as what the judge needs of it.
 fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
+    value_sig(callee, None)
+}
+
+/// The signature a `<sce:call>` statement of `callee` is judged by
+/// (docs/adr/0108, D6 item 2): its slots as [`value_func_sig`] types them, and,
+/// for an algorithm that returns nothing, an answer the statement drops and no
+/// one reads. An expression never calls such an algorithm, since it has no
+/// value, so this signature is asked only where the statement is judged.
+pub fn statement_sig(callee: &StaticCallee) -> Option<FuncSig> {
+    value_sig(callee, Some(InferredType::Unknown))
+}
+
+/// [`value_func_sig`], with `nothing` the type of what a call of an algorithm
+/// that returns nothing answers, or `None` where no such call is judged.
+fn value_sig(callee: &StaticCallee, nothing: Option<InferredType>) -> Option<FuncSig> {
     let value = callee.value.as_ref()?;
     let optional = |t: &SceType| InferredType::Optional(crate::forge::types::OptionalElem::of(t));
     let params = value
@@ -1174,14 +1222,25 @@ fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
             | StaticSlot::OptionalRecord(_)
             | StaticSlot::ScalarList(_)
             | StaticSlot::RecordList(_)
-            | StaticSlot::Union(_) => InferredType::Unknown,
+            | StaticSlot::Union(_)
+            | StaticSlot::Map(_) => InferredType::Unknown,
         })
         .collect();
-    let ret = match value.ret.as_ref()? {
+    let Some(returned) = value.ret.as_ref() else {
+        return nothing.map(|ret| FuncSig {
+            may_fail: callee.may_fail,
+            ..FuncSig::new(params, ret)
+        });
+    };
+    let ret = match returned {
         StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
         StaticSlot::Optional(t) => optional(t),
         // A union is taken back whole into a union variable, as a record is.
         StaticSlot::Record(_) | StaticSlot::Union(_) => InferredType::Unknown,
+        // A map is a parameter only: what an algorithm returns as a map is no
+        // value a statechart takes through a call's signature
+        // ([`crate::forge::static_imports`] refuses the import).
+        StaticSlot::Map(_) => return None,
         StaticSlot::OptionalRecord(_) => {
             InferredType::Optional(crate::forge::types::OptionalElem::Record)
         }
@@ -1197,6 +1256,69 @@ fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
         ret_bound: callee.ret_bound.map(u64::from),
         ..FuncSig::new(params, ret)
     })
+}
+
+/// Whether the map or set `held` has the entries of the map or set `slot`: the
+/// same constructor, and a key and a value of the same type ([`same_type`]),
+/// whatever bound either states on itself ([`StaticScope::map_argument`]).
+fn same_entries(held: &AlgorithmValueType, slot: &AlgorithmValueType) -> bool {
+    match (held, slot) {
+        (
+            AlgorithmValueType::Map { key, value, .. },
+            AlgorithmValueType::Map {
+                key: slot_key,
+                value: slot_value,
+                ..
+            },
+        ) => same_type(key, slot_key) && same_type(value, slot_value),
+        (AlgorithmValueType::Set { key, .. }, AlgorithmValueType::Set { key: slot_key, .. }) => {
+            same_type(key, slot_key)
+        }
+        _ => false,
+    }
+}
+
+/// Whether `a` and `b` are one type: one constructor at every depth, one
+/// alias for a record, a union and an enum, and each bound the same number of
+/// bytes or elements, whichever name a build moves it by.
+fn same_type(a: &AlgorithmValueType, b: &AlgorithmValueType) -> bool {
+    let bound = |stated: &Option<crate::forge::value_type::Bound>| {
+        stated.as_ref().map(|bound| (bound.max, bound.min))
+    };
+    match (a, b) {
+        (AlgorithmValueType::Scalar(a), AlgorithmValueType::Scalar(b)) => a == b,
+        (AlgorithmValueType::Text { max: a }, AlgorithmValueType::Text { max: b })
+        | (AlgorithmValueType::Bytes { max: a }, AlgorithmValueType::Bytes { max: b }) => {
+            bound(a) == bound(b)
+        }
+        (AlgorithmValueType::Optional { elem: a }, AlgorithmValueType::Optional { elem: b }) => {
+            same_type(a, b)
+        }
+        (AlgorithmValueType::Record { alias: a }, AlgorithmValueType::Record { alias: b })
+        | (AlgorithmValueType::Union { alias: a }, AlgorithmValueType::Union { alias: b }) => {
+            a == b
+        }
+        (
+            AlgorithmValueType::List { elem: a, max },
+            AlgorithmValueType::List {
+                elem: b,
+                max: other,
+            },
+        ) => same_type(a, b) && bound(max) == bound(other),
+        (
+            AlgorithmValueType::Map { key: a, value, max },
+            AlgorithmValueType::Map {
+                key: b,
+                value: other_value,
+                max: other,
+            },
+        ) => same_type(a, b) && same_type(value, other_value) && bound(max) == bound(other),
+        (
+            AlgorithmValueType::Set { key: a, max },
+            AlgorithmValueType::Set { key: b, max: other },
+        ) => same_type(a, b) && bound(max) == bound(other),
+        _ => false,
+    }
 }
 
 /// The name of a call of `alias` whose state arguments are held as `codes`.
@@ -1551,6 +1673,17 @@ impl StaticScope {
                     None => Err(format!("`{name}` is not a union variable")),
                 }
             }
+            // A map or a set is lent by the name of the variable that holds it
+            // (docs/adr/0108, D5), whose entries are the slot's
+            // ([`Self::map_argument`]).
+            (StaticSlot::Map(slot), ArgShape::Name(name)) => {
+                self.map_argument(slot, name).map(|()| 'v')
+            }
+            (StaticSlot::Map(_), _) => Err(
+                "a map or a set is lent by the name of the variable that holds it, and not by \
+                 an expression that computes one"
+                    .to_string(),
+            ),
             _ => Err(
                 "a record, a union or a list is handed over by the name of the variable that \
                  holds it, or `_event.data` for the payload of a record event, and not by an \
@@ -1739,6 +1872,28 @@ impl StaticScope {
             let ty = v.value_type.as_ref()?;
             (v.id == name.trim() && ty.map_key().is_some()).then_some((v, ty))
         })
+    }
+
+    /// Whether `name` is a variable the map slot `slot` takes: a map or a set
+    /// variable whose key and value are the slot's own types, each bound by the
+    /// same number, whatever bound the variable states. The slot is a view of
+    /// the argument and states none (docs/adr/0108, D5), and it lends the
+    /// variable's own storage, which holds each entry in its key's and its
+    /// value's types (D6 item 4), so a key or a value of any other type is no
+    /// map it can lend. `Err` says why not, as a refusal of the call words it.
+    pub fn map_argument(&self, slot: &MapSlot, name: &str) -> Result<(), String> {
+        let Some((_, held)) = self.map_variable(name) else {
+            return Err(format!("`{name}` is not a map or a set variable"));
+        };
+        if same_entries(held, &slot.ty) {
+            Ok(())
+        } else {
+            Err(format!(
+                "`{name}` is of type {}, and the algorithm takes {}",
+                held.as_attr(),
+                slot.ty.as_attr()
+            ))
+        }
     }
 
     /// The imported callee `expr` is, taken whole, a call of — and that returns a

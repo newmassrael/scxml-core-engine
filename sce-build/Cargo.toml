@@ -2029,6 +2029,14 @@ name = "a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_
 path = "tests/a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_lower_it.rs"
 required-features = ["cli"]
 
+# A statechart's `<sce:call>` of an algorithm that writes a map in place is judged by the checker
+# and refused by name on every lane until the call is lowered (docs/adr/0108, D6 item 2). It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_call_that_writes_a_map_in_place_is_a_statement_the_checker_judges"
+path = "tests/a_call_that_writes_a_map_in_place_is_a_statement_the_checker_judges.rs"
+required-features = ["cli"]
+
 # A union variable is built where it is declared or starts absent. It runs `sce-codegen`, so it
 # carries the `cli` gate.
 [[test]]

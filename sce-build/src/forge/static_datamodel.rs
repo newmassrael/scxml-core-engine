@@ -218,6 +218,9 @@ pub fn check(
         diag_label,
         read: Default::default(),
         whole_state_call_ok: Default::default(),
+        in_place_call_ok: Default::default(),
+        walked_maps: Default::default(),
+        walk_state: Default::default(),
         receivers: Receivers::of(model, &held_enums, &event_schemas),
         lift_schemas: &model.imported_records,
         type_scope: crate::forge::value_path::statechart_scope(model),
@@ -324,6 +327,7 @@ pub fn check(
     let mut states: Vec<_> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
+        *judge.walk_state.borrow_mut() = state.id.clone();
         for block in state.on_entry_blocks.iter().chain(&state.on_exit_blocks) {
             judge.actions(&plain, block, &state.id)?;
         }
@@ -1077,6 +1081,18 @@ struct Judge<'a> {
     /// list, around the judging of its right side: a call that returns one is a value
     /// there and nowhere else.
     whole_state_call_ok: std::cell::Cell<bool>,
+    /// Set by a `<sce:call>` around the judging of its `expr`: a call of an
+    /// algorithm that writes a map in place is that statement's whole call and
+    /// no other expression's value (docs/adr/0108, D6 item 2).
+    in_place_call_ok: std::cell::Cell<bool>,
+    /// The map and set variables the `<foreach>`es the walk is inside walk:
+    /// maps no `<sce:call>` in their bodies hands an algorithm to write in
+    /// place (docs/adr/0108, D6 item 2).
+    walked_maps: std::cell::RefCell<Vec<String>>,
+    /// The id of the state whose content the walk is in, empty at document
+    /// scope: where a refusal of an expression by a rule of the data model is
+    /// placed, for an expression judged without its action.
+    walk_state: std::cell::RefCell<String>,
     /// Who reads the payload of a `<send>`, where the build knows ([`Receivers`]).
     receivers: Receivers<'a>,
     /// Every record schema the document imports, by alias, whole: what a
@@ -1328,6 +1344,27 @@ impl<'a> Judge<'a> {
         )
     }
 
+    /// The alias of an imported algorithm that writes a map in place
+    /// ([`crate::forge::type_ctx::StaticValueSignature::writes_in_place`]) that
+    /// `expr` calls where no call of one stands: anywhere inside it, and as the
+    /// whole of it but where a `<sce:call>` judges its `expr`
+    /// ([`Self::in_place_call_ok`]). `None` for an expression that calls none,
+    /// and for one that does not parse, which the judge refuses in its own
+    /// words.
+    fn in_place_call_in(&self, expr: &str) -> Option<String> {
+        let (whole, others) = crate::forge::expr::called_names(expr).ok()?;
+        let writes = |name: &str| {
+            self.scope
+                .value_callee(name)
+                .and_then(|callee| callee.value.as_ref())
+                .is_some_and(crate::forge::type_ctx::StaticValueSignature::writes_in_place)
+        };
+        others
+            .into_iter()
+            .find(|name| writes(name.as_str()))
+            .or_else(|| whole.filter(|name| !self.in_place_call_ok.get() && writes(name.as_str())))
+    }
+
     fn ctx<'c>(&self, payload: &'c [(String, crate::forge::value_path::Place)]) -> TypeCtx<'c>
     where
         'a: 'c,
@@ -1371,6 +1408,23 @@ impl<'a> Judge<'a> {
             )
         };
         self.record_reads(expr);
+        // A call of an algorithm that writes a map in place is the statement
+        // `<sce:call>`, the whole of its `expr`, and no value of any other
+        // expression, which has no effect (docs/adr/0108, D6 item 2).
+        if let Some(callee) = self.in_place_call_in(expr) {
+            return Err(self.rule_at(
+                format!("a call of `{callee}` in the expression `{}`", expr.trim()),
+                &format!(
+                    "`{callee}` writes a map in place, and an algorithm that does is called by \
+                     the statement <sce:call expr=\"{callee}(…)\"/>, the whole of its expr, never \
+                     in an expression, which has no effect"
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                &self.walk_state.borrow(),
+                &callee,
+            ));
+        }
         // A record or a list a statechart hands an algorithm is named at the call, and
         // the call is judged with each such name replaced by a placeholder, once the
         // name is known to be a variable of the type the algorithm takes. What is
@@ -2055,6 +2109,7 @@ impl<'a> Judge<'a> {
                             format!("a value of optional<{}>", t.as_attr())
                         }
                         StaticSlot::Union(union) => format!("a union of `{}`", union.alias),
+                        StaticSlot::Map(map) => format!("a {}", map.ty.as_attr()),
                     },
                     target.id
                 )))
@@ -2241,6 +2296,183 @@ impl<'a> Judge<'a> {
             list_fits(&held.ty, map, &StatechartNames)
                 .map_err(|misfit| whole(format!(": {}", misfit.sentence(written)))),
         )
+    }
+
+    /// A `<sce:call>` (docs/adr/0108, D6 item 2): `expr` is one call, written
+    /// whole, of an imported algorithm that writes a map in place; each argument
+    /// it writes in place is the name of a map or a set variable whose entries
+    /// are the parameter's ([`StaticScope::map_argument`]), and not the map a
+    /// `<foreach>` around the call walks; no map is named twice in the call; and
+    /// `location`, when written, takes what the algorithm returns by the rule an
+    /// `<assign>` of that value follows, judged by the `<assign>`'s own judge. A
+    /// `location` on an algorithm that returns nothing is refused, and a call
+    /// with none drops the value. Each refusal here is
+    /// `scxml/static-datamodel-rule`; what the `<assign>` judge and the
+    /// expression judge refuse is refused in their words.
+    fn call(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::expr::ArgShape;
+        use crate::forge::type_ctx::StaticSlot;
+        let written = action.expr.trim();
+        let location = action.location.trim();
+        let refused = |attr: &str, rule: &str, observed: &str| {
+            let spelling = action
+                .spellings
+                .get(attr)
+                .or_else(|| action.spellings.get("expr"));
+            self.rule_at(
+                format!("<sce:call expr=\"{written}\">"),
+                rule,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                observed,
+            )
+        };
+        let one_call = "a <sce:call> calls one algorithm the document imports, and its expr is \
+                        that call written whole: `Algorithm(a, b)`";
+        let Ok((Some(alias), _)) = crate::forge::expr::called_names(written) else {
+            return Err(refused("expr", one_call, written));
+        };
+        let Some(callee) = self
+            .scope
+            .callees
+            .iter()
+            .find(|c| c.alias == alias && c.kind.is_algorithm())
+        else {
+            return Err(refused("expr", one_call, &alias));
+        };
+        let Some(value) = callee.value.as_ref().filter(|v| v.writes_in_place()) else {
+            let why = match &callee.host_only {
+                Some(why) => format!("`{alias}` is no algorithm a statechart calls: {why}"),
+                None => format!(
+                    "a <sce:call> calls an algorithm that writes a map in place (an inout \
+                     parameter), and `{alias}` writes none: call it in an expression, as the \
+                     value of an <assign> or a guard"
+                ),
+            };
+            return Err(refused("expr", &why, &alias));
+        };
+        // A call of the wrong number of arguments is refused by the expression
+        // judge below, in its own words.
+        let site = crate::forge::expr::call_sites(written, &|name| name == alias)
+            .ok()
+            .and_then(|sites| sites.into_iter().next())
+            .filter(|site| site.args.len() == value.params.len());
+        if let Some(site) = site {
+            let walked = self.walked_maps.borrow();
+            let mut maps_named: Vec<&str> = Vec::new();
+            for (slot, arg) in value.params.iter().zip(&site.args) {
+                let name = match &arg.shape {
+                    ArgShape::Name(name) => Some(name.as_str()),
+                    _ => None,
+                };
+                if let StaticSlot::Map(map) = slot {
+                    if map.inout {
+                        let Some(name) = name else {
+                            let argument = written[arg.span.clone()].trim();
+                            return Err(refused(
+                                "expr",
+                                &format!(
+                                    "each argument `{alias}` writes in place is the name of a map \
+                                     or a set variable, and `{argument}` is not one"
+                                ),
+                                argument,
+                            ));
+                        };
+                        self.scope.map_argument(map, name).map_err(|why| {
+                            refused(
+                                "expr",
+                                &format!(
+                                    "each argument `{alias}` writes in place is a map or a set \
+                                     variable whose key and value are the parameter's: {why}"
+                                ),
+                                name,
+                            )
+                        })?;
+                        if walked.iter().any(|walked_map| walked_map == name) {
+                            return Err(refused(
+                                "expr",
+                                &format!(
+                                    "a <foreach> around the call walks `{name}` as it was when \
+                                     the loop began, and a call that wrote it in place would \
+                                     change it under the walk: hand the algorithm a map no loop \
+                                     around the call walks"
+                                ),
+                                name,
+                            ));
+                        }
+                    }
+                }
+                if let Some(name) = name.filter(|name| self.scope.map_variable(name).is_some()) {
+                    if maps_named.contains(&name) {
+                        return Err(refused(
+                            "expr",
+                            &format!(
+                                "no map or set is named twice in one call, since a map the \
+                                 algorithm writes in place is no view another of its arguments \
+                                 may hold: `{name}` is named twice"
+                            ),
+                            name,
+                        ));
+                    }
+                    maps_named.push(name);
+                }
+            }
+        }
+        // What the call returns is taken as an `<assign>` takes that value, or
+        // dropped; either way the call is the one expression that may call it.
+        self.in_place_call_ok.set(true);
+        let judged = if location.is_empty() {
+            // An algorithm that returns nothing is no value of an expression,
+            // so the call is judged where each way of making it answers what
+            // the statement drops ([`crate::forge::type_ctx::statement_sig`]).
+            let mut statement = ctx.clone();
+            if value.ret.is_none() {
+                if let Some(sig) = crate::forge::type_ctx::statement_sig(callee) {
+                    for made in self
+                        .scope
+                        .state_calls()
+                        .iter()
+                        .filter(|made| made.alias == alias)
+                    {
+                        statement.insert_func(made.name.as_str(), sig.clone());
+                    }
+                }
+            }
+            self.whole_state_call_ok.set(true);
+            let judged = self
+                .expr(
+                    &statement,
+                    written,
+                    action.spellings.get("expr"),
+                    Expected::Hint(InferredType::Unknown),
+                )
+                .map(|_| ());
+            self.whole_state_call_ok.set(false);
+            judged
+        } else if value.ret.is_none() {
+            Err(refused(
+                "location",
+                &format!(
+                    "location takes what the algorithm returns, and `{alias}` returns nothing: \
+                     write the call with no location"
+                ),
+                location,
+            ))
+        } else {
+            let assign = Action {
+                action_type: "assign".to_string(),
+                ..action.clone()
+            };
+            self.action(ctx, &assign, state)
+        };
+        self.in_place_call_ok.set(false);
+        judged
     }
 
     /// An `<sce:put>` (docs/adr/0108, D3 and D4): `target` a map or set
@@ -5463,6 +5695,7 @@ impl<'a> Judge<'a> {
             }
             "sce_put" => self.put(ctx, action, state)?,
             "sce_remove" => self.remove(ctx, action, state)?,
+            "sce_call" => self.call(ctx, action, state)?,
             "sce_lift" => self.lift(ctx, action)?,
             // A host action's arguments are judged by
             // `native_action::validate`; what they call still counts as a
@@ -5698,7 +5931,16 @@ impl<'a> Judge<'a> {
         self.loop_names
             .borrow_mut()
             .extend(names_bound.iter().map(|name| name.to_string()));
+        // The map the body walks is no map a `<sce:call>` in it writes in place
+        // ([`Self::call`]).
+        let walks_a_map = map.is_some();
+        if walks_a_map {
+            self.walked_maps.borrow_mut().push(array.to_string());
+        }
         let judged = self.actions(&inner, &action.actions, state);
+        if walks_a_map {
+            self.walked_maps.borrow_mut().pop();
+        }
         let kept = self.loop_names.borrow().len() - names_bound.len();
         self.loop_names.borrow_mut().truncate(kept);
         let kept = self.loop_enum_paths.borrow().len() - enum_paths_bound;

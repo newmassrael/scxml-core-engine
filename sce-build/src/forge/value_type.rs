@@ -1588,6 +1588,11 @@ impl Composition {
 /// on each lane, one step at a time (docs/adr/0108, D10).
 pub const MAP_LANDING: &str = "docs/adr/0108, D10";
 
+/// The record a refusal of a call that lends an algorithm a map names: the
+/// step that lowers a map slot, an `inout` one and the statement that calls
+/// it (docs/adr/0108, D6 items 1, 2 and 4).
+pub const MAP_CALL_LANDING: &str = "docs/adr/0108, Order of work, step 7";
+
 /// The sentence of the refusal of a map or a set, spelled `place`, by a
 /// position or a walk that holds none yet: the type is the language's, and
 /// its lowering lands lane by lane (docs/adr/0108, D10). One wording for
