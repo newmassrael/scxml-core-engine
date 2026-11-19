@@ -6,3 +6,9 @@ commit = "718b550d7716ffc43e0194b12a05b01a32b9eb16"
 base = "593cd1b8fe1f45f233ae43a1cc8747919702563c"
 machine = "mf977c53d872e"
 at = 1795081512
+
+[return]
+reason = "conflict"
+detail = "docs/SCE_CODEC_CONSUMER_MIGRATION.md"
+report = "mb2af4e1c456c:0000000271-24c3b7cd2e82/attempt-1.log"
+at = 1795081938
