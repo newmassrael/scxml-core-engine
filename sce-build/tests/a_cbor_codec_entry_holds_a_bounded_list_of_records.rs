@@ -129,10 +129,11 @@ fn a_list_of_records_is_read_by_the_one_type_grammar() {
 #[test]
 fn a_list_of_anything_but_a_record_is_read_and_refused_by_name_where_it_is_generated() {
     // docs/adr/0101, section 1: a list of integers is a value of the language.
-    // A backend that prints every entry type (Rust, Landing order step 4a)
-    // generates it; every other one prints only the shapes of docs/adr/0085
-    // step 3a, and refuses the codec by name (section 5.4), the entry and the
-    // list named in the one clause every refusal of the kind says.
+    // A backend that prints every entry type (Rust and C++, Landing order
+    // steps 4a and 4b) generates it, holding it in its list of the bound; every
+    // other one prints only the shapes of docs/adr/0085 step 3a, and refuses
+    // the codec by name (section 5.4), the entry and the list named in the one
+    // clause every refusal of the kind says.
     let text = document(
         "",
         CAUSAL_IMPORT,
@@ -150,10 +151,14 @@ fn a_list_of_anything_but_a_record_is_read_and_refused_by_name_where_it_is_gener
                     cbor_codec::lowers_every_entry_type(lang),
                     "{lang:?} generated a list of integers it does not lower"
                 );
-                assert!(
-                    code.contains("pub n: ::sce_forge_runtime::codec::BoundedList<u8, 4>,"),
-                    "{lang:?}:\n{code}"
-                );
+                let held = match lang {
+                    Language::Rust => "pub n: ::sce_forge_runtime::codec::BoundedList<u8, 4>,",
+                    Language::Cpp => "::SCE::Forge::OwnedList<uint8_t, 4> n_{};",
+                    other => {
+                        panic!("{other:?} prints a list of integers this test names no type of")
+                    }
+                };
+                assert!(code.contains(held), "{lang:?}:\n{code}");
             }
             Err(why) => {
                 assert!(
@@ -166,8 +171,9 @@ fn a_list_of_anything_but_a_record_is_read_and_refused_by_name_where_it_is_gener
         }
     }
     assert!(cbor_codec::lowers_every_entry_type(Language::Rust));
-    // Every backend but the reference still refuses it.
-    assert_eq!(refused, Language::ALL.len() - 1);
+    assert!(cbor_codec::lowers_every_entry_type(Language::Cpp));
+    // Every backend but the reference and C++ still refuses it.
+    assert_eq!(refused, Language::ALL.len() - 2);
 }
 
 #[test]
@@ -356,7 +362,7 @@ fn cpp_encodes(code: &str) -> String {
 fn the_cpp_map_is_printed_with_its_lists_of_records_that_hold_a_text() {
     // `cbor_causal_entry`'s `author` is a `string[16]`, which the schema's C++
     // unit holds in the `OwnedText<16>` of its bound (docs/adr/0086, section
-    // 7.4): a view of the records holds it within its bound, so the map is
+    // 7.4): the list of the records holds it within its bound, so the map is
     // printed from its plan and its encode refuses nothing, as on Rust. Red if
     // the printer refuses such a list again.
     let unlowered = sce_build::cpp_codec_unlowered_file(
@@ -374,23 +380,30 @@ fn the_cpp_map_is_printed_with_its_lists_of_records_that_hold_a_text() {
         &code,
         &[
             "#include \"cbor_causal_entry.h\"",
-            "::SCE::Forge::Bounded<std::vector<SCE::Generated::CborCausalEntry::CborCausalEntryPayload>, 2> \
+            // The list is held in the type a schema unit holds it in
+            // (docs/adr/0101, section 5.3), and lent.
+            "::SCE::Forge::OwnedList<SCE::Generated::CborCausalEntry::CborCausalEntryPayload, 2> \
              seen_{};",
+            "[[nodiscard]] const ::SCE::Forge::OwnedList<SCE::Generated::CborCausalEntry::CborCausalEntryPayload, 2>& \
+             seen() const noexcept { return seen_; }",
             // A read past the bound is refused before any record is read.
-            "if (*_len > 2) return ::SCE::Forge::CodecError::CborOutOfRange;",
-            "if (*_len > 3) return ::SCE::Forge::CodecError::CborOutOfRange;",
-            "auto _record = Records::decode_record_causal_entry(c);",
+            "if (*_len0 > 2) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (*_len0 > 3) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            // The record is read by the one function named for its document
+            // (docs/adr/0101, section 5.1).
+            "auto _r1 = Composites::decode_record_cbor_causal_entry(c);",
             // The text is read within its bound and held in the field's type.
-            "auto text = cbor::read_text(c, 16);",
-            "held_author = ::SCE::Forge::OwnedText<16>::make(std::move(*text));",
+            "auto _r0 = cbor::read_text(c, 16);",
+            "auto _b0 = ::SCE::Forge::OwnedText<16>::make(std::move(*_r0));",
+            "held_author = std::move(*_b0);",
             // The write is the array head and each record's map; the types
             // hold every bound, so nothing is checked.
             "if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) return _e;",
-            "if (auto _e = Records::encode_record_causal_entry(w, _record); _e) return _e;",
+            "if (auto _e = Composites::encode_record_cbor_causal_entry(w, _item0); _e) return _e;",
             "if (auto _e = cbor::write_text(w, record.author.inner()); _e) return _e;",
             "if (auto _e = cbor::write_map_head(w, 2); _e) return _e;",
         ],
-        "encode_record_causal_entry(::SCE::Forge::SceSink& w",
+        "encode_record_cbor_causal_entry(::SCE::Forge::SceSink& w",
         [
             "cbor::write_text(w, \"seq\")",
             "cbor::write_text(w, \"author\")",
@@ -407,7 +420,7 @@ fn stdlib_mesh() -> PathBuf {
 }
 
 #[test]
-fn the_cpp_envelope_is_printed_with_its_vector_as_a_view_of_the_schemas_payload() {
+fn the_cpp_envelope_is_printed_with_its_vector_lent_in_the_list_of_the_schemas_payload() {
     let path = stdlib_mesh().join("envelope.scxml");
     let unlowered = sce_build::cpp_codec_unlowered_file(&path, &[], &options())
         .unwrap_or_else(|e| panic!("envelope: {e:?}"))
@@ -432,27 +445,31 @@ fn the_cpp_envelope_is_printed_with_its_vector_as_a_view_of_the_schemas_payload(
             .join("\n")
     })
     .unwrap_or_else(|e| panic!("envelope: {}", e.error));
-    let view = "::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>";
-    let accessor = format!("std::optional<{view}> causal_vector() const noexcept");
-    let made = format!("_b_causal_vector = {view}::make(*causal_vector);");
+    let list = "::SCE::Forge::OwnedList<SCE::Generated::CausalEntry::CausalEntryPayload, 64>";
+    let accessor = format!(
+        "const std::optional<{list}>& causal_vector() const noexcept {{ return causal_vector_; }}"
+    );
+    let held = format!("std::optional<{list}> causal_vector_{{}};");
+    let made = format!("{list} _list0;");
     holds(
         Language::Cpp,
         &code,
         &[
-            // The value presents the list as a view within its count, held in
-            // the owning list of the same bound.
+            // The value holds the list in the type a schema unit holds it in
+            // (docs/adr/0101, section 5.3), and lends it.
             accessor.as_str(),
-            "std::optional<::SCE::Forge::Bounded<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>, 64>> causal_vector_{};",
+            held.as_str(),
             // A read past the bound is refused before any record is read, and
-            // the records read are held to the bound by the view's `make`.
-            "if (*_len > 64) return ::SCE::Forge::CodecError::CborOutOfRange;",
-            "auto _record = Records::decode_record_causal_entry(c);",
+            // each record read is appended to the list of that bound.
+            "if (*_len0 > 64) return ::SCE::Forge::CodecError::CborOutOfRange;",
             made.as_str(),
-            "held_seq = *read;",
-            // The write is the array head and each record's map; the view
+            "auto _r1 = Composites::decode_record_causal_entry(c);",
+            "if (!_list0.push(std::move(_item0))) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "held_seq = std::move(*_r0);",
+            // The write is the array head and each record's map; the list
             // holds the count, so nothing is checked.
             "if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) return _e;",
-            "if (auto _e = Records::encode_record_causal_entry(w, _record); _e) return _e;",
+            "if (auto _e = Composites::encode_record_causal_entry(w, _item0); _e) return _e;",
             "if (auto _e = cbor::write_map_head(w, 3); _e) return _e;",
         ],
         "encode_record_causal_entry(::SCE::Forge::SceSink& w",
@@ -661,7 +678,8 @@ fn the_python_map_holds_each_list_in_a_list_of_the_schemas_payload() {
 fn a_record_with_a_field_of_another_type_is_refused_by_name_where_it_is_not_lowered() {
     // docs/adr/0101, section 5.4: a backend whose printer writes the records
     // of docs/adr/0085 Landing order step 3a alone refuses the codec, naming
-    // the field; Rust prints every shape, and writes the field as its type.
+    // the field; Rust and C++ print every shape, and write the field as its
+    // type.
     let text = document(
         "",
         r#"  <sce:import kind="event-schema" src="cbor_signed_entry.scxml" as="SignedEntry"/>"#,
@@ -671,10 +689,15 @@ fn a_record_with_a_field_of_another_type_is_refused_by_name_where_it_is_not_lowe
         match generated(&text, "probe_list", lang) {
             Ok(code) => {
                 assert!(cbor_codec::lowers_every_entry_type(lang), "{lang:?}");
-                assert!(
-                    code.contains("cbor::write_int(w, i64::from(record.delta))?;"),
-                    "{lang:?}:\n{code}"
-                );
+                let written = match lang {
+                    Language::Rust => "cbor::write_int(w, i64::from(record.delta))?;",
+                    Language::Cpp => {
+                        "if (auto _e = cbor::write_int(w, static_cast<std::int64_t>(record.delta)); \
+                         _e) return _e;"
+                    }
+                    other => panic!("{other:?} prints a signed field this test names no write of"),
+                };
+                assert!(code.contains(written), "{lang:?}:\n{code}");
             }
             Err(why) => {
                 assert!(

@@ -368,16 +368,17 @@ fn every_backend_refuses_by_name_an_entry_its_printer_does_not_lower() {
     }
 }
 
-/// The Rust module of a codec of the corpus's imports whose one entry `v` is
-/// typed `ty`, stating that its encode may fail where `may_fail`.
-fn rust_of(ty: &str, may_fail: bool) -> String {
+/// What `lang` prints for a codec of the corpus's imports whose one entry `v`
+/// is typed `ty`, stating that its encode may fail where `may_fail`: the text
+/// of every file.
+fn printed(lang: Language, ty: &str, may_fail: bool) -> String {
     let stated = if may_fail {
         r#" sce:encode-may-fail="true""#
     } else {
         ""
     };
     let text = document_stating(stated, IMPORTS, &one_entry(ty));
-    compile_forge_with_imports(&text, label(), Language::Rust, &imports_dir(), &options())
+    compile_forge_with_imports(&text, label(), lang, &imports_dir(), &options())
         .map(|output| {
             output
                 .files
@@ -386,7 +387,12 @@ fn rust_of(ty: &str, may_fail: bool) -> String {
                 .collect::<Vec<_>>()
                 .join("\n")
         })
-        .unwrap_or_else(|e| panic!("Rust prints an entry of `{ty}`: {}", e.error))
+        .unwrap_or_else(|e| panic!("{lang:?} prints an entry of `{ty}`: {}", e.error))
+}
+
+/// The Rust module of a codec whose one entry `v` is typed `ty` ([`printed`]).
+fn rust_of(ty: &str, may_fail: bool) -> String {
+    printed(Language::Rust, ty, may_fail)
 }
 
 #[test]
@@ -497,6 +503,119 @@ fn rust_prints_an_entry_of_every_type_of_the_language() {
     // A map that requires a record or a union has no value by default.
     assert!(!rust_of("record:Customer", false).contains("pub fn new() -> Self"));
     assert!(rust_of("optional<record:Customer>", false).contains("pub fn new() -> Self"));
+}
+
+#[test]
+fn cpp_prints_an_entry_of_every_type_of_the_language() {
+    // docs/adr/0101, Landing order step 4b: each shape of section 5.1, read and
+    // written in its one form of section 2.1, held in the type section 5.3
+    // names for C++: a list in the runtime's `OwnedList` of its bound, a record
+    // in its schema's payload type, a union in its unit's type, each lent, and
+    // `std::optional` around one that may be absent. `may_fail` where a value of
+    // the type can have no encoding, as on Rust.
+    let customer = "SCE::Generated::OrderCustomer::OrderCustomerPayload";
+    let payment = "SCE::Generated::OrderPayment::OrderPayment";
+    let lent_customer =
+        format!("[[nodiscard]] const {customer}& v() const noexcept {{ return v_; }}");
+    let read_customer = format!(
+        "static ::SCE::Forge::Decoded<{customer}> decode_record_order_customer(::SCE::Forge::SceCursor& c) {{"
+    );
+    let lent_maybe = format!(
+        "[[nodiscard]] const std::optional<{payment}>& v() const noexcept {{ return v_; }}"
+    );
+    let cases: &[(&str, bool, &[&str])] = &[
+        (
+            "int8",
+            false,
+            &[
+                "const auto _r0 = cbor::read_int_within(c, \
+                 static_cast<std::int64_t>(std::numeric_limits<int8_t>::min()), \
+                 static_cast<std::int64_t>(std::numeric_limits<int8_t>::max()));",
+                "v = static_cast<int8_t>(*_r0);",
+                "if (auto _e = cbor::write_int(w, static_cast<std::int64_t>(v)); _e) return _e;",
+                "[[nodiscard]] constexpr int8_t v() const noexcept { return v_; }",
+            ],
+        ),
+        (
+            "float32",
+            false,
+            &[
+                "auto _r0 = cbor::read_float32(c);",
+                "if (auto _e = cbor::write_float(w, static_cast<double>(v)); _e) return _e;",
+            ],
+        ),
+        (
+            "optional<float64>",
+            false,
+            &[
+                "auto _r0 = cbor::read_float(c);",
+                "[[nodiscard]] constexpr std::optional<double> v() const noexcept { return v_; }",
+            ],
+        ),
+        (
+            "list<optional<uint16>>[3]",
+            false,
+            &[
+                "::SCE::Forge::OwnedList<std::optional<uint16_t>, 3> v_{};",
+                "const auto _null1 = cbor::take_null(c);",
+                "if (auto _e = cbor::write_null(w); _e) return _e;",
+            ],
+        ),
+        (
+            "list<list<uint8>[2]>[2]",
+            false,
+            &[
+                "const auto _len1 = cbor::read_array_len(c);",
+                "for (const auto& _item1 : _item0) {",
+            ],
+        ),
+        (
+            "list<bool>[1..2]",
+            true,
+            &[
+                "if (*_len0 > 2 || *_len0 < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
+                "if (v.size() < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            ],
+        ),
+        (
+            "record:Customer",
+            false,
+            &[
+                lent_customer.as_str(),
+                read_customer.as_str(),
+                "if (auto _e = Composites::encode_record_order_customer(w, v); _e) return _e;",
+            ],
+        ),
+        (
+            "list<record:Line>[4]",
+            false,
+            &[
+                "SCE::Generated::PaintColor::from_underlying(static_cast<uint8_t>(*_r0))",
+                "if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>(\
+                 SCE::Generated::PaintColor::to_underlying(record.color))); _e) return _e;",
+            ],
+        ),
+        (
+            "union:Payment",
+            true,
+            &[
+                // The union's unit, which brings in the case records it names.
+                "#include \"order_payment.h\"",
+                "static constexpr std::string_view kCases[] = {\"card\", \"cash\", \"voucher\"};",
+                "const auto empty = cbor::read_empty_case(c);",
+                "if (auto _e = cbor::write_variant(w, \"cash\"); _e) return _e;",
+                "if (record.voucher_code.size() > 4) return ::SCE::Forge::CodecError::CborOutOfRange;",
+                "if (auto _e = Composites::check_union_order_payment(v); _e) return _e;",
+            ],
+        ),
+        ("optional<union:Payment>", true, &[lent_maybe.as_str()]),
+    ];
+    for &(ty, may_fail, expected) in cases {
+        let cpp = printed(Language::Cpp, ty, may_fail);
+        for expected in expected {
+            assert!(cpp.contains(expected), "{ty}: missing `{expected}`:\n{cpp}");
+        }
+    }
 }
 
 #[test]
