@@ -2378,3 +2378,165 @@ fn rust_copies_no_map_it_reads_and_only_the_map_a_walk_writes() {
         "the walk of `a`, whose body writes only `b`, copies a map:\n{machine}"
     );
 }
+
+/// An algorithm that declares `may-fail` and returns the entries of the map it
+/// is lent, keeping the keys it met in a set of its own: a map local it
+/// returns, a set local it does not, and puts that name no outcome.
+const DISTINCT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="distinct"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="m" type="map&lt;uint32, uint64&gt;"/>
+    <sce:return type="map&lt;uint32, uint64&gt;[4]" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="seen" type="set&lt;uint32&gt;[4]"/>
+    <sce:var name="out" type="map&lt;uint32, uint64&gt;[4]"/>
+    <sce:foreach in="m" item="v" key="k">
+      <sce:put target="seen" key="k"/>
+      <sce:put target="out" key="k" expr="v"/>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// docs/adr/0108, D5 and D8: a Rust algorithm writes the map it returns into
+/// its caller's destination, a parameter of the returned local's name after
+/// the declared ones, `&mut` the map of the local's bound, emptied where the
+/// local is declared, the return saying only that it was written; builds any
+/// other map local under a seed drawn from the map it is lent; and fails a put
+/// that names no outcome on a full map with `capacity-exceeded`.
+#[test]
+fn a_rust_algorithm_returns_a_map_into_its_callers_destination() {
+    use quote::ToTokens;
+    let documents = [("algorithm_distinct.scxml", DISTINCT.to_string())];
+    let (ok, printed, files) = generate_rust_beside(&documents, "algorithm_distinct.scxml", false);
+    assert!(ok, "Rust generates the algorithm:\n{printed}");
+    let functions = functions_of(&files);
+    let distinct = function_named(&functions, "distinct");
+    let (generics, inputs) = signature_of(distinct);
+    assert_eq!(generics, ["const N0 : usize"]);
+    assert_eq!(
+        inputs,
+        [
+            "& :: sce_portable_bytes :: BoundedMap < u32 , u64 , N0 >",
+            "& mut :: sce_portable_bytes :: BoundedMap < u32 , u64 , 4 >",
+        ]
+    );
+    assert_eq!(
+        distinct.sig.output.to_token_stream().to_string(),
+        "-> Result < () , sce_forge_runtime :: algorithm :: AlgorithmError >"
+    );
+    let mut methods = MethodCalls::default();
+    syn::visit::Visit::visit_item_fn(&mut methods, distinct);
+    for (receiver, method) in [
+        ("out", "clear"),
+        ("m", "derived_seed"),
+        ("seen", "put"),
+        ("out", "put"),
+    ] {
+        assert!(
+            methods
+                .0
+                .iter()
+                .any(|(r, called)| r == receiver && called == method),
+            "no `{receiver}.{method}` in {:?}",
+            methods.0
+        );
+    }
+    assert!(
+        methods.cloned().is_empty(),
+        "the walk of the map lent to be read copies it: {:?}",
+        methods.0
+    );
+    let mut called = Called::default();
+    syn::visit::Visit::visit_item_fn(&mut called, distinct);
+    assert!(
+        called
+            .0
+            .iter()
+            .any(|path| path == ":: sce_portable_bytes :: FromSeed :: from_seed"),
+        "the set local is built under a seed: {:?}",
+        called.0
+    );
+    let (_, text) = files
+        .iter()
+        .find(|(_, text)| text.contains("pub fn distinct"))
+        .expect("the algorithm's file");
+    assert!(
+        text.contains("== ::sce_portable_bytes::PutOutcome::Full {")
+            && text.contains(
+                "return Err(sce_forge_runtime::algorithm::AlgorithmError::CapacityExceeded);"
+            )
+            && text.contains("return Ok(());"),
+        "a put with no outcome fails a full map, and the return says the map was written:\n{text}"
+    );
+}
+
+/// docs/adr/0108, D1 and D8: Rust refuses by name an algorithm whose map holds
+/// a text or a byte string, which an algorithm holds in types of its own, and
+/// one that builds a map local with no map it is lent or returns to draw the
+/// local's seed from.
+#[test]
+fn a_rust_algorithm_map_with_no_spelling_or_no_seed_is_refused_by_name() {
+    let text_key = DISTINCT
+        .replace(
+            "<sce:param name=\"m\" type=\"map&lt;uint32, uint64&gt;\"/>",
+            "<sce:param name=\"m\" type=\"map&lt;string[8], uint64&gt;\"/>",
+        )
+        .replace(
+            "type=\"set&lt;uint32&gt;[4]\"",
+            "type=\"set&lt;string[8]&gt;[4]\"",
+        )
+        .replace(
+            "<sce:var name=\"out\" type=\"map&lt;uint32, uint64&gt;[4]\"/>",
+            "<sce:var name=\"out\" type=\"map&lt;string[8], uint64&gt;[4]\"/>",
+        )
+        .replace(
+            "<sce:return type=\"map&lt;uint32, uint64&gt;[4]\" may-fail=\"true\"/>",
+            "<sce:return type=\"map&lt;string[8], uint64&gt;[4]\" may-fail=\"true\"/>",
+        );
+    let no_seed = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="distinct"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="xs" type="list&lt;uint32&gt;"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="seen" type="set&lt;uint32&gt;[4]"/>
+    <sce:foreach in="xs" item="x">
+      <sce:put target="seen" key="x"/>
+    </sce:foreach>
+    <sce:return expr="len(seen)"/>
+  </sce:body>
+</scxml>
+"#;
+    for (document, part) in [
+        (
+            text_key,
+            "a map whose key or value is a text or a byte string, which Rust does not lower \
+             in an algorithm",
+        ),
+        (
+            no_seed.to_string(),
+            "builds a map local and is lent no map and returns none, so there is no seed to \
+             draw the local's from",
+        ),
+    ] {
+        let documents = [("algorithm_distinct.scxml", document)];
+        let (ok, printed, _) = generate_rust_beside(&documents, "algorithm_distinct.scxml", false);
+        assert!(!ok, "Rust refuses the algorithm:\n{printed}");
+        assert!(
+            printed.contains("\"code\":\"generate/unsupported-feature\"") && printed.contains(part),
+            "expected a refusal holding `{part}`:\n{printed}"
+        );
+    }
+}
