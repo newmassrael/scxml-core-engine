@@ -1337,9 +1337,9 @@ mod tests {
             let value = (draw >> 32) as u32;
             match (draw >> 8) % 16 {
                 0..=8 => {
-                    let expected = match model.iter_mut().find(|(k, _)| *k == key) {
-                        Some(entry) => {
-                            entry.1 = value;
+                    let expected = match model.iter().position(|(k, _)| *k == key) {
+                        Some(at) => {
+                            model[at].1 = value;
                             PutOutcome::Replaced
                         }
                         None if model.len() == BOUND => PutOutcome::Full,
