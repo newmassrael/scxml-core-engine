@@ -48,9 +48,6 @@ pub mod checkpoint;
 pub mod conformance;
 pub mod endpoint;
 pub mod generated;
-// Formatted by the script that writes it (generate.sh ends with rustfmt), so the
-// workspace's format check does not read a tree a regeneration owns.
-#[rustfmt::skip]
 pub mod generated_rate;
 #[cfg(feature = "https")]
 pub mod https;
