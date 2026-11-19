@@ -541,7 +541,7 @@ class RouterTest {
         val bytes = sentToEcu(hmi.send(answer("service.response.force", wireText), id(5), 0))
         val reply = decode(bytes)
         assertEquals(PatternKind.RPC_REPLY, reply.pattern)
-        assertTrue(wire.contentEquals(reply.invoke_id))
+        assertTrue(wire.contentEquals(reply.invoke_id?.bytes))
         assertEquals(RpcStatus.OK, reply.rpc_status)
 
         assertEquals(
