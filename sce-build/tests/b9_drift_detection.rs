@@ -769,11 +769,13 @@ fn verify_passes_on_the_materialized_rust_w3c_tree() {
 
 /// ADR 0094 test 16 for the tree the defect was measured on: every file of
 /// the Rust `static_datamodel` tree states the closure of the documents it
-/// was generated from, found under the three fixture directories its
-/// generations read and the kind examples the test profile's ports import
-/// (`kind-examples/event-schema.scxml`, which the tree writes a file of its
-/// own for; standard documents need no root). Before the ADR one digest of
-/// the whole fixture directory stood in all of them.
+/// was generated from. Its generations name documents of three fixture
+/// directories (`static_datamodel`, `test_profile`, `ttcn3_export`), and
+/// those import from two more (`union`, `sce-build/kind-examples`); with
+/// `--with-imports` every imported document is written as a file of its
+/// own, so each of the five is a root (standard documents need none).
+/// Before the ADR one digest of the whole fixture directory stood in all of
+/// them.
 #[test]
 fn verify_passes_on_the_materialized_rust_static_datamodel_tree() {
     let workspace = workspace_root();
@@ -782,19 +784,19 @@ fn verify_passes_on_the_materialized_rust_static_datamodel_tree() {
         "backends/rust/tests/src/integration/static_datamodel",
     );
     let fixtures = workspace.join("sce-build/tests/fixtures");
-    let result = Command::new(env_bin())
-        .arg("verify")
-        .arg(&target)
-        .arg("--input-root")
-        .arg(fixtures.join("static_datamodel"))
-        .arg("--input-root")
-        .arg(fixtures.join("test_profile"))
-        .arg("--input-root")
-        .arg(fixtures.join("union"))
-        .arg("--input-root")
-        .arg(workspace.join("sce-build/kind-examples"))
-        .output()
-        .expect("spawn sce-codegen");
+    let roots = [
+        fixtures.join("static_datamodel"),
+        fixtures.join("test_profile"),
+        fixtures.join("ttcn3_export"),
+        fixtures.join("union"),
+        workspace.join("sce-build/kind-examples"),
+    ];
+    let mut verify = Command::new(env_bin());
+    verify.arg("verify").arg(&target);
+    for root in &roots {
+        verify.arg("--input-root").arg(root);
+    }
+    let result = verify.output().expect("spawn sce-codegen");
     assert_eq!(
         result.status.code(),
         Some(0),
