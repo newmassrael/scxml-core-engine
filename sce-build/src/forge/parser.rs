@@ -11669,6 +11669,11 @@ fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Appe
             | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
+            // A map's statements write a map, which is no buffer
+            // (docs/adr/0108, D5).
+            | AlgorithmStmt::Put { .. }
+            | AlgorithmStmt::Remove { .. }
+            | AlgorithmStmt::Clear { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
