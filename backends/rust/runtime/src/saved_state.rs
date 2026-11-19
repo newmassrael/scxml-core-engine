@@ -2231,7 +2231,7 @@ pub fn map_to_saved<K, V, const N: usize>(
 /// A saved map `saved`, named `what` in a refusal, its keys read by `key` and
 /// its values by `value` as [`map_to_saved`] wrote them (a byte string by
 /// [`bounded_bytes`]), held to its bound with no key twice
-/// ([`keyed_entries`]). What a generated machine reads a map variable back with.
+/// (`keyed_entries`). What a generated machine reads a map variable back with.
 pub fn map_from_saved<K: crate::MapKey, V, const N: usize>(
     saved: &Value,
     what: &str,
