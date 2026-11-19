@@ -940,6 +940,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), keyed), replayed.end())
             << keyed << " was not replayed: a map has no lowering for the Interpreter";
     }
+    // ... and the table an algorithm writes in place, lent by a <sce:call> whose answer the
+    // machine takes (docs/adr/0108, "Order of work", step 7): a generation taken, a duplicate
+    // of the one held or an older one, and a full table that has no room for a new peer.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_map_take"), replayed.end())
+        << "static_map_take was not replayed: a <sce:call> that lends a map has no lowering for the Interpreter";
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }

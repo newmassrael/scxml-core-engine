@@ -1,0 +1,41 @@
+{
+  "machine": "static_map_take",
+  "about": "A statechart lends an algorithm its table of each peer's latest generation to write in place and takes the union it answers (docs/adr/0108, D6 item 2): `<sce:call expr=\"TakeGeneration(resets, _event.data, generation)\" location=\"took\"/>`. The first generation of a peer is put into the table and `taken`; the generation the table holds for the peer, or an older one, is a `duplicate` carrying the last generation held, and leaves the table as it was; a newer one replaces the generation where the peer stands; and a new peer the full table of two has no room for is answered `no_room`, the table as it was, while a peer it holds is still taken. The table's writes and the answer are both seen once the call returns. A map is stated as the array of its entries, each [key, value], in the order its keys were first put; a key is stated as an object of its fields, each 64-bit half as the text of its digits, and the 64-bit field of the `duplicate` case as the text of its digits, the form a saved state writes a 64-bit integer in wherever a record holds one; a variable's and an entry's 64-bit integer is a number. Expected values are derived from the documents, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "watching", "variables": { "resets": [], "generation": 1, "took": { "kind": "taken" }, "taken": 0, "refused": 0, "last_duplicate": 0 } } },
+
+    { "note": "the first generation of a peer is taken",
+      "event": "peer.seen", "data": { "low": 1, "high": 0 },
+      "expect": { "variables": { "resets": [[{ "low": "1", "high": "0" }, 1]], "took": { "kind": "taken" }, "taken": 1, "refused": 0 } } },
+    { "note": "the generation the table holds is a duplicate of it, and the table is as it was",
+      "event": "peer.seen", "data": { "low": 1, "high": 0 },
+      "expect": { "variables": { "resets": [[{ "low": "1", "high": "0" }, 1]], "took": { "kind": "duplicate", "last": "1" }, "taken": 1, "last_duplicate": 1 } } },
+
+    { "event": "generation.next",
+      "expect": { "variables": { "generation": 2 } } },
+    { "note": "a newer generation replaces the one held where the peer stands",
+      "event": "peer.seen", "data": { "low": 1, "high": 0 },
+      "expect": { "variables": { "resets": [[{ "low": "1", "high": "0" }, 2]], "took": { "kind": "taken" }, "taken": 2 } } },
+
+    { "event": "generation.back",
+      "expect": { "variables": { "generation": 1 } } },
+    { "note": "an older generation is a duplicate of the last one held",
+      "event": "peer.seen", "data": { "low": 1, "high": 0 },
+      "expect": { "variables": { "resets": [[{ "low": "1", "high": "0" }, 2]], "took": { "kind": "duplicate", "last": "2" }, "taken": 2, "last_duplicate": 2 } } },
+
+    { "note": "the halves swapped are another peer, put last: the table holds its two",
+      "event": "peer.seen", "data": { "low": 0, "high": 1 },
+      "expect": { "variables": { "resets": [[{ "low": "1", "high": "0" }, 2], [{ "low": "0", "high": "1" }, 1]], "took": { "kind": "taken" }, "taken": 3, "refused": 0 } } },
+    { "note": "a new peer the full table has no room for: no_room, and the table as it was",
+      "event": "peer.seen", "data": { "low": 2, "high": 0 },
+      "expect": { "variables": { "resets": [[{ "low": "1", "high": "0" }, 2], [{ "low": "0", "high": "1" }, 1]], "took": { "kind": "no_room" }, "taken": 3, "refused": 1, "last_duplicate": 2 } } },
+
+    { "event": "generation.next",
+      "expect": { "variables": { "generation": 2 } } },
+    { "note": "a peer the full table holds is still taken, its generation replaced where it stands",
+      "event": "peer.seen", "data": { "low": 0, "high": 1 },
+      "expect": { "variables": { "resets": [[{ "low": "1", "high": "0" }, 2], [{ "low": "0", "high": "1" }, 2]], "took": { "kind": "taken" }, "taken": 4, "refused": 1 } } },
+    { "event": "peer.seen", "data": { "low": 2, "high": 0 },
+      "expect": { "variables": { "resets": [[{ "low": "1", "high": "0" }, 2], [{ "low": "0", "high": "1" }, 2]], "took": { "kind": "no_room" }, "taken": 4, "refused": 2 } } }
+  ]
+}

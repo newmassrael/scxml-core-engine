@@ -186,6 +186,10 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         "static_map_composite_key",
         "static_set",
         "static_map_order",
+        // ... and a table lent to an algorithm that writes it in place, by a
+        // `<sce:call>` whose answer the machine takes (docs/adr/0108, "Order of
+        // work", step 7).
+        "static_map_take",
     ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),

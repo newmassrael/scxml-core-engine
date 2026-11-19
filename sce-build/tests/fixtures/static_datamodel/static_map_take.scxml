@@ -4,7 +4,9 @@
   latest generation, written in place by the algorithm that keeps it, which a
   <sce:call> calls as a statement and whose answer it takes by its location.
 
-  `generation.next` moves the generation a peer is seen at one on. `peer.seen`
+  `generation.next` moves the generation a peer is seen at one on, and
+  `generation.back` one back, so a peer can be seen at a generation older than
+  the one the table holds for it. `peer.seen`
   hands `algorithm_take_generation.scxml` the table, the peer (its payload,
   taken whole as the key) and the generation: the algorithm puts the
   generation into `resets` in place and answers `taken`, or answers that the
@@ -36,6 +38,9 @@
   <state id="watching">
     <transition event="generation.next" type="internal">
       <assign location="generation" expr="generation + 1"/>
+    </transition>
+    <transition event="generation.back" type="internal">
+      <assign location="generation" expr="generation - 1"/>
     </transition>
     <transition event="peer.seen" type="internal">
       <sce:call expr="TakeGeneration(resets, _event.data, generation)" location="took"/>
