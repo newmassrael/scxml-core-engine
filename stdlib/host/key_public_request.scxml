@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/key_public_request.scxml — the request of
+  `sce-host-key-public` (docs/SCE_HOST_FEATURES.md, "Keys"): `key_id` names a
+  signing key of the host, configured or generated.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="key_public_request"
+       sce:event-name="host.key.public.request">
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+  </datamodel>
+</scxml>

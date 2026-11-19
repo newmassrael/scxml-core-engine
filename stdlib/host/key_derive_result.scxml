@@ -4,9 +4,11 @@
 <!--
   sce:std/host/key_derive_result.scxml — the answer of `sce-host-key-derive`
   (docs/SCE_HOST_FEATURES.md, "Signing and sealing"): `key_id` names the key
-  the host derived and keeps, `derived:<n>`, which `sce-host-cose-encrypt0`,
-  `sce-host-cose-decrypt0` and a further derivation take by that id. The key
-  itself stays in the host.
+  the host derived and keeps, `derived:` and 32 hexadecimal digits computed
+  from what derived it, so the same derivation is one id in every process
+  that shares the host's key store. `sce-host-cose-encrypt0`,
+  `sce-host-cose-decrypt0` and a further derivation take it by that id. The
+  key itself stays in the host.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

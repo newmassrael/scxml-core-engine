@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/key_generate_result.scxml — the answer of
+  `sce-host-key-generate` (docs/SCE_HOST_FEATURES.md, "Keys"): `key_id` names
+  the key the host generated and keeps, `generated:` and 32 hexadecimal
+  digits, the same in every process that shares the host's key store. The key
+  itself stays in the host.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="key_generate_result"
+       sce:event-name="host.key.generate.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+  </datamodel>
+</scxml>

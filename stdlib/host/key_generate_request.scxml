@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/key_generate_request.scxml — the request of
+  `sce-host-key-generate` (docs/SCE_HOST_FEATURES.md, "Keys").
+
+  `key_use` is the one use of the key: `sign` (an Ed25519 signing key),
+  `seal` (a ChaCha20/Poly1305 key that seals and opens), `mac` (an
+  HMAC-SHA-256 key) or `derive` (input keying material of a derivation); the
+  host refuses any other. `label` is what the document calls the key, kept
+  beside it for the operator; empty when there is none.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="key_generate_request"
+       sce:event-name="host.key.generate.request">
+  <datamodel>
+    <data id="key_use" sce:type="string[8]" sce:direction="in"/>
+    <data id="label" sce:type="string[64]" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/mac_verify_result.scxml — the answer of `sce-host-mac-verify`
+  (docs/SCE_HOST_FEATURES.md, "Keyed digests"): `valid` is true when the tag
+  is the whole HMAC-SHA-256 of the message under the key. A tag that does not
+  verify is an answer, `valid` false, not a failure.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="mac_verify_result"
+       sce:event-name="host.mac.verify.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

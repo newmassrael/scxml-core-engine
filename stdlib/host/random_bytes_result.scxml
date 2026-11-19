@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/random_bytes_result.scxml — the answer of
+  `sce-host-random-bytes` (docs/SCE_HOST_FEATURES.md, "Random bytes"):
+  `bytes` holds as many bytes as the request's `length`, drawn from the host's
+  random source. Its bound is the named bound `random_bytes`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="random_bytes_result"
+       sce:event-name="host.random.bytes.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="bytes" sce:type="bytes[random_bytes=256]" sce:direction="in"/>
+  </datamodel>
+</scxml>

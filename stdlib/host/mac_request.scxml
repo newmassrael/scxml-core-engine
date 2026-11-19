@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/mac_request.scxml — the request of `sce-host-mac`
+  (docs/SCE_HOST_FEATURES.md, "Keyed digests").
+
+  `key_id` names a MAC key the host holds; the key itself never reaches the
+  statechart. `message` is the bytes tagged, bounded by the named bound
+  `mac_message`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="mac_request"
+       sce:event-name="host.mac.request">
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="message" sce:type="bytes[mac_message=4096]" sce:direction="in"/>
+  </datamodel>
+</scxml>

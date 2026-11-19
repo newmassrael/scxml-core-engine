@@ -123,11 +123,12 @@ pub const EVERY_REFERENCE_HOST: &[HostLane] = &[
     HostLane::Interpreter,
 ];
 
-/// The lanes whose reference host serves signing and sealing
-/// (docs/SCE_HOST_FEATURES.md, section 10; docs/adr/0107, D7): Rust on the
-/// RustCrypto crates and C++ on libsodium. Every other lane is a later step of
-/// docs/adr/0107, which adds the lane here in the change that lands its host and
-/// its driver's replay of the scenario.
+/// The lanes whose reference host serves signing and sealing, random bytes,
+/// keyed digests and keys (docs/SCE_HOST_FEATURES.md, sections 10 to 13;
+/// docs/adr/0107, D7; docs/adr/0109, D0 and D5 to D7): Rust on the RustCrypto
+/// crates and C++ on libsodium. Every other lane is a later step, which adds the
+/// lane here in the change that lands its host and its driver's replay of the
+/// scenario.
 pub const COSE_REFERENCE_HOSTS: &[HostLane] = &[
     HostLane::Generated(Language::Rust),
     HostLane::Generated(Language::Cpp),
@@ -140,8 +141,8 @@ const LIBRARY_DIRECTORY: &str = "sce:std/host/";
 /// table, the document that specifies them and the reference hosts, and a
 /// test holds this table to the library and the specification. Each names
 /// the lanes that serve it: those of sections 2 to 6 every lane
-/// ([`EVERY_REFERENCE_HOST`]), signing and sealing Rust and C++
-/// ([`COSE_REFERENCE_HOSTS`]).
+/// ([`EVERY_REFERENCE_HOST`]), signing and sealing, random bytes, keyed
+/// digests and keys Rust and C++ ([`COSE_REFERENCE_HOSTS`]).
 pub const TYPES: &[StandardHostType] = &[
     StandardHostType {
         invoke_type: "sce-host-clock-now",
@@ -249,6 +250,42 @@ pub const TYPES: &[StandardHostType] = &[
         invoke_type: "sce-host-key-derive",
         request: Some("key_derive_request"),
         result: "key_derive_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-random-bytes",
+        request: Some("random_bytes_request"),
+        result: "random_bytes_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-mac",
+        request: Some("mac_request"),
+        result: "mac_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-mac-verify",
+        request: Some("mac_verify_request"),
+        result: "mac_verify_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-key-generate",
+        request: Some("key_generate_request"),
+        result: "key_generate_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-key-public",
+        request: Some("key_public_request"),
+        result: "key_public_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-key-retire",
+        request: Some("key_retire_request"),
+        result: "key_retire_result",
         served_by: COSE_REFERENCE_HOSTS,
     },
 ];
@@ -638,8 +675,9 @@ mod tests {
         );
     }
 
-    /// Signing and sealing are served by the Rust and C++ reference hosts and
-    /// refused on every other lane, naming those two (docs/adr/0107, D7, D8).
+    /// Signing and sealing, random bytes, keyed digests and keys are served by
+    /// the Rust and C++ reference hosts and refused on every other lane, naming
+    /// those two (docs/adr/0107, D7, D8; docs/adr/0109, D0).
     #[test]
     fn signing_and_sealing_are_served_on_rust_and_cpp_and_refused_elsewhere() {
         let cose: Vec<&StandardHostType> = TYPES
@@ -655,6 +693,12 @@ mod tests {
                 "sce-host-cose-encrypt0",
                 "sce-host-cose-decrypt0",
                 "sce-host-key-derive",
+                "sce-host-random-bytes",
+                "sce-host-mac",
+                "sce-host-mac-verify",
+                "sce-host-key-generate",
+                "sce-host-key-public",
+                "sce-host-key-retire",
             ]
         );
         for standard in cose {
