@@ -6126,15 +6126,15 @@ full map's put that names none. A `<foreach>` walks the map's positions in a
 loop of its own: over the map itself where nothing in its body writes the map,
 and over a copy taken where the loop begins where something does (docs/adr/0108,
 D6, item 3); each turn binds a number, a `bool`, an enum and a record that owns
-no buffer by copy, and a text and a record that owns one lent where the map holds
-it. The saved form and the scenarios' are the Interpreter's array of entries; a
-restore refuses a map of more entries than its bound or with a key twice, as a
-saved list past its bound is refused. The snapshot lends the map whole, a
-`BoundedMap` the host walks in order and reads by `get`. A byte string as a key
-or a value of a Rust map is refused by name, since the saved form writes each
-key and value by its type's writer and a byte string's there is the list of its
-numbers; a byte string inside a record key or value is written as the record
-writes it.
+no buffer by copy, and a text, a byte string and a record that owns one lent
+where the map holds it, or cloned where a statement of the body (a `<send>`, a
+host action, a `<cancel>`, a lift, a render) takes the machine whole while the
+entry would be lent. The saved form and the scenarios' are the Interpreter's
+array of entries, each key and value in the form its type has in a saved state,
+a byte string as its Latin-1 text as a byte-string variable is; a restore
+refuses a map of more entries than its bound or with a key twice, as a saved
+list past its bound is refused. The snapshot lends the map whole, a
+`BoundedMap` the host walks in order and reads by `get`.
 
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports
 (`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge
