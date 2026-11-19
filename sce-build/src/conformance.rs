@@ -3907,6 +3907,36 @@ fn fold_refused_cases(
     Ok(true)
 }
 
+/// The keys of a codec's oracle entry a fold owns: the decode-rejection vectors
+/// ([`fold_reject_vectors`]) and the byte cases stated as the interface
+/// presents the value ([`fold_source_cases`], [`fold_refused_cases`]). Each
+/// reaches a harness only as its fold writes it, for a backend whose printer
+/// prints the codec; the rows as the oracle states them are no value a
+/// fragment renders from.
+const FOLDED_ORACLE_KEYS: [&str; 3] = ["rejects", "sources", "refused"];
+
+/// Fold every key of `oracle_entry`, the oracle's entry of a fixture, into
+/// `fixture_obj`, the fixture's value on the C11 route, so a per-kind fragment
+/// reads it as `f.<key>` whatever shape the oracle uses for its kind
+/// (`cases`, `sequence`, `tags`). Manifest fields take precedence: the oracle
+/// is for case data, not for redefining the fixture's identity or shape (a
+/// timer's oracle `timers` block would otherwise collide with its manifest
+/// `timers` list). A key a fold owns ([`FOLDED_ORACLE_KEYS`]) is left to its
+/// fold: copied as the oracle states it, the `sources` of a codec the C11
+/// printer does not print would reach the fragment as cases of an encode over
+/// a source its header does not declare.
+fn merge_oracle_entry(
+    fixture_obj: &mut serde_json::Map<String, serde_json::Value>,
+    oracle_entry: &serde_json::Map<String, serde_json::Value>,
+) {
+    for (k, val) in oracle_entry {
+        if FOLDED_ORACLE_KEYS.contains(&k.as_str()) {
+            continue;
+        }
+        fixture_obj.entry(k.clone()).or_insert_with(|| val.clone());
+    }
+}
+
 /// The rows of a codec fixture's byte cases stated under `key` (`sources`,
 /// `refused`), and whether the C++ backend prints the codec from its plan.
 /// Cases of a fixture that is not a codec, and a key with no case, are
@@ -5120,15 +5150,7 @@ pub fn render_harness(
                 let fixture_obj = v.as_object_mut().ok_or_else(|| {
                     format!("fixture {} did not serialize to a JSON object", f.name)
                 })?;
-                for (k, val) in oracle_entry {
-                    // Manifest fields take precedence — the oracle is for
-                    // case data, not for redefining the fixture's identity
-                    // or shape. This guards against accidental overrides
-                    // (e.g. timer's oracle `timers` block colliding with
-                    // its manifest `timers` list when a future phase adds
-                    // timer to c11_supported_kind).
-                    fixture_obj.entry(k.clone()).or_insert_with(|| val.clone());
-                }
+                merge_oracle_entry(fixture_obj, oracle_entry);
                 enriched.push(v);
             }
         }
@@ -5795,6 +5817,41 @@ mod tests {
 
         let (folded, value) = fold(false).expect("a codec on the template is handed nothing");
         assert!(!folded && value.get("sources").is_none());
+    }
+
+    /// The oracle's `cases` reach a C11 fixture as the oracle states them, and
+    /// its `sources`, `refused` and `rejects` only as their folds write them: a
+    /// codec the C11 printer does not print, such as a CBOR map, keeps no source
+    /// case, and one it prints keeps the case its fold wrote.
+    ///
+    /// Turns red where `merge_oracle_entry` copies a key of
+    /// `FOLDED_ORACLE_KEYS`, or stops copying a key no fold owns.
+    #[test]
+    fn a_c11_fixture_takes_no_byte_case_from_the_oracle_but_through_its_fold() {
+        let oracle = serde_json::json!({
+            "cases": [{ "decoded": { "flag": 1 }, "encoded": [1] }],
+            "sources": [{ "source": { "flag": 1 }, "encoded": [1] }],
+            "refused": [{ "source": { "flag": 9 }, "error": "length-out-of-range" }],
+            "rejects": [{ "why": "short", "encoded": [255], "error": "need-more-bytes" }],
+        });
+        let oracle = oracle.as_object().expect("an oracle entry is an object");
+
+        let mut unprinted = serde_json::Map::new();
+        unprinted.insert("name".into(), "codec_cbor_map".into());
+        merge_oracle_entry(&mut unprinted, oracle);
+        assert_eq!(unprinted["cases"], oracle["cases"]);
+        for key in ["sources", "refused", "rejects"] {
+            assert!(
+                !unprinted.contains_key(key),
+                "`{key}` reached the fixture as the oracle states it"
+            );
+        }
+
+        let folded = serde_json::json!([{ "bindings": ["value.flag = 1u;"] }]);
+        let mut printed = serde_json::Map::new();
+        printed.insert("sources".into(), folded.clone());
+        merge_oracle_entry(&mut printed, oracle);
+        assert_eq!(printed["sources"], folded);
     }
 
     /// A list of a byte case of a printed C11 codec is set entry by entry into
