@@ -305,6 +305,55 @@ target_include_directories(codec_source_generated_test PRIVATE
 target_compile_options(codec_source_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME codec_source_generated COMMAND codec_source_generated_test)
 
+# A CBOR map of an entry of every constructor of the language (docs/adr/0101,
+# Landing order step 4b), held to the corpus the Rust conformance holds Rust to
+# (numerical_reference.json, `codec_cbor_composed`): its cases, its variant
+# encodings and its rejects, byte for byte. The codec and the enums, records and
+# union it reaches are the corpus's own documents, which no generated tree
+# hashes, generated into a directory of their own, where each header includes
+# the ones it imports.
+set(CBOR_COMPOSED_FIXTURE_DIR "${REPO_ROOT}/tests/forge/conformance/codec_cbor_composed")
+set(CBOR_COMPOSED_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/cbor_composed_headers")
+file(MAKE_DIRECTORY "${CBOR_COMPOSED_GENERATED_DIR}")
+set(CBOR_COMPOSED_DOCUMENTS
+    cbor_composed_level
+    cbor_composed_color
+    cbor_composed_code
+    cbor_composed_point
+    cbor_composed_reading
+    cbor_composed_card
+    cbor_composed_batch
+    cbor_composed_kind
+    cbor_composed_choice
+    codec_cbor_composed
+)
+set(CBOR_COMPOSED_GENERATED_HEADERS "")
+foreach(_cbor_composed_document IN LISTS CBOR_COMPOSED_DOCUMENTS)
+    sce_codegen_generation(_CBOR_COMPOSED
+        DOCUMENT "${CBOR_COMPOSED_FIXTURE_DIR}/${_cbor_composed_document}.scxml"
+        OUTPUT_DIR "${CBOR_COMPOSED_GENERATED_DIR}"
+        LANGUAGE cpp
+        CLAIM SCE_CBOR_COMPOSED_CPP_DECLARED_OUTPUTS
+        COMMENT "Generating C++ CBOR composed fixture ${_cbor_composed_document}")
+    list(APPEND CBOR_COMPOSED_GENERATED_HEADERS ${_CBOR_COMPOSED_HEADERS})
+endforeach()
+add_custom_target(generate_cbor_composed_fixtures_cpp)
+target_sources(generate_cbor_composed_fixtures_cpp PRIVATE ${CBOR_COMPOSED_GENERATED_HEADERS})
+
+add_executable(cbor_composed_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/cbor_composed_generated_test.cpp")
+add_dependencies(cbor_composed_generated_test generate_cbor_composed_fixtures_cpp)
+set_target_properties(cbor_composed_generated_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(cbor_composed_generated_test PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${NLOHMANN_JSON_INCLUDE_DIR}"
+    "${CBOR_COMPOSED_GENERATED_DIR}"
+)
+target_compile_definitions(cbor_composed_generated_test PRIVATE
+    "REFERENCE_JSON_PATH=\"${REFERENCE_JSON}\""
+)
+target_compile_options(cbor_composed_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME cbor_composed_generated COMMAND cbor_composed_generated_test)
+
 # The runtime's CBOR items on their own (sce/forge/cbor.h), under the same
 # blanket -Werror; what a generated CBOR codec does with them is judged by
 # the harness above (codec_cbor_map).
