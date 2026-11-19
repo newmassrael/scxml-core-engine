@@ -177,8 +177,13 @@ fn generate_rust_files(document: &str) -> (bool, String, Vec<(String, String)>) 
     let out_dir = tempfile::tempdir().expect("an output directory");
     let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
     let (ok, printed) = run(&["generate", "-l", "rust", "-o", out.as_str()], &path);
+    (ok, printed, rust_files_in(out_dir.path()))
+}
+
+/// Every Rust file `dir` holds, by name.
+fn rust_files_in(dir: &Path) -> Vec<(String, String)> {
     let mut files = Vec::new();
-    for entry in std::fs::read_dir(out_dir.path()).expect("read the output") {
+    for entry in std::fs::read_dir(dir).expect("read the output") {
         let path = entry.expect("an output file").path();
         if path.extension().is_some_and(|ext| ext == "rs") {
             let name = path
@@ -192,7 +197,7 @@ fn generate_rust_files(document: &str) -> (bool, String, Vec<(String, String)>) 
             ));
         }
     }
-    (ok, printed, files)
+    files
 }
 
 /// [`generate_rust_files`], every file joined.
@@ -2007,4 +2012,369 @@ fn a_c11_statechart_hands_an_algorithm_the_storage_of_its_maps() {
             "no `{held}` in the generated machine:\n{code}"
         );
     }
+}
+
+/// `sce-codegen generate -l rust` of `main`, written in a scratch directory
+/// beside `documents`, and of every document it imports where `with_imports`:
+/// whether it passed, what it printed, and every Rust file it wrote, by name.
+fn generate_rust_beside(
+    documents: &[(&str, String)],
+    main: &str,
+    with_imports: bool,
+) -> (bool, String, Vec<(String, String)>) {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for (name, text) in documents {
+        std::fs::write(dir.path().join(name), text).expect("write a document");
+    }
+    let out_dir = tempfile::tempdir().expect("an output directory");
+    let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
+    let mut args = vec!["generate", "-l", "rust", "-o", out.as_str()];
+    if with_imports {
+        args.push("--with-imports");
+    }
+    let (ok, printed) = run(&args, &dir.path().join(main));
+    (ok, printed, rust_files_in(out_dir.path()))
+}
+
+/// The documents of the static fixture directory `names` names, as committed.
+fn static_documents(names: &[&'static str]) -> Vec<(&'static str, String)> {
+    names
+        .iter()
+        .map(|name| {
+            let text = std::fs::read_to_string(static_fixtures().join(name))
+                .unwrap_or_else(|e| panic!("read {name}: {e}"));
+            (*name, text)
+        })
+        .collect()
+}
+
+/// Every function the Rust files `files` declare, read off their syntax
+/// trees; each file is held to parse as Rust.
+fn functions_of(files: &[(String, String)]) -> Vec<syn::ItemFn> {
+    #[derive(Default)]
+    struct Functions(Vec<syn::ItemFn>);
+    impl<'ast> syn::visit::Visit<'ast> for Functions {
+        fn visit_item_fn(&mut self, function: &'ast syn::ItemFn) {
+            self.0.push(function.clone());
+            syn::visit::visit_item_fn(self, function);
+        }
+    }
+    let mut functions = Functions::default();
+    for (name, text) in files {
+        let tree = syn::parse_file(text)
+            .unwrap_or_else(|e| panic!("{name} does not parse as Rust: {e}\n{text}"));
+        syn::visit::Visit::visit_file(&mut functions, &tree);
+    }
+    functions.0
+}
+
+/// The function named `name` among `functions`.
+fn function_named<'f>(functions: &'f [syn::ItemFn], name: &str) -> &'f syn::ItemFn {
+    functions
+        .iter()
+        .find(|function| function.sig.ident == name)
+        .unwrap_or_else(|| panic!("no function `{name}` was generated"))
+}
+
+/// The adapter a machine declares for an algorithm call (`call___st<n>`).
+fn adapter_of(functions: &[syn::ItemFn]) -> &syn::ItemFn {
+    functions
+        .iter()
+        .find(|function| function.sig.ident.to_string().starts_with("call___st"))
+        .expect("the machine declares the call's adapter")
+}
+
+/// The generic parameters and the type of each parameter of `function`, each
+/// as its tokens print.
+fn signature_of(function: &syn::ItemFn) -> (Vec<String>, Vec<String>) {
+    use quote::ToTokens;
+    let generics = function
+        .sig
+        .generics
+        .params
+        .iter()
+        .map(|param| param.to_token_stream().to_string())
+        .collect();
+    let inputs = function
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|input| match input {
+            syn::FnArg::Typed(typed) => Some(typed.ty.to_token_stream().to_string()),
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+    (generics, inputs)
+}
+
+/// The syntax tree of the machine among `files`.
+fn machine_tree(files: &[(String, String)]) -> (syn::File, String) {
+    let (_, machine) = files
+        .iter()
+        .find(|(name, _)| name.ends_with("_sm.rs"))
+        .expect("the machine is generated");
+    let tree = syn::parse_file(machine).expect("the machine parses as Rust");
+    (tree, machine.clone())
+}
+
+/// Each method a syntax tree calls, with the receiver it calls it on, each as
+/// its tokens print.
+#[derive(Default)]
+struct MethodCalls(Vec<(String, String)>);
+
+impl<'ast> syn::visit::Visit<'ast> for MethodCalls {
+    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+        use quote::ToTokens;
+        self.0.push((
+            call.receiver.to_token_stream().to_string(),
+            call.method.to_string(),
+        ));
+        syn::visit::visit_expr_method_call(self, call);
+    }
+}
+
+impl MethodCalls {
+    /// Each receiver a `.clone()` is called on.
+    fn cloned(&self) -> Vec<&str> {
+        self.0
+            .iter()
+            .filter(|(_, method)| method == "clone")
+            .map(|(receiver, _)| receiver.as_str())
+            .collect()
+    }
+}
+
+/// The arguments of each call a machine makes of the adapter of an algorithm
+/// call (`call___st<n>`), each as its tokens print.
+#[derive(Default)]
+struct AdapterCalls(Vec<Vec<String>>);
+
+impl<'ast> syn::visit::Visit<'ast> for AdapterCalls {
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        use quote::ToTokens;
+        if let syn::Expr::Path(path) = call.func.as_ref() {
+            let adapter = path
+                .path
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident.to_string().starts_with("call___st"));
+            if adapter {
+                self.0.push(
+                    call.args
+                        .iter()
+                        .map(|arg| arg.to_token_stream().to_string())
+                        .collect(),
+                );
+            }
+        }
+        syn::visit::visit_expr_call(self, call);
+    }
+}
+
+/// The documents the statechart that lends its table imports, and the
+/// algorithm it lends it to, as committed.
+const TAKE_DOCUMENTS: [&str; 5] = [
+    "schema_map_peer.scxml",
+    "enum_take_kind.scxml",
+    "schema_take_duplicate.scxml",
+    "union_take_result.scxml",
+    "algorithm_take_generation.scxml",
+];
+
+/// docs/adr/0108, D5, D6 items 1, 2 and 4, and "Order of work", step 7: Rust
+/// lowers an algorithm that writes the table it is lent in place. The
+/// function is generic over the bound of the caller's map and takes it `&mut`
+/// in the type a machine's variable of the same parts is held in, the record
+/// key in the type its unit declares; `has` and the value at the peer's key are
+/// the reads of the leaf crate, the value read where the build proved the key
+/// held, since the algorithm declares no `may-fail` and has no failure to hand
+/// on; and the put is the map's own. Read off the syntax tree of the generated
+/// function.
+#[test]
+fn rust_lowers_an_algorithm_that_writes_a_map_it_is_lent_in_place() {
+    let documents = static_documents(&TAKE_DOCUMENTS);
+    let (ok, printed, files) =
+        generate_rust_beside(&documents, "algorithm_take_generation.scxml", false);
+    assert!(ok, "Rust generates the algorithm:\n{printed}");
+    let functions = functions_of(&files);
+    let take = function_named(&functions, "take_generation");
+    let (generics, inputs) = signature_of(take);
+    assert_eq!(generics, ["const N0 : usize"]);
+    assert_eq!(
+        inputs.first().map(String::as_str),
+        Some(
+            "& mut :: sce_portable_bytes :: BoundedMap < schema_map_peer :: \
+             SchemaMapPeerPayload , u64 , N0 >"
+        ),
+        "{inputs:?}"
+    );
+    let mut called = Called::default();
+    syn::visit::Visit::visit_item_fn(&mut called, take);
+    for read in [
+        ":: sce_portable_bytes :: map :: holds",
+        ":: sce_portable_bytes :: map :: held_cloned",
+    ] {
+        assert!(
+            called.0.iter().any(|path| path == read),
+            "no `{read}` in {:?}",
+            called.0
+        );
+    }
+    assert!(
+        !called.0.iter().any(|path| path.ends_with("found")),
+        "a read proven held does not fail: {:?}",
+        called.0
+    );
+    let mut methods = MethodCalls::default();
+    syn::visit::Visit::visit_item_fn(&mut methods, take);
+    assert!(
+        methods
+            .0
+            .iter()
+            .any(|(receiver, method)| receiver == "resets" && method == "put"),
+        "the table is put into where it is lent: {:?}",
+        methods.0
+    );
+}
+
+/// docs/adr/0108, D6 items 2 and 4: the Rust machine lends its table to the
+/// algorithm by a `<sce:call>`: the call's adapter is generic over the bound
+/// of the table and takes it `&mut` in the type the machine holds it in, the
+/// type the algorithm's slot names, and the machine hands it its own variable,
+/// `&mut self.resets`, with no copy.
+#[test]
+fn a_rust_machine_lends_its_table_to_be_written_in_place() {
+    let mut documents = static_documents(&TAKE_DOCUMENTS);
+    documents.extend(static_documents(&["static_map_take.scxml"]));
+    let (ok, printed, files) = generate_rust_beside(&documents, "static_map_take.scxml", true);
+    assert!(
+        ok,
+        "Rust generates the statechart and what it imports:\n{printed}"
+    );
+    let functions = functions_of(&files);
+    function_named(&functions, "take_generation");
+    let (generics, inputs) = signature_of(adapter_of(&functions));
+    assert_eq!(generics, ["const N0 : usize"]);
+    assert_eq!(
+        inputs.first().map(String::as_str),
+        Some(
+            "& mut :: sce_rust_runtime :: BoundedMap < schema_map_peer :: \
+             SchemaMapPeerPayload , u64 , N0 >"
+        ),
+        "{inputs:?}"
+    );
+    let (tree, _) = machine_tree(&files);
+    let mut calls = AdapterCalls::default();
+    syn::visit::Visit::visit_file(&mut calls, &tree);
+    assert_eq!(calls.0.len(), 1, "{:?}", calls.0);
+    assert_eq!(
+        calls.0[0].first().map(String::as_str),
+        Some("& mut self . resets")
+    );
+}
+
+/// An algorithm that is lent the table `b` to write in place and the table `a`
+/// to read: the walk of `a` writes `b` only, and the walk of `b` removes each
+/// key it meets.
+const REFILL_BY_WALKS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="refill"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="b" type="map&lt;uint32, uint64&gt;" inout="true"/>
+    <sce:param name="a" type="map&lt;uint32, uint64&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:foreach in="a" item="v" key="k">
+      <sce:remove target="b" key="k"/>
+    </sce:foreach>
+    <sce:foreach in="b" item="w" key="j">
+      <sce:remove target="b" key="j"/>
+    </sce:foreach>
+  </sce:body>
+</scxml>
+"#;
+
+/// A statechart whose `<foreach>` over `a` calls `Refill(b, a)`: `b` is lent
+/// to be written in place, and `a`, the map the loop walks, to be read.
+const WALK_LEND: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="walk_lend">
+  <sce:import kind="algorithm" src="algorithm_refill.scxml" as="Refill"/>
+  <datamodel>
+    <data id="a" sce:type="map&lt;uint32, uint64&gt;[4]" sce:direction="out"/>
+    <data id="b" sce:type="map&lt;uint32, uint64&gt;[4]" sce:direction="out"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal">
+      <foreach array="a" item="v" sce:key="k">
+        <sce:call expr="Refill(b, a)"/>
+      </foreach>
+    </transition>
+  </state>
+</scxml>
+"#;
+
+/// docs/adr/0108, D6 items 1 and 3, read off the syntax trees of the
+/// generated Rust: a map lent to be read is handed over by reference and
+/// copied nowhere, by the machine (`&self.a`, its walk over `a` taking no
+/// copy) or by its adapter (`&BoundedMap`); and in the algorithm a
+/// `<sce:foreach>` over a map its body does not write walks the map itself,
+/// while one whose body writes the map it walks walks a copy of it.
+#[test]
+fn rust_copies_no_map_it_reads_and_only_the_map_a_walk_writes() {
+    let documents = [
+        ("algorithm_refill.scxml", REFILL_BY_WALKS.to_string()),
+        ("walk_lend.scxml", WALK_LEND.to_string()),
+    ];
+    let (ok, printed, files) = generate_rust_beside(&documents, "walk_lend.scxml", true);
+    assert!(
+        ok,
+        "Rust generates the statechart and the algorithm:\n{printed}"
+    );
+    let functions = functions_of(&files);
+
+    let refill = function_named(&functions, "refill");
+    let (generics, inputs) = signature_of(refill);
+    assert_eq!(generics, ["const N0 : usize", "const N1 : usize"]);
+    assert_eq!(
+        inputs,
+        [
+            "& mut :: sce_portable_bytes :: BoundedMap < u32 , u64 , N0 >",
+            "& :: sce_portable_bytes :: BoundedMap < u32 , u64 , N1 >",
+        ]
+    );
+    let mut methods = MethodCalls::default();
+    syn::visit::Visit::visit_item_fn(&mut methods, refill);
+    assert_eq!(
+        methods.cloned(),
+        ["b"],
+        "only the walk of `b`, whose body writes `b`, copies its map: {:?}",
+        methods.0
+    );
+
+    let (_, inputs) = signature_of(adapter_of(&functions));
+    assert_eq!(
+        inputs,
+        [
+            "& mut :: sce_rust_runtime :: BoundedMap < u32 , u64 , N0 >",
+            "& :: sce_rust_runtime :: BoundedMap < u32 , u64 , N1 >",
+        ]
+    );
+    let (tree, machine) = machine_tree(&files);
+    let mut calls = AdapterCalls::default();
+    syn::visit::Visit::visit_file(&mut calls, &tree);
+    assert_eq!(calls.0, [["& mut self . b", "& self . a"]]);
+    let mut methods = MethodCalls::default();
+    syn::visit::Visit::visit_file(&mut methods, &tree);
+    assert!(
+        !methods.cloned().contains(&"self . a"),
+        "the machine copies the map it lends to be read:\n{machine}"
+    );
+    assert!(
+        !machine.contains("sce_walk_"),
+        "the walk of `a`, whose body writes only `b`, copies a map:\n{machine}"
+    );
 }

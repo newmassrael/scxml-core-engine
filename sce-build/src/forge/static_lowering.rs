@@ -4700,6 +4700,75 @@ fn rust_union_crossing(value: &str, cases: &[CrossedCase]) -> String {
     format!("match {value} {{ {} }}", arms.join(", "))
 }
 
+/// The runtime's map of `key` and `value`, or its set of `key` where `value` is
+/// `None`, of the bound `bound`, a number or the name of a bound a function
+/// takes (docs/adr/0108, D8): one spelling for a machine's variable
+/// ([`StaticTarget::map_type`]) and the map an adapter is lent
+/// ([`rust_lent_map_type`]).
+fn rust_map_type(key: &str, value: Option<&str>, bound: &str) -> String {
+    match value {
+        Some(value) => format!("::sce_rust_runtime::BoundedMap<{key}, {value}, {bound}>"),
+        None => format!("::sce_rust_runtime::BoundedSet<{key}, {bound}>"),
+    }
+}
+
+/// The type the adapter of a call is lent the map of the slot type `ty` in, of
+/// the bound `bound` (docs/adr/0108, D6 items 1 and 4): the type the machine
+/// holds a variable of the same parts in, a record and a value of an enum in
+/// the type its unit declares ([`StaticTarget::map_unit`]), which is the type
+/// the algorithm's slot names, and every other part in the type a variable of
+/// its type is held in. `None` for a part no map holds.
+fn rust_lent_map_type(
+    target: &RustTarget,
+    spec: &AdapterSpec<'_>,
+    ty: &crate::forge::model::AlgorithmValueType,
+    bound: &str,
+) -> Option<String> {
+    use crate::forge::model::AlgorithmValueType;
+    let part = |part: &AlgorithmValueType| -> Option<String> {
+        Some(match part {
+            AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
+                let model = spec.enums.get(&reference.alias)?;
+                let part = MapUnitPart::Enum {
+                    alias: &reference.alias,
+                    model,
+                };
+                target.map_unit(spec.machine, part)?.ty
+            }
+            AlgorithmValueType::Record { alias } => {
+                let schema = spec.schemas.get(alias)?;
+                let part = MapUnitPart::Record { alias, schema };
+                target.map_unit(spec.machine, part)?.ty
+            }
+            AlgorithmValueType::Scalar(scalar) => target.scalar_type(scalar),
+            AlgorithmValueType::Text { max } => {
+                crate::forge::composed_lowering::rust_text_type(max.as_ref()?.max)
+            }
+            AlgorithmValueType::Bytes { max } => {
+                crate::forge::composed_lowering::rust_bytes_type(max.as_ref()?.max)
+            }
+            AlgorithmValueType::Optional { .. }
+            | AlgorithmValueType::Union { .. }
+            | AlgorithmValueType::List { .. }
+            | AlgorithmValueType::Map { .. }
+            | AlgorithmValueType::Set { .. } => return None,
+        })
+    };
+    match ty {
+        AlgorithmValueType::Map { key, value, .. } => {
+            Some(rust_map_type(&part(key)?, Some(&part(value)?), bound))
+        }
+        AlgorithmValueType::Set { key, .. } => Some(rust_map_type(&part(key)?, None, bound)),
+        AlgorithmValueType::Scalar(_)
+        | AlgorithmValueType::Text { .. }
+        | AlgorithmValueType::Bytes { .. }
+        | AlgorithmValueType::Record { .. }
+        | AlgorithmValueType::Union { .. }
+        | AlgorithmValueType::List { .. }
+        | AlgorithmValueType::Optional { .. } => None,
+    }
+}
+
 /// How a Rust crossing of a record holds the record it reads
 /// ([`rust_record_to_unit`], [`rust_record_from_unit`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4838,6 +4907,17 @@ const RUST_TEST_RUNTIME: &str = "::sce_rust_runtime::test";
 /// variable's initial value draws its own ([`StaticTarget::map_empty`]).
 const RUST_MAP_SEEDS: &str = "sce_map_seeds";
 
+/// What a Rust map's `put` answers (docs/adr/0108, D3 and D4): the runtime's
+/// enum, and the declared name of each of its variants, in its order, which
+/// is the variant of the same name of the standard enum an `outcome` names.
+/// One pairing for a machine's statement and an algorithm's
+/// ([`crate::forge::rust_algorithm_map`]).
+pub(crate) const RUST_PUT_OUTCOMES: (&str, &[&str]) =
+    ("PutOutcome", &["inserted", "replaced", "full"]);
+
+/// ... and what its `remove` answers.
+pub(crate) const RUST_REMOVE_OUTCOMES: (&str, &[&str]) = ("RemoveOutcome", &["removed", "absent"]);
+
 /// `text` as a Rust string literal.
 fn rust_text(text: &str) -> String {
     format!("\"{}\"", filters::escape_rust(text.to_string()))
@@ -4968,16 +5048,37 @@ impl StaticTarget for RustTarget {
     // Lent to the adapter, which converts what the algorithm's types differ in and
     // gives nothing back of it. The literal `null` handed to an optional record is
     // the absent value of the record's own type, lent as well (docs/adr/0055, step 9).
+    // A map is lent whole, the very `BoundedMap` the variable is (docs/adr/0108,
+    // D6 items 1 and 4): borrowed to be read, and borrowed mutably where the
+    // algorithm writes it in place, which only a `<sce:call>` hands over.
     fn state_argument(&self, machine: &str, arg: &StateArg, held: &str) -> String {
         match (&arg.slot, arg.code) {
             (StaticSlot::OptionalRecord(alias), 'n') => {
                 format!("&None::<{}>", self.record_type(machine, alias))
             }
+            (slot @ StaticSlot::Map(_), _) if slot.written_in_place() => format!("&mut {held}"),
             _ => format!("&{held}"),
         }
     }
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
+    }
+    // docs/adr/0108, D6 item 2: the algorithm writes each map it is lent where
+    // the variable holds it, through the `&mut` its argument is
+    // ([`Self::state_argument`]), so there is nothing to write back: the
+    // statement is the call, its answer stored where the location names one.
+    // A failure is only an argument's, which leaves the closure the statement
+    // is received in before the call is made.
+    fn in_place_call(&self, call: &InPlaceCall<'_>) -> Option<String> {
+        let statement = format!("{};", call.call);
+        Some(match (&call.store, call.can_fail) {
+            (Some(store), true) => {
+                self.receiving_write(store.write, call.call, call.ty, call.failed)
+            }
+            (Some(store), false) => (store.write)(call.call),
+            (None, true) => self.receiving_statement(&statement, call.failed),
+            (None, false) => statement,
+        })
     }
     // The adapter's list held as the variable holds it ([`RustTarget::held_list`]).
     fn state_list_within(&self, _adapter: &str, value: &str, _capacity: u32) -> String {
@@ -5094,6 +5195,10 @@ impl StaticTarget for RustTarget {
         let mut declarations = Vec::new();
         let mut prelude = Vec::new();
         let mut arguments = Vec::new();
+        // The bound of each map the adapter is lent, a parameter of its own:
+        // the map is the variable's, whatever bound it states (docs/adr/0108,
+        // D5), and the algorithm's slot takes it at that bound.
+        let mut bounds: Vec<String> = Vec::new();
         for (index, param) in spec.params.iter().enumerate() {
             let name = format!("p{index}");
             match param {
@@ -5224,16 +5329,47 @@ impl StaticTarget for RustTarget {
                     slot: StaticSlot::Scalar(_) | StaticSlot::Optional(_),
                     ..
                 } => return None,
-                // A map is lent whole, which no adapter writes yet: a call of an
-                // algorithm that takes one is refused before any adapter is
-                // asked for ([`lower`], docs/adr/0108, D6 items 1 and 4).
+                // A map is lent whole and handed on as it is (docs/adr/0108, D6
+                // items 1, 2 and 4): the machine holds its record and enum
+                // entries in the types their units declare, the types the
+                // algorithm's slot holds, so nothing of it crosses. Borrowed to
+                // be read, and mutably where the algorithm writes it in place.
                 AdapterParam::State {
-                    slot: StaticSlot::Map(_),
+                    slot: StaticSlot::Map(map),
                     ..
-                } => return None,
+                } => {
+                    let bound = format!("N{index}");
+                    let ty = rust_lent_map_type(self, spec, &map.ty, &bound)?;
+                    let access = if map.inout { "&mut " } else { "&" };
+                    declarations.push(format!("{name}: {access}{ty}"));
+                    bounds.push(format!("const {bound}: usize"));
+                    arguments.push(name);
+                }
             }
         }
-        let (returned_type, converted) = match value.ret.as_ref()? {
+        let bounds = if bounds.is_empty() {
+            String::new()
+        } else {
+            format!("<{}>", bounds.join(", "))
+        };
+        // An algorithm that returns nothing is called by a `<sce:call>` alone,
+        // which lends it a map to write in place and stores nothing; it
+        // declares no `may-fail` (`algorithm/inout-on-may-fail`), so the
+        // adapter makes the call and answers nothing.
+        let Some(returned) = value.ret.as_ref() else {
+            if spec.callee.may_fail {
+                return None;
+            }
+            return Some(format!(
+                "#[allow(non_snake_case)]\nfn {}{bounds}({}) {{\n{}    {}({});\n}}",
+                spec.name,
+                declarations.join(", "),
+                prelude.concat(),
+                spec.call,
+                arguments.join(", ")
+            ));
+        };
+        let (returned_type, converted) = match returned {
             // The machine's own enum, built case by case from the one the union's
             // unit declares, which the algorithm gave back.
             StaticSlot::Union(union) => {
@@ -5288,7 +5424,7 @@ impl StaticTarget for RustTarget {
         // A list the algorithm returns is written into a destination the adapter
         // holds (docs/adr/0082), and read from there as a returned value is.
         let returns_list = matches!(
-            value.ret.as_ref()?,
+            returned,
             StaticSlot::ScalarList(_) | StaticSlot::RecordList(_)
         );
         if returns_list {
@@ -5303,7 +5439,7 @@ impl StaticTarget for RustTarget {
                 format!("    let r = {call}?;\n")
             };
             format!(
-                "#[allow(non_snake_case)]\nfn {}({}) -> Result<{returned_type}, sce_forge_runtime::algorithm::AlgorithmError> {{\n{prelude}{received}    Ok({converted})\n}}",
+                "#[allow(non_snake_case)]\nfn {}{bounds}({}) -> Result<{returned_type}, sce_forge_runtime::algorithm::AlgorithmError> {{\n{prelude}{received}    Ok({converted})\n}}",
                 spec.name,
                 declarations.join(", ")
             )
@@ -5313,7 +5449,7 @@ impl StaticTarget for RustTarget {
             return None;
         } else {
             format!(
-                "#[allow(non_snake_case)]\nfn {}({}) -> {returned_type} {{\n{prelude}    let r = {call};\n    {converted}\n}}",
+                "#[allow(non_snake_case)]\nfn {}{bounds}({}) -> {returned_type} {{\n{prelude}    let r = {call};\n    {converted}\n}}",
                 spec.name,
                 declarations.join(", ")
             )
@@ -6071,9 +6207,9 @@ impl StaticTarget for RustTarget {
         ];
         let mut lines = match (write.outcome, write.outcome_enum, &write.op) {
             (Some(outcome), Some((ty, document)), op) => {
-                let (runtime, variants): (&str, &[&str]) = match op {
-                    MapOp::Put { .. } => ("PutOutcome", &["inserted", "replaced", "full"]),
-                    MapOp::Remove => ("RemoveOutcome", &["removed", "absent"]),
+                let (runtime, variants) = match op {
+                    MapOp::Put { .. } => RUST_PUT_OUTCOMES,
+                    MapOp::Remove => RUST_REMOVE_OUTCOMES,
                 };
                 let arms: Vec<String> = variants
                     .iter()
@@ -6195,10 +6331,7 @@ impl StaticTarget for RustTarget {
     }
     // The runtime's own map and set, their bound in their type, as a list's is.
     fn map_type(&self, key: &str, value: Option<&str>, capacity: u32) -> Option<String> {
-        Some(match value {
-            Some(value) => format!("::sce_rust_runtime::BoundedMap<{key}, {value}, {capacity}>"),
-            None => format!("::sce_rust_runtime::BoundedSet<{key}, {capacity}>"),
-        })
+        Some(rust_map_type(key, value, &capacity.to_string()))
     }
     // The runtime's `MapKey`, fed each field's canonical bytes in the order the
     // schema declares the fields.

@@ -42928,7 +42928,7 @@ struct AlgorithmBodyCfg<'a> {
     absences: &'a TypedAbsences,
     channel: ReturnChannel<'a>,
     unions: &'a crate::forge::algorithm_union::AlgorithmUnions<'a>,
-    c11_maps: Option<&'a C11AlgorithmMaps<'a>>,
+    maps: Option<HeldMaps<'a>>,
 }
 
 /// Lower an algorithm body into a multi-line code string in the target
@@ -42971,7 +42971,7 @@ fn lower_algorithm_body(
         absences: cfg.absences,
         channel: cfg.channel,
         unions: cfg.unions,
-        c11_maps: cfg.c11_maps,
+        maps: cfg.maps,
     };
     lower_algorithm_block(
         stmts,
@@ -43018,19 +43018,32 @@ fn collect_algorithm_assigned_roots(
     stmts: &[AlgorithmStmt],
     out: &mut std::collections::HashSet<String>,
 ) {
+    fn insert_root(target: &str, out: &mut std::collections::HashSet<String>) {
+        let root: String = target
+            .trim()
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if !root.is_empty() {
+            out.insert(root);
+        }
+    }
     for s in stmts {
         match s {
             AlgorithmStmt::Assign { target, .. }
             | AlgorithmStmt::Append { target, .. }
-            | AlgorithmStmt::Put { target, .. }
-            | AlgorithmStmt::Remove { target, .. }
-            | AlgorithmStmt::Clear { target, .. } => {
-                let root: String = target
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                    .collect();
-                if !root.is_empty() {
-                    out.insert(root);
+            | AlgorithmStmt::Clear { target, .. } => insert_root(target, out),
+            // A put and a remove write their map, and the local their outcome
+            // names (docs/adr/0108, D3 and D4).
+            AlgorithmStmt::Put {
+                target, outcome, ..
+            }
+            | AlgorithmStmt::Remove {
+                target, outcome, ..
+            } => {
+                insert_root(target, out);
+                if let Some(outcome) = outcome {
+                    insert_root(outcome, out);
                 }
             }
             AlgorithmStmt::If {
@@ -43104,10 +43117,100 @@ struct AlgorithmLowerCtx<'a> {
     /// The unions the body's parameters and locals hold (docs/adr/0092,
     /// Landing order step 5): what a union local's case is read from.
     unions: &'a crate::forge::algorithm_union::AlgorithmUnions<'a>,
-    /// Where a C11 body holds its maps (docs/adr/0108, D4 and D6,
-    /// [`C11AlgorithmMaps`]); `None` on every other backend and in a body that
-    /// holds none.
-    c11_maps: Option<&'a C11AlgorithmMaps<'a>>,
+    /// Where the body holds its maps, on the lane that lowers it
+    /// ([`HeldMaps`]); `None` in a body that holds none and calls no algorithm
+    /// that takes a seed.
+    maps: Option<HeldMaps<'a>>,
+}
+
+/// Where an algorithm's body holds its maps and sets, on each lane that lowers
+/// them (docs/adr/0108, D4 to D8, `codegen_matrix::ALGORITHM_MAP_BACKENDS`):
+/// what its declarations, its statements and its walks are spelled by. One
+/// lane's holding is never read by another lane's lowering.
+#[derive(Clone, Copy)]
+enum HeldMaps<'a> {
+    /// Every map reached through an address in the caller's storage.
+    C11(&'a C11AlgorithmMaps<'a>),
+    /// Every map a Rust body holds, lent, written back or its own.
+    Rust(&'a crate::forge::rust_algorithm_map::RustAlgorithmMaps),
+}
+
+impl<'a> HeldMaps<'a> {
+    /// The C11 holding, on C11.
+    fn c11(self) -> Option<&'a C11AlgorithmMaps<'a>> {
+        match self {
+            Self::C11(maps) => Some(maps),
+            Self::Rust(_) => None,
+        }
+    }
+
+    /// The Rust holding, on Rust.
+    fn rust(self) -> Option<&'a crate::forge::rust_algorithm_map::RustAlgorithmMaps> {
+        match self {
+            Self::Rust(maps) => Some(maps),
+            Self::C11(_) => None,
+        }
+    }
+
+    /// Whether the body holds a map or a set declared as `name`: a parameter
+    /// or a local, never a loop's item or key.
+    fn holds(self, name: &str) -> bool {
+        match self {
+            Self::C11(maps) => maps.renames.iter().any(|(held, _)| held == name),
+            Self::Rust(maps) => maps.holds(name),
+        }
+    }
+
+    /// The type the parameter `p` is lent in where it is a map or a set: on
+    /// C11 the address of the caller's storage, which views a map of any bound,
+    /// the parameter's own being none; on Rust `&` the caller's map, or `&mut`
+    /// it where it is `inout`. `None` for any other parameter.
+    fn param_type(self, p: &crate::forge::model::AlgorithmParam) -> Option<String> {
+        match self {
+            Self::C11(_) => p.sce_type.map_key().map(|_| {
+                crate::forge::static_lowering::c11_lent_map_type(p.written_in_place()).to_string()
+            }),
+            Self::Rust(maps) => maps.param_type(&p.name),
+        }
+    }
+
+    /// The parameter the caller's destination of a map return is, after the
+    /// declared ones (docs/adr/0108, D5): on C11 the address of the caller's
+    /// storage, a map of the caller's bound and seed, handed with the caller's
+    /// failure record; on Rust `&mut` the map of the bound the returned local
+    /// states. `None` for an algorithm that returns no map.
+    fn destination(self, l: &LangCtx) -> Option<String> {
+        match self {
+            Self::C11(maps) => maps.output.map(|output| {
+                format!(
+                    "{} {}, sce_forge_algorithm_failure_t *{C11_CALLER_FAILURE}",
+                    crate::forge::static_lowering::c11_lent_map_type(true),
+                    l.local_id(output)
+                )
+            }),
+            Self::Rust(maps) => maps.destination(&|name: &str| l.local_id(name)),
+        }
+    }
+
+    /// Each name an expression reads a map through, to its spelling there: on
+    /// C11 the address in its caller's storage it is held at (`len(m)` is
+    /// `sce_map_count(&(*m))`), on Rust the map behind the reference a
+    /// parameter or the destination is (docs/adr/0108, D4 and D6 item 1).
+    fn renames(self, l: &LangCtx) -> Vec<(String, String)> {
+        match self {
+            Self::C11(maps) => maps.renames.clone(),
+            Self::Rust(maps) => maps.renames(&|name: &str| l.local_id(name)),
+        }
+    }
+
+    /// The map local the body returns, built in the caller's destination
+    /// (docs/adr/0108, D5), by its declared name.
+    fn output(self) -> Option<&'a str> {
+        match self {
+            Self::C11(maps) => maps.output,
+            Self::Rust(maps) => maps.output(),
+        }
+    }
 }
 
 /// Lower one statement ([`lower_algorithm_stmt`]) and the return of any
@@ -43572,7 +43675,7 @@ fn lower_c11_map_walk(
     let map = C11LentMap::of(ctx, type_ctx, source)?;
     // A body that writes the map walks the copy of it its caller holds the
     // storage of ([`C11AlgorithmMaps`]), taken as the loop begins.
-    let copy = ctx.c11_maps.and_then(|maps| {
+    let copy = ctx.maps.and_then(HeldMaps::c11).and_then(|maps| {
         maps.copies
             .iter()
             .find(|(walk, _)| std::ptr::eq(*walk, s))
@@ -43671,6 +43774,238 @@ fn lower_c11_map_walk(
     Ok(())
 }
 
+/// A statement of a map or a set a Rust body holds, or a walk over one
+/// (docs/adr/0108, D3 to D6), spelled by [`crate::forge::rust_algorithm_map`]:
+/// a key and a value are computed as the expressions they are, a record by the
+/// name of the parameter, local or loop item that holds it; a put and a remove
+/// write their `outcome` as the variant of the same name of the standard enum
+/// the outcome's local holds, and a put that names none fails
+/// `capacity-exceeded` on a full map; a walk binds its item and its key each
+/// turn and copies the map only where its body writes it (D6 item 3).
+/// `type_ctx` is the body's context where `proven` holds.
+fn lower_rust_map_stmt(
+    s: &AlgorithmStmt,
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    pad: &str,
+    indent: usize,
+    proven: &crate::forge::narrowing::Facts,
+    out: &mut String,
+) -> Result<(), ForgeError> {
+    use crate::forge::rust_algorithm_map::{self as rust_maps, Outcome, Walk};
+    use crate::forge::types::InferredType;
+    let pipeline = |what: String| -> ForgeError { GenerateError::InvalidConfig(what).into() };
+    let maps = ctx
+        .maps
+        .and_then(HeldMaps::rust)
+        .ok_or_else(|| pipeline("a statement of a map reached a body that holds none".into()))?;
+    let l = ctx.l;
+    let held_map = |name: &str| {
+        maps.held(name)
+            .ok_or_else(|| pipeline(format!("`{name}` is no map or set the body holds")))
+    };
+    let lower = |written: &str,
+                 spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+                 slot: InferredType|
+     -> Result<String, ForgeError> {
+        let site = ExpressionSite::new(written, spelling);
+        expr::transpile_into(written, l.expr_target(), type_ctx, ctx.renames, slot)
+            .map_err(|refusal| site.place(refusal))
+    };
+    // A key or a value of type `ty`, as the map takes it: by value.
+    let part = |written: &str,
+                spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+                ty: &AlgorithmValueType|
+     -> Result<String, ForgeError> {
+        let name = written.trim();
+        match ty {
+            AlgorithmValueType::Record { .. } if ctx.records.contains_key(name) => Ok(ctx
+                .renames
+                .get(name)
+                .map_or_else(|| l.local_id(name), |held| (*held).to_string())),
+            // The item or the key of a walk over a map of records, a clone the
+            // walk bound.
+            AlgorithmValueType::Record { .. }
+                if type_ctx.value_of(name).is_some_and(|place| {
+                    matches!(place.ty, crate::forge::value_type::ValueType::Record { .. })
+                }) =>
+            {
+                Ok(format!("{}.clone()", l.local_id(name)))
+            }
+            AlgorithmValueType::Record { alias } => Err(GenerateError::unsupported(format!(
+                "`{name}` as a record:{alias} of a map, which is not a record parameter, local \
+                 or loop item"
+            ))
+            .into()),
+            AlgorithmValueType::Scalar(scalar) => {
+                lower(written, spelling, InferredType::from_sce_type(scalar))
+            }
+            AlgorithmValueType::Text { .. }
+            | AlgorithmValueType::Bytes { .. }
+            | AlgorithmValueType::Union { .. }
+            | AlgorithmValueType::List { .. }
+            | AlgorithmValueType::Map { .. }
+            | AlgorithmValueType::Set { .. }
+            | AlgorithmValueType::Optional { .. } => Err(pipeline(format!(
+                "`{name}` as a part of a map of {ty}, which the map's declaration refused"
+            ))),
+        }
+    };
+    // The local `outcome` names and the standard enum's spelling of each
+    // variant the runtime answers, in the runtime's order.
+    let outcome_of = |outcome: &Option<String>,
+                      declared: &[&str]|
+     -> Result<Option<(String, Vec<String>)>, ForgeError> {
+        let Some(outcome) = outcome.as_deref().map(str::trim) else {
+            return Ok(None);
+        };
+        let alias = maps
+            .outcome_alias(outcome)
+            .ok_or_else(|| pipeline(format!("the outcome `{outcome}` is no local of an enum")))?;
+        let variants = declared
+            .iter()
+            .map(|variant| lower(&format!("{alias}.{variant}"), None, InferredType::Unknown))
+            .collect::<Result<Vec<String>, ForgeError>>()?;
+        Ok(Some((l.local_id(outcome), variants)))
+    };
+    match s {
+        AlgorithmStmt::Put {
+            target,
+            key,
+            key_spelling,
+            expr,
+            expr_spelling,
+            outcome,
+            ..
+        } => {
+            let name = target.trim();
+            let held = held_map(name)?;
+            let key = part(key, key_spelling.as_ref(), &held.key)?;
+            let value = match (&held.value, expr) {
+                (Some(ty), Some(expr)) => Some(part(expr, expr_spelling.as_ref(), ty)?),
+                (None, None) => None,
+                (Some(_), None) | (None, Some(_)) => {
+                    return Err(pipeline(format!(
+                        "a put into `{name}` with a value into a set or none into a map, which \
+                         the parser refuses"
+                    )))
+                }
+            };
+            let spelled = outcome_of(outcome, crate::forge::static_lowering::RUST_PUT_OUTCOMES.1)?;
+            // A put that names no outcome fails on a full map, which only a body
+            // that declares `may-fail` may write (D6 item 2).
+            if spelled.is_none() && !ctx.channel.may_fail {
+                return Err(pipeline(format!(
+                    "a put into `{name}` with no outcome in an algorithm that does not declare \
+                     may-fail, which the parser refuses"
+                )));
+            }
+            let full = format!(
+                "return Err({}::CapacityExceeded);",
+                rust_algorithm_failure(true)
+            );
+            let outcome = spelled.as_ref().map(|(place, variants)| Outcome {
+                place: place.as_str(),
+                variants: variants.as_slice(),
+            });
+            out.push_str(&rust_maps::put(
+                pad,
+                &l.local_id(name),
+                &key,
+                value.as_deref(),
+                outcome.as_ref(),
+                &full,
+            ));
+        }
+        AlgorithmStmt::Remove {
+            target,
+            key,
+            key_spelling,
+            outcome,
+            ..
+        } => {
+            let name = target.trim();
+            let held = held_map(name)?;
+            let key = part(key, key_spelling.as_ref(), &held.key)?;
+            let spelled = outcome_of(
+                outcome,
+                crate::forge::static_lowering::RUST_REMOVE_OUTCOMES.1,
+            )?;
+            let outcome = spelled.as_ref().map(|(place, variants)| Outcome {
+                place: place.as_str(),
+                variants: variants.as_slice(),
+            });
+            out.push_str(&rust_maps::remove(
+                pad,
+                &l.local_id(name),
+                &key,
+                outcome.as_ref(),
+            ));
+        }
+        AlgorithmStmt::Clear { target, .. } => {
+            let name = target.trim();
+            held_map(name)?;
+            out.push_str(&rust_maps::clear(pad, &l.local_id(name)));
+        }
+        AlgorithmStmt::Foreach {
+            item,
+            source,
+            key,
+            body,
+            ..
+        } => {
+            let name = source.trim();
+            let held = held_map(name)?;
+            if held.value.is_none() && key.is_some() {
+                return Err(pipeline(format!(
+                    "a walk over the set `{name}` that binds a key, which the parser refuses"
+                )));
+            }
+            let (map, item) = (l.local_id(name), l.local_id(item));
+            let key = key.as_deref().map(|key| l.local_id(key.trim()));
+            let walk = Walk {
+                held,
+                map: &map,
+                item: &item,
+                key: key.as_deref(),
+                copies: crate::forge::narrowing::Writes::of_block(body).reaches(name),
+                depth: indent,
+            };
+            let (open, close) = walk.spelled(pad);
+            out.push_str(&open);
+            let inner = indent + 2;
+            lower_algorithm_block(
+                body,
+                ctx,
+                &"    ".repeat(inner),
+                inner,
+                &crate::forge::narrowing::loop_entry(proven, body),
+                out,
+            )?;
+            out.push_str(&close);
+        }
+        AlgorithmStmt::Var { .. }
+        | AlgorithmStmt::RecordVar { .. }
+        | AlgorithmStmt::RecordFromCall { .. }
+        | AlgorithmStmt::UnionVar { .. }
+        | AlgorithmStmt::UnionCopied { .. }
+        | AlgorithmStmt::Assign { .. }
+        | AlgorithmStmt::Append { .. }
+        | AlgorithmStmt::If { .. }
+        | AlgorithmStmt::While { .. }
+        | AlgorithmStmt::Return { .. }
+        | AlgorithmStmt::Call { .. }
+        | AlgorithmStmt::Require { .. } => {
+            return Err(pipeline(
+                "a statement that is no put, remove, clear or walk of a map reached the \
+                 lowering of one"
+                    .into(),
+            ))
+        }
+    }
+    Ok(())
+}
+
 /// Lower one statement, without the failure check that follows it
 /// ([`lower_algorithm_stmt_and_check`]). Every refusal is placed at the
 /// attribute it names, from the statement's spellings
@@ -43712,7 +44047,7 @@ fn lower_algorithm_stmt(
         absences,
         channel,
         unions,
-        c11_maps,
+        maps,
     } = ctx;
     // The statement's expressions are read where `proven` holds: a `.value` the
     // narrowing admitted is a proven read here too.
@@ -43728,12 +44063,59 @@ fn lower_algorithm_stmt(
         // storage, started empty under its seed where it is declared, or the
         // caller's destination emptied there ([`C11AlgorithmMaps`]).
         AlgorithmStmt::Var { name, .. }
-            if c11_maps.is_some_and(|maps| maps.starts.contains_key(name.as_str())) =>
+            if maps
+                .and_then(HeldMaps::c11)
+                .is_some_and(|maps| maps.starts.contains_key(name.as_str())) =>
         {
-            let start = c11_maps
+            let start = maps
+                .and_then(HeldMaps::c11)
                 .and_then(|maps| maps.starts.get(name.as_str()))
                 .expect("guarded by the arm");
             out.push_str(&format!("{pad}{start}\n"));
+        }
+        // A map or a set a Rust body declares (docs/adr/0108, D5): the
+        // caller's destination emptied, or a local of its own built empty.
+        AlgorithmStmt::Var { name, .. }
+            if maps
+                .and_then(HeldMaps::rust)
+                .is_some_and(|maps| maps.holds(name.as_str())) =>
+        {
+            let maps = maps.and_then(HeldMaps::rust).expect("guarded by the arm");
+            let declared = maps
+                .declare(
+                    pad,
+                    name,
+                    &l.local_id(name),
+                    assigned.contains(name.as_str()),
+                )
+                .ok_or_else(|| {
+                    GenerateError::InvalidConfig(format!(
+                        "algorithm map '{name}' is declared as a local and is no map local"
+                    ))
+                })?;
+            out.push_str(&declared);
+        }
+        // A statement of a map or a set the body holds, and a walk over one
+        // (docs/adr/0108, D3 to D6), on the lane that holds it: on C11 the
+        // caller's storage, written and walked where it stands through the
+        // functions of `sce/forge/map.h`.
+        AlgorithmStmt::Foreach { source: held, .. }
+        | AlgorithmStmt::Put { target: held, .. }
+        | AlgorithmStmt::Remove { target: held, .. }
+        | AlgorithmStmt::Clear { target: held, .. }
+            if maps.is_some_and(|maps| maps.holds(held.trim())) =>
+        {
+            match (maps.expect("guarded by the arm"), s) {
+                (HeldMaps::Rust(_), _) => {
+                    lower_rust_map_stmt(s, ctx, type_ctx, pad, indent, proven, out)?;
+                }
+                (HeldMaps::C11(_), AlgorithmStmt::Foreach { .. }) => {
+                    lower_c11_map_walk(s, ctx, type_ctx, pad, indent, proven, out)?;
+                }
+                (HeldMaps::C11(_), _) => {
+                    out.push_str(&c11_algorithm_map_write(s, ctx, type_ctx, pad)?);
+                }
+            }
         }
         AlgorithmStmt::Var {
             name,
@@ -44888,22 +45270,6 @@ fn lower_algorithm_stmt(
                 }
             }
         }
-        // docs/adr/0108, D3 to D6 on C11: each map is the caller's storage the
-        // algorithm is lent, written and walked where it stands through the
-        // functions of `sce/forge/map.h`.
-        AlgorithmStmt::Put { .. } | AlgorithmStmt::Remove { .. } | AlgorithmStmt::Clear { .. }
-            if lang == Language::C11 =>
-        {
-            out.push_str(&c11_algorithm_map_write(s, ctx, type_ctx, pad)?);
-        }
-        AlgorithmStmt::Foreach { source, .. }
-            if lang == Language::C11
-                && type_ctx
-                    .value_of(source.trim())
-                    .is_some_and(|place| place.is_keyed()) =>
-        {
-            lower_c11_map_walk(s, ctx, type_ctx, pad, indent, proven, out)?;
-        }
         // docs/adr/0108, D5: a walk over a map, and the statements that write
         // one, are lowered only by a backend that lowers an algorithm's map,
         // which renders none of them before [`reject_map_in_unsupported_lang`]
@@ -45354,12 +45720,6 @@ fn lower_algorithm_stmt(
             expr_spelling,
         } => {
             let line = match e {
-                // A map returned on C11 is the caller's destination the body
-                // built (docs/adr/0108, D5, [`C11AlgorithmMaps`]), which every
-                // `<sce:return>` names: the return says only that it was built.
-                Some(_) if c11_maps.is_some_and(|maps| maps.output.is_some()) => {
-                    channel.value(pad, "", true)
-                }
                 // `null` given whole to a return of an element whose type an
                 // expression cannot name is the return's own absent value
                 // ([`TypedAbsences`]).
@@ -45399,6 +45759,28 @@ fn lower_algorithm_stmt(
                     let value =
                         ListSpelling::new(l, elem, imports)?.return_value(&l.local_id(name));
                     channel.value(pad, &value, true)
+                }
+                // A map return (docs/adr/0108, D5): the local the body returns
+                // is the caller's destination already, so the return says only
+                // that it was written, as a list return's does.
+                Some(rhs) if return_value.is_some_and(|t| t.map_key().is_some()) => {
+                    let name = rhs.trim();
+                    if maps.and_then(HeldMaps::output) != Some(name) {
+                        let site = ExpressionSite::new(rhs, expr_spelling.as_ref());
+                        let at = site.locate(Some(0..name.len()));
+                        let refusal: ForgeError =
+                            crate::forge::error::ExprError::UnsupportedConstruct {
+                                construct: format!(
+                                    "a {} return that is not the map local the body returns, \
+                                     by name",
+                                    return_value.map(|t| t.as_attr()).unwrap_or_default()
+                                ),
+                                observed: at.observed(),
+                            }
+                            .into();
+                        return Err(at.place(refusal));
+                    }
+                    channel.value(pad, "", true)
                 }
                 // A union return (docs/adr/0092, Landing order step 5): the
                 // returned value is a union parameter or local of the same
@@ -48454,6 +48836,44 @@ fn render_algorithm(
         .map(|def| format!("{def}\n\n"))
         .collect();
     let unions = types.union_rules();
+    // docs/adr/0108, D5, D6 and D8: each map or set a Rust algorithm holds, in
+    // the type a machine's variable of the same parts is held in, a record in
+    // the type its unit declares (D6 item 4), read through the functions of
+    // the leaf crate that declares it.
+    let rust_maps = if lang == Language::Rust && m.first_map().is_some() {
+        let part = |part: &AlgorithmValueType| -> Result<Option<String>, ForgeError> {
+            Ok(match part {
+                AlgorithmValueType::Record { alias } => Some(
+                    resolve_record(imports, alias, None, &format!("a map of {part}"))?
+                        .qualified_type
+                        .clone(),
+                ),
+                AlgorithmValueType::Scalar(scalar)
+                    if !matches!(scalar, SceType::String | SceType::Bytes) =>
+                {
+                    Some(l.type_name(scalar).into_owned())
+                }
+                AlgorithmValueType::Scalar(_)
+                | AlgorithmValueType::Text { .. }
+                | AlgorithmValueType::Bytes { .. }
+                | AlgorithmValueType::Union { .. }
+                | AlgorithmValueType::List { .. }
+                | AlgorithmValueType::Map { .. }
+                | AlgorithmValueType::Set { .. }
+                | AlgorithmValueType::Optional { .. } => None,
+            })
+        };
+        let local = |name: &str| l.local_id(name);
+        let maps = crate::forge::rust_algorithm_map::RustAlgorithmMaps::of(m, &part, &local)?;
+        type_ctx.rust_map_reads = Some(crate::forge::rust_algorithm_map::RUST_ALGORITHM_MAP_READS);
+        Some(maps)
+    } else {
+        None
+    };
+    let held_maps = c11_maps
+        .as_ref()
+        .map(HeldMaps::C11)
+        .or_else(|| rust_maps.as_ref().map(HeldMaps::Rust));
 
     // Per-RFC §synth-5-J-5 signature emit (item C7 lowering, 2026-05-13):
     // each `<sce:import kind="bounded-collection">` adds a
@@ -48490,13 +48910,9 @@ fn render_algorithm(
                 );
             }
             // A map or a set is lent whole, never copied (docs/adr/0108, D6
-            // items 1, 2 and 4): on C11 the address of the caller's storage,
-            // which views a map of any bound, the parameter's own being none.
-            if p.sce_type.map_key().is_some() && lang == Language::C11 {
-                return Ok(l.place_param(
-                    &p.name,
-                    crate::forge::static_lowering::c11_lent_map_type(p.written_in_place()),
-                ));
+            // items 1, 2 and 4) ([`HeldMaps::param_type`]).
+            if let Some(lent) = held_maps.and_then(|maps| maps.param_type(p)) {
+                return Ok(l.place_param(&p.name, &lent));
             }
             // A value that may be absent is passed by value, as a number is
             // (docs/adr/0055); a parameter is read-only, so a record it holds is
@@ -48624,18 +49040,12 @@ fn render_algorithm(
             };
         }
     }
-    // A map a C11 algorithm returns is built in the caller's storage, the
-    // destination it is handed last with the caller's failure record, as a list
-    // is (docs/adr/0082; docs/adr/0108, D5): a map of the caller's bound and seed,
-    // reached by its core, which the local the body returns names. The call
-    // answers whether it built it, and a map return declares may-fail.
+    // A map an algorithm returns is built in the caller's destination, as a
+    // list is (docs/adr/0082; docs/adr/0108, D5), a parameter after the
+    // declared ones ([`HeldMaps::destination`]). The call answers whether it
+    // built it, and a map return declares may-fail.
     let c11_map_output = c11_maps.as_ref().and_then(|maps| maps.output);
-    if let Some(output) = c11_map_output {
-        let parameter = format!(
-            "{} {}, sce_forge_algorithm_failure_t *{C11_CALLER_FAILURE}",
-            crate::forge::static_lowering::c11_lent_map_type(true),
-            l.local_id(output)
-        );
+    if let Some(parameter) = held_maps.and_then(|maps| maps.destination(&l)) {
         params_str = if params_str.is_empty() {
             parameter
         } else {
@@ -49001,11 +49411,9 @@ fn render_algorithm(
     if let (Language::C11, Some(name)) = (lang, destination_buffer.as_ref()) {
         const_renames_owned.push((name.clone(), c11_destination(&l.local_id(name))));
     }
-    // ... and each map through the address in its caller's storage it is held
-    // at (docs/adr/0108, D4 and D6, [`C11AlgorithmMaps`]): `len(m)` is
-    // `sce_map_count(&(*m))`.
-    if let Some(maps) = &c11_maps {
-        const_renames_owned.extend(maps.renames.iter().cloned());
+    // ... and each map through where the body holds it ([`HeldMaps::renames`]).
+    if let Some(maps) = held_maps {
+        const_renames_owned.extend(maps.renames(&l));
     }
     let const_renames: std::collections::HashMap<&str, &str> = const_renames_owned
         .iter()
@@ -49051,7 +49459,7 @@ fn render_algorithm(
             absences: &absences,
             channel,
             unions: &unions,
-            c11_maps: c11_maps.as_ref(),
+            maps: held_maps,
         },
         body_indent,
     )?;
@@ -49080,6 +49488,16 @@ fn render_algorithm(
     // instead of selecting a casing per backend. The module identity vars
     // (`namespace` / `package`) come from `base_context` and are unaffected.
     ctx.insert("primary_symbol".into(), primary_symbol.into());
+    // The bound of each map a Rust algorithm is lent, which its caller's
+    // variable states (docs/adr/0108, D5); nothing for any other algorithm.
+    ctx.insert(
+        "generics".into(),
+        rust_maps
+            .as_ref()
+            .map(crate::forge::rust_algorithm_map::RustAlgorithmMaps::generics)
+            .unwrap_or_default()
+            .into(),
+    );
     ctx.insert("params_str".into(), params_str.into());
     ctx.insert("return_type".into(), return_type.into());
     // RFC §synth-5-A line 311 (item C7 lowering, 2026-05-13):

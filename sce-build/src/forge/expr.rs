@@ -7612,7 +7612,15 @@ pub(crate) const RUST_MAP_READS: &str = "::sce_rust_runtime::portable::map";
 /// read out of one, an entry or a field of one, crosses into the machine's own
 /// type where it is read. A record entry taken whole crosses where the
 /// statement that takes it is lowered.
+///
+/// An algorithm calls the same functions of the leaf crate its map type is
+/// declared in ([`TypeCtx::rust_map_reads`]). In one that does not declare
+/// `may-fail`, which has no failure to hand on, a value at a key is read where
+/// the build proved the key held (D6 item 2; any other read is refused as
+/// `algorithm/undeclared-integer-failure`), by `held` and `held_cloned`, which
+/// read it as a proven index of a list is read.
 fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    let reads = ctx.rust_map_reads.unwrap_or(RUST_MAP_READS);
     // `m[k].f`: the field of the value the map lends.
     if let ExprKind::Member { object, property } = &mut expr.kind {
         let entry = keyed_entry(object, ctx);
@@ -7648,7 +7656,7 @@ fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         KeyedBuiltin::Len => "count",
         KeyedBuiltin::Has => "holds",
     };
-    **callee = TypedExpr::new(ExprKind::Raw(format!("{RUST_MAP_READS}::{function}")));
+    **callee = TypedExpr::new(ExprKind::Raw(format!("{reads}::{function}")));
     for (position, arg) in args.iter_mut().enumerate() {
         if position == 1 {
             rust_typed_key_literal(arg, &held);
@@ -7789,9 +7797,28 @@ fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> 
     let (map_ty, key_ty) = (map.ty, key.ty);
     wrap_in_call(&mut map, "&", map_ty);
     wrap_in_call(&mut key, "&", key_ty);
+    let reads = ctx.rust_map_reads.unwrap_or(RUST_MAP_READS);
+    // An algorithm's body that hands on no failure reads the key the build
+    // proved held ([`lower_keyed_reads_for_rust`]); a machine receives every
+    // failure it runs into.
+    if ctx.rust_map_reads.is_some() && !ctx.receives_failures {
+        let proven = match function {
+            "value" => "held",
+            _ => "held_cloned",
+        };
+        node.kind = ExprKind::Call {
+            callee: Box::new(TypedExpr::new(ExprKind::Raw(format!("{reads}::{proven}")))),
+            args: vec![map, key],
+            params: Vec::new(),
+            fails: false,
+            into_destination: false,
+            storage: None,
+        };
+        return true;
+    }
     let lookup = TypedExpr::new(ExprKind::Call {
         callee: Box::new(TypedExpr::new(ExprKind::Raw(format!(
-            "{RUST_MAP_READS}::{function}"
+            "{reads}::{function}"
         )))),
         args: vec![map, key],
         params: Vec::new(),

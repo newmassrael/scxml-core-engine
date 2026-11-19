@@ -76,6 +76,7 @@ pub mod requirement_nodes;
 pub mod retention;
 pub mod review_table;
 pub(crate) mod ring_ops;
+pub(crate) mod rust_algorithm_map;
 pub mod rust_optional;
 pub mod saved_migration;
 pub mod schema_revision;
