@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The checks a bx landing queue's refs meet in pre-push (bx-land-refs.sh), on a repository made here: a ref's NAME
-# under refs/bx-land/ never exempts it; only content that passes its arm's test narrows what it meets.
+# under refs/bx-land/ never exempts it; only content that passes its kind's tests narrows what it meets.
 #
 #   1. a genuine record (bx's identity, unrelated history, the record's files) meets the term check alone
 #   2. this repository's commit pushed as .../log is published AND gated
@@ -13,6 +13,18 @@
 #   6. an item sharing history with origin/HEAD is published and not gated
 #   7. an item sharing no history with it is published and gated
 #   8. a push to main is published and gated, as before
+#   9. genuine early marks meet the term check alone
+#  10. this repository's commit pushed as .../early is published and gated
+#  11. a ref under refs/bx-land/ no kind describes is published and gated
+#  12. with no description to be had, a genuine record is published and gated (the hook fails closed)
+#  13. with a description of another format, the same
+#  14. with no description, a push to main is published and gated (a machine without bx pushes as before)
+#
+# The test runs under `set -euo pipefail`, as pre-push does, so a library that ends the hook early fails it.
+#
+# The kinds are bx's description (`bx-fleet land refs --describe --tsv`, format 1), stated here as the file the
+# library reads from $BX_LAND_REFS_DESCRIPTION so the test needs no bx; a release that changes a kind changes this
+# file with the library's copy.
 #
 # Usage: tools/git-hooks/test-bx-land-refs.sh   (no network, no build; a few seconds)
 
@@ -23,6 +35,15 @@ source "$HERE/bx-land-refs.sh"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+DESCRIPTION="$WORK/description.tsv"
+{
+    printf '# bx-land-refs 1\n'
+    printf 'log\t^refs/bx-land/.+/log$\t^(queue\\.toml|next|items/[0-9]{10}-[a-z0-9]+\\.toml)$\tbx land <bx-land@localhost>\tnone\t0\t0\n'
+    printf 'lease\t^refs/bx-land/.+/lease$\t^holder\\.toml$\tbx land <bx-land@localhost>\tnone\t0\t0\n'
+    printf 'early\t^refs/bx-land/.+/early$\t^early\\.json$\tbx land <bx-land@localhost>\tnone\t0\t0\n'
+    printf 'item\t^refs/bx-land/.+/items/[^/]+$\t-\t-\tshares\t1\t0\n'
+} > "$DESCRIPTION"
+export BX_LAND_REFS_DESCRIPTION="$DESCRIPTION"
 cd "$WORK"
 git init -q -b main repo
 cd repo
@@ -68,6 +89,7 @@ LEASE="$(orphan bxid 'holder.toml=token = "aa"')"
 FOREIGN_FILE="$(orphan bxid 'next=2' 'evil.cpp=int x;')"
 PERSON_RECORD="$(orphan person 'next=2' 'queue.toml=format = 1')"
 UNRELATED_ITEM="$(orphan person 'other.cpp=int y;')"
+EARLY="$(orphan bxid 'early.json={"marks": []}')"
 Z=0000000000000000000000000000000000000000
 
 fails=0
@@ -94,4 +116,14 @@ case_ "5 a genuine lease meets the term check alone" no no "$LEASE $LEASE refs/b
 case_ "6 an item sharing history with origin/HEAD is published, not gated" yes no "$HEAD_SHA $HEAD_SHA refs/bx-land/main/items/ab12cd34ef56 $Z"
 case_ "7 an item sharing no history with it is published and gated" yes yes "$UNRELATED_ITEM $UNRELATED_ITEM refs/bx-land/main/items/cd34ef56ab12 $Z"
 case_ "8 a push to main is published and gated" yes yes "refs/heads/main $HEAD_SHA refs/heads/main $Z"
+case_ "9 genuine early marks meet the term check alone" no no "$EARLY $EARLY refs/bx-land/main/early $Z"
+case_ "10 this repository's commit pushed as .../early is published and gated" yes yes "$HEAD_SHA $HEAD_SHA refs/bx-land/main/early $Z"
+case_ "11 a ref under refs/bx-land/ no kind describes is published and gated" yes yes "$REC2 $REC2 refs/bx-land/main/unknown $Z"
+BX_LAND_REFS_DESCRIPTION="$WORK/none.tsv" \
+    case_ "12 with no description a genuine record is published and gated" yes yes "$REC2 $REC2 refs/bx-land/main/log $REC1"
+printf '# bx-land-refs 2\n' > "$WORK/format2.tsv"
+BX_LAND_REFS_DESCRIPTION="$WORK/format2.tsv" \
+    case_ "13 with a description of another format the same" yes yes "$REC2 $REC2 refs/bx-land/main/log $REC1"
+BX_LAND_REFS_DESCRIPTION="$WORK/none.tsv" \
+    case_ "14 with no description a push to main is published and gated" yes yes "refs/heads/main $HEAD_SHA refs/heads/main $Z"
 exit "$fails"

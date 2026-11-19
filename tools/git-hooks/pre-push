@@ -47,13 +47,14 @@ PUSHED_REFS="$(cat)"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# ── The refs of a bx landing queue (bx RFC 0024, section 12).
+# ── The refs of a bx landing queue (bx RFC 0024, sections 12 and 4.14).
 #
 # A ref under refs/bx-land/ asks for a test of its CONTENT, and only passing it
-# narrows what the ref meets: a genuine record or lease meets the term check
-# alone, a genuine item every check of what a push publishes and no gate.
-# Anything else, whatever it is named, is checked as any push. The tests and
-# their reasons are bx-land-refs.sh's. PUBLISHED_REFS and GATED_REFS are the
+# narrows what the ref meets: genuine bookkeeping (the record, the lease, the
+# early marks) meets the term check alone, a genuine item every check of what a
+# push publishes and no gate. Anything else, whatever it is named, is checked as
+# any push, as is every such ref when bx cannot describe its kinds. The kinds
+# are bx's description; the tests and their reasons are bx-land-refs.sh's. PUBLISHED_REFS and GATED_REFS are the
 # lists the checks below walk; the term check walks every pushed ref.
 # shellcheck source=tools/git-hooks/bx-land-refs.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/bx-land-refs.sh"
