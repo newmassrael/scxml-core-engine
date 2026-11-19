@@ -233,8 +233,10 @@ static void test_{{ f.name }}(void) {
    docs/adr/0058 §5), and the bytes are decoded and what the decode presents
    compared with the value, element by element (law 1). The values are static,
    as a struct that holds a large array is too large for a stack. Independent of
-   `oracle_eligible`, which speaks of the `cases`. #}
-{% set source_max = (f.name | to_upper_snake_case) ~ "_MAX_BYTES" %}
+   `oracle_eligible`, which speaks of the `cases`. The encode is handed a sink
+   one byte larger than the case's frame, not one of `<CODEC>_MAX_BYTES`: a
+   codec that states no bound has a MAX_BYTES no array can be sized by, and the
+   one extra byte is where an encode that writes past its frame is seen. #}
 {% for s in f.sources %}
 {% set source_index = loop.index0 %}
     {
@@ -245,7 +247,7 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
         static const uint8_t source_expected[] = { {% if s.encoded %}{{ s.encoded | join(", ") }}{% else %}0{% endif %} };
         const size_t source_len = {{ s.encoded | length }};
-        uint8_t source_buf[{{ source_max }} > 0u ? {{ source_max }} : 1u];
+        uint8_t source_buf[{{ (s.encoded | length) + 1 }}];
         sce_forge_writer_t source_w = sce_forge_writer_init_buf(source_buf, sizeof source_buf);
         sce_forge_codec_status_t source_st =
             {{ f.name }}_encode_source({{ f.name }}_value_source(), &value, &source_w{% for v in s.encode_inputs %}, {{ v }}{% endfor %});
@@ -284,7 +286,9 @@ static void test_{{ f.name }}(void) {
 {# Refused cases (docs/adr/0081 §5): `source` is a value of the interface its
    encode refuses (docs/adr/0065 §2), made as a `sources` value is, and `symbol`
    the status the encode answers it with; the encode writes nothing before it
-   refuses. #}
+   refuses. Its sink has room for one byte: an encode that writes one before
+   it refuses is seen by the position, one that writes more by the status, and
+   a larger sink would only hide it. #}
 {% for r in f.refused %}
     {
         static {{ f.name }}_t value;
@@ -292,7 +296,7 @@ static void test_{{ f.name }}(void) {
 {% for b in r.bindings %}
         {{ b }}
 {% endfor %}
-        uint8_t refused_buf[{{ source_max }} > 0u ? {{ source_max }} : 1u];
+        uint8_t refused_buf[1];
         sce_forge_writer_t refused_w = sce_forge_writer_init_buf(refused_buf, sizeof refused_buf);
         sce_forge_codec_status_t refused_st =
             {{ f.name }}_encode_source({{ f.name }}_value_source(), &value, &refused_w{% for v in r.encode_inputs %}, {{ v }}{% endfor %});
