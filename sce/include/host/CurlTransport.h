@@ -14,8 +14,13 @@
  *   so libcurl does not resolve it again, and refuses at the socket any address it was not given
  *   (CURLOPT_OPENSOCKETFUNCTION). The URL is read once, by libcurl's own parser, and the host the policy
  *   judges is the one libcurl connects to; `Host` and the TLS server name stay the URL's.
- * - What it follows. Nothing: a `3xx` is answered as it came, and no proxy is used, the proxy variables
- *   of the environment included.
+ * - What it follows. Nothing: a `3xx` is answered as it came.
+ * - Through a proxy. None is read from the environment (the proxy variables included). A proxy the
+ *   deployment configures (CurlTransportSettings::proxy) is reached as itself: its own address is not
+ *   judged, the target still is, every exchange is tunnelled with `CONNECT` (CURLOPT_HTTPPROXYTUNNEL),
+ *   for `http` as for `https`, to the address the policy admitted (CURLOPT_CONNECT_TO), so the proxy
+ *   never resolves the name, and the socket guard admits the proxy's addresses alone. The proxy's
+ *   credentials travel in the `CONNECT` alone (CURLOPT_PROXYHEADER) and never reach the target.
  * - How long it waits. The connection and its TLS handshake, the response's head from the request's
  *   sending on, and the whole transfer each have a bound (CurlTimeouts); one that passes fails `network`.
  *   libcurl tells the head's wait about once a second, so that bound is kept to about a second.
@@ -131,6 +136,17 @@ struct CurlTimeouts {
     std::chrono::milliseconds total{60000};
 };
 
+/// An HTTP proxy every exchange is tunnelled through with `CONNECT` (docs/adr/0109, D4). It is the
+/// deployment's, reached as itself: the policy judges the target and not the proxy.
+struct CurlProxy {
+    /// The proxy's host: a name, which the system's resolver answers, or an address literal without brackets.
+    std::string host;
+    uint16_t port = 0;
+    /// The value of `Proxy-Authorization` each `CONNECT` carries (`Basic dXNlcjpwYXNz`), sent to the proxy and
+    /// to nothing else; empty for none.
+    std::string authorization;
+};
+
 /// What a transport is built with besides its policy.
 struct CurlTransportSettings {
     CurlTimeouts timeouts;
@@ -140,6 +156,8 @@ struct CurlTransportSettings {
     size_t maxHeaderBytes = 65536;
     /// A file of authorities believed in place of the CA bundle libcurl was built with; empty for that.
     std::string caBundle;
+    /// The proxy every exchange is tunnelled through; nothing to connect directly.
+    std::optional<CurlProxy> proxy;
 };
 
 namespace detail {
@@ -296,7 +314,8 @@ inline curl_socket_t onCurlOpenSocket(void *user, curlsocktype, struct curl_sock
 }  // namespace detail
 
 /// The network transport of section 5 on libcurl, built with the policy every exchange is judged by; there
-/// is no transport without one.
+/// is no transport without one. A proxy named by its host name is answered by the system's resolver
+/// (SystemResolver).
 class CurlTransport : public Transport {
 public:
     explicit CurlTransport(DestinationPolicy policy, CurlTransportSettings settings = {})
@@ -347,15 +366,56 @@ private:
         }
         CURL *handle = easy.get();
 
-        // The name pinned to the addresses the policy admitted. An address literal is not resolved.
-        detail::CurlSlist resolve;
-        if (!IpAddress::parse(detail::normalizedHost(host))) {
-            std::string entry = host + ":" + std::to_string(destination.port) + ":";
-            for (size_t i = 0; i < destination.addresses.size(); ++i) {
-                const IpAddress &address = destination.addresses[i];
-                entry += (i == 0 ? "" : ",") + (address.v6 ? "[" + address.text() + "]" : address.text());
+        const auto written = [](const IpAddress &address) {
+            return address.v6 ? "[" + address.text() + "]" : address.text();
+        };
+        const auto pinned = [&written](const std::string &name, uint16_t port,
+                                       const std::vector<IpAddress> &addresses) {
+            std::string entry = name + ":" + std::to_string(port) + ":";
+            for (size_t i = 0; i < addresses.size(); ++i) {
+                entry += (i == 0 ? "" : ",") + written(addresses[i]);
             }
-            if (!detail::appendLine(resolve, entry)) {
+            return entry;
+        };
+        const bool literalTarget = IpAddress::parse(detail::normalizedHost(host)).has_value();
+
+        // Where a socket may be opened to: the addresses the policy admitted, or through a proxy the proxy's
+        // own. A name is pinned to them (CURLOPT_RESOLVE), so libcurl resolves nothing itself; an address
+        // literal is not resolved.
+        std::vector<IpAddress> reachable = destination.addresses;
+        detail::CurlSlist resolve;
+        detail::CurlSlist connectTo;
+        detail::CurlSlist proxyHeaders;
+        std::string proxyUrl;
+        if (!settings_.proxy) {
+            if (!literalTarget && !detail::appendLine(resolve, pinned(host, destination.port, reachable))) {
+                return failed;
+            }
+        } else {
+            const CurlProxy &proxy = *settings_.proxy;
+            const auto proxyLiteral = IpAddress::parse(proxy.host);
+            reachable.clear();
+            if (proxyLiteral) {
+                reachable.push_back(*proxyLiteral);
+            } else if (auto found = proxyResolver_->resolve(proxy.host)) {
+                reachable = std::move(*found);
+            }
+            if (reachable.empty()) {
+                return failed;
+            }
+            if (!proxyLiteral && !detail::appendLine(resolve, pinned(proxy.host, proxy.port, reachable))) {
+                return failed;
+            }
+            proxyUrl =
+                "http://" + (proxyLiteral ? written(*proxyLiteral) : proxy.host) + ":" + std::to_string(proxy.port);
+            // The tunnel is asked for to the address the policy checked, never to the name.
+            if (!literalTarget && !detail::appendLine(connectTo, host + ":" + std::to_string(destination.port) + ":" +
+                                                                     written(destination.addresses.front()) + ":" +
+                                                                     std::to_string(destination.port))) {
+                return failed;
+            }
+            if (!proxy.authorization.empty() &&
+                !detail::appendLine(proxyHeaders, "Proxy-Authorization: " + proxy.authorization)) {
                 return failed;
             }
         }
@@ -385,7 +445,7 @@ private:
 
         detail::CurlTransfer transfer;
         transfer.easy = handle;
-        transfer.admitted = &destination.addresses;
+        transfer.admitted = &reachable;
         transfer.maxBody = settings_.maxResponseBytes;
         transfer.maxHead = settings_.maxHeaderBytes;
         transfer.headerBound = settings_.timeouts.header;
@@ -410,8 +470,19 @@ private:
         }
         curl_easy_setopt(handle, CURLOPT_OPENSOCKETFUNCTION, &detail::onCurlOpenSocket);
         curl_easy_setopt(handle, CURLOPT_OPENSOCKETDATA, static_cast<void *>(&transfer));
-        // An empty proxy is no proxy, whatever the environment says.
-        curl_easy_setopt(handle, CURLOPT_PROXY, "");
+        // The configured proxy, or an empty one, which is no proxy whatever the environment says. The
+        // request's own fields go to the target alone and the proxy's to the proxy alone.
+        curl_easy_setopt(handle, CURLOPT_PROXY, proxyUrl.c_str());
+        curl_easy_setopt(handle, CURLOPT_HEADEROPT, static_cast<long>(CURLHEADER_SEPARATE));
+        if (settings_.proxy) {
+            curl_easy_setopt(handle, CURLOPT_HTTPPROXYTUNNEL, 1L);
+            if (connectTo) {
+                curl_easy_setopt(handle, CURLOPT_CONNECT_TO, connectTo.get());
+            }
+            if (proxyHeaders) {
+                curl_easy_setopt(handle, CURLOPT_PROXYHEADER, proxyHeaders.get());
+            }
+        }
         curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 0L);
 #if LIBCURL_VERSION_NUM >= 0x075500
         curl_easy_setopt(handle, CURLOPT_PROTOCOLS_STR, "http,https");
@@ -460,6 +531,9 @@ private:
 
     DestinationPolicy policy_;
     CurlTransportSettings settings_;
+    /// What answers a proxy named by its host name: the system's resolver, since the proxy is the
+    /// deployment's and not a target the policy judges.
+    std::shared_ptr<Resolver> proxyResolver_ = std::make_shared<SystemResolver>();
 };
 
 }  // namespace SCE::StandardHost
