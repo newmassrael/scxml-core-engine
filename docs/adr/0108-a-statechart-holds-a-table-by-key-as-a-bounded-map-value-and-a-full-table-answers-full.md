@@ -280,6 +280,14 @@ fixed seed, and the generated header states the residue: such a map can be flood
 so a deployment that faces untrusted peers must supply entropy. The Interpreter's JavaScript `Map` hashes as its
 engine does and is a reference, not a deployment.
 
+An algorithm's own map (a map local, or the copy a walk that writes its map takes) is seeded from the host too, through
+whatever lent it storage: (Amended 2026-11-20.) its seed is derived, under the local's name, from the seed of a map
+the algorithm is lent or of the destination it returns a map into. An algorithm that is lent none and returns none
+takes a seed from its caller. A statechart passes one drawn from the source its own maps were seeded from, and an
+algorithm that calls such an algorithm passes one derived from its own, so whether an algorithm takes a seed is
+decided over its calls as a whole. No lane fixes a seed for an algorithm, and the residue of a host without entropy
+is the machine's.
+
 **The saved form** (`docs/SCE_ACCEPTED_SUBSET.md` §2.15, "Saving and restoring") is an array of `[key, value]`
 pairs in D2's order, and a set's is an array of keys. Each key and value is written in the form its type already
 has there. A restored map holds its entries in the saved order. A saved map with more entries than its bound, or
