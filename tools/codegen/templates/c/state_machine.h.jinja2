@@ -35,6 +35,12 @@
 {% endfor %}
 {% endfor %}
 {% set takes_simulated_host = has_native_duties or host_duty_children.any %}
+{# docs/adr/0108, D8: a machine that holds a map or a set takes the seed its maps
+   hash their keys under as the last argument of every construction. Kept in step
+   with the same `set`s in `state_machine.c.jinja2` and `saved.c.jinja2`. #}
+{% set ns_maps = namespace(any=false) %}
+{% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set ns_maps.any = true %}{% endif %}{% endfor %}
+{% set map_seed_param = ', sce_map_seed_t map_seed' if ns_maps.any else '' %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 header. Module-level form is a comment, not the
    `#line` directive — `#line` in a header would propagate into
@@ -55,6 +61,21 @@
    written to a saved state and read back by the functions declared beside them,
    and a machine that saves declares its own. #}
 #include "sce/saved_state.h"
+{% endif %}
+{% if ns_maps.any %}
+{# docs/adr/0108, D8: a map or a set is the type `sce/forge/map.h` declares for its
+   key, its value and its bound, which the policy below holds. #}
+#include "sce/forge/map.h"
+
+/* docs/adr/0108, D8: this machine holds a map or a set and has no source of
+   randomness of its own, so every start of it (each `_init*`, `_init_at`,
+   `_restore`, and the starts a parent gives it) takes `map_seed`, the 128-bit key
+   its maps hash their keys under, each map keyed by a seed of its own drawn from
+   it. Nothing a document or a host observes depends on the seed. A host with no
+   entropy hands a fixed seed, and a map of this machine can then be flooded by a
+   peer that knows that seed, every lookup a scan of the table: a deployment that
+   faces peers it does not trust hands a seed drawn from entropy
+   (`sce_map_seed_of_bytes`). */
 {% endif %}
 {% if static_published | selectattr('view') | rejectattr('read') | list %}
 {# SCE Accepted Subset §2.15: a published list is read through the library's
@@ -1585,7 +1606,7 @@ void {{ csym_prefix }}{{ model.name }}_observe_transition(const {{ csym_prefix }
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
-                                  const {{ native_actions_interface }} *actions{% endif %});
+                                  const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 {% if model.needs_event_scheduler %}
 
 /* W3C SCXML 6.2.2 + 6.2.5: both seams at once — the clock this machine
@@ -1603,7 +1624,7 @@ SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   sce_clock_t clock,
                                   const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
-                                  const {{ native_actions_interface }} *actions{% endif %});
+                                  const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 {% endif %}
 
 /* Change what serves `processor_type` on a machine that is already
@@ -1706,13 +1727,13 @@ uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
-                                  const {{ native_actions_interface }} *actions{% endif %});
+                                  const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 {% if model.needs_event_scheduler %}
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
                                   sce_clock_t clock,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
-                                  const {{ native_actions_interface }} *actions{% endif %});
+                                  const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 {% endif %}
 {% if model.host_processor_types %}
 
@@ -1723,14 +1744,14 @@ SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_surfaces({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_processor_registry_t *host_processors,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
-                                  const {{ native_actions_interface }} *actions{% endif %});
+                                  const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 {% if model.needs_event_scheduler %}
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_surfaces({{ csym_prefix }}{{ model.name }}_t *sm,
                                   sce_clock_t clock,
                                   const sce_host_processor_registry_t *host_processors,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
-                                  const {{ native_actions_interface }} *actions{% endif %});
+                                  const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 {% endif %}
 {% endif %}
 {% endif %}
@@ -1834,7 +1855,7 @@ bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix
    this call; whatever `user_data` points at must. */
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,
-                                                          const {{ native_actions_interface }} *actions);
+                                                          const {{ native_actions_interface }} *actions{{ map_seed_param }});
 {% if takes_simulated_host %}
 
 /* docs/adr/0038: `_init_with_actions` for a host that only simulates the
@@ -1852,7 +1873,7 @@ SCE_WARN_UNUSED
    production wiring and a recorder is not. */
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_simulated_actions({{ csym_prefix }}{{ model.name }}_t *sm,
-                                                                    const {{ native_actions_interface }} *actions);
+                                                                    const {{ native_actions_interface }} *actions{{ map_seed_param }});
 {% endif %}
 {% else %}
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
@@ -1873,9 +1894,14 @@ SCE_WARN_UNUSED
    refused for one: every `_init*` of it answers `{{ csym_prefix | upper }}{{ model.name | upper }}_START_OK`. The
    answer is still the caller's to read, as it is on every machine.
 {% endif %}
+{% if ns_maps.any %}
+
+   docs/adr/0108, D8: `map_seed` is what this machine's maps hash their keys
+   under (see the note on it above the machine's types).
+{% endif %}
 */
 SCE_WARN_UNUSED
-{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm);
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm{{ map_seed_param }});
 
 /* §scxml-6.4 (docs/adr/0098): start this machine as the child of an invoke,
    when it does not address its parent (one that may is started through
@@ -1888,7 +1914,7 @@ SCE_WARN_UNUSED
    values are read during this call only. It answers as `_init` does. */
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_invoked({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock,
-                                                       const sce_handed_values_t *handed);
+                                                       const sce_handed_values_t *handed{{ map_seed_param }});
 {% endif %}
 
 /* docs/adr/0096: why the last start of this machine could not establish its
@@ -1959,7 +1985,7 @@ sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_with_session_id({{ cs
                                        const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
                                        const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
                                        const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
-                                       const {{ native_actions_interface }} *actions{% endif %});
+                                       const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 {% if model.needs_script_engine %}
 
 /* W3C SCXML C.2.3: initialize with the deployment's inbound BasicHTTP
@@ -1971,7 +1997,7 @@ sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_with_session_id({{ cs
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
                                                             const char *basic_http_access_uri{% if has_native_actions %},
-                                                            const {{ native_actions_interface }} *actions{% endif %});
+                                                            const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 {% endif %}
 {% if model.may_address_parent %}
 /* W3C SCXML 6.4: Initialize an invoked-child SM with parent-routing
@@ -2047,7 +2073,7 @@ void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.n
                                        const char *parent_session_id,
                                        sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
-                                       sce_clock_t clock);
+                                       sce_clock_t clock{{ map_seed_param }});
 void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* §scxml-6.4 (docs/adr/0098): the values a parent's `<param>`s and `namelist`
@@ -2178,7 +2204,7 @@ int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms(const {{ 
    installs; `sce_clock_manual(0)` hands time to the host, which then drives the
    machine with `_advance_time_ms` instead of `_tick`. */
 SCE_WARN_UNUSED
-{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock{% if has_native_actions %}, const {{ native_actions_interface }} *actions{% endif %});
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock{% if has_native_actions %}, const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 
 /* §scxml-6.2: Move this machine's clock forward by `ms` and run whatever that
    made due.
@@ -2824,7 +2850,7 @@ SCE_WARN_UNUSED
     sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
     const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
     const sce_host_processor_registry_t *host_processors{% endif %}{% if has_native_actions %},
-    const {{ native_actions_interface }} *actions{% endif %});
+    const {{ native_actions_interface }} *actions{% endif %}{{ map_seed_param }});
 
 /* W3C SCXML 3.3: Compile-time policy queries (mirror C++ `*Policy::*`). */
 {{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_initial_state(void);
@@ -2951,7 +2977,7 @@ bool {{ csym_prefix }}{{ model.name }}_judge(const char *text, size_t len, sce_s
    on as it would one it had initialized. */
 bool {{ csym_prefix }}{{ model.name }}_restore({{ csym_prefix }}{{ model.name }}_t *sm, const char *text, size_t len,
                              int64_t wall_now_ms{% if saved_restore_args %},
-                             const {{ csym_prefix }}{{ model.name }}_restore_args_t *args{% endif %},
+                             const {{ csym_prefix }}{{ model.name }}_restore_args_t *args{% endif %}{{ map_seed_param }},
                              sce_saved_error_t *err);
 
 /* ── The session of a tree (docs/adr/0045) ───────────────────────────── */

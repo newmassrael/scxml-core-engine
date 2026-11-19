@@ -379,9 +379,12 @@ impl ComposedLowering {
                 ..walks
             },
 
+            // ... and in the type `sce/forge/map.h` declares for its parts and
+            // its bound, reserved in the machine (step 6).
             Language::C11 => Self {
                 unions: true,
                 records: true,
+                maps: true,
                 ..walks
             },
 
@@ -2787,9 +2790,9 @@ mod tests {
 
     /// docs/adr/0108, D10: a statechart's map or set variable passes the gate
     /// every route asks, the Interpreter's lowering, the first to hold one
-    /// ("Order of work", step 4), and Rust's, the second (step 5), and is
-    /// refused by name, naming the record, by every other generated backend,
-    /// none of whose rows holds one yet.
+    /// ("Order of work", step 4), Rust's, the second (step 5), and C11's, the
+    /// third (step 6), and is refused by name, naming the record, by every
+    /// other generated backend, none of whose rows holds one yet.
     #[test]
     fn a_map_variable_passes_the_gate_and_is_refused_by_each_lowering_that_holds_none() {
         use crate::generator::Language;
@@ -2804,10 +2807,14 @@ mod tests {
         });
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_none());
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ECMASCRIPT).is_none());
-        assert!(
-            first_unlowered_composed_use(&model, ComposedLowering::of(Language::Rust)).is_none()
-        );
-        for language in Language::ALL.iter().filter(|l| **l != Language::Rust) {
+        let holding = [Language::Rust, Language::C11];
+        for language in holding {
+            assert!(
+                first_unlowered_composed_use(&model, ComposedLowering::of(language)).is_none(),
+                "{language:?} holds a map"
+            );
+        }
+        for language in Language::ALL.iter().filter(|l| !holding.contains(l)) {
             let lowering = ComposedLowering::of(*language);
             assert!(
                 !lowering.maps,
@@ -2829,9 +2836,12 @@ mod tests {
             crate::forge::model::AlgorithmValueType::read("list<set<uint8>[2]>[3]").ok();
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_some());
         assert!(first_unlowered_composed_use(&model, ComposedLowering::ECMASCRIPT).is_some());
-        assert!(
-            first_unlowered_composed_use(&model, ComposedLowering::of(Language::Rust)).is_some()
-        );
+        for language in holding {
+            assert!(
+                first_unlowered_composed_use(&model, ComposedLowering::of(language)).is_some(),
+                "{language:?} holds a map inside a list"
+            );
+        }
     }
 
     /// Each backend's row says what its machine spells, no more and no less:

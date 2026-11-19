@@ -6391,7 +6391,7 @@ pub struct C11EventPayload {
 /// (mirrors the `event | replace('.','_') | replace('-','_')` the C11
 /// templates apply to the event enum). The caller upper/lower-cases it for
 /// the tag constant vs the struct/member spelling.
-fn c11_event_token(event: &str) -> String {
+pub(crate) fn c11_event_token(event: &str) -> String {
     event.replace(['.', '-'], "_")
 }
 

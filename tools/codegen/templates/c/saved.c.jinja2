@@ -32,6 +32,8 @@
 {{ put_scalar(true, field.saved_type, expr) }}
 {%- elif field.saved_kind in ["record", "union"] -%}
 {{ field.saved_type }}_saved_write(w, &{{ expr }});
+{%- elif field.saved_kind in ["map", "set"] -%}
+{{ field.ty }}_saved_write(w, &{{ expr }});
 {%- elif field.saved_kind == "list" -%}
 sce_jw_begin_array(w);
     for (size_t at_ = 0u; at_ < ({{ expr }}).len; ++at_) {
@@ -98,6 +100,11 @@ if (({{ expr }}).present) {
 {% endfor %}
 {% set takes_simulated_host = has_native_duties or host_duty_children.any %}
 {% set saved_restore_args = model.needs_event_scheduler or model.host_processor_types or model.host_invoker_types or has_native_actions %}
+{# docs/adr/0108, D8: a machine that holds a map or a set is constructed by a restore
+   with the seed its maps hash their keys under, as every other construction of it is.
+   Kept in step with the same `set`s in `state_machine.h.jinja2`. #}
+{% set saved_maps = namespace(any=false) %}
+{% for field in static_fields %}{% if field.saved_kind in ["map", "set"] %}{% set saved_maps.any = true %}{% endif %}{% endfor %}
 {% set n_records = static_saved_shape.records | length %}
 {% set n_enums = static_saved_shape.enums | length %}
 {% set n_histories = model.history_states | length %}
@@ -251,6 +258,12 @@ SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const cha
         out->len = count;
     }
     return true;
+}
+{% elif field.saved_kind in ["map", "set"] %}
+    /* docs/adr/0108, D8: a map is read an entry at a time, each put into `out` where it is
+       kept, which the construction started under its seed: no copy of the map's whole bound
+       is made here (docs/adr/0082). */
+    return {{ field.ty }}_saved_read(v, what, at, out, err);
 }
 {% else %}
     {{ field.ty }} value;
@@ -1890,7 +1903,7 @@ bool {{ _t }}_judge(const char *text, size_t len, sce_saved_error_t *err) {
 }
 
 bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall_now_ms{% if saved_restore_args %},
-                      const {{ _t }}_restore_args_t *args{% endif %}, sce_saved_error_t *err) {
+                      const {{ _t }}_restore_args_t *args{% endif %}{% if saved_maps.any %}, sce_map_seed_t map_seed{% endif %}, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
 {% if saved_restore_args %}
@@ -1912,7 +1925,7 @@ bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall
 {% endif %}
     /* Constructed with no id given: a tree's state then binds the id it was saved with
        (`_saved_apply`), and a format-1 state, which holds none, keeps the one drawn here. */
-    const sce_start_refusal_t refused = {{ _t }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %});
+    const sce_start_refusal_t refused = {{ _t }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %}{% if saved_maps.any %}, map_seed{% endif %});
     if (refused != SCE_START_REFUSAL_NONE) {
         /* The act table, or (docs/adr/0096) a script session that cannot be
            established, each in the words of the runtime's refusal. */

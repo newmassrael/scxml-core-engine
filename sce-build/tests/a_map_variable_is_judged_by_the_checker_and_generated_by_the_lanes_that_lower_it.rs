@@ -7,9 +7,9 @@
 //! the checker reads once), and refuses each read, statement and loop that is
 //! no use of a map by the code D11 names, saying what is accepted. The
 //! Interpreter's lowering, the first to hold a map ("Order of work", step 4),
-//! lowers the document, Rust's `generate`, the second (step 5), generates it,
-//! and every other generated lane's `generate` refuses it by name, naming the
-//! record that lands a map lane by lane (D10).
+//! lowers the document, Rust's `generate`, the second (step 5), and C11's, the
+//! third (step 6), generate it, and every other generated lane's `generate`
+//! refuses it by name, naming the record that lands a map lane by lane (D10).
 //!
 //! Each refusal is the well-formed document with one thing changed, so the
 //! refusal is the change's and nothing else's.
@@ -86,9 +86,9 @@ fn refused(document: &str, code: &str, part: &str) {
 
 /// docs/adr/0108, D3 to D5 and D10: the document that writes every read,
 /// statement and loop of a map the checker reads is accepted by `check`,
-/// refused by name by every lane that generates a statechart but Rust, and lowered by
-/// the Interpreter's lowering, every statement of a map replaced and every read
-/// of one a call of the library.
+/// refused by name by every lane that generates a statechart but Rust and C11,
+/// and lowered by the Interpreter's lowering, every statement of a map replaced
+/// and every read of one a call of the library.
 #[test]
 fn a_map_document_is_checked_and_refused_by_every_lane_by_name() {
     let path = fixtures().join("map_faces.scxml");
@@ -99,8 +99,12 @@ fn a_map_document_is_checked_and_refused_by_every_lane_by_name() {
 
     let place = "`map<record:PeerKey, record:Face>[face_max=4]` in a statechart's variable";
     for &language in sce_build::generator::Language::ALL {
-        // Rust holds a map ("Order of work", step 5), as the test below holds.
-        if language == sce_build::generator::Language::Rust {
+        // Rust holds a map ("Order of work", step 5), and C11 (step 6), as the
+        // tests below hold.
+        if matches!(
+            language,
+            sce_build::generator::Language::Rust | sce_build::generator::Language::C11
+        ) {
             continue;
         }
         let lane = language.canonical_name();
@@ -309,6 +313,139 @@ fn rust_saves_a_byte_string_of_a_map_as_its_latin1_text() {
             "no `{held}` in the generated Rust:\n{code}"
         );
     }
+}
+
+/// The C11 lowering of `document`, written beside the schemas it imports:
+/// whether `generate` passed, what it printed, and every header and source it
+/// wrote, joined.
+fn generate_c11(document: &str) -> (bool, String, String) {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for name in SIBLINGS {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a schema");
+    }
+    let path = dir.path().join("map_faces.scxml");
+    std::fs::write(&path, document).expect("write the statechart");
+    let out_dir = tempfile::tempdir().expect("an output directory");
+    let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
+    let (ok, printed) = run(&["generate", "-l", "c11", "-o", out.as_str()], &path);
+    let mut code = String::new();
+    let mut files: Vec<PathBuf> = std::fs::read_dir(out_dir.path())
+        .expect("read the output")
+        .map(|entry| entry.expect("an output file").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "h" || ext == "c"))
+        .collect();
+    files.sort();
+    for path in files {
+        code.push_str(&std::fs::read_to_string(&path).expect("read a generated file"));
+    }
+    (ok, printed, code)
+}
+
+/// docs/adr/0108, "Order of work", step 6: C11 generates the document, each map
+/// and set the type `sce/forge/map.h` declares for its parts and its bound,
+/// started under a seed drawn from the one every construction takes; each read a
+/// call of the header's over the map's address with a probe of the key, a record
+/// key and the payload taken whole each by the function that writes its
+/// canonical bytes; each statement a write of the map; a whole map taken into
+/// another's storage; and the saved form written and read by each map's type.
+/// D6 item 3: a `<foreach>` whose body does not write the map it walks walks the
+/// map itself, and one whose body does walks a copy the machine holds.
+#[test]
+fn c11_holds_a_map_and_copies_one_only_for_a_loop_that_writes_it() {
+    let (ok, printed, code) = generate_c11(&faces());
+    assert!(ok, "C11 generates a map:\n{printed}");
+    for held in [
+        "#include \"sce/forge/map.h\"",
+        "SCE_MAP_DECLARE(sce_static_map_uint32_uint64_8, uint32_t, uint64_t, 8u, \
+         sce_static_map_uint32_uint64_8_key_feed)",
+        "SCE_MAP_DECLARE(sce_static_map_uint32_uint64_16, uint32_t, uint64_t, 16u, \
+         sce_static_map_uint32_uint64_16_key_feed)",
+        "SCE_SET_DECLARE(sce_static_set_uint32_4, uint32_t, 4u, sce_static_set_uint32_4_key_feed)",
+        "sce_map_key_text(key, sink);",
+        "static inline void map_faces_record_peer_key_map_key(const void *key, sce_map_sink_t *sink)",
+        "static inline void map_faces_peer_seen_payload_map_key(const void *key, sce_map_sink_t *sink)",
+        "sce_map_seed_t map_seed",
+        "sce_map_seed_derive(map_seed, 0u)",
+        "sce_map_holds(&(sm->policy.v_faces), &(sm->policy.v_peer), NULL)",
+        "map_faces_peer_seen_payload_map_key)",
+        "sce_map_count(&(sm->policy.v_faces))",
+        "sce_map_lookup_take(&sce_failure_, sce_map_lookup(&(sm->policy.v_counts), SCE_MAP_KEY_UINT(",
+        "SCE_MAP_KEY_TEXT(",
+        "SCE_MAP_VALUE_OF(sm->policy.v_faces, ",
+        "sce_map_assign(&(sm->policy.v_spare), &(sm->policy.v_counts));",
+        "sce_map_clear(&(sm->policy.v_flags));",
+        "SCE_MAP_PUT_FULL",
+        "SCE_MAP_REMOVE_REMOVED",
+        "sce_static_map_uint32_uint64_8_t_saved_write(w, &",
+        "sce_static_map_uint32_uint64_8_t_saved_read(v, what, at, out, err)",
+        "sce_map_first(&(sm->policy.v_faces))",
+    ] {
+        assert!(
+            code.contains(held),
+            "no `{held}` in the generated C11:\n{code}"
+        );
+    }
+    // No loop of the document writes the map it walks.
+    assert!(
+        !code.contains("sce_map_copy_for_walk("),
+        "a loop copies a map:\n{code}"
+    );
+
+    // The walk of `seen` that removes each key it meets walks a copy of it, held
+    // in the machine's scratch at the loop's depth.
+    let writes_its_map = edited(
+        &faces(),
+        "<sce:put target=\"counts\" key=\"s\" expr=\"total\"/>",
+        "<sce:remove target=\"seen\" key=\"s\"/>",
+    );
+    let (ok, printed, code) = generate_c11(&writes_its_map);
+    assert!(ok, "C11 generates a loop that writes its map:\n{printed}");
+    for held in [
+        "sce_map_copy_for_walk(sce_walk_",
+        "&sm->scratch.loop_0.of_sce_static_set_uint32_4",
+        "sce_static_set_uint32_4_t of_sce_static_set_uint32_4;",
+    ] {
+        assert!(
+            code.contains(held),
+            "no `{held}` in the generated C11:\n{code}"
+        );
+    }
+}
+
+/// docs/adr/0108, D8: a C11 machine holding a map takes its seed from the host
+/// that constructs it, and neither a parent nor a test component's runner hands
+/// one yet, so a document that invokes a child holding a map is refused by name
+/// on C11, naming the record.
+#[test]
+fn c11_refuses_a_child_that_holds_a_map_by_name() {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for name in SIBLINGS {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a schema");
+    }
+    std::fs::write(dir.path().join("map_faces.scxml"), faces()).expect("write the child");
+    let parent = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="map_parent">
+  <state id="running">
+    <invoke id="faces" type="scxml" src="map_faces.scxml"/>
+  </state>
+</scxml>
+"#;
+    let path = dir.path().join("map_parent.scxml");
+    std::fs::write(&path, parent).expect("write the parent");
+    let out_dir = tempfile::tempdir().expect("an output directory");
+    let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
+    let (ok, printed) = run(&["generate", "-l", "c11", "-o", out.as_str()], &path);
+    assert!(
+        !ok,
+        "C11 generates a parent of a child that holds a map:\n{printed}"
+    );
+    assert!(
+        printed.contains("\"code\":\"generate/unsupported-feature\"")
+            && printed.contains("of a child that holds a map or a set")
+            && printed.contains("(docs/adr/0108, D10)"),
+        "{printed}"
+    );
 }
 
 /// docs/adr/0108, D2, D3 and D11: a map is read through `len`, `has` and the

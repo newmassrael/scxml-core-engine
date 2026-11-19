@@ -3491,6 +3491,7 @@ mod tests {
             target
                 .map_write(&MapWrite {
                     map,
+                    ty: "",
                     place,
                     types: None,
                     capacity,
@@ -3540,6 +3541,7 @@ mod tests {
         assert!(target
             .map_write(&MapWrite {
                 map: "faces",
+                ty: "",
                 place: &place_of("map<record:Peer, uint8>[2]"),
                 types: None,
                 capacity: 2,

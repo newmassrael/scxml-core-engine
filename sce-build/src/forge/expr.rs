@@ -872,6 +872,9 @@ fn resolve_then_rename(
     if matches!(target, ExprTarget::Rust) {
         lower_keyed_reads_for_rust(ast, ctx);
     }
+    if matches!(target, ExprTarget::C) {
+        lower_keyed_reads_for_c(ast, ctx)?;
+    }
     // docs/adr/0092, section 6.1: a read of a union's member, judged above
     // where its case is proven, spelled by the cases the facts leave, on the
     // backend whose machine holds a union.
@@ -7709,6 +7712,220 @@ fn rust_typed_key_literal(key: &mut TypedExpr, held: &crate::forge::value_path::
         _ => return,
     };
     key.kind = ExprKind::Raw(typed);
+}
+
+/// What `len(m)` of a C11 machine's map or set calls (`sce/forge/map.h`).
+const C_MAP_COUNT: &str = "sce_map_count";
+/// What `has(m, k)` calls.
+const C_MAP_HOLDS: &str = "sce_map_holds";
+/// What finds the value `m[k]` reads, a call that may fail, whose failure its
+/// `_take` records ([`pass_failure_on`]).
+const C_MAP_LOOKUP: &str = "sce_map_lookup";
+/// What reads the value the lookup found as the map holds its values.
+const C_MAP_VALUE_OF: &str = "SCE_MAP_VALUE_OF";
+
+/// Each read of a map or a set of `expr` (docs/adr/0108, D3), spelled for a
+/// C11 machine, which holds one in the type `sce/forge/map.h` declares for its
+/// parts and its bound and reads it through the header's functions over the
+/// map's address: `len(m)` is its `sce_map_count`, a `uint32` as a list's
+/// length is; `has(m, k)` its `sce_map_holds`; and `m[k]` the value its
+/// `sce_map_lookup` finds, read where the map holds it as the map holds its
+/// values (`SCE_MAP_VALUE_OF`), a call that may fail: a key that is absent
+/// fails `out-of-range`, as an index outside a list does, and gives the map's
+/// zero value. A text value is read as its buffer's text, and so is a text
+/// field of a record value (`m[k].f`).
+///
+/// A key is handed as a probe and the function that writes the probe's
+/// canonical bytes ([`c_map_probe`]), so a value of another width, a text
+/// pointer and the payload taken whole each find the key whose bytes they
+/// write. Run after the reads are judged and before any rename, while each map
+/// is the place the author named; a scope that holds no map holds no such
+/// read.
+fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
+    let ty = expr.ty;
+    // `m[k].f`: the field of the value the lookup found.
+    if let ExprKind::Member { object, property } = &mut expr.kind {
+        if c_keyed_value(object, ctx)? {
+            if ty == InferredType::Str {
+                property.push('.');
+                property.push_str(C_BUFFER_TEXT);
+            }
+            return Ok(());
+        }
+    }
+    if c_keyed_value(expr, ctx)? {
+        if ty == InferredType::Str {
+            let value = std::mem::replace(expr, TypedExpr::new(ExprKind::NullLit));
+            *expr = TypedExpr {
+                span: value.span.clone(),
+                ty,
+                kind: ExprKind::Member {
+                    object: Box::new(value),
+                    property: C_BUFFER_TEXT.to_string(),
+                },
+            };
+        }
+        return Ok(());
+    }
+    let builtin = match &expr.kind {
+        ExprKind::Call { callee, args, .. } => keyed_builtin(callee, args, ctx),
+        _ => None,
+    };
+    for child in expr.children_mut() {
+        lower_keyed_reads_for_c(child, ctx)?;
+    }
+    let Some((builtin, held)) = builtin else {
+        return Ok(());
+    };
+    let span = expr.span.clone();
+    let ExprKind::Call {
+        callee,
+        args,
+        params,
+        ..
+    } = &mut expr.kind
+    else {
+        return Ok(());
+    };
+    params.clear();
+    match builtin {
+        KeyedBuiltin::Len => {
+            *callee = Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_COUNT.to_string())));
+            if let Some(map) = args.first_mut() {
+                let map_ty = map.ty;
+                wrap_in_call(map, "&", map_ty);
+            }
+        }
+        KeyedBuiltin::Has => {
+            let mut taken = std::mem::take(args).into_iter();
+            let (Some(mut map), Some(key)) = (taken.next(), taken.next()) else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: "a `has` of a map or a set that names no key".to_string(),
+                    observed: None,
+                }
+                .at(span));
+            };
+            let (probe, feed) = c_map_probe(key, &held, ctx)?;
+            let map_ty = map.ty;
+            wrap_in_call(&mut map, "&", map_ty);
+            *callee = Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_HOLDS.to_string())));
+            *args = vec![map, probe, feed];
+        }
+    }
+    Ok(())
+}
+
+/// `node`, when it reads the value at a key of a map (`m[k]`), as the read of
+/// the value [`C_MAP_LOOKUP`] finds there, its key's own reads lowered first
+/// ([`lower_keyed_reads_for_c`]); `false`, and `node` as it was, for any other
+/// node.
+fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusal> {
+    let held = match &node.kind {
+        ExprKind::Index { object, .. } => keyed_place(object, ctx),
+        _ => None,
+    };
+    let Some(held) = held else {
+        return Ok(false);
+    };
+    let ExprKind::Index { object, index } = std::mem::replace(&mut node.kind, ExprKind::NullLit)
+    else {
+        return Ok(false);
+    };
+    let (map, mut key) = (*object, *index);
+    lower_keyed_reads_for_c(&mut key, ctx)?;
+    let (probe, feed) = c_map_probe(key, &held, ctx)?;
+    let mut address = map.clone();
+    let address_ty = address.ty;
+    wrap_in_call(&mut address, "&", address_ty);
+    let lookup = TypedExpr::new(ExprKind::Call {
+        callee: Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_LOOKUP.to_string()))),
+        args: vec![address, probe, feed],
+        params: Vec::new(),
+        fails: true,
+        into_destination: false,
+        storage: None,
+    });
+    node.kind = ExprKind::Call {
+        callee: Box::new(TypedExpr::new(ExprKind::Raw(C_MAP_VALUE_OF.to_string()))),
+        args: vec![map, lookup],
+        params: Vec::new(),
+        fails: false,
+        into_destination: false,
+        storage: None,
+    };
+    Ok(true)
+}
+
+/// The probe of the key `key` of the map or the set `held` a C11 read hands the
+/// lookup, and the function that writes the probe's canonical bytes
+/// (`sce/forge/map.h`, docs/adr/0108, D1): an integer as a 64-bit integer of
+/// its sign, the key's where the literal states none, a value of an enum as the
+/// number its constant carries, a `bool`, a text and a byte string each by the
+/// header's probe of it, and a record where it stands, of the map's own key
+/// type, which the map's own feed writes (`NULL`), or the payload taken whole,
+/// which the feed its key declaration names writes
+/// ([`TypeCtx::payload_key_feed`]).
+fn c_map_probe(
+    key: TypedExpr,
+    held: &crate::forge::value_path::Place,
+    ctx: &TypeCtx<'_>,
+) -> Result<(TypedExpr, TypedExpr), Refusal> {
+    use crate::forge::model::SceType;
+    use crate::forge::value_type::ValueType;
+    let raw = |text: &str| TypedExpr::new(ExprKind::Raw(text.to_string()));
+    let probe = |made_by: &str, mut key: TypedExpr| {
+        let key_ty = key.ty;
+        wrap_in_call(&mut key, made_by, key_ty);
+        key
+    };
+    let unspelled = |span: Option<std::ops::Range<usize>>, what: &str| {
+        ExprError::UnsupportedConstruct {
+            construct: format!("{what}, which a C11 map looks up by no key"),
+            observed: None,
+        }
+        .at(span)
+    };
+    let span = key.span.clone();
+    let Some(key_place) = held.map_key() else {
+        return Err(unspelled(span, "a read of a value that is no map"));
+    };
+    Ok(match key_place.ty {
+        ValueType::Record { .. } => {
+            let payload = place_path(&key).as_deref()
+                == Some(crate::forge::event_schema_check::EVENT_DATA_PATH);
+            let feed = if payload {
+                ctx.payload_key_feed
+                    .clone()
+                    .ok_or_else(|| unspelled(span, "a payload taken whole as a record key"))?
+            } else {
+                "NULL".to_string()
+            };
+            (probe("&", key), raw(&feed))
+        }
+        ValueType::Text { .. } => (probe("SCE_MAP_KEY_TEXT", key), raw("sce_map_key_text_at")),
+        ValueType::Bytes { .. } => (
+            probe("SCE_MAP_KEY_BYTES", key),
+            raw("sce_map_key_bytes_view"),
+        ),
+        ValueType::Scalar(SceType::Bool) => {
+            (probe("SCE_MAP_KEY_BOOL", key), raw("sce_map_key_bool"))
+        }
+        ValueType::Scalar(SceType::Enum(_)) => {
+            (probe("SCE_MAP_KEY_UINT", key), raw("sce_map_key_uint64"))
+        }
+        ValueType::Scalar(scalar) => {
+            let signed = match key.ty {
+                InferredType::Int { signed, .. } => signed,
+                _ => scalar.is_signed(),
+            };
+            if signed {
+                (probe("SCE_MAP_KEY_INT", key), raw("sce_map_key_int64"))
+            } else {
+                (probe("SCE_MAP_KEY_UINT", key), raw("sce_map_key_uint64"))
+            }
+        }
+        other => return Err(unspelled(span, &format!("a key of type `{other}`"))),
+    })
 }
 
 /// Where the key of a read at a key of the map `map` names stands

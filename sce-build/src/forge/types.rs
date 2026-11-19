@@ -1564,6 +1564,15 @@ pub struct TypeCtx<'a> {
     /// ⚠ Empty everywhere but an algorithm that holds a union, and emptiness is
     /// what keeps a statechart's union reads exactly what they were.
     pub unit_unions: HashMap<&'a str, String>,
+    /// The function a read of a map hands the map's lookup with the payload of
+    /// the event the transition is on taken whole as a record key
+    /// (`has(m, _event.data)`, docs/adr/0108, D3), for a target whose lookup
+    /// takes the function that writes the key it is handed
+    /// ([`crate::forge::static_lowering::StaticTarget::payload_key_feed`]).
+    ///
+    /// ⚠ `None` everywhere but a transition of a C11 statechart whose payload
+    /// is of the schema of a record a map is keyed by.
+    pub payload_key_feed: Option<String>,
 }
 
 /// How the arguments of one call, and the value it answers, cross between a
@@ -1631,6 +1640,7 @@ impl<'a> TypeCtx<'a> {
             value_scope: None,
             place_items: std::collections::HashSet::new(),
             unit_unions: HashMap::new(),
+            payload_key_feed: None,
         }
     }
 
