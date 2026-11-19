@@ -13,8 +13,11 @@
 //! - [`mac`]: HMAC-SHA-256 (RFC 2104) and its verification through that comparison;
 //! - [`random`]: where random bytes come from, the operating system's source unless a test gives
 //!   another;
+//! - [`ed25519`]: the one Ed25519 signature (RFC 8032), which a `COSE_Sign1` and an HTTP message
+//!   signature of the Mesh `https` binding (ADR 0109, D9) both make and check;
 //! - [`cose`]: COSE objects (RFC 9052) signed with Ed25519 and sealed with ChaCha20/Poly1305, keys
-//!   derived with HKDF-SHA-256, and a public key exported as a `COSE_Key`;
+//!   derived with HKDF-SHA-256, a public key exported as a `COSE_Key`, and its thumbprint (RFC
+//!   9679);
 //! - [`wrap`]: a key's material wrapped under a key-encryption key the key store never holds;
 //! - [`keyring`]: the life of a key a host generates or derives, over a key store
 //!   (`sce_rust_session_store::KeyStore`);
@@ -28,6 +31,7 @@
 
 pub mod cose;
 pub mod credential;
+pub mod ed25519;
 pub mod equal;
 pub mod keyring;
 pub mod mac;

@@ -18,19 +18,20 @@ use std::convert::Infallible;
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
-use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use sce_forge_runtime::cbor::{
     read_array_len, read_bytes, read_head, read_map_len, read_text, skip, write_array_head,
     write_bytes, write_head, write_map_head, write_text, write_uint, MAJOR_TEXT, MAJOR_UNSIGNED,
 };
 use sce_forge_runtime::codec::{SceCursor, VecSink};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
+
+use crate::ed25519;
 
 /// The bytes of a key: an Ed25519 seed, a ChaCha20/Poly1305 key, a public key, a derived key.
 pub const KEY_BYTES: usize = 32;
-/// The bytes of an Ed25519 signature.
-const SIGNATURE_BYTES: usize = 64;
+/// The bytes of a COSE key thumbprint (RFC 9679): the whole output of SHA-256.
+pub const THUMBPRINT_BYTES: usize = 32;
 /// The bytes of a ChaCha20/Poly1305 nonce: 96 bits.
 pub const IV_BYTES: usize = 12;
 
@@ -74,7 +75,7 @@ pub struct TrustedKey {
 
 /// The Ed25519 public key of the seed `seed`, which a trust set holds.
 pub fn public_key_of(seed: &[u8; KEY_BYTES]) -> [u8; KEY_BYTES] {
-    SigningKey::from_bytes(seed).verifying_key().to_bytes()
+    ed25519::public_key_of(seed)
 }
 
 // ── Writing ────────────────────────────────────────────────────────────
@@ -146,9 +147,7 @@ fn enc_structure(protected: &[u8], external_aad: &[u8]) -> Vec<u8> {
 /// unprotected one.
 pub fn sign1(seed: &[u8; KEY_BYTES], kid: &[u8], payload: &[u8], external_aad: &[u8]) -> Vec<u8> {
     let protected = protected_sign1(kid);
-    let signature = SigningKey::from_bytes(seed)
-        .sign(&sig_structure(&protected, external_aad, payload))
-        .to_bytes();
+    let signature = ed25519::sign(seed, &sig_structure(&protected, external_aad, payload));
     let mut out = Vec::new();
     let mut w = VecSink::new(&mut out);
     put(write_head(&mut w, MAJOR_TAG, TAG_SIGN1));
@@ -383,7 +382,9 @@ pub fn verify1(
     if headers.alg != Some(Algorithm::Int(ALG_EDDSA)) {
         return None;
     }
-    let signature = Signature::from_bytes(&<[u8; SIGNATURE_BYTES]>::try_from(signature).ok()?);
+    if signature.len() != ed25519::SIGNATURE_BYTES {
+        return None;
+    }
     let to_be_signed = sig_structure(protected, external_aad, payload);
     let kid = headers.kid.or(unprotected.kid);
     trusted
@@ -392,11 +393,41 @@ pub fn verify1(
             Some(kid) => kid.as_slice() == signer.id.as_bytes(),
             None => true,
         })
-        .find(|signer| {
-            VerifyingKey::from_bytes(&signer.public_key)
-                .is_ok_and(|key| key.verify_strict(&to_be_signed, &signature).is_ok())
-        })
+        .find(|signer| ed25519::verify(&signer.public_key, &to_be_signed, signature))
         .map(|signer| (signer.id.clone(), payload.to_vec()))
+}
+
+/// The `COSE_Key` RFC 9679 takes the thumbprint of for an Ed25519 public key: the map of the
+/// members its key type requires and nothing else, `{1: 1, -1: 6, -2: x}` (key type OKP, curve
+/// Ed25519, the key), in its deterministic encoding (RFC 8949 section 4.2.1). It names the
+/// algorithm and the curve with the key, so it is also how a key is carried where only its bytes
+/// would be ambiguous: in a header that offers it, and in a pin a server keeps of it.
+pub fn cose_key_ed25519_required(public_key: &[u8; KEY_BYTES]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut w = VecSink::new(&mut out);
+    put(write_map_head(&mut w, 3));
+    write_int(&mut w, KEY_LABEL_KTY);
+    write_int(&mut w, KTY_OKP);
+    write_int(&mut w, KEY_LABEL_CRV);
+    write_int(&mut w, CRV_ED25519);
+    write_int(&mut w, KEY_LABEL_X);
+    put(write_bytes(&mut w, public_key));
+    out
+}
+
+/// The Ed25519 public key `cose_key` carries when it is exactly the encoding
+/// [`cose_key_ed25519_required`] writes, and `None` for anything else: another key type or curve,
+/// another member, another encoding of the same map, or bytes after it.
+pub fn ed25519_of_cose_key(cose_key: &[u8]) -> Option<[u8; KEY_BYTES]> {
+    let prefix_length = cose_key.len().checked_sub(KEY_BYTES)?;
+    let public_key: [u8; KEY_BYTES] = cose_key[prefix_length..].try_into().ok()?;
+    (cose_key_ed25519_required(&public_key) == cose_key).then_some(public_key)
+}
+
+/// The COSE key thumbprint of an Ed25519 public key (RFC 9679 section 3): the SHA-256 of
+/// [`cose_key_ed25519_required`].
+pub fn thumbprint_ed25519(public_key: &[u8; KEY_BYTES]) -> [u8; THUMBPRINT_BYTES] {
+    Sha256::digest(cose_key_ed25519_required(public_key)).into()
 }
 
 /// The plaintext of `cose` opened with `key` over `external_aad` too, or
@@ -464,5 +495,37 @@ mod tests {
             cose_key_ed25519(b"11", &public),
             bytes_of_hex(COSE_KEY_1).expect("hex")
         );
+    }
+
+    /// RFC 9679's input for the public key of RFC 8032's test 1, written out by hand: `a3` a map of
+    /// three, `01 01` kty OKP, `20 06` crv Ed25519, `21 5820 ...` x; and its SHA-256, computed apart
+    /// from this crate. Red if the thumbprint takes in another member (the key id) or another order.
+    #[test]
+    fn a_thumbprint_digests_the_required_members_alone() {
+        let public: [u8; KEY_BYTES] = bytes_of_hex(PUBLIC_1)
+            .expect("hex")
+            .try_into()
+            .expect("32 bytes");
+        let required = cose_key_ed25519_required(&public);
+        assert_eq!(
+            required,
+            bytes_of_hex(
+                "a301012006215820d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+            )
+            .expect("hex")
+        );
+        assert_eq!(
+            thumbprint_ed25519(&public).to_vec(),
+            bytes_of_hex("866eefbd6718c8846cd7ddfe43fc74ab1daac4538ff8514ea2ec2d410a415743")
+                .expect("hex")
+        );
+        assert_eq!(ed25519_of_cose_key(&required), Some(public));
+        assert_eq!(
+            ed25519_of_cose_key(&cose_key_ed25519(b"11", &public)),
+            None,
+            "a key that carries a key id is not the required form"
+        );
+        assert_eq!(ed25519_of_cose_key(&required[1..]), None);
+        assert_eq!(ed25519_of_cose_key(&[0u8; 8]), None, "shorter than a key");
     }
 }
