@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 02a1f302f8985c8979205027eb5b236990d7a79fc8e74a6197aa1d9c5b50cead
+// source-hash: c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee
 #![doc = "SCE-MAP: algorithm_goal_undated.scxml:6 :: _forge_body"]
 // SCE-MAP: algorithm_goal_undated.scxml:6 :: _forge_body
 

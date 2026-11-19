@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 02a1f302f8985c8979205027eb5b236990d7a79fc8e74a6197aa1d9c5b50cead
+// source-hash: c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -309,7 +309,7 @@ impl StaticModelHarnessTransition {
     /// The digest of the source set this machine was generated from: the
     /// `source-hash` of the file's own header, as a value.
     pub const SOURCE_HASH: &'static str =
-        "02a1f302f8985c8979205027eb5b236990d7a79fc8e74a6197aa1d9c5b50cead";
+        "c2e56e3837f180f07a5c044369108d947c57fa7c065dd063d76bf9f37c590bee";
 
     /// Every transition of the machine.
     pub const ALL: [StaticModelHarnessTransition; 15] = [
@@ -1298,6 +1298,7 @@ impl StaticModelHarnessPersist for Engine<StaticModelHarnessPolicy> {
                 },
             ],
             features: None,
+            migrations: &[],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
