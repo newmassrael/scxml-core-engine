@@ -5464,8 +5464,21 @@ struct TransportRouter {
     /// `target` names the binding whose client received the envelope, a
     /// codegen-time constant: one client is built per binding and reads only
     /// the mailbox at that binding's server, so arrival here IS that peer's
-    /// identity for the responder check.
+    /// identity for the responder check, and for the sender's too.
     void onHttpsInbound(SCE::Mesh::MeshEnvelope env, const char* target) {
+        // SCE_MESH.md section 10.9, invariant 10: the server whose mailbox this
+        // client reads is the one its URL and TLS authenticated, the binding's
+        // peer, and `env.source` is only what the envelope says. One that
+        // names another machine is dropped before anything kept by sender
+        // sees it (the duplicate window, the ordering buffer, a request's
+        // correlation) and before the machine is told. Not on a causal
+        // binding, whose route reads a member's change from any link.
+        if (httpsLinkNamesSender(target) && env.source != target) {
+            SCE_LOG_ERROR("Mesh https binding '{}': an envelope names '{}' as its source, "
+                          "a machine its link does not name; dropped",
+                          target, env.source);
+            return;
+        }
 {% if https_client_rpc %}
         if (!admitAddressedReply(env, target)) {
             return;
@@ -5481,6 +5494,20 @@ struct TransportRouter {
 {% endfor %}
         // session_idx `0`: an https binding is a client, with no server pool.
         (void)this->dispatchToSession(env, 0);
+    }
+
+    /// Whether the https binding `target` names the sender of what its client
+    /// receives: every one but a causal binding, whose group's changes reach
+    /// a member through any link as their authors wrote them (SCE_MESH.md
+    /// §mesh-10.12).
+    static bool httpsLinkNamesSender(const char* target) {
+{% for t in targets if t.state.kind == "https" and t.causal %}
+        if (std::string(target) == "{{ t.target | replace("#", "") }}") {
+            return false;
+        }
+{% endfor %}
+        (void)target;
+        return true;
     }
 {% endif %}
 {% if "dds" in transport_types %}

@@ -172,6 +172,44 @@ fn a_dialing_binding_builds_its_client_from_the_hosts_adapter() {
     assert!(!code.contains("motor_outbound_"));
 }
 
+/// SCE_MESH.md section 10.9, invariant 10: the client reads the mailbox of the
+/// one server its URL and TLS authenticated, so an envelope that names another
+/// machine as its source is dropped where it enters, before the reply
+/// admission, the duplicate window or the machine sees it. Red if the check
+/// leaves `onHttpsInbound`, or if it follows the reply admission (a forged
+/// reply would then retire a request as the responder's).
+#[test]
+fn what_the_client_receives_names_its_binding_as_its_source() {
+    let code = generate("source", DIALING, "").expect("a dialing https binding generates");
+
+    let entry = code
+        .find("void onHttpsInbound(SCE::Mesh::MeshEnvelope env, const char* target) {")
+        .expect("the client's one inbound path");
+    let inbound = &code[entry..];
+    let check = inbound
+        .find("if (httpsLinkNamesSender(target) && env.source != target) {")
+        .expect("the inbound path refuses a source its link does not name");
+    let admission = inbound
+        .find("admitAddressedReply(env, target)")
+        .expect("the reply admission follows");
+    assert!(
+        check < admission,
+        "the source is held to the link before a reply is admitted"
+    );
+
+    // `motor` is not a causal binding, so its link names its sender.
+    let predicate = code
+        .find("static bool httpsLinkNamesSender(const char* target) {")
+        .expect("the predicate the check asks");
+    let body = &code[predicate..];
+    let end = body.find("return true;").expect("the predicate's default");
+    assert!(
+        !body[..end].contains("return false;"),
+        "a plain binding is not exempted: {}",
+        &body[..end]
+    );
+}
+
 #[test]
 fn the_retry_policy_is_the_clients_and_wraps_no_dispatcher() {
     let code = generate(
