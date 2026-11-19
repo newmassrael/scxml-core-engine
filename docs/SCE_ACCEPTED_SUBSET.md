@@ -6059,7 +6059,7 @@ body that writes the map writes the machine's map and not the walk.
 `sce:key` is refused under any other data model.
 `sce-build/tests/fixtures/map/map_faces.scxml` writes every read, statement
 and loop above, and
-`sce-build/tests/a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane.rs`
+`sce-build/tests/a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_lower_it.rs`
 holds what is accepted and each refusal.
 
 **The Interpreter's map.** `sce-codegen lower` holds a map or a set as the

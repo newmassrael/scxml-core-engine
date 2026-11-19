@@ -2008,8 +2008,8 @@ required-features = ["cli"]
 # until its lowering holds one (docs/adr/0108). It runs `sce-codegen`, so it carries the `cli`
 # gate.
 [[test]]
-name = "a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane"
-path = "tests/a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane.rs"
+name = "a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_lower_it"
+path = "tests/a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_lower_it.rs"
 required-features = ["cli"]
 
 # A union variable is built where it is declared or starts absent. It runs `sce-codegen`, so it
