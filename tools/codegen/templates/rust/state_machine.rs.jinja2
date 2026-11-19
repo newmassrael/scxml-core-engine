@@ -1046,10 +1046,24 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% endif %}
 }
 
+{# docs/adr/0108, D8: whether the machine holds a map or a set, whose keys
+   hash under a seed drawn where the machine is built. #}
+{% set ns_maps = namespace(any=false) %}
+{% for field in static_fields %}
+{% if field.saved_kind in ["map", "set"] %}
+{% set ns_maps.any = true %}
+{% endif %}
+{% endfor %}
+{# A machine with no source of randomness the runtime reads takes the seed of
+   its maps from its host, as it takes its session id. #}
+{% set map_seed_given = no_std and ns_maps.any %}
 {# What every constructor takes beside the session id, and passes on to
-   `build`: the host of the `<sce:action>`s, then the script engine. #}
-{% set ctor_params = ("actions: A" if has_native_actions else "") ~ (", " if has_native_actions and model.needs_script_engine else "") ~ ("script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>" if model.needs_script_engine else "") %}
-{% set ctor_args = ("actions" if has_native_actions else "") ~ (", " if has_native_actions and model.needs_script_engine else "") ~ ("script_engine" if model.needs_script_engine else "") %}
+   `build`: the host of the `<sce:action>`s, then the script engine, then the
+   seed of the machine's maps where its host gives it. #}
+{% set ctor_param_list = (["actions: A"] if has_native_actions else []) + (["script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>"] if model.needs_script_engine else []) + (["map_seed: ::sce_rust_runtime::MapSeed"] if map_seed_given else []) %}
+{% set ctor_arg_list = (["actions"] if has_native_actions else []) + (["script_engine"] if model.needs_script_engine else []) + (["map_seed"] if map_seed_given else []) %}
+{% set ctor_params = ctor_param_list | join(", ") %}
+{% set ctor_args = ctor_arg_list | join(", ") %}
 {% set ctor_rest_params = (", " ~ ctor_params) if ctor_params else "" %}
 {% set ctor_rest_args = (", " ~ ctor_args) if ctor_args else "" %}
 {# docs/adr/0045: the session id `build` takes, the id a host gives, and that
@@ -1092,7 +1106,8 @@ Default::default()
     reads only the variables declared before it and can neither fail nor act
     (one that could fail is refused where it is written), so declaring it a
     second time is not observable. A module parameter keeps what its
-    component filled.
+    component filled. A map or a set is declared again empty under the seed
+    `build` drew it (docs/adr/0108, D8), which only `build` holds.
 #}
 {% macro static_field_declarations(fields, enums, seed) %}
 {% for field in fields %}
@@ -1104,6 +1119,8 @@ Default::default()
         let {{ field.name }}: {{ field.ty }} = if {{ seed }}.{{ field.name }}.is_some() { {{ seed }}.{{ field.name }} } else { {{ field.init }} };
 {% elif seed and field.seeded %}
         let {{ field.name }}: {{ field.ty }} = match {{ seed }}.{{ field.name }} { Some(value) => value, None => {{ field.init }} };
+{% elif seed and field.saved_kind in ["map", "set"] %}
+        let {{ field.name }}: {{ field.ty }} = self.{{ field.name }}.empty_like();
 {% else %}
         let {{ field.name }}: {{ field.ty }} = {{ field.init }};
 {% endif %}
@@ -1170,6 +1187,11 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {# SCE Accepted Subset §2.15: each sce-static variable's initial value, in
    declaration order (`static_field_declarations`). #}
 {% if static_fields %}
+{% if ns_maps.any %}
+        // docs/adr/0108, D8: the seeds the machine's maps hash their keys under,
+        // one drawn for each from the seed {% if map_seed_given %}the host gave{% else %}drawn from the operating system{% endif %}.
+        let mut sce_map_seeds = ::sce_rust_runtime::MapSeeds::new({% if map_seed_given %}map_seed{% else %}::sce_rust_runtime::map_seed(){% endif %});
+{% endif %}
 {{ static_field_declarations(static_fields, static_enums, none) }}
 {% endif %}
         Self {
@@ -1318,6 +1340,14 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// proven through
     /// [`new_with_checked_session_id`](Self::new_with_checked_session_id). The
     /// id is held, not copied.
+{% if map_seed_given %}
+    ///
+    /// `map_seed` is what the machine's maps hash their keys under
+    /// (docs/adr/0108, D8), from the same host for the same reason. A host with
+    /// no entropy hands a fixed seed, and a map of such a machine can then be
+    /// flooded by a peer that knows it: a deployment that faces peers it does
+    /// not trust hands a seed drawn from entropy.
+{% endif %}
 {% else %}
     /// With [`new_with_checked_session_id`](Self::new_with_checked_session_id),
     /// the way this machine is built on `wasm32-unknown-unknown`, which has no

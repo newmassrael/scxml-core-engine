@@ -2004,8 +2004,9 @@ path = "tests/a_map_type_is_read_and_refused_by_name_where_it_is_not_lowered.rs"
 required-features = ["cli"]
 
 # A map or set variable, its reads, statements and loop are judged by the checker, lowered for
-# the Interpreter, and refused by name on every generated lane until its lowering holds one
-# (docs/adr/0108). It runs `sce-codegen`, so it carries the `cli` gate.
+# the Interpreter and generated for Rust, and refused by name on every other generated lane
+# until its lowering holds one (docs/adr/0108). It runs `sce-codegen`, so it carries the `cli`
+# gate.
 [[test]]
 name = "a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane"
 path = "tests/a_map_variable_is_judged_by_the_checker_and_generated_by_no_lane.rs"

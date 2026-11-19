@@ -1209,6 +1209,64 @@ pub struct MapWrite<'a> {
     /// The variable of the statement's standard outcome enum it writes what it
     /// did to, as the target names it; `None` where it names none.
     pub outcome: Option<&'a str>,
+    /// The type the machine holds a value of the outcome's enum in, with the
+    /// name of the enum document that declares its variants, for a target that
+    /// spells the variant it writes ([`StaticTarget::enum_variant`]); `None`
+    /// where the statement names no outcome or the target has no enum type.
+    pub outcome_enum: Option<(&'a str, &'a str)>,
+    /// The statement that raises `error.execution` for a put that names no
+    /// outcome into a full map, empty where the document names no such event,
+    /// for a target that raises it itself, as a full list's append does
+    /// ([`StaticTarget::append`]'s `overflow`).
+    pub full: &'a str,
+    /// The statement that raises `error.execution` for a key or a value that
+    /// cannot be computed or held, for a target that raises it itself.
+    pub failed: &'a str,
+}
+
+/// A `<foreach>` over a map or a set (docs/adr/0108, D5), as a target that
+/// walks one in a loop of its own is handed it ([`StaticTarget::map_loop`]):
+/// each entry in the map's order, its item bound to the entry's value (its key
+/// for a set), its `sce:key` to its key, and its index, where the document
+/// names one, to its position from 0.
+pub struct MapWalk<'a> {
+    /// The map or the set, as the machine reaches it.
+    pub map: &'a str,
+    /// The item, spelled as the target spells a local.
+    pub item: &'a str,
+    /// Whether the item's value is plain data the loop binds a copy of (a
+    /// number, a bool, a value of an enum, a record that owns no buffer), and
+    /// not one it lends the body where the map holds it (a text, a byte string,
+    /// a record that owns one): a read never copies a map, nor what it holds
+    /// (docs/adr/0108, D6).
+    pub item_copied: bool,
+    /// The key of a map's loop that names one by `sce:key`, spelled as a local,
+    /// and whether it is plain data as [`Self::item_copied`] says.
+    pub key: Option<(&'a str, bool)>,
+    /// The index, spelled as a local, where the document names one.
+    pub index: Option<&'a str>,
+    /// Whether the loop walks a set, whose item is each key.
+    pub set: bool,
+    /// Whether the body writes the map at any depth, so that the loop walks a
+    /// copy of it, the map as it was when the loop began (§scxml-4.6); where it
+    /// does not, the body cannot change the map, and the loop walks the map
+    /// itself (docs/adr/0108, D6 item 3).
+    pub copies: bool,
+    /// How many loops hold this one.
+    pub depth: usize,
+}
+
+/// How a target walks a map or a set in its own loop
+/// ([`StaticTarget::map_loop`]): the head that opens the loop, the statements
+/// that open each turn of it and bind its variables, the head of the statement
+/// that runs a body that ends its block on every path for the first entry
+/// alone, and how the body reads what the loop binds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapLoop {
+    pub head: String,
+    pub prologue: String,
+    pub first: String,
+    pub entry: MapEntry,
 }
 
 /// What a [`MapWrite`] does.
@@ -2397,11 +2455,18 @@ pub trait StaticTarget {
     fn map_empty(&self) -> Option<String> {
         None
     }
-    /// The value an `<assign>` writes into a map or a set variable from
-    /// `value`, the whole of another (docs/adr/0108, D2): a copy of it, which
-    /// cannot fail, since the judge held `value` to a map whose type the
-    /// variable's fits. `None` for a target whose machine holds no map yet.
-    fn map_copy(&self, _value: &str) -> Option<String> {
+    /// The value an `<assign>` writes into a map or a set variable of the type
+    /// `to` from `value`, the whole of another, of the type `from`
+    /// (docs/adr/0108, D2): a copy of it, which cannot fail, since the judge
+    /// held `value` to a map whose type the variable's fits (a bound no
+    /// larger, each text of a bound no larger). `None` for a target whose
+    /// machine holds no map yet.
+    fn map_copy(
+        &self,
+        _value: &str,
+        _from: &crate::forge::model::AlgorithmValueType,
+        _to: &crate::forge::model::AlgorithmValueType,
+    ) -> Option<String> {
         None
     }
     /// The statement an `<sce:put>` or an `<sce:remove>` lowers to
@@ -2410,9 +2475,66 @@ pub trait StaticTarget {
         None
     }
     /// How the body of a `<foreach>` over a map (`set` false) or a set reads
-    /// what the loop binds its item to, spelled `item` ([`MapEntry`]). `None`
-    /// for a target whose machine holds no map yet.
+    /// what the loop binds its item to, spelled `item` ([`MapEntry`]), for a
+    /// target that runs the document's own loop. `None` for a target whose
+    /// machine holds no map yet, and for one that walks a map in a loop of its
+    /// own ([`Self::map_loop`]).
     fn map_entry(&self, _item: &str, _set: bool) -> Option<MapEntry> {
+        None
+    }
+    /// Whether the machine holds a map or a set in a type of its own that names
+    /// the types of its key and its value ([`Self::map_type`]), which are then
+    /// declared as a variable's are, a key's made a key of the target's map
+    /// ([`Self::map_key_record_def`], [`Self::map_key_enum_def`]). `false` for a
+    /// target that holds every map in one value of no type of its own (the
+    /// Interpreter's array of entries).
+    fn types_maps(&self) -> bool {
+        false
+    }
+    /// The type a map (`value` the type of its values) or a set (`value`
+    /// `None`) of keys of the type `key`, bounded by `capacity`, is held in,
+    /// for a target that [`Self::types_maps`].
+    fn map_type(&self, _key: &str, _value: Option<&str>, _capacity: u32) -> Option<String> {
+        None
+    }
+    /// Whether a map of this target holds a byte string as a key or a value.
+    /// `false` for a target whose saved form of a map writes each key and value
+    /// by the one writer of its type, which writes a byte string as the list of
+    /// numbers it holds and not as the text a saved byte string is
+    /// (docs/adr/0108, D8): such a map is refused by name.
+    fn map_holds_bytes(&self) -> bool {
+        true
+    }
+    /// The declaration that makes a value of the record type `ty`, whose fields,
+    /// as the type names them, are `fields` in the order its schema declares
+    /// them, a key of the target's map (docs/adr/0108, D1): its canonical
+    /// bytes are those of its fields in that order. `None` for a target whose
+    /// map needs no such declaration.
+    fn map_key_record_def(&self, _ty: &str, _fields: &[String]) -> Option<String> {
+        None
+    }
+    /// ... and a value of the enum type `ty` a key, by its declared number.
+    fn map_key_enum_def(&self, _ty: &str) -> Option<String> {
+        None
+    }
+    /// The declaration that makes the type the machine holds the payload of
+    /// `event`, of the schema `schema`, in a key of the target's map, as a
+    /// record of that schema is ([`Self::map_key_record_def`]), so a record key
+    /// is looked up by the payload taken whole (`has(m, _event.data)`,
+    /// docs/adr/0108, D3). `None` for a target that holds the payload in no
+    /// type of its own, or whose map needs no such declaration.
+    fn payload_key_def(
+        &self,
+        _machine: &str,
+        _event: &str,
+        _schema: &EntrySchema,
+    ) -> Option<String> {
+        None
+    }
+    /// The loop a `<foreach>` over a map or a set lowers to, for a target that
+    /// walks one in a loop of its own ([`MapWalk`], [`MapLoop`]). `None` for a
+    /// target that runs the document's own loop ([`Self::map_entry`]).
+    fn map_loop(&self, _walk: &MapWalk<'_>) -> Option<MapLoop> {
         None
     }
     /// The loop a `<foreach>` over the list at `list` lowers to, as the head
@@ -4110,6 +4232,13 @@ const RUST_RECEIVED_VALUE: &str = "sce_value";
 /// crate root.
 const RUST_TEST_RUNTIME: &str = "::sce_rust_runtime::test";
 
+/// The seeds a Rust machine builds its maps from (docs/adr/0108, D8): a
+/// `MapSeeds` the machine's constructor declares under this name before its
+/// variables, drawn from the operating system with `std` and handed by the host
+/// without it (`rust/state_machine.rs.jinja2`), and in which every map
+/// variable's initial value draws its own ([`StaticTarget::map_empty`]).
+const RUST_MAP_SEEDS: &str = "sce_map_seeds";
+
 /// `text` as a Rust string literal.
 fn rust_text(text: &str) -> String {
     format!("\"{}\"", filters::escape_rust(text.to_string()))
@@ -5291,6 +5420,242 @@ impl StaticTarget for RustTarget {
     }
     fn clear(&self, target: &str) -> String {
         format!("{target}.clear();")
+    }
+    // A map or a set starts empty under the next of the seeds its machine draws
+    // its maps' from where it is built ([`RUST_MAP_SEEDS`]): one spelling for
+    // either, whose type is the variable's.
+    fn map_empty(&self) -> Option<String> {
+        Some(format!(
+            "::sce_rust_runtime::FromSeed::from_seed({RUST_MAP_SEEDS}.draw())"
+        ))
+    }
+    // The map's own copy where the two types are one, and otherwise its entries
+    // copied into the variable's bound, a text of a smaller bound widened into
+    // the place's own: a copy that cannot fail, since the judge held the value
+    // to a type the variable's fits.
+    fn map_copy(
+        &self,
+        value: &str,
+        from: &crate::forge::model::AlgorithmValueType,
+        to: &crate::forge::model::AlgorithmValueType,
+    ) -> Option<String> {
+        use crate::forge::model::AlgorithmValueType;
+        if from == to {
+            return Some(format!("{value}.clone()"));
+        }
+        let part = |ty: &AlgorithmValueType| match ty {
+            AlgorithmValueType::Text { max: Some(bound) } => format!(
+                "{}::SceString::<{}>::widened",
+                crate::forge::composed_lowering::RUST_PORTABLE,
+                bound.max
+            ),
+            _ => "::core::clone::Clone::clone".to_string(),
+        };
+        Some(match to {
+            AlgorithmValueType::Map {
+                key, value: held, ..
+            } => format!(
+                "::sce_rust_runtime::BoundedMap::widened_map(&{value}, {}, {})",
+                part(key),
+                part(held)
+            ),
+            AlgorithmValueType::Set { key, .. } => format!(
+                "::sce_rust_runtime::BoundedSet::widened_map(&{value}, {})",
+                part(key)
+            ),
+            _ => return None,
+        })
+    }
+    // An expression that is `true` when the statement failed, as an append's is
+    // ([`Self::append`]): the call runs in a closure a key or a value that
+    // fails returns out of before the map is written. What a put or a remove
+    // did is the runtime's outcome, written into the variable `outcome` names
+    // as the variant of the same name of its standard enum; a put that names
+    // none fails into a full map.
+    fn map_write(&self, write: &MapWrite<'_>) -> Option<String> {
+        let (map, key) = (write.map, write.key);
+        let call = match write.op {
+            MapOp::Put { value: Some(value) } => format!("{map}.put({key}, {value})"),
+            MapOp::Put { value: None } => format!("{map}.put({key})"),
+            MapOp::Remove => format!("{map}.remove(&{key})"),
+        };
+        let closure = |returned: &str| {
+            format!(
+                "match (|| -> Result<{returned}, sce_forge_runtime::algorithm::AlgorithmError> {{"
+            )
+        };
+        let failed = [
+            "    Err(_) => {".to_string(),
+            format!("        {}", write.failed),
+            "        true".to_string(),
+            "    }".to_string(),
+            "}".to_string(),
+        ];
+        let mut lines = match (write.outcome, write.outcome_enum, &write.op) {
+            (Some(outcome), Some((ty, document)), op) => {
+                let (runtime, variants): (&str, &[&str]) = match op {
+                    MapOp::Put { .. } => ("PutOutcome", &["inserted", "replaced", "full"]),
+                    MapOp::Remove => ("RemoveOutcome", &["removed", "absent"]),
+                };
+                let arms: Vec<String> = variants
+                    .iter()
+                    .map(|variant| {
+                        format!(
+                            "::sce_rust_runtime::{runtime}::{} => {ty}::{}",
+                            filters::to_pascal_case((*variant).to_string()),
+                            self.enum_variant(ty, document, variant)
+                        )
+                    })
+                    .collect();
+                let written = format!("match sce_outcome {{ {} }}", arms.join(", "));
+                vec![
+                    closure(&format!("::sce_rust_runtime::{runtime}")),
+                    format!("    Ok({call})"),
+                    "})() {".to_string(),
+                    "    Ok(sce_outcome) => {".to_string(),
+                    format!("        {}", self.assign(outcome, &written)),
+                    "        false".to_string(),
+                    "    }".to_string(),
+                ]
+            }
+            // An outcome named for a target with no type for its enum is no
+            // statement this target writes.
+            (Some(_), None, _) => return None,
+            (None, _, MapOp::Put { .. }) => vec![
+                closure("bool"),
+                format!("    Ok({call} == ::sce_rust_runtime::PutOutcome::Full)"),
+                "})() {".to_string(),
+                "    Ok(false) => false,".to_string(),
+                "    Ok(true) => {".to_string(),
+                format!("        {}", write.full),
+                "        true".to_string(),
+                "    }".to_string(),
+            ],
+            (None, _, MapOp::Remove) => vec![
+                closure("()"),
+                format!("    let _ = {call};"),
+                "    Ok(())".to_string(),
+                "})() {".to_string(),
+                "    Ok(()) => false,".to_string(),
+            ],
+        };
+        lines.extend(failed);
+        Some(Self::lines(&lines))
+    }
+    // A loop of its own over the map's positions, which holds no borrow of the
+    // map between two reads: a body that writes the map walks a copy of it
+    // (docs/adr/0108, D6 item 3), and any other walks the map itself, which
+    // nothing in the body can change. Each turn binds the item and the key
+    // where the walk holds them: a copy of plain data, and a borrow of a text
+    // or of a record that owns a buffer, which no read copies.
+    fn map_loop(&self, walk: &MapWalk<'_>) -> Option<MapLoop> {
+        let depth = walk.depth;
+        let (cursor, at, position) = (
+            format!("sce_cursor_{depth}"),
+            format!("sce_at_{depth}"),
+            format!("sce_position_{depth}"),
+        );
+        let (walked, copy) = if walk.copies {
+            let walked = format!("sce_walk_{depth}");
+            let copy = format!("let {walked} = {}.clone(); ", walk.map);
+            (walked, copy)
+        } else {
+            (walk.map.to_string(), String::new())
+        };
+        let counter = if walk.index.is_some() {
+            format!(" let mut {position}: u32 = 0;")
+        } else {
+            String::new()
+        };
+        let opening = format!("{copy}let mut {cursor} = {walked}.first();{counter}");
+        let read = |accessor: &str, copied: bool| {
+            let deref = if copied { "*" } else { "" };
+            format!("{deref}{walked}.{accessor}({at})")
+        };
+        let item_accessor = if walk.set { "key_at" } else { "value_at" };
+        let mut prologue = vec![
+            format!("{cursor} = {walked}.next_after({at});"),
+            format!(
+                "let {} = {};",
+                walk.item,
+                read(item_accessor, walk.item_copied)
+            ),
+        ];
+        let mut bound = vec![format!("&{}", walk.item)];
+        if let Some((key, copied)) = walk.key {
+            prologue.push(format!("let {key} = {};", read("key_at", copied)));
+            bound.push(format!("&{key}"));
+        }
+        if let Some(index) = walk.index {
+            prologue.push(format!("let {index} = {position};"));
+            prologue.push(format!("{position} += 1;"));
+            bound.push(format!("&{index}"));
+        }
+        prologue.push(format!("let _ = ({},);", bound.join(", ")));
+        Some(MapLoop {
+            head: format!("{opening} while let Some({at}) = {cursor}"),
+            prologue: prologue.join(" "),
+            first: format!("{opening} if let Some({at}) = {cursor}"),
+            entry: MapEntry {
+                value: walk.item.to_string(),
+                key: walk
+                    .key
+                    .map_or_else(|| walk.item.to_string(), |(key, _)| key.to_string()),
+            },
+        })
+    }
+    fn types_maps(&self) -> bool {
+        true
+    }
+    // The runtime's own map and set, their bound in their type, as a list's is.
+    fn map_type(&self, key: &str, value: Option<&str>, capacity: u32) -> Option<String> {
+        Some(match value {
+            Some(value) => format!("::sce_rust_runtime::BoundedMap<{key}, {value}, {capacity}>"),
+            None => format!("::sce_rust_runtime::BoundedSet<{key}, {capacity}>"),
+        })
+    }
+    // The saved form writes each key and value by its type's `SavedValue`
+    // (`saved_state`), and a byte string's is the list of its numbers.
+    fn map_holds_bytes(&self) -> bool {
+        false
+    }
+    // The runtime's `MapKey`, fed each field's canonical bytes in the order the
+    // schema declares the fields.
+    fn map_key_record_def(&self, ty: &str, fields: &[String]) -> Option<String> {
+        let feeds: String = fields
+            .iter()
+            .map(|field| {
+                format!("        ::sce_rust_runtime::MapKey::feed_key(&self.{field}, into);\n")
+            })
+            .collect();
+        Some(format!(
+            "/// docs/adr/0108, D1: a `{ty}` is a key of a map by its fields, in the order its \
+             schema declares them.\n\
+             impl ::sce_rust_runtime::MapKey for {ty} {{\n    \
+             fn feed_key(&self, into: &mut dyn ::sce_rust_runtime::KeyFeed) {{\n\
+             {feeds}    }}\n}}"
+        ))
+    }
+    // ... and an enum's by the number its document declares for each value
+    // ([`Self::enum_number_symbols`]).
+    fn map_key_enum_def(&self, ty: &str) -> Option<String> {
+        Some(format!(
+            "/// docs/adr/0108, D1: a value of `{ty}` is a key of a map by the number its \
+             document declares for it.\n\
+             impl ::sce_rust_runtime::MapKey for {ty} {{\n    \
+             fn feed_key(&self, into: &mut dyn ::sce_rust_runtime::KeyFeed) {{\n        \
+             ::sce_rust_runtime::MapKey::feed_key(&self.to_underlying(), into);\n    }}\n}}"
+        ))
+    }
+    // The payload struct the typed channel holds the event's payload in, whose
+    // fields are the schema's, named as written
+    // (`forge::generator::rust_entry_payload`), as a record's are.
+    fn payload_key_def(&self, machine: &str, event: &str, schema: &EntrySchema) -> Option<String> {
+        let fields: Vec<String> = schema.fields.iter().map(|f| f.id.clone()).collect();
+        self.map_key_record_def(
+            &crate::forge::generator::rust_payload_struct(machine, event),
+            &fields,
+        )
     }
     // The loop owns a copy of the list: a body may append to the list it
     // walks, which a borrow of it would not allow. The elements are
@@ -7163,6 +7528,9 @@ pub fn lower(
     let no_payload = scope.paths(None);
     let mut fields = Vec::new();
     let mut declarations = TypeDeclarations::new(target, machine, &held_enums);
+    // The schemas of the records a map variable is keyed by, by name, whose
+    // payload a transition may look a key up by (docs/adr/0108, D3).
+    let mut key_records: BTreeSet<String> = BTreeSet::new();
     // Taken before any expression is rewritten: the shape is the document's,
     // and the same for every backend.
     let saved_shape = saved_shape(model, &scope);
@@ -7326,20 +7694,39 @@ pub fn lower(
             // by its row of the composed lowering before the walk (D10), and is
             // refused by name here all the same.
             if let Some(ty) = var.value_type.as_ref().filter(|t| t.map_key().is_some()) {
+                let element = format!("<data id=\"{}\">", var.id);
                 let empty = target
                     .map_empty()
-                    .ok_or_else(|| map_not_lowered(&format!("<data id=\"{}\">", var.id), lang))?;
+                    .ok_or_else(|| map_not_lowered(&element, lang))?;
                 if let Some(element) = target.data_element(&var.id, &empty) {
                     rewrites.note_element(var.value_type_spelling.as_ref(), &element);
                 }
                 let set = matches!(ty, crate::forge::model::AlgorithmValueType::Set { .. });
+                // A target that holds a map in a type of its own holds its key
+                // and its value in the types a variable of each is held in,
+                // declared once, the key made a key of the target's map
+                // (docs/adr/0108, D1 and D8); a host reads the map lent, as it
+                // reads a list, and the snapshot copies it.
+                let (held_ty, view) = if target.types_maps() {
+                    let held = map_variable_type(var, ty, &records, &mut declarations)?;
+                    if let crate::forge::model::AlgorithmValueType::Record { alias } =
+                        ty.map_key().unwrap_or(ty)
+                    {
+                        if let Some(schema) = records.get(alias) {
+                            key_records.insert(schema.name.clone());
+                        }
+                    }
+                    (held.clone(), Some(held))
+                } else {
+                    (ty.as_attr(), None)
+                };
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
-                    ty: ty.as_attr(),
+                    ty: held_ty,
                     init: empty,
                     published,
-                    view: None,
+                    view,
                     read: None,
                     bound: var.capacity(),
                     saved_kind: if set { "set" } else { "map" },
@@ -7940,6 +8327,13 @@ pub fn lower(
             }
             continue;
         };
+        // A payload of the schema of a record a map is keyed by is a key of that
+        // map, so a read looks the record up by the payload taken whole
+        // (`has(m, _event.data)`, docs/adr/0108, D3).
+        if key_records.contains(&schema.name) {
+            let def = target.payload_key_def(machine, event, schema);
+            declarations.map_key(&format!("payload<{event}>"), def);
+        }
         if crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {
             continue;
         }
@@ -8475,6 +8869,149 @@ impl<'t> TypeDeclarations<'t> {
         }
         list
     }
+
+    /// The declaration `def` that makes `ty` a key of a map (docs/adr/0108,
+    /// D1), made once however many maps are keyed by it; nothing for a target
+    /// whose map needs none.
+    fn map_key(&mut self, ty: &str, def: Option<String>) {
+        if let Some(def) = def {
+            if self.declared.insert(format!("map key<{ty}>")) {
+                self.type_defs.push(def);
+            }
+        }
+    }
+
+    /// The type a key or a value of a map of the type `part` is held in
+    /// (docs/adr/0108, D1 and D8), declared as a variable of that type is: a
+    /// number's and a bool's own, an enum's and a record's the machine's own,
+    /// declared the first time any place names it, and a text's and a byte
+    /// string's the storage of its bound. A key's type is made a key of the
+    /// target's map besides (`key`), a record's field by field, each enum a
+    /// field holds made one too. `element` names the variable in a refusal.
+    fn map_part(
+        &mut self,
+        part: &crate::forge::model::AlgorithmValueType,
+        key: bool,
+        records: &BTreeMap<String, EntrySchema>,
+        element: &str,
+    ) -> Result<String, GenerateError> {
+        use crate::forge::model::AlgorithmValueType;
+        let target = self.target;
+        let lang = target.name();
+        let unheld = |why: String| GenerateError::unsupported(format!("{element}: {why}"));
+        let bound = |max: &Option<crate::forge::value_type::Bound>| {
+            max.as_ref()
+                .map(|bound| bound.max)
+                .ok_or_else(|| unheld(format!("`{part}` states no bound")))
+        };
+        let byte_string = || {
+            unheld(format!(
+                "a map of {lang} holds no byte string as a key or a value yet: its saved form \
+                 writes each by the one writer of its type, which writes a byte string as the \
+                 list of its numbers and not as the text a saved byte string is ({})",
+                crate::forge::value_type::MAP_LANDING
+            ))
+        };
+        Ok(match part {
+            AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
+                let ty = self.enum_type(&reference.alias).map_err(|alias| {
+                    unheld(format!(
+                        "the enum `{alias}` {lang} has no enum type for, or whose document \
+                         could not be read"
+                    ))
+                })?;
+                if key {
+                    let def = target.map_key_enum_def(&ty);
+                    self.map_key(&ty, def);
+                }
+                ty
+            }
+            AlgorithmValueType::Scalar(scalar) => target.scalar_type(scalar),
+            AlgorithmValueType::Text { max } => {
+                let storage = target
+                    .string_storage(bound(max)?, "\"\"")
+                    .ok_or_else(|| unheld(format!("{lang} holds no text of `{part}`")))?;
+                self.string_storage(&storage);
+                storage.ty
+            }
+            AlgorithmValueType::Bytes { max } => {
+                if !target.map_holds_bytes() {
+                    return Err(byte_string());
+                }
+                let storage = target
+                    .bytes_storage(bound(max)?, "{ 0 }")
+                    .ok_or_else(|| unheld(format!("{lang} holds no byte string of `{part}`")))?;
+                self.string_storage(&storage);
+                storage.ty
+            }
+            AlgorithmValueType::Record { alias } => {
+                let schema = records.get(alias).ok_or_else(|| {
+                    unheld(format!(
+                        "record:{alias} names no event-schema this build read"
+                    ))
+                })?;
+                let ty = self.record(alias, schema)?;
+                if key {
+                    for field in &schema.fields {
+                        if let SceType::Enum(reference) = field.sce_type.present_type() {
+                            if let Ok(enum_ty) = self.enum_type(&reference.alias) {
+                                let def = target.map_key_enum_def(&enum_ty);
+                                self.map_key(&enum_ty, def);
+                            }
+                        }
+                    }
+                    let fields: Vec<String> = schema
+                        .fields
+                        .iter()
+                        .map(|f| target.record_field(&f.id))
+                        .collect();
+                    let def = target.map_key_record_def(&ty, &fields);
+                    self.map_key(&ty, def);
+                }
+                ty
+            }
+            AlgorithmValueType::Optional { .. }
+            | AlgorithmValueType::Union { .. }
+            | AlgorithmValueType::List { .. }
+            | AlgorithmValueType::Map { .. }
+            | AlgorithmValueType::Set { .. } => {
+                return Err(unheld(crate::forge::value_type::map_unlowered(
+                    &part.to_string(),
+                )))
+            }
+        })
+    }
+}
+
+/// The type `var`, a map or a set variable of the type `ty`, is held in on a
+/// target that holds a map in a type of its own ([`StaticTarget::types_maps`]):
+/// its key's and its value's types declared ([`TypeDeclarations::map_part`]),
+/// bounded by the variable's bound.
+fn map_variable_type(
+    var: &crate::model::Variable,
+    ty: &crate::forge::model::AlgorithmValueType,
+    records: &BTreeMap<String, EntrySchema>,
+    declarations: &mut TypeDeclarations<'_>,
+) -> Result<String, GenerateError> {
+    use crate::forge::model::AlgorithmValueType;
+    let element = format!("<data id=\"{}\">", var.id);
+    let lang = declarations.target.name();
+    let capacity = var.capacity().ok_or_else(|| {
+        GenerateError::unsupported(format!("{element}: a map or a set states its bound"))
+    })?;
+    let (key, value) = match ty {
+        AlgorithmValueType::Map { key, value, .. } => (key.as_ref(), Some(value.as_ref())),
+        AlgorithmValueType::Set { key, .. } => (key.as_ref(), None),
+        _ => return Err(map_not_lowered(&element, lang)),
+    };
+    let key = declarations.map_part(key, true, records, &element)?;
+    let value = value
+        .map(|value| declarations.map_part(value, false, records, &element))
+        .transpose()?;
+    declarations
+        .target
+        .map_type(&key, value.as_deref(), capacity)
+        .ok_or_else(|| map_not_lowered(&element, lang))
 }
 
 /// The enum `model`, held by the machine as `alias` in the type `ty`
@@ -20467,12 +21004,17 @@ fn lower_action(
             // ... and a map or a set variable takes another whole, copied: the
             // judge held the value to a map variable whose type the location's
             // fits, so the copy cannot fail (docs/adr/0108, D2 and D3).
-            if rewrites.scope.map_variable(&action.location).is_some() {
+            if let Some((_, to)) = rewrites.scope.map_variable(&action.location) {
                 let location = action.location.trim();
+                let element = format!("<assign location=\"{location}\">");
+                let (_, from) = rewrites
+                    .scope
+                    .map_variable(&action.expr)
+                    .ok_or_else(|| map_not_lowered(&element, lang))?;
                 let value = lower(&action.expr, InferredType::Unknown)?;
-                let copy = target.map_copy(&value.text).ok_or_else(|| {
-                    map_not_lowered(&format!("<assign location=\"{location}\">"), lang)
-                })?;
+                let copy = target
+                    .map_copy(&value.text, from, to)
+                    .ok_or_else(|| map_not_lowered(&element, lang))?;
                 rewrites.note(&action.expr, action.spellings.get("expr"), &copy);
                 let name = renames.get(location).copied().unwrap_or(location);
                 action.native_code = target.assign(name, &copy);
@@ -21163,8 +21705,43 @@ fn lower_action(
                 })
                 .transpose()?;
             let outcome = action.outcome.trim();
+            // The machine's type for the outcome's standard enum, and the name of
+            // the document that declares its variants.
+            let outcome_enum = rewrites
+                .scope
+                .variables
+                .iter()
+                .find(|v| !outcome.is_empty() && v.id == outcome)
+                .and_then(|v| v.value_type.as_ref())
+                .and_then(crate::forge::model::AlgorithmValueType::scalar)
+                .and_then(|ty| match ty {
+                    SceType::Enum(reference) => Some(reference.alias.clone()),
+                    _ => None,
+                })
+                .and_then(|alias| {
+                    let document = rewrites.held_enums.get(&alias)?.name.clone();
+                    Some((target.enum_type(rewrites.machine, &alias)?, document))
+                });
             let outcome =
                 (!outcome.is_empty()).then(|| renames.get(outcome).copied().unwrap_or(outcome));
+            // A put that names no outcome into a full map fails as an append to
+            // a full list does (docs/adr/0108, D4).
+            let full = if rewrites.raises_error && put {
+                target.raise_execution_error(
+                    rewrites.machine,
+                    "assignmentFailed",
+                    &format!(
+                        "<sce:put target='{map}'>: the map already holds its capacity of \
+                         {capacity}"
+                    ),
+                )
+            } else {
+                String::new()
+            };
+            let failed = failed(format!(
+                "<sce:{} target='{map}'>",
+                if put { "put" } else { "remove" }
+            ));
             let write = MapWrite {
                 map: renames.get(map.as_str()).copied().unwrap_or(map.as_str()),
                 place: &place,
@@ -21179,6 +21756,11 @@ fn lower_action(
                     MapOp::Remove
                 },
                 outcome,
+                outcome_enum: outcome_enum
+                    .as_ref()
+                    .map(|(ty, document)| (ty.as_str(), document.as_str())),
+                full: &full,
+                failed: &failed,
             };
             action.native_code = target
                 .map_write(&write)
@@ -21776,9 +22358,6 @@ fn lower_map_foreach(
     let index = action.index.trim().to_string();
     let key = action.key.trim().to_string();
     let item_local = target.expr_target().local_spelling(&item);
-    let entry = target
-        .map_entry(&item_local, place.is_set())
-        .ok_or_else(|| map_not_lowered(&construct, lang))?;
     // The map as the loop's head reaches it, for a target that runs the
     // document's own `<foreach>` (the Interpreter).
     let name = renames.get(map).copied().unwrap_or(map);
@@ -21797,6 +22376,45 @@ fn lower_map_foreach(
     let record_of = |at: &Place| match &at.ty {
         ValueType::Record { alias } => Some(alias.clone()),
         _ => None,
+    };
+    // Plain data a loop binds a copy of: a number, a bool, a value of an enum,
+    // and a record the target holds as one ([`StaticTarget::record_view`]); a
+    // text, a byte string and a record that owns a buffer are lent where the
+    // map holds them.
+    let copied = |at: &Place| match &at.ty {
+        ValueType::Scalar(_) => true,
+        ValueType::Record { alias } => rewrites.schemas.get(alias).is_some_and(|schema| {
+            target
+                .record_view(&target.record_type(rewrites.machine, alias), schema)
+                .is_none()
+        }),
+        _ => false,
+    };
+    // A target that walks a map in a loop of its own walks a copy of it only
+    // where the body writes it, at any depth (docs/adr/0108, D6 item 3), and
+    // binds each entry where the walk holds it.
+    let index_local = (!index.is_empty()).then(|| target.expr_target().local_spelling(&index));
+    let key_local = (!key.is_empty()).then(|| target.expr_target().local_spelling(&key));
+    let walk = MapWalk {
+        map: name,
+        item: &item_local,
+        item_copied: copied(&element),
+        key: key_local.as_deref().zip(key_place.as_ref().map(&copied)),
+        index: index_local.as_deref(),
+        set: place.is_set(),
+        copies: Writes::of_block(&action.actions).reaches(map),
+        depth: rewrites.loop_depth.get(),
+    };
+    let entry = match target.map_loop(&walk) {
+        Some(walked) => {
+            action.native_loop = walked.head;
+            action.native_loop_prologue = walked.prologue;
+            action.native_loop_first = walked.first;
+            walked.entry
+        }
+        None => target
+            .map_entry(&item_local, place.is_set())
+            .ok_or_else(|| map_not_lowered(&construct, lang))?,
     };
     let record_item = record_of(&element);
     let record_key = key_place.as_ref().and_then(record_of);

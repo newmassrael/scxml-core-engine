@@ -337,6 +337,19 @@ impl Writes {
         writes
     }
 
+    /// Whether what was collected may write the variable `variable`, whole or
+    /// any part of it (`faces`, `faces.count`, `faces[k]`), or anything at all:
+    /// what decides that a `<foreach>` over a map walks a copy of it, since its
+    /// body writes the map it walks (docs/adr/0108, D6 item 3).
+    pub fn reaches(&self, variable: &str) -> bool {
+        let variable = variable.trim();
+        self.anything
+            || self.paths.iter().any(|path| {
+                path.strip_prefix(variable)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '[']))
+            })
+    }
+
     fn collect<S: Statement>(&mut self, statement: &S) {
         statement.writes(self);
         for block in statement.blocks() {
@@ -1413,6 +1426,31 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(held.after(&Writes::of(&remove)), facts(&["sid"]));
+    }
+
+    /// docs/adr/0108, D6 item 3: a block reaches a map where a statement at any
+    /// depth writes it, whole or in part, or where a `<script>` may write
+    /// anything; a variable whose name another begins with is another variable.
+    #[test]
+    fn a_block_reaches_a_variable_it_writes_at_any_depth() {
+        let remove = Action {
+            action_type: "sce_remove".to_string(),
+            location: "faces".to_string(),
+            ..Default::default()
+        };
+        let nested = Action {
+            action_type: "if".to_string(),
+            then_actions: vec![remove],
+            ..Default::default()
+        };
+        let block = [action("assign", "count", ""), nested];
+        assert!(Writes::of_block(&block).reaches("faces"));
+        assert!(Writes::of_block(&block).reaches("count"));
+        assert!(!Writes::of_block(&block).reaches("face"));
+        assert!(!Writes::of_block(&block).reaches("facesKept"));
+        assert!(!Writes::of_block(&[action("assign", "count", "")]).reaches("faces"));
+        assert!(Writes::of_block(&[action("assign", "faces.count", "")]).reaches("faces"));
+        assert!(Writes::of_block(&[action("script", "", "")]).reaches("faces"));
     }
 
     #[test]
