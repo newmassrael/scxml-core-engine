@@ -544,7 +544,7 @@ mod tests {
             "a proxy that names nobody is its own client"
         );
         assert_eq!(
-            client_address(proxy, ["for=192.0.2.60:8080;by=10.0.0.2"], &[]),
+            client_address(proxy, ["for=192.0.2.60:9443;by=10.0.0.2"], &[]),
             proxy,
             "with no trusted proxy, nothing is read"
         );
