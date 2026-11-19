@@ -16,12 +16,12 @@
 #include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 
 #define CODEC_ZENOH_VALUE_SLICE_MIN_BYTES 1
-#define CODEC_ZENOH_VALUE_SLICE_MAX_BYTES 26
+#define CODEC_ZENOH_VALUE_SLICE_MAX_BYTES 266
 
 typedef struct {
     uint8_t kind;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="16") */
-    uint8_t data[16];
+    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="256") */
+    uint8_t data[256];
     size_t  data_len;
 } codec_zenoh_value_slice_t;
 
@@ -67,7 +67,7 @@ static inline sce_forge_codec_status_t codec_zenoh_value_slice_decode(sce_forge_
         size_t _n = (size_t)_d_len;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->data_len = sce_forge_codec_hold(out->data, 16U, raw, _n, &_over);
+        out->data_len = sce_forge_codec_hold(out->data, 256U, raw, _n, &_over);
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
@@ -159,7 +159,7 @@ static inline sce_forge_codec_status_t codec_zenoh_value_slice_encode_source(con
  * text no UTF-8 holds, in it or in a body or an entry it holds
  * (docs/adr/0081 §2). */
 static inline sce_forge_codec_status_t codec_zenoh_value_slice_check_value(const codec_zenoh_value_slice_t *self) {
-    if (!sce_forge_length_within_bound(self->data_len, 16)) {
+    if (!sce_forge_length_within_bound(self->data_len, 256)) {
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     return SCE_FORGE_CODEC_OK;
