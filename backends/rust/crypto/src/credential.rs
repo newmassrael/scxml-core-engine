@@ -22,8 +22,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine as _;
+use base64ct::{Base64UrlUnpadded, Encoding as _};
 use sce_forge_runtime::cbor::{write_array_head, write_text, write_uint};
 use sce_forge_runtime::codec::VecSink;
 use sce_rust_session_store::{Digest, TokenStore};
@@ -41,21 +40,24 @@ const TOKEN_DIGITS: usize = 43;
 /// The bytes of a token's text: its prefix and its digits.
 pub const TOKEN_TEXT_BYTES: usize = TOKEN_PREFIX.len() + TOKEN_DIGITS;
 
-/// The text of the token whose bytes are `secret`.
+/// The text of the token whose bytes are `secret`. A token is a secret, so its digits are written
+/// in time that does not depend on its bytes (`base64ct`, as libsodium's `sodium_bin2base64` is in
+/// the C++ host).
 pub fn token_text(secret: &[u8; TOKEN_SECRET_BYTES]) -> String {
-    format!("{TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(secret))
+    format!("{TOKEN_PREFIX}{}", Base64UrlUnpadded::encode_string(secret))
 }
 
 /// Whether `text` is a token's text: the prefix, then the base64url without padding of exactly
-/// [`TOKEN_SECRET_BYTES`] bytes, in its one canonical spelling.
+/// [`TOKEN_SECRET_BYTES`] bytes, in its one canonical spelling, read in time that does not depend
+/// on its bytes.
 pub fn is_token(text: &str) -> bool {
     let Some(digits) = text.strip_prefix(TOKEN_PREFIX) else {
         return false;
     };
+    let mut secret = [0u8; TOKEN_SECRET_BYTES];
     digits.len() == TOKEN_DIGITS
-        && URL_SAFE_NO_PAD
-            .decode(digits)
-            .is_ok_and(|bytes| bytes.len() == TOKEN_SECRET_BYTES)
+        && Base64UrlUnpadded::decode(digits, &mut secret)
+            .is_ok_and(|decoded| decoded.len() == TOKEN_SECRET_BYTES)
 }
 
 /// The digest a store keeps a token as, and finds a presented one by: the SHA-256 of its text.
