@@ -600,6 +600,80 @@ class RouterTest {
         assertNull(envelope.invoke_id)
     }
 
+    // ── SCE_MESH.md section 10.6: a reply on an ordered binding ──
+
+    /** `ecu` asking `hmi` over an ordered binding: every envelope it orders stamped, nothing held for readiness. */
+    private fun orderedRequester(): Router = Router("ecu", 8u, 50).also {
+        it.addPeer("hmi", ordered.copy(buffer = null, responders = listOf("hmi")))
+    }
+
+    /** `hmi` answering `ecu` over the same ordered binding. */
+    private fun orderedResponder(): Router = Router("hmi", 8u, 50).also {
+        it.addPeer(
+            "ecu",
+            ordered.copy(buffer = null, responders = listOf("ecu"), replyEvents = listOf("service.response.force")),
+        )
+    }
+
+    /**
+     * SCE_MESH.md section 10.6.4: a reply is not in its sender's sequence, so it is written with no
+     * `sequence_no` and the counter does not move: the sends around it are numbered 1 and 2. Red if the
+     * send half stamps every envelope: the reply takes 2 and the next send 3, a number the receiver
+     * waits for and never gets.
+     */
+    @Test
+    fun aReplyOnAnOrderedBindingTakesNoNumber() {
+        val hmi = orderedResponder()
+        val before = sentToEcu(hmi.send(request("#ecu", "status.changed", ""), id(2), 0))
+        val reply = sentToEcu(hmi.send(answer("service.response.force", wireText), id(5), 0))
+        val after = sentToEcu(hmi.send(request("#ecu", "status.changed", ""), id(3), 0))
+        assertEquals(PatternKind.RPC_REPLY, decode(reply).pattern)
+        assertEquals(listOf(1uL, null, 2uL), listOf(before, reply, after).map { decode(it).sequence_no })
+    }
+
+    /**
+     * SCE_MESH.md section 10.6.4: a reply with no `sequence_no`, as the C++ router's server answers,
+     * completes its request on an ordered binding. Red if the receive half asks a reply for a number:
+     * it is then refused as `missingSequence` (§mesh-16.7 row 11) and the request waits for ever.
+     */
+    @Test
+    fun anUnnumberedReplyCompletesItsRequestOnAnOrderedBinding() {
+        val ecu = orderedRequester()
+        started(ecu, null)
+        assertEquals(
+            listOf(Effect.Complete("ask", 7, """{"force":12}""", "hmi")),
+            done(ecu.receive("hmi", reply(5, null, null, """{"force":12}"""), 20)),
+        )
+    }
+
+    /**
+     * The whole ordered round trip: a reply sent between two sends leaves no gap in the stream, so the
+     * send after it is delivered at once and no `orderingGap` (§mesh-16.7 row 12) is raised once the gap
+     * timeout has passed. Red if the reply took a number: the send after it waits for that number.
+     */
+    @Test
+    fun aReplyBetweenTwoSendsLeavesNoGap() {
+        val ecu = orderedRequester()
+        val hmi = orderedResponder()
+        assertEquals(listOf("service.request.force"), events(done(hmi.receive("ecu", started(ecu, null), 0))))
+        val first = sentToEcu(hmi.send(request("#ecu", "status.changed", ""), id(2), 10))
+        val answered = sentToEcu(hmi.send(answer("service.response.force", wireText), id(5), 10))
+        val second = sentToEcu(hmi.send(request("#ecu", "status.done", ""), id(3), 10))
+
+        assertEquals(listOf("status.changed"), events(done(ecu.receive("hmi", first, 20))))
+        assertEquals(
+            listOf(Effect.Complete("ask", 7, """{"force":12}""", "hmi")),
+            done(ecu.receive("hmi", answered, 20)),
+        )
+        assertEquals(
+            listOf("status.done"),
+            events(done(ecu.receive("hmi", second, 20))),
+            "the send after the reply waits for no number",
+        )
+        val later = done(ecu.tick(10_000))
+        assertTrue(later.isEmpty(), "no gap times out: $later")
+    }
+
     /** §mesh-16.7 row 5: the link a request waits on is lost; a reply or a deadline afterwards ends nothing. */
     @Test
     fun aLostLinkIsRow5ForEachRequestWaitingOnIt() {

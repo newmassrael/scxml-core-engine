@@ -28,6 +28,7 @@ import com.sce.generated.ordering_gap_end.orderingGapEnd
 import com.sce.generated.ordering_hold.orderingHold
 import com.sce.generated.ordering_prune.orderingPrune
 import com.sce.generated.ordering_slot.OrderingSlotPayload
+import com.sce.generated.pattern_kind.PatternKind
 
 /**
  * What one binding asks of the envelopes it receives: dedup only where the
@@ -36,6 +37,23 @@ import com.sce.generated.ordering_slot.OrderingSlotPayload
  * (§mesh-10.6).
  */
 data class Delivery(val dedup: Boolean, val ordered: Boolean)
+
+/**
+ * Whether an envelope of [pattern] is in its sender's sequence on a binding
+ * that orders (§mesh-10.6.3, §mesh-10.6.4): stamped by the sender from the
+ * binding's counter, and released by the receiver in that order. The one
+ * answer the send half and the receive half both ask, so a number is taken
+ * exactly by the envelopes a receiver waits for.
+ *
+ * A reply (`RpcReply`) and a field notification (`FieldNotify`) find what they
+ * answer by its id, not by their place in the stream: they take no number, and
+ * the receiver passes them past its ordering buffer (still through the
+ * duplicate window), whether or not their sender numbered them. A binding with
+ * durable receipt numbers and orders every envelope (SCE_MESH.md section
+ * 10.11); this core carries none. The Rust core's `sequenced`.
+ */
+internal fun sequenced(pattern: PatternKind): Boolean =
+    pattern != PatternKind.RPC_REPLY && pattern != PatternKind.FIELD_NOTIFY
 
 /** What one call released, in the order the engine must see it, and what it signalled. */
 class Outcome {
@@ -49,9 +67,10 @@ sealed class AdmitError {
     data object Malformed : AdmitError()
 
     /**
-     * The binding is ordered and the envelope carries no `sequence_no`
-     * (§mesh-10.6.3). Refused before the dedup window sees its id, so a
-     * refused envelope does not take a window slot.
+     * The binding is ordered, the envelope is one it orders ([sequenced]),
+     * and it carries no `sequence_no` (§mesh-10.6.3). Refused before the
+     * dedup window sees its id, so a refused envelope does not take a window
+     * slot.
      */
     data object Unstamped : AdmitError()
 
@@ -132,11 +151,15 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
         // Every kind of rejection is one malformed envelope to the receive half.
         val envelope = Envelope.decode(SceCursor(bytes)).valueOr { return Admission.Refused(AdmitError.Malformed) }
         val sequence = envelope.sequence_no
-        if (delivery.ordered && sequence == null) {
+        // §mesh-10.6.4: a reply or a field notification passes the ordering
+        // buffer, numbered or not; every other envelope of an ordered binding
+        // is placed by its number.
+        val ordered = delivery.ordered && sequenced(envelope.pattern)
+        if (ordered && sequence == null) {
             return Admission.Refused(AdmitError.Unstamped)
         }
         return try {
-            Admission.Admitted(admitDecoded(link, envelope, sequence, delivery, nowMs))
+            Admission.Admitted(admitDecoded(link, envelope, sequence, delivery.dedup, ordered, nowMs))
         } catch (refusal: RuleRefusal) {
             Admission.Refused(AdmitError.Rule(refusal.error))
         }
@@ -146,12 +169,13 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
         link: String,
         envelope: Envelope,
         sequence: ULong?,
-        delivery: Delivery,
+        dedup: Boolean,
+        ordered: Boolean,
         nowMs: Long,
     ): Outcome {
         val out = Outcome()
         val sender = senders.getOrPut(link) { Sender() }
-        if (delivery.dedup) {
+        if (dedup) {
             val id = envelopeId(envelope.id.bytes)
             if (dedupHolds(sender.window, id)) {
                 return out
@@ -162,7 +186,7 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
                 out.signals += Signal.DedupWindowOverflow(link, dedupWindow)
             }
         }
-        if (!delivery.ordered || sequence == null) {
+        if (!ordered || sequence == null) {
             out.released += envelope
             return out
         }

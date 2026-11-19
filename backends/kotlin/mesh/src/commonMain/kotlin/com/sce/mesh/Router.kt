@@ -35,7 +35,10 @@ data class PeerConfig(
     val buffer: OutboundBuffer?,
     /** deploy.yaml's `retry` block, if the binding has one (§mesh-10.10). */
     val retry: RetryPolicy?,
-    /** Whether envelopes TO this peer carry a `sequence_no`: `ordering: required` on a transport that does not order (§mesh-10.6.3). */
+    /**
+     * Whether envelopes TO this peer carry a `sequence_no`: `ordering: required` on a transport that does not order
+     * (§mesh-10.6.3). Only the envelopes the receiver orders take one ([sequenced]); a reply goes unnumbered.
+     */
     val stampSequence: Boolean,
     /** How envelopes FROM this peer are delivered (§mesh-10.5, §mesh-10.6). */
     val delivery: Delivery,
@@ -431,15 +434,19 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
 
     /**
      * Write [envelope] for [peerName] and hand it to that peer's send half:
-     * what [send] and [invoke] share once they know what to say. `null` when
-     * it could not be written.
+     * what [send] and [invoke] share once they know what to say, so a request
+     * and a send to one peer draw from one counter. `null` when it could not
+     * be written.
      */
     private fun transmit(peerName: String, peer: Peer, envelope: Envelope, nowMs: Long): List<Effect>? {
-        envelope.sequence_no = if (peer.config.stampSequence) peer.nextSequence else null
+        // §mesh-10.6.3: the binding's next number, when it stamps and the
+        // envelope is one the receiver orders ([sequenced]: a reply takes none).
+        val stamps = peer.config.stampSequence && sequenced(envelope.pattern)
+        envelope.sequence_no = if (stamps) peer.nextSequence else null
         val bytes = envelope.encodeToByteArray() ?: return null
         // §mesh-10.6.3: the counter advances once per envelope written, and has
         // no wrap guard.
-        if (peer.config.stampSequence) peer.nextSequence += 1u
+        if (stamps) peer.nextSequence += 1u
         return dispatch(peerName, peer, bytes, nowMs)
     }
 
