@@ -362,7 +362,9 @@ other routes beside it, which are the downstream's.
     `docs/SCE_SERVER_DEPLOY.md`, for a program built from the parts steps 5 to 8 landed (its deploy keys, the session
     store and a restart, a standby under the lease and the fence, the clients' trust and proxies, backups, and a stuck
     session told from an idle one).
-11. The COSE operations and the `https` client on the remaining lanes, one step per lane.
+11. The COSE operations and the `https` client on the remaining lanes, one step per lane. Amended 2026-11-19 by the
+    owner (and ADR 0109 D0): each such step lands when a consumer of that language needs it; until then the lane
+    refuses the operation or the binding by name (`codegen/standard-host-type-not-served`, the binding's refusal).
 
 Steps 3 and 4 do not depend on the Mesh steps and may land in parallel with them.
 

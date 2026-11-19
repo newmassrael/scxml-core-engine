@@ -742,6 +742,10 @@ each a commit of its own:
    section 2 leaves it. A backend's step regenerates the committed trees that hold a codec it now lowers differently
    (none of the committed documents' bytes move). The last step removes `lowers_record_list` and the refusal's
    composition arms.
+   Amended 2026-11-19 by the owner (and ADR 0109 D0): 4a Rust and 4b C++ land now; 4c to 4g each land when a
+   consumer of that language needs a composed CBOR entry, and until then that backend refuses one by name in the
+   one sentence `cbor_codec::refusal` gives. The plan-based printers and the composed corpus keep a later step
+   mechanical. `lowers_record_list` and the composition arms stay until the last backend's step.
 5. **The corpus**, completed: every case of "Conformance" item 1 on all seven backends, the mutation casefiles.
 6. **The lane's fixtures.** The two codec documents, their round trips on every backend, the coverage test without
    `NO_CODEC_FORM`.
