@@ -1195,7 +1195,8 @@ impl Action {
     /// and the template branches list them. `sce_append` / `sce_clear` are a
     /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`), the
     /// second a map's too, `sce_put` / `sce_remove` a map's or a set's
-    /// (`<sce:put>` / `<sce:remove>`, docs/adr/0108, which no lane lowers yet),
+    /// (`<sce:put>` / `<sce:remove>`, docs/adr/0108, which the Interpreter and
+    /// Rust lower),
     /// `sce_lift` the statement that reads a text into a record or keeps why
     /// it could not (`<sce:lift>`, docs/adr/0087), `sce_render` the
     /// statement that renders a text template into a string variable

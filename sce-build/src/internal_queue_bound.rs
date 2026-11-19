@@ -477,8 +477,9 @@ impl<'m> Analysis<'m> {
             }
             "send" => self.send(action),
             // A `<sce:render>` fails as an `<assign>` does, where a hole's value
-            // fails (docs/adr/0087, section 3.1, item 6).
-            "assign" | "log" | "sce_append" | "sce_render" => {
+            // fails (docs/adr/0087, section 3.1, item 6), and a put or a remove
+            // of a map as an append to a list does (docs/adr/0108, D4).
+            "assign" | "log" | "sce_append" | "sce_render" | "sce_put" | "sce_remove" => {
                 if !action.native_code.is_empty() && action.native_fails {
                     Ok(Cost::ending(self.execution_error()))
                 } else {
@@ -1531,6 +1532,32 @@ mod tests {
             .state("a", None)
             .entry("a", vec![failing_assign(), failing_assign()]);
         assert_eq!(doc.bound().depth(), Some(0));
+    }
+
+    /// A put into a map and a remove from one raise their error and end the
+    /// block as an append to a list does (docs/adr/0108, D4): two in one block
+    /// are one error, and a block of each is one each.
+    #[test]
+    fn a_put_and_a_remove_of_a_map_count_as_a_failing_statement() {
+        let keyed = |action_type: &str| Action {
+            action_type: action_type.to_string(),
+            location: "faces".to_string(),
+            key: "7".to_string(),
+            native_code: "faces.put(7, 1)".to_string(),
+            native_fails: true,
+            ..Action::default()
+        };
+        let one_block = Doc::new()
+            .names("error.execution")
+            .state("a", None)
+            .entry("a", vec![keyed("sce_put"), keyed("sce_remove")]);
+        assert_eq!(one_block.bound(), chain(1, 0));
+        let two_blocks = Doc::new()
+            .names("error.execution")
+            .state("a", None)
+            .entry("a", vec![keyed("sce_put")])
+            .entry("a", vec![keyed("sce_remove")]);
+        assert_eq!(two_blocks.bound(), chain(2, 0));
     }
 
     /// A `<cancel>` whose id cannot be computed raises its error and ends the

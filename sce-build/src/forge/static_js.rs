@@ -1175,7 +1175,12 @@ impl StaticTarget for JsTarget {
     }
     // The array of entries is never changed in place, so the value taken whole is
     // its own copy (docs/adr/0108, D2).
-    fn map_copy(&self, value: &str) -> Option<String> {
+    fn map_copy(
+        &self,
+        value: &str,
+        _from: &crate::forge::model::AlgorithmValueType,
+        _to: &crate::forge::model::AlgorithmValueType,
+    ) -> Option<String> {
         Some(value.to_string())
     }
     // The element that replaces the `<sce:put>` or the `<sce:remove>`
@@ -3354,7 +3359,8 @@ mod tests {
         // A map or a set variable is held where the target spells the map it
         // starts as, and every statement and loop of one (docs/adr/0108, D10).
         assert_eq!(lowering.maps, target.map_empty().is_some());
-        assert_eq!(lowering.maps, target.map_copy("m").is_some());
+        let set = crate::forge::model::AlgorithmValueType::read("set<uint8>[2]").expect("a type");
+        assert_eq!(lowering.maps, target.map_copy("m", &set, &set).is_some());
         assert_eq!(lowering.maps, target.map_entry("e", false).is_some());
         assert_eq!(lowering.name, target.name());
     }
@@ -3484,6 +3490,9 @@ mod tests {
                     key: "k",
                     op,
                     outcome,
+                    outcome_enum: None,
+                    full: "",
+                    failed: "",
                 })
                 .expect("the Interpreter holds a map")
         };
@@ -3530,6 +3539,9 @@ mod tests {
                 key: "k",
                 op: MapOp::Remove,
                 outcome: None,
+                outcome_enum: None,
+                full: "",
+                failed: "",
             })
             .is_none());
     }
@@ -3555,7 +3567,12 @@ mod tests {
             })
         );
         assert_eq!(target.map_empty().as_deref(), Some("[]"));
-        assert_eq!(target.map_copy("spare").as_deref(), Some("spare"));
+        let small = crate::forge::model::AlgorithmValueType::read("set<uint8>[2]").expect("a type");
+        let large = crate::forge::model::AlgorithmValueType::read("set<uint8>[4]").expect("a type");
+        assert_eq!(
+            target.map_copy("spare", &small, &large).as_deref(),
+            Some("spare")
+        );
     }
 
     /// A statechart that holds a map of numbers by number and a set of

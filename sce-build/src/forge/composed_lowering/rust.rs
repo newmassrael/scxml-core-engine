@@ -985,8 +985,9 @@ mod tests {
 
     /// The Rust row of the one table of what each backend lowers of a
     /// composed value: a payload read at any depth, a list taken whole, a
-    /// composed value sent (docs/adr/0086, sections 5 and 6), and a union
-    /// held (docs/adr/0092, section 7).
+    /// composed value sent (docs/adr/0086, sections 5 and 6), a union held
+    /// (docs/adr/0092, section 7), and a map or a set variable (docs/adr/0108,
+    /// "Order of work", step 5).
     #[test]
     fn the_rust_row_lowers_every_composed_position_and_holds_a_union() {
         use crate::forge::event_schema_check::ComposedLowering;
@@ -999,7 +1000,7 @@ mod tests {
                 unions: true,
                 records: true,
                 sends: true,
-                maps: false,
+                maps: true,
             }
         );
     }

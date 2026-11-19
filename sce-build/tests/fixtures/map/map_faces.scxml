@@ -15,8 +15,9 @@
   map that binds its key and over a set. The payload of the event `peer.seen` is
   a record of the key's schema, taken whole as a key.
 
-  No lane generates a map yet (docs/adr/0108, D10): `check` accepts this
-  document, and every lane's `generate` refuses it by name.
+  The Interpreter and Rust lower a map first (docs/adr/0108, D10): `check`
+  accepts this document, both lower it, and every other lane's `generate`
+  refuses it by name.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="holding" datamodel="sce-static" name="map_faces">
