@@ -70,6 +70,14 @@
    "encoded": "a200000100",
    "equals_input": true
   },
+  "codec_cbor_signed_enum/status-negative": {
+   "encoded": "a10020",
+   "equals_input": true
+  },
+  "codec_cbor_signed_enum/detail-negative": {
+   "encoded": "a200000120",
+   "equals_input": true
+  },
   "codec_cbor_record_list/smallest": {
    "encoded": "a300500000000000000000000000000000000001600380",
    "equals_input": true
