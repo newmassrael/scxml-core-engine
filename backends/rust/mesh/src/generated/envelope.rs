@@ -23,13 +23,12 @@ use super::pattern_kind;
 use super::payload_codec;
 use super::rpc_status;
 
-/// Read one record of the event schema `causal_entry` (`record:CausalEntry`)
-/// from `c`, as a list of this map holds it (docs/adr/0085, Landing order step
-/// 3a), into the payload type the schema's own unit declares: one CBOR map of
-/// every field, each under its id as text (docs/adr/0086, section 9.2). Its keys
-/// in any order, a key the schema does not declare skipped whole, a key given
-/// twice and a field missing refused, and a text or byte string past its bound
-/// refused.
+/// Read one record of the event schema `causal_entry` from `c`, into the payload
+/// type the schema's own unit declares: one CBOR map of its present fields,
+/// each under its id as text (docs/adr/0101, section 2.1). Its keys in any
+/// order, a key the schema does not declare skipped whole, a key given twice
+/// and a field that is not optional missing refused, and a value of no field's
+/// type refused.
 fn decode_record_causal_entry(
     c: &mut SceCursor<'_>,
 ) -> Result<causal_entry::CausalEntryPayload, CodecError> {
@@ -70,8 +69,8 @@ fn decode_record_causal_entry(
     })
 }
 
-/// Write one record of `causal_entry` as one map of every field, the keys in
-/// the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
+/// Write one record of `causal_entry` as one map of its present fields, the keys
+/// in the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
 fn encode_record_causal_entry<S: SceSink + ?Sized>(
     w: &mut S,
     record: &causal_entry::CausalEntryPayload,
@@ -414,8 +413,7 @@ impl<'a> Envelope<'a> {
                         return Err(CodecError::CborDuplicateKey);
                     }
                     causal_vector = Some({
-                        // A definite-length array within the list's counts,
-                        // each item one record's map.
+                        // A definite-length array within the list's counts.
                         let len = cbor::read_array_len(&mut c)?;
                         if len > 64 {
                             return Err(CodecError::CborOutOfRange);
@@ -952,8 +950,8 @@ impl<S: EnvelopeStorage> EnvelopeOwned<S> {
             region_id: <Self as EnvelopeSource>::region_id(self),
             child_session_id: <Self as EnvelopeSource>::child_session_id(self),
             causal_epoch: <Self as EnvelopeSource>::causal_epoch(self),
-            // A list of records is held by value in both forms, so the view
-            // takes a copy of it.
+            // A list, a record and a union are held by value in both forms, so
+            // the view takes a copy of it.
             causal_vector: self.causal_vector.clone(),
         }
     }
@@ -1392,10 +1390,12 @@ impl<'a> Envelope<'a> {
         }
         if let Some(v) = src.causal_vector() {
             cbor::write_uint(w, 20)?;
-            let len = v.as_slice().len();
-            cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(len))?;
-            for record in v.as_slice() {
-                encode_record_causal_entry(w, record)?;
+            cbor::write_array_head(
+                w,
+                ::sce_forge_runtime::codec::widen_usize(v.as_slice().len()),
+            )?;
+            for item in v.as_slice() {
+                encode_record_causal_entry(w, item)?;
             }
         }
         Ok(())
