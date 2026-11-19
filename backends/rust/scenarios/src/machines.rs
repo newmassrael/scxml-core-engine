@@ -178,11 +178,7 @@ macro_rules! scenarios {
 /// (`generate/unsupported-feature`), so there is no module a row could build it
 /// from. The step that lowers the construct on Rust generates the machine, takes
 /// the entry off and adds the row.
-pub const NOT_YET_LOWERED: &[(&str, &str)] = &[(
-    "static_map_take",
-    "a <sce:call> that lends an imported algorithm a map to write in place has no Rust \
-     lowering yet (docs/adr/0108, Order of work, step 7)",
-)];
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[];
 
 scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
@@ -244,6 +240,7 @@ scenarios! {
     "static_map_full" => static_map_full_sm::{StaticMapFullPolicy, StaticMapFullPersist};
     "static_map_order" => static_map_order_sm::{StaticMapOrderPolicy, StaticMapOrderPersist};
     "static_map_record" => static_map_record_sm::{StaticMapRecordPolicy, StaticMapRecordPersist};
+    "static_map_take" => static_map_take_sm::{StaticMapTakePolicy, StaticMapTakePersist};
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_call" => static_list_call_sm::{StaticListCallPolicy, StaticListCallPersist};
