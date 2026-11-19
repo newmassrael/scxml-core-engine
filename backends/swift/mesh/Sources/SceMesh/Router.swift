@@ -65,6 +65,18 @@ public struct PeerConfig: Equatable, Sendable {
         self.replyEvents = replyEvents
         self.causal = causal
     }
+
+    /// Whether the link of this binding names the machine that sent what arrives on it, so that an
+    /// envelope whose `source` names another machine is refused (`RouterError.sourceNotLink`,
+    /// SCE_MESH.md section 10.9, invariant 10). Every transport a host core serves joins this
+    /// machine to one peer per link and tells the core that peer's name, which the host
+    /// authenticated (`wss` by the path or the URL the client dialed, section 18.1; `zenoh_inbox`
+    /// by the last chunk of the key, section 20.1). So does every binding but a causal route, which
+    /// is a group: a member's change reaches a copy through any member or relay as its author wrote
+    /// it (§mesh-10.12). The Rust core's `PeerConfig::link_names_sender`.
+    public var linkNamesSender: Bool {
+        causal == nil
+    }
 }
 
 /// One thing the host must do.
@@ -127,6 +139,13 @@ public enum RouterError: Error, Equatable, Sendable {
 
     /// The host named a peer it never bound with `Router.addPeer`.
     case unknownPeer(String)
+
+    /// An envelope arrived on the link of `peer` naming another machine, `source`, as its sender,
+    /// and was dropped: the link names the machine the host authenticated at its other end, and an
+    /// envelope's `source` is only what its writer wrote (SCE_MESH.md section 10.9, invariant 10).
+    /// Nothing the router keeps by sender saw it, and the machine was not told. Never refused on a
+    /// causal route (`PeerConfig.linkNamesSender`).
+    case sourceNotLink(peer: String, source: String)
 
     /// A standard rule refused its input: a sequence at the `UInt64` maximum, or a clock that cannot
     /// be subtracted.
@@ -488,6 +507,14 @@ public final class Router {
         }
         if bound.config.causal != nil {
             return receiveCausal(peer, bound, bytes, nowMs: nowMs)
+        }
+        // SCE_MESH.md section 10.9, invariant 10: the link names the machine at its other end, and
+        // `source` is only what the envelope says. One that names another machine is refused before
+        // anything kept by sender sees it (the duplicate window, the ordering hold, a request's
+        // correlation) and before the machine is told, so no link speaks for a machine it is not.
+        var claimed = SceCursor(bytes)
+        if bound.config.linkNamesSender, let envelope = try? Envelope.decode(&claimed), envelope.source != peer {
+            return .refused(.sourceNotLink(peer: peer, source: envelope.source))
         }
         let delivery = bound.config.delivery
         // §mesh-14.6: a reply is checked against its request's responder set on arrival, while the

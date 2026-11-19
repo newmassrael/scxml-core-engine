@@ -284,10 +284,10 @@ class RouterTest {
             else -> fail("expected the request to start, got $invoked")
         }
 
-    private fun reply(n: Int, status: RpcStatus?, message: String?, data: String): ByteArray =
+    private fun reply(n: Int, status: RpcStatus?, message: String?, data: String, source: String = "hmi"): ByteArray =
         Envelope(
             id = EnvelopeIdBytes.of(id(n))!!,
-            source = EnvelopeSourceText.of("hmi")!!,
+            source = EnvelopeSourceText.of(source)!!,
             event_type = EnvelopeEventTypeText.of("service.response.force")!!,
             pattern = PatternKind.RPC_REPLY,
             datacontenttype = if (data.isEmpty()) PayloadCodec.NONE else PayloadCodec.JSON,
@@ -365,14 +365,75 @@ class RouterTest {
         val ecu = requester(null)
         started(ecu, null)
         assertEquals(
-            // The envelope's word, reported as written; what refused it was the binding it came in on.
-            listOf(Effect.Raise("mallory", Signal.RpcReplyFromUndeclaredPeer("hmi", wireText))),
-            done(ecu.receive("mallory", reply(2, RpcStatus.OK, null, "1"), 20)),
+            // What refused it was the binding it came in on, whose machine the envelope names.
+            listOf(Effect.Raise("mallory", Signal.RpcReplyFromUndeclaredPeer("mallory", wireText))),
+            done(ecu.receive("mallory", reply(2, RpcStatus.OK, null, "1", source = "mallory"), 20)),
         )
         assertEquals(
             listOf(Effect.Complete("ask", 7, "2", "hmi")),
             done(ecu.receive("hmi", reply(3, RpcStatus.OK, null, "2"), 21)),
         )
+    }
+
+    /**
+     * SCE_MESH.md section 10.9, invariant 10, before §mesh-14.6 is asked: a reply that arrives on
+     * mallory's link naming hmi, the declared responder, is refused to the host, ends nothing and
+     * raises nothing, and the request is still answered by hmi. Red if the router takes the
+     * envelope's `source` over its link: the reply is then row 14 under hmi's name.
+     */
+    @Test
+    fun aReplyNamingTheResponderOnAnotherLinkIsRefusedToTheHost() {
+        val ecu = requester(null)
+        started(ecu, null)
+        assertEquals(
+            Routed.Refused(RouterError.SourceNotLink("mallory", "hmi")),
+            ecu.receive("mallory", reply(2, RpcStatus.OK, null, "1"), 20),
+        )
+        assertEquals(
+            listOf(Effect.Complete("ask", 7, "2", "hmi")),
+            done(ecu.receive("hmi", reply(3, RpcStatus.OK, null, "2"), 21)),
+        )
+    }
+
+    /**
+     * SCE_MESH.md section 10.9, invariant 10: a client that writes another client's name as its
+     * `source` is refused to the host and takes nothing of that client's: not the id in its
+     * duplicate window, so the other's own copy is delivered as its own. Red if the router takes
+     * `source` over the link: alice's copy is then delivered as bob's, and bob's own is dropped as
+     * a duplicate.
+     */
+    @Test
+    fun aClientThatNamesAnotherAsItsSourceIsRefusedAndTakesNothingOfIts() {
+        val cloud = Router("cloud", 8u, 50)
+        val accepting = unordered.copy(buffer = null)
+        cloud.addPeer("alice", accepting.copy(responders = listOf("alice")))
+        cloud.addPeer("bob", accepting.copy(responders = listOf("bob")))
+        val forged = Envelope(
+            id = EnvelopeIdBytes.of(id(0xB0))!!,
+            source = EnvelopeSourceText.of("bob")!!,
+            event_type = EnvelopeEventTypeText.of("note")!!,
+            pattern = PatternKind.FIRE_FORGET,
+            datacontenttype = PayloadCodec.JSON,
+            data = EnvelopeDataBytes.of("""{"n":3}""".encodeToByteArray())!!,
+        ).encodeToByteArray() ?: fail("the envelope did not encode")
+
+        assertEquals(Routed.Refused(RouterError.SourceNotLink("alice", "bob")), cloud.receive("alice", forged, 0))
+        assertEquals(
+            listOf(Effect.Deliver("note", """{"n":3}""", "bob", null, null)),
+            done(cloud.receive("bob", forged, 1)),
+        )
+        assertEquals(Routed.Refused(RouterError.SourceNotLink("alice", "bob")), cloud.receive("alice", forged, 2))
+    }
+
+    /**
+     * A causal route is a group, not a link to one machine (SCE_MESH.md section 10.12): its
+     * binding names no sender, and every other binding does. Red if a causal route is held to its link's name: a
+     * member's change relayed through another member is then refused.
+     */
+    @Test
+    fun onlyACausalRouteNamesNoSender() {
+        assertTrue(unordered.linkNamesSender)
+        assertTrue(!unordered.copy(causal = CausalGroup("people", 0uL, listOf("phone/list"))).linkNamesSender)
     }
 
     /** §mesh-9.5 `<cancel>`: nothing on the wire, and a later answer is dropped. */

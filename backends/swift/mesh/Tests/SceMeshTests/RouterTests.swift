@@ -300,10 +300,12 @@ func sendRequest(_ target: String, _ event: String, _ data: String, sendID: Stri
         return try transmitted(.done(effects))
     }
 
-    private func reply(_ n: Int, _ status: RpcStatus?, _ message: String?, _ data: String) throws -> [UInt8] {
+    private func reply(
+        _ n: Int, _ status: RpcStatus?, _ message: String?, _ data: String, source: String = "hmi"
+    ) throws -> [UInt8] {
         var envelope = Envelope()
         envelope.id = envelopeID(n)
-        envelope.source = "hmi"
+        envelope.source = source
         envelope.event_type = "service.response.force"
         envelope.pattern = .rpcReply
         envelope.datacontenttype = data.isEmpty ? PayloadCodec.none : .json
@@ -380,12 +382,68 @@ func sendRequest(_ target: String, _ event: String, _ data: String, sendID: Stri
         let ecu = requester(deadlineMs: nil)
         _ = try started(ecu, deadlineMs: nil)
         #expect(
-            // The envelope's word, reported as written; what refused it was the binding it came in on.
-            try done(ecu.receive(peer: "mallory", bytes: reply(2, .ok, nil, "1"), nowMs: 20))
-                == [.raise(peer: "mallory", signal: .rpcReplyFromUndeclaredPeer(source: "hmi", invokeID: wireText))])
+            // What refused it was the binding it came in on, whose machine the envelope names.
+            try done(ecu.receive(peer: "mallory", bytes: reply(2, .ok, nil, "1", source: "mallory"), nowMs: 20))
+                == [.raise(peer: "mallory", signal: .rpcReplyFromUndeclaredPeer(source: "mallory", invokeID: wireText))])
         #expect(
             try done(ecu.receive(peer: "hmi", bytes: reply(3, .ok, nil, "2"), nowMs: 21))
                 == [.complete(invokeID: "ask", token: 7, data: "2", source: "hmi")])
+    }
+
+    /// SCE_MESH.md section 10.9, invariant 10, before §mesh-14.6 is asked: a reply that arrives on
+    /// mallory's link naming hmi, the declared responder, is refused to the host, ends nothing and
+    /// raises nothing, and the request is still answered by hmi. Red if the router takes the
+    /// envelope's `source` over its link: the reply is then row 14 under hmi's name.
+    @Test func aReplyNamingTheResponderOnAnotherLinkIsRefusedToTheHost() throws {
+        let ecu = requester(deadlineMs: nil)
+        _ = try started(ecu, deadlineMs: nil)
+        #expect(
+            try ecu.receive(peer: "mallory", bytes: reply(2, .ok, nil, "1"), nowMs: 20)
+                == .refused(.sourceNotLink(peer: "mallory", source: "hmi")))
+        #expect(
+            try done(ecu.receive(peer: "hmi", bytes: reply(3, .ok, nil, "2"), nowMs: 21))
+                == [.complete(invokeID: "ask", token: 7, data: "2", source: "hmi")])
+    }
+
+    /// SCE_MESH.md section 10.9, invariant 10: a client that writes another client's name as its
+    /// `source` is refused to the host and takes nothing of that client's: not the id in its
+    /// duplicate window, so the other's own copy is delivered as its own. Red if the router takes
+    /// `source` over the link: alice's copy is then delivered as bob's, and bob's own is dropped as
+    /// a duplicate.
+    @Test func aClientThatNamesAnotherAsItsSourceIsRefusedAndTakesNothingOfIts() throws {
+        let cloud = Router(machine: "cloud", dedupWindow: 8, gapTimeoutMs: 50)
+        var accepting = unordered
+        accepting.buffer = nil
+        cloud.addPeer("alice", config: config(accepting, responders: ["alice"]))
+        cloud.addPeer("bob", config: config(accepting, responders: ["bob"]))
+        var envelope = Envelope()
+        envelope.id = envelopeID(0xB0)
+        envelope.source = "bob"
+        envelope.event_type = "note"
+        envelope.pattern = .fireForget
+        envelope.datacontenttype = .json
+        envelope.data = Array(#"{"n":3}"#.utf8)
+        let forged = try encodeEnvelope(envelope)
+
+        #expect(
+            cloud.receive(peer: "alice", bytes: forged, nowMs: 0)
+                == .refused(.sourceNotLink(peer: "alice", source: "bob")))
+        #expect(
+            try done(cloud.receive(peer: "bob", bytes: forged, nowMs: 1))
+                == [.deliver(event: "note", data: #"{"n":3}"#, source: "bob", sendID: nil, invokeID: nil)])
+        #expect(
+            cloud.receive(peer: "alice", bytes: forged, nowMs: 2)
+                == .refused(.sourceNotLink(peer: "alice", source: "bob")))
+    }
+
+    /// A causal route is a group, not a link to one machine (§mesh-10.12): its binding names no
+    /// sender, and every other binding does. Red if a causal route is held to its link's name: a
+    /// member's change relayed through another member is then refused.
+    @Test func onlyACausalRouteNamesNoSender() {
+        #expect(unordered.linkNamesSender)
+        var causal = unordered
+        causal.causal = CausalGroup(name: "people", epoch: 0, view: ["phone/list"])
+        #expect(!causal.linkNamesSender)
     }
 
     /// §mesh-9.5 `<cancel>`: nothing on the wire, and a later answer is dropped.

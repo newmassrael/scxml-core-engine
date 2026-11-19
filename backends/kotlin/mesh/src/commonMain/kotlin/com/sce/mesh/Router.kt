@@ -55,7 +55,20 @@ data class PeerConfig(
      * which then replaces the duplicate window and the sequence buffer for it.
      */
     val causal: CausalGroup?,
-)
+) {
+    /**
+     * Whether the link of this binding names the machine that sent what arrives on it, so that an
+     * envelope whose `source` names another machine is refused ([RouterError.SourceNotLink],
+     * SCE_MESH.md section 10.9, invariant 10). Every transport a host core serves joins this
+     * machine to one peer per link and tells the core that peer's name, which the host
+     * authenticated (`wss` by the path, or the URL the client dialed, section 18.1). So does every
+     * binding but a causal route, which is a group: a member's change reaches a copy through any
+     * member or relay as its author wrote it (§mesh-10.12). The Rust core's
+     * `PeerConfig::link_names_sender`.
+     */
+    val linkNamesSender: Boolean
+        get() = causal == null
+}
 
 /** One thing the host must do. */
 sealed class Effect {
@@ -141,6 +154,15 @@ sealed class RouterError {
 
     /** The host named a peer it never bound with [Router.addPeer]. */
     data class UnknownPeer(val peer: String) : RouterError()
+
+    /**
+     * An envelope arrived on the link of [peer] naming another machine, [source], as its sender, and
+     * was dropped: the link names the machine the host authenticated at its other end, and an
+     * envelope's `source` is only what its writer wrote (SCE_MESH.md section 10.9, invariant 10).
+     * Nothing the router keeps by sender saw it, and the machine was not told. Never refused on a
+     * causal route ([PeerConfig.linkNamesSender]).
+     */
+    data class SourceNotLink(val peer: String, val source: String) : RouterError()
 
     /** A standard rule refused its input: a sequence at the `ULong` maximum, or a clock that cannot be subtracted. */
     data class Rule(val error: AlgorithmError) : RouterError()
@@ -465,6 +487,14 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
     fun receive(peer: String, bytes: ByteArray, nowMs: Long): Routed {
         val bound = peers[peer] ?: return Routed.Refused(RouterError.UnknownPeer(peer))
         if (bound.config.causal != null) return receiveCausal(peer, bound, bytes, nowMs)
+        // SCE_MESH.md section 10.9, invariant 10: the link names the machine at its other end, and
+        // `source` is only what the envelope says. One that names another machine is refused before
+        // anything kept by sender sees it (the duplicate window, the ordering hold, a request's
+        // correlation) and before the machine is told, so no link speaks for a machine it is not.
+        val claimed = Envelope.decode(SceCursor(bytes)).valueOrNull()?.source?.text
+        if (bound.config.linkNamesSender && claimed != null && claimed != peer) {
+            return Routed.Refused(RouterError.SourceNotLink(peer, claimed))
+        }
         val delivery = bound.config.delivery
         // §mesh-14.6: a reply is checked against its request's responder set on
         // arrival, while the binding it came in on is still known — an ordered
