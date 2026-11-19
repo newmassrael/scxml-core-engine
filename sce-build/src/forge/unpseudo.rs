@@ -3144,6 +3144,27 @@ fn parse_statechart(
     Ok(m)
 }
 
+/// The type that opens `text`, as the one type grammar spells it, and the
+/// clauses after the space that ends it.
+///
+/// Not the first space. A type is spelled with a space inside it, the one
+/// after the comma of `map<K, T>` (docs/adr/0108, D1), and nowhere outside its
+/// angle brackets, so the type ends at the first space at depth zero. Split at
+/// the first space, `map<uint8, uint8>` read as the type `map<uint8,` and the
+/// page of every map variable could not be read back.
+fn split_type_word(text: &str) -> (&str, &str) {
+    let mut depth = 0usize;
+    for (i, c) in text.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            ' ' if depth == 0 => return (&text[..i], &text[i + 1..]),
+            _ => {}
+        }
+    }
+    (text, "")
+}
+
 /// `data <id>[: <type>] [sce-type <t>] [capacity <n>] [direction <d>] [src <s>] [= <expr>] [content <c>]`,
 /// and for a record variable one nested `<field> = <expr>` line per field —
 /// the lines an algorithm's record local nests.
@@ -3213,17 +3234,18 @@ fn parse_variable(
     // Clause order is the renderer's: `sce-type` and `src` first, then the
     // free-text `= <expr>` and `content`, each of which closes the line.
     if let Some(after) = tail.strip_prefix("sce-type ") {
-        let (t, more) = match after.split_once(' ') {
-            Some((t, m)) => (t, m),
-            None => (after, ""),
-        };
+        let (t, more) = split_type_word(after);
         let t = undo(t, line.number)?;
-        v.value_type = Some(
-            crate::forge::model::AlgorithmValueType::from_attr(&t).ok_or_else(|| ParseError {
+        // Any type of the one grammar, as the document's parser reads a
+        // variable's `sce:type`: a map, a set or a union is held by the model
+        // and written on the page, and which of them a lowering holds is the
+        // lowering's to refuse, not the reader's.
+        v.value_type = Some(crate::forge::model::AlgorithmValueType::read(&t).map_err(
+            |refusal| ParseError {
                 line: line.number,
-                why: format!("`{t}` is not a value type"),
-            })?,
-        );
+                why: format!("`{t}` is not a value type: {}", refusal.rule()),
+            },
+        )?);
         tail = more;
     }
     if let Some(after) = tail.strip_prefix("capacity ") {
@@ -4254,4 +4276,96 @@ pub fn covered_kind(doc: &ForgeDocument) -> Option<&'static str> {
 /// Whether this document is one the reader covers.
 pub fn covers(doc: &ForgeDocument) -> bool {
     covered_kind(doc).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A statechart holding a map and a set variable, and a walk over the map
+    /// that binds its key: the constructs docs/adr/0108 adds to a page.
+    const KEYED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="ordering" datamodel="sce-static" name="keyed_page">
+  <datamodel>
+    <data id="entries" sce:type="map&lt;uint8, uint8&gt;[4]" sce:direction="out"/>
+    <data id="tags" sce:type="set&lt;string[8]&gt;[3]" sce:direction="out"/>
+    <data id="order" sce:type="list&lt;uint8&gt;[4]" sce:direction="out"/>
+    <data id="lastAt" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="ordering">
+    <transition event="put.one" type="internal">
+      <sce:put target="entries" key="1" expr="10"/>
+    </transition>
+    <transition event="walk" type="internal">
+      <sce:clear target="order"/>
+      <foreach array="entries" item="value" sce:key="key" index="at">
+        <sce:append target="order" expr="key"/>
+        <assign location="lastAt" expr="at"/>
+      </foreach>
+    </transition>
+  </state>
+</scxml>"#;
+
+    /// Each variable of a statechart by id, with its declared type as the
+    /// grammar spells it.
+    fn types_of(doc: &ForgeDocument) -> Vec<(String, Option<String>)> {
+        let ForgeDocument::Statechart(m) = doc else {
+            panic!("a statechart reads back as a statechart");
+        };
+        m.variables
+            .iter()
+            .map(|v| (v.id.clone(), v.value_type.as_ref().map(ToString::to_string)))
+            .collect()
+    }
+
+    /// A map variable's page reads back to the same type, and so does a set's.
+    /// The map's spelling holds a space, and a reader that ended the type at
+    /// the first space refused the page; one that read the type as a slot's
+    /// refused a map and a set, which no slot holds.
+    #[test]
+    fn a_map_and_a_set_variable_read_back_as_their_types() {
+        let model = crate::parser::SCXMLParser::new()
+            .parse_string(KEYED, "keyed_page")
+            .expect("the document parses");
+        let doc = ForgeDocument::Statechart(Box::new(model));
+        let page = crate::forge::pseudo::render(&doc).expect("the page renders");
+        let back = parse(&page).unwrap_or_else(|e| panic!("{e}\n{page}"));
+
+        assert_eq!(types_of(&back), types_of(&doc), "{page}");
+        assert_eq!(
+            types_of(&back)[0],
+            (
+                "entries".to_string(),
+                Some("map<uint8, uint8>[4]".to_string())
+            )
+        );
+        assert_eq!(
+            types_of(&back)[1],
+            ("tags".to_string(), Some("set<string[8]>[3]".to_string()))
+        );
+        assert_eq!(
+            crate::forge::pseudo::render(&back).expect("the read-back renders"),
+            page
+        );
+    }
+
+    /// The type ends at the first space outside its angle brackets, at any
+    /// depth of nesting, and runs to the end of a line that holds no clause
+    /// after it.
+    #[test]
+    fn a_type_ends_at_the_first_space_outside_its_brackets() {
+        assert_eq!(
+            split_type_word("map<uint8, map<uint16, bool>[2]> capacity 4 direction out"),
+            (
+                "map<uint8, map<uint16, bool>[2]>",
+                "capacity 4 direction out"
+            )
+        );
+        assert_eq!(
+            split_type_word("set<string[8]> direction out"),
+            ("set<string[8]>", "direction out")
+        );
+        assert_eq!(split_type_word("uint32"), ("uint32", ""));
+    }
 }

@@ -124,7 +124,11 @@
 //! ```text
 //!   machine <name> (datamodel: <d>, initial: <s>[, binding: <b>][, queue: <n>])
 //!     context <id> [cpp-type <t>] [cpp-include <i>] [kt-type <t>]
-//!     data <id>[: <type>] [src <s>] [= <expr>] [content <c>]
+//!     data <id>[: <type>] [sce-type <t>] [capacity <n>] [direction <d>]
+//!          [src <s>] [= <expr>] [content <c>]
+//!       (<t> is the type grammar's spelling without its outermost bound;
+//!        its one space is the `, ` inside `map<K, T>`, so it ends at the
+//!        first space outside its angle brackets)
 //!     (state|parallel|final) <id> [initial <s>] [initial-children <s>...]
 //!       (a head clause whose value is not one word moves to its own
 //!        line in the body, same keyword, value to end of line)
@@ -2884,7 +2888,10 @@ fn render_variable_body(v: &crate::model::Variable, out: &mut Out<'_>) {
     }
     // The declared type under `datamodel="sce-static"` is a clause of its
     // own, apart from the classified `: <type>` above: one is what the
-    // author wrote, the other what the analyzer inferred.
+    // author wrote, the other what the analyzer inferred. The grammar's own
+    // spelling, though a map's holds a space (`map<K, T>`): the reader ends
+    // the type at the first space outside its angle brackets, so the page
+    // shows the type as the author wrote it rather than an escaped one.
     if let Some(t) = &v.value_type {
         let _ = write!(
             line,
