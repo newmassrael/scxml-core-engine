@@ -311,8 +311,11 @@ impl Receipt {
 /// `invoke_id`.
 type Replies = Arc<Mutex<BTreeMap<[u8; 16], String>>>;
 
+/// A session's slot as the table and each call that acts on it share it.
+type SharedSlot<M, T, E> = Arc<Slot<M, T, E>>;
+
 /// Every session the pool holds, in memory or about to be, by key.
-type Table<M, T, E> = BTreeMap<String, Arc<Slot<M, T, E>>>;
+type Table<M, T, E> = BTreeMap<String, SharedSlot<M, T, E>>;
 
 /// One input of a session's inbox, applied by the session's owner-thread
 /// operation of the same name.
@@ -845,7 +848,7 @@ where
     /// while it was saved.
     fn evict(
         &self,
-        slot: &Arc<Slot<F::Machine, T, E>>,
+        slot: &SharedSlot<F::Machine, T, E>,
         live: &mut MutexGuard<'_, Option<Live<F::Machine, T, E>>>,
         now: u64,
     ) -> bool {
@@ -1023,7 +1026,7 @@ where
     /// Whether one was dropped; a session being run is not a candidate.
     fn make_room(&self) -> bool {
         let now = self.wall_now();
-        let mut quiet: Vec<(u64, Arc<Slot<F::Machine, T, E>>)> = Vec::new();
+        let mut quiet: Vec<(u64, SharedSlot<F::Machine, T, E>)> = Vec::new();
         for slot in self.slots() {
             let Some(live) = try_lock(&slot.live) else {
                 continue;
@@ -1099,14 +1102,14 @@ where
     }
 
     /// Every session the table holds now.
-    fn slots(&self) -> Vec<Arc<Slot<F::Machine, T, E>>> {
+    fn slots(&self) -> Vec<SharedSlot<F::Machine, T, E>> {
         lock(&self.table).values().cloned().collect()
     }
 
     /// Take `slot` out of the table when its inbox holds nothing, so that it
     /// is not loaded for nothing. True when it is out of the table, taken out
     /// now or before.
-    fn retire_if_idle(&self, slot: &Arc<Slot<F::Machine, T, E>>) -> bool {
+    fn retire_if_idle(&self, slot: &SharedSlot<F::Machine, T, E>) -> bool {
         let mut table = lock(&self.table);
         let mut inbox = lock(&slot.inbox);
         if inbox.closed {
@@ -1498,7 +1501,7 @@ where
     /// answered `Unavailable`.
     fn lose(
         &self,
-        slot: &Arc<Slot<F::Machine, T, E>>,
+        slot: &SharedSlot<F::Machine, T, E>,
         live: &mut Option<Live<F::Machine, T, E>>,
         reason: String,
     ) {
@@ -1539,7 +1542,7 @@ where
     /// Stop serving `slot`'s key: take it out of the table and answer each
     /// request its inbox held with `refusal`, which settles it; anything else
     /// it held is dropped, told to the host and lost.
-    fn abandon(&self, slot: &Arc<Slot<F::Machine, T, E>>, refusal: &Refusal) {
+    fn abandon(&self, slot: &SharedSlot<F::Machine, T, E>, refusal: &Refusal) {
         let held = {
             let mut table = lock(&self.table);
             let mut inbox = lock(&slot.inbox);
@@ -1637,7 +1640,7 @@ fn fence_of<M, T, E>(slot: &Slot<M, T, E>) -> Option<u64> {
 
 /// Take `slot` out of `table`, if it is still the session the table holds for
 /// its key: a newer one for the key stays.
-fn remove_slot<M, T, E>(table: &mut Table<M, T, E>, slot: &Arc<Slot<M, T, E>>) {
+fn remove_slot<M, T, E>(table: &mut Table<M, T, E>, slot: &SharedSlot<M, T, E>) {
     if table
         .get(&slot.key)
         .is_some_and(|current| Arc::ptr_eq(current, slot))
