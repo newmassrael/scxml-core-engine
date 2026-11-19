@@ -85,6 +85,7 @@ https = [
     "dep:rustls-platform-verifier",
     "dep:sha2",
     "dep:base64",
+    "dep:sce-rust-crypto",
     "tls",
 ]
 # The behaviour every adapter of the HTTPS port is held to (SCE_MESH.md section 22.7): a local
@@ -135,6 +136,9 @@ rustls-platform-verifier = { version = "0.6", optional = true }
 # The digest a server pins an installation secret by, and the text the secret is sent as.
 sha2 = { version = "0.10", optional = true, default-features = false }
 base64 = { version = "0.22", optional = true, default-features = false, features = ["alloc"] }
+# The `https` feature's server: the one comparison of a secret (a pin, a token's name), and the
+# reference check of bearer tokens over a credential store (ADR 0109, D3).
+sce-rust-crypto = { path = "../crypto", optional = true }
 # The `https-conformance` kit's test authority and the certificates it issues.
 rcgen = { version = "0.13", optional = true, default-features = false, features = ["crypto", "ring"] }
 

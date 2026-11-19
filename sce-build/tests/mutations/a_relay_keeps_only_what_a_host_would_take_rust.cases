@@ -13,7 +13,7 @@
 # anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-relay --lib --test a_relay_keeps_what_members_signed_and_reads_none_of_it
-mutation_targets backends/rust/relay/src/relay.rs backends/rust/relay/src/token.rs backends/rust/relay/src/limits.rs backends/rust/relay/src/store.rs backends/rust/relay/src/protocol.rs backends/rust/relay/src/client.rs backends/rust/trust/src/trust.rs
+mutation_targets backends/rust/relay/src/relay.rs backends/rust/relay/src/token.rs backends/rust/relay/src/limits.rs backends/rust/relay/src/store.rs backends/rust/relay/src/protocol.rs backends/rust/relay/src/client.rs backends/rust/trust/src/trust.rs backends/rust/crypto/src/equal.rs
 mutation_oracles backends/rust/relay/tests/a_relay_keeps_what_members_signed_and_reads_none_of_it.rs
 
 # ── What a courier gives a relay that shows a device's conflict, and tells a machine ──────────
@@ -40,14 +40,14 @@ PY
 
 mutation_case "A relay takes a token whose tag is not the one its secret makes" <<'PY'
 edit("backends/rust/relay/src/token.rs",
-     "    if !equal(&hmac_sha256(&self.secret, &payload), &tag) {",
-     "    if !equal(&hmac_sha256(&self.secret, &payload), &tag) && false {")
+     "    if !same_secret(&hmac_sha256(&self.secret, &payload), &tag) {",
+     "    if !same_secret(&hmac_sha256(&self.secret, &payload), &tag) && false {")
 PY
 
 mutation_case "A relay takes a token whose tag is shorter or longer than the one its secret makes" <<'PY'
-edit("backends/rust/relay/src/token.rs",
-     "a.len() == b.len() && a.iter()",
-     "a.iter()")
+edit("backends/rust/crypto/src/equal.rs",
+     "    bool::from(a.ct_eq(b))",
+     "    let n = a.len().min(b.len());\n    bool::from(a[..n].ct_eq(&b[..n]))")
 PY
 
 mutation_case "A relay takes a token in the very millisecond it expires" <<'PY'

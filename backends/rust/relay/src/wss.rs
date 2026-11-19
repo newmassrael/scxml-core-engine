@@ -41,6 +41,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use futures_util::{FutureExt, SinkExt, StreamExt};
+use sce_rust_crypto::equal::same_secret;
 use sce_rust_relay_transport::{Notice, Notices, Signal, Transport, TransportError};
 use tokio::net::TcpStream;
 use tokio::sync::Notify;
@@ -403,7 +404,7 @@ impl Transport for WssLink {
     }
 
     fn set_token(&mut self, token: &str) -> bool {
-        if token != self.token {
+        if !same_secret(token.as_bytes(), self.token.as_bytes()) {
             self.token = token.to_string();
             self.give_up("the token changed");
         }

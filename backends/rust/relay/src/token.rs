@@ -23,6 +23,7 @@ use std::fmt;
 
 use sha2::{Digest, Sha256};
 
+use sce_rust_crypto::equal::same_secret;
 use sce_rust_trust::encoding;
 
 /// A device of one list, as a token names it.
@@ -156,7 +157,7 @@ impl Authority {
     /// The device a token names, when the relay issued it for itself and it has not expired.
     pub fn verify(&self, token: &str, now_ms: u64) -> Result<Session, TokenError> {
         let (payload, tag) = halves(token)?;
-        if !equal(&hmac_sha256(&self.secret, &payload), &tag) {
+        if !same_secret(&hmac_sha256(&self.secret, &payload), &tag) {
             return Err(TokenError::BadTag);
         }
         let Claims {
@@ -233,11 +234,6 @@ fn halves(token: &str) -> Result<(Vec<u8>, Vec<u8>), TokenError> {
     let payload = encoding::decode(payload).ok_or(TokenError::Malformed)?;
     let tag = encoding::decode(tag).ok_or(TokenError::Malformed)?;
     Ok((payload, tag))
-}
-
-/// Whether two tags are the same, in time that does not depend on where they first differ.
-pub(crate) fn equal(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// HMAC-SHA256 (RFC 2104) of `message` under `key`, for a key of at most 64 bytes.

@@ -70,7 +70,8 @@ use crate::driver::Exchange;
 use crate::limits::Windows;
 use crate::logs::{list_digest, refused};
 use crate::protocol::{Code, Create, Join, Login, Request, Response};
-use crate::token::{equal, hmac_sha256, Authority};
+use crate::token::{hmac_sha256, Authority};
+use sce_rust_crypto::equal::same_secret;
 
 /// How long a challenge holds, by the relay's clock.
 pub const CHALLENGE_MS: u64 = 60_000;
@@ -633,7 +634,7 @@ impl Doorway {
             .try_into()
             .map_err(|_| unauthorized("the nonce is not one this relay gives"))?;
         let tag = self.tag(list, node, expires_at_ms, &nonce[..16]);
-        if !equal(&tag, &nonce[16..]) {
+        if !same_secret(&tag, &nonce[16..]) {
             return Err(unauthorized(
                 "the challenge is not one this relay made for this list and node",
             ));

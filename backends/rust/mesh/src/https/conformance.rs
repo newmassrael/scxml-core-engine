@@ -80,6 +80,7 @@ use crate::inbound::Delivery;
 use crate::outbound::RetryPolicy;
 use crate::reconnect::Backoff;
 use crate::router::{PeerConfig, Router};
+use sce_rust_crypto::equal::same_secret;
 use sce_rust_runtime::HostSendRequest;
 
 /// What an adapter is run through: how to make one, told which authorities to believe and which
@@ -290,7 +291,7 @@ impl Bench {
                 ..ServerSettings::default()
             },
             Authenticator::Bearer(Arc::new(|name: &str, token: &str| {
-                name == "phone" && token == TOKEN
+                name == "phone" && same_secret(token.as_bytes(), TOKEN.as_bytes())
             })),
             |name| name == "phone",
             host,

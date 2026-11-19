@@ -63,6 +63,13 @@ use super::{
 };
 use crate::endpoint::{Transport, TransportFailure};
 use crate::peers::{EdgeRate, EdgeRates, HttpsAuthenticator, Machine, PeerLink};
+use sce_rust_crypto::equal::same_secret;
+
+// The credentials an authenticator reads (ADR 0109, D3): the pin store of `install`, its memory
+// implementation, and the reference check of `bearer` over a credential store. The store contract
+// is `sce-rust-session-store`'s, whose `SqliteStore` is the durable implementation.
+pub use sce_rust_crypto::credential::StoredTokens;
+pub use sce_rust_session_store::{MemoryCredentials, PinStore};
 
 /// The bounds a server keeps: deploy.yaml's keys of the accepting side, and two of the host's own
 /// for shedding load.
@@ -253,46 +260,28 @@ pub type CertificateCheck = Arc<dyn Fn(&str, &[u8]) -> bool + Send + Sync>;
 /// server is never built without one.
 #[derive(Clone)]
 pub enum Authenticator {
-    /// `Authorization: Bearer <token>`, verified by the host.
+    /// `Authorization: Bearer <token>`, verified by the host; [`Authenticator::stored_tokens`]
+    /// verifies the tokens a host issued into a credential store.
     Bearer(BearerCheck),
     /// `Authorization: SCE-Install <secret>`: the first secret a name brings is pinned, by its
-    /// SHA-256, at the first exchange answered `200`, and no other is taken for it after.
+    /// SHA-256, at the first exchange answered `200`, and no other is taken for it after. The pins
+    /// are kept in the store given: [`MemoryCredentials`] forgets them when the server stops, and
+    /// the next secret a name brings is pinned again; the session store's SQLite file
+    /// (`SqliteStore`) keeps them across a restart.
     Install(Arc<dyn PinStore>),
     /// A TLS client certificate, required by the TLS configuration ([`server_tls`] with client
     /// authorities) and checked against the name by the host.
     Mtls(CertificateCheck),
 }
 
-/// Where a server keeps the installation pins: name to the SHA-256 of its secret. A server that
-/// keeps them in memory ([`MemoryPins`]) forgets them when it stops, and the next secret a name
-/// brings is pinned again; a host that keeps them durably implements this on its store.
-pub trait PinStore: Send + Sync {
-    /// The digest `name` is pinned to.
-    fn pinned(&self, name: &str) -> Option<[u8; 32]>;
-    /// Pin `name` to `digest` unless it is pinned already, in one step; true when `name` is now
-    /// pinned to `digest`, whether by this call or before it.
-    fn pin(&self, name: &str, digest: [u8; 32]) -> bool;
-}
-
-/// Pins held in memory.
-#[derive(Default)]
-pub struct MemoryPins(Mutex<HashMap<String, [u8; 32]>>);
-
-impl PinStore for MemoryPins {
-    fn pinned(&self, name: &str) -> Option<[u8; 32]> {
-        self.0.lock().expect(HELD).get(name).copied()
+impl Authenticator {
+    /// The `bearer` authenticator whose check is `tokens` (ADR 0109, D3): a token proves a name
+    /// when the credential store holds its digest for that name, not revoked and not expired.
+    pub fn stored_tokens(tokens: StoredTokens) -> Self {
+        Self::Bearer(Arc::new(move |name: &str, token: &str| {
+            tokens.check(name, token)
+        }))
     }
-
-    fn pin(&self, name: &str, digest: [u8; 32]) -> bool {
-        let mut pins = self.0.lock().expect(HELD);
-        let held = pins.entry(name.to_string()).or_insert(digest);
-        same_digest(held, &digest)
-    }
-}
-
-/// Two digests compared in time that does not depend on where they differ.
-fn same_digest(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// When a `200` may acknowledge the envelopes an exchange carried, as the host that took them in
@@ -972,8 +961,8 @@ fn credential<'a>(request: &'a Request<Incoming>, scheme: &str) -> Option<&'a st
     given.eq_ignore_ascii_case(scheme).then(|| text.trim())
 }
 
-/// What the authenticator makes of a request, before its body is read: refused, or admitted
-/// with the installation digest still to pin.
+/// What the authenticator makes of a request, before its body is read: refused, admitted with
+/// the installation digest still to pin, or not judged because the pin store could not be read.
 enum Admission {
     Refused,
     /// Admitted; `pin` is the installation digest still to pin, and `new` says the name is
@@ -982,6 +971,8 @@ enum Admission {
         pin: Option<[u8; 32]>,
         new: bool,
     },
+    /// The pin store failed: the client is not at fault, and is answered as load shed is.
+    Unavailable,
 }
 
 fn admit(
@@ -1007,11 +998,12 @@ fn admit(
             };
             let digest = install_digest(&secret);
             match pins.pinned(name) {
-                Some(held) if !same_digest(&held, &digest) => Admission::Refused,
-                held => Admission::Admitted {
+                Ok(Some(held)) if !same_secret(&held, &digest) => Admission::Refused,
+                Ok(held) => Admission::Admitted {
                     pin: Some(digest),
                     new: held.is_none(),
                 },
+                Err(_) => Admission::Unavailable,
             }
         }
         Authenticator::Mtls(check) => match certificate {
@@ -1092,6 +1084,11 @@ async fn exchange(
             return unauthorized(&shared.authenticator);
         }
         Admission::Admitted { pin, new } => (pin, new),
+        // A store that failed is no failed authentication of the client's: it counts against no
+        // rate.
+        Admission::Unavailable => {
+            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after)
+        }
     };
     if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.client(&name, now)) {
         return shed(StatusCode::TOO_MANY_REQUESTS, wait);
@@ -1171,9 +1168,13 @@ async fn exchange(
     // check, so of two first exchanges that bring different secrets one is refused `401`.
     if let Some(digest) = pin {
         if let Authenticator::Install(pins) = &shared.authenticator {
-            if !pins.pin(&name, digest) {
-                shared.edge(|edge, now| edge.failed(&name, address, now));
-                return unauthorized(&shared.authenticator);
+            match pins.pin(&name, &digest) {
+                Ok(held) if same_secret(&held, &digest) => {}
+                Ok(_) => {
+                    shared.edge(|edge, now| edge.failed(&name, address, now));
+                    return unauthorized(&shared.authenticator);
+                }
+                Err(_) => return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after),
             }
         }
     }
@@ -1575,17 +1576,127 @@ mod tests {
         );
     }
 
+    /// The `Authorization` value of the installation secret of 32 bytes of `byte`.
+    fn install(byte: u8) -> String {
+        use base64::Engine as _;
+
+        alloc::format!(
+            "{INSTALL_SCHEME} {}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([byte; 32])
+        )
+    }
+
+    /// §mesh-22.5, ADR 0109 D3: a name is pinned, in the store the server was given, to the first
+    /// secret it brings, and any other secret is answered `401` naming the scheme; once the pin is
+    /// removed from the store, the next secret the name brings is pinned.
     #[test]
     fn a_name_is_pinned_to_the_first_secret_and_refuses_any_other() {
-        let pins = MemoryPins::default();
-        let first = install_digest(&[1; 32]);
-        let other = install_digest(&[2; 32]);
-        assert_eq!(pins.pinned("phone"), None);
-        assert!(pins.pin("phone", first));
-        assert!(pins.pin("phone", first), "the same secret again");
-        assert!(!pins.pin("phone", other));
-        assert_eq!(pins.pinned("phone"), Some(first));
-        assert!(pins.pin("tablet", other), "another name pins its own");
+        use super::super::HttpsTransport;
+
+        let pins = MemoryCredentials::new();
+        let Serving {
+            _runtime,
+            server: _,
+            address,
+            port,
+        } = serving_authenticated(
+            Authenticator::Install(Arc::new(pins.clone())),
+            |_events: Vec<LinkEvent>| {},
+            Duration::from_secs(5),
+        );
+        let exchange = |byte: u8| {
+            port.exchange(request_authorized(
+                "phone",
+                address,
+                Vec::new(),
+                install(byte).as_str(),
+            ))
+            .expect("a response")
+        };
+        assert_eq!(exchange(1).status, 200, "the first secret");
+        assert_eq!(
+            pins.pinned("phone").expect("the pin"),
+            Some(install_digest(&[1; 32])),
+            "the name is pinned to the secret's SHA-256 in the store given"
+        );
+        assert_eq!(exchange(1).status, 200, "the same secret again");
+        let refused = exchange(2);
+        assert_eq!(refused.status, 401, "a second secret");
+        assert_eq!(refused.header("WWW-Authenticate"), Some(INSTALL_SCHEME));
+        assert_eq!(
+            pins.pinned("phone").expect("the pin"),
+            Some(install_digest(&[1; 32])),
+            "a second secret replaced nothing"
+        );
+        assert!(pins.unpin("phone").expect("the operator removes the pin"));
+        assert_eq!(
+            exchange(2).status,
+            200,
+            "an unpinned name pins the next secret it brings"
+        );
+        assert_eq!(exchange(1).status, 401, "and refuses the first now");
+    }
+
+    /// ADR 0109, D3: the `bearer` authenticator over a credential store admits a token the store
+    /// holds for the name the path claims, and answers `401` for another name, an expired token
+    /// and a revoked one.
+    #[test]
+    fn a_stored_token_admits_its_name_until_it_expires_or_is_revoked() {
+        use super::super::HttpsTransport;
+        use sce_rust_crypto::credential::{token_digest, token_text};
+        use sce_rust_session_store::{CredentialStore, TokenRow, TokenStore};
+
+        let store = MemoryCredentials::new();
+        let token = token_text(&[0x42; 32]);
+        let other = token_text(&[0x43; 32]);
+        for (text, name) in [(token.as_str(), "phone"), (other.as_str(), "tablet")] {
+            store
+                .issue(&TokenRow {
+                    digest: token_digest(text),
+                    name: name.to_string(),
+                    issued_ms: 1_000,
+                    expires_ms: 2_000,
+                    revoked: false,
+                })
+                .expect("issuing a token");
+        }
+        let now = Arc::new(AtomicU64::new(1_500));
+        let Serving {
+            _runtime,
+            server: _,
+            address,
+            port,
+        } = serving_authenticated(
+            Authenticator::stored_tokens(StoredTokens::with_clock(Arc::new(store.clone()), {
+                let now = Arc::clone(&now);
+                Box::new(move || now.load(Ordering::SeqCst))
+            })),
+            |_events: Vec<LinkEvent>| {},
+            Duration::from_secs(5),
+        );
+        let status = |text: &str| {
+            port.exchange(request_authorized(
+                "phone",
+                address,
+                Vec::new(),
+                &alloc::format!("{BEARER_SCHEME} {text}"),
+            ))
+            .expect("a response")
+            .status
+        };
+        assert_eq!(status(token.as_str()), 200, "phone's token");
+        assert_eq!(
+            status(other.as_str()),
+            401,
+            "tablet's token claims no phone"
+        );
+        assert_eq!(status("t"), 401, "a text that is no token");
+        now.store(2_000, Ordering::SeqCst);
+        assert_eq!(status(token.as_str()), 401, "expired");
+        now.store(1_500, Ordering::SeqCst);
+        assert_eq!(status(token.as_str()), 200, "before its expiry again");
+        store.revoke("phone").expect("revoking phone");
+        assert_eq!(status(token.as_str()), 401, "revoked");
     }
 
     /// A host whose endpoint checkpoints, its endpoint sealed through `sealed` whenever envelopes
@@ -1634,7 +1745,7 @@ mod tests {
     }
 
     /// A server of `phone` on a loopback port, with `host` behind it, holding an exchange at most
-    /// `max_hold`.
+    /// `max_hold`, admitting the bearer token `t` for `phone`.
     fn serving(host: impl ServerHost, max_hold: Duration) -> Serving {
         serving_with(
             ServerSettings {
@@ -1661,6 +1772,26 @@ mod tests {
                 checked(name) && token == "t"
             })),
             move |name| bound(name),
+            host,
+        )
+        .expect("a server");
+        listening(server)
+    }
+
+    /// A server of `phone` on a loopback port, checking names with `authenticator`, with `host`
+    /// behind it, holding an exchange at most `max_hold`.
+    fn serving_authenticated(
+        authenticator: Authenticator,
+        host: impl ServerHost,
+        max_hold: Duration,
+    ) -> Serving {
+        let server = HttpsServer::new(
+            ServerSettings {
+                max_hold,
+                ..ServerSettings::default()
+            },
+            authenticator,
+            |name| name == "phone",
             host,
         )
         .expect("a server");
@@ -1701,16 +1832,29 @@ mod tests {
         }
     }
 
-    /// An exchange of `phone` with the server at `address`, carrying `body`, asking for no hold.
+    /// An exchange of `phone` with the server at `address`, carrying `body`, asking for no hold,
+    /// with the bearer token `t`.
     fn request_to(address: std::net::SocketAddr, body: Vec<u8>) -> super::super::HttpsRequest {
         request_as("phone", address, body)
     }
 
-    /// An exchange of `name` with the server at `address`, carrying `body`, asking for no hold.
+    /// An exchange of `name` with the server at `address`, carrying `body`, asking for no hold,
+    /// with the bearer token `t`.
     fn request_as(
         name: &str,
         address: std::net::SocketAddr,
         body: Vec<u8>,
+    ) -> super::super::HttpsRequest {
+        request_authorized(name, address, body, "Bearer t")
+    }
+
+    /// An exchange of `name` with the server at `address`, carrying `body`, asking for no hold,
+    /// with `authorization` as its `Authorization` header.
+    fn request_authorized(
+        name: &str,
+        address: std::net::SocketAddr,
+        body: Vec<u8>,
+        authorization: &str,
     ) -> super::super::HttpsRequest {
         super::super::HttpsRequest {
             url: alloc::format!("http://{address}/sce-mesh/1/{name}"),
@@ -1718,7 +1862,7 @@ mod tests {
                 ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
                 (ACK_HEADER.to_string(), "0".to_string()),
                 (HOLD_HEADER.to_string(), "0".to_string()),
-                ("Authorization".to_string(), "Bearer t".to_string()),
+                ("Authorization".to_string(), authorization.to_string()),
             ],
             body,
             timeout: Duration::from_secs(10),

@@ -2918,3 +2918,22 @@ that landing rather than at it.
   `<hex>/<size>`). From a checkout of the released commit, `sce-codegen materialize <tree> --into <dir>
   --provenance <file>` writes the same record, and equal `output_tree` values mean equal files.
 
+## An HTTPS server keeps its pins in a credential store, and compares them in one place (ADR 0109 D3)
+
+Landing: the commits that add this section. No generated tree changes; a consumer that builds an `https` server of
+`sce-rust-mesh` changes the program that builds its authenticator.
+
+- `sce_rust_mesh::https::server::PinStore` is the credential contract of `sce-rust-session-store` (re-exported under
+  the same path) and every method answers a `Result<_, Failure>`: `pinned(name)` answers
+  `Result<Option<[u8; 32]>, Failure>`; `pin(name, &digest)` takes the digest by reference and answers the digest the
+  name is pinned to afterwards, which the server compares with the one presented, instead of a `bool`; and
+  `unpin(name)` is new. A `PinStore` of the consumer's own implements the three, and compares no secret itself.
+- `MemoryPins` is gone: `MemoryCredentials` (re-exported beside `PinStore`) is the store in memory, and
+  `sce_rust_session_store::SqliteStore`, the session store's file, is a `PinStore` that keeps the pins across a
+  restart. Write `Authenticator::Install(Arc::new(MemoryCredentials::new()))` where the program wrote
+  `Authenticator::Install(Arc::new(MemoryPins::default()))`.
+- A pin store that fails is answered `503` with `Retry-After`, as load shed, where nothing could fail before.
+- `Authenticator::stored_tokens(StoredTokens::new(store))` is the `bearer` check over the tokens a host issued into
+  a credential store (`sce-host-credential-issue`, docs/SCE_HOST_FEATURES.md section 14). A `BearerCheck` closure of
+  the program's own is still taken as before, and compares its secret with `sce_rust_crypto::equal::same_secret`.
+
