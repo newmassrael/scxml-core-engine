@@ -1702,8 +1702,11 @@ static void the_bounds_a_record_past_the_test_log_is_counted_and_ends_with_error
 #error "SCE_PROJECT_ROOT names the repository's root, which the schema is read from; the build defines it"
 #endif
 
-// The text a canonical writer wrote, of the cases below.
-static char canonical_out[512];
+// The text a canonical writer wrote, of the cases below. It holds the longest
+// text a case expects with room to spare: the log of a killed PTC is 698 bytes,
+// and a buffer shorter than the expected text makes its comparison one gcc
+// decides at compile time (-Wstring-compare) and the case one that cannot pass.
+static char canonical_out[1024];
 
 // A canonical writer over `canonical_out`.
 static sce_jcs_t *canonical_writer(sce_jcs_t *jcs) {
