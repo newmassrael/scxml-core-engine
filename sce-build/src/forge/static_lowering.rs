@@ -16353,11 +16353,13 @@ fn c11_map_type_def(
          const {prefix}_slot_t *slot = &map->slots[at - 1u];\n        \
          sce_jw_element(w);\n        {entry_write}\n    }}\n    \
          sce_jw_end_array(w);\n}}\n\n\
-         /* The key of the saved entry `entry`, which `what` names in a refusal, read into `key`. */\n\
+         /* The key of the saved entry `entry`, which `what` names in a refusal, read into `key`, which\n   \
+         is written on every path, a refused entry's included. */\n\
          static inline bool {ty}_saved_key(sce_jv_t entry, const char *what, unsigned at, {held_key} *key,\n    \
-         sce_saved_error_t *err) {{\n\
+         sce_saved_error_t *err) {{\n    \
+         memset(key, 0, sizeof(*key));\n\
          {key_part}    \
-         (void)at;\n    memset(key, 0, sizeof(*key));\n    \
+         (void)at;\n    \
          return {read_key};\n}}\n\n\
          /* The map a saved state holds, refused unless it is the array of at most {capacity} entries with \
          no key twice.\n   \
