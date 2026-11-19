@@ -5984,11 +5984,11 @@ as a list does, and its entries are in the order their keys were first put
 (in an expression or a host action's argument) is
 `expression/unsupported-construct`, and so is a whole-map `<assign>` from
 anything but another map variable whose type it fits, which copies it whole.
-**The Interpreter runs a map; no generated backend generates one yet**
+**The Interpreter and Rust run a map; no other backend generates one yet**
 (docs/adr/0108, D10): `check` judges a document that declares one, the
-Interpreter's lowering holds it (below), and every backend's `generate` refuses
-it as `generate/unsupported-feature`, naming the type and that record, until the
-step that lands the lane.
+Interpreter's lowering and Rust's hold it (below), and every other backend's
+`generate` refuses it as `generate/unsupported-feature`, naming the type and that
+record, until the step that lands the lane.
 
 **Reading a map.** `len(m)` is the number of entries, a `uint32` as a list's
 length is; `has(m, k)` is `true` when `k` is one of its keys; `m[k]` is the
@@ -6094,9 +6094,47 @@ record value, its fields, and a copy of it taken whole), `static_map_composite_k
 (a key of two `uint64` halves, kept apart when they are swapped),
 `static_set.json` and `static_map_order.json` (a key put again keeps its place, a
 key removed and put again goes last, and a walk meets the entries in that order)
-run on the Interpreter. The generated backends refuse their machines by name and
-replay none of them yet: the Rust scenario table and the C++ suite list them as
-not yet lowered, and the other drivers name no scenario they do not replay.
+run on the Interpreter and on Rust. The other generated backends refuse their
+machines by name and replay none of them yet: the C++ suite lists them as not
+yet lowered, and the other drivers name no scenario they do not replay.
+
+**Rust's map.** A Rust machine holds a map in the runtime's
+`BoundedMap<K, V, N>` and a set in its `BoundedSet<K, N>` (`sce_rust_runtime`,
+from `sce-portable-bytes`), each key and value in the type a variable of its
+type is held in (docs/adr/0108, D8): an array of `N` entry slots with a free
+list, a doubly linked order through them, which is the order a walk, the saved
+form and the snapshot follow, and an open-addressing index of twice the bound
+with tombstones, so no put or remove moves an entry. With `std` the slots and the
+index grow as the map fills, up to the bound; without it they are inline, the
+bound reserved. The index hashes a key's canonical bytes (the runtime's
+`MapKey`: an integer as the 16 bytes of its value whatever its width, a `bool`
+as one, an enum by its declared number, a text and a byte string by their length
+and their bytes, a record by its fields in order) with SipHash-1-3 under a
+128-bit seed for each map, drawn from the operating system through `std`'s
+`RandomState` where the machine is built, and handed to the machine's
+constructor by its host without `std` (a host with no entropy hands a fixed
+seed, and its maps can then be flooded by a peer that knows it). The seed shows
+in nothing a document or a host reads. A key is found by any value that writes
+its bytes, so a literal, a narrower value, a text slice and a payload taken whole
+each find their key. `len(m)`, `has(m, k)`, `m[k]` and `m[k].field` are calls of
+the runtime's `portable::map` functions, the value at a key read through
+`found`, which fails a key that is absent as an index outside a list fails; a
+field is read where the map holds the value and no more of it is copied.
+`<sce:put>` and `<sce:remove>` are the map's own `put` and `remove`, which answer
+the outcome the statement writes as the variant of the same name, and fail a
+full map's put that names none. A `<foreach>` walks the map's positions in a
+loop of its own: over the map itself where nothing in its body writes the map,
+and over a copy taken where the loop begins where something does (docs/adr/0108,
+D6, item 3); each turn binds a number, a `bool`, an enum and a record that owns
+no buffer by copy, and a text and a record that owns one lent where the map holds
+it. The saved form and the scenarios' are the Interpreter's array of entries; a
+restore refuses a map of more entries than its bound or with a key twice, as a
+saved list past its bound is refused. The snapshot lends the map whole, a
+`BoundedMap` the host walks in order and reads by `get`. A byte string as a key
+or a value of a Rust map is refused by name, since the saved form writes each
+key and value by its type's writer and a byte string's there is the list of its
+numbers; a byte string inside a record key or value is written as the record
+writes it.
 
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports
 (`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge
