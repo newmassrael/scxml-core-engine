@@ -195,8 +195,11 @@ PY
 # one for it.
 mutation_case "a variable with no initial value is admitted" <<'PY'
 edit("sce-build/src/parser.rs",
-     """            if !module_parameter && node.attribute("expr").is_none_or(|e| e.trim().is_empty()) {""",
-     """            if !module_parameter && node.attribute("expr").is_none_or(|e| e.trim().is_empty()) && false {""")
+     """                && node.attribute("expr").is_none_or(|e| e.trim().is_empty())
+            {""",
+     """                && node.attribute("expr").is_none_or(|e| e.trim().is_empty())
+                && false
+            {""")
 PY
 
 # The gate stops reaching the tool: every document reads as accepted. The
