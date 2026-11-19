@@ -1509,6 +1509,17 @@ across all devices (`mesh/deploy-duplicate-machine`). The
 referenced from `bindings:` follow the rules in §2.5 and must resolve
 in full (`mesh/external-unresolved-names`).
 
+What a client may cost a server is bounded by keys of its own (amended
+by ADR 0109, decisions D1 and D2): a machine's `sessions:` takes
+`max_live` (default 100000) and `max_inbox` (default 64), each at least
+1 (`mesh/deploy-invalid-sessions`), and the accepting side of an
+`https` binding takes `max_clients` (100000), `max_response_bytes`
+(its `max_body_bytes`), `rate:` (`none`, or the limiters `address`,
+`client`, `failed_auth` and `new_names`, each `{ interval_ms, burst }`
+or `none`, and `max_tracked`) and `trusted_proxies` (CIDR blocks), each
+checked by value and by side (`mesh/topology-invalid-binding-field`).
+SCE_MESH.md sections 14.4 and 22 give their meaning and defaults.
+
 #### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
 
 Optional top-level map carrying per-codec default-arm overrides for

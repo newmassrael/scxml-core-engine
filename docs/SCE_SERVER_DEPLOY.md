@@ -7,6 +7,9 @@ configure, what a restart and a standby process do, what the clients need of the
 to tell a session that is stuck from one that is idle. Every key name and default below is taken from the code or
 from SCE_MESH.md, and each says where.
 
+Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
+decisions D1 and D2: what a client may cost the server (section 2).
+
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
 says of "the program" is what such a program must do.
@@ -73,6 +76,10 @@ The keys and their defaults are SCE_MESH.md section 22's table; the defaults are
 | server | `max_body_bytes` | the largest request body taken in; a larger one is answered `413` | 1048576 | a positive integer |
 | server | `absence_ms` | how long a client may go without an exchange and stay ready | 120000 | a positive integer that fits 32 bits |
 | server | `mailbox` | how many envelopes wait for one client at most | 1024 | a positive integer that fits 32 bits |
+| server | `max_clients` | how many client entries the server holds in memory; an exchange for a name past it is answered `503` | 100000 | a positive integer that fits 32 bits |
+| server | `max_response_bytes` | the most mailbox bytes one response carries; the rest go at the next exchange | `max_body_bytes` | a positive integer |
+| server | `rate` | the edge's limiters, below | on, at the defaults below | `none`, or a map of `address`, `client`, `failed_auth`, `new_names` (each `{ interval_ms, burst }` or `none`) and `max_tracked` |
+| server | `trusted_proxies` | the proxies whose `Forwarded` header names the client's address | none | a list of CIDR blocks (`10.0.0.0/8`, `2001:db8::/32`, or a bare address) |
 | client | `url` | `https://<host>[:<port>][<base>]`, before the binding's path, with no query or fragment; `http://` only to a loopback host | required | as said |
 | client | `authenticator` | as on the server | required | as on the server |
 | client | `hold_ms` | how long a poll asks the server to hold it | 25000 | a positive integer that fits 32 bits |
@@ -92,6 +99,32 @@ What these mean for an operator:
 - **A full mailbox drops.** A send to a client whose mailbox holds `mailbox` envelopes is dropped as SCE_MESH.md
   section 16.7 row 9 (`backpressureDrop`). A client absent for longer than `absence_ms` is told to its machine as row
   1 (`transportUnavailable`), and its mailbox stays (SCE_MESH.md section 22.4).
+- **A client costs a stated bound** (ADR 0109, D1). A client's entry is removed once its mailbox is empty, no
+  exchange of it is in flight and it is not ready, so the names that make one exchange and go away are forgotten
+  `absence_ms` after; `max_clients` bounds the entries held at once, and a name past it is answered `503` with
+  `Retry-After`. A response carries at most `max_response_bytes` of the mailbox, the rest at the next exchange. A
+  mailbox made again after its entry was removed numbers anew, in an incarnation of its own (SCE_MESH.md section 22.3),
+  which its client follows as it follows a restart.
+- **The edge limits rate** (ADR 0109, D2), each limiter by the standard library's GCRA (`sce:std/rate/gcra_admit`),
+  and a refusal is `429` with `Retry-After`, the limiter's wait rounded up to a second:
+
+  | Limiter | Counts | Keyed by | Default |
+  |---|---|---|---|
+  | `address` | every exchange, before it is authenticated | the remote address (an IPv4 address, an IPv6 /64) | 100 a second, burst 200 (`interval_ms: 10, burst: 200`) |
+  | `client` | every exchange that authenticated | the client's name | 20 a second, burst 40 (`interval_ms: 50, burst: 40`) |
+  | `failed_auth` | each `401`; while it refuses, an exchange is answered `429` without running the authenticator | the name, and the address | 10 a minute, burst 10 (`interval_ms: 6000, burst: 10`) |
+  | `new_names` | each name the `install` authenticator pins for the first time | the remote address | 20 an hour, burst 20 (`interval_ms: 180000, burst: 20`) |
+
+  Each limiter tracks at most `rate.max_tracked` keys (default 100000), dropping the key of the earliest arrival to
+  make room; a restart starts every limiter fresh. `rate: none` turns every limiter off, and `<limiter>: none` one.
+  A guess at another client's name locks that name out for as long as the `failed_auth` limiter refuses it, which is
+  the price of costing the guesser the rate; choose the rate with that in mind.
+- **Behind a load balancer.** Every client of a server behind a reverse proxy arrives from the proxy's address, so the
+  `address` and `new_names` limiters would count every client as one. Name the proxy's addresses in
+  `trusted_proxies`: a connection from one of them has its client's address read from `Forwarded` (RFC 7239), the
+  rightmost address it names that is not itself a trusted proxy, and its connections count toward
+  `max_connections` alone. The proxy must set `Forwarded` (not `X-Forwarded-For`, which is not read) and strip any a
+  client sent. A connection from any other address is keyed by its own address, whatever it sends.
 
 The server has bounds deploy.yaml does not carry, the program's own (`ServerSettings` in `server.rs`):
 
@@ -101,6 +134,16 @@ The server has bounds deploy.yaml does not carry, the program's own (`ServerSett
 | `max_exchanges` | 10000 | the most exchanges in flight at once; one more is answered `503` |
 | `max_exchanges_per_client` | 3 | the most exchanges in flight for one client; one more is answered `429` |
 | `retry_after` | 1 s | what a `429` or `503` asks the client to wait (`Retry-After`) |
+| `handshake_timeout` | 10 s | the longest a TLS handshake may take; the connection is closed past it |
+| `header_timeout` | 10 s | the longest a request's head may take to arrive; the connection is closed past it |
+| `body_timeout` | 30 s | the longest a request's body may take to arrive whole; the exchange is answered `408` |
+| `max_connections` | 20000 | the most connections open at once; one more is closed at accept |
+| `max_connections_per_address` | 64 | the most connections open at once from one address (an IPv4 address, an IPv6 /64), a trusted proxy's excepted; one more is closed at accept |
+
+A program that accepts its connections itself rather than calling `HttpsServer::serve` hands each to
+`HttpsServer::serve_accepted` with its remote address, so that the edge's address limits apply, and applies the
+connection bounds and the handshake timeout itself; `serve_connection`, which takes no address, holds its exchanges
+to no limiter of the address.
 
 The Rust client has settings of its own beside `hold_ms` (`ClientSettings` in `backends/rust/mesh/src/https/client.rs`):
 `exchange_timeout`, how long an exchange may take beyond the hold it asks for, 30 s; and `backoff`, the wait between
@@ -115,9 +158,12 @@ A machine entry declares (SCE_MESH.md section 14, schema; section 14.4, "Keyed s
 sessions:
   key_from: data.<field> | client   # where an envelope's key is read
   idle_ms: <integer>                # an idle session is saved and dropped after this
+  max_live: <integer>               # optional, 100000: sessions held in memory at most
+  max_inbox: <integer>              # optional, 64: envelopes waiting in one session's inbox
 ```
 
-Both fields are required when the block is present; neither has a default. `key_from: client` keys a session by the
+`key_from` and `idle_ms` are required when the block is present, and neither has a default; `max_live` and
+`max_inbox` are at least 1 (ADR 0109, D1). `key_from: client` keys a session by the
 name the client posts under, so one client is one session; `key_from: data.<field>` keys it by a field of the
 request's data, which the event schema of every `service.request.*` the machine handles must declare as a
 `string[N]` of at most 256 bytes or as an integer (`mesh/deploy-sessions-key-not-in-request`). The block stands beside no `server:` block, no binding with
@@ -126,6 +172,14 @@ serves it; every other backend refuses it (`mesh/codegen-keyed-pool-unsupported`
 
 `idle_ms` is how long a session stays in memory after its last event. A session is dropped only when it also holds
 nothing pending (section 7), so `idle_ms` bounds the memory of quiet sessions and nothing else.
+
+`max_live` bounds the sessions in memory whatever their activity. At the bound, a request for a key not in memory
+saves and drops the session idle longest that holds nothing pending, and when none can be dropped the request is
+shed: over the `https` binding its exchange is answered `503` and the client carries it again, and on a binding that
+acknowledges nothing it is answered `RpcStatus::Unavailable`. `max_inbox` bounds the envelopes waiting for one
+session, and one past it is shed the same way; each shed the program is told of is `PoolError::Shed`. A session
+started for a key the store holds nothing for is written only if its first run does not end in a final state, so a
+document that answers a key it does not know and finishes costs the store nothing.
 
 ## 3. The session store
 
