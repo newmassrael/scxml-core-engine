@@ -68,13 +68,53 @@ done
     done
 } > "$MODULE_LIST"
 
+# The standard rate limiter (sce:std/rate), which the HTTPS server's edge
+# judges every limit with (docs/adr/0109, D2): a tree of its own, generated
+# from its own directory, so that `verify --input-root stdlib/rate` recomputes
+# it as the Mesh tree's check recomputes that one.
+RATE_OUT_DIR="$SCRIPT_DIR/src/generated_rate"
+RATE_MODULE_LIST="$SCRIPT_DIR/src/generated_rate.rs"
+STDLIB_RATE="$REPO_ROOT/stdlib/rate"
+
+find "$RATE_OUT_DIR" -mindepth 1 -exec rm -rf {} + 2>/dev/null || true
+mkdir -p "$RATE_OUT_DIR"
+
+rate_documents=()
+for path in "$STDLIB_RATE"/*.scxml; do
+    rate_documents+=("$(basename "$path" .scxml)")
+done
+
+for document in "${rate_documents[@]}"; do
+    "$SCE_CODEGEN" generate "$STDLIB_RATE/$document.scxml" \
+        --language rust \
+        --output-dir "$RATE_OUT_DIR/" \
+        --source-root "$REPO_ROOT" >/dev/null
+done
+
+{
+    echo "// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+    echo "// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael"
+    echo ""
+    echo "//! The standard rate limiter (\`sce:std/rate\`), generated."
+    echo "//!"
+    echo "//! GENERATED -- DO NOT EDIT (backends/rust/mesh/generate.sh)."
+    echo "//! Each module is one document; they name one another as siblings"
+    echo "//! (\`super::gcra_decision\`), which is why they share this parent."
+    echo ""
+    for document in "${rate_documents[@]}"; do
+        echo "pub mod ${document};"
+    done
+} > "$RATE_MODULE_LIST"
+
 # The workspace's `cargo fmt --check` covers a committed tree like any other
 # source, so it is committed formatted — the same step every committed Rust
 # tree's regeneration ends with.
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$OUT_DIR" "$REPO_ROOT"
+sce_rustfmt_dir "$RATE_OUT_DIR" "$REPO_ROOT"
 
 echo "Generated ${#documents[@]} Rust modules under $OUT_DIR"
+echo "Generated ${#rate_documents[@]} Rust modules under $RATE_OUT_DIR"
 
 # The WebSocket loopback example's peer table (SCE_MESH.md §mesh-19): the
 # server machine of tests/mesh/wss_loopback/deploy.yaml, which

@@ -26,6 +26,11 @@
 //! the session store a server keeps them in. [`pool`] serves a machine the
 //! deployment declares a keyed pool as one session per key, each kept in a
 //! session store as its checkpoint while it is out of memory.
+//!
+//! [`generated_rate`] is the standard rate limiter (`sce:std/rate`), generated
+//! as [`generated`] is: the HTTPS server's edge judges every limit with it
+//! (docs/adr/0109, D2), so a document's rate limit and the edge's are one
+//! algorithm.
 
 #![forbid(unsafe_code)]
 
@@ -43,6 +48,10 @@ pub mod checkpoint;
 pub mod conformance;
 pub mod endpoint;
 pub mod generated;
+// Formatted by the script that writes it (generate.sh ends with rustfmt), so the
+// workspace's format check does not read a tree a regeneration owns.
+#[rustfmt::skip]
+pub mod generated_rate;
 #[cfg(feature = "https")]
 pub mod https;
 pub mod inbound;
