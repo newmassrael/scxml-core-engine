@@ -6012,11 +6012,11 @@ as a list does, and its entries are in the order their keys were first put
 (in an expression or a host action's argument) is
 `expression/unsupported-construct`, and so is a whole-map `<assign>` from
 anything but another map variable whose type it fits, which copies it whole.
-**The Interpreter and Rust run a map; no other backend generates one yet**
+**The Interpreter, Rust and C11 run a map; no other backend generates one yet**
 (docs/adr/0108, D10): `check` judges a document that declares one, the
-Interpreter's lowering and Rust's hold it (below), and every other backend's
-`generate` refuses it as `generate/unsupported-feature`, naming the type and that
-record, until the step that lands the lane.
+Interpreter's lowering, Rust's and C11's hold it (below), and every other
+backend's `generate` refuses it as `generate/unsupported-feature`, naming the type
+and that record, until the step that lands the lane.
 
 **Reading a map.** `len(m)` is the number of entries, a `uint32` as a list's
 length is; `has(m, k)` is `true` when `k` is one of its keys; `m[k]` is the
@@ -6122,9 +6122,9 @@ record value, its fields, and a copy of it taken whole), `static_map_composite_k
 (a key of two `uint64` halves, kept apart when they are swapped),
 `static_set.json` and `static_map_order.json` (a key put again keeps its place, a
 key removed and put again goes last, and a walk meets the entries in that order)
-run on the Interpreter and on Rust. The other generated backends refuse their
-machines by name and replay none of them yet: the C++ suite lists them as not
-yet lowered, and the other drivers name no scenario they do not replay.
+run on the Interpreter, on Rust and on C11. The other generated backends refuse
+their machines by name and replay none of them yet: the C++ suite lists them as
+not yet lowered, and the other drivers name no scenario they do not replay.
 
 **Rust's map.** A Rust machine holds a map in the runtime's
 `BoundedMap<K, V, N>` and a set in its `BoundedSet<K, N>` (`sce_rust_runtime`,
@@ -6163,6 +6163,49 @@ a byte string as its Latin-1 text as a byte-string variable is; a restore
 refuses a map of more entries than its bound or with a key twice, as a saved
 list past its bound is refused. The snapshot lends the map whole, a
 `BoundedMap` the host walks in order and reads by `get`.
+
+**C11's map.** A C11 machine holds a map in the type `sce/forge/map.h`'s
+`SCE_MAP_DECLARE` declares for its key, its value and its bound, and a set in
+the one `SCE_SET_DECLARE` declares, each named by its parts and its bound as a
+list is (`sce_static_map_uint32_int32_3_t`), so two variables of one shape hold
+one type; each key and value is held in the type a variable of its type is held
+in. The algorithm is Rust's (docs/adr/0108, D8): `N` entry slots with a free list,
+a doubly linked order through them, and an open-addressing index of exactly
+twice the bound with tombstones, so no put or remove moves an entry; the map is
+the machine's own storage, the bound reserved (D4, "Storage"), and nothing is
+allocated. The index hashes a key's canonical bytes, as Rust's does (an integer
+as the 16 bytes of the 128-bit integer it is whatever its width, a `bool` as one,
+a value of an enum as the unsigned number its constant carries, a text and a byte
+string by their length and their bytes, a record by its fields in the order its
+schema declares them), with SipHash-1-3 under a 128-bit seed for each map. C11
+has no entropy source of its own, so every start of a machine that holds a map
+(each `_init*`, `_init_at` and `_restore`) takes `sce_map_seed_t map_seed` as
+its last argument, and the machine starts each map under a seed drawn from it in
+declaration order; the generated header says that a fixed seed leaves the maps
+open to a peer that knows it. A parent and a test component's runner hand no
+seed yet, so an `<invoke>` of a child that holds a map, and a test component
+that holds one, are `generate/unsupported-feature` on C11, naming that record.
+`len(m)`, `has(m, k)` and `m[k]` are the header's `sce_map_count`,
+`sce_map_holds` and `sce_map_lookup`, each handed the map's address, a probe of
+the key and the function that writes the probe's canonical bytes, so a value of
+another width, a text and the payload taken whole each find their key; the value
+at a key is read where the map holds it, and a key that is absent fails the read
+`out-of-range` as an index outside a list does. `<sce:put>` and `<sce:remove>`
+compute the key and the value first and then call the map type's own `put` and
+`remove`, which answer the outcome the statement writes as the variant of the
+same name, and fail a full map's put that names none. A `<foreach>` walks the
+map's positions in its order, over the map itself where nothing in its body
+writes the map and over a copy in the machine's `scratch` at the loop's depth
+where something does (docs/adr/0108, D6 item 3; docs/adr/0082), binding each
+item and key by copy and a text as the text of its buffer. A whole-map
+`<assign>` puts the entries of one into the other's storage under its own seed.
+No frame of the machine grows with a map's bound
+(`no_c11_frame_grows_with_a_map_bound`). The saved form is the Interpreter's array
+of entries, a byte string as its Latin-1 text; a restore refuses a map of more
+entries than its bound or with a key twice, and a judge that keeps nothing holds
+each key against each before it. A host reads a published map through the type's
+view: its slots, the position of its first entry and how many it holds, each
+entry naming the one after it.
 
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports
 (`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge
