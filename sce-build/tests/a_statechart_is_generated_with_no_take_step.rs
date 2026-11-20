@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The take step of a test component (docs/SCE_TEST_PROFILE.md §4.4, P4 step
-//! 1) is generated only for a test component. Appendix D has no such step, and
-//! a statechart that is not a test component pays nothing for it:
+//! The take step of a test component (docs/SCE_TEST_PROFILE.md §4.4, P4
+//! step 1) is generated only for a test component. Appendix D has no such
+//! step, and a statechart that is not a test component pays nothing for it:
 //!
 //! - on Rust its policy names neither `TAKES_TRANSITIONS` nor
 //!   `take_transition`, the two items only the runtime's `test-component`
