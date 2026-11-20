@@ -321,6 +321,7 @@ set(CBOR_COMPOSED_DOCUMENTS
     cbor_composed_code
     cbor_composed_point
     cbor_composed_reading
+    cbor_composed_revised
     cbor_composed_card
     cbor_composed_batch
     cbor_composed_kind

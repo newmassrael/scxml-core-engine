@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A record whose schema grew (docs/adr/0044): its first revision carried `id`
+  alone; its second added a signed number, an enum, a text and a list, each of
+  which a record written before it existed reads in its place, the number, the
+  enum and the text their defaults and the list the empty list, and an
+  optional text, which such a record reads absent. A map of a record of the
+  first revision lacks the five keys and is read so; one that lacks `id` is
+  refused. Held by an optional entry of the codec, so every other case of the
+  corpus leaves it out.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cbor_composed_revised"
+       sce:event-name="cbor.composed.revised"
+       sce:revision="2">
+  <sce:import kind="enum" src="cbor_composed_level.scxml" as="Level"/>
+  <datamodel>
+    <data id="id" sce:type="uint8" sce:direction="in"/>
+    <data id="gain" sce:type="int16" sce:direction="in" sce:since="2" sce:default="-3"/>
+    <data id="mode" sce:type="enum:Level" sce:direction="in" sce:since="2" sce:default="fault"/>
+    <data id="label" sce:type="string[4]" sce:direction="in" sce:since="2" sce:default="none"/>
+    <data id="tags" sce:type="list&lt;uint8&gt;[2]" sce:direction="in" sce:since="2"/>
+    <data id="memo" sce:type="optional&lt;string[4]&gt;" sce:direction="in" sce:since="2"/>
+  </datamodel>
+</scxml>

@@ -8,7 +8,9 @@
   optional numbers, of lists and of a lower count, a record that holds a list,
   an optional text and a nested record, an optional record, a union of an
   empty case, a case of a byte string and a case of a list, a list of unions
-  of a lower count and an optional union, and an optional text. Its values,
+  of a lower count and an optional union, an optional text, and an optional
+  record whose schema grew, whose map of its first revision lacks the fields
+  its second added and reads their defaults (docs/adr/0044). Its values,
   their bytes, the encodings a decode reads and the encode never writes, and
   the inputs a decode refuses are the corpus's
   (tests/forge/conformance/numerical_reference.json, `codec_cbor_composed`).
@@ -26,6 +28,7 @@
   <sce:import kind="enum" src="cbor_composed_code.scxml" as="Code"/>
   <sce:import kind="event-schema" src="cbor_composed_point.scxml" as="Point"/>
   <sce:import kind="event-schema" src="cbor_composed_reading.scxml" as="Reading"/>
+  <sce:import kind="event-schema" src="cbor_composed_revised.scxml" as="Revised"/>
   <sce:import kind="union" src="cbor_composed_choice.scxml" as="Choice"/>
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
@@ -46,5 +49,6 @@
     <data id="choices" sce:type="list&lt;union:Choice&gt;[1..3]" sce:key="14" sce:direction="out"/>
     <data id="maybe" sce:type="optional&lt;union:Choice&gt;" sce:key="15" sce:direction="out"/>
     <data id="note" sce:type="optional&lt;string[8]&gt;" sce:key="16" sce:direction="out"/>
+    <data id="revised" sce:type="optional&lt;record:Revised&gt;" sce:key="17" sce:direction="out"/>
   </datamodel>
 </scxml>
