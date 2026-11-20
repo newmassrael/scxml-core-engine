@@ -383,6 +383,7 @@ mod tests {
                     WrittenType::read("uint8").unwrap().bounded().unwrap(),
                 )],
                 scope: TypeScope::default(),
+                added: Default::default(),
             },
         );
         let union = ScopedUnion {

@@ -136,6 +136,7 @@ mod tests {
                 .map(|(id, written)| (id.to_string(), ty(written)))
                 .collect(),
             scope: TypeScope::default(),
+            added: Default::default(),
         }
     }
 

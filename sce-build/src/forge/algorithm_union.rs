@@ -302,6 +302,7 @@ mod tests {
             name: "r".into(),
             fields: vec![("n".into(), ValueType::Scalar(SceType::Int32))],
             scope: TypeScope::default(),
+            added: Default::default(),
         };
         let mut own = TypeScope::default();
         own.enums.insert("K".into(), kind.clone());

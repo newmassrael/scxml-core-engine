@@ -30629,6 +30629,7 @@ mod tests {
                     ("reason".to_string(), ty("optional<enum:Refusal>")),
                 ],
                 scope: schema_scope,
+                added: Default::default(),
             },
         );
         let root = Place::of(ty("record:Verdict"));

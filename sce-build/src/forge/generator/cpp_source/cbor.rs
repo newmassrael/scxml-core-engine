@@ -94,6 +94,12 @@ fn indented(blocks: &[String], columns: usize) -> String {
     out
 }
 
+/// `bytes` as the elements of a C++ array initializer, each in hexadecimal.
+fn cpp_byte_list(bytes: &[u8]) -> String {
+    let each: Vec<String> = bytes.iter().map(|b| format!("0x{b:02x}")).collect();
+    each.join(", ")
+}
+
 /// A C++ string literal of `text`: a key of a record's map or a union's case.
 fn literal(text: &str) -> String {
     format!("\"{}\"", filters::escape_cpp(text.to_string()))
@@ -179,6 +185,18 @@ fn declared(qualified: &str) -> &str {
 /// `UndeclaredEnumValue`; `null` stands only for a list's element that may be
 /// absent. Every name it binds is suffixed by `depth`.
 fn read_stmts(shape: &CborShape, into: &str, held: Held, depth: usize) -> Vec<String> {
+    read_stmts_from(shape, "c", into, held, depth)
+}
+
+/// [`read_stmts`] from the cursor named `c`, the cursor a read of the input
+/// reads from, or another: the cursor over the bytes of a field's default.
+fn read_stmts_from(
+    shape: &CborShape,
+    c: &str,
+    into: &str,
+    held: Held,
+    depth: usize,
+) -> Vec<String> {
     let read = bound_name("_r", depth);
     // A read whose `Decoded` holds the value as the place holds it.
     let whole = |call: String| {
@@ -204,11 +222,11 @@ fn read_stmts(shape: &CborShape, into: &str, held: Held, depth: usize) -> Vec<St
         CborShape::Int {
             bits: 64,
             signed: false,
-        } => whole("cbor::read_uint(c)".to_string()),
+        } => whole(format!("cbor::read_uint({c})")),
         CborShape::Int { signed: false, .. } => {
             let ty = held_type(shape, held);
             vec![format!(
-                "const auto {read} = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));\n\
+                "const auto {read} = cbor::read_uint_upto({c}, static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));\n\
                  if (!{read}) return {read}.error();\n\
                  {into} = static_cast<{ty}>(*{read});"
             )]
@@ -216,32 +234,33 @@ fn read_stmts(shape: &CborShape, into: &str, held: Held, depth: usize) -> Vec<St
         CborShape::Int { signed: true, .. } => {
             let ty = held_type(shape, held);
             vec![format!(
-                "const auto {read} = cbor::read_int_within(c, static_cast<std::int64_t>(std::numeric_limits<{ty}>::min()), static_cast<std::int64_t>(std::numeric_limits<{ty}>::max()));\n\
+                "const auto {read} = cbor::read_int_within({c}, static_cast<std::int64_t>(std::numeric_limits<{ty}>::min()), static_cast<std::int64_t>(std::numeric_limits<{ty}>::max()));\n\
                  if (!{read}) return {read}.error();\n\
                  {into} = static_cast<{ty}>(*{read});"
             )]
         }
-        CborShape::Float { bits: 32 } => whole("cbor::read_float32(c)".to_string()),
-        CborShape::Float { .. } => whole("cbor::read_float(c)".to_string()),
-        CborShape::Bool => whole("cbor::read_bool(c)".to_string()),
-        CborShape::Text { max } => {
-            bounded(format!("cbor::read_text(c, {max})"), held_type(shape, held))
-        }
-        CborShape::Bytes { max, .. } if held == Held::Field => {
-            whole(format!("cbor::read_bytes(c, {max})"))
-        }
-        CborShape::Bytes { max, .. } => bounded(
-            format!("cbor::read_bytes(c, {max})"),
+        CborShape::Float { bits: 32 } => whole(format!("cbor::read_float32({c})")),
+        CborShape::Float { .. } => whole(format!("cbor::read_float({c})")),
+        CborShape::Bool => whole(format!("cbor::read_bool({c})")),
+        CborShape::Text { max } => bounded(
+            format!("cbor::read_text({c}, {max})"),
             held_type(shape, held),
         ),
-        CborShape::Enum(enumeration) => enum_read(enumeration, into, &read),
+        CborShape::Bytes { max, .. } if held == Held::Field => {
+            whole(format!("cbor::read_bytes({c}, {max})"))
+        }
+        CborShape::Bytes { max, .. } => bounded(
+            format!("cbor::read_bytes({c}, {max})"),
+            held_type(shape, held),
+        ),
+        CborShape::Enum(enumeration) => enum_read(enumeration, c, into, &read),
         CborShape::Record(record) => {
             let [decode, _, _] = composite_fns("record", &record.name);
-            whole(format!("{decode}(c)"))
+            whole(format!("{decode}({c})"))
         }
         CborShape::Union(union) => {
             let [decode, _, _] = composite_fns("union", &union.name);
-            whole(format!("{decode}(c)"))
+            whole(format!("{decode}({c})"))
         }
         // A definite-length array, its count judged against the list's bound
         // and lower count before any element is read (docs/adr/0101, section
@@ -258,9 +277,9 @@ fn read_stmts(shape: &CborShape, into: &str, held: Held, depth: usize) -> Vec<St
             } else {
                 String::new()
             };
-            let element = read_stmts(elem, &item, Held::Composed, depth + 1);
+            let element = read_stmts_from(elem, c, &item, Held::Composed, depth + 1);
             vec![format!(
-                "const auto {len} = cbor::read_array_len(c);\n\
+                "const auto {len} = cbor::read_array_len({c});\n\
                  if (!{len}) return {len}.error();\n\
                  if (*{len} > {max}{short}) return ::SCE::Forge::CodecError::CborOutOfRange;\n\
                  {list_ty} {list};\n\
@@ -279,9 +298,9 @@ fn read_stmts(shape: &CborShape, into: &str, held: Held, depth: usize) -> Vec<St
         // which refuses what is no value of it.
         CborShape::Nullable(elem) => {
             let (null, present) = (bound_name("_null", depth), bound_name("_present", depth));
-            let element = read_stmts(elem, &present, Held::Composed, depth + 1);
+            let element = read_stmts_from(elem, c, &present, Held::Composed, depth + 1);
             vec![format!(
-                "const auto {null} = cbor::take_null(c);\n\
+                "const auto {null} = cbor::take_null({c});\n\
                  if (!{null}) return {null}.error();\n\
                  if (*{null}) {{\n\
                  \x20   {into} = std::nullopt;\n\
@@ -301,18 +320,18 @@ fn read_stmts(shape: &CborShape, into: &str, held: Held, depth: usize) -> Vec<St
 /// The statements that read a value of `enumeration` into `into`: the integer
 /// of its carrier within the carrier's range, major type 1 below zero for a
 /// signed one (docs/adr/0101, section 2.1), and the variant it declares, a
-/// number a closed enum does not declare refused. `read` is the name the
-/// integer is bound to.
-fn enum_read(enumeration: &CborEnum, into: &str, read: &str) -> Vec<String> {
+/// number a closed enum does not declare refused. `c` is the cursor it reads
+/// from, and `read` the name the integer is bound to.
+fn enum_read(enumeration: &CborEnum, c: &str, into: &str, read: &str) -> Vec<String> {
     let carrier = cpp_type(&enumeration.carrier);
     let (_, from) = enum_number_symbols(&enumeration.name, !enumeration.closed, Language::Cpp);
     let number = if enumeration.carrier.is_signed() {
         format!(
-            "cbor::read_int_within(c, static_cast<std::int64_t>(std::numeric_limits<{carrier}>::min()), static_cast<std::int64_t>(std::numeric_limits<{carrier}>::max()))"
+            "cbor::read_int_within({c}, static_cast<std::int64_t>(std::numeric_limits<{carrier}>::min()), static_cast<std::int64_t>(std::numeric_limits<{carrier}>::max()))"
         )
     } else {
         format!(
-            "cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{carrier}>::max()))"
+            "cbor::read_uint_upto({c}, static_cast<std::uint64_t>(std::numeric_limits<{carrier}>::max()))"
         )
     };
     let made = format!("{from}(static_cast<{carrier}>(*{read}))");
@@ -577,6 +596,31 @@ fn record_fns(record: &CborRecord) -> String {
             made.push_str(&format!(
                 "        record.{member} = std::move(held_{member});\n"
             ));
+        } else if let Some(default) = &field.default {
+            // A field a later revision of the schema added: a map a writer of an
+            // earlier revision wrote lacks its key, and it reads the value the
+            // plan holds for it, by the reader of the field's own value.
+            let read = read_stmts_from(
+                &field.shape,
+                "lacked",
+                &format!("held_{member}"),
+                Held::Field,
+                0,
+            );
+            missing.push_str(&format!(
+                "        if (!held_{member}.has_value()) {{\n\
+                 \x20           // A map of a revision before the field was added lacks its key, and\n\
+                 \x20           // reads its default (docs/adr/0044).\n\
+                 \x20           static constexpr std::uint8_t kLacked[] = {{{bytes}}};\n\
+                 \x20           ::SCE::Forge::SceCursor lacked(kLacked, sizeof kLacked);\n\
+                 {read}\
+                 \x20       }}\n",
+                bytes = cpp_byte_list(default),
+                read = indented(&read, 12),
+            ));
+            made.push_str(&format!(
+                "        record.{member} = std::move(*held_{member});\n"
+            ));
         } else {
             missing.push_str(&format!(
                 "        if (!held_{member}.has_value()) return ::SCE::Forge::CodecError::CborRequiredKeyMissing;\n"
@@ -586,6 +630,11 @@ fn record_fns(record: &CborRecord) -> String {
             ));
         }
     }
+    let lacked = if record.fields.iter().any(|f| f.default.is_some()) {
+        "    /// A field a later revision of the schema added, missing, reads its default.\n"
+    } else {
+        ""
+    };
     let read = format!(
         "    /// Read one record of the event schema `{schema}` from `c`, into the payload\n\
          \x20   /// type the schema's own unit declares: one CBOR map of its present fields,\n\
@@ -593,6 +642,7 @@ fn record_fns(record: &CborRecord) -> String {
          \x20   /// order, a key the schema does not declare skipped whole, a key given twice\n\
          \x20   /// and a field that is not optional missing refused, and a value of no\n\
          \x20   /// field's type refused.\n\
+         {lacked}\
          \x20   static ::SCE::Forge::Decoded<{payload}> {decode}(::SCE::Forge::SceCursor& c) {{\n\
          \x20       namespace cbor = ::SCE::Forge::Cbor;\n\
          \x20       const auto count = cbor::read_map_len(c);\n\
@@ -1467,6 +1517,7 @@ mod tests {
             optional: ty.optional_elem().is_some(),
             ty,
             shape,
+            default: None,
         }
     }
 
@@ -1740,6 +1791,51 @@ mod tests {
         assert!(at("sku") < at("note") && at("note") < at("color") && at("color") < at("quantity"));
         // Nothing of it is refused, so it has no check.
         assert!(!code.contains("check_record_order_line"), "{code}");
+        // No field was added by a later revision, so none reads a default.
+        assert!(!code.contains("lacked"), "{code}");
+    }
+
+    // Red if a field a later revision added is refused where its key is
+    // missing rather than read from the bytes of its default, or if a field of
+    // the first revision is no longer refused (docs/adr/0044).
+    #[test]
+    fn a_field_a_later_revision_added_reads_its_default_where_its_key_is_missing() {
+        let mut gain = field("gain", "int16", int(16, true));
+        gain.default = Some(vec![0x22]);
+        let mut mode = field("mode", "enum:Color", color());
+        mode.default = Some(vec![0x02]);
+        let revised = record(
+            "revised_entry",
+            vec![
+                field("id", "uint8", int(8, false)),
+                gain,
+                mode,
+                field("memo", "optional<string[4]>", CborShape::Text { max: 4 }),
+            ],
+        );
+        let code = record_fns(&revised);
+        holds_all(
+            &code,
+            &[
+                "    /// A field a later revision of the schema added, missing, reads its default.\n",
+                "        if (!held_id.has_value()) return \
+                 ::SCE::Forge::CodecError::CborRequiredKeyMissing;\n",
+                "        if (!held_gain.has_value()) {\n\
+                 \x20           // A map of a revision before the field was added lacks its key, and\n\
+                 \x20           // reads its default (docs/adr/0044).\n\
+                 \x20           static constexpr std::uint8_t kLacked[] = {0x22};\n\
+                 \x20           ::SCE::Forge::SceCursor lacked(kLacked, sizeof kLacked);\n\
+                 \x20           const auto _r0 = cbor::read_int_within(lacked, ",
+                "            static constexpr std::uint8_t kLacked[] = {0x02};\n",
+                "            const auto _r0 = cbor::read_uint_upto(lacked, ",
+                "        record.gain = std::move(*held_gain);\n",
+                "        record.memo = std::move(held_memo);\n",
+            ],
+        );
+        assert!(
+            !code.contains("if (!held_gain.has_value()) return"),
+            "a defaulted field is not refused where its key is missing:\n{code}"
+        );
     }
 
     // Red if a union is written with its tag beside its fields rather than as

@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge};
 use crate::forge::value_type::{
-    ScopedCase, ScopedEnum, ScopedRecord, ScopedUnion, ScopedVariant, TypeScope,
+    AddedField, ScopedCase, ScopedEnum, ScopedRecord, ScopedUnion, ScopedVariant, TypeScope,
 };
 use crate::DocumentLabel;
 
@@ -247,7 +247,31 @@ fn scoped_record_at(
             .map(|f| (f.id.clone(), f.sce_type.clone()))
             .collect(),
         scope: type_scope_at(imports, base_dir, walk),
+        added: added_fields(&schema.fields),
     }
+}
+
+/// The fields of `fields`, an event schema's, that a revision after its first
+/// added (`sce:since`), each with its `sce:default` (docs/adr/0044): what a
+/// reader of a record of the schema reads where a record written before the
+/// field existed lacks it.
+pub fn added_fields(
+    fields: &[crate::forge::model::SchemaField],
+) -> std::collections::BTreeMap<String, AddedField> {
+    fields
+        .iter()
+        .filter_map(|f| {
+            f.since.map(|since| {
+                (
+                    f.id.clone(),
+                    AddedField {
+                        since,
+                        default: f.default.clone(),
+                    },
+                )
+            })
+        })
+        .collect()
 }
 
 /// Each enum, event schema and union `imports` (written relative to

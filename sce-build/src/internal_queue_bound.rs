@@ -1404,6 +1404,7 @@ mod tests {
                 name: "event_batch_item".to_string(),
                 fields: vec![("tags".to_string(), ty("list<string[8]>[4]"))],
                 scope: TypeScope::default(),
+                added: Default::default(),
             },
         );
         doc.model.imported_type_scope.records.insert(
@@ -1413,6 +1414,7 @@ mod tests {
                 name: "event_batch".to_string(),
                 fields: vec![("items".to_string(), ty("list<record:Item>[3]"))],
                 scope: batch_scope,
+                added: Default::default(),
             },
         );
         let mut inner = foreach_over("row.tags", vec![raise("tag")]);

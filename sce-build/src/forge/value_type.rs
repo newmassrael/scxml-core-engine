@@ -1903,6 +1903,17 @@ pub trait TypeEnv {
     fn record_scope(&self, _alias: &str) -> Option<&dyn TypeEnv> {
         None
     }
+    /// The fields a later revision of the schema of the record `alias` names
+    /// added, by id (docs/adr/0044): what a reader of a record written before
+    /// one of them existed reads in its place. `None` where the environment
+    /// does not say, as a table that holds only fields answers: no field is
+    /// known to have been added later.
+    fn record_added(
+        &self,
+        _alias: &str,
+    ) -> Option<&std::collections::BTreeMap<String, AddedField>> {
+        None
+    }
     /// What tells the record `alias` names from every other, across the
     /// documents its fields are read in: what a record that holds itself is
     /// found by. The alias itself where one set of aliases is read.
@@ -1973,6 +1984,23 @@ pub struct ScopedRecord {
     pub name: String,
     pub fields: Vec<(String, ValueType)>,
     pub scope: TypeScope,
+    /// The fields a revision of the schema after its first added, by id
+    /// (docs/adr/0044); empty for a schema of one revision.
+    pub added: std::collections::BTreeMap<String, AddedField>,
+}
+
+/// A field a revision of an event schema after its first added (docs/adr/0044):
+/// the revision that added it, and its `sce:default` as the schema writes it.
+/// A record written before that revision lacks the field, and a reader of it
+/// takes the default in its place, the empty list for a list, which declares
+/// none, and absence for an optional field that declares none (docs/SCE_ACCEPTED_SUBSET.md,
+/// "An event schema that grows").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddedField {
+    /// The revision that added it (`sce:since`), 2 or more.
+    pub since: u32,
+    /// Its `sce:default`, verbatim; `None` where it declares none.
+    pub default: Option<String>,
 }
 
 /// A union, as a size reads it (docs/adr/0092, section 1.1): the document it
@@ -2038,6 +2066,9 @@ impl TypeEnv for TypeScope {
     }
     fn record_scope(&self, alias: &str) -> Option<&dyn TypeEnv> {
         self.records.get(alias).map(|r| &r.scope as &dyn TypeEnv)
+    }
+    fn record_added(&self, alias: &str) -> Option<&std::collections::BTreeMap<String, AddedField>> {
+        self.records.get(alias).map(|r| &r.added)
     }
     fn record_key(&self, alias: &str) -> String {
         self.records
@@ -5155,6 +5186,7 @@ mod tests {
                 name: "item".into(),
                 fields: vec![("level".into(), ValueType::Scalar(enum_ty("Level")))],
                 scope: item_scope,
+                added: Default::default(),
             },
         );
         let item = ValueType::Record {
@@ -6350,6 +6382,7 @@ mod tests {
                 name: "item".into(),
                 fields: vec![("mood".into(), ty("enum:Mood")), ("id".into(), ty("uint8"))],
                 scope: item_scope,
+                added: Default::default(),
             },
         );
         scope.records.insert(
@@ -6359,6 +6392,7 @@ mod tests {
                 name: "item".into(),
                 fields: vec![("x".into(), ty("bool"))],
                 scope: TypeScope::default(),
+                added: Default::default(),
             },
         );
         let mut loop_scope = TypeScope::default();
@@ -6367,6 +6401,7 @@ mod tests {
             name: "loop".into(),
             fields: vec![("next".into(), ty("optional<record:Loop>"))],
             scope: TypeScope::default(),
+            added: Default::default(),
         };
         loop_scope.records.insert("Loop".into(), looping.clone());
         scope.records.insert(
@@ -6964,6 +6999,7 @@ mod tests {
                 name: "item".into(),
                 fields: vec![("x".into(), ty("bool"))],
                 scope: TypeScope::default(),
+                added: Default::default(),
             },
         );
         let mut outer = TypeScope::default();
@@ -6974,6 +7010,7 @@ mod tests {
                 name: "item".into(),
                 fields: vec![("inner".into(), ty("record:Inner"))],
                 scope: wrapper_scope,
+                added: Default::default(),
             },
         );
         let mut defs = SchemaDefs::default();
@@ -7064,6 +7101,7 @@ mod tests {
                 .map(|(id, written)| (id.to_string(), ty(written)))
                 .collect(),
             scope: TypeScope::default(),
+            added: Default::default(),
         }
     }
 
@@ -7433,6 +7471,7 @@ mod tests {
                 name: "n".into(),
                 fields: vec![("next".into(), ty("optional<union:U>"))],
                 scope: node_scope,
+                added: Default::default(),
             },
         );
         assert_eq!(
@@ -7761,6 +7800,7 @@ mod tests {
                 name: "n".into(),
                 fields: vec![("next".into(), ty("optional<union:U>"))],
                 scope: node_scope,
+                added: Default::default(),
             },
         );
         let cycle = GrammarError::ContainsItself {
@@ -7778,6 +7818,7 @@ mod tests {
                 name: "shape".into(),
                 fields: vec![("x".into(), ty("bool"))],
                 scope: TypeScope::default(),
+                added: Default::default(),
             },
         );
         for fields in [

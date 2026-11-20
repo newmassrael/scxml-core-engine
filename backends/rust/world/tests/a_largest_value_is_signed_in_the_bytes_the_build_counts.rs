@@ -189,6 +189,7 @@ fn scope() -> TypeScope {
             name: "event_batch_item".to_string(),
             fields: fields(&ITEM_FIELDS),
             scope: item_scope,
+            added: Default::default(),
         },
     );
     let mut outer = batch_scope.clone();
@@ -199,6 +200,7 @@ fn scope() -> TypeScope {
             name: "event_batch".to_string(),
             fields: fields(&BATCH_FIELDS),
             scope: batch_scope,
+            added: Default::default(),
         },
     );
     outer

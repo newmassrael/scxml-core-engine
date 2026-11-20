@@ -2033,6 +2033,7 @@ mod tests {
                 ("quantity".to_string(), TypeOf::Scalar(SceType::Uint16)),
             ],
             scope: inner,
+            added: Default::default(),
         };
         let mut scope = TypeScope::default();
         scope.records.insert("Line".to_string(), line);
@@ -2059,6 +2060,7 @@ mod tests {
                 ),
             ],
             scope,
+            added: Default::default(),
         };
         let mut outer = TypeScope::default();
         outer.records.insert("Order".to_string(), order);
@@ -2091,6 +2093,7 @@ mod tests {
             name: "card_payment".to_string(),
             fields: vec![("amount".to_string(), TypeOf::Scalar(SceType::Uint32))],
             scope: TypeScope::default(),
+            added: Default::default(),
         };
         let mut union_scope = TypeScope::default();
         union_scope.records.insert("Card".to_string(), card);
