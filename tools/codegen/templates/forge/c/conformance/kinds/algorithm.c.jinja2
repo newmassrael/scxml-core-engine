@@ -169,11 +169,18 @@ static void test_{{ f.name }}(void) {
 {% elif arg_ty.list_of is defined %}
             .input_arg{{ ai }} = { {% for v in c.args[ai] %}{{ v | c_literal(arg_ty.list_of) }}, {% else %}0{% endfor %} },
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
+{# A map with no entry bakes no entry: its array is left to the static table's
+   zero, and its length says it holds none. Each entry is designated at the
+   depth of its type, a record key or value inside braces of its own. #}
 {% elif arg_ty.map is defined %}
-            .input_arg{{ ai }} = { {% for e in c.args[ai] %}{ .key = {{ values.saved_part(arg_ty.map.key, e[0]) }}, .value = {{ values.saved_part(arg_ty.map.value, e[1]) }} }, {% else %}{0}{% endfor %} },
+{% if c.args[ai] | length > 0 %}
+            .input_arg{{ ai }} = { {% for e in c.args[ai] %}{ .key = {{ values.saved_part(arg_ty.map.key, e[0]) }}, .value = {{ values.saved_part(arg_ty.map.value, e[1]) }} }, {% endfor %}},
+{% endif %}
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% if arg_ty.inout and c.after is defined %}
-            .after_arg{{ ai }} = { {% for e in c.after[arg_ty.after_at] %}{ .key = {{ values.saved_part(arg_ty.map.key, e[0]) }}, .value = {{ values.saved_part(arg_ty.map.value, e[1]) }} }, {% else %}{0}{% endfor %} },
+{% if c.after[arg_ty.after_at] | length > 0 %}
+            .after_arg{{ ai }} = { {% for e in c.after[arg_ty.after_at] %}{ .key = {{ values.saved_part(arg_ty.map.key, e[0]) }}, .value = {{ values.saved_part(arg_ty.map.value, e[1]) }} }, {% endfor %}},
+{% endif %}
             .after_arg{{ ai }}_len = {{ c.after[arg_ty.after_at] | length }},
 {% endif %}
 {% elif arg_ty.enum is defined %}
