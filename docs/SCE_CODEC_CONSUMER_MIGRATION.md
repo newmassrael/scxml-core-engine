@@ -3275,3 +3275,28 @@ tables, which carry the new deploy keys, and changes the code that implements or
   new codes: `mesh/deploy-invalid-receipt`, `mesh/deploy-receipt-without-persistence`,
   `mesh/codegen-durable-receipt-unsupported` and `mesh/codegen-persistence-without-saved-state`.
 
+## A host keeps the key-value feature in the store it is built with, durably when that store is (ADR 0109 D13)
+
+Landing: the commits that add this section. No generated tree changes; a consumer that builds a reference host,
+reads its store, writes a session store's `Write` by hand, or implements a session store changes that code.
+
+- `sce_rust_session_store::KvStore` is the contract of the key-value feature's store (get, put, put-if, delete,
+  next-key, a listing, the first result of each put-if by its `Identity`, and a re-seal), held to
+  `sce_rust_session_store::kv_conformance`. `MemoryStore` and `SqliteStore` implement it; `SqliteStore`'s layout is 6,
+  and a file of layout 1 to 5 is brought to it when opened; a build before this one refuses a file of layout 6.
+  `Sealed<S>` implements it over a store that does, with `Sealed::reseal_values` for a rotation.
+- `MemoryStore` and `SqliteStore` now implement two contracts whose methods share names (`get`, `put`, `delete`): a
+  call on one of them in a scope that imports both `SessionStore` and `KvStore` names its contract
+  (`SessionStore::get(&store, key)`).
+- `Write` has a field `sessions: &[&str]`, the session ids a removal ends, whose first results it deletes; the
+  constructors `Write::put` and `Write::delete` leave it empty, and a `Write { .. }` written field by field adds
+  `sessions: &[]`. A store that wraps another passes it on, as `Sealed` does with each id's entry. The pool names
+  the sessions of a finished machine's tree that started a host-run invoke.
+- Rust: `ReferenceHost::with_kv_store(clock, transport, store)` builds a host on a store of the embedding's;
+  `ReferenceHost::new` builds one on a `MemoryStore`, as before. `ReferenceHost::store_entries` answers a `Result`,
+  the store's `Failure` (re-exported as `StoreFailure`) when it cannot list, where it answered the list. The host
+  keeps no table of first results of its own: the store keeps them.
+- C++: `ReferenceHost(clock, transport, store)` builds a host on a `SCE::StandardHost::KvStore` the embedding gives
+  and that outlives it; `ReferenceHost(clock, transport)` builds one on a `MemoryKvStore` of its own, as before.
+  `ReferenceHost` is no longer copied. `storeEntries()` answers `std::optional`, nothing when the store cannot list.
+
