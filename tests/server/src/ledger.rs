@@ -39,7 +39,7 @@ use sce_rust_mesh::endpoint::{
 };
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::peers::{
-    EdgeRates, HttpsAuthenticator, KeyFrom, Machine, Peer, PeerLink, Sessions,
+    EdgeRates, HttpsAuthenticator, KeyFrom, Machine, Peer, PeerLink, Receipt, Sessions,
 };
 use sce_rust_mesh::pool::{SessionEndpoint, SessionFactory, SessionMachine};
 use sce_rust_mesh::router::PeerConfig;
@@ -121,6 +121,8 @@ pub const HTTPS: Binding = Binding {
         // the server keeps, not the message signatures, which the conformance kit judges.
         sign: None,
         max_skew_ms: 300_000,
+        receipt: Receipt::Transport,
+        retain_ms: 2_592_000_000,
     },
 };
 

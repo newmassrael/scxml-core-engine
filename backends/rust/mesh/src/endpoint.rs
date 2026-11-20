@@ -550,6 +550,47 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.router.awaits_reply(wire_id)
     }
 
+    /// An exchange `peer` answered carried `envelopes`, which it answers only
+    /// once a durable checkpoint of its own holds them: under `receipt:
+    /// durable` on the `https` binding, each is acknowledged and held no more
+    /// ([`Router::carried`]; docs/adr/0109, D10).
+    pub fn peer_carried(&mut self, peer: &str, envelopes: &[Vec<u8>]) {
+        self.router.carried(peer, envelopes);
+    }
+
+    /// Every envelope to `peer` takes a place in `window` first (see
+    /// [`Router::bound_window`]): an `https` server's outbox (docs/adr/0109,
+    /// D10).
+    pub fn bound_window(
+        &mut self,
+        peer: &str,
+        window: Arc<dyn crate::router::Window>,
+    ) -> Result<(), RouterError> {
+        self.router.bound_window(peer, window)
+    }
+
+    /// How many envelopes the machine produced for `peer` that no durable
+    /// checkpoint released yet ([`Router::held_for`]).
+    pub fn held_for(&self, peer: &str) -> usize {
+        self.router.held_for(peer)
+    }
+
+    /// An envelope the machine sent `peer` was kept in `peer`'s outbox for
+    /// `age_ms`, longer than the binding's `retain_ms`, without `peer`
+    /// acknowledging it, and the outbox let it go (docs/adr/0109, D10): the
+    /// machine is told, as SCE_MESH.md section 16.7 row 15, with `retain_ms`
+    /// as the bound it outlived.
+    pub fn outbox_expired(&mut self, peer: &str, age_ms: u64, retain_ms: u64) {
+        let bound = |ms: u64| i64::try_from(ms).unwrap_or(i64::MAX);
+        self.raise(
+            Some(peer),
+            &Signal::OutboundStaleDrop {
+                age_ms: bound(age_ms),
+                max_age_ms: bound(retain_ms),
+            },
+        );
+    }
+
     /// End the ordering gaps that have waited out their timeout, and send
     /// again what has waited out its backoff. The host calls this on its own
     /// schedule; nothing else makes time pass for the core.

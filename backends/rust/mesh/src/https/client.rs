@@ -48,7 +48,7 @@ use super::{
     HOLD_HEADER, PATH_PREFIX,
 };
 use crate::endpoint::{Transport, TransportFailure};
-use crate::peers::{HttpsAuthenticator, Peer, PeerLink};
+use crate::peers::{HttpsAuthenticator, Peer, PeerLink, Receipt};
 use crate::reconnect::Backoff;
 
 /// How a client reaches its server.
@@ -76,6 +76,11 @@ pub struct ClientSettings {
     /// verifies what its server sends (SCE_MESH.md section 22.9). `None` takes a `200` as it
     /// comes.
     pub verify: Option<Vec<TrustedKey>>,
+    /// deploy.yaml's `receipt: durable` (docs/adr/0109, D10; SCE_MESH.md section 10.11): every
+    /// request acknowledges only what the host reported a durable checkpoint of its own holds
+    /// ([`HttpsClient::held`]), and each `200` that carried envelopes is told to the host
+    /// ([`LinkEvent::Carried`]), whose core keeps each in its checkpoint until then.
+    pub durable: bool,
 }
 
 impl ClientSettings {
@@ -96,6 +101,7 @@ impl ClientSettings {
             max_body_bytes: super::DEFAULT_MAX_BODY_BYTES as usize,
             backoff: Backoff::default(),
             verify: None,
+            durable: false,
         }
     }
 
@@ -117,6 +123,7 @@ impl ClientSettings {
             authenticator,
             hold_ms,
             verify,
+            receipt,
         } = peer.link
         else {
             return None;
@@ -135,6 +142,7 @@ impl ClientSettings {
         (fits && verifies).then(|| ClientSettings {
             hold: Duration::from_millis(u64::from(hold_ms)),
             verify: trusted,
+            durable: matches!(receipt, Receipt::Durable { .. }),
             ..ClientSettings::new(url, own, peer.name, credential)
         })
     }
@@ -178,6 +186,11 @@ struct State {
     /// Whether the last `200` did not verify under `verify:`, so that a run of them is told once
     /// (SCE_MESH.md section 16.7 row 19, once per edge).
     unauthenticated: bool,
+    /// Under `receipt: durable` (docs/adr/0109, D10), the highest mailbox number, in the
+    /// incarnation of `mark`, that the host reported a durable checkpoint of its own holds
+    /// ([`HttpsClient::held`]): what every request acknowledges, never above `mark.ack`. `None`
+    /// on a binding that is not durable, whose requests acknowledge `mark.ack`.
+    held: Option<u64>,
     /// Where the host is told what happened. Called with the state held, so that what the two
     /// threads observe reaches the host in the order it was observed.
     events: EventSink,
@@ -200,6 +213,32 @@ struct Mark {
 }
 
 const HELD: &str = "the client's state is never left mid-update: nothing in it panics while held";
+
+impl State {
+    /// What the next request acknowledges: the highest number handed to the core, or, under
+    /// `receipt: durable`, the highest a durable checkpoint of the host holds (docs/adr/0109,
+    /// D10), so that the server never deletes what a crash of this client would lose.
+    fn acknowledging(&self) -> Mark {
+        match self.held {
+            Some(held) => Mark {
+                ack: held.min(self.mark.ack),
+                epoch: self.mark.epoch.clone(),
+            },
+            None => self.mark.clone(),
+        }
+    }
+}
+
+/// Where a client stands in its server's mailbox (SCE_MESH.md section 22.3): the incarnation
+/// the mailbox numbers in (`None` before the first `200`) and the highest number the client
+/// handed its host. Read by a host that checkpoints under `receipt: durable` before it applies
+/// what the client handed it, and reported back once a checkpoint that holds it is durable
+/// ([`HttpsClient::received`], [`HttpsClient::held`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Received {
+    pub epoch: Option<String>,
+    pub number: u64,
+}
 
 impl Shared {
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -350,6 +389,12 @@ fn take_outcome(
                 state.ready = true;
                 (state.events)(LinkEvent::Ready(server.clone()));
             }
+            // docs/adr/0109, D10: under `receipt: durable` the server answers `200` only once a
+            // durable checkpoint holds what the request carried, which is the binding's
+            // acknowledgement of it: the host's core holds it no more.
+            if shared.settings.durable && !carried.is_empty() {
+                (state.events)(LinkEvent::Carried(server.clone(), carried));
+            }
             take_mailbox(&mut state, &server, &sent.mark, &response);
             Then::Continue
         }
@@ -437,6 +482,10 @@ fn take_mailbox(state: &mut State, server: &str, sent: &Mark, response: &HttpsRe
             ack: 0,
             epoch: Some(epoch.to_string()),
         };
+        // What a checkpoint held counted in the numbering that is gone.
+        if let Some(held) = state.held.as_mut() {
+            *held = 0;
+        }
         if replaced {
             (state.events)(LinkEvent::Restarted(server.to_string()));
         }
@@ -521,6 +570,7 @@ impl HttpsClient {
         let Some(target_uri) = normalize_target_uri(&url) else {
             return Err(ClientError::BadBase(settings.base));
         };
+        let held = settings.durable.then_some(0);
         let shared = Arc::new(Shared {
             authorization: settings.credential.authorization(),
             url,
@@ -533,6 +583,7 @@ impl HttpsClient {
                 ready: false,
                 stopped: false,
                 unauthenticated: false,
+                held,
                 events: Box::new(events),
             }),
             wake: Condvar::new(),
@@ -555,6 +606,35 @@ impl HttpsClient {
     pub fn transport(&self) -> HttpsClientTransport {
         HttpsClientTransport {
             shared: Arc::clone(&self.shared),
+        }
+    }
+
+    /// Where the client stands in its server's mailbox: the incarnation and the highest number
+    /// it handed its host (docs/adr/0109, D10). A host that checkpoints under `receipt: durable`
+    /// reads this before it applies what the client handed it, so that what it applies holds at
+    /// least this much, and reports it with [`Self::held`] once a checkpoint taken after is
+    /// durable.
+    pub fn received(&self) -> Received {
+        let state = self.shared.lock();
+        Received {
+            epoch: state.mark.epoch.clone(),
+            number: state.mark.ack,
+        }
+    }
+
+    /// A durable checkpoint of the host holds every envelope up to `received`, read with
+    /// [`Self::received`] before the host applied what it was handed (docs/adr/0109, D10): under
+    /// `receipt: durable` every request acknowledges that much from now on, so the server
+    /// deletes nothing a crash of this machine would lose. A mark of an incarnation the client
+    /// has left counts in a numbering that is gone, and moves nothing; on a binding that is not
+    /// durable this does nothing.
+    pub fn held(&self, received: &Received) {
+        let mut state = self.shared.lock();
+        if state.mark.epoch != received.epoch {
+            return;
+        }
+        if let Some(held) = state.held.as_mut() {
+            *held = (*held).max(received.number);
         }
     }
 
@@ -658,7 +738,7 @@ fn poll(shared: &Shared) {
             if state.stopped {
                 return;
             }
-            state.mark.clone()
+            state.acknowledging()
         };
         let (outcome, sent) = exchange(shared, Vec::new(), &mark, shared.settings.hold);
         if let Then::Wait(wait) = take_outcome(shared, Vec::new(), &sent, outcome, &mut failures) {
@@ -715,7 +795,7 @@ fn send(shared: &Shared) {
                     carried.push(envelope);
                 }
             }
-            (carried, state.mark.clone())
+            (carried, state.acknowledging())
         };
         let body = super::join_sequence(carried.iter().map(Vec::as_slice));
         let (outcome, sent) = exchange(shared, body, &mark, Duration::ZERO);
@@ -842,6 +922,7 @@ mod tests {
                 ready: true,
                 stopped: false,
                 unauthenticated: false,
+                held: None,
                 events: Box::new(move |event| {
                     let _ = tx.send(event);
                 }),
@@ -981,6 +1062,7 @@ mod tests {
                 authenticator,
                 hold_ms: 9_000,
                 verify: None,
+                receipt: Receipt::Transport,
             },
         }
     }
@@ -1033,6 +1115,7 @@ mod tests {
                 authenticator: HttpsAuthenticator::Key,
                 hold_ms: 9_000,
                 verify: Some("servers"),
+                receipt: Receipt::Transport,
             },
             ..dialed(HttpsAuthenticator::Key)
         };
@@ -1307,6 +1390,78 @@ mod tests {
         client.stop();
         assert!(matches!(next(&rx), LinkEvent::Lost(peer, _) if peer == "cloud"));
         assert!(transport.transmit("cloud", &[0x01]).is_err(), "stopped");
+    }
+
+    /// docs/adr/0109, D10: under `receipt: durable` a client acknowledges only what its host
+    /// reported a durable checkpoint holds, never merely what it handed on, and a mark of an
+    /// incarnation it left moves nothing; each `200` that carried what the core transmitted is
+    /// told to the host as `Carried`. Red if `State::acknowledging` answers `mark` alone, or the
+    /// `200` branch of `take_outcome` tells no `Carried`.
+    #[test]
+    fn a_durable_client_acknowledges_only_what_its_host_holds_and_tells_what_a_200_carried() {
+        let port = Arc::new(Scripted::default());
+        port.polls
+            .lock()
+            .unwrap()
+            .push_back(Ok(ok(Some(1), three())));
+        let (tx, rx) = mpsc::channel();
+        let client = HttpsClient::start(
+            ClientSettings {
+                durable: true,
+                ..settings()
+            },
+            port.clone(),
+            move |event| {
+                let _ = tx.send(event);
+            },
+        )
+        .unwrap();
+        assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
+        for _ in 0..3 {
+            assert!(matches!(next(&rx), LinkEvent::Received(..)));
+        }
+        let acknowledged = |port: &Scripted| {
+            std::thread::sleep(Duration::from_millis(150));
+            port.asked
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .find(|request| request.body.is_empty())
+                .and_then(|request| header_of(request, ACK_HEADER))
+        };
+        assert_eq!(
+            acknowledged(&port),
+            Some("0".to_string()),
+            "nothing a checkpoint holds yet"
+        );
+        let received = client.received();
+        assert_eq!(
+            received,
+            Received {
+                epoch: Some(EPOCH.to_string()),
+                number: 3
+            }
+        );
+        client.held(&Received {
+            epoch: Some(EARLIER.to_string()),
+            number: 3,
+        });
+        assert_eq!(
+            acknowledged(&port),
+            Some("0".to_string()),
+            "a mark of an incarnation the client left moves nothing"
+        );
+        client.held(&received);
+        assert_eq!(acknowledged(&port), Some("3".to_string()));
+
+        let mut transport = client.transport();
+        transport.transmit("cloud", &[0x09]).unwrap();
+        assert_eq!(
+            next(&rx),
+            LinkEvent::Carried("cloud".to_string(), alloc::vec![alloc::vec![0x09]])
+        );
+        client.stop();
     }
 
     /// A server that sheds load is waited out, and what the shed exchange carried goes again; it

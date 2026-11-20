@@ -12,7 +12,7 @@
 //! does by hand is open the sockets each [`PeerLink`] names.
 
 use crate::inbound::ConfigError;
-use crate::router::{PeerConfig, Router};
+use crate::router::{DurableSend, PeerConfig, Router};
 
 /// How the link to a peer is opened. The core never reads it; the host's
 /// transport adapter does, to know which connections to open. (Not
@@ -48,6 +48,10 @@ pub enum PeerLink {
         /// deploy.yaml's `verify`: the trust set of the host a response is verified under
         /// (docs/adr/0109, D9; SCE_MESH.md section 22.9), by its name; `None` verifies nothing.
         verify: Option<&'static str>,
+        /// deploy.yaml's `receipt:` (docs/adr/0109, D10; SCE_MESH.md section 10.11): under
+        /// [`Receipt::Durable`] the client acknowledges only what a durable checkpoint of its own
+        /// holds, and keeps what it sends in its checkpoint until a `200` carried it.
+        receipt: Receipt,
     },
     /// The HTTPS binding: the peer posts its exchanges to this machine, which listens on
     /// `listen` (`<host>:<port>`) and keeps the peer's mailbox.
@@ -80,7 +84,30 @@ pub enum PeerLink {
         /// deploy.yaml's `max_skew_ms`: how far a signed request's `created` may lie from the
         /// server's clock under the `key` authenticator (docs/adr/0109, D9).
         max_skew_ms: u32,
+        /// deploy.yaml's `receipt:` (docs/adr/0109, D10; SCE_MESH.md section 10.11): under
+        /// [`Receipt::Durable`] what the machine sends the peer is kept in the peer's outbox in
+        /// the store until the peer acknowledges it, `mailbox` the durable window of it.
+        receipt: Receipt,
+        /// deploy.yaml's `retain_ms`: how long an envelope is kept in the peer's outbox unless
+        /// the peer acknowledges it (docs/adr/0109, D10); read under [`Receipt::Durable`].
+        retain_ms: u64,
     },
+}
+
+/// Which of SCE_MESH.md section 10.11's two receipt guarantees a binding gets: deploy.yaml's
+/// `receipt:` (docs/adr/0109, D10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Receipt {
+    /// `receipt: transport`, the default: the transport's receipt, up to the receiving process.
+    Transport,
+    /// `receipt: durable`: nothing the receiver was sent is lost across a crash and a restore of
+    /// either side. On the `https` binding the acknowledgement is the binding's own
+    /// (`Sce-Mesh-Ack`, and the `200`), and the server keeps a durable outbox per client.
+    /// `window` and `retry_ms` are the sending machine's `receipt: { window, retry_ms }` block
+    /// (256 and 1000 when it has none): what a dialing side holds unacknowledged at most, and how
+    /// long one it holds waits before it is sent again. The accepting side of `https` reads
+    /// neither: its window is the binding's `mailbox`.
+    Durable { window: u32, retry_ms: u32 },
 }
 
 /// One limiter of an HTTPS server's edge (docs/adr/0109, D2), judged by the generic cell rate
@@ -218,10 +245,33 @@ pub struct Machine {
 
 impl Machine {
     /// A router holding every peer this machine is bound to.
+    ///
+    /// A dialing `https` binding under `receipt: durable` (docs/adr/0109, D10) makes the router
+    /// checkpoint and hold what it sends the peer until a `200` carried it, the binding's
+    /// acknowledgement (SCE_MESH.md section 10.11): the host checkpoints the machine, as the
+    /// deployment's `persistence: checkpoint` says it does.
     pub fn router(&self) -> Result<Router, ConfigError> {
         let mut router = Router::new(self.name, self.dedup_window, self.gap_timeout_ms)?;
         for peer in self.peers {
             router.add_peer(peer.name, peer.config);
+        }
+        for peer in self.peers {
+            if let PeerLink::HttpsDial {
+                receipt: Receipt::Durable { window, retry_ms },
+                ..
+            } = peer.link
+            {
+                router.enable_checkpoints();
+                router
+                    .send_durably(
+                        peer.name,
+                        DurableSend {
+                            window: window as usize,
+                            retry_ms: i64::from(retry_ms),
+                        },
+                    )
+                    .map_err(|_| ConfigError::BadReceipt { peer: peer.name })?;
+            }
         }
         Ok(router)
     }
@@ -347,6 +397,8 @@ mod tests {
                 trusted_proxies: &[],
                 sign: None,
                 max_skew_ms: 300_000,
+                receipt: Receipt::Transport,
+                retain_ms: 2_592_000_000,
             },
         }],
         sessions: None,
@@ -379,5 +431,81 @@ mod tests {
             ..MACHINE
         };
         assert!(empty_window.router().is_err());
+    }
+
+    /// A client of an `https` server whose binding declares `receipt: durable`.
+    fn durable_dialer(window: u32) -> Machine {
+        let peers: &'static [Peer] = Box::leak(Box::new([Peer {
+            name: "cloud",
+            config: PeerConfig {
+                transport: "https",
+                ..MACHINE.peers[0].config
+            },
+            link: PeerLink::HttpsDial {
+                url: "https://cal.example",
+                authenticator: HttpsAuthenticator::Bearer,
+                hold_ms: 25_000,
+                verify: None,
+                receipt: Receipt::Durable {
+                    window,
+                    retry_ms: 1_000,
+                },
+            },
+        }]));
+        Machine { peers, ..MACHINE }
+    }
+
+    /// docs/adr/0109, D10: a dialing `https` binding under `receipt: durable` makes the router
+    /// checkpoint and hold what it sends, after the checkpoint that produced it is durable, until
+    /// an exchange answered `200` carried it, which the binding tells as `Carried`; a window of 0,
+    /// which the build refuses, is refused here too. Red if `Machine::router` applies no receipt,
+    /// or `Router::carried` acknowledges nothing.
+    #[test]
+    fn a_durable_dialing_binding_holds_what_it_sends_until_an_exchange_carried_it() {
+        use crate::checkpoint::Clocks;
+        use crate::router::Effect;
+        use sce_rust_runtime::HostSendRequest;
+
+        let mut router = durable_dialer(4).router().expect("a valid configuration");
+        assert!(router.is_checkpointed());
+        assert!(router.holds_until_acknowledged("cloud"));
+        router.peer_ready("cloud", 0).expect("a bound peer");
+        let produced = router
+            .send(
+                &HostSendRequest {
+                    event_name: "note".to_string(),
+                    target: "#cloud".to_string(),
+                    ..HostSendRequest::default()
+                },
+                [7; 16],
+                0,
+            )
+            .expect("a send");
+        assert!(produced.is_empty(), "held for its checkpoint");
+        router
+            .seal(
+                1,
+                Clocks {
+                    monotonic_ms: 0,
+                    wall_ms: 0,
+                },
+            )
+            .expect("sealed");
+        let released = router.durable(1, 0).expect("durable");
+        let bytes = match released.as_slice() {
+            [Effect::Transmit { bytes, .. }] => bytes.clone(),
+            other => panic!("the send leaves once its checkpoint is durable, not {other:?}"),
+        };
+        assert!(
+            router.holds_for_durability(),
+            "held until an exchange carried it"
+        );
+        router.carried("cloud", &[bytes]);
+        assert!(!router.holds_for_durability(), "the 200 acknowledged it");
+
+        assert_eq!(
+            durable_dialer(0).router().err(),
+            Some(ConfigError::BadReceipt { peer: "cloud" })
+        );
     }
 }

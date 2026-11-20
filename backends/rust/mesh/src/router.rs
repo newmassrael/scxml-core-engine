@@ -27,6 +27,7 @@
 
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use sce_forge_runtime::algorithm::AlgorithmError;
@@ -193,6 +194,19 @@ impl Default for DurableSend {
     }
 }
 
+/// The room a binding keeps for what is sent to one peer, shared by every router that sends to it:
+/// the durable window of an `https` server's outbox (docs/adr/0109, D10; SCE_MESH.md section
+/// 10.11), which counts the peer's outbox and what the routers produced for it and no commit
+/// appended yet. A router reserves one place for each envelope it writes to the peer; the
+/// window's owner gives the place back once the envelope is acknowledged, or once it is dropped
+/// unwritten.
+pub trait Window: Send + Sync {
+    /// Reserve a place for one more envelope, or `Err(depth)`, the envelopes the window holds,
+    /// when it holds its most: the send is refused as SCE_MESH.md section 16.7 row 9, and nothing
+    /// accepted is dropped.
+    fn reserve(&self) -> Result<(), u32>;
+}
+
 /// What became of a request [`Router::invoke`] was handed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Invoked {
@@ -218,6 +232,9 @@ struct Peer {
     /// What it keeps of the peer's stream when the peer sends to it with
     /// durable receipt ([`Router::receive_durably`]).
     durable_in: Option<DurableIn>,
+    /// The window every envelope to the peer takes a place in, when its binding keeps one
+    /// ([`Router::bound_window`]).
+    window: Option<Arc<dyn Window>>,
 }
 
 /// A sender's side of durable receipt for one peer.
@@ -347,8 +364,59 @@ impl Router {
                 causal: None,
                 durable_out: None,
                 durable_in: None,
+                window: None,
             },
         );
+    }
+
+    /// Every envelope written to `peer` takes a place in `window` first, and one it has no room
+    /// for is refused as `backpressureDrop` (SCE_MESH.md section 16.7 row 9) and never written:
+    /// the durable window of an `https` server's outbox (docs/adr/0109, D10), which the sessions
+    /// of a pool share. A send that is never accepted is told, and nothing accepted is dropped.
+    pub fn bound_window(&mut self, peer: &str, window: Arc<dyn Window>) -> Result<(), RouterError> {
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        bound.window = Some(window);
+        Ok(())
+    }
+
+    /// The binding to `peer` acknowledges by the exchange that carried an envelope, and one
+    /// carried `envelopes`: the `https` binding's `200`, which its server answers only once a
+    /// durable checkpoint holds what the exchange carried (docs/adr/0109, D10; SCE_MESH.md
+    /// section 10.11). Each of them this router holds until acknowledged, under durable receipt
+    /// ([`Self::send_durably`]), is acknowledged by its sequence number and held no more; so no
+    /// `durableReceipt` envelope is sent on such a binding. Anything else is passed over.
+    pub fn carried(&mut self, peer: &str, envelopes: &[Vec<u8>]) {
+        let Some(out) = self
+            .peers
+            .get_mut(peer)
+            .and_then(|bound| bound.durable_out.as_mut())
+        else {
+            return;
+        };
+        for bytes in envelopes {
+            let Ok(envelope) = Envelope::decode(&mut SceCursor::new(bytes)) else {
+                continue;
+            };
+            if let Some(sequence) = envelope.sequence_no {
+                out.unacked.remove(&sequence);
+            }
+        }
+    }
+
+    /// How many envelopes the machine produced for `peer` that no durable checkpoint released
+    /// yet (SCE_MESH.md section 10.11): those a host drops with the router, losing them.
+    pub fn held_for(&self, peer: &str) -> usize {
+        self.persist.as_ref().map_or(0, |persist| {
+            persist
+                .open
+                .iter()
+                .chain(persist.sealed.iter().flat_map(|(_, batch)| batch.iter()))
+                .filter(|unreleased| unreleased.peer == peer)
+                .count()
+        })
     }
 
     /// Checkpoint this machine: its deployment says `persistence: checkpoint`
@@ -1751,6 +1819,13 @@ fn write_envelope(
                 depth: u32::try_from(held).unwrap_or(u32::MAX),
             });
         }
+    }
+    // Reserved last, so that a place is taken only for an envelope that is written: nothing
+    // below refuses one.
+    if let Some(window) = &peer.window {
+        window
+            .reserve()
+            .map_err(|depth| Signal::BackpressureDrop { depth })?;
     }
     let durable = peer.durable_out.is_some();
     let stamps = (peer.config.stamp_sequence || durable) && sequenced(envelope.pattern, durable);

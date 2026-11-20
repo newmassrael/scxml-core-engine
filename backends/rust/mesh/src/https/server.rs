@@ -36,11 +36,11 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::Infallible;
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
@@ -70,6 +70,7 @@ use super::{
     INSTALL_SCHEME, PATH_ROOT, VERSION,
 };
 use crate::endpoint::{Transport, TransportFailure};
+use crate::outbox::{Outboxes, Wake};
 use crate::peers::{EdgeRate, EdgeRates, HttpsAuthenticator, Machine, PeerLink};
 use sce_rust_crypto::equal::same_secret;
 
@@ -213,6 +214,10 @@ impl Listening {
                 trusted_proxies,
                 sign,
                 max_skew_ms,
+                // The outbox of a durable binding is the keyed pool's, kept in its store
+                // (`HttpsServer::keep_outboxes`), not a bound of the server's own.
+                receipt: _,
+                retain_ms: _,
             } = peer.link
             else {
                 continue;
@@ -474,6 +479,17 @@ struct Mailboxes {
     /// The most entries held at once (deploy.yaml's `max_clients`).
     max_clients: usize,
     clients: Mutex<HashMap<String, Client>>,
+    /// The outboxes of the clients whose binding is durable (docs/adr/0109, D10), which a keyed
+    /// pool keeps in its store ([`HttpsServer::keep_outboxes`]): such a client's mailbox is its
+    /// outbox, and the entry here keeps only its presence.
+    durable: OnceLock<Arc<Outboxes>>,
+}
+
+impl Mailboxes {
+    /// The outboxes, when `client`'s binding keeps a durable one.
+    fn outboxes_of(&self, client: &str) -> Option<&Arc<Outboxes>> {
+        self.durable.get().filter(|outboxes| outboxes.keeps(client))
+    }
 }
 
 /// Why no entry could be made for a client.
@@ -524,6 +540,19 @@ pub struct MailboxTransport {
 
 impl Transport for MailboxTransport {
     fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
+        // docs/adr/0109, D10: a durable client's mailbox is its outbox, appended to only by the
+        // write that keeps the checkpoint which holds the envelope; one handed to the transport
+        // would be answered from nowhere, so it is refused aloud.
+        if self.mailboxes.outboxes_of(peer).is_some() {
+            return Err(TransportFailure {
+                retryable: false,
+                message: Some(alloc::format!(
+                    "the binding to {peer} keeps a durable outbox, which only a checkpoint's \
+                     write appends to"
+                )),
+                queue_full: None,
+            });
+        }
         let mut clients = self.mailboxes.lock();
         let client = match self.mailboxes.entry(&mut clients, peer) {
             Ok(client) => client,
@@ -577,6 +606,10 @@ struct Shared {
     /// The edge's limiters (docs/adr/0109, D2), and the moment their clock counts from.
     edge: Mutex<Edge>,
     started: Instant,
+    /// Set by [`HttpsServer::stop`] (docs/adr/0109, D10): every new exchange is answered `503`
+    /// with `Retry-After`, and the signal ends the accept loop and every held exchange.
+    stopping: AtomicBool,
+    stopped: Notify,
 }
 
 impl Shared {
@@ -693,6 +726,7 @@ impl HttpsServer {
             capacity: settings.mailbox,
             max_clients: settings.max_clients,
             clients: Mutex::new(HashMap::new()),
+            durable: OnceLock::new(),
         });
         let settings_rates = settings.rates;
         Ok(HttpsServer {
@@ -709,8 +743,55 @@ impl HttpsServer {
                 connections: Mutex::new(Connections::default()),
                 edge: Mutex::new(Edge::new(&settings_rates)),
                 started: Instant::now(),
+                stopping: AtomicBool::new(false),
+                stopped: Notify::new(),
             }),
         })
+    }
+
+    /// Answer the clients whose binding is durable from `outboxes`, the outboxes a keyed pool
+    /// keeps in its store (`Pool::outboxes`; docs/adr/0109, D10; SCE_MESH.md section 22.3): such
+    /// a client's exchange opens its outbox, its acknowledgement deletes in the store, and its
+    /// response carries what the outbox holds, numbered in the outbox's incarnation, which a
+    /// restart keeps. An append wakes the client's held exchange. Given once, before the server
+    /// serves; a second call is ignored.
+    pub fn keep_outboxes(&self, outboxes: Arc<Outboxes>) {
+        let mailboxes = Arc::clone(&self.shared.mailboxes);
+        let wake: Wake = Arc::new(move |client: &str| {
+            if let Some(held) = mailboxes.lock().get(client) {
+                held.arrived.notify_waiters();
+            }
+        });
+        if self
+            .shared
+            .mailboxes
+            .durable
+            .set(Arc::clone(&outboxes))
+            .is_ok()
+        {
+            outboxes.watch(wake);
+        }
+    }
+
+    /// Stop the server in order (docs/adr/0109, D10): accept no connection more, answer every
+    /// new exchange `503` with `Retry-After`, as load shed (SCE_MESH.md section 22.4), and answer
+    /// every held exchange at once with what its mailbox holds; then wait, at most `within`, for
+    /// the exchanges in flight to end. Answers whether they all did. What an exchange in flight
+    /// carried is still handed to the host, which answers it as it stands; the host stops its
+    /// pool after this (`Pool::stop`).
+    pub async fn stop(&self, within: Duration) -> bool {
+        self.shared.stopping.store(true, Ordering::SeqCst);
+        self.shared.stopped.notify_waiters();
+        let until = tokio::time::Instant::now() + within;
+        loop {
+            if self.shared.exchanges.load(Ordering::Acquire) == 0 {
+                return true;
+            }
+            if tokio::time::Instant::now() >= until {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
     }
 
     /// The transport the host builds its endpoint on.
@@ -746,8 +827,10 @@ impl HttpsServer {
         self.shared.durable_reported.notify_waiters();
     }
 
-    /// Accept on `listener` until it fails, with TLS from `tls` (or none, for a loopback test),
-    /// serving each connection on a task of its own, and watch for absent clients meanwhile.
+    /// Accept on `listener` until it fails, or until the server is stopped ([`Self::stop`]),
+    /// which answers an error of kind `Interrupted`, with TLS from `tls` (or none, for a loopback
+    /// test), serving each connection on a task of its own, and watch for absent clients
+    /// meanwhile.
     ///
     /// A connection past `max_connections`, or past `max_connections_per_address` from its
     /// address, is closed at accept, and one whose TLS handshake takes longer than
@@ -767,7 +850,22 @@ impl HttpsServer {
         let scheme = if acceptor.is_some() { "https" } else { "http" };
         let handshake_timeout = self.shared.settings.handshake_timeout;
         let error = loop {
-            let (stream, remote) = match listener.accept().await {
+            // docs/adr/0109, D10: a stop ends the accept loop; the signal is enabled before the
+            // flag is read, so a stop between the two is not missed.
+            let stopped = self.shared.stopped.notified();
+            tokio::pin!(stopped);
+            stopped.as_mut().enable();
+            if self.shared.stopping.load(Ordering::SeqCst) {
+                break std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "the server was stopped",
+                );
+            }
+            let accepted = tokio::select! {
+                accepted = listener.accept() => accepted,
+                _ = &mut stopped => continue,
+            };
+            let (stream, remote) = match accepted {
                 Ok(accepted) => accepted,
                 Err(error) => break error,
             };
@@ -1087,6 +1185,15 @@ fn request_target(request: &Request<Incoming>, scheme: &str) -> Option<String> {
     )
 }
 
+/// The milliseconds since the Unix epoch on the server's clock: what an outbox is opened and
+/// acknowledged at.
+fn unix_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|since| u64::try_from(since.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or(0)
+}
+
 /// The seconds since the Unix epoch on the server's clock, which a request's `created` is held
 /// to.
 fn unix_seconds() -> i64 {
@@ -1216,6 +1323,11 @@ async fn exchange(
     remote: Option<IpAddr>,
     scheme: &'static str,
 ) -> Response<Full<Bytes>> {
+    // docs/adr/0109, D10: a server that is stopping takes nothing in; the client carries what it
+    // sent again, to the server that serves next.
+    if shared.stopping.load(Ordering::SeqCst) {
+        return shed(StatusCode::SERVICE_UNAVAILABLE, shared.settings.retry_after);
+    }
     // §mesh-22.4: the refusals below (`429`, `405`, `404`, `503`, `401`, `400`, `413`, `415`)
     // are each answered before the request's envelopes reach the core.
     //
@@ -1400,6 +1512,26 @@ async fn exchange(
         }
     }
 
+    // docs/adr/0109, D10: a durable client's mailbox is its outbox in the store, opened at its
+    // exchange (in an incarnation drawn now when the store holds none for it) and acknowledged
+    // there before the request's envelopes are taken in, the order of section 22.3. A store that
+    // cannot be read or written is answered as load shed: the client is not at fault, and sends
+    // again.
+    let durable = shared.mailboxes.outboxes_of(&name).cloned();
+    if let Some(outboxes) = &durable {
+        let now = unix_millis();
+        let Ok(drawn) = draw_epoch() else {
+            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        };
+        let Ok(incarnation) = outboxes.open(&name, &drawn, now) else {
+            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        };
+        let acknowledges = ack > 0 && acked_in.as_deref() == Some(incarnation.as_str());
+        if acknowledges && outboxes.acknowledge(&name, &incarnation, ack, now).is_err() {
+            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        }
+    }
+
     // Taken in: the acknowledgement, readiness and the envelopes, told in the order decided
     // (§mesh-22.3). The body is split as §mesh-22.2 frames it, a CBOR sequence whose unreadable
     // tail reaches the core as one last envelope.
@@ -1459,30 +1591,47 @@ async fn exchange(
         let notified = arrived.notified();
         tokio::pin!(notified);
         notified.as_mut().enable();
-        let waiting = shared
-            .mailboxes
-            .lock()
-            .get(&name)
-            .is_some_and(|client| !client.entries.is_empty());
-        if waiting || tokio::time::Instant::now() >= until {
+        // docs/adr/0109, D10: a stop answers a held exchange at once, with what its mailbox
+        // holds.
+        let stopped = shared.stopped.notified();
+        tokio::pin!(stopped);
+        stopped.as_mut().enable();
+        let waiting = match &durable {
+            Some(outboxes) => outboxes.holds(&name),
+            None => shared
+                .mailboxes
+                .lock()
+                .get(&name)
+                .is_some_and(|client| !client.entries.is_empty()),
+        };
+        if waiting || shared.stopping.load(Ordering::SeqCst) || tokio::time::Instant::now() >= until
+        {
             break;
         }
         tokio::select! {
             _ = &mut notified => {}
+            _ = &mut stopped => {}
             _ = tokio::time::sleep_until(until) => {}
         }
     }
 
     // At most `max_response_bytes` of the mailbox (docs/adr/0109, D1); the rest at the next
-    // exchange, which the numbering of §mesh-22.3 allows.
-    let (epoch, first, body) = {
-        let clients = shared.mailboxes.lock();
-        match clients.get(&name) {
-            Some(client) => {
-                let (first, body) = client.response(settings.max_response_bytes);
-                (Some(client.epoch.clone()), first, body)
-            }
+    // exchange, which the numbering of §mesh-22.3 allows. A durable client's is its outbox
+    // (docs/adr/0109, D10), numbered in the outbox's incarnation.
+    let (epoch, first, body) = match &durable {
+        Some(outboxes) => match outboxes.response(&name, settings.max_response_bytes) {
+            Some(carried) => (Some(carried.incarnation), carried.first, carried.body),
             None => (None, None, Vec::new()),
+        },
+        None => {
+            let clients = shared.mailboxes.lock();
+            match clients.get(&name) {
+                Some(client) => {
+                    let (first, body) = client.response(settings.max_response_bytes);
+                    (Some(client.epoch.clone()), first, body)
+                }
+                None => (None, None, Vec::new()),
+            }
         }
     };
     drop(in_flight);
@@ -1773,6 +1922,8 @@ mod tests {
                 trusted_proxies: &[],
                 sign: None,
                 max_skew_ms: 300_000,
+                receipt: crate::peers::Receipt::Transport,
+                retain_ms: 2_592_000_000,
             },
         }
     }
@@ -2913,5 +3064,180 @@ mod tests {
         assert_eq!(at(unix_seconds()), 200, "the registered key");
         assert_eq!(at(unix_seconds() - 1_000), 401, "created too long ago");
         assert_eq!(at(unix_seconds() + 1_000), 401, "created too far ahead");
+    }
+
+    /// An exchange of `phone` with the server at `address` acknowledging `ack` in `epoch` (none
+    /// when `None`), asking for a hold of `hold_ms`, with the bearer token `t`.
+    fn request_acknowledging(
+        address: std::net::SocketAddr,
+        ack: u64,
+        epoch: Option<&str>,
+        hold_ms: u64,
+    ) -> super::super::HttpsRequest {
+        let mut request = request_to(address, Vec::new());
+        request
+            .headers
+            .retain(|(name, _)| name != ACK_HEADER && name != HOLD_HEADER);
+        request
+            .headers
+            .push((ACK_HEADER.to_string(), ack.to_string()));
+        request
+            .headers
+            .push((HOLD_HEADER.to_string(), hold_ms.to_string()));
+        if let Some(epoch) = epoch {
+            request
+                .headers
+                .push((EPOCH_HEADER.to_string(), epoch.to_string()));
+        }
+        request.timeout = Duration::from_secs(10).saturating_add(Duration::from_millis(hold_ms));
+        request
+    }
+
+    /// The outboxes of `phone`, a client whose binding is durable, kept in `store`.
+    fn phone_outboxes(store: &sce_rust_session_store::MemoryStore) -> Arc<Outboxes> {
+        Arc::new(Outboxes::new(
+            Arc::new(store.clone()),
+            [(
+                "phone".to_string(),
+                crate::outbox::OutboxBinding {
+                    window: 8,
+                    retain_ms: 2_592_000_000,
+                },
+            )]
+            .into_iter()
+            .collect(),
+        ))
+    }
+
+    /// docs/adr/0109, D10: a durable client is answered from its outbox in the store, numbered
+    /// in the outbox's incarnation; its acknowledgement deletes what it covers in the store; a
+    /// server started again on the same store answers in the same incarnation and numbers on;
+    /// and the transport refuses an envelope for it, which only a checkpoint's write appends.
+    /// Red if the exchange answers a durable client from the in-memory mailbox, or acknowledges
+    /// only there.
+    #[test]
+    fn a_durable_client_is_answered_from_its_outbox_and_acknowledges_in_the_store() {
+        use super::super::HttpsTransport;
+        use sce_rust_session_store::{Append, MemoryStore, SessionStore};
+
+        let store = MemoryStore::new();
+        // Two CBOR items, the envelopes a pool's writes appended.
+        let appended = store
+            .append(
+                &[
+                    Append {
+                        client: "phone",
+                        incarnation: EPOCH,
+                        sender: Some("k"),
+                        envelope: &[0x01],
+                    },
+                    Append {
+                        client: "phone",
+                        incarnation: EPOCH,
+                        sender: Some("k"),
+                        envelope: &[0x02],
+                    },
+                ],
+                1_000,
+            )
+            .expect("two appends");
+        assert_eq!(appended.len(), 2);
+
+        let before = serving(|_: Vec<LinkEvent>| {}, Duration::from_secs(5));
+        before.server.keep_outboxes(phone_outboxes(&store));
+        assert!(
+            before
+                .server
+                .transport()
+                .transmit("phone", &[0x03])
+                .is_err(),
+            "the transport takes nothing for a durable client"
+        );
+        let first = before
+            .port
+            .exchange(request_acknowledging(before.address, 0, None, 0))
+            .expect("a response");
+        assert_eq!(first.status, 200);
+        assert_eq!(first.header(EPOCH_HEADER), Some(EPOCH));
+        assert_eq!(first.header(FIRST_HEADER), Some("1"));
+        assert_eq!(first.body, alloc::vec![0x01, 0x02]);
+
+        let acked = before
+            .port
+            .exchange(request_acknowledging(before.address, 1, Some(EPOCH), 0))
+            .expect("a response");
+        assert_eq!(acked.status, 200);
+        assert_eq!(acked.header(FIRST_HEADER), Some("2"));
+        assert_eq!(acked.body, alloc::vec![0x02]);
+        let held = store
+            .outbox("phone")
+            .expect("the outbox read")
+            .expect("the outbox");
+        assert_eq!(
+            held.entries
+                .iter()
+                .map(|entry| entry.number)
+                .collect::<Vec<_>>(),
+            alloc::vec![2],
+            "the acknowledgement deleted entry 1 in the store"
+        );
+        drop(before);
+
+        let again = serving(|_: Vec<LinkEvent>| {}, Duration::from_secs(5));
+        again.server.keep_outboxes(phone_outboxes(&store));
+        let restarted = again
+            .port
+            .exchange(request_acknowledging(again.address, 1, Some(EPOCH), 0))
+            .expect("a response");
+        assert_eq!(
+            restarted.header(EPOCH_HEADER),
+            Some(EPOCH),
+            "the incarnation outlives the server"
+        );
+        assert_eq!(restarted.header(FIRST_HEADER), Some("2"));
+        assert_eq!(restarted.body, alloc::vec![0x02]);
+    }
+
+    /// docs/adr/0109, D10: a stop answers a held exchange at once with what its mailbox holds,
+    /// and takes no exchange in after it. Red if the hold waits out its bound, or a new exchange
+    /// is answered `200`.
+    #[test]
+    fn a_stop_answers_a_held_exchange_at_once_and_takes_nothing_in_after_it() {
+        use super::super::HttpsTransport;
+
+        let Serving {
+            _runtime,
+            server,
+            address,
+            port,
+        } = serving(|_: Vec<LinkEvent>| {}, Duration::from_secs(20));
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn({
+            let port = Arc::clone(&port);
+            move || {
+                let started = Instant::now();
+                let answered = port.exchange(request_acknowledging(address, 0, None, 20_000));
+                let _ = tx.send((answered, started.elapsed()));
+            }
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_millis(300)).is_err(),
+            "the exchange is held"
+        );
+        let ended = _runtime.block_on(server.stop(Duration::from_secs(5)));
+        assert!(ended, "every exchange in flight ended");
+        let (answered, took) = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the held exchange was answered");
+        assert_eq!(answered.expect("a response").status, 200);
+        assert!(
+            took < Duration::from_secs(10),
+            "answered at the stop, took {took:?}"
+        );
+        let after = port.exchange(request_acknowledging(address, 0, None, 0));
+        assert!(
+            !matches!(&after, Ok(response) if response.status == 200),
+            "an exchange after the stop was taken in: {after:?}"
+        );
     }
 }

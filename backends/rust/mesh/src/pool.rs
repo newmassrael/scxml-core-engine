@@ -27,9 +27,10 @@
 //! answered with, what waits for a link) in one write. After every input that
 //! took an envelope in or ran a macrostep the pool takes one in the three
 //! steps of section 10.11: the machine's saved state and the endpoint sealed
-//! with the next number ([`Endpoint::checkpoint`]), the write through a
-//! [`StoreSink`] carrying the version it was read at and the lease's fence,
-//! so a session another process took over is never written by this one, and
+//! with the next number ([`Endpoint::checkpoint`]), the write
+//! ([`SessionStore::write`]) carrying the version it was read at and the
+//! lease's fence, so a session another process took over is never written by
+//! this one, and
 //! the endpoint told the checkpoint is durable ([`Endpoint::durable`]), which
 //! releases what the input made: nothing a session sends leaves before the
 //! checkpoint that holds it is durable. A session that had no event for
@@ -61,6 +62,21 @@
 //! receipt is the session's own: a session's checkpoint numbers start again
 //! when it ends or is taken over, so a number says nothing across sessions.
 //!
+//! A client whose `https` accepting binding declares `receipt: durable` has an
+//! outbox in the store (docs/adr/0109, D10; [`crate::outbox`]): what a
+//! checkpoint holds for it is appended to the outbox by the write that keeps
+//! the checkpoint, so the session holds nothing for it once the write answered
+//! and the server answers the client's exchanges from the outbox
+//! ([`Pool::outboxes`]). The binding's `mailbox` is a window every session
+//! shares: an envelope written while the client's outbox and what the sessions
+//! produced for it hold `mailbox` is refused at admit as SCE_MESH.md section
+//! 16.7 row 9. An entry older than `retain_ms` expires ([`Pool::expire`]), and
+//! the session that sent it is told at its next run, as row 15.
+//!
+//! [`Pool::stop`] stops the pool in order: it admits nothing, runs what each
+//! inbox holds, and saves every session as a clean checkpoint, so a start
+//! after it raises no `restored`.
+//!
 //! A process that loses a key's lease (another process took it over, or a
 //! renewal was refused) stops serving the key: the session is dropped without
 //! being saved, and every request for it that waits, or that arrives while
@@ -81,16 +97,19 @@
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
+use std::time::{Duration, Instant};
 
 use sce_forge_runtime::codec::SceCursor;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_session_store::{
-    AcquireError, Failure, Held, LeaseError, SessionStore, WriteError, LATEST_MOMENT,
+    AcquireError, Append, Change, Failure, Held, LeaseError, SessionStore, Write, WriteError,
+    LATEST_MOMENT,
 };
 
-use crate::checkpoint::{self, Checkpoint, CheckpointSink, LoadError, StoreSink};
+use crate::checkpoint::{self, Checkpoint, EndpointSection, LoadError, Unreleased};
 use crate::endpoint::{
     Endpoint, EngineCall, Environment, SharedEndpoint, Transport, TransportFailure,
 };
@@ -99,6 +118,7 @@ use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
 use crate::generated::rpc_status::RpcStatus;
 use crate::inbound::ConfigError;
+use crate::outbox::Outboxes;
 use crate::peers::{KeyFrom, Machine, Sessions};
 use crate::router::{payload_text, within, RouterError};
 
@@ -238,6 +258,27 @@ pub enum PoolError {
     NotAnswered { peer: String, reason: String },
     /// What the endpoint of the session `key` reported to its host.
     Endpoint { key: String, error: RouterError },
+    /// The envelope numbered `number` in `client`'s outbox, appended at `at_ms`, was kept longer
+    /// than the binding's `retain_ms` without `client` acknowledging it, and the store let it go
+    /// (docs/adr/0109, D10). `sender`, the session that sent it, is told at its next run, as
+    /// SCE_MESH.md section 16.7 row 15; `None` for an answer the pool made in a session's place.
+    OutboxExpired {
+        client: String,
+        number: u64,
+        at_ms: u64,
+        sender: Option<String>,
+    },
+}
+
+/// What [`Pool::stop`] did with each session it held in memory.
+#[derive(Debug, Default)]
+pub struct StopReport {
+    /// The sessions saved as a clean checkpoint and dropped, their leases released: their restore
+    /// raises no `restored` (SCE_MESH.md section 16.7 row 17).
+    pub saved: Vec<String>,
+    /// The sessions not saved by the stop, each with the reason: each restores from its last
+    /// durable checkpoint, which is not clean, and raises `restored` as after a crash.
+    pub not_saved: Vec<(String, String)>,
 }
 
 /// The transport of a session's endpoint: the pool's own, through which every
@@ -247,12 +288,25 @@ pub struct SessionTransport<T> {
     key: String,
     inner: Arc<Mutex<T>>,
     replies: Replies,
+    /// The outboxes of the clients whose binding is durable (docs/adr/0109, D10).
+    outboxes: Option<Arc<Outboxes>>,
 }
 
 impl<T: Transport> Transport for SessionTransport<T> {
     fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
         if let Some(wire_id) = request_id(bytes) {
             lock(&self.replies).insert(wire_id, self.key.clone());
+        }
+        // A client with a durable outbox has every envelope a checkpoint released in its outbox
+        // already, appended by the write that made that checkpoint durable. What else the
+        // endpoint sends it (a reply a duplicate request is answered with) is a copy of one its
+        // outbox holds until it acknowledges it, or one it took in before it did.
+        if self
+            .outboxes
+            .as_ref()
+            .is_some_and(|outboxes| outboxes.keeps(peer))
+        {
+            return Ok(());
         }
         lock(&self.inner).transmit(peer, bytes)
     }
@@ -330,6 +384,9 @@ enum Input {
     Tick,
     /// Load the session: one of its waits came due while it was out of memory.
     Wake,
+    /// An expiry noted an envelope the session sent that its client never acknowledged
+    /// (docs/adr/0109, D10): read the session's notes and tell its machine.
+    Notes,
 }
 
 /// A session's inbox. Closed once the session left the table: nothing is
@@ -401,6 +458,10 @@ struct Live<M, T, E> {
     /// (docs/adr/0109, D1), so a key a document refuses costs the store
     /// nothing.
     provisional: bool,
+    /// The last of the session's notes its machine was told (docs/adr/0109,
+    /// D10): the next write takes every note up to it, in the transaction that
+    /// keeps what the machine made of them.
+    notes_through: u64,
 }
 
 /// What the pool answers a request with when it cannot serve its session.
@@ -452,12 +513,15 @@ enum Full {
     Inbox,
     /// Its key is not in memory, and the pool holds `sessions.max_live`.
     Live,
+    /// The pool is stopping ([`Pool::stop`]): it admits nothing.
+    Stopping,
 }
 
 impl Full {
     /// The reason a shed envelope is told or answered with.
     fn reason(self, sessions: &Sessions) -> String {
         match self {
+            Full::Stopping => "the pool is stopping, and admits nothing".to_string(),
             Full::Inbox => alloc::format!(
                 "its session's inbox holds {} envelopes, the most it takes",
                 sessions.max_inbox
@@ -505,6 +569,11 @@ where
     /// by the entry the store indexes it under.
     deferred: Mutex<BTreeMap<String, u64>>,
     errors: Mutex<Vec<PoolError>>,
+    /// The outboxes of the clients whose `https` accepting binding is durable
+    /// (docs/adr/0109, D10), which the server answers their exchanges from.
+    outboxes: Option<Arc<Outboxes>>,
+    /// Set by [`Pool::stop`]: nothing is admitted from then on.
+    stopping: AtomicBool,
 }
 
 impl<F, T, E> Pool<F, T, E>
@@ -537,6 +606,7 @@ where
             });
         }
         machine.router().map_err(PoolConfigError::Router)?;
+        let outboxes = Outboxes::of_machine(&machine, Arc::clone(&store));
         Ok(Self {
             machine,
             sessions,
@@ -550,12 +620,22 @@ where
             replies: Arc::new(Mutex::new(BTreeMap::new())),
             deferred: Mutex::new(BTreeMap::new()),
             errors: Mutex::new(Vec::new()),
+            outboxes,
+            stopping: AtomicBool::new(false),
         })
     }
 
     /// The machine the pool serves.
     pub fn machine(&self) -> &Machine {
         &self.machine
+    }
+
+    /// The outboxes of the clients whose `https` accepting binding declares `receipt: durable`
+    /// (docs/adr/0109, D10; SCE_MESH.md section 10.11), kept in the pool's store; `None` when it
+    /// has none. The server answers those clients' exchanges from them
+    /// (`HttpsServer::keep_outboxes`).
+    pub fn outboxes(&self) -> Option<&Arc<Outboxes>> {
+        self.outboxes.as_ref()
     }
 
     /// Whether the session `key` is in memory. Waits for a run of it that is
@@ -742,6 +822,9 @@ where
     /// another process has replaced since, and a session in memory here or
     /// leased elsewhere is not to be read at all.
     pub fn due(&self) -> Vec<String> {
+        if self.stopping.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
         let now = self.wall_now();
         let mut keys = Vec::new();
         for slot in self.slots() {
@@ -971,6 +1054,15 @@ where
             }
             Err(failure) => self.error(PoolError::Store { key: None, failure }),
         }
+        // docs/adr/0109, D10: an outbox entry read in this process expires at
+        // its moment, which [`Self::expire`] then acts on.
+        if let Some(expiry) = self
+            .outboxes
+            .as_ref()
+            .and_then(|outboxes| outboxes.next_expiry_ms())
+        {
+            at(expiry);
+        }
         next
     }
 
@@ -1031,6 +1123,9 @@ where
 
     /// [`Self::post_bounded`] without making room.
     fn try_post(&self, key: &str, input: Input) -> Result<(), (Input, Full)> {
+        if self.stopping.load(Ordering::SeqCst) {
+            return Err((input, Full::Stopping));
+        }
         let mut table = lock(&self.table);
         if let Some(slot) = table.get(key) {
             let mut inbox = lock(&slot.inbox);
@@ -1128,11 +1223,145 @@ where
     /// Put an input made by `input` in every session's inbox, and answer their
     /// keys.
     fn broadcast(&self, input: impl Fn() -> Input) -> Vec<String> {
+        // A stopping pool admits nothing: its sessions are being saved as they stand.
+        if self.stopping.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
         let table = lock(&self.table);
         for slot in table.values() {
             lock(&slot.inbox).queue.push_back(input());
         }
         table.keys().cloned().collect()
+    }
+
+    /// Expire the outboxes of the pool's durable clients (docs/adr/0109, D10): each entry older
+    /// than its binding's `retain_ms` is deleted by the store, which notes it, in the same
+    /// transaction, for the session that sent it; each is told to the host
+    /// ([`PoolError::OutboxExpired`]). A sender in memory reads its notes at its next run, and the
+    /// keys answered are those sessions, to run; one out of memory was made due at once by the
+    /// store, and is loaded by [`Self::due`]. The host calls this on its clock loop's schedule
+    /// (`Self::next_wake_ms` counts the expiries of the outboxes read in this process).
+    pub fn expire(&self) -> Vec<String> {
+        let Some(outboxes) = self.outboxes.as_ref() else {
+            return Vec::new();
+        };
+        let now = self.wall_now();
+        let mut senders = BTreeSet::new();
+        let clients: Vec<String> = outboxes
+            .bindings()
+            .map(|(client, _)| client.to_string())
+            .collect();
+        for client in clients {
+            let expiry = match outboxes.expire(&client, now, WAKE_BATCH) {
+                Ok(expiry) => expiry,
+                Err(failure) => {
+                    self.error(PoolError::Store { key: None, failure });
+                    continue;
+                }
+            };
+            for expired in expiry.expired {
+                if let Some(sender) = &expired.entry.sender {
+                    senders.insert(sender.clone());
+                }
+                self.error(PoolError::OutboxExpired {
+                    client: expired.client,
+                    number: expired.entry.number,
+                    at_ms: expired.entry.at_ms,
+                    sender: expired.entry.sender,
+                });
+            }
+        }
+        let table = lock(&self.table);
+        let mut keys = Vec::new();
+        for sender in senders {
+            if let Some(slot) = table.get(&sender) {
+                lock(&slot.inbox).queue.push_back(Input::Notes);
+                keys.push(sender);
+            }
+        }
+        keys
+    }
+
+    /// Stop the pool in order (docs/adr/0109, D10): admit nothing from now on (what arrives is
+    /// shed, [`Fate::Lost`] for a host that reads receipts, `RpcStatus::Unavailable` for a
+    /// request it does not), run what each session's inbox holds to completion, wait for a run
+    /// of a session another thread is in the middle of, then save every session in memory as a
+    /// clean checkpoint (SCE_MESH.md section 10.11: its endpoint takes nothing in after it, so
+    /// its restore raises no `restored`), drop it and release its lease. What is not done by
+    /// `deadline` is not done: the report names each session not saved and why, and each such
+    /// session restores from its last durable checkpoint with `restored`, as after a crash.
+    ///
+    /// The host stops its binding's server first (`HttpsServer::stop`), so that no exchange is
+    /// taken in while the sessions are saved, and catches the signal that asks it to stop
+    /// (docs/SCE_SERVER_DEPLOY.md, section 4).
+    pub fn stop(&self, deadline: Instant) -> StopReport {
+        self.stopping.store(true, Ordering::SeqCst);
+        // What the inboxes hold, run to completion; a run made on another thread meanwhile is
+        // waited for by `run`, which takes the session's lock.
+        loop {
+            let waiting: Vec<String> = self
+                .slots()
+                .into_iter()
+                .filter(|slot| !lock(&slot.inbox).queue.is_empty())
+                .map(|slot| slot.key.clone())
+                .collect();
+            if waiting.is_empty() || Instant::now() >= deadline {
+                break;
+            }
+            for key in waiting {
+                self.run(&key);
+            }
+        }
+        let mut report = StopReport::default();
+        for slot in self.slots() {
+            let mut live = loop {
+                if let Some(live) = try_lock(&slot.live) {
+                    break Some(live);
+                }
+                if Instant::now() >= deadline {
+                    break None;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            let Some(live) = live.as_mut() else {
+                report.not_saved.push((
+                    slot.key.clone(),
+                    "a run of it was still going at the deadline".to_string(),
+                ));
+                continue;
+            };
+            if live.is_none() {
+                continue;
+            }
+            let now = self.wall_now();
+            let saved = match live.as_mut() {
+                Some(session) => self.checkpoint(&slot, session, now, Take::Clean),
+                None => continue,
+            };
+            match saved {
+                Ok(true) => {
+                    **live = None;
+                    self.forget_replies(&slot.key);
+                    self.release(&slot);
+                    // Out of the table; what its inbox still holds, when the deadline came
+                    // before its run, was never admitted, and its sender carries it again.
+                    self.abandon(&slot, &Refusal::unavailable("the pool stopped".to_string()));
+                    report.saved.push(slot.key.clone());
+                }
+                Ok(false) => {
+                    self.lose(&slot, live, "the pool stopped".to_string());
+                    report.not_saved.push((
+                        slot.key.clone(),
+                        "its clean checkpoint could not be written".to_string(),
+                    ));
+                }
+                Err(reason) => {
+                    self.lose(&slot, live, reason.clone());
+                    report.not_saved.push((slot.key.clone(), reason));
+                }
+            }
+        }
+        report
     }
 
     /// Every session the table holds now.
@@ -1222,6 +1451,9 @@ where
             unreadable @ LoadError::Unreadable { .. } => not_built(unreadable.to_string()),
         })?;
         let endpoint = self.endpoint_for(key)?;
+        if let Some(loaded) = &loaded {
+            self.append_held(key, &loaded.checkpoint, now)?;
+        }
         let machine = match &loaded {
             Some(loaded) => self.restore(key, &loaded.checkpoint, &endpoint, now),
             None => self.factory.start(key, &endpoint, now),
@@ -1235,6 +1467,9 @@ where
                 loaded.checkpoint.state.earliest_due(),
             )
         });
+        // docs/adr/0109, D10: what an expiry noted for the session is told
+        // its machine now, and taken by the write that keeps what it made of it.
+        let notes_through = self.raise_notes(key, &mut lock(&endpoint), 0);
         Ok(Live {
             machine,
             endpoint,
@@ -1243,11 +1478,138 @@ where
             earliest_due,
             last_active_ms: now,
             // A machine just started ran its initial macrostep, which no
-            // checkpoint holds yet.
-            dirty: loaded.is_none(),
+            // checkpoint holds yet; one told of notes is to be saved with them
+            // taken.
+            dirty: loaded.is_none() || notes_through > 0,
             unsaved: Vec::new(),
             provisional: loaded.is_none(),
+            notes_through,
         })
+    }
+
+    /// Append to the durable clients' outboxes what `checkpoint`, the last durable checkpoint of
+    /// the session `key`, holds for them unreleased (docs/adr/0109, D10): one a build that kept
+    /// no outbox for the client wrote, which the restore releases. The pool writes no such
+    /// checkpoint, since the write that makes one durable appends what it holds for a durable
+    /// client; so a restore after a binding became durable loses nothing the checkpoint held.
+    fn append_held(&self, key: &str, checkpoint: &Checkpoint, now: u64) -> Result<(), Refusal> {
+        let Some(outboxes) = &self.outboxes else {
+            return Ok(());
+        };
+        let held: Vec<&Unreleased> = checkpoint
+            .endpoints
+            .iter()
+            .flat_map(|section| section.router.unreleased.iter())
+            .filter(|unreleased| outboxes.keeps(&unreleased.peer))
+            .collect();
+        if held.is_empty() {
+            return Ok(());
+        }
+        let incarnation = self.incarnation();
+        let appends: Vec<Append<'_>> = held
+            .iter()
+            .map(|unreleased| Append {
+                client: &unreleased.peer,
+                incarnation: &incarnation,
+                sender: Some(key),
+                envelope: &unreleased.envelope,
+            })
+            .collect();
+        match self.store.append(&appends, now) {
+            Ok(appended) => {
+                let envelopes: Vec<Vec<u8>> = held
+                    .iter()
+                    .map(|unreleased| unreleased.envelope.clone())
+                    .collect();
+                outboxes.committed(&appended, &envelopes, now, false);
+                Ok(())
+            }
+            Err(failure) => {
+                let reason = failure.to_string();
+                self.error(PoolError::Store {
+                    key: Some(key.to_string()),
+                    failure,
+                });
+                Err(Refusal::unavailable(reason))
+            }
+        }
+    }
+
+    /// Tell the machine of the session `key`, through `endpoint`, each note an expiry wrote for
+    /// it above `told` (docs/adr/0109, D10): an envelope it sent a client that the client never
+    /// acknowledged within the binding's `retain_ms`, raised as SCE_MESH.md section 16.7 row 15.
+    /// Answers the last note told, which the session's next write takes.
+    fn raise_notes(
+        &self,
+        key: &str,
+        endpoint: &mut Endpoint<SessionTransport<T>, E>,
+        told: u64,
+    ) -> u64 {
+        let Some(outboxes) = &self.outboxes else {
+            return told;
+        };
+        let notes = match self.store.notes(key) {
+            Ok(notes) => notes,
+            Err(failure) => {
+                self.error(PoolError::Store {
+                    key: Some(key.to_string()),
+                    failure,
+                });
+                return told;
+            }
+        };
+        let now = self.wall_now();
+        let mut last = told;
+        for note in notes.into_iter().filter(|note| note.id > told) {
+            let retain_ms = outboxes.retain_ms(&note.client).unwrap_or(0);
+            endpoint.outbox_expired(&note.client, now.saturating_sub(note.at_ms), retain_ms);
+            last = last.max(note.id);
+        }
+        last
+    }
+
+    /// The incarnation a client's outbox numbers in when this pool's write is the one that opens
+    /// it (SCE_MESH.md section 22.3): a fresh UUID of the environment, as 32 lowercase
+    /// hexadecimal digits.
+    fn incarnation(&self) -> String {
+        const DIGITS: &[u8; 16] = b"0123456789abcdef";
+        let drawn = lock(&self.environment).envelope_id();
+        let mut text = String::with_capacity(32);
+        for byte in drawn {
+            text.push(char::from(DIGITS[usize::from(byte >> 4)]));
+            text.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+        }
+        text
+    }
+
+    /// Take out of `sections`, the endpoint sections of a checkpoint about to be written, what
+    /// they hold unreleased for a durable client (docs/adr/0109, D10): the write appends it to
+    /// the client's outbox, so the checkpoint holds nothing for it, and its restore releases
+    /// nothing of it again.
+    fn outbound(&self, sections: &mut [EndpointSection]) -> Vec<Unreleased> {
+        let Some(outboxes) = &self.outboxes else {
+            return Vec::new();
+        };
+        let mut outbound = Vec::new();
+        for section in sections {
+            let (held, kept): (Vec<Unreleased>, Vec<Unreleased>) =
+                core::mem::take(&mut section.router.unreleased)
+                    .into_iter()
+                    .partition(|unreleased| outboxes.keeps(&unreleased.peer));
+            section.router.unreleased = kept;
+            outbound.extend(held);
+        }
+        outbound
+    }
+
+    /// Give back the places `outbound` took in their clients' outbox windows: envelopes no write
+    /// will append, their session dropped before one held them.
+    fn unreserve(&self, outbound: &[Unreleased]) {
+        if let Some(outboxes) = &self.outboxes {
+            for unreleased in outbound {
+                outboxes.unreserve(&unreleased.peer, 1);
+            }
+        }
     }
 
     /// The machine of the session `key` restored from `checkpoint` at `now`,
@@ -1282,10 +1644,32 @@ where
         // A session is kept only as its checkpoint, so nothing it sends may
         // leave before a durable checkpoint holds it.
         router.enable_checkpoints();
+        // docs/adr/0109, D10: what the session sends a durable client takes a
+        // place in the client's outbox window, which every session shares.
+        if let Some(outboxes) = &self.outboxes {
+            let clients: Vec<String> = outboxes
+                .bindings()
+                .map(|(client, _)| client.to_string())
+                .collect();
+            for client in clients {
+                if let Some(window) = outboxes.window(&client) {
+                    router
+                        .bound_window(&client, window)
+                        .map_err(|error| Refusal {
+                            status: RpcStatus::InternalError,
+                            reason: alloc::format!(
+                                "the session's router cannot keep {client}'s outbox window: \
+                                 {error:?}"
+                            ),
+                        })?;
+                }
+            }
+        }
         let transport = SessionTransport {
             key: key.to_string(),
             inner: Arc::clone(&self.transport),
             replies: Arc::clone(&self.replies),
+            outboxes: self.outboxes.clone(),
         };
         let mut endpoint = Endpoint::new(router, transport, lock(&self.environment).clone());
         for peer in lock(&self.ready).iter() {
@@ -1309,6 +1693,7 @@ where
             };
             let now = self.wall_now();
             let event = matches!(input, Input::Envelope { .. });
+            let told = session.notes_through;
             let calls = {
                 let mut endpoint = lock(&session.endpoint);
                 match input {
@@ -1324,6 +1709,9 @@ where
                     Input::NotReady(peer) => endpoint.peer_not_ready(&peer),
                     Input::Tick => endpoint.tick(),
                     Input::Wake => {}
+                    Input::Notes => {
+                        session.notes_through = self.raise_notes(key, &mut endpoint, told);
+                    }
                 }
                 endpoint.take_calls()
             };
@@ -1332,8 +1720,9 @@ where
             }
             // An envelope taken in changed what the endpoint holds (its
             // duplicate window, its reply cache), which the checkpoint holds
-            // too, even when it ran no macrostep.
-            session.dirty |= event;
+            // too, even when it ran no macrostep; so did a note told, which
+            // the next write takes.
+            session.dirty |= event || session.notes_through > told;
             // A provisional session is written once its first run ends, and
             // only if its machine is still running then (docs/adr/0109, D1).
             if !session.provisional {
@@ -1399,8 +1788,9 @@ where
     /// Take the checkpoint of `session` that `take` asks for, in the three
     /// steps of SCE_MESH.md section 10.11: the machine's saved state and the
     /// endpoint sealed with the next number ([`Endpoint::checkpoint`]), the
-    /// write through a [`StoreSink`] over the version the session was read at
-    /// and under the key's lease, and, once the write answered, the endpoint
+    /// write ([`SessionStore::write`]) over the version the session was read
+    /// at and under the key's lease, appending what the checkpoint holds for a
+    /// durable client to its outbox, and, once the write answered, the endpoint
     /// told the checkpoint is durable ([`Endpoint::durable`]), which releases
     /// what it holds. Answers whether a durable checkpoint holds the session
     /// as `take` asked. An error is the reason this process no longer holds
@@ -1433,7 +1823,7 @@ where
         };
         let sequence = session.sequence.saturating_add(1);
         let sealed = lock(&session.endpoint).checkpoint(sequence, state, take == Take::Clean);
-        let taken = match sealed {
+        let mut taken = match sealed {
             Ok(taken) => taken,
             Err(error) => return not_saved(error.to_string()),
         };
@@ -1441,10 +1831,51 @@ where
         // or not the write lands, and a later checkpoint holds what this one
         // holds.
         session.sequence = sequence;
-        let mut sink = StoreSink::new(&*self.store, key, session.version, fence);
-        match sink.write(&taken) {
-            Ok(()) => {
-                session.version = sink.version();
+        // docs/adr/0109, D10: what the checkpoint holds for a durable client is
+        // appended to the client's outbox by the write that keeps it, the
+        // transactional outbox: both are durable or neither is.
+        let outbound = self.outbound(&mut taken.endpoints);
+        let written = {
+            let incarnation = if outbound.is_empty() {
+                String::new()
+            } else {
+                self.incarnation()
+            };
+            let appends: Vec<Append<'_>> = outbound
+                .iter()
+                .map(|unreleased| Append {
+                    client: &unreleased.peer,
+                    incarnation: &incarnation,
+                    sender: Some(key),
+                    envelope: &unreleased.envelope,
+                })
+                .collect();
+            let document = taken.to_json();
+            self.store.write(
+                key,
+                &Write {
+                    change: Change::Keep {
+                        state: document.as_bytes(),
+                        earliest_due: taken.earliest_due(),
+                    },
+                    expected_version: session.version,
+                    fence,
+                    outbox: &appends,
+                    notes_through: session.notes_through,
+                    now_ms: now,
+                },
+            )
+        };
+        match written {
+            Ok(written) => {
+                session.version = written.version;
+                if let Some(outboxes) = &self.outboxes {
+                    let envelopes: Vec<Vec<u8>> = outbound
+                        .into_iter()
+                        .map(|unreleased| unreleased.envelope)
+                        .collect();
+                    outboxes.committed(&written.appended, &envelopes, now, true);
+                }
                 session.earliest_due = taken.state.earliest_due();
                 session.dirty = false;
                 // Every envelope taken in so far was taken in before the seal:
@@ -1487,39 +1918,89 @@ where
         if let Some(fence) = fence_of(slot) {
             let sequence = finished.sequence.saturating_add(1);
             let mut endpoint = lock(&finished.endpoint);
-            let sealed = match endpoint.seal(sequence) {
-                Ok(_) => true,
+            let mut sealed = match endpoint.seal(sequence) {
+                Ok(section) => Some(section),
                 Err(error) => {
                     self.error(PoolError::NotSaved {
                         key: key.to_string(),
                         reason: error.to_string(),
                     });
-                    false
+                    None
                 }
             };
+            // docs/adr/0109, D10: what its last inputs sent a durable client is
+            // appended to the client's outbox by the write that removes it.
+            let outbound = match sealed.as_mut() {
+                Some(section) => self.outbound(core::slice::from_mut(section)),
+                None => Vec::new(),
+            };
+            let now = self.wall_now();
             // A session the store never held (a provisional one whose first
             // run finished, docs/adr/0109, D1) has nothing to remove, and what
-            // it sent leaves at once: nothing durable changed.
-            let removed = if finished.version == 0 {
-                Ok(())
+            // it sent leaves at once: nothing durable changed, unless a
+            // durable client's outbox is appended to.
+            let removed = if finished.version == 0 && outbound.is_empty() {
+                Ok(None)
             } else {
-                self.store.delete(key, finished.version, fence)
+                let incarnation = if outbound.is_empty() {
+                    String::new()
+                } else {
+                    self.incarnation()
+                };
+                let appends: Vec<Append<'_>> = outbound
+                    .iter()
+                    .map(|unreleased| Append {
+                        client: &unreleased.peer,
+                        incarnation: &incarnation,
+                        sender: Some(key),
+                        envelope: &unreleased.envelope,
+                    })
+                    .collect();
+                self.store
+                    .write(
+                        key,
+                        &Write {
+                            outbox: &appends,
+                            now_ms: now,
+                            ..Write::delete(finished.version, fence)
+                        },
+                    )
+                    .map(Some)
             };
             match removed {
-                Ok(()) if sealed => {
+                Ok(written) if sealed.is_some() => {
+                    if let (Some(written), Some(outboxes)) = (written, &self.outboxes) {
+                        let envelopes: Vec<Vec<u8>> = outbound
+                            .iter()
+                            .map(|unreleased| unreleased.envelope.clone())
+                            .collect();
+                        outboxes.committed(&written.appended, &envelopes, now, true);
+                    }
                     endpoint.durable(sequence);
                     self.report(key, &mut endpoint);
                     ended = true;
                 }
-                Ok(()) => {}
-                Err(WriteError::Conflict(conflict)) => self.error(PoolError::LeaseLost {
-                    key: key.to_string(),
-                    reason: alloc::format!("its end was refused: {conflict}"),
-                }),
-                Err(WriteError::Failed(failure)) => self.error(PoolError::Store {
-                    key: Some(key.to_string()),
-                    failure,
-                }),
+                Ok(_) => {}
+                Err(WriteError::Conflict(conflict)) => {
+                    self.unreserve(&outbound);
+                    self.error(PoolError::LeaseLost {
+                        key: key.to_string(),
+                        reason: alloc::format!("its end was refused: {conflict}"),
+                    })
+                }
+                Err(WriteError::Failed(failure)) => {
+                    self.unreserve(&outbound);
+                    self.error(PoolError::Store {
+                        key: Some(key.to_string()),
+                        failure,
+                    })
+                }
+            }
+        } else if let Some(outboxes) = &self.outboxes {
+            // No lease, no write: what it held for a durable client is let go.
+            let endpoint = lock(&finished.endpoint);
+            for (client, _) in outboxes.bindings() {
+                outboxes.unreserve(client, endpoint.held_for(client));
             }
         }
         let fate = if ended { Fate::Settled } else { Fate::Lost };
@@ -1541,6 +2022,14 @@ where
     ) {
         if let Some(mut dropped) = live.take() {
             settle_all(&mut dropped.unsaved, Fate::Lost);
+            // docs/adr/0109, D10: what it produced for a durable client and no
+            // write appended is lost with it, and gives its window places back.
+            if let Some(outboxes) = &self.outboxes {
+                let endpoint = lock(&dropped.endpoint);
+                for (client, _) in outboxes.bindings() {
+                    outboxes.unreserve(client, endpoint.held_for(client));
+                }
+            }
         }
         *lock(&slot.lease) = LeaseState::Unheld;
         self.forget_replies(&slot.key);
@@ -1620,11 +2109,7 @@ where
         let id = lock(&self.environment).envelope_id();
         let sent = refusal_envelope(self.machine.name, request, status, reason, id)
             .map_err(|error| alloc::format!("{error:?}"))
-            .and_then(|bytes| {
-                lock(&self.transport)
-                    .transmit(peer, &bytes)
-                    .map_err(|failure| alloc::format!("{failure:?}"))
-            });
+            .and_then(|bytes| self.answer(peer, bytes));
         match sent {
             Ok(()) => Fate::Settled,
             Err(reason) => {
@@ -1635,6 +2120,37 @@ where
                 Fate::Lost
             }
         }
+    }
+
+    /// Send `bytes`, an answer the pool makes in a session's place, to `peer`: appended to its
+    /// outbox when its binding keeps a durable one (docs/adr/0109, D10), so that what settles the
+    /// request it answers is durable too, and handed to the transport otherwise.
+    fn answer(&self, peer: &str, bytes: Vec<u8>) -> Result<(), String> {
+        let Some(outboxes) = self
+            .outboxes
+            .as_ref()
+            .filter(|outboxes| outboxes.keeps(peer))
+        else {
+            return lock(&self.transport)
+                .transmit(peer, &bytes)
+                .map_err(|failure| alloc::format!("{failure:?}"));
+        };
+        let now = self.wall_now();
+        let incarnation = self.incarnation();
+        let appended = self
+            .store
+            .append(
+                &[Append {
+                    client: peer,
+                    incarnation: &incarnation,
+                    sender: None,
+                    envelope: &bytes,
+                }],
+                now,
+            )
+            .map_err(|failure| failure.to_string())?;
+        outboxes.committed(&appended, &[bytes], now, false);
+        Ok(())
     }
 
     /// Forget every request the session `key` sent.
@@ -3499,6 +4015,282 @@ mod tests {
             "a clean checkpoint's restore raises no restored row: {:?}",
             lock(&probe.unhandled)
         );
+    }
+
+    /// [`ROOMS`] whose client reaches it over an `https` accepting binding under `receipt:
+    /// durable` (docs/adr/0109, D10): its outbox holds `mailbox` envelopes at most, each kept
+    /// `retain_ms` unless the client acknowledges it.
+    fn rooms_durable(mailbox: u32, retain_ms: u64) -> Machine {
+        let peers: &'static [Peer] = Box::leak(Box::new([
+            Peer {
+                name: "client",
+                config: PeerConfig {
+                    transport: "https",
+                    ..CLIENT
+                },
+                link: PeerLink::HttpsAccept {
+                    listen: "127.0.0.1:9443",
+                    authenticator: crate::peers::HttpsAuthenticator::Bearer,
+                    max_hold_ms: 1_000,
+                    max_body_bytes: 65_536,
+                    absence_ms: 60_000,
+                    mailbox,
+                    max_clients: 16,
+                    max_response_bytes: 65_536,
+                    rate: crate::peers::EdgeRates::NONE,
+                    trusted_proxies: &[],
+                    sign: None,
+                    max_skew_ms: 300_000,
+                    receipt: crate::peers::Receipt::Durable {
+                        window: 256,
+                        retry_ms: 1_000,
+                    },
+                    retain_ms,
+                },
+            },
+            ROOMS.peers[1],
+        ]));
+        Machine { peers, ..ROOMS }
+    }
+
+    /// The envelopes the store's outbox of the client holds, as `(number, event)`.
+    fn outboxed(store: &MemoryStore) -> Vec<(u64, String)> {
+        store
+            .outbox("client")
+            .expect("the outbox read")
+            .map(|outbox| {
+                outbox
+                    .entries
+                    .iter()
+                    .map(|entry| {
+                        let envelope = Envelope::decode(&mut SceCursor::new(&entry.envelope))
+                            .expect("an envelope");
+                        (entry.number, envelope.event_type.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// docs/adr/0109, D10: what a session sends a durable client is appended to the client's
+    /// outbox by the write that keeps the session's checkpoint, and by no other path: nothing of
+    /// it reaches the transport, the checkpoint holds nothing for it, and the outboxes the server
+    /// answers from hold it under the store's number. Red if `Pool::checkpoint` writes without
+    /// the appends `Pool::outbound` takes out of the checkpoint.
+    #[test]
+    fn a_reply_to_a_durable_client_is_appended_by_the_write_of_its_checkpoint() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire) = pool_of(
+            rooms_durable(8, 60_000),
+            "p1",
+            Arc::new(store.clone()),
+            &clock,
+            &probe,
+        );
+        deliver(&pool, join("r1", 1));
+        assert!(
+            wire.take().is_empty(),
+            "nothing for the durable client went through the transport"
+        );
+        assert_eq!(
+            outboxed(&store),
+            vec![(1, "service.response.join".to_string())]
+        );
+        let outbox = store
+            .outbox("client")
+            .expect("the outbox read")
+            .expect("the outbox the write opened");
+        assert_eq!(outbox.entries[0].sender.as_deref(), Some("r1"));
+        assert_eq!(outbox.entries[0].at_ms, T0);
+        let loaded = checkpoint::load(&store, "r1")
+            .expect("read")
+            .expect("saved");
+        assert!(
+            loaded
+                .checkpoint
+                .endpoints
+                .iter()
+                .all(|section| section.router.unreleased.is_empty()),
+            "the checkpoint holds nothing for the client: its outbox does"
+        );
+        let outboxes = pool.outboxes().expect("the pool keeps the client's outbox");
+        let incarnation = outboxes
+            .open("client", "ffffffffffffffffffffffffffffffff", T0)
+            .expect("the client's exchange opens its outbox");
+        assert_eq!(incarnation, outbox.incarnation, "the store's incarnation");
+        let carried = outboxes.response("client", 65_536).expect("an outbox held");
+        assert_eq!(carried.first, Some(1));
+        assert_eq!(carried.body, outbox.entries[0].envelope);
+    }
+
+    /// docs/adr/0109, D10: `mailbox` is the durable window of the client, shared by every
+    /// session: a reply admitted while the client's outbox holds `mailbox` envelopes is refused
+    /// at admit as row 9 and told to the session that sent it, nothing is appended for it, and
+    /// an acknowledgement makes room again. Red if `write_envelope` takes no place in the
+    /// window, or `Outboxes::reserve` counts what the store holds or what is reserved apart.
+    #[test]
+    fn a_send_past_a_durable_clients_window_is_refused_at_admit_until_an_ack_makes_room() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, _wire) = pool_of(
+            rooms_durable(2, 60_000),
+            "p1",
+            Arc::new(store.clone()),
+            &clock,
+            &probe,
+        );
+        deliver(&pool, join("r1", 1));
+        deliver(&pool, join("r2", 2));
+        assert_eq!(outboxed(&store).len(), 2, "two sessions, one window");
+        assert!(lock(&probe.unhandled).is_empty());
+        deliver(&pool, join("r3", 3));
+        assert_eq!(
+            outboxed(&store).len(),
+            2,
+            "a reply past the window is not appended"
+        );
+        assert_eq!(
+            lock(&probe.unhandled).as_slice(),
+            ["error.communication".to_string()],
+            "the session that sent it is told, as row 9"
+        );
+        let outboxes = pool.outboxes().expect("the pool keeps the client's outbox");
+        let incarnation = outboxes
+            .open("client", "ffffffffffffffffffffffffffffffff", T0)
+            .expect("the outbox opened");
+        assert_eq!(
+            outboxes
+                .acknowledge("client", &incarnation, 1, T0)
+                .expect("an acknowledgement"),
+            1
+        );
+        deliver(&pool, join("r3", 4));
+        assert_eq!(
+            outboxed(&store)
+                .iter()
+                .map(|(number, _)| *number)
+                .collect::<Vec<_>>(),
+            vec![2, 3],
+            "the place the acknowledgement freed was taken, numbered on"
+        );
+    }
+
+    /// docs/adr/0109, D10: an outbox entry kept longer than `retain_ms` is deleted by the expiry
+    /// and told to the host; the session that sent it is told as row 15 at its next run, whether
+    /// it was in memory or out of it (the store made it due at once), and the write that keeps
+    /// what its machine made of it takes the note. Red if `Pool::build` or `Input::Notes` raises
+    /// no row, or the write of `Pool::checkpoint` does not take the notes it told.
+    #[test]
+    fn an_entry_past_retain_ms_expires_and_its_sender_is_told_at_its_next_run() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, _wire) = pool_of(
+            rooms_durable(8, 1_500),
+            "p1",
+            Arc::new(store.clone()),
+            &clock,
+            &probe,
+        );
+        deliver(&pool, join("r1", 1));
+        deliver(&pool, join("r2", 2));
+        clock.advance(1_001);
+        deliver(&pool, join("r1", 3));
+        assert_eq!(pool.evict_idle(), vec!["r2".to_string()]);
+        clock.advance(600);
+        assert_eq!(
+            pool.expire(),
+            vec!["r1".to_string()],
+            "the sender in memory is run"
+        );
+        let expired: Vec<(u64, Option<String>)> = pool
+            .take_errors()
+            .into_iter()
+            .filter_map(|error| match error {
+                PoolError::OutboxExpired {
+                    client,
+                    number,
+                    sender,
+                    ..
+                } if client == "client" => Some((number, sender)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            expired,
+            vec![(1, Some("r1".to_string())), (2, Some("r2".to_string()))]
+        );
+        assert_eq!(
+            outboxed(&store)
+                .iter()
+                .map(|(number, _)| *number)
+                .collect::<Vec<_>>(),
+            vec![3],
+            "the young entry stays"
+        );
+        pool.run("r1");
+        assert!(
+            pool.due().contains(&"r2".to_string()),
+            "the sender out of memory is due at once"
+        );
+        pool.run("r2");
+        assert_eq!(
+            lock(&probe.unhandled).as_slice(),
+            [
+                "error.communication".to_string(),
+                "error.communication".to_string()
+            ],
+            "each sender is told once"
+        );
+        for key in ["r1", "r2"] {
+            assert!(
+                store.notes(key).expect("the notes").is_empty(),
+                "the write of {key} took its note"
+            );
+        }
+    }
+
+    /// docs/adr/0109, D10: an orderly stop admits nothing more, saves every session in memory as
+    /// a clean checkpoint and releases its lease; a pool started on the store after it restores
+    /// each without `restored`. Red if `Pool::stop` takes its checkpoints as `Take::IfChanged`,
+    /// or leaves a session in memory.
+    #[test]
+    fn a_stop_saves_every_session_clean_and_a_start_after_it_raises_no_restored() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (first, wire) = pool("p1", &store, &clock, &probe);
+        deliver(&first, join("r1", 1));
+        deliver(&first, join("r2", 2));
+        wire.take();
+        let report = first.stop(Instant::now() + Duration::from_secs(5));
+        let mut saved = report.saved.clone();
+        saved.sort();
+        assert_eq!(saved, vec!["r1".to_string(), "r2".to_string()]);
+        assert!(report.not_saved.is_empty(), "{:?}", report.not_saved);
+        for key in ["r1", "r2"] {
+            assert!(!first.is_live(key), "{key} is dropped");
+            let loaded = checkpoint::load(&store, key).expect("read").expect("saved");
+            assert!(loaded.checkpoint.clean, "{key}'s last checkpoint is clean");
+        }
+        assert_eq!(
+            first.receive("client", join("r3", 3)),
+            None,
+            "a stopped pool admits nothing"
+        );
+        assert_eq!(
+            wire.take()
+                .iter()
+                .map(|sent| sent.status)
+                .collect::<Vec<_>>(),
+            vec![Some(RpcStatus::Unavailable)],
+            "a request it does not admit is answered as unavailable"
+        );
+
+        let (again, _) = pool("p1", &store, &clock, &probe);
+        deliver(&again, join("r1", 4));
+        deliver(&again, join("r2", 5));
+        assert!(
+            lock(&probe.unhandled).is_empty(),
+            "a restore from a clean checkpoint raises no restored row: {:?}",
+            lock(&probe.unhandled)
+        );
+        assert_eq!(probe.restored.load(Ordering::SeqCst), 2);
     }
 
     #[test]

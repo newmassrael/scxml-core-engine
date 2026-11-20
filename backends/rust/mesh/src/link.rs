@@ -46,6 +46,11 @@ pub enum LinkEvent {
     /// of it was taken in; the words say why. Told once per edge, from the first such answer after
     /// one that verified, and raised as section 16.7 row 19.
     Unauthenticated(String, String),
+    /// An exchange `peer` answered `200` carried these envelopes, which `peer` answers only once
+    /// a durable checkpoint of its own holds them: the HTTPS binding's acknowledgement under
+    /// `receipt: durable` (docs/adr/0109, D10; SCE_MESH.md section 10.11). Told only on such a
+    /// binding; the core holds them no more.
+    Carried(String, Vec<Vec<u8>>),
 }
 
 /// Hand a link's event to the endpoint it concerns.
@@ -66,6 +71,7 @@ pub fn deliver<T: Transport, E: Environment>(endpoint: &mut Endpoint<T, E>, even
         LinkEvent::Interrupted(peer, _) => endpoint.peer_interrupted(&peer),
         LinkEvent::Restarted(peer) => endpoint.peer_restarted(&peer),
         LinkEvent::Unauthenticated(peer, _) => endpoint.peer_unauthenticated(&peer),
+        LinkEvent::Carried(peer, envelopes) => endpoint.peer_carried(&peer, &envelopes),
     }
 }
 

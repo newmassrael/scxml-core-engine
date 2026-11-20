@@ -55,6 +55,7 @@ pub mod inbound;
 pub mod inbox;
 pub mod link;
 pub mod outbound;
+pub mod outbox;
 pub mod peers;
 pub mod pool;
 pub mod reconnect;

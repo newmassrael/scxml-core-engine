@@ -463,7 +463,8 @@ impl ClientSide {
                     LinkEvent::Received(..)
                     | LinkEvent::Unsent(..)
                     | LinkEvent::Restarted(_)
-                    | LinkEvent::Unauthenticated(..) => {}
+                    | LinkEvent::Unauthenticated(..)
+                    | LinkEvent::Carried(..) => {}
                 }
                 deliver(&mut self.endpoint, event);
             }

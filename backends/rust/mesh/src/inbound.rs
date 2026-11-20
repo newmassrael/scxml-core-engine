@@ -166,6 +166,9 @@ pub enum ConfigError {
     EmptyDedupWindow,
     /// deploy.yaml's `gap_timeout_ms` is negative.
     NegativeGapTimeout,
+    /// The `receipt:` the binding to `peer` declares cannot be kept: a `window` or `retry_ms` of
+    /// 0, which the build refuses (docs/adr/0109, D10), in a table written by hand.
+    BadReceipt { peer: &'static str },
 }
 
 /// One sender's receive state.
