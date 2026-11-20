@@ -11,6 +11,7 @@ use crate::audit::{
     rules as audit_rules, AuditAppend, AuditCheckpoint, AuditHead, AuditRow, AuditStore,
     NoCheckpointAt,
 };
+use crate::batch::{Batched, Committed, Decided};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
@@ -139,6 +140,69 @@ impl Records {
         self.entries.range(from..=to).map(|(_, entry)| entry)
     }
 
+    /// What [`SessionStore::write`] does, on these records: nothing unless the rules admit it.
+    fn write(&mut self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+        rules::admit_write(
+            self.leases.get(key),
+            write.fence,
+            self.version_of(key),
+            write.expected_version,
+        )?;
+        let version = match write.change {
+            Change::Keep {
+                state,
+                earliest_due,
+            } => {
+                let version = self.next_number();
+                self.sessions.insert(
+                    key.to_string(),
+                    Stored {
+                        state: state.to_vec(),
+                        version,
+                        earliest_due: earliest_due.map(moment),
+                    },
+                );
+                self.take_notes(key, Some(write.notes_through));
+                version
+            }
+            Change::Remove => {
+                self.sessions.remove(key);
+                self.take_notes(key, None);
+                self.first_results
+                    .retain(|(session, _, _), _| !write.sessions.contains(&session.as_str()));
+                self.audit_identities
+                    .retain(|(session, _, _), _| !write.sessions.contains(&session.as_str()));
+                0
+            }
+        };
+        let appended = self.append(write.outbox, write.now_ms);
+        Ok(Written { version, appended })
+    }
+
+    /// What [`SessionStore::acknowledge`] does, on these records: how many entries it deleted.
+    fn acknowledge(&mut self, client: &str, incarnation: &str, through: u64, now_ms: u64) -> u64 {
+        if !rules::acknowledges(
+            self.heads.get(client).map(|head| head.incarnation.as_str()),
+            incarnation,
+        ) {
+            return 0;
+        }
+        let covered: Vec<(String, u64)> = self
+            .entries_of(client)
+            .take_while(|entry| entry.number <= through)
+            .map(|entry| (client.to_string(), entry.number))
+            .collect();
+        for key in &covered {
+            self.entries.remove(key);
+        }
+        if !covered.is_empty() {
+            if let Some(head) = self.heads.get_mut(client) {
+                head.touched_ms = moment(now_ms);
+            }
+        }
+        covered.len() as u64
+    }
+
     /// Take the notes of `key`: those numbered at most `through`, or every one when `through` is
     /// `None`.
     fn take_notes(&mut self, key: &str, through: Option<u64>) {
@@ -197,44 +261,30 @@ impl SessionStore for MemoryStore {
     }
 
     fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+        self.records().write(key, write)
+    }
+
+    /// Every item under the one lock that is the batch's transaction, each decided by the same
+    /// steps as a call of its own, which change nothing before the rules admitted the item.
+    fn write_many(&self, batch: &[Batched<'_>]) -> Result<Vec<Decided>, Failure> {
         let mut records = self.records();
-        rules::admit_write(
-            records.leases.get(key),
-            write.fence,
-            records.version_of(key),
-            write.expected_version,
-        )?;
-        let version = match write.change {
-            Change::Keep {
-                state,
-                earliest_due,
-            } => {
-                let version = records.next_number();
-                records.sessions.insert(
-                    key.to_string(),
-                    Stored {
-                        state: state.to_vec(),
-                        version,
-                        earliest_due: earliest_due.map(moment),
-                    },
-                );
-                records.take_notes(key, Some(write.notes_through));
-                version
-            }
-            Change::Remove => {
-                records.sessions.remove(key);
-                records.take_notes(key, None);
-                records
-                    .first_results
-                    .retain(|(session, _, _), _| !write.sessions.contains(&session.as_str()));
-                records
-                    .audit_identities
-                    .retain(|(session, _, _), _| !write.sessions.contains(&session.as_str()));
-                0
-            }
-        };
-        let appended = records.append(write.outbox, write.now_ms);
-        Ok(Written { version, appended })
+        Ok(batch
+            .iter()
+            .map(|item| match *item {
+                Batched::Write { key, write } => records.write(key, &write).map(Committed::Written),
+                Batched::Acknowledge {
+                    client,
+                    incarnation,
+                    through,
+                    now_ms,
+                } => Ok(Committed::Acknowledged(records.acknowledge(
+                    client,
+                    incarnation,
+                    through,
+                    now_ms,
+                ))),
+            })
+            .collect())
     }
 
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -337,30 +387,9 @@ impl SessionStore for MemoryStore {
         through: u64,
         now_ms: u64,
     ) -> Result<u64, Failure> {
-        let mut records = self.records();
-        if !rules::acknowledges(
-            records
-                .heads
-                .get(client)
-                .map(|head| head.incarnation.as_str()),
-            incarnation,
-        ) {
-            return Ok(0);
-        }
-        let covered: Vec<(String, u64)> = records
-            .entries_of(client)
-            .take_while(|entry| entry.number <= through)
-            .map(|entry| (client.to_string(), entry.number))
-            .collect();
-        for key in &covered {
-            records.entries.remove(key);
-        }
-        if !covered.is_empty() {
-            if let Some(head) = records.heads.get_mut(client) {
-                head.touched_ms = moment(now_ms);
-            }
-        }
-        Ok(covered.len() as u64)
+        Ok(self
+            .records()
+            .acknowledge(client, incarnation, through, now_ms))
     }
 
     fn expire(&self, client: &str, before_ms: u64, limit: usize) -> Result<Expiry, Failure> {

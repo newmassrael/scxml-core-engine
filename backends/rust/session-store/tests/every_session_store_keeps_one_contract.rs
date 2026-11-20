@@ -90,6 +90,21 @@ fn in_memory_an_old_entry_expires_and_its_sender_is_noted() {
     outbox_conformance::an_old_entry_expires_and_its_sender_is_noted(&in_memory());
 }
 
+#[test]
+fn in_memory_a_batch_is_decided_item_by_item() {
+    conformance::a_batch_is_decided_item_by_item(&in_memory());
+}
+
+#[test]
+fn in_memory_a_batch_sees_its_earlier_items_and_is_seen_whole_on_return() {
+    conformance::a_batch_sees_its_earlier_items_and_is_seen_whole_on_return(&in_memory());
+}
+
+#[test]
+fn in_memory_a_batch_appends_and_acknowledges_item_by_item() {
+    outbox_conformance::a_batch_appends_and_acknowledges_item_by_item(&in_memory());
+}
+
 #[cfg(feature = "sqlite")]
 mod common;
 
@@ -186,6 +201,25 @@ mod on_sqlite {
     fn an_old_entry_expires_and_its_sender_is_noted() {
         outbox_conformance::an_old_entry_expires_and_its_sender_is_noted(&on_sqlite(
             "outbox-expiry",
+        ));
+    }
+
+    #[test]
+    fn a_batch_is_decided_item_by_item() {
+        conformance::a_batch_is_decided_item_by_item(&on_sqlite("batch-items"));
+    }
+
+    #[test]
+    fn a_batch_sees_its_earlier_items_and_is_seen_whole_on_return() {
+        conformance::a_batch_sees_its_earlier_items_and_is_seen_whole_on_return(&on_sqlite(
+            "batch-whole",
+        ));
+    }
+
+    #[test]
+    fn a_batch_appends_and_acknowledges_item_by_item() {
+        outbox_conformance::a_batch_appends_and_acknowledges_item_by_item(&on_sqlite(
+            "batch-outbox",
         ));
     }
 }

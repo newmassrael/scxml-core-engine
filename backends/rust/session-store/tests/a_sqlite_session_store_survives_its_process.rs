@@ -11,8 +11,9 @@ use std::time::Duration;
 
 use rusqlite::{Connection, TransactionBehavior};
 use sce_rust_session_store::{
-    AcquireError, Append, CredentialStore, Due, Held, KeyRow, KeyState, KeyStore, KeyUse, PinStore,
-    SessionStore, SqliteStore, Stored, TokenRow, TokenStore, Write, WriteError, LATEST_MOMENT,
+    AcquireError, Append, Batched, Committed, CredentialStore, Decided, Due, Held, KeyRow,
+    KeyState, KeyStore, KeyUse, PinStore, SessionStore, SqliteStore, Stored, TokenRow, TokenStore,
+    Write, WriteError, LATEST_MOMENT,
 };
 
 use common::Scratch;
@@ -568,6 +569,104 @@ fn a_write_that_fails_part_of_the_way_through_leaves_nothing_of_itself() {
         version + 1,
         "the number the failed put took was not given back with the rest of it"
     );
+}
+
+/// ADR 0109, D15: an item of a batch the database refuses part of the way through (after it took
+/// its number from the counter) is answered failed and leaves nothing of itself, its number
+/// included, while the items before and after it are kept; and what the batch kept is there when
+/// the file is opened again, so the batch was durable when it answered. Red if the store rolls an
+/// item back with the whole transaction (the others lost) or not at all (its number kept).
+#[test]
+fn a_batch_item_that_fails_partway_leaves_nothing_and_the_rest_is_kept() {
+    let scratch = Scratch::new("batch-partway");
+    let (before, after, kept_before, kept_after) = {
+        let store = SqliteStore::open(scratch.database()).expect("making the store");
+        let before = store.acquire("before", "a", 1_000, 0).expect("a lease");
+        let during = store.acquire("during", "a", 1_000, 0).expect("a lease");
+        let after = store.acquire("after", "a", 1_000, 0).expect("a lease");
+
+        // Another program makes the middle item's row fail after the item checked its lease and
+        // its version and took its number from the counter.
+        let raw = Connection::open(scratch.database()).expect("a connection of another program");
+        raw.execute_batch(
+            "CREATE TRIGGER refuse_thirteen AFTER INSERT ON sessions WHEN NEW.earliest_due = 13 \
+             BEGIN SELECT RAISE(ABORT, 'refused by the test'); END;",
+        )
+        .expect("the trigger");
+        let decided = store
+            .write_many(&[
+                Batched::Write {
+                    key: "before",
+                    write: Write::put(b"before", Some(100), 0, before.fence),
+                },
+                Batched::Write {
+                    key: "during",
+                    write: Write::put(b"during", Some(13), 0, during.fence),
+                },
+                Batched::Write {
+                    key: "after",
+                    write: Write::put(b"after", Some(300), 0, after.fence),
+                },
+            ])
+            .expect("a batch the store could make");
+        let version = |decided: &Decided| match decided {
+            Ok(Committed::Written(written)) => written.version,
+            other => panic!("an item that should have been kept gave {other:?}"),
+        };
+        let kept_before = version(&decided[0]);
+        assert!(
+            matches!(decided[1], Err(WriteError::Failed(_))),
+            "an item the database refused gave {:?}",
+            decided[1]
+        );
+        let kept_after = version(&decided[2]);
+        assert_eq!(
+            kept_after,
+            kept_before + 1,
+            "the number the failed item took was not given back with the rest of it"
+        );
+        raw.execute_batch("DROP TRIGGER refuse_thirteen")
+            .expect("dropping the trigger");
+        (before, after, kept_before, kept_after)
+    };
+
+    let store = SqliteStore::open(scratch.database()).expect("opening the store again");
+    assert_eq!(
+        store.get("before").expect("a read"),
+        Some(Stored {
+            state: b"before".to_vec(),
+            version: kept_before,
+            earliest_due: Some(100),
+        })
+    );
+    assert_eq!(store.get("during").expect("a read"), None);
+    assert_eq!(
+        store.get("after").expect("a read"),
+        Some(Stored {
+            state: b"after".to_vec(),
+            version: kept_after,
+            earliest_due: Some(300),
+        })
+    );
+    assert_eq!(
+        store.due_before(LATEST_MOMENT, 10).expect("a listing"),
+        vec![
+            Due {
+                key: "before".to_string(),
+                due: 100
+            },
+            Due {
+                key: "after".to_string(),
+                due: 300
+            },
+        ]
+    );
+    store
+        .put("before", b"again", None, kept_before, before.fence)
+        .expect("a write under the lease taken before the file was opened again");
+    store
+        .put("after", b"again", None, kept_after, after.fence)
+        .expect("a write under the lease taken before the file was opened again");
 }
 
 #[test]
