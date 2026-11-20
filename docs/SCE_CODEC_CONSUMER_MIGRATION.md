@@ -3372,3 +3372,30 @@ builds `Outboxes` itself, writes a peer table by hand, or implements `ServerHost
   one client's events (a lost client's `LinkEvent::Lost` included, which was told for all absent clients in one
   call). A host whose state is shared by every client takes a lock of its own; a host over a keyed pool needs none.
 
+## A server reports what it does through a metrics port, and says whether it is ready (ADR 0109 D16)
+
+Landing: the commits that add this section. No generated tree changes, and no existing constructor changes: a
+consumer that gives no adapter reports nothing and builds as before. A consumer that wants the metrics, or the
+health checks, adds the calls below; one that implements or wraps a part named here reads the notes on it.
+
+- A new crate, `sce-rust-metrics`, of no dependency: the `Metrics` trait (`count`, `adjust`, `observe`), the series
+  as values of `Counter`, `Gauge` and `Histogram` whose labels are variants of closed enums, the registry
+  `FAMILIES` (`REGISTRY` is `sce-metrics-1`), `NoMetrics`, the reference adapter `openmetrics::OpenMetrics`
+  (`render()`, `CONTENT_TYPE`) and `recording::Recording` for tests. `Counter`, `Gauge` and `Histogram` are
+  `#[non_exhaustive]`: an adapter that matches on them has a `_` arm, and one that renders by `family()` and
+  `labels()` needs none.
+- Rust: `HttpsServer::observed`, `Pool::observed`, `Committer::observed` and `HttpsClient::start_observed` take an
+  `Arc<dyn Metrics>` beside the arguments of `new` and `start`, which keep working; `ReferenceHost::set_metrics`
+  gives the reference host one. `HttpsServer::health()` and `Pool::health()` answer
+  `sce_rust_mesh::health::Health` (`accepting`, `stopping`, `store_reachable`, `ready()`, `stopped()`, `and`);
+  each reads the store, so a program on tokio calls it on the blocking pool. `Committer::store_answers` and
+  `Outboxes::store_answers` are the reads they make. `Authenticator::kind` names an authenticator by
+  `AuthenticatorKind`.
+- C++: `host/Metrics.h` holds `SCE::Metrics::Metrics` (`count`, `observe`), `NoMetrics` and `Recording`, and the
+  series the C++ side reports (`Counter::clientExchanges`, `Counter::hostOperationFailures`,
+  `Counter::auditAppends`, `Histogram::hostOperationDuration`). `ReferenceHost::setMetrics`,
+  `AuditFeature::setMetrics` and the new member `ClientHost::metrics` (null by default) give it; each adapter
+  outlives what it is given to. A `ClientHost` built by its constructor, or member by member, keeps working.
+- The registry of names, the reasons a server sheds and the readiness and liveness checks are
+  `docs/SCE_SERVER_DEPLOY.md` section 10.
+

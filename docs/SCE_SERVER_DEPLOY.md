@@ -12,7 +12,8 @@ decisions D1 and D2: what a client may cost the server (section 2); D8: the stor
 SQL read of it shows (sections 3, 8 and 9); D9: message signatures, the `key` authenticator and the deploy keys
 `sign`, `verify` and `max_skew_ms` (sections 0, 1, 2, 5 and 7); D10: `persistence:` and `receipt:`, a durable client's
 outbox in the store, its window and its expiry, and the orderly stop (sections 0 to 4, 8 and 9); D15: the checkpoints
-of many sessions committed together, `sessions.commit_delay_us`, and the host told per client (sections 0 to 3).
+of many sessions committed together, `sessions.commit_delay_us`, and the host told per client (sections 0 to 3); D16:
+the metrics port, the registry of the names it reports and the health checks (sections 0, 1, 9 and 10).
 
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
@@ -38,6 +39,8 @@ says of "the program" is what such a program must do.
 | The key-value feature's values kept durably, each put-if's first result in the transaction of its write, the first results of a session deleted with it | `KvStore` of `sce-rust-session-store` (`SqliteStore` from layout 6, sealed under `Sealed`), given to the host by `ReferenceHost::with_kv_store`; the pool names the sessions a removal ends (`Write::sessions`) | ADR 0109, D13; docs/SCE_HOST_FEATURES.md section 3 |
 | An audit log: entries redacted by their schema, chained, checkpointed under the audit key, durable before the append answers, retained by segments | `AuditStore` of `sce-rust-session-store` (`SqliteStore` from layout 7, sealed under `Sealed`), `sce_rust_crypto::audit` (the chain, the checkpoints, `verify`, `retain`), given to the host by `ReferenceHost::set_audit_store` and `set_audit_streams`; `audit_stop` at the orderly stop, `audit_retain` on the host's schedule | ADR 0109, D14; docs/SCE_HOST_FEATURES.md section 15; docs/SCE_AUDIT_LOG.md |
 | The dialing side of a durable `https` binding in Rust: acknowledges only what a durable checkpoint of its own holds, keeps what it sent until a `200` carried it | `HttpsClient::received`, `HttpsClient::held`, `LinkEvent::Carried`, and the router `Machine::router` builds | ADR 0109, D10; SCE_MESH.md section 10.11 |
+| The metrics port: what the server, the pool, the store's committer, the reference hosts and the `https` clients report, by fixed names and closed label sets, and the reference adapter that renders the OpenMetrics text exposition | `sce-rust-metrics` (`Metrics`, `openmetrics::OpenMetrics`, `recording::Recording`), given by `HttpsServer::observed`, `Pool::observed`, `ReferenceHost::set_metrics` and `HttpsClient::start_observed`; C++ `host/Metrics.h`, given by `ReferenceHost::setMetrics`, `AuditFeature::setMetrics` and `ClientHost::metrics` | ADR 0109, D16; section 10 |
+| Health: whether a part takes work in, is stopping, and reaches its store | `HttpsServer::health`, `Pool::health` (`sce_rust_mesh::health::Health`) | ADR 0109, D16; section 10.4 |
 
 Not built, and a server must not count on them:
 
@@ -69,6 +72,7 @@ Not built, and a server must not count on them:
 | The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, sleeping until `Pool::next_wake_ms` between them, and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation |
 | The checkpoint each exchange waits for: `ServerHost::deliver` answers the endpoint's `sealed_through()`, and `HttpsServer::durable` is told each checkpoint reported durable. The server calls `deliver` at once for different clients and one at a time for each: a host over a keyed pool runs the sessions it is handed on the calling thread, and one over a single endpoint takes a lock of its own | the server | SCE_MESH.md section 22.8 |
 | The standard host features its machine asks for (section 9 of `docs/SCE_HOST_FEATURES.md` names what their reference hosts keep in memory) | the machine | `docs/SCE_HOST_FEATURES.md` |
+| The adapter of the metrics port, and the route its exposition is served on; the readiness and liveness checks | `HttpsServer::observed`, `Pool::observed`, `ReferenceHost::set_metrics` | section 10 |
 
 `PoolConfig::renew_every_ms` must be above zero and below `lease_ttl_ms`; `Pool::new` refuses any other pair
 (`PoolConfigError::Renewal`). Neither has a default: the program chooses both (section 4).
@@ -596,6 +600,10 @@ What the program can read:
 - `Pool::is_live(key)`: whether the session is in memory.
 - `Pool::take_errors()`: what went wrong that only the host can act on, in order (`PoolError` in `pool.rs`).
 - `Pool::next_wake_ms()`: the earliest moment the pool has work, and so the moment the clock loop must call it again.
+- `Pool::health()` and `HttpsServer::health()`: whether each takes work in, is stopping, and reaches its store
+  (section 10.4).
+- The metrics of section 10: the sessions in memory, what was loaded, restored and evicted, what was shed and why,
+  the lease renewals refused, the outboxes' depth and expiries, and how long each commit took.
 - The store, read only. In WAL mode a reader does not stop the server's writes: `SELECT session, earliest_due FROM
   sessions WHERE earliest_due <= <now>`, `SELECT session, owner, fence, expires_ms FROM leases`. Never write the
   tables by hand: a write outside the contract is outside its versions and fences.
@@ -623,3 +631,125 @@ A session is **stuck** in these shapes, each with what shows it:
 | Never saved | the session stays in memory past `idle_ms`; `PoolError::NotSaved` or `PoolError::Store` for it, again and again | its checkpoint cannot be written, so it is not dropped; the store's medium, or a machine that cannot be saved now |
 | Not restorable | `PoolError::NotBuilt` for the key at each request, each answered `RpcStatus::InternalError` | its checkpoint is one this build does not read (`checkpoint` format other than 1, or a saved state the machine refuses), or the program could not build the machine |
 | A client not reached | `transportUnavailable` (row 1) for the client, then `backpressureDrop` (row 9) on its sends | the client has made no exchange for `absence_ms`, and its mailbox filled; the session itself is well. Under `receipt: durable` the sends are refused at admit and nothing accepted is lost; once the client has been gone longer than `retain_ms`, `PoolError::OutboxExpired` and `outboundStaleDrop` (row 15) in the session that sent each, and `SELECT client, count(*) FROM outbox_entries GROUP BY client` shows who is owed what |
+
+## 10. What the server reports: metrics and health
+
+ADR 0109, D16. The parts of a server report what they do through a port, not a library: the `Metrics` trait of
+`sce-rust-metrics` in Rust (`count`, `adjust`, `observe`) and the `SCE::Metrics::Metrics` interface of
+`host/Metrics.h` in C++ (`count`, `observe`). SCE links no metrics library; the program gives each part the adapter it
+chooses, and a part given none reports to `NoMetrics`, which reports nothing, so every constructor that takes no
+adapter works as before.
+
+| Part | Given the adapter by | Reports |
+|---|---|---|
+| The `https` server | `HttpsServer::observed(settings, authenticator, is_bound, host, metrics)` | `sce_server_*` |
+| The keyed pool, its committer and its durable clients' outboxes | `Pool::observed(machine, config, factory, store, transport, environment, metrics)` | `sce_pool_*`, `sce_store_*` |
+| The Rust reference host | `ReferenceHost::set_metrics(metrics)` | `sce_host_*` |
+| The C++ reference host and its audit feature | `ReferenceHost::setMetrics(metrics)`, `AuditFeature::setMetrics(metrics)` | `sce_host_*` |
+| The Rust `https` client | `HttpsClient::start_observed(settings, port, events, metrics)` | `sce_client_exchanges` |
+| The C++ `https` client | `ClientHost::metrics` | `sce_client_exchanges` |
+
+### 10.1 The registry of names
+
+Every series is a family of the table below with a value for each of its labels. The names are fixed, and every
+label value is a variant of a closed enum of the port (`ExchangeStatus`, `ServerShed`, `PoolShed`,
+`AuthenticatorKind`, `RestoredFrom`, `Eviction`, `HostOperation`, `HostFailure` in Rust, and their counterparts in
+C++), so no series carries a client's name, a session's key or any other text a client chose: a caller has no way to
+hand a label a text of its own. The registry is a wire surface, `sce-metrics-1` (SCE_WIRE_CONTRACTS.md, "Server
+metrics"), `pre-release`: a dashboard or an alert written against it reads the registry's name from
+`sce_metrics_info`, and a change that renames or removes a family, a label or a value names a new registry. In Rust
+the registry is `sce_rust_metrics::FAMILIES`; `host/Metrics.h` holds the families the C++ side reports, value for
+value.
+
+| Family (as exposed) | Type | Labels and their values | Moved by |
+|---|---|---|---|
+| `sce_metrics_info` | info | `registry`: `sce-metrics-1` | always 1, rendered by the reference adapter |
+| `sce_server_exchanges_total` | counter | `status`: `200`, `400`, `401`, `404`, `405`, `408`, `413`, `415`, `429`, `503`, `other` | each exchange the server answered, by the status of its answer |
+| `sce_server_held_exchanges` | gauge | none | an exchange held open while its client's mailbox is empty, from its first wait until it is answered or its connection drops |
+| `sce_server_sheds_total` | counter | `reason`: `rate`, `concurrency`, `max_clients`, `max_connections`, `max_connections_per_address`, `durability`, `store`, `stopping`, `random_source` | each `429` and each `503` the server answered, and each connection it closed at accept, by why (below) |
+| `sce_server_authentication_failures_total` | counter | `authenticator`: `bearer`, `install`, `mtls`, `key` | each `401`, by the authenticator that refused it |
+| `sce_pool_live_sessions` | gauge | none | a session brought into memory, and one dropped from it (finished, evicted, lost, stopped) |
+| `sce_pool_loads_total` | counter | none | each session brought into memory, started or restored |
+| `sce_pool_restores_total` | counter | `checkpoint`: `clean`, `not_clean` | each session restored from its last durable checkpoint; a `not_clean` one raises `restored` (SCE_MESH.md section 16.7 row 17) |
+| `sce_pool_evictions_total` | counter | `reason`: `idle`, `max_live` | each session saved clean and dropped: idle past `idle_ms`, or to make room at `sessions.max_live` |
+| `sce_pool_sheds_total` | counter | `reason`: `max_live`, `max_inbox`, `stopping` | each envelope shed before a session took it in (`PoolError::Shed`, or `Unavailable`, or a lost receipt) |
+| `sce_pool_lease_renewals_refused_total` | counter | none | each lease renewal the store refused: a key this process lost (`PoolError::LeaseLost` from `Pool::renew_leases`) |
+| `sce_pool_outbox_depth` | gauge | none | the envelopes the process holds of its durable clients' outboxes: read from the store at first use, appended, acknowledged, expired |
+| `sce_pool_outbox_expiries_total` | counter | none | each outbox entry deleted unacknowledged past `retain_ms` (`Pool::expire`) |
+| `sce_store_commit_duration_seconds` | histogram, seconds | none; buckets 0.0005 to 30 | each commit of the committer, durable on return (section 3.1) |
+| `sce_store_commit_batch_size` | histogram | none; buckets 1 to 1024 | the writes and acknowledgements each commit held |
+| `sce_host_operation_duration_seconds` | histogram, seconds | `type`: each standard host operation's type (`sce-host-kv-get`, ...) | each start of an operation the reference host answered at once; a start it holds is not observed |
+| `sce_host_operation_failures_total` | counter | `type` as above; `code`: `unavailable`, `quota_exceeded`, `network`, `response_too_large`, `invalid_body`, `destination_refused`, `busy`, `context_exceeded`, `answer_too_large`, `declined`, `unknown_key`, `key_retired`, `unknown_stream`, `invalid_argument`, `other` | each start answered with a failure code, or refused (`invalid_argument`); a code no operation names (one injected) is `other` |
+| `sce_host_audit_appends_total` | counter | none | each entry appended to the audit log; a repeat under one identity appends none |
+| `sce_client_exchanges_total` | counter | `status` as the server's, and `none` | each exchange an `https` client made, by the status its server answered; `none` when no response came |
+
+Why a server sheds, each a value of `reason`:
+
+- `rate`: a limiter of the edge refused the exchange (`rate:`, section 2.1), `429`;
+- `concurrency`: `max_exchanges` in flight (`503`), or `max_exchanges_per_client` for the client (`429`);
+- `max_clients`, `max_connections`, `max_connections_per_address`: the bounds of ADR 0109 D1 (`503`, or the connection
+  closed at accept);
+- `durability`: the envelopes the exchange carried were not made durable, or not within `max_hold` (`503`). An envelope
+  the pool shed at one of its own bounds is counted in `sce_pool_sheds_total` where the pool shed it, and its exchange
+  here, since the pool told the binding it is not durable;
+- `store`: a store the exchange reads could not be read or written: the pin store of `install` or `key`, or a durable
+  client's outbox (`503`);
+- `stopping`: the server is stopping (`503`, section 4.1);
+- `random_source`: no incarnation could be drawn for a mailbox (`503`).
+
+So each `429` and each `503` the server answers is one shed, and the sum of `sce_server_sheds_total` less its
+connection reasons is the sum of `sce_server_exchanges_total` over `429` and `503`.
+
+### 10.2 The reference adapter and its route
+
+`sce_rust_metrics::openmetrics::OpenMetrics` keeps every series in memory and renders the OpenMetrics 1.0 text
+exposition (`render()`), which the program serves on a route of its own, with the media type
+`sce_rust_metrics::openmetrics::CONTENT_TYPE` (`application/openmetrics-text; version=1.0.0; charset=utf-8`). A family
+of no label is rendered at zero from the start; a family with labels shows only the series that moved. The same
+adapter is handed to every part, and the gauges of parts that share it add up.
+
+```rust
+use std::sync::Arc;
+use sce_rust_metrics::openmetrics::{OpenMetrics, CONTENT_TYPE};
+
+let metrics = Arc::new(OpenMetrics::new());
+let pool = Arc::new(Pool::observed(machine, config, factory, store, transport, environment, metrics.clone())?);
+let server = HttpsServer::observed(settings, authenticator, is_bound, host, metrics.clone())?;
+reference_host.set_metrics(metrics.clone());
+// On a listener of the program's own (here 127.0.0.1:9443, apart from the binding's `listen`), a `GET /metrics`
+// is answered `200` with `Content-Type: CONTENT_TYPE` and the body `metrics.render()`.
+```
+
+Keep the route off the address the clients reach: it shows how the server is used, which is the operator's to read.
+A program on another metrics stack (a Prometheus client, OpenTelemetry) implements `Metrics` over it instead, with
+the same names, and chooses its own buckets.
+
+### 10.3 What to watch
+
+- **Load shed**: a rising `sce_server_sheds_total` by `reason` says which bound is met; `rate` and
+  `max_connections_per_address` under an attack, `max_clients` or `sce_pool_sheds_total{reason="max_live"}` when the
+  server is too small for its clients, `durability` and `store` when the store is slow or failing.
+- **Durability**: `sce_store_commit_duration_seconds` is the disk's sync; `sce_store_commit_batch_size` shows whether
+  group commit fills (section 3.1).
+- **Restarts that were not clean**: `sce_pool_restores_total{checkpoint="not_clean"}` counts the restores that raised
+  `restored`; after an orderly stop (section 4.1) it stays flat.
+- **A process that lost its keys**: `sce_pool_lease_renewals_refused_total` above zero (section 6).
+- **Clients that do not come back**: `sce_pool_outbox_depth` rising and `sce_pool_outbox_expiries_total`.
+- **Guessing**: `sce_server_authentication_failures_total` with `sce_server_sheds_total{reason="rate"}`.
+
+### 10.4 Readiness and liveness
+
+`HttpsServer::health()` and `Pool::health()` answer a `Health`: `accepting` (it takes work in; false from the moment a
+stop begins), `stopping` (a stop has begun and has not ended: the server still has an exchange in flight, the pool is
+in `Pool::stop`) and `store_reachable` (the store it keeps its state in answered a read just now: the pool's store, and
+for the server the pool's store when it answers durable clients and the pin store of `install` and `key`).
+`Health::and` joins the two.
+
+- **Readiness**: `server.health().and(pool.health()).ready()`, true while both accept and reach their stores. A load
+  balancer that reads it sends nothing to a process that stops or cannot reach its store.
+- **Liveness**: that `health` answered at all. A store that does not answer makes the process unready, not dead:
+  restarting it reaches the same store.
+- **Stopped**: `Health::stopped()` once both have stopped (section 4.1); the program may exit then.
+
+`health` reads the store, and blocks for as long as the store does: a program on tokio calls it on the blocking pool
+(`tokio::task::spawn_blocking`), as it calls `Pool::stop`.
