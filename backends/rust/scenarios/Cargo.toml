@@ -47,6 +47,9 @@ sce-build = { path = "../../../sce-build", features = ["cli"] }
 # The reference host of the standard host features, which the scenarios of
 # `tests/host_features/` replay a machine against (docs/SCE_HOST_FEATURES.md).
 sce-rust-host-features = { path = "../host-features" }
+# The durable key-value store of the reference host, on the system's SQLite,
+# which section 3's scenario is replayed against too (docs/adr/0109, D13).
+sce-rust-session-store = { path = "../session-store" }
 # The engine again, with the transition observer (docs/adr/0089) the exhaustive
 # run of the reference harness measures its transition coverage by
 # (docs/adr/0087, section 9.4). A test-only feature: the library and its wasm32

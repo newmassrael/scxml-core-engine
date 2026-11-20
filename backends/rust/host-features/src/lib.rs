@@ -14,8 +14,10 @@
 //! random bytes from a [`RandomSource`], all the embedding's to supply; the
 //! keys of signing and sealing it configures as [`CoseKeys`], the keys the
 //! host generates and derives are kept by a [`Keyring`] over a key store it
-//! may supply, and the bearer tokens it issues are kept, as their digests, in a
-//! [`CredentialStore`] it may supply: the host's semantics are fixed and what
+//! may supply, the bearer tokens it issues are kept, as their digests, in a
+//! [`CredentialStore`] it may supply, and the values of the key-value feature
+//! are kept in the [`KvStore`] it was built with
+//! ([`ReferenceHost::with_kv_store`]): the host's semantics are fixed and what
 //! it reads is not, which is what lets a scenario judge it.
 //!
 //! A transport that reaches the network for a server checks where each request
@@ -46,7 +48,10 @@ pub use model::{
 pub use sce_rust_crypto::keyring::Keyring;
 pub use sce_rust_crypto::random::{RandomSource, ScriptedRandom, SystemRandom};
 pub use sce_rust_runtime::AnswerSchema;
-pub use sce_rust_session_store::{CredentialStore, MemoryCredentials, TokenRow, TokenStore};
+pub use sce_rust_session_store::{
+    CredentialStore, Failure as StoreFailure, KvStore, MemoryCredentials, MemoryStore, TokenRow,
+    TokenStore,
+};
 pub use serve::{serve, Shared};
 
 /// The operation that generates a text (docs/SCE_HOST_FEATURES.md, section 6).
@@ -144,7 +149,13 @@ pub(crate) const INVALID_ARGUMENT: &str = r#"{"reason":"invalid_argument"}"#;
 pub struct ReferenceHost<T: Transport> {
     pub(crate) clock: Box<dyn ClockSource + Send>,
     pub(crate) transport: T,
-    pub(crate) store: kv::Store,
+    /// The store of the key-value feature, the first result of each put-if by
+    /// the identity of its invocation with it: the one the host was built with
+    /// (docs/adr/0109, D13).
+    pub(crate) kv: Arc<dyn KvStore>,
+    /// The most keys the key-value store holds, set by the embedding; `None`
+    /// for no bound.
+    pub(crate) quota: Option<u64>,
     pub(crate) notifications: notify::Notifications,
     /// Failures to inject: the operation type to the code it fails with.
     pub(crate) faults: BTreeMap<String, String>,
@@ -178,9 +189,6 @@ pub struct ReferenceHost<T: Transport> {
     /// memory until the embedding gives another (docs/SCE_HOST_FEATURES.md,
     /// section 14).
     pub(crate) credentials: Arc<dyn CredentialStore>,
-    /// The first result of each put-if, by the identity of its invocation:
-    /// what a repeat of that identity is answered with (docs/adr/0107, D4).
-    pub(crate) first_results: BTreeMap<Invocation, Outcome>,
 }
 
 /// A start the host was given: the operation, the invocation's id, the
@@ -197,13 +205,27 @@ pub struct Start {
 
 impl<T: Transport> ReferenceHost<T> {
     /// A host reading `clock` and carrying HTTP over `transport`, with an empty
-    /// store, nothing posted, the notification permission undetermined, and no
-    /// key.
+    /// key-value store in memory, nothing posted, the notification permission
+    /// undetermined, and no key. A host that stops forgets what its store held.
     pub fn new(clock: Box<dyn ClockSource + Send>, transport: T) -> Self {
+        Self::with_kv_store(clock, transport, Arc::new(MemoryStore::new()))
+    }
+
+    /// [`Self::new`], with `store` as its key-value store: the store the
+    /// program opened, durable when it is one (the session store's SQLite file,
+    /// `sce_rust_session_store::SqliteStore`), in which the host keeps each
+    /// put-if's first result with its write (docs/SCE_HOST_FEATURES.md
+    /// section 3; docs/adr/0109, D13).
+    pub fn with_kv_store(
+        clock: Box<dyn ClockSource + Send>,
+        transport: T,
+        store: Arc<dyn KvStore>,
+    ) -> Self {
         Self {
             clock,
             transport,
-            store: kv::Store::default(),
+            kv: store,
+            quota: None,
             notifications: notify::Notifications::default(),
             faults: BTreeMap::new(),
             held: Vec::new(),
@@ -217,7 +239,6 @@ impl<T: Transport> ReferenceHost<T> {
             random: Box::new(SystemRandom),
             nonces: None,
             credentials: Arc::new(MemoryCredentials::new()),
-            first_results: BTreeMap::new(),
         }
     }
 
@@ -294,7 +315,7 @@ impl<T: Transport> ReferenceHost<T> {
     /// Bound the store to `keys` keys; a write of a new key past it fails
     /// `quota_exceeded`.
     pub fn set_quota(&mut self, keys: usize) {
-        self.store.quota = Some(keys);
+        self.quota = Some(u64::try_from(keys).unwrap_or(u64::MAX));
     }
 
     /// The notification permission, as the platform says it:
@@ -309,9 +330,15 @@ impl<T: Transport> ReferenceHost<T> {
         self.notifications.user_decision = decision.to_string();
     }
 
-    /// The store's keys and values, in key order.
-    pub fn store_entries(&self) -> Vec<(String, String)> {
-        self.store.entries()
+    /// The store's keys and values, in key order, or why the store could not
+    /// list them.
+    pub fn store_entries(&self) -> Result<Vec<(String, String)>, StoreFailure> {
+        kv::entries(self.kv.as_ref())
+    }
+
+    /// The key-value store the host was built with.
+    pub fn kv_store(&self) -> &Arc<dyn KvStore> {
+        &self.kv
     }
 
     /// The ids of the waiting notifications, in the order posted.
@@ -348,7 +375,10 @@ impl<T: Transport> ReferenceHost<T> {
     /// result, a failure included, and changes nothing: the engine starts a
     /// running invocation again under the same identity when it restores a
     /// state saved before the answer was taken (docs/adr/0107, D4), and the
-    /// write it asked for was made once.
+    /// write it asked for was made once. The store keeps the first result in
+    /// the transaction of the write (docs/adr/0109, D13), so a durable store
+    /// answers it after the host's process stopped, whether it stopped before
+    /// or after the answer left.
     pub fn start(
         &mut self,
         operation: &str,
@@ -366,23 +396,17 @@ impl<T: Transport> ReferenceHost<T> {
             start: invocation.start,
             params: params.clone(),
         });
-        let keeps_first = operation == "sce-host-kv-put-if";
-        if keeps_first {
-            if let Some(first) = self.first_results.get(invocation) {
+        if operation == kv::PUT_IF {
+            if let Some(first) = kv::first(self, invocation) {
                 sce_rust_runtime::sce_log_info!(
                     "{operation} {id}: start {} of session {} repeated, answered as first",
                     invocation.start,
                     invocation.session_id
                 );
-                return Some(first.clone());
+                return Some(first);
             }
         }
-        let outcome = self.perform(operation, invocation, params);
-        if keeps_first && matches!(outcome, Outcome::Done(_)) {
-            self.first_results
-                .insert(invocation.clone(), outcome.clone());
-        }
-        Some(outcome)
+        Some(self.perform(operation, invocation, params))
     }
 
     /// The operation itself, as [`Self::start`] describes it, for a start that is
@@ -415,6 +439,11 @@ impl<T: Transport> ReferenceHost<T> {
         }
         if let Some(code) = self.faults.get(operation) {
             sce_rust_runtime::sce_log_info!("{operation} {id}: fails {code}, injected");
+            // A put-if's failure is its first result too, which a repeat is
+            // answered with (docs/SCE_HOST_FEATURES.md section 3).
+            if operation == kv::PUT_IF {
+                return kv::keep_failure(self, invocation, code);
+            }
             return failure(operation, code);
         }
         match operation {
@@ -422,8 +451,9 @@ impl<T: Transport> ReferenceHost<T> {
             "sce-host-clock-zone" => clock::zone(self),
             "sce-host-kv-get" => kv::get(self, argument("key")),
             "sce-host-kv-put" => kv::put(self, argument("key"), argument("value")),
-            "sce-host-kv-put-if" => kv::put_if(
+            kv::PUT_IF => kv::put_if(
                 self,
+                invocation,
                 argument("key"),
                 argument("value"),
                 argument("expected_version"),

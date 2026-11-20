@@ -181,7 +181,7 @@ fn sessions_that_share_a_value_never_pass_its_limit() {
 
     let mut host = host.lock().expect("the shared host");
     assert_eq!(
-        host.store_entries(),
+        host.store_entries().expect("the host's store"),
         vec![(SEATS_KEY.to_string(), SEATS.to_string())]
     );
     let writes: Vec<_> = host
@@ -211,7 +211,7 @@ fn sessions_that_share_a_value_never_pass_its_limit() {
         "the repeats did not answer as the first starts did"
     );
     assert_eq!(
-        host.store_entries(),
+        host.store_entries().expect("the host's store"),
         vec![(SEATS_KEY.to_string(), SEATS.to_string())],
         "a repeat wrote"
     );
