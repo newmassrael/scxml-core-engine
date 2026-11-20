@@ -11,7 +11,8 @@ Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it
 decisions D1 and D2: what a client may cost the server (section 2); D8: the store sealed at rest, its keys and what an
 SQL read of it shows (sections 3, 8 and 9); D9: message signatures, the `key` authenticator and the deploy keys
 `sign`, `verify` and `max_skew_ms` (sections 0, 1, 2, 5 and 7); D10: `persistence:` and `receipt:`, a durable client's
-outbox in the store, its window and its expiry, and the orderly stop (sections 0 to 4, 8 and 9).
+outbox in the store, its window and its expiry, and the orderly stop (sections 0 to 4, 8 and 9); D15: the checkpoints
+of many sessions committed together, `sessions.commit_delay_us`, and the host told per client (sections 0 to 3).
 
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
@@ -33,6 +34,7 @@ says of "the program" is what such a program must do.
 | Message signatures: a `200` signed by the server's `sign` key and verified by a client under `verify:`, a request signed under the `key` authenticator | `sce_rust_mesh::https::signature` (server and Rust client); `SCE::Mesh::Https::Signatures` (C++ client), on libsodium | ADR 0109, D9; SCE_MESH.md section 22.9 |
 | A durable client's outbox: what a session sends it kept in the store, appended by the write of the session's checkpoint, until the client acknowledges it; its window and its expiry | `SessionStore::write` and the outbox calls of `sce-rust-session-store` (`SqliteStore` from layout 5, sealed under `Sealed`); `sce_rust_mesh::outbox::Outboxes`, kept by the pool (`Pool::outboxes`, `Pool::expire`) and answered from by the server (`HttpsServer::keep_outboxes`) | ADR 0109, D10; SCE_MESH.md sections 10.11 and 22.3 |
 | The orderly stop: the server answers what it holds and takes nothing in, the pool saves every session as a clean checkpoint | `HttpsServer::stop`, `Pool::stop` | ADR 0109, D10; SCE_MESH.md sections 14.4 and 22.4 |
+| Group commit: the checkpoints of many sessions and the acknowledgements of durable clients written in one transaction, each answered once it is durable; the server tells its host per client | `sce_rust_mesh::commit::Committer` (`Pool::committer`) over `SessionStore::write_many` (`SqliteStore`: one savepoint per write, one sync; sealed under `Sealed`); `ServerHost::deliver` called at once for different clients | ADR 0109, D15; SCE_MESH.md sections 10.11, 14.4 and 22.8 |
 | The key-value feature's values kept durably, each put-if's first result in the transaction of its write, the first results of a session deleted with it | `KvStore` of `sce-rust-session-store` (`SqliteStore` from layout 6, sealed under `Sealed`), given to the host by `ReferenceHost::with_kv_store`; the pool names the sessions a removal ends (`Write::sessions`) | ADR 0109, D13; docs/SCE_HOST_FEATURES.md section 3 |
 | An audit log: entries redacted by their schema, chained, checkpointed under the audit key, durable before the append answers, retained by segments | `AuditStore` of `sce-rust-session-store` (`SqliteStore` from layout 7, sealed under `Sealed`), `sce_rust_crypto::audit` (the chain, the checkpoints, `verify`, `retain`), given to the host by `ReferenceHost::set_audit_store` and `set_audit_streams`; `audit_stop` at the orderly stop, `audit_retain` on the host's schedule | ADR 0109, D14; docs/SCE_HOST_FEATURES.md section 15; docs/SCE_AUDIT_LOG.md |
 | The dialing side of a durable `https` binding in Rust: acknowledges only what a durable checkpoint of its own holds, keeps what it sent until a `200` carried it | `HttpsClient::received`, `HttpsClient::held`, `LinkEvent::Carried`, and the router `Machine::router` builds | ADR 0109, D10; SCE_MESH.md section 10.11 |
@@ -65,7 +67,7 @@ Not built, and a server must not count on them:
 | The key that signs every `200` when the binding names `sign` (`ServerSettings::signer`, read from the key ring) | `HttpsServer::new` | section 5, "Message signatures" |
 | The server's certificate chain and key, and for `mtls` the client authorities | `server_tls` | section 5 |
 | The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, sleeping until `Pool::next_wake_ms` between them, and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation |
-| The checkpoint each exchange waits for: `ServerHost::deliver` answers the endpoint's `sealed_through()`, and `HttpsServer::durable` is told each checkpoint reported durable | the server | SCE_MESH.md section 22.8 |
+| The checkpoint each exchange waits for: `ServerHost::deliver` answers the endpoint's `sealed_through()`, and `HttpsServer::durable` is told each checkpoint reported durable. The server calls `deliver` at once for different clients and one at a time for each: a host over a keyed pool runs the sessions it is handed on the calling thread, and one over a single endpoint takes a lock of its own | the server | SCE_MESH.md section 22.8 |
 | The standard host features its machine asks for (section 9 of `docs/SCE_HOST_FEATURES.md` names what their reference hosts keep in memory) | the machine | `docs/SCE_HOST_FEATURES.md` |
 
 `PoolConfig::renew_every_ms` must be above zero and below `lease_ttl_ms`; `Pool::new` refuses any other pair
@@ -187,10 +189,12 @@ sessions:
   idle_ms: <integer>                # an idle session is saved and dropped after this
   max_live: <integer>               # optional, 100000: sessions held in memory at most
   max_inbox: <integer>              # optional, 64: envelopes waiting in one session's inbox
+  commit_delay_us: <integer>        # optional, 0: how long a commit waits for more writes
 ```
 
 `key_from` and `idle_ms` are required when the block is present, and neither has a default; `max_live` and
-`max_inbox` are at least 1 (ADR 0109, D1). `key_from: client` keys a session by the
+`max_inbox` are at least 1 (ADR 0109, D1); `commit_delay_us` is at most 100000 (ADR 0109, D15; section 3, "Group
+commit"). `key_from: client` keys a session by the
 name the client posts under, so one client is one session; `key_from: data.<field>` keys it by a field of the
 request's data, which the event schema of every `service.request.*` the machine handles must declare as a
 `string[N]` of at most 256 bytes or as an integer (`mesh/deploy-sessions-key-not-in-request`). The block stands beside no `server:` block, no binding with
@@ -248,6 +252,11 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   system, never a network one. Beside `<file>` SQLite keeps `<file>-wal` and `<file>-shm`; all three are the store.
 - **Waiting for a lock.** A call that finds the database locked by another connection's write waits 5 s
   (`SqliteStore::BUSY_TIMEOUT`, or the bound given to `open_with_busy_timeout`) before it fails.
+- **Many writes, one sync** (ADR 0109, D15). The pool writes the checkpoints of its sessions, and the acknowledgements
+  of its durable clients, in batches (`SessionStore::write_many`): one `IMMEDIATE` transaction, one savepoint per write,
+  one sync of the log at the commit. A write refused for its version or its fence, or one the database refuses part
+  of the way through, is rolled back to its savepoint and answered alone; the others commit. Section 3.1 says when a
+  batch holds more than one write, and how to measure what it buys.
 - **Its layout.** The database's `user_version` names the layout, `7` today. A file of layout `1` to `6` is brought
   to `7` when it is opened, in one transaction, its sessions, leases, keys, credentials, outboxes and values kept. A
   file of a layout this build does not know, or one that holds tables the store did not make, is refused. A later
@@ -311,6 +320,47 @@ it is, so the log is verified without the sealing keys. Under a sealed store, `s
 `invoke` hold entries, `state`, `wrapped`, a pin's `digest`, a token's `sealed` and a value's `value` hold records, a
 token's `digest` holds the keyed digest of its digest and its moments are 0. Every moment is milliseconds since the
 Unix epoch.
+
+### 3.1 Group commit
+
+ADR 0109, D15; SCE_MESH.md sections 10.11 and 22.8. With `synchronous=FULL` every commit waits for the disk, so a
+pool that wrote one checkpoint at a time would take as many inputs a second as the disk takes syncs. The pool instead
+hands each write to its committer (`Pool::committer`), which writes everything handed to it since its last commit in
+one transaction and answers each write once that transaction is durable. A commit starts as soon as the one before it
+ended, and its batch is what arrived meanwhile: under load a batch holds as many writes as arrived while the previous
+one was synced, and alone a write is committed at once, so nothing waits that would not have waited anyway. A reply is
+released, and a `200` answered, only after the commit that holds it, as before.
+
+- **What fills a batch.** Sessions of different keys that run at once. The `https` server tells its host the exchanges
+  of different clients at once and those of one client one at a time (`ServerHost::deliver`), so a host that runs
+  each session it is handed on the calling thread, as the pool's hosts do, lets many clients' checkpoints share a
+  commit. One client's inputs are one session's, and are committed one after another.
+- **`sessions.commit_delay_us`** (default `0`, at most `100000`): how long a commit waits before it takes its batch,
+  as PostgreSQL's `commit_delay`. Leave it at `0` unless a measurement below shows that batches stay small under the
+  load the server carries and the disk's sync is what bounds it; every reply then waits that much longer.
+- **What it does not change.** Each write's durability, its version and fence checks, and what a crash loses: a
+  process killed before a commit ended has released nothing that commit held, and its clients send again.
+
+**Measuring it.** The suite has a measurement that is not run by default:
+`tests/server/tests/group_commit_throughput.rs`. Each client is a thread with a key of its own that sends requests to a
+pool on the reference store, one after another; one client is the serial baseline. Run it on the machine and disk the
+server will run on, with nothing else writing to that disk:
+
+```sh
+SCE_SERVER_SUITE_CLIENTS=1,4,16,64 SCE_SERVER_SUITE_REQUESTS=200 \
+  cargo test --release -p sce-server-suite --test group_commit_throughput -- --ignored --nocapture
+```
+
+It prints, for each count of clients, the inputs, the transactions they cost, the inputs a transaction held and the
+inputs taken in a second. Its scratch store is under the system's temporary directory; point `TMPDIR` at the disk the
+store will live on. Record the result here, with the machine, the file system and the date:
+
+| Clients | Inputs | Transactions | Inputs per transaction | Inputs per second |
+|---|---|---|---|---|
+| 1 | not yet measured | | | |
+| 4 | not yet measured | | | |
+| 16 | not yet measured | | | |
+| 64 | not yet measured | | | |
 
 ## 4. What a restart does
 
