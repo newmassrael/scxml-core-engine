@@ -394,7 +394,11 @@ COST_MEASURED: dict[str, str] = {
 # skipped, since the fleet cache it compares against does not exist yet. Its
 # skip costs a shell start; its run is timed on the first machine that names a
 # fleet.
-UNMEASURED_COST_CEILING = 32
+#
+# 32 -> 33 on 2026-11-20, the same direction: `c11-mcu` arrived written where
+# no ARM compiler could run, so its cost is an estimate its entry derives. Its
+# first run reads it.
+UNMEASURED_COST_CEILING = 33
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -1044,6 +1048,13 @@ GATES: dict[str, dict] = {
             # has to start the suite that judges it.
             "backends/c/runtime/include/**",
             "backends/c/forge-runtime/include/**",
+            # The C11 MCU gate's set, its budget, its board and the record that
+            # names the set (docs/adr/0110, D3), which
+            # `the_c11_mcu_gate_weighs_the_set_its_record_names` compiles in
+            # and holds to one another.
+            "scripts/gates/c11-mcu.sh",
+            "backends/c/mcu/**",
+            "docs/adr/0110-a-c11-machine-core-is-freestanding-and-a-gate-weighs-and-runs-it-on-an-mcu.md",
             # The standard library, whose statecharts that save are held to
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.
@@ -1581,6 +1592,42 @@ GATES: dict[str, dict] = {
         "summary": "C11 and C++ queues under GenMC + weakened-ordering mutants",
         # GenMC explores every interleaving its model admits rather than
         # sampling some, and its revision is pinned by the tracked installer.
+        "cache": True,
+        "inputs": None,
+        "commits": [],
+        "peak_gb": 5,
+    },
+    # A C11 machine's core links with no C library, is weighed against a budget
+    # and runs its replay scenario on a Cortex-M4 under QEMU (docs/adr/0110, D3):
+    # the set the ADR names, generated, compiled with the ADR's flags, linked
+    # with `-nostdlib -lgcc` beside the board's startup, memory functions and
+    # seams (backends/c/mcu/), and held to backends/c/mcu/footprint.budget.
+    #
+    # `cost_s` is an ESTIMATE, absent from COST_MEASURED: the gate was written
+    # where no ARM compiler could run. Six generations, a few dozen small C
+    # compiles and six QEMU runs of a second or two each, after the generator
+    # build `codegen-build` owns. Time it on its first run and date it here.
+    #
+    # `ci_only` for `genmc-queue`'s reason: the ARM compiler and QEMU are tools
+    # bx.toml declares (`[platform.linux.tools.arm-none-eabi-gcc]`,
+    # `[platform.linux.tools.qemu-system-arm]`) and not every build machine is
+    # verified to carry them; the gate refuses (exit 3) without them, so a push
+    # that selected it there would be refused for a reason that says nothing
+    # about the tree. c11-mcu.yml installs both on its runner.
+    "c11-mcu": {
+        "workflows": ["c11-mcu.yml"],
+        "runner_workflow": True,
+        "deps": ["codegen-build"],
+        "ci_only": "an ARM cross compiler and QEMU, which bx.toml declares "
+                   "and not every build machine is verified to carry; the "
+                   "gate ends 'could not run' without them, so a push that "
+                   "selected it there would be refused for a reason that says "
+                   "nothing about the tree. c11-mcu.yml installs both.",
+        "cost_s": 60,
+        "summary": "C11 machines linked with no libc, weighed and run on a Cortex-M4",
+        # The compiler and the emulator are tools of the platform at the
+        # versions bx.toml checks, the budget and the scenarios are tracked,
+        # and the run is on a counter clock the scenario alone moves.
         "cache": True,
         "inputs": None,
         "commits": [],

@@ -273,6 +273,13 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // the 17.6-minute push gap, so no plausible correction changes the classification. Replace it after 25
     // runs of its own and delete this paragraph.
     ("swift-backend.yml", 8.5, 0, 0, 0),
+    // STAND-IN, borrowed 2026-11-20 for a lane of no history: it builds `sce-codegen` and then runs
+    // `scripts/gate`, as `authoring-core.yml` does (8.5). Its own work is six C11 generations, a few
+    // dozen small cross compiles and six QEMU runs of seconds each, after an apt install of the ARM
+    // toolchain and QEMU, so the true median may sit a few minutes above 8.5; both are far under the
+    // 17.6-minute push gap, so no plausible correction changes the classification. Replace it after
+    // 25 runs of its own and delete this paragraph.
+    ("c11-mcu.yml", 8.5, 0, 0, 0),
     ("clang-format-check.yml", 0.8, 0, 25, 0),
     ("clippy-check.yml", 7.7, 0, 22, 1),
     // ⚠ STAND-IN, borrowed 2026-10-27 for a lane of no history: it configures a scratch tree of the
