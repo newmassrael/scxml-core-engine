@@ -852,11 +852,16 @@ pub enum RuntimeRequirement {
     /// default is that clock ([`SCXMLModel::needs_event_scheduler`]). A host
     /// that hands every instance a clock of its own may implement it itself.
     Clock,
+    /// The log seams (`sce/log.h`'s `_sce_log_write` and `_sce_log_real`),
+    /// which a platform tier of the runtime implements (docs/adr/0110, D2):
+    /// the machine writes a line, for a `<log>` or one of the runtime's own
+    /// diagnostics ([`c11_logs`]).
+    Log,
 }
 
 impl RuntimeRequirement {
     /// Every requirement a backend can state, in the order a set lists them.
-    pub const ALL: [Self; 4] = [Self::Lua, Self::Dom, Self::Http, Self::Clock];
+    pub const ALL: [Self; 5] = [Self::Lua, Self::Dom, Self::Http, Self::Clock, Self::Log];
 
     /// The name a plan states the requirement by
     /// (`\trequires\t<generation>\t<name>`), and a build maps to a library.
@@ -866,6 +871,7 @@ impl RuntimeRequirement {
             Self::Dom => "dom",
             Self::Http => "http",
             Self::Clock => "clock",
+            Self::Log => "log",
         }
     }
 
@@ -878,6 +884,7 @@ impl RuntimeRequirement {
             Self::Dom => "#include <sce/lua_dom_binding.h>",
             Self::Http => "#include <sce/http_client.h>",
             Self::Clock => "#include <sce/clock.h>",
+            Self::Log => "#include <sce/log.h>",
         }
     }
 }
@@ -904,7 +911,32 @@ pub fn c11_runtime_requirements(model: &SCXMLModel) -> BTreeSet<RuntimeRequireme
     if model.needs_event_scheduler == Some(true) {
         requires.insert(RuntimeRequirement::Clock);
     }
+    if c11_logs(model) {
+        requires.insert(RuntimeRequirement::Log);
+    }
     requires
+}
+
+/// Whether a C11 machine generated from `model` writes a line through the log
+/// seams (`sce/log.h`, docs/adr/0110 D2), which is what its templates and its
+/// lowering emit a call of the seam for:
+///
+/// - a `<log>` anywhere in its executable content, and a
+///   `<sce:render>` of a `sce-static` machine, which says what it wrote as a
+///   `<log>` would;
+/// - a machine that schedules, whose `_advance_time_ms` says once that a host
+///   moved a clock it does not own;
+/// - a machine with a script engine, which says when its engine failed to read
+///   an event's data or to bind `_event`.
+fn c11_logs(model: &SCXMLModel) -> bool {
+    if model.needs_event_scheduler == Some(true) || model.needs_script_engine {
+        return true;
+    }
+    let mut logs = false;
+    crate::host_processor_analyzer::walk_model_actions(model, &mut |_state, action| {
+        logs |= matches!(action.action_type.as_str(), "log" | "sce_render");
+    });
+    logs
 }
 
 /// Return `content` guaranteed to end with a newline.

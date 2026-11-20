@@ -676,7 +676,7 @@ SCE_C_UNUSED static inline bool {{ csym_prefix }}{{ model.name }}_event_keep(
         {{ csym_prefix }}{{ model.name }}_queued_event_t *dst,
         const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *src) {
     const char *data = src->data != NULL ? src->data : "";
-    const size_t len = strlen(data);
+    const size_t len = sce_text_length(data);
     if (len >= sizeof(dst->data)) {
         return false;
     }

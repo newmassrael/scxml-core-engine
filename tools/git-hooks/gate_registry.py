@@ -1031,6 +1031,10 @@ GATES: dict[str, dict] = {
             # requires `a_c11_machine_includes_what_it_states_it_requires`
             # compiles in and holds to what the generator can state.
             "backends/c/runtime/CMakeLists.txt",
+            # The host's log seams, which
+            # `a_c11_machine_logs_through_the_log_seams` links a machine with
+            # and reads the lines of.
+            "backends/c/runtime/posix/log.c",
             # The standard library, whose statecharts that save are held to
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.

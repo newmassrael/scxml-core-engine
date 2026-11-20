@@ -287,7 +287,7 @@
                failure never reaches the copy, and the terminator goes with it. #}
             {% set seed_into = '_child_params.v_' ~ (param.name | to_snake_case) %}
             {% set seed_handed = '_child_params.has_v_' ~ (param.name | to_snake_case) ~ ' = true;' %}
-            {% set seed_write = ('memmove(' ~ seed_into ~ '.data, sce_value, strlen(sce_value) + 1u); ' ~ seed_handed) if param.native_seed_type == 'const char *' else (seed_into ~ ' = sce_value; ' ~ seed_handed) %}
+            {% set seed_write = ('memmove(' ~ seed_into ~ '.data, sce_value, sce_text_length(sce_value) + 1u); ' ~ seed_handed) if param.native_seed_type == 'const char *' else (seed_into ~ ' = sce_value; ' ~ seed_handed) %}
             {
                 {% if param.native_fails %}
                 sce_forge_algorithm_failure_t sce_failure_ = {0};
@@ -412,7 +412,7 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
        not this machine's, so one this document does not write reaches it as the
        event of the longest prefix it does, under the name the child sent
        (`evt.name`). One that no prefix of is written is dropped. */
-    if ({{ csym_prefix }}{{ model.name }}_arrive(name, strlen(name), &evt.event, evt.name)) {
+    if ({{ csym_prefix }}{{ model.name }}_arrive(name, sce_text_length(name), &evt.event, evt.name)) {
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
     }
 }
@@ -1076,7 +1076,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                stem. A value naming none of them is the failure the
                Interpreter reports when a document will not load — and, as
                there, the arguments are not read. */
-            if ({% for candidate in invoke_info.candidates %}strcmp(__sce_selected_{{ invoke_info.field_suffix }}, "{{ candidate.stem | escape_c }}") != 0{{ " && " if not loop.last }}{% endfor %}) {
+            if ({% for candidate in invoke_info.candidates %}sce_text_compare(__sce_selected_{{ invoke_info.field_suffix }}, "{{ candidate.stem | escape_c }}") != 0{{ " && " if not loop.last }}{% endfor %}) {
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_SRC_NOT_FOUND,
@@ -1086,7 +1086,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
             }
 {{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
 {% for candidate in invoke_info.candidates %}
-            if (strcmp(__sce_selected_{{ invoke_info.field_suffix }}, "{{ candidate.stem | escape_c }}") == 0) {
+            if (sce_text_compare(__sce_selected_{{ invoke_info.field_suffix }}, "{{ candidate.stem | escape_c }}") == 0) {
                 /* Parent routing is stamped before the entry walk, for the
                    reason the static-invoke site above states: a candidate
                    that announces itself with `<onentry><send

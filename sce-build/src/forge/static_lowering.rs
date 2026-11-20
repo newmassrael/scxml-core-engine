@@ -18434,12 +18434,14 @@ impl StaticTarget for CTarget {
             render.call
         ))
     }
+    // A line of the runtime's, through the log seam (`sce/log.h`), as a `<log>`
+    // with no label writes one.
     fn render_log(&self, machine: &str, template: &str, location: &str) -> Option<String> {
+        let line = c_text(&format!(
+            "[sce] {machine}: <sce:render template=\"{template}\"> wrote {location}"
+        ));
         Some(format!(
-            "fprintf(stderr, \"[sce] {}: <sce:render template=\\\"{}\\\"> wrote {}\\n\");",
-            filters::escape_c(machine.to_string()),
-            filters::escape_c(template.to_string()),
-            filters::escape_c(location.to_string())
+            "_sce_log_write(SCE_LOG_INFO, NULL, 0u, {line}, sizeof({line}) - 1u);"
         ))
     }
     fn callee_def(&self, callee: &StaticCallee) -> Option<String> {
@@ -19714,7 +19716,7 @@ impl StaticTarget for CTarget {
     // The text and its terminator move together into the buffer, which the value
     // may overlap (`title = title`), and the bound was judged before this runs.
     fn assign_string(&self, target: &str, value: &str) -> String {
-        format!("memmove({target}, {value}, strlen({value}) + 1u);")
+        format!("memmove({target}, {value}, sce_text_length({value}) + 1u);")
     }
     // A record's string field is the buffer of its bound, which an expression
     // reads as the buffer's text, as it reads a string variable's, and as it
@@ -19930,12 +19932,10 @@ impl StaticTarget for CTarget {
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
     }
-    // To stderr, as the machine's other `<log>` is. The text is the one every
-    // log of this target writes ([`c_logged`]).
+    // Through the log seams, as the machine's other `<log>` is
+    // ([`c_log_seam`]).
     fn log(&self, label: &str, value: &str, ty: InferredType) -> String {
-        c_logged(label, value, ty, &|format, arguments| {
-            format!("(void)fprintf(stderr, \"{format}\\n\"{arguments});")
-        })
+        c_log_seam(label, value, ty)
     }
     // The header's `sce_payload_lift` refuses what comes before a field is read,
     // and each field is read into a zeroed local record by the value reader of its
@@ -21212,8 +21212,9 @@ fn c_test_template(unit: &str) -> String {
 /// bool to its word. The label is an argument, not part of the format, so a `%`
 /// in it is text. An optional value is written as its present value, and as
 /// `null` where it is absent, as on every engine (docs/adr/0055, section 2).
-/// One text for the engine's `<log>` and for a test component's
-/// ([`StaticTarget::test_log`]).
+/// The text of a test component's log ([`StaticTarget::test_log`]), which the
+/// hosted test runtime takes as one string; the engine's `<log>` hands the same
+/// value to the log seams instead ([`c_log_seam`]), and the two spell it alike.
 fn c_logged(
     label: &str,
     value: &str,
@@ -21254,6 +21255,68 @@ fn c_logged(
         _ => ("%lld", format!("(long long)({value})")),
     };
     labelled(conversion, &format!(", {argument}"))
+}
+
+/// The C statement that hands a `<log>` of `value`, of type `ty`, under `label`
+/// to the log seams (`sce/log.h`, docs/adr/0110 D2), which write it as the
+/// engine's `<log>` shows it (§scxml-4.7). A machine's core formats no real, so a
+/// real is handed whole to `_sce_log_real`. Every other value is handed to
+/// `_sce_log_write` as the text [`c_logged`] spells it: a bool as its word, a
+/// string as itself, an integer as its decimal digits, built by `sce/text.h` into
+/// a local of the bytes the longest of them takes. The value is read once. An
+/// optional value is logged as its present value, and as `null` where it is
+/// absent, as on every engine (docs/adr/0055, section 2).
+fn c_log_seam(label: &str, value: &str, ty: InferredType) -> String {
+    let label_args = if label.is_empty() {
+        "NULL, 0u".to_string()
+    } else {
+        let text = c_text(label);
+        format!("{text}, sizeof({text}) - 1u")
+    };
+    if let InferredType::Optional(elem) = ty {
+        let held = format!("({value})");
+        let present = c_log_seam(
+            label,
+            &crate::forge::expr::c_present_read(&held, ty),
+            elem.present(),
+        );
+        return format!(
+            "if ({held}.present) {{ {present} }} else {{ _sce_log_write(SCE_LOG_INFO, {label_args}, \"null\", 4u); }}"
+        );
+    }
+    match ty {
+        InferredType::Float { .. } | InferredType::UntypedFloat => {
+            format!("_sce_log_real(SCE_LOG_INFO, {label_args}, (double)({value}));")
+        }
+        InferredType::Bool => format!(
+            "{{ const bool sce_log_ = ({value}); _sce_log_write(SCE_LOG_INFO, {label_args}, \
+             sce_log_ ? \"true\" : \"false\", sce_log_ ? 4u : 5u); }}"
+        ),
+        InferredType::Str => format!(
+            "{{ const char *const sce_log_ = ({value}); _sce_log_write(SCE_LOG_INFO, {label_args}, \
+             sce_log_, sce_text_length(sce_log_)); }}"
+        ),
+        InferredType::Int { signed: false, .. } => format!(
+            "{{ char sce_log_[SCE_TEXT_DECIMAL_CAP]; _sce_log_write(SCE_LOG_INFO, {label_args}, \
+             sce_log_, sce_text_of_u64((uint64_t)({value}), sce_log_, sizeof(sce_log_))); }}"
+        ),
+        // A signed integer, and an integer no context typed. The other types are
+        // ones a `<log>` the checker passed does not name (`c_logged` reads
+        // them as this one does), and an optional one was handled above.
+        InferredType::Int { signed: true, .. }
+        | InferredType::UntypedInt
+        | InferredType::Bytes
+        | InferredType::List(_)
+        | InferredType::ListBuffer(_)
+        | InferredType::BytesBuffer
+        | InferredType::Record(_)
+        | InferredType::Null
+        | InferredType::Optional(_)
+        | InferredType::Unknown => format!(
+            "{{ char sce_log_[SCE_TEXT_DECIMAL_CAP]; _sce_log_write(SCE_LOG_INFO, {label_args}, \
+             sce_log_, sce_text_of_i64((int64_t)({value}), sce_log_, sizeof(sce_log_))); }}"
+        ),
+    }
 }
 
 /// The line a C11 unit that holds an optional value (docs/adr/0055) includes the
@@ -27998,7 +28061,7 @@ mod tests {
             .is_some_and(|l| l.contains("SCE_LOG_INFO(")));
         assert!(CTarget::arguments()
             .render_log("m", "Notice", "note")
-            .is_some_and(|l| l.starts_with("fprintf(stderr, ")));
+            .is_some_and(|l| l.starts_with("_sce_log_write(SCE_LOG_INFO, ")));
         assert_eq!(KotlinTarget.render_log("m", "Notice", "note"), None);
         assert_eq!(PythonTarget.render_log("m", "Notice", "note"), None);
     }
@@ -28161,7 +28224,7 @@ mod tests {
         assert_eq!(
             c.assign_present_string_field("sm->policy.v_pick", "title", "text")
                 .as_deref(),
-            Some("memmove(sm->policy.v_pick.value.title.data, text, strlen(text) + 1u);")
+            Some("memmove(sm->policy.v_pick.value.title.data, text, sce_text_length(text) + 1u);")
         );
         assert_eq!(
             c.assign_present_bytes_field("sm->policy.v_pick", "frame", "v")

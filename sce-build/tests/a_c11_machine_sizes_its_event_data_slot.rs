@@ -395,7 +395,7 @@ fn an_untyped_host_run_ending_is_held_to_the_bound_the_host_abi_declares() {
         "the machine checks the bound its slot was sized by:\n{source}"
     );
     assert!(
-        source.contains("if (data != NULL && strlen(data) >= sizeof(sm->current_external.data)) {\n        refuse_event_data(sm, NULL);\n        return false;\n    }"),
+        source.contains("if (data != NULL && sce_text_length(data) >= sizeof(sm->current_external.data)) {\n        refuse_event_data(sm, NULL);\n        return false;\n    }"),
         "an ending whose data is past the slot is refused whole at the door:\n{source}"
     );
     let longest = longest_reason(&header);
