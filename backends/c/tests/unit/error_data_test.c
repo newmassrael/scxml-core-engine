@@ -17,7 +17,7 @@
 //
 // Header-only code; nothing here allocates.
 
-#include <sce/error_data.h>
+#include <sce/error_data_text.h>
 
 #include <stdio.h>
 #include <string.h>

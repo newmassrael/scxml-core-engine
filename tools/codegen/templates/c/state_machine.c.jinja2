@@ -657,6 +657,12 @@ SCE_SM_FN static SCE_C_UNUSED bool scratch_reserve({{ csym_prefix }}{{ model.nam
 {% endif %}
 {% if model.needs_script_engine %}
 
+/* docs/adr/0106 #111: the JSON text of an `error.*` event's record, which this
+   machine hands its script engine's data model (`push_error_record`); written
+   with the hosted JSON writer, as the engine it is handed to is hosted
+   (docs/adr/0110, D2). */
+#include <sce/error_data_text.h>
+
 /* §scxml-5.10, §scxml-B-2-8: the two ways this machine writes a global of its
    Lua state, and the only two.
 
