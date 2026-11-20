@@ -62,9 +62,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "sce/forge/bytes.h"
+#include "sce/text.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -77,7 +77,7 @@ extern "C" {
 
 /* Two present texts, each a buffer of its bound, are the same value when they hold
  * the same bytes up to their terminator. */
-#define SCE_OPTIONAL_SAME_STRING(a, b) (strcmp((a).data, (b).data) == 0)
+#define SCE_OPTIONAL_SAME_STRING(a, b) (sce_text_compare((a).data, (b).data) == 0)
 
 /* Two present byte strings, each a buffer and the length it holds, are the same
  * value when they hold the same bytes. */
@@ -92,7 +92,7 @@ extern "C" {
 #define SCE_OPTIONAL_HOLDS(x, v) ((x).present && (x).value == (v))
 
 /* `x === t` of an optional text and a present text. */
-#define SCE_OPTIONAL_HOLDS_TEXT(x, t) ((x).present && strcmp((x).value.data, (t)) == 0)
+#define SCE_OPTIONAL_HOLDS_TEXT(x, t) ((x).present && sce_text_compare((x).value.data, (t)) == 0)
 
 /* The optional value of the type `T`, named `<prefix>_t`, with its two constructors,
  * `<prefix>_none()` and `<prefix>_some(v)`, and no comparison: what every optional

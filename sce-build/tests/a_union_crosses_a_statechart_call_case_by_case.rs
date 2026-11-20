@@ -254,10 +254,10 @@ fn c11_maps_the_machines_union_into_the_units_and_back() {
             &format!("static inline {unit} call_Extent__v_union_in0({machine_union} value) {{\n"),
             "    const char *const variant = \
              statechart_shape_crossing_union_union_shape_minimal_variant(&value);\n    if (variant \
-             == NULL) {\n        abort();\n    }\n",
-            "    if (strcmp(variant, \"dot\") == 0) {\n        return \
+             == NULL) {\n        SCE_UNREACHED();\n    }\n",
+            "    if (sce_text_compare(variant, \"dot\") == 0) {\n        return \
              union_shape_minimal_case_dot();\n    }\n",
-            "    if (strcmp(variant, \"circle\") == 0) {\n        const __typeof__(value.as.circle) \
+            "    if (sce_text_compare(variant, \"circle\") == 0) {\n        const __typeof__(value.as.circle) \
              sce_case = value.as.circle;\n        return \
              union_shape_minimal_case_circle((ShapeRadiusMinimalPayload_t){ .radius = \
              sce_case.radius });\n    }\n",

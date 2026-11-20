@@ -74,7 +74,7 @@
             }
 {% endif %}
 {% if e.kind == "text" and not e.len_ref %}
-            if (strlen(v->{{ e.data_ref }}) != text_len) {
+            if (sce_text_length(v->{{ e.data_ref }}) != text_len) {
                 return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
             }
 {% endif %}
@@ -95,7 +95,7 @@
 {% elif e.kind == "text" %}
 {#- A text that may be absent ends at its terminator, which its buffer, one byte
     past its bound, always has room for. #}
-{{ i }}s = sce_forge_cbor_write_text(w, self->{{ e.data_ref }}, strlen(self->{{ e.data_ref }}));
+{{ i }}s = sce_forge_cbor_write_text(w, self->{{ e.data_ref }}, sce_text_length(self->{{ e.data_ref }}));
 {% elif e.kind == "bytes" %}
 {{ i }}if (self->{{ e.len_ref }} > {{ e.capacity }}U) {
 {{ i }}    return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
@@ -144,7 +144,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "sce/forge/cbor.h"
 #include "sce/forge/codec.h"
@@ -247,7 +246,7 @@ static inline sce_forge_codec_status_t {{ r.decode_fn }}(sce_forge_cursor_t *c, 
             s = sce_forge_cbor_read_bool(c, &out->{{ f.name }});
 {% elif f.kind == "text" %}
             s = sce_forge_cbor_read_text(c, {{ f.max }}U, {{ f.max }}U, out->{{ f.name }}.data, &text_len);
-            if (s == SCE_FORGE_CODEC_OK && strlen(out->{{ f.name }}.data) != text_len) {
+            if (s == SCE_FORGE_CODEC_OK && sce_text_length(out->{{ f.name }}.data) != text_len) {
                 s = SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
             }
 {% elif f.kind == "bytes" %}
@@ -295,7 +294,7 @@ static inline sce_forge_codec_status_t {{ r.encode_fn }}(const {{ r.type_name }}
     if (record->{{ f.name }}.data[{{ f.max }}] != '\0') {
         return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
     }
-    s = sce_forge_cbor_write_text(w, record->{{ f.name }}.data, strlen(record->{{ f.name }}.data));
+    s = sce_forge_cbor_write_text(w, record->{{ f.name }}.data, sce_text_length(record->{{ f.name }}.data));
 {% elif f.kind == "bytes" %}
     if (record->{{ f.name }}.len > {{ f.max }}U) {
         return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;

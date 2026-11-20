@@ -30,7 +30,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
+
+#include "sce/text.h"
 
 #ifdef __cplusplus
 extern "C" {

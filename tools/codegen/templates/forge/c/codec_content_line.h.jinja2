@@ -84,7 +84,7 @@
 {#- The length of the string `x` holds, read from `holder`: the member beside its
     buffer, or, for a text held as every text of the machine is, the length it
     ends at. #}
-{% macro length_of(x, holder) %}{% if x.len_ref %}{{ holder }}{{ x.len_ref }}{% else %}strlen({{ holder }}{{ x.data_ref }}){% endif %}{% endmacro %}
+{% macro length_of(x, holder) %}{% if x.len_ref %}{{ holder }}{{ x.len_ref }}{% else %}sce_text_length({{ holder }}{{ x.data_ref }}){% endif %}{% endmacro %}
 {#- The parameters of a property, each written when present, at indent `i`, read
     from `holder`: `self->` for the codec itself, `rec->` for the record of one
     line. #}
@@ -121,7 +121,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "sce/forge/codec.h"
 #include "sce/forge/content_line.h"

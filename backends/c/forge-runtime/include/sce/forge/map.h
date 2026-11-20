@@ -57,11 +57,11 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "sce/forge/algorithm.h"
 #include "sce/forge/bytes.h"
 #include "sce/portability.h"
+#include "sce/text.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -216,7 +216,7 @@ static inline sce_map_seed_t sce_map_seed_of_child(sce_map_seed_t seed, const ch
         const uint8_t tag = (uint8_t)(2u + side);
         sce_siphash_begin(&sip, seed, 1u, 3u);
         sce_siphash_write(&sip, &tag, 1u);
-        sce_siphash_write(&sip, (const uint8_t *)invoke_id, strlen(invoke_id));
+        sce_siphash_write(&sip, (const uint8_t *)invoke_id, sce_text_length(invoke_id));
         halves[side] = sce_siphash_finish(&sip);
     }
     return sce_map_seed_from_halves(halves[0], halves[1]);
@@ -277,7 +277,7 @@ static inline void sce_map_feed_bytes(sce_map_sink_t *sink, const uint8_t *data,
 
 /* A text: the byte string of its UTF-8 bytes. */
 static inline void sce_map_feed_text(sce_map_sink_t *sink, const char *text) {
-    sce_map_feed_bytes(sink, (const uint8_t *)text, strlen(text));
+    sce_map_feed_bytes(sink, (const uint8_t *)text, sce_text_length(text));
 }
 
 /* The feeds of the keys whose type this header knows: each integer type, `bool`, a

@@ -23,9 +23,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/text.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -878,7 +878,7 @@ static inline sce_forge_codec_status_t sce_forge_cl_enum_carrier_of(const sce_fo
         return SCE_FORGE_CODEC_LINE_BAD_VALUE;
     }
     for (i = 0; i < count; ++i) {
-        const size_t len = strlen(rows[i].text);
+        const size_t len = sce_text_length(rows[i].text);
         size_t j;
         if (len != n) {
             continue;
@@ -977,7 +977,7 @@ static inline sce_forge_cl_writer_t sce_forge_cl_writer_init(sce_forge_writer_t 
 }
 
 static inline sce_forge_codec_status_t sce_forge_cl_writer_raw(sce_forge_cl_writer_t *w, const char *text) {
-    return sce_forge_writer_write_bytes(w->sink, (const uint8_t *)text, strlen(text));
+    return sce_forge_writer_write_bytes(w->sink, (const uint8_t *)text, sce_text_length(text));
 }
 
 static inline sce_forge_codec_status_t sce_forge_cl_writer_line_with(sce_forge_cl_writer_t *w, const char *head) {

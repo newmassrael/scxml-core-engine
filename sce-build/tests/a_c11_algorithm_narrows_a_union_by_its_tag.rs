@@ -63,7 +63,7 @@ fn a_c11_unit_holds_a_union_as_a_struct_of_its_tag_and_its_cases() {
     let (file, text) = unit("union_shape_minimal.scxml");
     assert_eq!(file, "union_shape_minimal.h");
     for needle in [
-        "#include <stdlib.h>\n#include <string.h>\n",
+        "#include \"sce/portability.h\"\n#include \"sce/text.h\"\n",
         "#include \"shape_kind.h\"\n",
         "#include \"shape_radius_minimal.h\"\n",
         "#include \"shape_rect_minimal.h\"\n",
@@ -104,7 +104,7 @@ fn a_c11_algorithm_reads_each_case_of_its_union_where_its_tag_is_tested() {
     // Every case returned before the end of the body, which no path reaches.
     holds(
         &text,
-        "abort(); /* algorithm_shape_extent: every case of its union returned before the end \
+        "SCE_UNREACHED(); /* algorithm_shape_extent: every case of its union returned before the end \
          of its body */\n}",
     );
 }
@@ -127,7 +127,7 @@ fn a_c11_algorithm_returns_a_union_it_was_given_or_built() {
     );
     holds(&text, "return grown;");
     // Its last statement returns, so the body needs nothing after it.
-    assert!(!text.contains("abort();"), "{text}");
+    assert!(!text.contains("SCE_UNREACHED();"), "{text}");
 }
 
 /// A list of unions (docs/adr/0099, "Still open" item 2) is a view of the

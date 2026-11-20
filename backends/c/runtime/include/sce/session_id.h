@@ -26,8 +26,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
+#include "sce/text.h"
 #include "sce/types.h"
 
 #ifdef __cplusplus
@@ -147,7 +147,7 @@ SCE_C_UNUSED static inline bool sce_xml_name_char(uint32_t c) {
  * name character however the replacement character itself is classed.
  * `offending` may be NULL. */
 SCE_C_UNUSED static inline bool sce_session_id_is_nmtoken(const char *id, uint32_t *offending) {
-    const size_t n = strlen(id);
+    const size_t n = sce_text_length(id);
     size_t at = 0u;
     if (n == 0u) {
         if (offending != NULL) {

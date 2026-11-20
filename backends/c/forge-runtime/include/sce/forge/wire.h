@@ -19,9 +19,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+
+#include "sce/text.h"
 
 /* How a real is written: the one spelling every engine writes, in the runtime's
  * own include directory because the typed payload of a machine with no
@@ -209,6 +208,7 @@ static inline void sce_forge_wire_begin(sce_forge_wire_t *w, char *buf, size_t c
  * escaped, every other byte — a byte of UTF-8 included — as it is. */
 static inline void sce_forge_wire_put_char(sce_forge_wire_t *w, unsigned char c) {
     char escaped[7];
+    sce_text_writer_t text;
     switch (c) {
     case '"':
         sce_forge_wire_put(w, "\\\"", 2u);
@@ -227,7 +227,9 @@ static inline void sce_forge_wire_put_char(sce_forge_wire_t *w, unsigned char c)
         break;
     default:
         if (c < 0x20u) {
-            (void)snprintf(escaped, sizeof(escaped), "\\u%04x", (unsigned)c);
+            text = sce_text_writer(escaped, sizeof(escaped));
+            sce_text_put_text(&text, "\\u");
+            sce_text_put_hex(&text, (uint64_t)c, 4u);
             sce_forge_wire_put(w, escaped, 6u);
         } else {
             sce_forge_wire_put(w, (const char *)&c, 1u);
@@ -275,20 +277,20 @@ static inline void sce_forge_wire_put_value(sce_forge_wire_t *w, sce_forge_wire_
         sce_forge_wire_put(w, value.as.b ? "true" : "false", value.as.b ? 4u : 5u);
         break;
     case SCE_FORGE_WIRE_INT:
-        (void)snprintf(number, sizeof(number), "%lld", (long long)value.as.i);
-        sce_forge_wire_put(w, number, strlen(number));
+        sce_forge_wire_put(w, number, sce_text_of_i64(value.as.i, number, sizeof(number)));
         break;
     case SCE_FORGE_WIRE_UINT:
-        (void)snprintf(number, sizeof(number), "%llu", (unsigned long long)value.as.u);
-        sce_forge_wire_put(w, number, strlen(number));
+        sce_forge_wire_put(w, number, sce_text_of_u64(value.as.u, number, sizeof(number)));
         break;
     case SCE_FORGE_WIRE_WIDE_INT:
-        (void)snprintf(number, sizeof(number), "\"%lld\"", (long long)value.as.i);
-        sce_forge_wire_put(w, number, strlen(number));
+        sce_forge_wire_put(w, "\"", 1u);
+        sce_forge_wire_put(w, number, sce_text_of_i64(value.as.i, number, sizeof(number)));
+        sce_forge_wire_put(w, "\"", 1u);
         break;
     case SCE_FORGE_WIRE_WIDE_UINT:
-        (void)snprintf(number, sizeof(number), "\"%llu\"", (unsigned long long)value.as.u);
-        sce_forge_wire_put(w, number, strlen(number));
+        sce_forge_wire_put(w, "\"", 1u);
+        sce_forge_wire_put(w, number, sce_text_of_u64(value.as.u, number, sizeof(number)));
+        sce_forge_wire_put(w, "\"", 1u);
         break;
     case SCE_FORGE_WIRE_REAL:
         /* JSON has no spelling for a value that is not finite: it crosses as
@@ -297,7 +299,7 @@ static inline void sce_forge_wire_put_value(sce_forge_wire_t *w, sce_forge_wire_
         if (value.as.r - value.as.r != 0.0) {
             sce_forge_wire_put(w, "null", 4u);
         } else if (sce_number_text(value.as.r, number, sizeof(number)) != 0u) {
-            sce_forge_wire_put(w, number, strlen(number));
+            sce_forge_wire_put(w, number, sce_text_length(number));
         } else {
             w->overflow = true;
         }
@@ -346,7 +348,7 @@ static inline void sce_forge_wire_key(sce_forge_wire_t *w, const char *key) {
         sce_forge_wire_put(w, ",", 1u);
     }
     w->any = true;
-    sce_forge_wire_put(w, key, strlen(key));
+    sce_forge_wire_put(w, key, sce_text_length(key));
     sce_forge_wire_put(w, ":", 1u);
 }
 
@@ -359,7 +361,7 @@ static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce
         w->overflow = true;
         return;
     }
-    if (w->any && w->last_key != NULL && strcmp(w->last_key, key) == 0) {
+    if (w->any && w->last_key != NULL && sce_text_compare(w->last_key, key) == 0) {
         if (w->last_count == 1u) {
             if (w->len + 1u >= w->cap) {
                 w->overflow = true;
@@ -462,7 +464,7 @@ static inline void sce_forge_wire_member(sce_forge_wire_t *w, const char *key, s
         return;
     }
     sce_forge_wire_next_in_container(w);
-    sce_forge_wire_put(w, key, strlen(key));
+    sce_forge_wire_put(w, key, sce_text_length(key));
     sce_forge_wire_put(w, ":", 1u);
     sce_forge_wire_put_value(w, value);
 }
@@ -474,7 +476,7 @@ static inline void sce_forge_wire_member_open(sce_forge_wire_t *w, const char *k
         return;
     }
     sce_forge_wire_next_in_container(w);
-    sce_forge_wire_put(w, key, strlen(key));
+    sce_forge_wire_put(w, key, sce_text_length(key));
     sce_forge_wire_put(w, ":", 1u);
     sce_forge_wire_open_container(w, open);
 }
@@ -587,27 +589,25 @@ static inline bool sce_forge_wire_json(sce_forge_wire_value_t value, char *buf, 
  * infinities included), and a string as itself. False when it did not
  * fit, and `buf` then holds the empty string, never a truncated value. */
 static inline bool sce_forge_wire_text(sce_forge_wire_value_t value, char *buf, size_t cap) {
-    int written = 0;
     if (cap == 0u) {
         return false;
     }
     switch (value.kind) {
     case SCE_FORGE_WIRE_BOOL:
-        written = snprintf(buf, cap, "%s", value.as.b ? "true" : "false");
-        break;
+        return sce_text_place(value.as.b ? "true" : "false", value.as.b ? 4u : 5u, buf, cap) != 0u;
     case SCE_FORGE_WIRE_INT:
     case SCE_FORGE_WIRE_WIDE_INT:
-        written = snprintf(buf, cap, "%lld", (long long)value.as.i);
-        break;
+        return sce_text_of_i64(value.as.i, buf, cap) != 0u;
     case SCE_FORGE_WIRE_UINT:
     case SCE_FORGE_WIRE_WIDE_UINT:
-        written = snprintf(buf, cap, "%llu", (unsigned long long)value.as.u);
-        break;
+        return sce_text_of_u64(value.as.u, buf, cap) != 0u;
     case SCE_FORGE_WIRE_REAL:
         return sce_number_text(value.as.r, buf, cap) != 0u;
-    case SCE_FORGE_WIRE_STRING:
-        written = snprintf(buf, cap, "%s", value.as.s);
-        break;
+    case SCE_FORGE_WIRE_STRING: {
+        /* The empty string is placed whole with a length of 0, as is no other. */
+        const size_t n = sce_text_length(value.as.s);
+        return sce_text_place(value.as.s, n, buf, cap) == n;
+    }
     case SCE_FORGE_WIRE_BYTES: {
         /* The Latin-1 text of the bytes: a byte above 0x7F is the two bytes of its
          * character. A request carries text as a C string, which cannot hold a
@@ -638,11 +638,9 @@ static inline bool sce_forge_wire_text(sce_forge_wire_value_t value, char *buf, 
         buf[0] = '\0';
         return false;
     }
-    if (written < 0 || (size_t)written >= cap) {
-        buf[0] = '\0';
-        return false;
-    }
-    return true;
+    /* A kind no case names is not a value the data model holds. */
+    buf[0] = '\0';
+    return false;
 }
 
 /* `n` values joined into one string, written into `buf` of `cap` bytes — what
@@ -663,7 +661,7 @@ static inline char *sce_forge_concat_into(char *buf, size_t cap, const sce_forge
             buf[0] = '\0';
             return buf;
         }
-        len += strlen(buf + len);
+        len += sce_text_length(buf + len);
     }
     return buf;
 }

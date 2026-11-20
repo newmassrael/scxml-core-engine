@@ -6488,7 +6488,7 @@ _used += (size_t)_put;\n"
 /// past what it wrote; the function returns false when it did not.
 fn c11_wire_wrote(call: &str) -> String {
     format!(
-        "    if (!({call})) {{\n        return false;\n    }}\n    _used += strlen(out + _used);\n"
+        "    if (!({call})) {{\n        return false;\n    }}\n    _used += sce_text_length(out + _used);\n"
     )
 }
 
@@ -41006,12 +41006,12 @@ fn unreached_end(lang: crate::generator::Language, name: &str, pad: &str) -> Str
             "{pad}raise AssertionError({})",
             filters::py_string_literal(why)
         ),
-        // `abort`, which ends the process and returns nothing, so the compiler
-        // asks the body for no value after it; the union's unit includes
-        // `<stdlib.h>` for it (`forge/c/union.h.jinja2`). A `may-fail` body
-        // hands a failure on through `sce_failure_`, never by ending the
-        // process.
-        Language::C11 => format!("{pad}abort(); /* {why} */"),
+        // `SCE_UNREACHED`, which stops the program and returns nothing, so the
+        // compiler asks the body for no value after it; the union's unit
+        // includes `sce/portability.h` for it (`forge/c/union.h.jinja2`), and
+        // no library function is called (docs/adr/0110, D1). A `may-fail` body
+        // hands a failure on through `sce_failure_`, never by stopping.
+        Language::C11 => format!("{pad}SCE_UNREACHED(); /* {why} */"),
     }
 }
 

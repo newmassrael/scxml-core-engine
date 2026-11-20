@@ -266,7 +266,7 @@ fn the_inject_seam_writes_each_part_held_to_its_type() {
              sce_forge_wire_begin(sce_wire, out, cap);\n",
             "if (((*payload).late).len > sizeof(((*payload).late).data) / \
              sizeof(((*payload).late).data[0])) {\n    sce_forge_wire_refuse(sce_wire);\n}",
-            "if (memchr(((*sce_item_0).label).data, '\\0', sizeof(((*sce_item_0).label).data)) == NULL)",
+            "if (sce_text_find_byte(((*sce_item_0).label).data, '\\0', sizeof(((*sce_item_0).label).data)) == NULL)",
             "const char *const sce_name = enum_signal_level_declared_name((*sce_item_0));",
             "    if (!sce_forge_wire_end(sce_wire)) {\n        return false;\n    }\n",
         ],
@@ -634,11 +634,11 @@ fn a_text_a_composed_value_holds_is_read_as_the_text_of_its_buffer_on_c11() {
     for (read, lowered) in [
         (
             when("_event.data.note === 'ab'"),
-            "strcmp(sm->pending_payload.as.batch_sent.note.data, \"ab\") == 0",
+            "sce_text_compare(sm->pending_payload.as.batch_sent.note.data, \"ab\") == 0",
         ),
         (
             set("len(_event.data.note)"),
-            "strlen(sm->pending_payload.as.batch_sent.note.data)",
+            "sce_text_length(sm->pending_payload.as.batch_sent.note.data)",
         ),
         (
             when("len(_event.data.items) &gt; 0 &amp;&amp; _event.data.items[0].label === 'ab'"),
@@ -646,7 +646,7 @@ fn a_text_a_composed_value_holds_is_read_as_the_text_of_its_buffer_on_c11() {
         ),
         (
             over_items(when("row.label === 'ab'")),
-            "strcmp(row.label.data, \"ab\") == 0",
+            "sce_text_compare(row.label.data, \"ab\") == 0",
         ),
         (
             over_items(when("len(row.tags) &gt; 0 &amp;&amp; row.tags[0] === 'ab'")),
@@ -657,7 +657,7 @@ fn a_text_a_composed_value_holds_is_read_as_the_text_of_its_buffer_on_c11() {
                 r#"<foreach array="row.tags" item="word">{}</foreach>"#,
                 when("word === 'ab'")
             )),
-            "strcmp(word.data, \"ab\") == 0",
+            "sce_text_compare(word.data, \"ab\") == 0",
         ),
         (
             over_items(r#"<assign location="last" expr="row.label"/>"#.to_string()),

@@ -236,7 +236,7 @@ add_test(NAME codec_encode_bound_c COMMAND codec_encode_bound_test_c)
 # -Werror bar; what a generated CBOR codec does with them is judged by the
 # harness above (codec_cbor_map).
 add_executable(cbor_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/cbor_runtime_test.c")
-target_include_directories(cbor_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_include_directories(cbor_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}" "${CORE_RUNTIME_INCLUDE_DIR}")
 target_compile_options(cbor_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME cbor_runtime_c COMMAND cbor_runtime_test_c)
 
@@ -245,7 +245,7 @@ add_test(NAME cbor_runtime_c COMMAND cbor_runtime_test_c)
 # bounds the value. What a generated codec does with them is judged by the
 # harness above (codec_vle_zint_u16, _u32 and _u64).
 add_executable(vle_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/vle_runtime_test.c")
-target_include_directories(vle_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_include_directories(vle_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}" "${CORE_RUNTIME_INCLUDE_DIR}")
 target_compile_options(vle_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME vle_runtime_c COMMAND vle_runtime_test_c)
 
@@ -253,7 +253,7 @@ add_test(NAME vle_runtime_c COMMAND vle_runtime_test_c)
 # same -Werror bar; what a generated content-line codec does with them is judged
 # by the harness above (codec_content_line_event).
 add_executable(content_line_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/content_line_runtime_test.c")
-target_include_directories(content_line_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_include_directories(content_line_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}" "${CORE_RUNTIME_INCLUDE_DIR}")
 target_compile_options(content_line_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME content_line_runtime_c COMMAND content_line_runtime_test_c)
 
@@ -261,7 +261,7 @@ add_test(NAME content_line_runtime_c COMMAND content_line_runtime_test_c)
 # markers (sce/forge/text_template.h, docs/adr/0087 section 3.1), under the
 # same -Werror bar.
 add_executable(text_template_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/text_template_runtime_test.c")
-target_include_directories(text_template_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_include_directories(text_template_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}" "${CORE_RUNTIME_INCLUDE_DIR}")
 target_compile_options(text_template_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME text_template_runtime_c COMMAND text_template_runtime_test_c)
 
@@ -271,7 +271,7 @@ add_test(NAME text_template_runtime_c COMMAND text_template_runtime_test_c)
 # with: the helpers convert only where they say so. What a generated algorithm
 # does with them is the conformance fixtures' (docs/adr/0063, section 9).
 add_executable(total_arith_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/total_arith_runtime_test.c")
-target_include_directories(total_arith_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_include_directories(total_arith_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}" "${CORE_RUNTIME_INCLUDE_DIR}")
 target_compile_options(total_arith_runtime_test_c PRIVATE
     -Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion)
 add_test(NAME total_arith_runtime_c COMMAND total_arith_runtime_test_c)

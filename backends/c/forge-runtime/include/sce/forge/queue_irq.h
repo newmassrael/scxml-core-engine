@@ -30,9 +30,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include <sce/forge/queue.h>
+#include <sce/text.h>
 
 #ifndef SCE_IRQ_STATE_T_DEFINED
 typedef uint32_t irq_state_t;

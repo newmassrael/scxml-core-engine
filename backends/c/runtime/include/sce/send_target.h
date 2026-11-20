@@ -18,8 +18,8 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <string.h>
 
+#include "sce/text.h"
 #include "sce/types.h"
 
 #ifdef __cplusplus
@@ -49,7 +49,8 @@ typedef enum {
  * URL to be no target of this processor.
  */
 static inline bool sce_send_target_names_nothing(const char *target) {
-    return target == NULL || target[0] == '\0' || strcmp(target, "undefined") == 0 || strcmp(target, "nil") == 0;
+    return target == NULL || target[0] == '\0' || sce_text_compare(target, "undefined") == 0 ||
+           sce_text_compare(target, "nil") == 0;
 }
 
 /**
@@ -79,15 +80,15 @@ static inline sce_send_target_kind_t sce_classify_send_target(const char *target
     if (target[0] == '!') {
         return SCE_SEND_TARGET_UNSUPPORTED;
     }
-    if (strcmp(target, "#_internal") == 0) {
+    if (sce_text_compare(target, "#_internal") == 0) {
         return SCE_SEND_TARGET_INTERNAL;
     }
-    if (strcmp(target, "#_parent") == 0) {
+    if (sce_text_compare(target, "#_parent") == 0) {
         return SCE_SEND_TARGET_PARENT;
     }
-    if (strncmp(target, session_prefix, sizeof(session_prefix) - 1u) == 0) {
+    if (sce_text_compare_n(target, session_prefix, sizeof(session_prefix) - 1u) == 0) {
         id = target + sizeof(session_prefix) - 1u;
-    } else if (strncmp(target, SCE_SCXML_LOCATION_PREFIX, sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u) == 0 &&
+    } else if (sce_text_compare_n(target, SCE_SCXML_LOCATION_PREFIX, sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u) == 0 &&
                target[sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u] != '\0') {
         if (!sce_session_id_from_scxml_location(id_buf, id_cap, target)) {
             return SCE_SEND_TARGET_UNREACHABLE;
@@ -97,7 +98,7 @@ static inline sce_send_target_kind_t sce_classify_send_target(const char *target
         id = NULL;
     }
     if (id != NULL) {
-        if (id[0] == '\0' || (own_session_id != NULL && strcmp(id, own_session_id) == 0)) {
+        if (id[0] == '\0' || (own_session_id != NULL && sce_text_compare(id, own_session_id) == 0)) {
             return SCE_SEND_TARGET_SELF;
         }
         *id_out = id;
