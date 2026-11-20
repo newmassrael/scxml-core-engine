@@ -2813,6 +2813,34 @@
       }
     },
     {
+      "name": "take_generation",
+      "document": "../../../sce-build/tests/fixtures/static_datamodel/algorithm_take_generation.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "take_generation",
+      "args": [
+        { "map": { "key": { "record": "schema_map_peer" }, "value": "u64" }, "capacity": 4, "inout": true },
+        { "record": "schema_map_peer" },
+        "u64"
+      ],
+      "output": { "union": "union_take_result" }
+    },
+    {
+      "name": "any_above",
+      "document": "../../../sce-build/tests/fixtures/static_datamodel/algorithm_any_above.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "any_above",
+      "args": [
+        { "map": { "key": "u32", "value": "u64" }, "capacity": 4 },
+        "u64"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "codec_declared_bounds",
       "kind": "codec",
       "ref_section": "codecs",
@@ -3912,6 +3940,28 @@
       ]
     },
     {
+      "name": "enum_take_kind",
+      "document": "../../../sce-build/tests/fixtures/static_datamodel/enum_take_kind.scxml",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "taken", "value": 0 },
+        { "name": "duplicate", "value": 1 },
+        { "name": "no_room", "value": 2 }
+      ]
+    },
+    {
+      "name": "put_outcome",
+      "document": "sce:std/collection/put_outcome.scxml",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "inserted", "value": 0 },
+        { "name": "replaced", "value": 1 },
+        { "name": "full", "value": 2 }
+      ]
+    },
+    {
       "name": "envelope",
       "document": "sce:std/mesh/envelope.scxml",
       "kind": "codec",
@@ -4131,6 +4181,33 @@
     {
       "name": "date_expression",
       "document": "sce:std/time/date_expression.scxml",
+      "kind": "union",
+      "ref_section": "unions"
+    },
+    {
+      "name": "schema_map_peer",
+      "document": "../../../sce-build/tests/fixtures/static_datamodel/schema_map_peer.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "peer.seen",
+      "fields": [
+        { "name": "low", "value": 3, "sce_type": "uint64" },
+        { "name": "high", "value": 7, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "schema_take_duplicate",
+      "document": "../../../sce-build/tests/fixtures/static_datamodel/schema_take_duplicate.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "take.duplicate",
+      "fields": [
+        { "name": "last", "value": 7, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "union_take_result",
+      "document": "../../../sce-build/tests/fixtures/static_datamodel/union_take_result.scxml",
       "kind": "union",
       "ref_section": "unions"
     },

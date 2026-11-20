@@ -1992,6 +1992,12 @@ GATES: dict[str, dict] = {
                   # the Interpreter's lowered-algorithm test lowers and runs
                   # (AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp).
                   "sce-build/tests/fixtures/union/**",
+                  # The algorithms the catalog names in the statechart
+                  # fixtures (a map an algorithm is lent, docs/adr/0108 step
+                  # 7b), which the same test lowers and runs, and the
+                  # statecharts AStaticDatamodelRunsLoweredUnderTheInterpreter
+                  # Test lowers beside them.
+                  "sce-build/tests/fixtures/static_datamodel/**",
                   # The test profile's documents the build generates the
                   # suites from, their traces and their expected logs, which
                   # ATestSuiteRunsEndToEndTest and

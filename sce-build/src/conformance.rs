@@ -7804,6 +7804,20 @@ mod tests {
         }
     }
 
+    /// The documents of the algorithm that keeps each peer's latest generation
+    /// in an `inout` map (docs/adr/0108, "Order of work" step 7b): the
+    /// algorithm, the record its map is keyed by, the union it answers with the
+    /// enum of its tag and the record of its `duplicate` case, and the standard
+    /// enum its put's outcome is a value of.
+    const TAKE_GENERATION_FIXTURES: [&str; 6] = [
+        "take_generation",
+        "schema_map_peer",
+        "union_take_result",
+        "enum_take_kind",
+        "schema_take_duplicate",
+        "put_outcome",
+    ];
+
     /// A map argument is spelled by its parts and the bound of the map a
     /// fragment builds, `inout` where the algorithm writes it in place, and a
     /// union answer by the union fixture it is a value of: each reads as its own
@@ -7904,6 +7918,157 @@ mod tests {
             rust_saved_unmarshal_expr("x", "u32"),
             rust_unmarshal_expr("x", "u32")
         );
+    }
+
+    /// docs/adr/0108, "Order of work" step 7b: the algorithm that writes an
+    /// `inout` map is scheduled on each backend that lowers an algorithm's map
+    /// and on no other, by the gate the generator's own list answers, and the
+    /// harness of each that schedules it calls it. The C11 harness holds the
+    /// map in the type a machine names for a map of the same parts and bound,
+    /// its record key written by the function that type's declaration names.
+    #[test]
+    fn an_algorithm_that_holds_a_map_reaches_only_the_harnesses_that_lower_it() {
+        let manifest = catalog_of(&TAKE_GENERATION_FIXTURES);
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let take = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == "take_generation")
+            .expect("the catalog holds the algorithm");
+        for &lang in Language::ALL
+            .iter()
+            .filter(|lang| crate::forge::codegen_matrix::emits_anything(**lang))
+        {
+            let lowers = crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS.contains(&lang);
+            let scheduled = lang_supports_fixture(take, lang, &resource_dir)
+                .unwrap_or_else(|e| panic!("{lang:?}: schedule: {e}"));
+            assert_eq!(
+                scheduled, lowers,
+                "{lang:?}: the algorithm's map is scheduled where the backend lowers one"
+            );
+            let rendered = render_harness(&manifest, lang, &template_base, &resource_dir)
+                .unwrap_or_else(|e| panic!("{lang:?}: render failed: {e}"));
+            let symbol = crate::forge::generator::forge_algorithm_symbol("take_generation", lang);
+            assert_eq!(
+                rendered.source.contains(&format!("{symbol}(")),
+                lowers,
+                "{lang:?}: the harness calls `{symbol}` exactly where it is scheduled"
+            );
+            if lang == Language::C11 {
+                for held in [
+                    "SCE_MAP_DECLARE(sce_static_map_SchemaMapPeerPayload_uint64_4, \
+                     SchemaMapPeerPayload_t, uint64_t, 4u,",
+                    "static inline void SchemaMapPeerPayload_map_key(const void *key, \
+                     sce_map_sink_t *sink) {",
+                    "sce_static_map_SchemaMapPeerPayload_uint64_4_t arg0;",
+                ] {
+                    assert!(
+                        rendered.source.contains(held),
+                        "C11: the harness does not hold `{held}`"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Every case of an algorithm fixture that is lent a map states the map in
+    /// its saved form, no more entries than the bound the fragment builds it
+    /// of, each `[key, value]`; and a case of one that writes a map in place
+    /// states, under `after`, one map for each `inout` slot in the order of the
+    /// arguments, while no other case states any. A case short of an `after`
+    /// would be read past its end by every fragment, and one that states an
+    /// `after` no fragment compares would read as a claim nobody checked.
+    #[test]
+    fn every_case_of_an_algorithm_lent_a_map_states_the_maps_in_their_saved_form() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let manifest = Manifest::load(&root.join("tests/forge/conformance/fixtures.json"))
+            .expect("manifest must load and validate");
+        let oracle: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("tests/forge/conformance/numerical_reference.json"))
+                .expect("read oracle"),
+        )
+        .expect("parse oracle JSON");
+        let saved_map = |value: &serde_json::Value, capacity: u32| {
+            value.as_array().is_some_and(|entries| {
+                entries.len() <= capacity as usize
+                    && entries
+                        .iter()
+                        .all(|entry| entry.as_array().is_some_and(|pair| pair.len() == 2))
+            })
+        };
+        let mut lent = 0;
+        let mut written = 0;
+        for fixture in &manifest.fixtures {
+            let FixtureSpec::Algorithm { args, .. } = &fixture.spec else {
+                continue;
+            };
+            let maps: Vec<(usize, &MapArg)> = args
+                .iter()
+                .enumerate()
+                .filter_map(|(at, arg)| match arg {
+                    AlgorithmArg::Map(m) => Some((at, m)),
+                    _ => None,
+                })
+                .collect();
+            if maps.is_empty() {
+                continue;
+            }
+            lent += 1;
+            let inout: Vec<u32> = maps
+                .iter()
+                .filter(|(_, m)| m.inout)
+                .map(|(_, m)| m.capacity)
+                .collect();
+            if !inout.is_empty() {
+                written += 1;
+            }
+            let cases = oracle[&fixture.ref_section][&fixture.name]["cases"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{}: the oracle holds no cases", fixture.name));
+            assert!(!cases.is_empty(), "{}: no case", fixture.name);
+            for (index, case) in cases.iter().enumerate() {
+                for (at, m) in &maps {
+                    assert!(
+                        saved_map(&case["args"][*at], m.capacity),
+                        "{} case {index}: argument {at} is no saved map of at most {} entries",
+                        fixture.name,
+                        m.capacity
+                    );
+                }
+                match case.get("after") {
+                    None => assert!(
+                        inout.is_empty() || case.get("fails").is_some(),
+                        "{} case {index}: no `after` for the map it writes in place",
+                        fixture.name
+                    ),
+                    Some(after) => {
+                        let after = after.as_array().unwrap_or_else(|| {
+                            panic!("{} case {index}: `after` is no array", fixture.name)
+                        });
+                        assert_eq!(
+                            after.len(),
+                            inout.len(),
+                            "{} case {index}: one map under `after` for each inout slot",
+                            fixture.name
+                        );
+                        for (map, capacity) in after.iter().zip(&inout) {
+                            assert!(
+                                saved_map(map, *capacity),
+                                "{} case {index}: an `after` is no saved map of at most \
+                                 {capacity} entries",
+                                fixture.name
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // A floor, as the enum check's is: a catalog that lost its map fixtures
+        // must not pass on none.
+        assert!(lent >= 2, "only {lent} fixture(s) are lent a map");
+        assert!(written >= 1, "no fixture writes a map in place");
     }
 
     /// A list output of unions is refused: the harness compares no two values of

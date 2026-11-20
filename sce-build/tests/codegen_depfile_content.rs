@@ -407,6 +407,36 @@ fn stage_conformance_catalog(dst: &Path) -> PathBuf {
             .expect("catalog file is copyable");
         }
     }
+    // A fixture whose document lies outside the resources names it by a path
+    // resolved from them, as an import is resolved from the document that names
+    // it (the statechart fixtures' algorithms of docs/adr/0108, step 7b). The
+    // staged copy names the same document from where the staging is.
+    let mut catalog: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&manifest).expect("staged catalog is readable"),
+    )
+    .expect("staged catalog is JSON");
+    let mut moved = false;
+    for fixture in catalog["fixtures"]
+        .as_array_mut()
+        .expect("the catalog lists fixtures")
+    {
+        let Some(document) = fixture.get("document").and_then(|d| d.as_str()) else {
+            continue;
+        };
+        if document.starts_with("sce:std/") {
+            continue;
+        }
+        let at = src_root.join("resources").join(document);
+        fixture["document"] = serde_json::Value::String(at.display().to_string());
+        moved = true;
+    }
+    if moved {
+        std::fs::write(
+            &manifest,
+            serde_json::to_string_pretty(&catalog).expect("the catalog re-serializes"),
+        )
+        .expect("staged catalog is writable");
+    }
 
     let resources = dst.join("resources");
     std::fs::create_dir_all(&resources).expect("resource directory is creatable");

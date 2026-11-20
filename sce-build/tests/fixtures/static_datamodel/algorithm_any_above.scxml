@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A rule that only reads a table (docs/adr/0108, D6 items 1 and 3): whether
+  `m` holds an entry whose value is above `least` under a key above 0. The map
+  is a read-only slot, lent where it stands, and the walk writes nothing of it,
+  so it walks the map itself and copies nothing. Held to the numerical
+  reference beside the table `algorithm_take_generation.scxml` writes in place
+  (tests/forge/conformance/numerical_reference.json).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="any_above"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="m" type="map&lt;uint32, uint64&gt;"/>
+    <sce:param name="least" type="uint64"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:foreach in="m" item="v" key="k">
+      <sce:if cond="v &gt; least &amp;&amp; k &gt; 0">
+        <sce:assign target="found" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>

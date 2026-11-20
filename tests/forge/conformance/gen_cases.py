@@ -175,6 +175,15 @@ listed in `TABLES` and written whole, in its order, before the fixture's draws. 
 model is first held to a second statement of the rule written with `datetime` alone,
 over the whole table and 4000 inputs inside datetime's years
 (`validate_resolve_date`); the `overflow` cases outside those years are hand cases.
+
+The algorithms that are lent a map (docs/adr/0108, "Order of work" step 7b):
+`take_generation`, which keeps each peer's latest generation in a table it writes in
+place and answers a union, and `any_above`, which only reads its map. A map is stated
+in its saved form, and the table a call leaves is stated beside its answer under
+`after`; the tables are drawn up to the bound the catalog gives the harnesses, full as
+often as any other size, so the refusal of a new peer is drawn as often as the
+duplicate and the newer generation. Only the backends that lower an algorithm's map
+(`codegen_matrix::ALGORITHM_MAP_BACKENDS`) and the Interpreter run these cases.
 """
 
 from __future__ import annotations
@@ -4473,6 +4482,130 @@ def utc_local_args(rng: SplitMix64):
     return [starts, offsets, local]
 
 
+# ── Maps an algorithm is lent (docs/adr/0108, "Order of work" step 7b) ──
+#
+# A map argument is stated in its saved form (D8): the array of its entries in
+# the map's order, each `[key, value]`, a 64-bit integer as the text of its
+# digits, a narrower integer as a number and a record as the object of its
+# fields. A slot the algorithm writes in place (`inout`) is stated again under
+# `after`, as the call leaves it, one map for each such slot in the order of the
+# arguments: such a model answers `("ok", value, [map, ...])`. The bound of each
+# map is the one the catalog gives the harnesses, read from it, so no case is
+# drawn against another bound.
+
+CATALOG = Path("tests/forge/conformance/fixtures.json")
+
+
+def catalog_capacity(fixture: str) -> int:
+    """The bound of the one map argument of `fixture` each harness builds."""
+    for entry in json.loads(CATALOG.read_text(encoding="utf-8"))["fixtures"]:
+        if entry["name"] != fixture:
+            continue
+        capacities = [arg["capacity"] for arg in entry["args"] if isinstance(arg, dict) and "map" in arg]
+        if len(capacities) == 1:
+            return capacities[0]
+    raise SystemExit(f"{fixture}: the catalog lends it no one map whose bound a model reads")
+
+
+TAKE_CAPACITY = catalog_capacity("take_generation")
+ABOVE_CAPACITY = catalog_capacity("any_above")
+
+
+def saved_peer(key: dict) -> tuple:
+    """A peer id of a saved table, its two 64-bit halves written as digits."""
+    return (int(key["low"]), int(key["high"]))
+
+
+def saved_table(held: list) -> list:
+    """The saved form of a table held as `[((low, high), generation), ...]`."""
+    return [[{"low": str(low), "high": str(high)}, str(generation)] for (low, high), generation in held]
+
+
+def take_generation(resets: list, peer: dict, generation: int):
+    """The latest generation of each peer, kept in `resets`
+    (sce-build/tests/fixtures/static_datamodel/algorithm_take_generation.scxml):
+    a generation equal to or older than the one held is a duplicate of the last,
+    the table as it was; a newer one is put where the held one stands; a peer the
+    table does not hold is put last, or refused as no_room where the table holds
+    as many peers as its bound, the table as it was. Either way taken."""
+    held = [(saved_peer(key), int(value)) for key, value in resets]
+    wanted = (peer["low"], peer["high"])
+    at = next((index for index, (key, _) in enumerate(held) if key == wanted), None)
+    if at is not None and held[at][1] >= generation:
+        return ("ok", {"kind": "duplicate", "last": held[at][1]}, [resets])
+    if at is not None:
+        held[at] = (wanted, generation)
+    elif len(held) < TAKE_CAPACITY:
+        held.append((wanted, generation))
+    else:
+        return ("ok", {"kind": "no_room"}, [resets])
+    return ("ok", {"kind": "taken"}, [saved_table(held)])
+
+
+TAKE_HALVES = [0, 1, 2, 2**32, 2**53, 2**63, U64_MAX - 1, U64_MAX]
+TAKE_GENERATIONS = [0, 1, 2, 5, 2**32, 2**53 - 1, 2**53, 2**63, U64_MAX - 1, U64_MAX]
+
+
+def take_peer(rng: SplitMix64) -> dict:
+    return {"low": rng.pick(TAKE_HALVES), "high": rng.pick(TAKE_HALVES)}
+
+
+def take_generation_value(rng: SplitMix64) -> int:
+    return rng.pick(TAKE_GENERATIONS) if rng.below(2) == 0 else rng.between(0, 1000)
+
+
+def take_args(rng: SplitMix64):
+    """A table of up to its bound of peers, a full one as often as any other
+    size, and two times in three a peer it holds with a generation one below, at
+    or one above the one held; otherwise a peer and a generation drawn afresh,
+    which a full table has no room for unless it holds the peer."""
+    size = rng.between(0, TAKE_CAPACITY)
+    held: list = []
+    while len(held) < size:
+        peer = take_peer(rng)
+        key = (peer["low"], peer["high"])
+        if any(known == key for known, _ in held):
+            continue
+        held.append((key, take_generation_value(rng)))
+    if held and rng.below(3) < 2:
+        key, value = held[rng.below(len(held))]
+        peer = {"low": key[0], "high": key[1]}
+        generation = clamp(value + rng.between(-1, 1), 0, U64_MAX)
+    else:
+        peer = take_peer(rng)
+        generation = take_generation_value(rng)
+    return [saved_table(held), peer, generation]
+
+
+def any_above(m: list, least: int):
+    """Whether the map holds a value above `least` under a key above 0
+    (sce-build/tests/fixtures/static_datamodel/algorithm_any_above.scxml). The
+    keys are 32-bit, saved as numbers; the values 64-bit, saved as digits."""
+    return ("ok", any(int(value) > least and key > 0 for key, value in m))
+
+
+ABOVE_KEYS = [0, 1, 2, 7, U32_MAX]
+ABOVE_VALUES = [0, 1, 2, 2**53 - 1, 2**53, 2**63, U64_MAX - 1, U64_MAX]
+
+
+def any_above_args(rng: SplitMix64):
+    """Up to the map's bound of keys, 0 among them as often as any other, each
+    value at an edge of uint64; and half the time a least one below or at a
+    value the map holds, otherwise at an edge."""
+    size = rng.between(0, ABOVE_CAPACITY)
+    keys: list = []
+    while len(keys) < size:
+        key = rng.pick(ABOVE_KEYS)
+        if key not in keys:
+            keys.append(key)
+    m = [[key, str(rng.pick(ABOVE_VALUES))] for key in keys]
+    if m and rng.below(2) == 0:
+        least = clamp(int(m[rng.below(len(m))][1]) + rng.between(-1, 0), 0, U64_MAX)
+    else:
+        least = rng.pick(ABOVE_VALUES)
+    return [m, least]
+
+
 #: fixture -> (model, argument generator, how many cases, seed).
 #: A seed is per fixture and never reused, so adding a case to one fixture does
 #: not move another's.
@@ -4642,6 +4775,8 @@ FIXTURES = {
     ),
     "resolve_date": (lambda args: resolve_date(*args), resolve_date_args, 400, 0xE110_006E),
     "resolve_date_at": (lambda args: resolve_date_at(*args), resolve_date_at_args, 200, 0xE110_0070),
+    "take_generation": (lambda args: take_generation(*args), take_args, 300, 0xE110_0074),
+    "any_above": (lambda args: any_above(*args), any_above_args, 200, 0xE110_0075),
 }
 
 #: Inputs a fixture is held to whole, written before its drawn cases, in the
@@ -5656,8 +5791,12 @@ def identity(args) -> str:
 
 
 def case_line(args, answer) -> str:
-    kind, value = answer
+    """One generated case: its arguments, its answer, and for a model of an
+    algorithm that writes a map in place, the maps it leaves (`after`)."""
+    kind, value = answer[0], answer[1]
     tail = f'"expected": {render(value)}' if kind == "ok" else f'"fails": "{value}"'
+    if len(answer) > 2:
+        tail += f', "after": {render(answer[2])}'
     return f'        {{ "args": {render(args)}, {tail}, "note": "{MARK}" }}'
 
 
@@ -5719,9 +5858,13 @@ def verify_model(fixture: str, model, cases) -> int:
         args = case["args"]
         answer = model(args)
         if "fails" in case:
-            ok = answer == ("fails", case["fails"])
+            ok = answer[:2] == ("fails", case["fails"])
         else:
             ok = answer[0] == "ok" and answer[1] == case["expected"]
+        # A model of an algorithm that writes a map in place also says what the
+        # map is left holding, and the case says the same.
+        if len(answer) > 2 or "after" in case:
+            ok = ok and len(answer) > 2 and answer[2] == case.get("after")
         if not ok:
             raise SystemExit(
                 f"{fixture}: the model answers {answer} for {args}, but the hand case "
