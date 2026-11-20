@@ -21,9 +21,11 @@
     deployment value (D12), the enum field of a typed request (step 4) and the named bounds' relations (D17);
   - the documents: `docs/SCE_SERVER_DEPLOY.md` and `docs/SCE_HOST_FEATURES.md` section 9 brought to all of it (step
     15).
-  Not landed: step 16 (D18, on measured need); D9's record-level half (after ADR 0101's steps 4a and 4b); a re-seal
-  pass for the outboxes and the audit log (D8 names one for every row); an in-place upgrade under load in the server
-  suite ("Conformance"); Open questions 5, 7, 8 and 9; and the later backend steps of D0.
+  D8's re-seal passes of the outboxes and the audit log (`Sealed::reseal_outboxes`, `Sealed::reseal_audit`) landed
+  after step 15, so that every row a sealed store holds has one. Not landed: step 16 (D18, on measured need); D9's
+  record-level half (after ADR 0101's steps 4a and 4b); an in-place upgrade under load in the server suite
+  ("Conformance"); Open questions 5, 7, 8 and 9; and the later backend steps of D0. Where a landing differs from the
+  text of a decision, an "Amended on landing" note under it says what landed and why.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0109" line in the landing that moves it):
   - `SCE_MESH.md` §10.5 (the windows an endpoint keeps are bounded by its links, D1), §10.11 (`persistence:` and
@@ -45,6 +47,13 @@
   - `SCE_WIRE_CONTRACTS.md`: the surfaces this record adds, each `pre-release` (the shape file of D11, the sealed
     row of D8, the audit entry and its signed checkpoint of D14, the signature profile of D9);
   - `docs/SCE_SERVER_DEPLOY.md` sections 0, 2 to 6, 8 and 9.
+  - Amended on landing: the landings moved more than this list names, each with its "Amended by: ADR 0109" line.
+    `docs/SCE_SERVER_DEPLOY.md` gained sections 1 (what the program supplies, D3 to D17), 2.4 (deployment values,
+    D12), 3.1 (group commit, D15), 3.2 (the key ring, D7, D8), 4.1 and 4.2 (the stop, D10; the upgrade, D11), 10 (the
+    metrics and health checks, D16) and 11 (the named bounds, D17). `docs/SCE_HOST_FEATURES.md` sections 7 and 8 name
+    the new operations' lanes, scenarios, stores, metrics and bounds (D3 to D7, D13, D14, D16, D17). New documents
+    fix the bytes of two surfaces, `docs/SCE_SEALED_RECORD.md` (D8) and `docs/SCE_AUDIT_LOG.md` (D14), and
+    `docs/SCE_CODEC_CONSUMER_MIGRATION.md` has a section per landing that changed a consumer's code.
 - Scope:
   - `sce-rust-mesh` (the `https` server and client, the keyed pool, the endpoint's windows, the checkpoint's commit),
     `sce-rust-session-store` (the contracts and SQLite implementations of every durable facility here),
@@ -534,6 +543,11 @@ not) on Rust and C++; a scenario that tags in one host and verifies in the other
   delivered to it at least once and taken in once, and none lost; a send to a client whose outbox is full is refused
   as row 9 and nothing accepted is missing; a stop under load leaves only clean checkpoints and a start raises no
   `RESTORED`; the parser's refusals each by code.
+- **Amended on landing.** The server's stop takes how long it waits, not a moment: `HttpsServer::stop(within:
+  Duration) -> bool`, asynchronous, answers whether every exchange in flight ended within it. The server runs on an
+  asynchronous runtime, whose timers count a duration, and the program gives the pool the moment
+  (`Pool::stop(deadline: Instant) -> StopReport`) once the server's stop answered, so the two together stay within
+  what the service manager allows (`docs/SCE_SERVER_DEPLOY.md` section 4.1).
 
 ### D11. A saved session is restored into a new version of its document by a migration the document declares
 
@@ -581,6 +595,15 @@ not) on Rust and C++; a scenario that tags in one host and verifies in the other
 - **Tested by:** fixtures `static_migration_1`, `_2` and `_3` with saved instances of the first two restored into the
   third, a running invoke dropped and a delayed send whose event was renamed delivered under its new name, on Rust and
   C++; each refusal code; a chain with a gap refused; a mutation casefile that drops a rename from the plan.
+- **Amended on landing.** The shape file is written by a command of its own, `sce-codegen shape <document>` (`-o`
+  writes it, `--host-invoker` as `generate` takes it), and not beside every generated machine: an author writes it
+  once per release, when the version is cut, and a file written at every build would be one nobody commits. The
+  fixtures are `static_migration_1` and `static_migration_2`, with their shape files under `shapes/`: one step holds
+  every kind of element, and a state of the first version restored into the second is the test
+  (`a_saved_state_is_migrated_into_the_next_version` on Rust, `ASavedStateIsMigratedIntoTheNextVersionTest` on C++).
+  A `convert` names the algorithm by the alias its document imports it under, and on Rust and C++ converts a
+  fixed-width number or a `bool`; another type is refused by name. The in-place upgrade under load of "Conformance"
+  is not built: no test of `tests/server` stops a loaded server and starts the next build on its store.
 
 ### D12. A machine declares the configuration it reads, and the deployment supplies it, checked
 
@@ -635,6 +658,12 @@ put-if killed between its write and its completion, answered with its first resu
 - It is not ADR 0062's log, which is bounded and forgets, nor `<log>`, which is diagnostic output.
 - **Tested by:** append, verify, a changed entry and a truncation detected, retention keeping the chain verifiable,
   redaction of both marks, on Rust and C++.
+- **Amended on landing.** The request record, `stdlib/host/audit_append_request.scxml`, has three fields: `stream`
+  (64), `entry` a text of the named bound `audit_entry` (4096), the record's JSON payload, and `sensitivity` a text
+  of the named bound `audit_marks` (1024), the schema's marks (`/password=secret;/email=personal`). The build writes
+  `entry` from the variable the `<param>` names and `sensitivity` from the schema `sce:entry` names, and a document
+  writes no `sensitivity`: the host redacts by marks it is given, since it reads no schema. The result is `sequence`
+  string (20), as decided. A record nested in an entry is refused by the build until its own marks are written.
 
 ### D15. The checkpoints of many sessions are committed together, and nothing is released before its commit
 
@@ -772,6 +801,12 @@ Each has a recommendation; the owner's acceptance decides them as recommended un
 1. Whether the durable stores share `sce-rust-session-store` or move to a crate named for the server's stores.
    Recommended: share it, one layout version for the file (2, with layout 1 upgraded in place on open in one
    transaction); a rename moves every dependant for no change of meaning.
+   Amended on landing: the stores share `sce-rust-session-store` and its one file, as recommended, but the layout
+   moved once per step that added tables, not once for the record: 2 (the keys, D7), 3 (the credentials, D3), 4 (a
+   token's sealed bytes, D8), 5 (the outboxes, D10), 6 (the key-value values, D13) and 7 (the audit log, D14). Each
+   step landed apart, and a file a landed build wrote has to name what it holds, so a build of the next step brings
+   any earlier layout to its own in one transaction on open (`LAYOUT_1` to `LAYOUT_7`, `lay_out` in
+   `backends/rust/session-store/src/sqlite.rs`).
 2. The default rates of D2. Recommended: the numbers D2 gives, each a deploy key, revisited with D16's measurements.
 3. Whether a deployment value belongs in the saved-state shape. Recommended: no (D12): the shape judges what a saved
    state holds, and it holds no deployment value; the manifest carries the declaration for deploy validation.
@@ -866,7 +901,8 @@ Each has a recommendation; the owner's acceptance decides them as recommended un
 - New wire surfaces, each `pre-release` and registered: the shape file, the sealed row, the audit entry and its
   signed checkpoint, the binding's signature profile.
 - The store's layout moves to 2; a build before it refuses the file, as `docs/SCE_SERVER_DEPLOY.md` section 3 already
-  says of a layout change.
+  says of a layout change. Amended on landing: it moved to 7, one layout per step that added tables (Open question 1);
+  a build before any of them refuses a file a later one opened.
 - More durable writes (the outbox, its acknowledgements, the audit log) are paid for by group commit, which the
   server's per-client delivery lets fill.
 - The runbook gains the key-encryption key, the credential and key stores, the stop, the upgrade, the metrics and the
