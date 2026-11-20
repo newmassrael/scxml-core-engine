@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 40948d21ebc5a6fe7ab6c4f9e58da2b865ba10589cdf0205751d36852f20df73
+// source-hash: 87a2eb84eebdb768267e608d24b4c5972ca4f13b65f8f537cab0aa9e32aa7d1a
 // source: sce:std/host/cose_encrypt0_request.scxml
-// SCE-MAP: cose_encrypt0_request.scxml:12 :: _forge_body
+// SCE-MAP: cose_encrypt0_request.scxml:15 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -22,7 +22,7 @@ public enum CoseEncrypt0Request {
     /// The most UTF-8 bytes `key_id` holds (the bound its type writes), as this build resolved it.
     public static let key_idMaxSize: UInt32 = 64
 
-    /// The most bytes `plaintext` holds (the bound its type writes), as this build resolved it.
+    /// The most bytes `plaintext` holds (the bound its type writes, named `cose_plaintext`), as this build resolved it.
     public static let plaintextMaxSize: UInt32 = 4352
 
     /// The most bytes `external_aad` holds (the bound its type writes), as this build resolved it.
@@ -38,7 +38,7 @@ public enum CoseEncrypt0Request {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_encrypt0_request:1\",\"x-sce-source-hash\":\"40948d21ebc5a6fe7ab6c4f9e58da2b865ba10589cdf0205751d36852f20df73\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"key_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"plaintext\":{\"type\":\"string\",\"maxLength\":4352,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"},\"external_aad\":{\"type\":\"string\",\"maxLength\":256,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"key_id\",\"plaintext\",\"external_aad\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_encrypt0_request:1\",\"x-sce-source-hash\":\"87a2eb84eebdb768267e608d24b4c5972ca4f13b65f8f537cab0aa9e32aa7d1a\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"key_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"plaintext\":{\"type\":\"string\",\"maxLength\":4352,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"},\"external_aad\":{\"type\":\"string\",\"maxLength\":256,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"key_id\",\"plaintext\",\"external_aad\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built
