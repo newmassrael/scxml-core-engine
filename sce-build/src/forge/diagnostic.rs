@@ -940,6 +940,11 @@ pub enum DiagnosticCode {
     /// build cannot write an entry of, or an append that names none.
     #[serde(rename = "validation/audit-entry-schema")]
     ValidationAuditEntrySchema,
+    /// `<invoke sce:payload>` (docs/adr/0107, Open question 1; docs/adr/0109,
+    /// D9): a record a COSE operation cannot sign, seal, verify or open by
+    /// name.
+    #[serde(rename = "validation/payload-record-schema")]
+    ValidationPayloadRecordSchema,
     /// A type whose largest encoding is past 2^64 - 1 bytes (docs/adr/0101,
     /// section 4.4): a CBOR codec's entry or map, or an event schema's or a
     /// union's payload, that no number the build holds sizes.
@@ -4110,6 +4115,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMapInWirePosition,
         ValidationDeploymentValueAssigned,
         ValidationAuditEntrySchema,
+        ValidationPayloadRecordSchema,
         ValidationEncodedSizeOverflow,
         TestProfileDatamodel,
         TestProfileMatcherType,
@@ -4936,6 +4942,9 @@ impl DiagnosticCode {
 
             // ── An audit entry's schema (docs/adr/0109, D14) ──
             ValidationAuditEntrySchema => Some("ADR 0109 D14"),
+
+            // ── A record signed or sealed by name (docs/adr/0109, D9) ──
+            ValidationPayloadRecordSchema => Some("ADR 0109 D9"),
 
             // ── The relations of the records' named bounds (docs/adr/0109, D17) ──
             CodegenStandardHostBoundRelation => Some("ADR 0109 D17"),
@@ -5924,6 +5933,7 @@ impl DiagnosticCode {
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
             | ValidationAuditEntrySchema
+            | ValidationPayloadRecordSchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -6487,6 +6497,7 @@ impl DiagnosticCode {
             ValidationMapInWirePosition => "validation/map-in-wire-position",
             ValidationDeploymentValueAssigned => "validation/deployment-value-assigned",
             ValidationAuditEntrySchema => "validation/audit-entry-schema",
+            ValidationPayloadRecordSchema => "validation/payload-record-schema",
             ValidationEncodedSizeOverflow => "validation/encoded-size-overflow",
             TestProfileDatamodel => "test-profile/datamodel",
             TestProfileMatcherType => "test-profile/matcher-type",
@@ -8791,6 +8802,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             detail,
         } => DiagnosticPayload {
             code: DiagnosticCode::ValidationAuditEntrySchema,
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!alias.is_empty()).then(|| alias.clone()),
+            fix: None,
+            key_fragments: vec![invoke_id.clone(), alias.clone(), detail.clone()],
+        },
+        // docs/adr/0109, D9: the alias as written is `actual`; each repair
+        // (import the schema, move the attribute, tighten a bound or raise it
+        // with --limit, rename an import) is a choice, so no fix.
+        ValidationError::PayloadRecordSchema {
+            invoke_id,
+            alias,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationPayloadRecordSchema,
             stage: Stage::Validation,
             expected: None,
             actual: (!alias.is_empty()).then(|| alias.clone()),
@@ -14416,6 +14442,18 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:3151fa4032abed22","code":"validation/audit-entry-schema","stage":"validation","spec":"ADR 0109 D14","message":"<invoke id=\"log\" sce:entry=\"SignIn\">: names no event schema this document imports","actual":"SignIn"}"#,
+            ),
+            (
+                // A signing names a record the document does not import
+                // (docs/adr/0109, D9).
+                "forge/payload-record-schema",
+                ValidationError::PayloadRecordSchema {
+                    invoke_id: "sign".into(),
+                    alias: "Note".into(),
+                    detail: "names no event schema this document imports".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:766db4b535df1beb","code":"validation/payload-record-schema","stage":"validation","spec":"ADR 0109 D9","message":"<invoke id=\"sign\" sce:payload=\"Note\">: names no event schema this document imports","actual":"Note"}"#,
             ),
             (
                 // A code identifier in shape — but Rust reserves `override`,
@@ -21577,6 +21615,7 @@ mod tests {
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
             | ValidationAuditEntrySchema
+            | ValidationPayloadRecordSchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -22623,6 +22662,7 @@ mod tests {
                 | ValidationMapKeyType | ValidationMapInWirePosition
                 | ValidationDeploymentValueAssigned
                 | ValidationAuditEntrySchema
+                | ValidationPayloadRecordSchema
                 | ValidationEncodedSizeOverflow
                 | TestProfileDatamodel | TestProfileMatcherType | TestProfileLiteral
                 | TestProfileTemplateParameter | TestProfileTemplateFloat
@@ -23083,9 +23123,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            562,
+            563,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 562 distinct variants to match the DiagnosticCode \
+             expected 563 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23746,6 +23786,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
             | ValidationAuditEntrySchema
+            | ValidationPayloadRecordSchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType

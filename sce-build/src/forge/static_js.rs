@@ -2196,6 +2196,13 @@ fn lower_parsed(
         crate::forge::standard_host::HostLane::Interpreter,
     )
     .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
+    // docs/adr/0109, D0 and D9: the Interpreter holds no record codec, so a
+    // record signed or sealed by name is refused by name here too.
+    crate::forge::payload_record::refuse_unread(
+        model,
+        crate::forge::standard_host::HostLane::Interpreter,
+    )
+    .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
     if model.datamodel != Datamodel::SceStatic {
         return install_doors(text, model).map_err(refuse);
     }

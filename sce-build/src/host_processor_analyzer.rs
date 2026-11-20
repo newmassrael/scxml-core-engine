@@ -470,6 +470,11 @@ pub fn declare_host_surfaces(
         // An audit append carries the marks of its entry's schema, which the
         // build writes and the document does not (docs/adr/0109, D14).
         crate::forge::audit_entry::write_requests(model);
+        // A signing or a seal that names a record crosses it as its
+        // deterministic CBOR, and a verification or an opening reads it back:
+        // the build writes the description of the record's type each reads it
+        // by (docs/adr/0109, D9).
+        crate::forge::payload_record::write_descriptors(model);
         model.refresh_invokes_view();
         // §scxml-3.12.1: a host completion falls back to the generic
         // `done.invoke` when the document names no specific one, as an SCXML
