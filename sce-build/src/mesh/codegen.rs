@@ -1622,6 +1622,10 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         template_base,
         // `generate_mesh` refused a keyed pool for this backend.
         sessions: _,
+        // `generate_mesh` refused a durable machine for this backend, and the
+        // receipt block only tells a durable binding how to send.
+        durable: _,
+        machine_receipt: _,
     } = inputs;
     // Validate: every target's transport must be in the registry AND
     // carried by the C++ template. Three failure modes, one refusal:
