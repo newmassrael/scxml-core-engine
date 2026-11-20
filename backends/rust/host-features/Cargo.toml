@@ -39,5 +39,10 @@ zeroize = "1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[dev-dependencies]
+# The SQLite store, which the audit log is held to across a reopened file
+# (docs/adr/0109, D14).
+sce-rust-session-store = { path = "../session-store" }
+
 [lints]
 workspace = true
