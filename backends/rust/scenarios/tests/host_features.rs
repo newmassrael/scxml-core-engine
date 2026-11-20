@@ -983,7 +983,8 @@ fn told<P: StatePolicy>(
 #[test]
 fn a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host() {
     use sce_rust_scenarios::integration::static_datamodel_large::static_host_cose_sm::{
-        StaticHostCoseLimits as Limits, StaticHostCosePolicy as LargePolicy,
+        StaticHostCoseLimits as Limits, StaticHostCosePersist as _,
+        StaticHostCosePolicy as LargePolicy,
     };
     let bounds = NamedBounds {
         cose_payload: Limits::COSE_PAYLOAD as usize,
