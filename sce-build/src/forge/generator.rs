@@ -23,6 +23,7 @@ use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
+mod c11_scenario_table;
 mod c11_source;
 mod c11_test_tables;
 mod c11_test_template;
@@ -61,6 +62,10 @@ pub(crate) mod test_template_walk;
 /// [`ImportContext::printed`] holds it, and a compile's options carry it for
 /// the element types an algorithm iterates. See [`printed_codec`].
 pub use printed_codec::PrintedCodec;
+
+/// A replay scenario as a C11 table, for an image that reads no file
+/// (docs/adr/0110, D3 item 3).
+pub use c11_scenario_table::{render_c11_scenario_table, C11ScenarioTable};
 
 /// A byte case of the Rust conformance harness, its source a literal of the
 /// codec's ready-made source (docs/adr/0081 §5). See [`rust_source::source_case`].

@@ -3463,6 +3463,33 @@ enum Commands {
         /// Observation trace file (JSON, `sce-observation-trace` v1)
         trace: String,
     },
+    /// Write a replay scenario as a C11 table, for a program that reads no
+    /// file.
+    ///
+    /// The `c11-mcu` gate runs each machine it weighs on a microcontroller
+    /// with no C library (docs/adr/0110, D3), where the scenario's JSON cannot
+    /// be read when the program runs. This reads it now and writes, on
+    /// standard output, one C11 translation unit: the machine's storage, a
+    /// start, and for each step the act it makes and a judge of what it
+    /// expects, compared in the machine's own types through the readers it
+    /// publishes. The runner that walks it is the gate's
+    /// (`backends/c/mcu/sce_mcu_scenario.h`).
+    ///
+    /// The scenario is first held to the vocabulary and to the machine, as
+    /// `scenarios --machine` holds it, and a scenario with a problem is
+    /// refused. A step the target cannot make (a restore, an event for a
+    /// child) is refused too. An expectation the target does not compare (a
+    /// map, a union, an enum, a text, a real, what the machine asked of its
+    /// host or sent its peers) is named in the table and left to the host
+    /// C11 lane, which replays the same scenario.
+    ScenarioTable {
+        /// Replay scenario (JSON, `machine` and `steps`)
+        scenario: String,
+        /// The statechart the scenario drives, generated for C11 beside the
+        /// table (`<stem>_sm.h`)
+        #[arg(long, value_name = "PATH")]
+        machine: String,
+    },
     /// Emit `<sce:unresolved>` placeholder NDJSON for a single SCXML
     /// file. One JSON record per
     /// marker (attribute form and element form both detected);
@@ -4602,6 +4629,9 @@ pub fn main() {
             error_format,
         ),
         Commands::JudgeScenarios { set, trace } => cmd_judge_scenarios(&set, &trace),
+        Commands::ScenarioTable { scenario, machine } => {
+            cmd_scenario_table(&scenario, &machine, error_format)
+        }
         Commands::TransitionTable {
             scxml,
             header,
@@ -4965,6 +4995,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Requirements { .. }
         | Commands::Scenarios { .. }
         | Commands::JudgeScenarios { .. }
+        | Commands::ScenarioTable { .. }
         | Commands::TransitionTable { .. }
         | Commands::ReviewTable { .. }
         | Commands::Pseudo { .. }
@@ -13842,6 +13873,67 @@ fn cmd_replay_scenario(
         }
         Ok(())
     });
+}
+
+/// `scenario-table`: the replay scenario `file` as the C11 table of the machine
+/// `machine` (docs/adr/0110, D3 item 3), on standard output. Refuses, through the
+/// door a requirement list uses (`cli/closure-input-unusable`), a file that is no
+/// replay scenario, a scenario the vocabulary or the machine finds a problem in,
+/// and a step the target cannot make.
+fn cmd_scenario_table(file: &str, machine: &str, error_format: ErrorFormat) {
+    use crate::scenario_replay::{machine_problems, problems, MachineFacts};
+    fn unusable(file: &str, kind: &'static str, detail: String) -> ! {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: file.to_string(),
+            what: "replay scenario",
+            kind,
+            detail,
+        })
+    }
+    let Some(scenario) = replay_scenario(file) else {
+        unusable(
+            file,
+            "not-a-replay-scenario",
+            "the file is not a JSON object that names its `machine` and lists its `steps`"
+                .to_string(),
+        )
+    };
+    let model = crate::parser::SCXMLParser::new()
+        .parse_file(machine)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    let document = Path::new(machine);
+    let stem = document
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default();
+    let facts = MachineFacts::of(&model, stem).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: machine.to_string(),
+            what: "machine",
+            kind: "type-unread",
+            detail: e.to_string(),
+        })
+    });
+    let mut found = problems(&scenario);
+    found.extend(machine_problems(&scenario, &facts));
+    if let Some(first) = found.first() {
+        unusable(
+            file,
+            "scenario-problem",
+            format!(
+                "{} problem(s), the first at {} ({}): {}",
+                found.len(),
+                first.path,
+                first.code,
+                first.detail
+            ),
+        );
+    }
+    let directory = document.parent().unwrap_or_else(|| Path::new("."));
+    let table =
+        crate::forge::generator::render_c11_scenario_table(&model, stem, directory, &scenario)
+            .unwrap_or_else(|detail| unusable(file, "not-on-the-target", detail));
+    out_stream(|w| w.write_all(table.source.as_bytes()));
 }
 
 /// `judge-scenarios` — judge an observation trace against a scenario set.
