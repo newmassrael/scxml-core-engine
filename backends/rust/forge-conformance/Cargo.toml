@@ -61,6 +61,10 @@ sce-link-runtime = { path = "../link-runtime" }
 # harness alone (measured 2026-09-30: Python, Go, Kotlin and C++ parse it
 # correctly). The reference file holds reals written with 16 and 17 digits.
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# The runtime's record codec (`record-cbor`), which
+# `tests/forge_cbor_payload_record.rs` holds byte for byte to the codec printed
+# for the same record (docs/adr/0109, D9).
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["record-cbor"] }
 
 [[test]]
 name = "numerical_conformance"

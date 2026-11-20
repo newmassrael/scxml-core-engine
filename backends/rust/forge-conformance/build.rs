@@ -334,6 +334,28 @@ fn main() {
         &options,
     );
 
+    // Step 7c'': the printed codecs of the records a COSE operation signs by
+    // name (docs/adr/0109, D9), each a map of its record under key 0, which
+    // `forge_cbor_payload_record.rs` holds byte for byte to the runtime's
+    // record codec (`codec_cbor_payload_record` of the corpus). The note is
+    // the static datamodel fixtures' own schema, generated beside the codec
+    // that names it through `use super::schema_cose_note;`.
+    generate_stripped_fixtures(
+        &[
+            "cbor_payload_leaves",
+            "codec_cbor_payload_leaves",
+            "codec_cbor_payload_note",
+        ],
+        &composed_fixtures,
+        &out_dir,
+        &options,
+    );
+    let static_fixtures = Path::new(&manifest_dir)
+        .join("../../../sce-build/tests/fixtures/static_datamodel")
+        .canonicalize()
+        .expect("canonicalize sce-build/tests/fixtures/static_datamodel");
+    generate_stripped_fixtures(&["schema_cose_note"], &static_fixtures, &out_dir, &options);
+
     // Step 7d: the CBOR codecs the pin of docs/adr/0101 step 0 captures
     // (tests/forge/cbor_pin), with every document they import, into a
     // directory of their own, where `forge_cbor_pin.rs` includes them as

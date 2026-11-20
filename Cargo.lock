@@ -3986,6 +3986,7 @@ dependencies = [
  "sce-forge-runtime",
  "sce-link-runtime",
  "sce-portable-bytes",
+ "sce-rust-runtime",
  "serde_json",
 ]
 

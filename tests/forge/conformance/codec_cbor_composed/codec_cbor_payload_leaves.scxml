@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A CBOR map of one entry, the record cbor_payload_leaves.scxml under key 0,
+  so that its value is `a1 00` and the record's own map (docs/adr/0101,
+  section 2.1). A record signed by name (sce:payload, docs/adr/0109, D9) is
+  that map, written by the runtime's record codec from the record's payload
+  JSON, and a peer that reads it is built from this printed codec, so the two
+  are held to one set of bytes
+  (tests/forge/conformance/numerical_reference.json, `codec_cbor_payload_record`).
+  A record's byte string past its bound has no encoding, so the encode can
+  refuse a value.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_payload_leaves"
+       sce:encode-may-fail="true" version="1.0">
+  <sce:import kind="event-schema" src="cbor_payload_leaves.scxml" as="Leaves"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="leaves" sce:type="record:Leaves" sce:key="0" sce:direction="out"/>
+  </datamodel>
+</scxml>

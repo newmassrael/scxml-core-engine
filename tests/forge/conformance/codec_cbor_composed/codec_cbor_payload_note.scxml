@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A CBOR map of one entry, the note static_host_cose.scxml signs and seals by
+  name (sce:payload, docs/adr/0109, D9; the event schema schema_cose_note.scxml
+  of the static datamodel fixtures), under key 0, so that its value is `a1 00`
+  and the note's own map (docs/adr/0101, section 2.1). The runtimes' record
+  codecs and this printed codec are held to one set of bytes for it
+  (tests/forge/conformance/numerical_reference.json, `codec_cbor_payload_record`).
+  A note's byte string past its bound has no encoding, so the encode can refuse
+  a value.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_payload_note"
+       sce:encode-may-fail="true" version="1.0">
+  <sce:import kind="event-schema" src="../../../../sce-build/tests/fixtures/static_datamodel/schema_cose_note.scxml" as="Note"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="note" sce:type="record:Note" sce:key="0" sce:direction="out"/>
+  </datamodel>
+</scxml>
