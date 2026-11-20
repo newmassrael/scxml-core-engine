@@ -64,12 +64,10 @@
 #include <stddef.h>
 
 #include "sce/types.h"
-{% if static_type_defs or static_saved_shape %}
-{# SCE Accepted Subset §2.15: a record and an enum a machine declares are
-   written to a saved state and read back by the functions declared beside them,
-   and a machine that saves declares its own. #}
-#include "sce/saved_state.h"
-{% endif %}
+{# SCE Accepted Subset §2.15: a record and an enum a machine declares are written
+   to a saved state and read back by functions its saved header declares
+   (`<name>_saved.h`, docs/adr/0110, D2), which includes the saved-state runtime;
+   this header declares the types alone. #}
 {% if ns_maps.any %}
 {# docs/adr/0108, D8: a map or a set is the type `sce/forge/map.h` declares for its
    key, its value and its bound, which the policy below holds. #}
@@ -2965,11 +2963,11 @@ void {{ cb }}(const sce_sample_t *sample SCE_PARAM_TYPESTATE(unconsumed), void *
 {% set saved_restore_args = model.needs_event_scheduler or model.host_processor_types or model.host_invoker_types or has_native_actions %}
 /* ── SCE Accepted Subset §2.15: saving this machine, restoring it ───── */
 /* A running machine saved at a macrostep boundary, and restored into a new process in place of
-   `_init` (docs/adr/0045). The saved state is JSON (`sce-saved-state`, format 3; formats 1 and 2
-   are read too), the same on every backend, so a state another backend saved is one this machine
-   restores, and the other way round. Nothing is allocated: the host owns the buffer a state is written into and the text one
-   is read from, and every refusal is one sentence in `err` (`sce/saved_json.h`), in the words the
-   other backends use. */
+   `_init` (docs/adr/0045), by a unit of its own: `{{ model.name }}_saved.c`, whose header
+   `{{ model.name }}_saved.h` declares `_save`, `_judge` and `_restore` (docs/adr/0110, D2). The
+   saved state is JSON text, which the unit formats and reads with the hosted C library; a
+   deployment that does not persist compiles neither file, and this machine's own source holds
+   nothing of it. What the unit reaches of the machine is declared below, and nothing else. */
 
 {% if saved_restore_args %}
 /* What a restore is handed besides the text: the seams `_init_with_*` take, since this is the one
@@ -2995,70 +2993,85 @@ typedef struct {{ csym_prefix }}{{ model.name }}_restore_args {
 } {{ csym_prefix }}{{ model.name }}_restore_args_t;
 
 {% endif %}
-/* The state of `sm`, written to `buf` of `cap` bytes as `sce-saved-state` JSON, terminated.
-   `wall_now_ms` is what time it is on the wall clock, in milliseconds since the Unix epoch: each
-   delayed `<send>` still waiting is written as the moment it comes due on that clock, not as a
-   wait, which would start again when the process came back.
-
-   `*len` is the length of the text, not counting its terminator, whether or not it fit: called
-   with `buf` NULL, this measures the text, and a host sizes its buffer by it. False, with the
-   reason in `err`, for a machine that is not running, one whose last macrostep stopped at the
-   microstep ceiling, and a buffer too small. */
-bool {{ csym_prefix }}{{ model.name }}_save(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t wall_now_ms, char *buf,
-                          size_t cap, size_t *len, sce_saved_error_t *err);
-
-/* Whether `text` is a state a machine of this document could restore, built from nothing and
-   touching no machine: its shape, its variables, its configuration, its queue and its waiting
-   sends are judged. What a parent's restore asks of the state of each child it holds. */
-{% if ns_maps.judges %}
-/* docs/adr/0108, D8: `check` is where the judge puts each map's entries to find a key held
-   twice, storage of the bound the host holds (`_saved_check_t`) and the judge's alone while
-   it runs; nothing the judge answers depends on what it held before. */
-{% endif %}
-bool {{ csym_prefix }}{{ model.name }}_judge(const char *text, size_t len{% if ns_maps.judges %}, {{ csym_prefix }}{{ model.name }}_saved_check_t *check{% endif %}, sce_saved_error_t *err);
-
-/* Stand `sm`, storage the caller owns, where `text` left a machine of this document: in place of
-   `_init`, so no `<onentry>` runs and no `<data>` is evaluated, since the saved run already did
-   both. Every value is read and the state judged before `sm` is touched, so a refused restore
-   leaves the storage as it was.
-
-   `wall_now_ms` is what time it is on the wall clock the saved `due`s were written against. A
-   delayed `<send>` is armed against the machine's clock to come due `due - wall_now_ms` after
-   now, and one that came due while the machine was away comes due now. A tree (format 2 or 3)
-   carries on under the id it was saved with, which every child's id and a peer's address name; a
-   format-1 state holds none, so the machine keeps the one it drew. The host drives the machine
-   on as it would one it had initialized. */
-bool {{ csym_prefix }}{{ model.name }}_restore({{ csym_prefix }}{{ model.name }}_t *sm, const char *text, size_t len,
-                             int64_t wall_now_ms{% if saved_restore_args %},
-                             const {{ csym_prefix }}{{ model.name }}_restore_args_t *args{% endif %}{{ map_seed_param }},
-                             sce_saved_error_t *err);
-
-/* ── The session of a tree (docs/adr/0045) ───────────────────────────── */
-/* A tree of sessions is saved by each session writing its own members into the object of its
-   parent's `invokes[i].session`, and restored by each being resumed where it stood. A parent
-   calls these on the child it runs, which it embeds; a host has no use for them. */
-
-/* Write the members of this session into the object `w` has open, in the order every backend
-   writes them. The root's `_save` is this inside the object that names the format. */
-bool {{ csym_prefix }}{{ model.name }}_save_members(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t wall_now_ms,
-                                    sce_jw_t *w, sce_saved_error_t *err);
-
-/* Refuse `members`, the object a child session was saved as in a tree of `form` (a child states no
-   format: its tree's is its own), unless it is a state of this document, building nothing
-   (docs/adr/0045, section 3, step 1). */
-bool {{ csym_prefix }}{{ model.name }}_judge_members(sce_jv_t members, int form{% if ns_maps.judges %}, {{ csym_prefix }}{{ model.name }}_saved_check_t *check{% endif %}, sce_saved_error_t *err);
-
-/* Stand `sm`, a machine its parent has begun (`_invoked_begin`) and not entered, where `members`
-   left it, read in the format `form` of its tree, in place of `_invoked_enter`: no `<onentry>`, no
-   `<data>`, nothing sent. */
-bool {{ csym_prefix }}{{ model.name }}_resume({{ csym_prefix }}{{ model.name }}_t *sm, sce_jv_t members, int form,
-                              int64_t wall_now_ms, sce_saved_error_t *err);
-
 /* Name the session `<parent_id>.<invoke_id>`, the id a child session is known by (docs/adr/0045):
    its parent's and the id of the start. False when the id does not fit the room a session id
-   has (`SCE_MAX_SESSION_ID_LEN`), in which case the session keeps the id it was given. */
+   has (`SCE_MAX_SESSION_ID_LEN`), in which case the session keeps the id it was given. A parent
+   names each child it starts so, whether or not it is ever saved, so a saved tree names every
+   session from the root alone. */
 bool {{ csym_prefix }}{{ model.name }}_bind_session_id({{ csym_prefix }}{{ model.name }}_t *sm, const char *parent_id,
                                        const char *invoke_id);
+
+/* ── The machine's doors for its saved unit (docs/adr/0110, D2) ───── */
+/* What `{{ model.name }}_saved.c` reaches of this machine beside its struct: the shape of the
+   document's states, the queue and the timer a restore fills, and the construction a restore
+   stands the machine up with. Each is the machine's own routine, the one its source runs, so a
+   restored machine and a started one cannot disagree. A host reaches none of them: it saves and
+   restores through `{{ model.name }}_saved.h`. */
+
+/* The states that are children of `s`, as bits of the configuration; none for an atomic state. */
+uint32_t {{ csym_prefix }}{{ model.name }}_core_state_children({{ csym_prefix }}{{ model.name }}_state_t s);
+
+/* The bit `s` holds in the configuration (`active`). */
+uint32_t {{ csym_prefix }}{{ model.name }}_core_state_bit({{ csym_prefix }}{{ model.name }}_state_t s);
+
+/* Whether `s` is a `<parallel>`, and whether it is a compound state. */
+bool {{ csym_prefix }}{{ model.name }}_core_state_is_parallel({{ csym_prefix }}{{ model.name }}_state_t s);
+bool {{ csym_prefix }}{{ model.name }}_core_state_is_compound({{ csym_prefix }}{{ model.name }}_state_t s);
+
+/* The parent of `s`, with `*has_parent` false (and `s` answered) for a state at the top. */
+{{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_core_state_parent({{ csym_prefix }}{{ model.name }}_state_t s,
+                                                                         bool *has_parent);
+
+/* The `k`-th state of the document in document order, `k` below the state count. */
+{{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_core_state_in_document_order(uint32_t k);
+
+/* The event the document receives under the `len` bytes of `name` (§scxml-3.12.1): the event
+   it names, or the one it extends, in `*out`, and the name it arrived under in `arrival`
+   (`SCE_MAX_ID_LEN` bytes) where that is not the document's own. False for a name the document
+   does not receive. */
+bool {{ csym_prefix }}{{ model.name }}_core_arrive(const char *name, size_t len, {{ csym_prefix }}{{ model.name }}_event_t *out,
+                                   char *arrival);
+
+/* Put `evt` at the back of the external queue, its data copied, as a host's event is put. */
+void {{ csym_prefix }}{{ model.name }}_core_queue_external({{ csym_prefix }}{{ model.name }}_t *sm,
+                                           const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt);
+{% if model.needs_event_scheduler %}
+
+/* What time it is on the machine's clock, in milliseconds. */
+uint64_t {{ csym_prefix }}{{ model.name }}_core_now_ms(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* A slot of the delayed-send queue that comes due at `ready_at_ms` on the machine's clock, in
+   its place by its time, for the caller to fill; NULL, with `full` raised as the machine raises a
+   send it cannot queue, when the queue is full. */
+{{ csym_prefix }}{{ model.name }}_scheduled_entry_t *{{ csym_prefix }}{{ model.name }}_core_arm_send({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                                    uint64_t ready_at_ms,
+                                                                                    const char *full);
+{% endif %}
+
+/* Build `sm` as every start of it does, entering nothing, with the seams `args` holds (each
+   member zero for its default){% if ns_maps.any %} and the seed its maps hash their keys under{% endif %}:
+   what a restore stands the machine in a saved configuration from. Anything but
+   `SCE_START_REFUSAL_NONE` built nothing that a host may drive. */
+sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_core_construct({{ csym_prefix }}{{ model.name }}_t *sm{% if saved_restore_args %},
+                                                      const {{ csym_prefix }}{{ model.name }}_restore_args_t *args{% endif %}{{ map_seed_param }});
+
+/* Stand a constructed machine in `configuration`, a configuration already judged to be one of
+   this document, entering nothing (W3C SCXML 3.2): what `_init_at` does after it constructs. */
+void {{ csym_prefix }}{{ model.name }}_core_stand_in({{ csym_prefix }}{{ model.name }}_t *sm,
+                                     const {{ csym_prefix }}{{ model.name }}_state_t *configuration, size_t count);
+{# Whether a child this machine starts sends to its parent, and is begun with the parent's
+   door, which `saved.c.jinja2` names for such a child alone: kept in step with the same
+   `set` in `state_machine.c.jinja2`. #}
+{% set saved_dispatch = namespace(any=false) %}
+{% for inv in model.invokes | scxml %}{% if inv.child_has_send_to_parent %}{% set saved_dispatch.any = true %}{% endif %}{% endfor %}
+{% for inv in model.invokes | hybrid %}{% for candidate in inv.candidates %}{% if candidate.child_has_send_to_parent %}{% set saved_dispatch.any = true %}{% endif %}{% endfor %}{% endfor %}
+{% if saved_dispatch.any %}
+
+/* Where a child session this machine starts sends to its parent: the door a resumed child is
+   handed, as a started one is (§scxml-6.4). `opaque` is the machine. */
+void {{ csym_prefix }}{{ model.name }}_core_dispatch_from_child(void *opaque, const char *name, const char *invoke_id,
+                                                const char *sender, const char *event_data);
+{% endif %}
 
 {% endif %}
 {% if model.test_component %}

@@ -1,0 +1,51 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    The C11 section attribute prefix of every statechart function a machine's
+    translation units define: its own source (`c/state_machine.c.jinja2`) and its
+    saved unit (`c/saved.c.jinja2`, docs/adr/0110, D2). One text for both, so a
+    deployment that places the machine in a section places all of it there.
+#}
+{% macro define(model) -%}
+/* SCE Protocol-Synthesis RFC §5.2 — C11 section attribute prefix
+   for every statechart function definition emitted below. When
+   `deploy.yaml`'s `platform.c11_section_attribute.class` is set, the
+   macro places every emitted statechart function in the named section
+   (C11-side wiring; non-C11 backends are rejected at the orchestrator
+   pass). When unset, the macro expands to nothing — author-side
+   override remains possible via a pre-include `#define SCE_SM_FN ...`
+   or compiler `-DSCE_SM_FN=...`. The `#ifndef` guard makes the
+   override stable across includes / unity builds.
+
+   Two toolchain families spell function placement differently and
+   neither accepts the other's syntax, so the choice is made by the
+   compiler that is actually running rather than by a deploy.yaml knob:
+   the section NAME is a property of the deployment, but the SYNTAX is a
+   property of the compiler, and asking a deployer to state their
+   toolchain twice — once to the build system, once here — is a pair
+   that can disagree.
+
+     * IAR (`__IAR_SYSTEMS_ICC__`, defined by every IAR C/C++ compiler):
+       `#pragma location="<name>"`, reached through `_Pragma` so it can
+       live in a macro. The pragma applies to the NEXT declaration,
+       which is why every use site below places the macro at the very
+       start of the declaration rather than between the storage class
+       and the return type.
+     * GCC / Clang / Keil: `__attribute__((section("<name>")))`, which
+       is valid in that same leading position.
+
+   One generated file therefore builds under either family with no
+   regeneration and no configuration change. */
+#ifndef SCE_SM_FN
+{% if model.c11_section_attribute_class %}
+#if defined(__IAR_SYSTEMS_ICC__)
+#define SCE_SM_FN _Pragma("location=\"{{ model.c11_section_attribute_class }}\"")
+#else
+#define SCE_SM_FN __attribute__((section("{{ model.c11_section_attribute_class }}")))
+#endif
+{% else %}
+#define SCE_SM_FN
+{% endif %}
+#endif
+{%- endmacro %}

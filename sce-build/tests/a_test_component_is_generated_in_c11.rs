@@ -156,7 +156,17 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
             .into_iter()
             .map(|(written, _)| written)
             .collect();
-        assert_eq!(names, [format!("{name}_sm.h"), format!("{name}_sm.c")]);
+        let (machine, saved) = names.split_at(2);
+        assert_eq!(machine, [format!("{name}_sm.h"), format!("{name}_sm.c")]);
+        // docs/adr/0110, D2: what follows the machine is its saved unit, for a
+        // component that is saved or reads a module parameter, and nothing else.
+        assert!(
+            saved
+                .iter()
+                .all(|written| *written == format!("{name}_saved.h")
+                    || *written == format!("{name}_saved.c")),
+            "{name} writes its machine and its saved unit alone: {names:?}"
+        );
         let header = file(name, &format!("{name}_sm.h"));
         for needle in [
             "\n#include \"sce/test/test_case_run.h\"\n".to_string(),
@@ -888,7 +898,9 @@ fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
     assert!(sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::C11));
     let source = file("param_asker", "param_asker_sm.c");
     for needle in [
-        "\n#include <sce/saved_values.h>\n",
+        // docs/adr/0110, D2: the readers of a saved value are the saved unit's,
+        // whose header the component includes.
+        "\n#include \"param_asker_saved.h\"\n",
         "\n    sm->policy.v_job = 0;\n",
         "SCE_SM_FN static bool param_asker_component_accept_module_parameters(void *user_data,",
         "\n    param_asker_t *sm = (param_asker_t *)user_data;\n",

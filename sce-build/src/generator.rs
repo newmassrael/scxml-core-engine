@@ -4352,7 +4352,20 @@ fn render_c11(
         test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
         snapshot_event => crate::test_component::SNAPSHOT_EVENT,
     };
-    let source_code = source_tmpl.render(source_ctx).map_err(render_error)?;
+    let source_code = source_tmpl.render(&source_ctx).map_err(render_error)?;
+    // docs/adr/0110, D2: a machine whose state a saved state holds is saved and
+    // restored by a unit of its own, rendered from the source's context and
+    // before the book of reasons is sealed, since a restore raises the reasons a
+    // start would.
+    let saved_source = match static_saved_shape {
+        Some(_) => Some(
+            env.get_template("c/saved.c.jinja2")
+                .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?
+                .render(&source_ctx)
+                .map_err(render_error)?,
+        ),
+        None => None,
+    };
     data_slot.hold_reasons(crate::forge::c11_reasons::seal());
 
     let header_ctx = minijinja::context! {
@@ -4400,6 +4413,9 @@ fn render_c11(
             .unwrap_or_default(),
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_saved_shape,
+        // docs/adr/0110, D2: the saved form of each type the machine declares,
+        // which its saved header declares and its own header does not.
+        static_saved_defs => static_lowering.saved_defs.join("\n\n"),
         static_seeds_algorithms => static_lowering.seeds_algorithms,
         static_done_data => static_done_data,
         ends_with_done_data => ends_with_done_data,
@@ -4414,16 +4430,44 @@ fn render_c11(
             .cloned()
             .unwrap_or_default(),
     };
-    let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;
+    let header_code = header_tmpl.render(&header_ctx).map_err(render_error)?;
+
+    let mut files = vec![
+        (format!("{input_stem}_sm.h"), header_code),
+        (format!("{input_stem}_sm.c"), source_code),
+    ];
+    // docs/adr/0110, D2: the saved unit's header, for a machine that is saved
+    // and for a test component that reads its module parameters by the readers
+    // of a saved value (docs/SCE_TEST_PROFILE.md §11.5), and its source for the
+    // first alone.
+    if c11_has_saved_header(model.test_component.as_ref(), static_saved_shape.is_some()) {
+        let saved_header = env
+            .get_template("c/saved.h.jinja2")
+            .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?
+            .render(&header_ctx)
+            .map_err(render_error)?;
+        files.push((format!("{input_stem}_saved.h"), saved_header));
+    }
+    if let Some(saved_source) = saved_source {
+        files.push((format!("{input_stem}_saved.c"), saved_source));
+    }
 
     Ok(GeneratedOutput {
-        files: vec![
-            (format!("{input_stem}_sm.h"), header_code),
-            (format!("{input_stem}_sm.c"), source_code),
-        ],
+        files,
         requires,
         ..Default::default()
     })
+}
+
+/// Whether a C11 machine has a saved header (`<machine>_saved.h`,
+/// docs/adr/0110, D2): one whose state a saved state holds (`saved`), and a test
+/// component that reads its module parameters, which it reads by the readers of
+/// a saved value of their types (docs/SCE_TEST_PROFILE.md §11.5).
+fn c11_has_saved_header(
+    test_component: Option<&crate::test_component::TestComponentProfile>,
+    saved: bool,
+) -> bool {
+    saved || test_component.is_some_and(|component| !component.module_parameters.is_empty())
 }
 
 // ── Kotlin generator ─────────────────────────────────────────────

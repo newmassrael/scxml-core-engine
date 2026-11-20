@@ -20,6 +20,7 @@
 // name is held by test_a_test_suite_runs_through_its_runner.c.
 
 #include "../require_started.h"
+#include "static_enum_saved.h"
 #include "static_enum_sm.h"
 
 #include <stdint.h>

@@ -19,8 +19,13 @@
     The block of a `call` is what runs when a child declaring `<sce:action>`s was given
     no complete host, so that nothing was begun. `seed`, when not empty, is the
     expression of the seed a child that takes one is begun with (docs/adr/0108, D8).
+    `dispatch`, when not empty, is the parent's door the child sends to its parent
+    through, for a unit the parent's own `_dispatch_external_by_name` is not in
+    scope of: the saved unit names the door the machine exports for it,
+    `_core_dispatch_from_child` (docs/adr/0110, D2).
 #}
-{% macro begin_static_child(prefix, parent, slot, stem, host_call, declares_duties, sends_to_parent, invoke_id, clock, seed='') -%}
+{% macro begin_static_child(prefix, parent, slot, stem, host_call, declares_duties, sends_to_parent, invoke_id, clock, seed='', dispatch='') -%}
+{% set door = dispatch if dispatch else prefix ~ parent ~ '_dispatch_external_by_name' %}
 {% if host_call %}
 if (!{{ prefix }}{{ stem }}_invoked_begin(
         &{{ slot }},
@@ -31,7 +36,7 @@ if (!{{ prefix }}{{ stem }}_invoked_begin(
 {% if sends_to_parent %}
         sm,
         sm->session_id,
-        {{ prefix }}{{ parent }}_dispatch_external_by_name,
+        {{ door }},
 {% else %}
         NULL,
         NULL,
@@ -48,7 +53,7 @@ if (!{{ prefix }}{{ stem }}_invoked_begin(
 {% if sends_to_parent %}
     sm,
     sm->session_id,
-    {{ prefix }}{{ parent }}_dispatch_external_by_name,
+    {{ door }},
 {% else %}
     NULL,
     NULL,

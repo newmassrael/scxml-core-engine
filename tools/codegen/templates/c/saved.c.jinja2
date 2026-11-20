@@ -3,10 +3,18 @@
 
 {#
     Saving this machine and restoring it (SCE Accepted Subset §2.15, docs/adr/0045):
-    the functions of a `sce-static` document that saves, included by
-    `state_machine.c.jinja2` after the doors that construct a machine. The C11
-    twin of the saved block of tools/codegen/templates/go/state_machine.go.jinja2
-    and of tools/codegen/templates/python/saved_functions.py.jinja2.
+    `<name>_saved.c`, the unit of a `sce-static` document that saves, beside the
+    machine's own source (docs/adr/0110, D2). The C11 twin of the saved block of
+    tools/codegen/templates/go/state_machine.go.jinja2 and of
+    tools/codegen/templates/python/saved_functions.py.jinja2.
+
+    A unit of its own because it is hosted: a saved state is JSON text, written and
+    read with the C library's formatter (`sce/saved_json.h`, `sce/saved_values.h`),
+    which a machine's core never calls (docs/adr/0110, D1). A deployment that does
+    not persist compiles none of it. What it reaches of the machine beside the
+    machine's struct are the doors the machine's header declares for it
+    (`_core_*`, defined by `state_machine.c.jinja2`), so a restored machine is
+    built, queued and stood in its configuration by the code a started one is.
 
     The profile is the C11 one: nothing is allocated. A text a machine restores is
     read in place (`sce/saved_state.h`), a text it saves is written into a buffer
@@ -16,11 +24,12 @@
     machine refuses leaves it as the caller had it (`_restore` constructs the
     machine only after the judge has passed).
 
-    The `_save`, `_judge` and `_restore` doors are declared in the header.
+    The `_save`, `_judge` and `_restore` doors are declared in `c/saved.h.jinja2`.
 #}
-
+{% include 'license_header.jinja2' %}
 {%- import '_macros/c_child_begin.jinja2' as child_begin %}
 {%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
+{%- import '_macros/c_section_attribute.jinja2' as section_attribute %}
 {#- A scalar's saved form, one text with a test component's read of its module
     parameters (`c/state_machine.c.jinja2`). -#}
 {%- from '_macros/c_saved_value.jinja2' import put_scalar, get_scalar %}
@@ -119,6 +128,22 @@ if (({{ expr }}).present) {
 {% for record in static_saved_shape.records %}{% if record.revisions %}{% set shape_revised.any = true %}{% endif %}{% endfor %}
 {% for lineage in static_saved_shape.enums %}{% if lineage.revisions %}{% set shape_revised.any = true %}{% endif %}{% endfor %}
 
+/* docs/adr/0110, D2: the saved unit, hosted by design. Its header declares the doors a host
+   saves and restores through and the saved form of every type the machine declares; the
+   machine's header, which it includes, declares the doors of the machine it reaches. */
+#include "{{ model.name }}_saved.h"
+{% for inv in family %}
+{% for target in (inv.candidates if inv.candidates else ([{'stem': inv.child_name}] if inv.kind == 'Scxml' else [])) %}
+/* docs/adr/0045: a child session is saved, judged and resumed through its own saved unit. */
+#include "{{ target.stem }}_saved.h"
+{% endfor %}
+{% endfor %}
+
+#include <stdio.h>  /* snprintf for the paths a refusal names */
+#include <string.h> /* strcmp and strlen of the texts a saved state holds */
+
+{{ section_attribute.define(model) }}
+
 /* ══════════════════════════════════════════════════════════════════════════
    SCE Accepted Subset §2.15: saving this machine, restoring it
    ══════════════════════════════════════════════════════════════════════════ */
@@ -216,8 +241,8 @@ SCE_SM_FN static SCE_C_UNUSED const char *{{ _t }}_saved_event_name({{ _t }}_eve
 SCE_SM_FN static void {{ _t }}_saved_write_states(sce_jw_t *w, uint32_t bits) {
     sce_jw_begin_array(w);
     for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
-        const {{ _t }}_state_t s = k_document_order[k];
-        if ((bits & state_bit(s)) != 0u) {
+        const {{ _t }}_state_t s = {{ _t }}_core_state_in_document_order(k);
+        if ((bits & {{ _t }}_core_state_bit(s)) != 0u) {
             sce_jw_element(w);
             sce_jw_string(w, {{ _t }}_state_name(s));
         }
@@ -402,14 +427,14 @@ SCE_SM_FN static void {{ _t }}_saved_history_set({{ _t }}_t *sm, size_t index, u
 /* §scxml-3.11, for a subtree: whether `state`, in the set `among`, holds the number of children a
    configuration gives it. */
 SCE_SM_FN static {{ _t }}_configuration_rejection_t {{ _t }}_saved_child_arity(uint32_t among, {{ _t }}_state_t state) {
-    const uint32_t children = k_child_states[state];
+    const uint32_t children = {{ _t }}_core_state_children(state);
     uint32_t held = among & children;
     size_t count = 0u;
     while (held != 0u) {
         held &= held - 1u;
         ++count;
     }
-    if (state_is_parallel(state)) {
+    if ({{ _t }}_core_state_is_parallel(state)) {
         if ((children & ~among) != 0u) {
             return {{ _u }}_CONFIG_PARALLEL_REGION_MISSING;
         }
@@ -419,7 +444,7 @@ SCE_SM_FN static {{ _t }}_configuration_rejection_t {{ _t }}_saved_child_arity(u
         }
         return count != regions ? {{ _u }}_CONFIG_PARALLEL_CHILD_COUNT : {{ _u }}_CONFIG_NONE;
     }
-    if (state_is_compound(state)) {
+    if ({{ _t }}_core_state_is_compound(state)) {
         return count != 1u ? {{ _u }}_CONFIG_COMPOUND_CHILD_COUNT : {{ _u }}_CONFIG_NONE;
     }
     return count != 0u ? {{ _u }}_CONFIG_ATOMIC_HAS_CHILDREN : {{ _u }}_CONFIG_NONE;
@@ -435,7 +460,7 @@ SCE_SM_FN static bool {{ _t }}_saved_history_read(sce_jv_t names, const char *hi
     sce_jiter_t it;
     sce_jv_t item;
     uint32_t held = 0u;
-    uint32_t subtree = state_bit(parent);
+    uint32_t subtree = {{ _t }}_core_state_bit(parent);
     char name[SCE_SAVED_QUOTE_LEN];
     size_t count = 0u;
     (void)sce_jv_iter(names, &it);
@@ -445,10 +470,10 @@ SCE_SM_FN static bool {{ _t }}_saved_history_read(sce_jv_t names, const char *hi
         if (!{{ _t }}_state_from_name(name, &state)) {
             return sce_saved_refuse(err, "the history '%s' records '%s', which the document does not name", history, name);
         }
-        if ((held & state_bit(state)) != 0u) {
+        if ((held & {{ _t }}_core_state_bit(state)) != 0u) {
             return sce_saved_refuse(err, "the history '%s' records '%s' twice", history, name);
         }
-        held |= state_bit(state);
+        held |= {{ _t }}_core_state_bit(state);
         ++count;
     }
     if (count == 0u) {
@@ -459,12 +484,12 @@ SCE_SM_FN static bool {{ _t }}_saved_history_read(sce_jv_t names, const char *hi
         {{ _t }}_state_t state = ({{ _t }}_state_t)k;
         uint32_t chain = 0u;
         bool has_parent = true;
-        if ((held & state_bit(state)) == 0u) {
+        if ((held & {{ _t }}_core_state_bit(state)) == 0u) {
             continue;
         }
         while (has_parent && state != parent) {
-            chain |= state_bit(state);
-            state = state_get_parent(state, &has_parent);
+            chain |= {{ _t }}_core_state_bit(state);
+            state = {{ _t }}_core_state_parent(state, &has_parent);
         }
         if (!has_parent || chain == 0u) {
             return sce_saved_refuse(err, "the history '%s' records '%s', which is not below its parent '%s'", history,
@@ -474,7 +499,8 @@ SCE_SM_FN static bool {{ _t }}_saved_history_read(sce_jv_t names, const char *hi
     }
     if (deep) {
         for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
-            if ((held & state_bit(({{ _t }}_state_t)k)) != 0u && k_child_states[k] != 0u) {
+            if ((held & {{ _t }}_core_state_bit(({{ _t }}_state_t)k)) != 0u &&
+                {{ _t }}_core_state_children(({{ _t }}_state_t)k) != 0u) {
                 return sce_saved_refuse(err,
                                         "the history '%s' records '%s', which has children (a deep history records "
                                         "atomic states)",
@@ -482,7 +508,7 @@ SCE_SM_FN static bool {{ _t }}_saved_history_read(sce_jv_t names, const char *hi
             }
         }
         for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
-            if ((subtree & state_bit(({{ _t }}_state_t)k)) != 0u) {
+            if ((subtree & {{ _t }}_core_state_bit(({{ _t }}_state_t)k)) != 0u) {
                 const {{ _t }}_configuration_rejection_t verdict = {{ _t }}_saved_child_arity(subtree, ({{ _t }}_state_t)k);
                 if (verdict != {{ _u }}_CONFIG_NONE) {
                     return sce_saved_refuse(err, "the history '%s' records states of no configuration: %s", history,
@@ -493,8 +519,8 @@ SCE_SM_FN static bool {{ _t }}_saved_history_read(sce_jv_t names, const char *hi
     } else {
         for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
             bool has_parent = false;
-            if ((held & state_bit(({{ _t }}_state_t)k)) != 0u &&
-                (state_get_parent(({{ _t }}_state_t)k, &has_parent) != parent || !has_parent)) {
+            if ((held & {{ _t }}_core_state_bit(({{ _t }}_state_t)k)) != 0u &&
+                ({{ _t }}_core_state_parent(({{ _t }}_state_t)k, &has_parent) != parent || !has_parent)) {
                 return sce_saved_refuse(err,
                                         "the history '%s' records '%s', which is not a child of '%s' (a shallow history "
                                         "records the children)",
@@ -605,7 +631,7 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         memset(&queued, 0, sizeof(queued));
         (void)sce_jv_string(event.name, quoted, sizeof(quoted), NULL);
         if (!sce_jv_string(event.name, name, sizeof(name), NULL) ||
-            !{{ _t }}_arrive(name, strlen(name), &queued.event, queued.name)) {
+            !{{ _t }}_core_arrive(name, strlen(name), &queued.event, queued.name)) {
             return sce_saved_refuse(err, "%s is '%s', which the document does not name", what, quoted);
         }
         if (!sce_jv_string(event.type, kind, sizeof(kind), NULL) ||
@@ -616,12 +642,14 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         (void)snprintf(field, sizeof(field), "%s.data", what);
         /* docs/adr/0086, section 8.5 (d): the data is read into the machine's
            scratch, which a restore has to itself, and the queue copies it; a
-           restore that only judges reads it into nothing, held to the slot. */
-        if (!sce_saved_text_into(event.data, field, sm != NULL ? SCE_SCRATCH_BUF(payload) : NULL,
-                                 SCE_SCRATCH_CAP(payload), err)) {
+           restore that only judges reads it into nothing, held to the slot. A
+           machine that saves has no script engine, so the role is storage of
+           its slot (`c/state_machine.c.jinja2`, `SCE_SCRATCH_BUF`). */
+        if (!sce_saved_text_into(event.data, field, sm != NULL ? sm->scratch.payload : NULL,
+                                 sizeof(sm->scratch.payload), err)) {
             return false;
         }
-        queued.data = sm != NULL ? SCE_SCRATCH_BUF(payload) : NULL;
+        queued.data = sm != NULL ? sm->scratch.payload : NULL;
         (void)snprintf(field, sizeof(field), "%s.sendid", what);
         if (!sce_saved_text_into(event.send_id, field, queued.send_id, sizeof(queued.send_id), err)) {
             return false;
@@ -646,7 +674,7 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         }
 {% endif %}
         if (sm != NULL) {
-            event_queue_push(sm, &sm->external_queue, &queued);
+            {{ _t }}_core_queue_external(sm, &queued);
         }
     }
     return true;
@@ -717,7 +745,7 @@ SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }
     sce_jiter_t it;
     sce_jv_t item;
     const size_t held = sce_jv_count(s->pending);
-    const uint64_t now_ms = sm != NULL ? sched_now_ms(sm) : 0u;
+    const uint64_t now_ms = sm != NULL ? {{ _t }}_core_now_ms(sm) : 0u;
     (void)wall_now_ms;
     (void)now_ms;
     if (held > (size_t)SCE_MAX_SCHEDULED) {
@@ -743,7 +771,7 @@ SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }
         case SCE_SAVED_ACT_RAISE:
         case SCE_SAVED_ACT_INTERNAL:
             if (!sce_jv_string(send.event, name, sizeof(name), NULL) ||
-                !{{ _t }}_arrive(name, strlen(name), &resolved, arrival)) {
+                !{{ _t }}_core_arrive(name, strlen(name), &resolved, arrival)) {
                 return sce_saved_refuse(err, "%s is '%s', which the document does not name", what, quoted);
             }
             break;
@@ -810,8 +838,8 @@ SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }
         }
 {% endif %}
         if (sm != NULL) {
-            slot = scheduled_reserve(sm, sce_saved_ready_at(wall_now_ms, now_ms, send.due),
-                                     {{ reason("scheduled_queue_full_send") }});
+            slot = {{ _t }}_core_arm_send(sm, sce_saved_ready_at(wall_now_ms, now_ms, send.due),
+                                          {{ reason("scheduled_queue_full_send") }});
             if (slot == NULL) {
                 return sce_saved_refuse(err, "%s could not be armed: the scheduled-send queue is full", what);
             }
@@ -918,7 +946,7 @@ SCE_SM_FN static bool {{ _t }}_saved_host_invokes(const sce_saved_session_t *s, 
                                     "%s is '%s' of type '%s', which the document does not have a host invoker run", what,
                                     quoted_id, quoted_type);
         }
-        if ((held & state_bit(owner->owner)) == 0u) {
+        if ((held & {{ _t }}_core_state_bit(owner->owner)) == 0u) {
             return sce_saved_refuse(err, "%s is '%s', whose state the saved configuration does not stand in", what,
                                     quoted_id);
         }
@@ -1083,7 +1111,7 @@ SCE_SM_FN static bool {{ _t }}_saved_resume_child({{ _t }}_t *sm, const sce_save
         /* The author's own `id` is the id the machine's events from the child carry. */
         sce_copy_bounded_id(invoke_id, "{{ inv.invoke_id | escape_c }}");
 {% endif %}
-{% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->' ~ slot, target.stem, target.child_host_call, target.child_declares_host_duties, target.child_has_send_to_parent, 'invoke_id', child_clock_c, 'sce_map_seed_of_child(sm->map_seed, invoke_id)' if target.child_takes_map_seed else '') %}
+{% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->' ~ slot, target.stem, target.child_host_call, target.child_declares_host_duties, target.child_has_send_to_parent, 'invoke_id', child_clock_c, 'sce_map_seed_of_child(sm->map_seed, invoke_id)' if target.child_takes_map_seed else '', _t ~ '_core_dispatch_from_child') %}
         return sce_saved_refuse(err, "invokes[%lu] could not be given the host its child declares", (unsigned long)index);
 {% endcall %}
 {% if model.host_invoker_types %}
@@ -1189,7 +1217,7 @@ SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint3
             return sce_saved_refuse(err, "invokes[%lu] is '%s', which the document does not invoke", (unsigned long)at,
                                     quoted);
         }
-        if ((held & state_bit(owner->owner)) == 0u) {
+        if ((held & {{ _t }}_core_state_bit(owner->owner)) == 0u) {
             return sce_saved_refuse(err, "invokes[%lu] is '%s', whose state the saved configuration does not stand in",
                                     (unsigned long)at, quoted);
         }
@@ -1335,7 +1363,7 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
             return sce_saved_refuse(err, "the document has no state '%s'", name);
         }
         judged->configuration[judged->configuration_count++] = state;
-        judged->active |= state_bit(state);
+        judged->active |= {{ _t }}_core_state_bit(state);
     }
     (void)sce_jv_string(s->current, quoted, sizeof(quoted), NULL);
     if (!{{ _t }}_state_from_name(quoted, &current)) {
@@ -1347,16 +1375,16 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
             {{ _t }}_validate_configuration(judged->configuration, judged->configuration_count);
         uint32_t held = 0u;
         for (size_t i = 0u; i < judged->configuration_count; ++i) {
-            held |= state_bit(judged->configuration[i]);
+            held |= {{ _t }}_core_state_bit(judged->configuration[i]);
         }
         if (verdict != {{ _u }}_CONFIG_NONE) {
             return sce_saved_refuse(err, "the saved configuration is refused: %s",
                                     {{ _t }}_configuration_rejection_text(verdict));
         }
-        if ((held & state_bit(current)) == 0u) {
+        if ((held & {{ _t }}_core_state_bit(current)) == 0u) {
             return sce_saved_refuse(err, "the saved configuration is refused: the current state is not in the configuration");
         }
-        if (k_child_states[current] != 0u) {
+        if ({{ _t }}_core_state_children(current) != 0u) {
             return sce_saved_refuse(err, "the saved configuration is refused: the current state must be the atomic state the engine descended to");
         }
     }
@@ -1478,7 +1506,7 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
     sce_jw_begin_array(w);
 {% if model.needs_event_scheduler %}
     {
-        const uint64_t now_ms = sched_now_ms(sm);
+        const uint64_t now_ms = {{ _t }}_core_now_ms(sm);
         /* docs/adr/0090, section 7: a `raise`, `parent` or `child` act is this session's own send,
            and it carries the pair and the sender the event built when it comes due carries: the
            ones this session's SCXML processor stamps on it, written here by the same stamp. */
@@ -1632,7 +1660,7 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
         host_view_t views[2u * (size_t)SCE_MAX_HOST_INVOCATIONS];
         size_t shown = 0u;
 {% if model.needs_event_scheduler %}
-        const uint64_t now_ms = sched_now_ms(sm);
+        const uint64_t now_ms = {{ _t }}_core_now_ms(sm);
 {% else %}
         const uint64_t now_ms = 0u;
 {% endif %}
@@ -1854,7 +1882,7 @@ SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_sessi
         }
     }
 {% endif %}
-    {{ _t }}_stand_in(sm, judged->configuration, judged->configuration_count);
+    {{ _t }}_core_stand_in(sm, judged->configuration, judged->configuration_count);
     sm->policy.current_state = judged->current;
     if (!{{ _t }}_saved_events(session, sm, err)) {
         return false;
@@ -1912,25 +1940,6 @@ bool {{ _t }}_resume({{ _t }}_t *sm, sce_jv_t members, int form, int64_t wall_no
     return {{ _t }}_saved_apply(sm, &session, &judged, wall_now_ms, err);
 }
 
-bool {{ _t }}_bind_session_id({{ _t }}_t *sm, const char *parent_id, const char *invoke_id) {
-    const size_t parent = strlen(parent_id);
-    const size_t invoke = strlen(invoke_id);
-    char bound[SCE_MAX_SESSION_ID_LEN];
-    if (sm == NULL || parent + 1u + invoke + 1u > sizeof(sm->session_id)) {
-        return false;
-    }
-    /* The location the id is published at is held in `SCE_MAX_URI_LEN` bytes, so an id whose
-       location does not fit is refused as one that does not fit itself, and the session keeps
-       the id and the location it had. */
-    sce_saved_path_field(bound, sizeof(bound), parent_id, invoke_id);
-    if (sce_scxml_location_len(bound) >= sizeof(sm->scxml_location)) {
-        return false;
-    }
-    memcpy(sm->session_id, bound, sizeof(sm->session_id));
-    (void)sce_scxml_location(sm->scxml_location, sizeof(sm->scxml_location), sm->session_id);
-    return true;
-}
-
 bool {{ _t }}_judge(const char *text, size_t len{% if saved_maps.judges %}, {{ _t }}_saved_check_t *check{% endif %}, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
@@ -1946,9 +1955,6 @@ bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall
                       const {{ _t }}_restore_args_t *args{% endif %}{% if saved_maps.seed %}, sce_map_seed_t map_seed{% endif %}, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
-{% if saved_restore_args %}
-    {{ _t }}_restore_args_t defaults;
-{% endif %}
     if (sm == NULL) {
         return sce_saved_refuse(err, "there is no machine to restore into");
     }
@@ -1968,15 +1974,10 @@ bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall
         return false;
     }
 {% endif %}
-{% if saved_restore_args %}
-    if (args == NULL) {
-        memset(&defaults, 0, sizeof(defaults));
-        args = &defaults;
-    }
-{% endif %}
-    /* Constructed with no id given: a tree's state then binds the id it was saved with
-       (`_saved_apply`), and a format-1 state, which holds none, keeps the one drawn here. */
-    const sce_start_refusal_t refused = {{ _t }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %}{% if saved_maps.seed %}, map_seed{% endif %});
+    /* Constructed with no id given (`_core_construct`): a tree's state then binds the id it was
+       saved with (`_saved_apply`), and a format-1 state, which holds none, keeps the one drawn
+       there. */
+    const sce_start_refusal_t refused = {{ _t }}_core_construct(sm{% if saved_restore_args %}, args{% endif %}{% if saved_maps.seed %}, map_seed{% endif %});
     if (refused != SCE_START_REFUSAL_NONE) {
         /* The act table, or (docs/adr/0096) a script session that cannot be
            established, each in the words of the runtime's refusal. */

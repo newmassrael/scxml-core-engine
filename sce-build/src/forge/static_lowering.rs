@@ -202,6 +202,12 @@ pub struct StaticLowering {
     /// event-schema a `record:<alias>` variable names, declared in the
     /// machine's own file the way its event payload types are.
     pub type_defs: Vec<String>,
+    /// The functions that write each type of [`Self::type_defs`] to a saved
+    /// state and read it back, for a target that emits them apart from the
+    /// types, in the machine's saved unit ([`StaticTarget::saves_apart`],
+    /// docs/adr/0110, D2): a deployment that does not persist compiles none of
+    /// them. Empty for every other target.
+    pub saved_defs: Vec<String>,
     /// One adapter for each way a call of an imported algorithm that takes or
     /// returns a record or a list is made (docs/SCE_ACCEPTED_SUBSET.md §2.15), declared
     /// after the machine's payload types, which an adapter that takes an event's
@@ -2483,6 +2489,31 @@ pub trait StaticTarget {
     fn enum_def(&self, _ty: &str, _alias: &str, _model: &EnumModel) -> String {
         String::new()
     }
+    /// Whether the functions that write a value of a type the machine declares
+    /// to a saved state and read it back are emitted apart from the type, in
+    /// the machine's saved unit ([`StaticLowering::saved_defs`]), so a
+    /// deployment that does not persist compiles none of them and none of the
+    /// text routines they call (docs/adr/0110, D2). `false` for a target that
+    /// writes each beside its type, or has none.
+    fn saves_apart(&self) -> bool {
+        false
+    }
+    /// The saved form of the record type `ty` ([`Self::record_def`]), for a
+    /// target that [`Self::saves_apart`]: the functions that write a value of it
+    /// and read one back. `None` for a target that writes it beside the type.
+    fn record_saved_def(
+        &self,
+        _ty: &str,
+        _alias: &str,
+        _schema: &EntrySchema,
+        _enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> Option<String> {
+        None
+    }
+    /// ... and of the enum type `ty` ([`Self::enum_def`]).
+    fn enum_saved_def(&self, _ty: &str, _alias: &str, _model: &EnumModel) -> Option<String> {
+        None
+    }
     /// The functions `<alias>.toNumber(value)` and `<alias>.fromNumber(number)`
     /// are lowered to, as `(to_number, from_number)`, for the enum `model` the
     /// machine holds in its own type `ty` ([`Self::enum_type`]): each called with
@@ -3041,6 +3072,18 @@ pub trait StaticTarget {
     /// variables hold one. `None` for a target whose map type its runtime
     /// declares.
     fn map_type_def(
+        &self,
+        _ty: &str,
+        _key: (&str, &crate::forge::model::AlgorithmValueType),
+        _value: Option<(&str, &crate::forge::model::AlgorithmValueType)>,
+        _capacity: u32,
+    ) -> Option<String> {
+        None
+    }
+    /// The saved form of the map type [`Self::map_type_def`] declares, for a
+    /// target that [`Self::saves_apart`]. `None` for a target that writes it
+    /// with the declaration, or declares no map type.
+    fn map_saved_def(
         &self,
         _ty: &str,
         _key: (&str, &crate::forge::model::AlgorithmValueType),
@@ -9856,6 +9899,7 @@ pub fn lower(
         }
     }
     let type_defs = declarations.type_defs;
+    let saved_defs = declarations.saved_defs;
     let mut adapter_defs = payload_key_defs;
     // The types and the reader functions a lift of a value read whole reached,
     // and the functions a received message is made by, declared before any
@@ -10126,6 +10170,7 @@ pub fn lower(
         deployment,
         payload_events,
         type_defs,
+        saved_defs,
         adapter_defs,
         scratch,
         header_imports: header_imports.into_iter().collect(),
@@ -10158,6 +10203,10 @@ struct TypeDeclarations<'t> {
     held_enums: &'t std::collections::BTreeMap<String, EnumModel>,
     declared: BTreeSet<String>,
     type_defs: Vec<String>,
+    /// The functions that write each declared type to a saved state and read
+    /// it back, for a target that emits them apart from the types
+    /// ([`StaticTarget::saves_apart`]); empty for every other.
+    saved_defs: Vec<String>,
     records: Vec<StaticRecord>,
     enums: Vec<StaticEnumType>,
     /// The unions a variable holds, as a saved state writes each.
@@ -10192,6 +10241,7 @@ impl<'t> TypeDeclarations<'t> {
             held_enums,
             declared: BTreeSet::new(),
             type_defs: Vec::new(),
+            saved_defs: Vec::new(),
             records: Vec::new(),
             enums: Vec::new(),
             unions: Vec::new(),
@@ -10199,6 +10249,17 @@ impl<'t> TypeDeclarations<'t> {
             map_units,
             unit_imports: BTreeSet::new(),
             unit_functions: BTreeMap::new(),
+        }
+    }
+
+    /// The saved form `def` of a type the machine declares: beside the types
+    /// for a target that writes it there, and among [`Self::saved_defs`] for
+    /// one that saves apart ([`StaticTarget::saves_apart`]).
+    fn saved_def(&mut self, def: String) {
+        if self.target.saves_apart() {
+            self.saved_defs.push(def);
+        } else {
+            self.type_defs.push(def);
         }
     }
 
@@ -10214,6 +10275,9 @@ impl<'t> TypeDeclarations<'t> {
         };
         if self.declared.insert(ty.clone()) {
             self.type_defs.push(self.target.enum_def(&ty, alias, model));
+            if let Some(saved) = self.target.enum_saved_def(&ty, alias, model) {
+                self.saved_def(saved);
+            }
             self.enums
                 .push(static_enum_type(self.target, &ty, alias, model));
         }
@@ -10265,6 +10329,12 @@ impl<'t> TypeDeclarations<'t> {
             }
             self.type_defs
                 .push(self.target.record_def(&ty, alias, schema, &enum_types));
+            if let Some(saved) = self
+                .target
+                .record_saved_def(&ty, alias, schema, &enum_types)
+            {
+                self.saved_def(saved);
+            }
             self.records.push(StaticRecord {
                 ty: ty.clone(),
                 fields: schema
@@ -10394,12 +10464,16 @@ impl<'t> TypeDeclarations<'t> {
     }
 
     /// The declaration `def` of the map type `ty` (docs/adr/0108, D8), made
-    /// once however many variables hold one; nothing for a target whose
-    /// runtime declares its map types.
-    fn map_type(&mut self, ty: &str, def: Option<String>) {
+    /// once however many variables hold one, and its saved form `saved` with
+    /// it ([`Self::saved_def`]); nothing for a target whose runtime declares
+    /// its map types.
+    fn map_type(&mut self, ty: &str, def: Option<String>, saved: Option<String>) {
         if let Some(def) = def {
             if self.declared.insert(format!("map<{ty}>")) {
                 self.type_defs.push(def);
+                if let Some(saved) = saved {
+                    self.saved_def(saved);
+                }
             }
         }
     }
@@ -10462,7 +10536,7 @@ impl<'t> TypeDeclarations<'t> {
             })?;
         if let Some(saved) = defs.saved {
             if self.declared.insert(format!("unit record<{}>", unit.ty)) {
-                self.type_defs.push(saved);
+                self.saved_def(saved);
             }
         }
         self.map_key(&unit.ty, defs.key);
@@ -10645,7 +10719,13 @@ fn map_type_of(
         value.as_deref().zip(value_part),
         capacity,
     );
-    declarations.map_type(&held, def);
+    let saved = declarations.target.map_saved_def(
+        &held,
+        (key.as_str(), key_part),
+        value.as_deref().zip(value_part),
+        capacity,
+    );
+    declarations.map_type(&held, def, saved);
     Ok(held)
 }
 
@@ -10838,12 +10918,13 @@ fn declare_composed(
                         saved_composed_record(ty, schema, target, &*spelling).map_err(refused)?,
                     );
                     // A backend whose record type carries its saved form (Swift) writes
-                    // it beside the type.
+                    // it beside the type, and one that saves apart (C11) in its saved
+                    // unit.
                     if let Some(saved_form) = spelling
                         .saved_record_ext(alias, &records, &enums)
                         .map_err(refused)?
                     {
-                        declarations.type_defs.push(saved_form);
+                        declarations.saved_def(saved_form);
                     }
                 }
             }
@@ -10880,13 +10961,13 @@ fn declare_composed(
             declarations.type_defs.push(spelling.union_def(&def));
         }
         // A backend whose union type carries its saved form (Swift) writes it beside
-        // the type.
+        // the type, and one that saves apart (C11) in its saved unit.
         if newly_saved {
             if let Some(saved_form) = spelling
                 .saved_union_ext(&def, key, &records)
                 .map_err(refused)?
             {
-                declarations.type_defs.push(saved_form);
+                declarations.saved_def(saved_form);
             }
         }
     }
@@ -17656,7 +17737,7 @@ pub(crate) fn c11_list_def(elem: &str, capacity: u32, what: &str) -> String {
 
 /// The C11 type a map (`value` the C type of its values) or a set (`value`
 /// `None`) of keys of the C type `key`, bounded by `capacity`, is held in
-/// (docs/adr/0108, D8), which `sce/forge/map.h` declares ([`c11_map_type_def`]):
+/// (docs/adr/0108, D8), which `sce/forge/map.h` declares ([`c11_map_type_decl`]):
 /// named by its parts and its bound as a list is ([`c11_list_type`]), so two
 /// variables of one shape hold one type and a map of one is taken whole into
 /// the other.
@@ -17922,7 +18003,8 @@ fn c11_map_part_saved_read(
 /// a guard of its name: the function that writes its key's canonical bytes and
 /// the runtime's declaration of the type over it (`sce/forge/map.h`). Every
 /// header that holds a map of the type writes this one text, a machine's
-/// ([`c11_map_type_def`]) and an algorithm's that holds one of its own alike.
+/// (whose saved unit writes its saved form, [`c11_map_saved_def`]) and an
+/// algorithm's that holds one of its own alike.
 /// `None` for a key no map of C11 holds.
 pub(crate) fn c11_map_type_decl(
     ty: &str,
@@ -17955,26 +18037,26 @@ pub(crate) fn c11_map_type_decl(
     ))
 }
 
-/// The declaration of the C11 map or set type `ty` ([`c11_map_type`]) of keys
-/// of the part `key`, values of the part `value` (`None` for a set), bounded by
-/// `capacity`, each part the C type the machine holds it in and the type the
-/// document writes it as (docs/adr/0108, D8), under a guard of its name, so
-/// every machine of a program that holds one declares it once: the function
-/// that writes its key's canonical bytes, the runtime's declaration of the type
-/// over it (`sce/forge/map.h`), and its saved form, the array of its entries in
-/// its order, each `[key, value]` and a set's each its key, written and read as
-/// a list's elements are, held to the bound with no key twice. A map a restore
-/// keeps is emptied first and keeps the seed its machine started it under; one
-/// a judge reads is put into the check map it is handed, the machine's scratch
-/// or the host's, so a key held twice is found in one pass and nothing is kept.
-/// A record key is read at the revision `key_at` of its schema and a record
-/// value at `value_at` (docs/adr/0044). `None` for a part no map of C11 holds.
+/// The saved form of the C11 map or set type `ty` ([`c11_map_type`],
+/// declared by [`c11_map_type_decl`]) of keys of the part `key`, values of the
+/// part `value` (`None` for a set), bounded by `capacity`, each part the C type
+/// the machine holds it in and the type the document writes it as
+/// (docs/adr/0108, D8), under a guard of its own, so every machine of a program
+/// that saves one declares it once: the array of its entries in its order,
+/// each `[key, value]` and a set's each its key, written and read as a list's
+/// elements are, held to the bound with no key twice. A map a restore keeps is
+/// emptied first and keeps the seed its machine started it under; one a judge
+/// reads is put into the check map it is handed, the machine's scratch or the
+/// host's, so a key held twice is found in one pass and nothing is kept. A
+/// record key is read at the revision `key_at` of its schema and a record value
+/// at `value_at` (docs/adr/0044). `None` for a part no map of C11 holds.
 ///
-/// The type ([`c11_map_type_decl`]) and its saved form are under two guards, so
-/// an algorithm that holds a map of the same type, which declares the type
-/// alone and saves nothing, and a machine that holds it, which declares both,
-/// make one program whichever header comes first.
-fn c11_map_type_def(
+/// The type and its saved form are under two guards and in two headers: the
+/// machine's declares the type and its saved unit's header the saved form
+/// (docs/adr/0110, D2), so an algorithm that holds a map of the same type,
+/// which declares the type alone and saves nothing, and a machine that holds
+/// it make one program whichever header comes first.
+fn c11_map_saved_def(
     ty: &str,
     key: (&str, &crate::forge::model::AlgorithmValueType),
     value: Option<(&str, &crate::forge::model::AlgorithmValueType)>,
@@ -17983,7 +18065,8 @@ fn c11_map_type_def(
     let prefix = ty.trim_end_matches("_t");
     let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
     let held_key = key.0;
-    let declared = c11_map_type_decl(ty, key, value.map(|part| part.0), capacity)?;
+    // A part no map of C11 holds has no declaration, and so no saved form.
+    c11_map_key_feed(key)?;
     let (local_value, put_args, entry_write, value_read) = match value {
         Some(part) => {
             let read = c11_map_part_saved_read(part, "part", "part_what", "value", "value_at")?;
@@ -18028,7 +18111,7 @@ fn c11_map_type_def(
     };
     let read_key = c11_map_part_saved_read(key, "part", "part_what", "(*key)", "at")?;
     Some(format!(
-        "{declared}\n\n#ifndef {guard}_SAVED\n#define {guard}_SAVED\n\
+        "#ifndef {guard}_SAVED\n#define {guard}_SAVED\n\
          /* The map as a saved state writes it: the array of its entries in its order. */\n\
          static inline void {ty}_saved_write(sce_jw_t *w, const {ty} *map) {{\n    \
          sce_jw_begin_array(w);\n    \
@@ -19349,12 +19432,46 @@ impl StaticTarget for CTarget {
             .iter()
             .map(|v| (v.name.clone(), v.value))
             .collect();
-        // Its saved form is the name the enum document declares for the variant, the
-        // same on every backend: written by `{ty}_saved_write` and read by
-        // `{ty}_saved_read`, beside the type under its guard, so a program that
-        // includes two machines of one enum declares them once. The reader names the
-        // enum by the document, which both machines import it from, and not by the
-        // alias one of them happens to.
+        format!(
+            "{}\n\n#ifndef {guard}\n#define {guard}\n\
+             /* SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value. */\n\
+             typedef {} {ty};\n\n\
+             /* The number the enum document declares for `value`. */\n\
+             static inline {carrier} {prefix}_number({ty} value) {{\n    return ({carrier})value;\n}}\n\
+             #endif\n\n{}",
+            crate::forge::generator::c11_enum_declaration(model),
+            crate::forge::generator::enum_qualified_type(&model.name, Language::C11),
+            crate::forge::generator::c11_enum_from_number(
+                &model.name,
+                &model.underlying_type,
+                &variants
+            ),
+        )
+    }
+    // A machine's saved state is a unit of its own, which a deployment that does
+    // not persist leaves out (docs/adr/0110, D2): the types are declared by the
+    // machine's header and their saved forms by its saved header.
+    fn saves_apart(&self) -> bool {
+        true
+    }
+    fn record_saved_def(
+        &self,
+        ty: &str,
+        _alias: &str,
+        schema: &EntrySchema,
+        enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> Option<String> {
+        Some(c11_record_saved_defs(ty, schema, enum_types, self))
+    }
+    // The saved form of an enum is the name the enum document declares for the
+    // variant, the same on every backend: written by `{ty}_saved_write` and read
+    // by `{ty}_saved_read`, under a guard of its own beside the type's, so a
+    // program that includes the saved headers of two machines of one enum
+    // declares them once. The reader names the enum by the document, which both
+    // machines import it from, and not by the alias one of them happens to.
+    fn enum_saved_def(&self, ty: &str, _alias: &str, model: &EnumModel) -> Option<String> {
+        let prefix = crate::forge::enum_naming::c11_function_prefix(&model.name);
+        let guard = format!("SCE_STATIC_ENUM_{}_SAVED", prefix.to_uppercase());
         let saved_names: String = model
             .variants
             .iter()
@@ -19365,12 +19482,8 @@ impl StaticTarget for CTarget {
             .iter()
             .map(|v| format!("        {},\n", self.enum_variant(ty, &model.name, &v.name)))
             .collect();
-        format!(
-            "{}\n\n#ifndef {guard}\n#define {guard}\n\
-             /* SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value. */\n\
-             typedef {} {ty};\n\n\
-             /* The number the enum document declares for `value`. */\n\
-             static inline {carrier} {prefix}_number({ty} value) {{\n    return ({carrier})value;\n}}\n\n\
+        Some(format!(
+            "#ifndef {guard}\n#define {guard}\n\
              /* `value` as a saved state writes it: the name the enum document declares for it. */\n\
              static inline void {ty}_saved_write(sce_jw_t *w, {ty} value) {{\n    \
              const char *declared = {prefix}_declared_name(value);\n    \
@@ -19383,16 +19496,9 @@ impl StaticTarget for CTarget {
              size_t index = 0u;\n    \
              if (!sce_saved_read_variant(v, what, \"{document}\", names, sizeof(names) / sizeof(names[0]), &index, err)) {{\n        \
              return false;\n    }}\n    \
-             if (out != NULL) {{\n        *out = values[index];\n    }}\n    return true;\n}}\n#endif\n\n{}",
-            crate::forge::generator::c11_enum_declaration(model),
-            crate::forge::generator::enum_qualified_type(&model.name, Language::C11),
-            crate::forge::generator::c11_enum_from_number(
-                &model.name,
-                &model.underlying_type,
-                &variants
-            ),
+             if (out != NULL) {{\n        *out = values[index];\n    }}\n    return true;\n}}\n#endif",
             document = filters::escape_c(model.name.clone())
-        )
+        ))
     }
     fn enum_number_symbols(&self, _ty: &str, model: &EnumModel) -> (String, String) {
         let prefix = crate::forge::enum_naming::c11_function_prefix(&model.name);
@@ -19512,8 +19618,7 @@ impl StaticTarget for CTarget {
              typedef struct {{\n{fields}}} {ty};\n\n\
              /* A borrowed view of a list of them: what a host reads, and cannot grow past\n   \
              the bound the machine keeps. */\n\
-             typedef struct {{\n    const {ty} *data;\n    size_t len;\n}} {view};\n\n{}",
-            c11_record_saved_defs(ty, schema, enum_types, self)
+             typedef struct {{\n    const {ty} *data;\n    size_t len;\n}} {view};"
         )
     }
     // The author's spelling, which is what an expression's member access writes
@@ -20368,9 +20473,8 @@ impl StaticTarget for CTarget {
     fn map_type(&self, key: &str, value: Option<&str>, capacity: u32) -> Option<String> {
         Some(c11_map_type(key, value, capacity))
     }
-    // The runtime's macro over the key's feed, and the saved form of the map,
-    // under a guard of its name, so two machines in one program declare it
-    // once ([`c11_map_type_def`]).
+    // The runtime's macro over the key's feed, under a guard of its name, so two
+    // machines in one program declare it once ([`c11_map_type_decl`]).
     fn map_type_def(
         &self,
         ty: &str,
@@ -20378,7 +20482,18 @@ impl StaticTarget for CTarget {
         value: Option<(&str, &crate::forge::model::AlgorithmValueType)>,
         capacity: u32,
     ) -> Option<String> {
-        c11_map_type_def(ty, key, value, capacity)
+        c11_map_type_decl(ty, key, value.map(|part| part.0), capacity)
+    }
+    // The saved form of the map, under a guard of its own, in the machine's saved
+    // unit ([`c11_map_saved_def`]).
+    fn map_saved_def(
+        &self,
+        ty: &str,
+        key: (&str, &crate::forge::model::AlgorithmValueType),
+        value: Option<(&str, &crate::forge::model::AlgorithmValueType)>,
+        capacity: u32,
+    ) -> Option<String> {
+        c11_map_saved_def(ty, key, value, capacity)
     }
     // A host reads the runtime's view of the map: its slots, the position of
     // its first entry and how many it holds, each entry naming the next.

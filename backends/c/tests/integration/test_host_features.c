@@ -31,9 +31,11 @@
 #include "sce/standard_host.h"
 #include "static_host_clock_sm.h"
 #include "static_host_http_sm.h"
+#include "static_host_kv_saved.h"
 #include "static_host_kv_sm.h"
 #include "static_host_model_sm.h"
 #include "static_host_notify_sm.h"
+#include "static_model_harness_saved.h"
 #include "static_model_harness_sm.h"
 
 #ifndef SCE_HOST_FEATURES_SCENARIO_DIR

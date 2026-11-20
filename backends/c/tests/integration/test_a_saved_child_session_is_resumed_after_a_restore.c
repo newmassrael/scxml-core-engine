@@ -29,6 +29,7 @@
 // `snprintf` and `strstr` are C99; the build asks for strict C11.
 #define _POSIX_C_SOURCE 200809L
 
+#include "static_invoke_saved.h"
 #include "static_invoke_sm.h"
 
 #include <stdint.h>
