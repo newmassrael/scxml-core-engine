@@ -6,7 +6,7 @@
   `sce-host-cose-encrypt0` (docs/SCE_HOST_FEATURES.md, "Signing and sealing"):
   `cose` is the tagged COSE_Encrypt0 of the plaintext (RFC 9052), sealed with
   ChaCha20/Poly1305 under a nonce the host drew, the key's id and the nonce in
-  its unprotected header.
+  its unprotected header, bounded by the named bound `cose_sealed`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -16,6 +16,6 @@
        sce:event-name="host.cose.encrypt0.result">
   <datamodel>
     <data id="error" sce:type="string[24]" sce:direction="in"/>
-    <data id="cose" sce:type="bytes[4480]" sce:direction="in"/>
+    <data id="cose" sce:type="bytes[cose_sealed=4480]" sce:direction="in"/>
   </datamodel>
 </scxml>

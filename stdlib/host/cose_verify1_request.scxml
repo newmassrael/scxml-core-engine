@@ -7,7 +7,8 @@
 
   `trust_set` names a set of public keys of the host's configuration, the
   signers the statechart accepts. `cose` is the tagged COSE_Sign1 to verify,
-  and `external_aad` the bytes it was signed over beside its payload.
+  and `external_aad` the bytes it was signed over beside its payload. `cose`
+  is bounded by the named bound `cose_signed`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -17,7 +18,7 @@
        sce:event-name="host.cose.verify1.request">
   <datamodel>
     <data id="trust_set" sce:type="string[64]" sce:direction="in"/>
-    <data id="cose" sce:type="bytes[4352]" sce:direction="in"/>
+    <data id="cose" sce:type="bytes[cose_signed=4352]" sce:direction="in"/>
     <data id="external_aad" sce:type="bytes[256]" sce:direction="in"/>
   </datamodel>
 </scxml>
