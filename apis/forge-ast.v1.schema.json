@@ -5829,6 +5829,10 @@
               "description": "`<content expr>` verbatim, evaluated when the invocation starts.",
               "type": "string"
             },
+            "entry_schema": {
+              "description": "`sce:entry` — the alias of the imported event schema an invoke of `sce-host-audit-append` appends a record of (docs/adr/0109, D14): the request's `entry` is a value of that record, and the build writes its `sensitivity` from the marks the schema declares. Empty when the invoke names none.",
+              "type": "string"
+            },
             "field_suffix": {
               "description": "The identifier every name generated for this invoke is built from — [`invoke_identifier`] of [`Self::invoke_id`], and nothing else: the fields, wrappers and counters of each backend (`child_{field_suffix}`, `childEngineWrapper…_{Pascal}`), the host operations a child's acts take (`actions_for_{field_suffix}`), the typed host-invoke interface, and the name of a child the invoke carries (`<parent>__sce_synth_invoke__{field_suffix}`). Distinct ids of one document have distinct identifiers, in every case each backend writes them in.",
               "type": "string"
@@ -7265,6 +7269,17 @@
         "path": {
           "description": "The path as the document writes it, relative to the document's directory.",
           "type": "string"
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the path is written: a refusal that names the file stands on the column the path begins at (SCE_ERROR_CONTRACT.md §2.2), not where the `<sce:migration>` does."
         }
       },
       "required": [
