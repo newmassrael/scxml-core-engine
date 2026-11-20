@@ -97,6 +97,11 @@
 //!   hooks a generated test component's policy implements for it; asks for
 //!   `std`. Without it the microstep is Appendix D's exit, content and entry,
 //!   and the crate holds no code for the step.
+//! - `record-cbor`: `record_cbor`, the codec a machine writes a record a COSE
+//!   operation signs or seals by name with, as its deterministic CBOR, and
+//!   reads one it verified or opened back with (docs/adr/0109, D9). It asks
+//!   for `std` and for `sce-forge-runtime`, whose CBOR items it writes and
+//!   reads.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(clippy::undocumented_unsafe_blocks)]
@@ -534,6 +539,9 @@ pub mod json;
 // `crate::Engine` target inside would be flagged by `redundant_explicit_links`.
 pub mod payload_reading;
 pub mod policy;
+// Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
+#[cfg(feature = "record-cbor")]
+pub mod record_cbor;
 /// A `datamodel="sce-static"` machine's whole state, saved and restored as
 /// one JSON document (SCE Accepted Subset §2.15). `std` only.
 #[cfg(feature = "std")]

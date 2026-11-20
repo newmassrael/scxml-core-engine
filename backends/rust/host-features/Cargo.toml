@@ -47,6 +47,9 @@ libc = "0.2"
 # The SQLite store, which the audit log is held to across a reopened file
 # (docs/adr/0109, D14).
 sce-rust-session-store = { path = "../session-store" }
+# The record codec, which `tests/payload_record_cross_language.rs` holds to the
+# deterministic CBOR of the record the vector signs (docs/adr/0109, D9).
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "record-cbor"] }
 
 [lints]
 workspace = true

@@ -4217,6 +4217,7 @@ dependencies = [
  "heapless",
  "log",
  "portable-atomic",
+ "sce-forge-runtime",
  "sce-portable-bytes",
  "thiserror 2.0.18",
 ]
