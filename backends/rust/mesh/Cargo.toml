@@ -41,6 +41,12 @@ required-features = ["zenoh"]
 name = "https_conformance"
 required-features = ["https-conformance"]
 
+# A request the C++ client signed, verified as the HTTPS server verifies one (docs/adr/0109, D9):
+# the vector both lanes are held to, tests/mesh/https_signature_cross_language.json.
+[[test]]
+name = "https_signature_cross_language"
+required-features = ["https"]
+
 [features]
 # The generated modules gate their heap-backed facades (`encode_to_vec`, the
 # growable sink) on the feature of the crate that holds them, spelled
@@ -147,6 +153,8 @@ tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-
 # A certificate made at test time, and a TLS server that presents it, for the `wss://` tests.
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
 tokio-rustls = { version = "0.26", default-features = false }
+# The cross-language vector of the HTTPS binding's request signature (tests/mesh), read as JSON.
+serde_json = "1"
 
 # Also over what the workspace's clippy sweep does not compile: the `zenoh` and
 # `conformance` features no member enables, which a run by hand
