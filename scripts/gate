@@ -48,7 +48,10 @@
 # copy that holds only the unit's inputs (bx RFC 0026; "A unit's inputs are its
 # gates' triggers" in the registry), so a unit does not run the self-test
 # again: it reads every workflow and every gate script, which such a copy does
-# not hold.
+# not hold. A unit whose gate reads the change set (`commits: ["CHANGES"]` in
+# the registry) is handed the push's ranges as `--changed-in`, and there they
+# select nothing: the plan already chose the gate, and the ranges are only what
+# the gate reads (`SCE_GATE_CHANGED_FILE`).
 
 set -euo pipefail
 
@@ -121,9 +124,24 @@ if (( LANDING )); then
     export SCE_GATE_LANDING=1
 fi
 # A unit is one gate a plan named, so it takes slugs and nothing that selects.
+# The ranges a plan carries to a gate that reads the change set are the one
+# exception, and they are the gate's input, not a selection: a unit with slugs
+# and `--changed-in` still runs the gates it names.
+UNIT_CHANGES=0
+if (( UNIT )) && [[ "$MODE" == "changed" && -z "$CHANGED_FILE" ]] \
+        && (( ${#CHANGED_RANGES[@]} && ${#SLUGS[@]} )); then
+    MODE="named"
+    UNIT_CHANGES=1
+fi
 if (( UNIT )) && [[ $PLAN -eq 1 || $MEASURE -eq 1 || "$MODE" != "named" ]]; then
     printf 'gate: --unit runs the gate(s) a plan named; it takes slugs, and not --plan, --measure, --list, --all or a change set\n' >&2
     exit 2
+fi
+# A unit tells its gates so. A gate that would otherwise take its change set
+# from the checkout's refs must not: a unit's checkout is a build machine's,
+# whose upstream says nothing about the push the unit judges.
+if (( UNIT )); then
+    export SCE_GATE_UNIT=1
 fi
 
 # ── The commit a plan named, and no other ──────────────────────────────
@@ -294,7 +312,14 @@ if (( PLAN )); then
     PLAN_ARGS=(--repo-root "$REPO_ROOT" --plan "${LANDING_ARGS[@]}")
     case "$MODE" in
         all)     PLAN_ARGS+=(--all) ;;
-        changed) PLAN_ARGS+=(--changed-from "$CHANGED_FILE") ;;
+        changed)
+            PLAN_ARGS+=(--changed-from "$CHANGED_FILE")
+            # The ranges travel too: a unit whose gate reads the change set
+            # carries them, since the file is this machine's alone.
+            for range in ${CHANGED_RANGES[@]+"${CHANGED_RANGES[@]}"}; do
+                PLAN_ARGS+=(--changed-in "$range")
+            done
+            ;;
         named)   PLAN_ARGS+=(--named "${SLUGS[@]}") ;;
         *)
             printf 'gate: --plan needs a selection: --all, --changed-in, --changed-from or slugs\n' >&2
@@ -408,6 +433,11 @@ PYEOF
             printf 'gate: %s resolved to no gate at all; the registry answered nothing for a name it accepted\n' \
                 "${SLUGS[*]}" >&2
             exit 2
+        fi
+        # A unit handed the push's ranges hands their paths to its gates, as
+        # the `changed` branch above does for a run that selected by them.
+        if (( UNIT_CHANGES )); then
+            export SCE_GATE_CHANGED_FILE="$CHANGED_FILE"
         fi
         ;;
     *)
@@ -539,6 +569,14 @@ gate_in_container() {
     fi
     if [[ -n "$AT_WANT" ]]; then
         inner+=(--at "$AT_WANT")
+    fi
+    # The ranges a unit was handed, which mean the same inside: the checkout and
+    # its git directory are mounted at their own paths.
+    if (( UNIT_CHANGES )); then
+        inner+=(--unit)
+        for range in "${CHANGED_RANGES[@]}"; do
+            inner+=(--changed-in "$range")
+        done
     fi
     inner+=("$slug")
     printf '\ngate: %s runs in %s (%s) on Rust %s from %s: %s\n' \

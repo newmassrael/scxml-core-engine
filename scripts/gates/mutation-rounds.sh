@@ -298,6 +298,15 @@ else
     if [[ -n "${SCE_GATE_CHANGED_FILE:-}" && -f "${SCE_GATE_CHANGED_FILE}" ]]; then
         reason="declared target in the push's change set"
         mapfile -t CHANGED < <(sort -u "$SCE_GATE_CHANGED_FILE")
+    # A plan's unit runs in a build machine's checkout, whose refs say nothing
+    # about the push it judges, so it derives no range from them; the plan
+    # hands it the push's ranges (`commits: ["CHANGES"]` in the registry), and
+    # a unit planned without them (`--all`) has no known set. Measured
+    # 2026-11-20: a landing unit that derived one took that checkout's
+    # upstream, a51553493c, and chose 578 casefiles where the push chose 14.
+    elif [[ -n "${SCE_GATE_UNIT:-}" ]]; then
+        reason="a unit handed no change set — the whole corpus"
+        SELECTED=("${CASEFILES[@]}")
     # `@{upstream}` first and `origin/HEAD` only as a fallback, because the
     # tracking ref is the one that is actually configured: measured on this
     # repository, `origin/HEAD` is not a symbolic ref at all, so a derivation
