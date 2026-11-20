@@ -132,6 +132,27 @@
 {{ i }}    return s;
 {{ i }}}
 {% endmacro %}
+{#- The read of one field `f` of a record a list holds into `*out`, from the
+    cursor `c`, each line indented by `i`, leaving its status in `s`: the
+    input's cursor in the loop over the map, or a cursor over the bytes of the
+    field's default. #}
+{% macro read_record_field(f, c, i) %}
+{% if f.kind == "bool" %}
+{{ i }}s = sce_forge_cbor_read_bool({{ c }}, &out->{{ f.name }});
+{% elif f.kind == "text" %}
+{{ i }}s = sce_forge_cbor_read_text({{ c }}, {{ f.max }}U, {{ f.max }}U, out->{{ f.name }}.data, &text_len);
+{{ i }}if (s == SCE_FORGE_CODEC_OK && strlen(out->{{ f.name }}.data) != text_len) {
+{{ i }}    s = SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+{{ i }}}
+{% elif f.kind == "bytes" %}
+{{ i }}s = sce_forge_cbor_read_bytes({{ c }}, {{ f.max }}U, {{ f.max }}U, out->{{ f.name }}.data, &out->{{ f.name }}.len);
+{% elif f.value_type == "uint64_t" %}
+{{ i }}s = sce_forge_cbor_read_uint({{ c }}, &out->{{ f.name }});
+{% else %}
+{{ i }}s = sce_forge_cbor_read_uint_upto({{ c }}, {{ f.int_max }}U, &raw);
+{{ i }}out->{{ f.name }} = ({{ f.value_type }})raw;
+{% endif %}
+{% endmacro %}
 {{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -243,22 +264,7 @@ static inline sce_forge_codec_status_t {{ r.decode_fn }}(sce_forge_cursor_t *c, 
                 return SCE_FORGE_CODEC_CBOR_DUPLICATE_KEY;
             }
             seen_{{ f.name }} = true;
-{% if f.kind == "bool" %}
-            s = sce_forge_cbor_read_bool(c, &out->{{ f.name }});
-{% elif f.kind == "text" %}
-            s = sce_forge_cbor_read_text(c, {{ f.max }}U, {{ f.max }}U, out->{{ f.name }}.data, &text_len);
-            if (s == SCE_FORGE_CODEC_OK && strlen(out->{{ f.name }}.data) != text_len) {
-                s = SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
-            }
-{% elif f.kind == "bytes" %}
-            s = sce_forge_cbor_read_bytes(c, {{ f.max }}U, {{ f.max }}U, out->{{ f.name }}.data, &out->{{ f.name }}.len);
-{% elif f.value_type == "uint64_t" %}
-            s = sce_forge_cbor_read_uint(c, &out->{{ f.name }});
-{% else %}
-            s = sce_forge_cbor_read_uint_upto(c, {{ f.int_max }}U, &raw);
-            out->{{ f.name }} = ({{ f.value_type }})raw;
-{% endif %}
-{% endfor %}
+{{ read_record_field(f, "c", "            ") }}{% endfor %}
         } else {
             s = sce_forge_cbor_skip(c);
         }
@@ -268,7 +274,17 @@ static inline sce_forge_codec_status_t {{ r.decode_fn }}(sce_forge_cursor_t *c, 
     }
 {% for f in r.fields %}
     if (!seen_{{ f.name }}) {
+{% if f.default_cbor is not none %}
+        /* A map of a revision before the field was added lacks its key, and
+         * reads its default (docs/adr/0044). */
+        static const uint8_t lacked_bytes[] = { {%- for b in f.default_cbor %}{{ b }}{{ ", " if not loop.last }}{% endfor -%} };
+        sce_forge_cursor_t lacked = sce_forge_cursor_init(lacked_bytes, sizeof lacked_bytes);
+{{ read_record_field(f, "&lacked", "        ") }}        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
+        }
+{% else %}
         return SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING;
+{% endif %}
     }
 {% endfor %}
     return SCE_FORGE_CODEC_OK;

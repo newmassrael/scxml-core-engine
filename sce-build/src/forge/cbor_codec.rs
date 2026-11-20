@@ -1517,7 +1517,10 @@ fn insert_cbor_records(
 /// a quoted literal every backend reads alike (an id is an XML name, so it
 /// holds no quote, backslash or `$`) and its length in bytes; the kind its wire
 /// form is, the bound of a text or a byte string, and the largest number an
-/// unsigned integer holds.
+/// unsigned integer holds; and, for a field a later revision of the schema
+/// added, the bytes of the value a map that lacks its key reads in its place
+/// (`default_cbor`, [`crate::forge::encode_plan::CborField::default`]), which
+/// the template reads with the field's own reader, `null` for any other.
 ///
 /// A compile refuses a record no import resolves before any language renders
 /// ([`unheld_value`]), and [`render`] one with a field these printers do not
@@ -1554,6 +1557,9 @@ fn record_contexts(
             "max": bound,
             "int_max": largest,
             "value_type": field_type(&f.ty),
+            // The bytes a map that lacks the field's key reads in its place, for
+            // a field a later revision of the schema added (docs/adr/0044).
+            "default_cbor": f.default,
         })
     };
     let mut seen: Vec<&str> = Vec::new();

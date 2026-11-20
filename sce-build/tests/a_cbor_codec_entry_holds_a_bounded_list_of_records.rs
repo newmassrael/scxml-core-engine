@@ -808,3 +808,124 @@ fn c11_holds_a_records_byte_string_in_its_buffer_with_its_length() {
         assert!(c.contains(expected), "missing `{expected}`:\n{c}");
     }
 }
+
+/// The import of a record whose schema grew: `id` of its first revision, and a
+/// number, a truth value, a text and a byte string its second added, each with
+/// its default.
+const REVISED_IMPORT: &str =
+    r#"  <sce:import kind="event-schema" src="cbor_revised_entry.scxml" as="RevisedEntry"/>"#;
+
+/// A list of at most two records of `cbor_revised_entry`.
+const REVISED_ENTRY: &str = r#"    <data id="n" sce:type="list&lt;record:RevisedEntry&gt;[2]" sce:key="0" sce:direction="out"/>"#;
+
+/// What `lang` generates for a list of records of `cbor_revised_entry`, whose
+/// byte string makes the encode refusable.
+fn revised(lang: Language) -> String {
+    generated(
+        &document(
+            r#" sce:encode-may-fail="true""#,
+            REVISED_IMPORT,
+            REVISED_ENTRY,
+        ),
+        "probe_list",
+        lang,
+    )
+    .unwrap_or_else(|why| panic!("{lang:?} generates a list of records that grew: {why}"))
+}
+
+/// What each backend's read of a record of `cbor_revised_entry` holds, by the
+/// language: the refusal of a map that lacks `id`, and the read of each field
+/// the second revision added from the bytes of its default.
+type LaneReads = (Language, &'static [&'static str]);
+
+/// A record of the schema's first revision lacks the four keys its second
+/// added: every backend that lowers a list of records reads each from the
+/// bytes of its default (`hops` 7 as `07`, `live` as `f5`, `tag` "none" as
+/// `64 6e 6f 6e 65`, `salt` "ab" as `42 61 62`), by the reader of the field's
+/// own value, and still refuses a record that lacks `id`, a field of the first
+/// revision (docs/adr/0044; SCE_FORGE.md section 4.6.1). Red if a printer
+/// refuses a field a later revision added where its key is missing, or reads
+/// a field of the first revision as a default.
+#[test]
+fn every_backend_reads_a_field_a_later_revision_added_from_its_default() {
+    let lanes: [LaneReads; 7] = [
+        (
+            Language::Rust,
+            &[
+                "        id: held_id.ok_or(CodecError::CborRequiredKeyMissing)?,\n",
+                "let mut lacked = SceCursor::new(&[0x07]);",
+                "let mut lacked = SceCursor::new(&[0xf5]);",
+                "let mut lacked = SceCursor::new(&[0x64, 0x6e, 0x6f, 0x6e, 0x65]);",
+                "let mut lacked = SceCursor::new(&[0x42, 0x61, 0x62]);",
+                "cbor::read_bool(&mut lacked)?",
+            ],
+        ),
+        (
+            Language::Cpp,
+            &[
+                "if (!held_id.has_value()) return ::SCE::Forge::CodecError::CborRequiredKeyMissing;",
+                "static constexpr std::uint8_t kLacked[] = {0x07};",
+                "static constexpr std::uint8_t kLacked[] = {0x42, 0x61, 0x62};",
+                "auto _r0 = cbor::read_bool(lacked);",
+            ],
+        ),
+        (
+            Language::Go,
+            &[
+                "return record, codec.ErrCborRequiredKeyMissing",
+                "lacked := codec.NewSceCursor([]byte{7})",
+                "lacked := codec.NewSceCursor([]byte{245})",
+                "lacked := codec.NewSceCursor([]byte{100, 110, 111, 110, 101})",
+                "lacked := codec.NewSceCursor([]byte{66, 97, 98})",
+                "v, err := codec.CborReadBool(&lacked)",
+                "raw, err := codec.CborReadUintUpto(&lacked, 255)",
+            ],
+        ),
+        (
+            Language::Kotlin,
+            &[
+                "?: return Decoded.Refused(CodecError.CborRequiredKeyMissing)",
+                "Cbor.readUintUpto(SceCursor(byteArrayOf(7.toByte())), 255UL)",
+                "Cbor.readBool(SceCursor(byteArrayOf(245.toByte())))",
+                "Cbor.readBytes(SceCursor(byteArrayOf(66.toByte(), 97.toByte(), 98.toByte())), 4)",
+            ],
+        ),
+        (
+            Language::Python,
+            &[
+                "raise cbor.CborRequiredKeyMissing()",
+                "held_hops = cbor.read_uint_upto(SceCursor(bytes([7])), 255)",
+                "held_live = cbor.read_bool(SceCursor(bytes([245])))",
+                "held_tag = cbor.read_text(SceCursor(bytes([100, 110, 111, 110, 101])), 4)",
+            ],
+        ),
+        (
+            Language::C11,
+            &[
+                "return SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING;",
+                "static const uint8_t lacked_bytes[] = {7};",
+                "sce_forge_cursor_t lacked = sce_forge_cursor_init(lacked_bytes, sizeof lacked_bytes);",
+                "s = sce_forge_cbor_read_bool(&lacked, &out->live);",
+                "s = sce_forge_cbor_read_bytes(&lacked, 4U, 4U, out->salt.data, &out->salt.len);",
+            ],
+        ),
+        (
+            Language::Swift,
+            &[
+                "guard let id_value = id_held else { throw CodecError.cborRequiredKeyMissing }",
+                "var lacked = SceCursor([7])",
+                "var lacked = SceCursor([245])",
+                "live_value = try Cbor.readBool(&lacked)",
+            ],
+        ),
+    ];
+    for (lang, expected) in lanes {
+        let code = revised(lang);
+        for expected in expected {
+            assert!(
+                code.contains(expected),
+                "{lang:?}: missing `{expected}`:\n{code}"
+            );
+        }
+    }
+}
