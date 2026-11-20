@@ -18,6 +18,7 @@ macro_rules! kit {
                 a_segment_is_deleted_whole_up_to_a_checkpoint,
                 streams_are_kept_apart,
                 handles_share_the_log,
+                an_entry_and_a_signature_are_replaced_only_from_what_they_hold,
                 a_removal_of_a_session_deletes_its_identities_and_no_row,
             ]
         );

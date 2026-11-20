@@ -20,6 +20,9 @@
 //!   sequence a checkpoint is kept at, keeps that checkpoint, and leaves the head.
 //! * [`streams_are_kept_apart`]: each stream has its own head, rows and checkpoints.
 //! * [`handles_share_the_log`]: what one handle appended, another reads.
+//! * [`an_entry_and_a_signature_are_replaced_only_from_what_they_hold`] (ADR 0109, D8): the
+//!   streams are listed a page at a time, and an entry or a signature is replaced only from the
+//!   bytes it holds, its chain kept.
 //! * [`a_removal_of_a_session_deletes_its_identities_and_no_row`]: for a store that keeps the
 //!   sessions too, the removal of a session deletes the identities its sessions appended under,
 //!   and keeps every row.
@@ -349,6 +352,105 @@ pub fn handles_share_the_log(harness: &impl AuditHarness) {
             .expect("the start repeated on the other handle"),
         AuditAppend::Repeated { sequence: 1 }
     );
+}
+
+/// ADR 0109, D8: the streams are listed a page at a time by the names the store keeps them under,
+/// and a row's entry and a checkpoint's signature are replaced only from the bytes they hold,
+/// every other column kept: a replacement made from bytes another one already replaced writes
+/// nothing, so a change made in between is not overwritten.
+pub fn an_entry_and_a_signature_are_replaced_only_from_what_they_hold(harness: &impl AuditHarness) {
+    let store = harness.handle();
+    let first = row("a", 1, 10);
+    appended(&store, &first);
+    assert_eq!(
+        store
+            .audit_append(&row("a", 2, 11), Some(b"signature at 2"), None)
+            .expect("a row with its checkpoint"),
+        AuditAppend::Appended
+    );
+    appended(&store, &row("b", 1, 12));
+
+    let mut names = vec![store.audit_indexed("a"), store.audit_indexed("b")];
+    names.sort();
+    assert_eq!(
+        store.audit_streams_after(None, 10).expect("every stream"),
+        names,
+        "each stream by the name the store keeps it under, in the order of its bytes"
+    );
+    assert_eq!(
+        store.audit_streams_after(None, 1).expect("a page of one"),
+        names[..1].to_vec()
+    );
+    assert_eq!(
+        store
+            .audit_streams_after(Some(names[0].as_str()), 10)
+            .expect("the page after the first"),
+        names[1..].to_vec()
+    );
+
+    assert!(
+        !store
+            .audit_reseal_row("a", 1, b"other bytes", b"replaced")
+            .expect("a replacement from bytes the row does not hold"),
+        "replaced from bytes the row does not hold"
+    );
+    assert!(
+        !store
+            .audit_reseal_row("a", 9, &first.entry, b"replaced")
+            .expect("a replacement of no row"),
+        "a sequence the stream holds no row at"
+    );
+    assert!(store
+        .audit_reseal_row("a", 1, &first.entry, b"replaced")
+        .expect("a replacement from the bytes held"));
+    assert!(
+        !store
+            .audit_reseal_row("a", 1, &first.entry, b"stale")
+            .expect("a replacement from the bytes it held before"),
+        "a replacement made from bytes already replaced is refused"
+    );
+    assert_eq!(
+        store.audit_rows("a", 0, 1).expect("row 1")[0],
+        AuditRow {
+            entry: b"replaced".to_vec(),
+            ..first
+        },
+        "the sequence, the moment and the chain are kept"
+    );
+
+    assert!(!store
+        .audit_reseal_checkpoint("a", 2, b"other bytes", b"resigned")
+        .expect("a replacement from bytes the checkpoint does not hold"));
+    assert!(!store
+        .audit_reseal_checkpoint("a", 1, b"signature at 2", b"resigned")
+        .expect("a replacement of no checkpoint"));
+    assert!(store
+        .audit_reseal_checkpoint("a", 2, b"signature at 2", b"resigned")
+        .expect("a replacement from the bytes held"));
+    assert!(!store
+        .audit_reseal_checkpoint("a", 2, b"signature at 2", b"stale")
+        .expect("a replacement from the bytes it held before"));
+    assert_eq!(
+        store.audit_checkpoints("a").expect("a's checkpoints"),
+        vec![AuditCheckpoint {
+            stream: "a".to_string(),
+            sequence: 2,
+            chain: chain("a", 2),
+            signature: b"resigned".to_vec(),
+        }],
+        "the sequence and the chain are kept"
+    );
+
+    assert_eq!(
+        store.audit_head("a").expect("a's head"),
+        AuditHead {
+            sequence: 2,
+            chain: chain("a", 2),
+        },
+        "a replacement leaves the head"
+    );
+    appended(&store, &row("a", 3, 13));
+    assert_eq!(sequences(&store, "b", 0), [1], "b is untouched");
 }
 
 /// The removal of a session deletes the identities its sessions appended under, and keeps every

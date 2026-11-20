@@ -91,6 +91,11 @@ fn in_memory_an_old_entry_expires_and_its_sender_is_noted() {
 }
 
 #[test]
+fn in_memory_an_entry_and_a_note_are_replaced_only_from_what_they_hold() {
+    outbox_conformance::an_entry_and_a_note_are_replaced_only_from_what_they_hold(&in_memory());
+}
+
+#[test]
 fn in_memory_a_batch_is_decided_item_by_item() {
     conformance::a_batch_is_decided_item_by_item(&in_memory());
 }
@@ -201,6 +206,13 @@ mod on_sqlite {
     fn an_old_entry_expires_and_its_sender_is_noted() {
         outbox_conformance::an_old_entry_expires_and_its_sender_is_noted(&on_sqlite(
             "outbox-expiry",
+        ));
+    }
+
+    #[test]
+    fn an_entry_and_a_note_are_replaced_only_from_what_they_hold() {
+        outbox_conformance::an_entry_and_a_note_are_replaced_only_from_what_they_hold(&on_sqlite(
+            "outbox-reseal",
         ));
     }
 
