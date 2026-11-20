@@ -2762,11 +2762,12 @@ pub(super) fn context(
         ));
     }
     // A frame laid out by byte is written into zeros as long as its fixed part, and the bytes or
-    // text after it appended; one written in turn grows as each field is appended.
+    // text after it appended, the arm of a variant among them; one written in turn grows as each
+    // field is appended.
     let streamed = plan
         .program
         .iter()
-        .any(|write| matches!(write, Write::Streamed { .. } | Write::Variant));
+        .any(|write| matches!(write, Write::Streamed { .. }));
     let fixed_end = plan
         .program
         .iter()
@@ -2779,7 +2780,7 @@ pub(super) fn context(
     let tails = plan
         .program
         .iter()
-        .any(|write| matches!(write, Write::Tail { .. }));
+        .any(|write| matches!(write, Write::Tail { .. } | Write::Variant));
     body.push(match (streamed, fixed_end, tails) {
         (true, _, _) | (false, None, true) => "var frame: [UInt8] = []".to_string(),
         (false, Some(end), true) => format!("var frame = [UInt8](repeating: 0, count: {end})"),

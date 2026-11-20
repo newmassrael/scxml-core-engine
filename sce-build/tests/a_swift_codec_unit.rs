@@ -625,6 +625,18 @@ fn a_variant_is_the_arm_its_tag_selects_with_the_tag_the_frame_said_for_the_catc
         ),
         "the encode derives the tag from the arm: {code}"
     );
+    // The tag is a fixed field stored at its offset, so the frame is zeros as long as the fixed
+    // part before the arm is appended; an empty frame has no byte to store the tag into.
+    assert!(
+        code.contains(
+            "        var frame = [UInt8](repeating: 0, count: 1)\n        storeInteger(msg_id_derived, into: &frame, at: 0, .big)\n"
+        ),
+        "the fixed part is laid out before the arm: {code}"
+    );
+    assert!(
+        code.contains("        frame += body_arm.bytes\n"),
+        "the arm is appended after the fixed part: {code}"
+    );
     assert!(
         code.contains("        case .default(_, let arm):\n            try CodecVariantSessionClose.encodeSource(arm, into: &body_arm)\n"),
         "an encode writes the arm that is held: {code}"
