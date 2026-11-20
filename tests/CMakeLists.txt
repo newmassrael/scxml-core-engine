@@ -1159,6 +1159,7 @@ endif()
 # below.
 if(TARGET sce_host_cose)
     target_sources(standard_host_scenario_test PRIVATE
+        integration/AStandardHostAuditTest.cpp
         integration/AStandardHostCoseTest.cpp
         integration/AStandardHostCredentialsTest.cpp
         integration/AStandardHostKeysTest.cpp
