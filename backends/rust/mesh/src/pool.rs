@@ -1940,42 +1940,43 @@ where
             // started a host-run invoke, whose first results of the key-value
             // feature a store keeps under their identities and deletes with
             // the removal.
-            let ended = sessions_with_host_starts(&finished.machine, now);
-            let ended_ids: Vec<&str> = ended.iter().map(String::as_str).collect();
+            let host_sessions = sessions_with_host_starts(&finished.machine, now);
+            let host_session_ids: Vec<&str> = host_sessions.iter().map(String::as_str).collect();
             // A session the store never held (a provisional one whose first
             // run finished, docs/adr/0109, D1) has nothing to remove, and what
             // it sent leaves at once: nothing durable changed, unless a
             // durable client's outbox is appended to or a host operation of it
             // kept a first result.
-            let removed = if finished.version == 0 && outbound.is_empty() && ended.is_empty() {
-                Ok(None)
-            } else {
-                let incarnation = if outbound.is_empty() {
-                    String::new()
+            let removed =
+                if finished.version == 0 && outbound.is_empty() && host_sessions.is_empty() {
+                    Ok(None)
                 } else {
-                    self.incarnation()
+                    let incarnation = if outbound.is_empty() {
+                        String::new()
+                    } else {
+                        self.incarnation()
+                    };
+                    let appends: Vec<Append<'_>> = outbound
+                        .iter()
+                        .map(|unreleased| Append {
+                            client: &unreleased.peer,
+                            incarnation: &incarnation,
+                            sender: Some(key),
+                            envelope: &unreleased.envelope,
+                        })
+                        .collect();
+                    self.store
+                        .write(
+                            key,
+                            &Write {
+                                outbox: &appends,
+                                now_ms: now,
+                                sessions: &host_session_ids,
+                                ..Write::delete(finished.version, fence)
+                            },
+                        )
+                        .map(Some)
                 };
-                let appends: Vec<Append<'_>> = outbound
-                    .iter()
-                    .map(|unreleased| Append {
-                        client: &unreleased.peer,
-                        incarnation: &incarnation,
-                        sender: Some(key),
-                        envelope: &unreleased.envelope,
-                    })
-                    .collect();
-                self.store
-                    .write(
-                        key,
-                        &Write {
-                            outbox: &appends,
-                            now_ms: now,
-                            sessions: &ended_ids,
-                            ..Write::delete(finished.version, fence)
-                        },
-                    )
-                    .map(Some)
-            };
             match removed {
                 Ok(written) if sealed.is_some() => {
                     if let (Some(written), Some(outboxes)) = (written, &self.outboxes) {
