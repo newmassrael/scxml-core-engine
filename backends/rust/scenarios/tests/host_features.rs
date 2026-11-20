@@ -19,9 +19,9 @@ use std::sync::{Arc, Mutex};
 use sce_rust_host_features::{
     cose, serve, AnswerSchema, AuditStreams, AuditVerdict, ClockSource, CoseKeys,
     ExhaustiveProvider, HttpRequest, HttpResponse, Invocation, KvStore, MemoryCredentials,
-    MemoryStore, OutcomeClass, Params, Personal, Reading, ReferenceHost, ScriptedAnswer,
-    ScriptedClock, ScriptedProvider, ScriptedRandom, Shared, StreamPolicy, TokenStore, Transport,
-    TransportFailure, TrustedKey, Zone,
+    MemoryStore, NamedBounds, OutcomeClass, Params, Personal, Reading, ReferenceHost,
+    ScriptedAnswer, ScriptedClock, ScriptedProvider, ScriptedRandom, Shared, StreamPolicy,
+    TokenStore, Transport, TransportFailure, TrustedKey, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, HostInvokeEvent, SceClock, StatePolicy, TransitionTaken};
@@ -953,6 +953,118 @@ fn a_machine_signs_verifies_seals_and_opens_through_its_host() {
         "static_host_cose",
         &[],
     );
+}
+
+/// Raise `event` with `data` on `engine`, run it to completion, and answer what
+/// the machine publishes afterwards.
+fn told<P: StatePolicy>(engine: &mut Engine<P>, event: &str, data: &Value) -> Value {
+    assert!(
+        P::resolve_event_by_name(event).is_some(),
+        "the machine's events do not match `{event}`"
+    );
+    engine.raise_external_by_name(event, &data.to_string());
+    settle(engine);
+    published(&engine.save_at(0).expect("saves"))
+}
+
+/// docs/adr/0109, D17: the signing and sealing machine built with its records'
+/// bounds moved (`static_datamodel_large`, built with `--limit
+/// cose_payload=8192` and its neighbours) signs a payload at the moved bound and
+/// verifies the object, and seals a plaintext at the moved bound and opens it,
+/// through a host given the build's constants, the machine's
+/// `StaticHostCoseLimits`.
+#[test]
+fn a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host() {
+    use sce_rust_scenarios::integration::static_datamodel_large::static_host_cose_sm::{
+        StaticHostCoseLimits as Limits, StaticHostCosePolicy as LargePolicy,
+    };
+    let bounds = NamedBounds {
+        cose_payload: Limits::COSE_PAYLOAD as usize,
+        cose_signed: Limits::COSE_SIGNED as usize,
+        cose_plaintext: Limits::COSE_PLAINTEXT as usize,
+        cose_sealed: Limits::COSE_SEALED as usize,
+        mac_message: Limits::MAC_MESSAGE as usize,
+        random_bytes: Limits::RANDOM_BYTES as usize,
+    };
+    assert_eq!(
+        (
+            bounds.cose_payload,
+            bounds.cose_signed,
+            bounds.cose_plaintext,
+            bounds.cose_sealed
+        ),
+        (8192, 8448, 8448, 8576),
+        "the tree built the machine with its bounds moved"
+    );
+    let mut reference = ReferenceHost::new(
+        Box::new(ScriptedClock::new()) as Box<dyn ClockSource + Send>,
+        Scripted(Arc::new(Mutex::new(Script::default()))),
+    );
+    reference
+        .set_cose_keys(cose_keys(&json!({
+            "sign": { "k": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60" },
+            "aead": { "box": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f" },
+            "trust": { "mine": ["k"] },
+        })))
+        .expect("no id of a generated or derived key");
+    reference.set_named_bounds(bounds);
+    let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
+    let mut engine = Engine::new(LargePolicy::new());
+    serve(&mut engine, &host);
+    engine.set_clock(SceClock::Manual(0));
+    engine.initialize().expect("the machine starts");
+    settle(&mut engine);
+
+    let payload = "p".repeat(bounds.cose_payload);
+    let signed = told(
+        &mut engine,
+        "host.cose.sign1.request",
+        &json!({ "key_id": "k", "payload": payload, "external_aad": "" }),
+    );
+    assert_eq!(signed["outcome"], "done", "{signed}");
+    let object = signed["signed_object"]
+        .as_str()
+        .expect("a byte string is its text")
+        .to_string();
+    let object_bytes = object.chars().count();
+    assert!(
+        object_bytes > bounds.cose_payload && object_bytes <= bounds.cose_signed,
+        "a signed object of {object_bytes} bytes"
+    );
+    let verified = told(
+        &mut engine,
+        "host.cose.verify1.request",
+        &json!({ "trust_set": "mine", "cose": object, "external_aad": "" }),
+    );
+    assert_eq!(verified["outcome"], "done", "{verified}");
+    assert_eq!(verified["valid"], true);
+    assert_eq!(verified["signer"], "k");
+    assert_eq!(verified["payload"], payload.as_str());
+
+    let plaintext = "q".repeat(bounds.cose_plaintext);
+    let sealed = told(
+        &mut engine,
+        "host.cose.encrypt0.request",
+        &json!({ "key_id": "box", "plaintext": plaintext, "external_aad": "" }),
+    );
+    assert_eq!(sealed["outcome"], "done", "{sealed}");
+    let sealed_bytes = sealed["sealed_object"]
+        .as_str()
+        .expect("a byte string is its text")
+        .chars()
+        .count();
+    assert!(
+        sealed_bytes > bounds.cose_plaintext && sealed_bytes <= bounds.cose_sealed,
+        "a sealed object of {sealed_bytes} bytes"
+    );
+    let opened = told(
+        &mut engine,
+        "cose.held.open",
+        &json!({ "key_id": "box", "external_aad": "" }),
+    );
+    assert_eq!(opened["outcome"], "done", "{opened}");
+    assert_eq!(opened["opened"], true);
+    assert_eq!(opened["plaintext"], plaintext.as_str());
 }
 
 /// The cases of the reference harness's scenario (docs/adr/0087, section 9.1 item

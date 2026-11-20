@@ -18,8 +18,14 @@ use sce_build::action::build_script::{
 };
 
 /// The directory of the tree, under the checkout's root, whose modules
-/// src/integration.rs mounts: `static_datamodel` alone.
+/// src/integration.rs mounts: `static_datamodel`, and
+/// `static_datamodel_large`, the signing and sealing machine built with its
+/// records' bounds moved (docs/adr/0109, D17).
 const MOUNTED: &str = "backends/rust/tests/src/integration";
+
+/// The modules the replay names, each a directory the tree places in
+/// [`MOUNTED`].
+const MODULES: [&str; 2] = ["static_datamodel", "static_datamodel_large"];
 
 fn main() {
     // First: a run of this process as the generator of an action is that
@@ -28,10 +34,12 @@ fn main() {
     let trees = materialize_trees(&["rust-static-datamodel"])
         .unwrap_or_else(|e| panic!("the machines of sce-rust-scenarios are not written: {e}"));
     let modules = trees.modules_in(MOUNTED);
-    assert!(
-        modules.iter().any(|m| m.name == "static_datamodel"),
-        "the tree placed no static_datamodel module in {MOUNTED}"
-    );
+    for module in MODULES {
+        assert!(
+            modules.iter().any(|m| m.name == module),
+            "the tree placed no {module} module in {MOUNTED}"
+        );
+    }
     write_module_declarations("static_datamodel.rs", &modules)
         .unwrap_or_else(|e| panic!("the declaration of static_datamodel is not written: {e}"));
 }

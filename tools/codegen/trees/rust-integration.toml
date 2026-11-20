@@ -21,7 +21,10 @@
 [tree]
 name = "rust-integration"
 roots = ["backends/rust/tests/src/integration/*"]
-except = ["backends/rust/tests/src/integration/static_datamodel"]
+except = [
+    "backends/rust/tests/src/integration/static_datamodel",
+    "backends/rust/tests/src/integration/static_datamodel_large",
+]
 committed = false
 
 # Every fixture of integration_resources: a directory holding the document of
@@ -152,7 +155,10 @@ keep = ["*_sm.rs"]
 # whole, a transition function a public module of its own.
 [[index]]
 directories = "backends/rust/tests/src/integration/*"
-except = ["backends/rust/tests/src/integration/static_datamodel"]
+except = [
+    "backends/rust/tests/src/integration/static_datamodel",
+    "backends/rust/tests/src/integration/static_datamodel_large",
+]
 file = "mod.rs"
 header = "// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)\n\n"
 entries = [

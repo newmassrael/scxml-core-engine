@@ -22,7 +22,10 @@
 
 [tree]
 name = "rust-static-datamodel"
-roots = ["backends/rust/tests/src/integration/static_datamodel"]
+roots = [
+    "backends/rust/tests/src/integration/static_datamodel",
+    "backends/rust/tests/src/integration/static_datamodel_large",
+]
 committed = false
 
 # Every statechart of the fixture directory declared under
@@ -113,6 +116,30 @@ arguments = [
 ]
 place = "backends/rust/tests/src/integration/static_datamodel"
 keep = ["*.rs"]
+
+# The signing and sealing machine built with the bounds of its records moved
+# (docs/adr/0109, D17), each as the relation the table of standard types holds
+# it to asks, and every document it imports: a module of its own,
+# `static_datamodel_large`, apart from the machine built as written, whose
+# files it shares the names of, and whose `source-hash` names the limits it
+# was built with, so `sce-codegen verify` of the tree built as written does not
+# read it. backends/rust/scenarios/tests/host_features.rs signs and seals at
+# its bounds through a host given its `StaticHostCoseLimits`.
+[[generation]]
+arguments = [
+    "generate", "sce-build/tests/fixtures/static_datamodel/static_host_cose.scxml", "--with-imports",
+    "--limit", "cose_payload=8192", "--limit", "cose_signed=8448",
+    "--limit", "cose_plaintext=8448", "--limit", "cose_sealed=8576",
+    "-l", "rust", "-o", "{out}",
+]
+place = "backends/rust/tests/src/integration/static_datamodel_large"
+keep = ["*.rs"]
+
+[[index]]
+directories = "backends/rust/tests/src/integration/static_datamodel_large"
+file = "mod.rs"
+header = "// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-static-datamodel)\n\n"
+entries = [{ files = "*.rs", line = "pub mod {module};\n" }]
 
 # The module index: every file the actions placed, a public module each.
 [[index]]
