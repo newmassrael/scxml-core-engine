@@ -166,7 +166,10 @@ PUSH_BUDGET_S = 300
 # here is to follow it down rather than bank the slack: a ceiling left above
 # the real share stops being a ratchet and silently permits the next
 # unmeasured cost to be added back.
-PACED_BUDGET_SHARE_CEILING = 0.237
+# 0.237 -> 0.133 on 2026-11-20, for the same kind of reason: `clippy` came back
+# into the push with 82 measured seconds, so the denominator grew to 188.485s
+# while the 25 paced seconds of `codegen-build` stayed where they were.
+PACED_BUDGET_SHARE_CEILING = 0.133
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -812,15 +815,18 @@ GATES: dict[str, dict] = {
     "clippy": {
         "workflows": ["clippy-check.yml"],
         "runner_workflow": True,
-        # The one that hurts. Lint is the fastest feedback a Rust change can
-        # get and it leaves anyway, because the budget is a ceiling on what a
-        # developer waits for and is not a ranking of what is useful. It was
-        # measured at 15s, 42s and 82s in one afternoon on this machine, which
-        # is also the clearest single illustration of why the numbers here
-        # cannot be trusted to a factor of two.
-        "ci_only": "82s under load. clippy-check.yml runs it. Kept local "
-                   "through three earlier cuts and only moved when the table "
-                   "was priced at what a loaded machine charges.",
+        # Lint is the fastest feedback a Rust change can get. It was measured
+        # at 15s, 42s and 82s in one afternoon on this machine, which is also
+        # the clearest single illustration of why the numbers here cannot be
+        # trusted to a factor of two.
+        #
+        # ⚠ Local, not `ci_only`. It was moved out of the push when the push
+        # was something a developer waited for. Since the landing queue
+        # judges every item with this hook on the build fleet (bx RFC 0024),
+        # a gate left out of the push is a gate left out of the merge queue:
+        # on 2026-11-20 item 290 landed two `explicit_auto_deref` errors and
+        # main stayed red until item 298. With `cache: True` a kept pass
+        # costs nothing, and 82s fits the ceiling beside the local set.
         "cost_s": 82,
         "summary": "cargo clippy --workspace --all-targets",
         # The lint set moves with each stable release, which is why the plan
@@ -4701,8 +4707,8 @@ def self_test(repo_root: Path) -> int:
     # triggers for exactly this reason — they are what stop rule 1 from
     # handing back the whole table for a path the registry does understand.
     check("rust", ["sce-build/src/mesh/deploy.rs"], want_full=False,
-          want_has=["codegen-build"],
-          want_lacks=["workspace-tests", "clippy"])
+          want_has=["codegen-build", "clippy"],
+          want_lacks=["workspace-tests"])
     # Dependency closure: an example-only change still builds sce-codegen.
     # `example-codegen` is `ci_only` now, but the closure it pulls in is not:
     # the dependency must survive its dependent leaving, or a gate that
