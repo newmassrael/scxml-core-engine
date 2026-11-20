@@ -231,25 +231,28 @@ impl Outboxes {
                 if reserved {
                     client.reserved = client.reserved.saturating_sub(1);
                 }
-                match client.held.as_mut() {
-                    // The cache numbers on as the store does; an append that does not follow its
-                    // last entry (another process appended between) leaves the cache to be read
-                    // again.
-                    Some(held)
-                        if held.incarnation == kept.incarnation
-                            && held
-                                .entries
-                                .back()
-                                .is_none_or(|last| last.number < kept.number) =>
-                    {
-                        held.entries.push_back(Cached {
-                            number: kept.number,
-                            at_ms,
-                            envelope: envelope.clone(),
-                        });
+                // The cache numbers on as the store does; an append that does not follow its
+                // last entry (another process appended between) leaves the cache to be read
+                // again, and one not read yet is read at its first use, this append among its
+                // entries.
+                let follows = client.held.as_ref().map(|held| {
+                    held.incarnation == kept.incarnation
+                        && held
+                            .entries
+                            .back()
+                            .is_none_or(|last| last.number < kept.number)
+                });
+                match follows {
+                    Some(true) => {
+                        if let Some(held) = client.held.as_mut() {
+                            held.entries.push_back(Cached {
+                                number: kept.number,
+                                at_ms,
+                                envelope: envelope.clone(),
+                            });
+                        }
                     }
-                    Some(_) => client.held = None,
-                    // Read at its first use, with this append among its entries.
+                    Some(false) => client.held = None,
                     None => {}
                 }
                 if !woken.contains(&kept.client) {
