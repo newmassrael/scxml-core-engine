@@ -212,12 +212,13 @@ pub fn published(key: &str) -> Result<Published, ReasonError> {
 /// The bound of one value of the run a reason quotes (`{v}` in its row).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quote {
-    /// A sentence of the runtime, at most the bound it publishes; spelled
-    /// `%s`, and checked by the machine against its header.
+    /// A sentence of the runtime, at most the bound it publishes; written
+    /// whole, and checked by the machine against its header.
     Published(Published),
     /// A text the document bounds at `n` bytes (the longest of the names it
-    /// can be); spelled `%.<n>s`, so the C library holds the bound whatever
-    /// path reaches the reason, and no text the document drives is cut.
+    /// can be); written at most `n` bytes of, so the writer holds the bound
+    /// whatever path reaches the reason, and no text the document drives is
+    /// cut.
     Within(u64),
 }
 
@@ -230,13 +231,26 @@ impl Quote {
         }
     }
 
-    /// The `printf` conversion the value is written by.
-    fn conversion(self) -> String {
+    /// The statement that writes `value`, a C expression of the quoted text,
+    /// with the text writer `writer` (`sce/text.h`, docs/adr/0110 D1): whole
+    /// for a sentence of the runtime, whose bound the machine checks against
+    /// its header, and at most `n` bytes of a text the document bounds, so no
+    /// path that reaches the reason writes past the bound the build measured.
+    fn write(self, writer: &str, value: &str) -> String {
         match self {
-            Quote::Published(_) => "%s".to_string(),
-            Quote::Within(n) => format!("%.{n}s"),
+            Quote::Published(_) => format!("sce_text_put_text(&{writer}, {value});"),
+            Quote::Within(n) => format!("sce_text_put_within(&{writer}, {value}, {n}u);"),
         }
     }
+}
+
+/// One part of a reason that quotes values of the run, in the order its text
+/// spells them ([`Reason::writes`]).
+enum ReasonPart {
+    /// Text the build knows: the row's own and each hole's.
+    Text(String),
+    /// A value of the run, at the bound its quote states.
+    Quote(Quote),
 }
 
 /// Every reason a C11 machine raises with an error, by the name its raise
@@ -695,7 +709,7 @@ impl Reason {
 
     /// The C string literal of the text filled with `holes`, quotes included,
     /// its length recorded in the book of the machine being generated. A row
-    /// that quotes a value of the run is no literal ([`Self::format`]).
+    /// that quotes a value of the run is no literal ([`Self::writes`]).
     pub fn literal(&self, holes: &[&str]) -> Result<String, ReasonError> {
         self.check_quotes(0)?;
         let text = self.fill(holes)?;
@@ -703,18 +717,55 @@ impl Reason {
         Ok(format!("\"{}\"", crate::filters::escape_c(text)))
     }
 
-    /// The C string literal of the `printf` format of the text: each hole
-    /// filled with `holes[N]` (a `%` of it doubled, so it is text and not a
-    /// conversion), and each quote, in order, the conversion of `quotes`'
-    /// bound. The reason is recorded at its longest, the text plus each
-    /// quote's bound, and a bound of the runtime as one the machine relies on.
-    pub fn format(&self, holes: &[&str], quotes: &[Quote]) -> Result<String, ReasonError> {
-        let (format, longest) = self.compose(holes, quotes)?;
+    /// The C block that writes the text into `buffer` of `cap` bytes with the
+    /// runtime's text writer (`sce/text.h`), never the C library's formatter,
+    /// which a machine's core does not call (docs/adr/0110, D1): each hole
+    /// filled with `holes[N]`, as text, and each quote, in order, the value
+    /// `values` holds at the same place, written within its quote's bound. The
+    /// caller has reserved `cap` bytes for the longest reason, so nothing is
+    /// cut. The reason is recorded at its longest, the text plus each quote's
+    /// bound, and a bound of the runtime as one the machine relies on.
+    pub fn writes(
+        &self,
+        holes: &[&str],
+        quotes: &[Quote],
+        values: &[&str],
+        buffer: &str,
+        cap: &str,
+    ) -> Result<String, ReasonError> {
+        if values.len() != quotes.len() {
+            return Err(ReasonError::Quotes {
+                row: self.row,
+                wanted: quotes.len(),
+                given: values.len(),
+            });
+        }
+        let (parts, longest) = self.compose(holes, quotes)?;
         self.hold_composed(quotes, longest)?;
-        Ok(format!("\"{}\"", crate::filters::escape_c(format)))
+        const WRITER: &str = "sce_reason_";
+        let mut block =
+            format!("{{ sce_text_writer_t {WRITER} = sce_text_writer({buffer}, {cap});");
+        let mut value = values.iter();
+        for part in parts {
+            match part {
+                ReasonPart::Text(text) => block.push_str(&format!(
+                    " sce_text_put_text(&{WRITER}, \"{}\");",
+                    crate::filters::escape_c(text)
+                )),
+                ReasonPart::Quote(quote) => {
+                    let value = value
+                        .next()
+                        .expect("the values were counted against the quotes");
+                    block.push(' ');
+                    block.push_str(&quote.write(WRITER, value));
+                }
+            }
+        }
+        block.push_str(" }");
+        Ok(block)
     }
 
-    /// Record the reason as [`Self::format`] does, for a site that hands the
+    /// Record the reason as [`Self::writes`] does, for a site that hands the
     /// quoted value on as it is (a row whose text is one quote).
     pub fn hold(&self, holes: &[&str], quotes: &[Quote]) -> Result<(), ReasonError> {
         let (_, longest) = self.compose(holes, quotes)?;
@@ -733,9 +784,14 @@ impl Reason {
         Ok(())
     }
 
-    /// The `printf` format of the text and the most bytes it writes, in one
-    /// pass over the row, so a hole's text that spells `{v}` stays text.
-    fn compose(&self, holes: &[&str], quotes: &[Quote]) -> Result<(String, usize), ReasonError> {
+    /// The parts of the text and the most bytes it writes, in one pass over
+    /// the row, so a hole's text that spells `{v}` stays text: each run of
+    /// text the build knows is one part, and each quote one.
+    fn compose(
+        &self,
+        holes: &[&str],
+        quotes: &[Quote],
+    ) -> Result<(Vec<ReasonPart>, usize), ReasonError> {
         self.check_quotes(quotes.len())?;
         let wanted = self.holes();
         if holes.len() != wanted {
@@ -745,17 +801,18 @@ impl Reason {
                 given: holes.len(),
             });
         }
-        let mut format = String::with_capacity(self.text.len());
+        let mut parts = Vec::new();
+        let mut text = String::with_capacity(self.text.len());
         let mut longest = 0usize;
         let mut quoted = quotes.iter();
         let mut rest = self.text;
         loop {
             let Some(at) = rest.find('{') else {
-                format.push_str(&rest.replace('%', "%%"));
+                text.push_str(rest);
                 longest += rest.len();
                 break;
             };
-            format.push_str(&rest[..at].replace('%', "%%"));
+            text.push_str(&rest[..at]);
             longest += at;
             let after = &rest[at..];
             let digit = after.as_bytes().get(1).copied();
@@ -763,24 +820,30 @@ impl Reason {
                 digit.filter(|d| d.is_ascii_digit() && after.as_bytes().get(2) == Some(&b'}'))
             {
                 let hole = holes[usize::from(d - b'0')];
-                format.push_str(&hole.replace('%', "%%"));
+                text.push_str(hole);
                 longest += hole.len();
                 rest = &after[3..];
             } else if let Some(tail) = after.strip_prefix(QUOTE) {
                 let quote = quoted
                     .next()
                     .expect("the quotes were counted against the row's");
-                format.push_str(&quote.conversion());
+                if !text.is_empty() {
+                    parts.push(ReasonPart::Text(std::mem::take(&mut text)));
+                }
+                parts.push(ReasonPart::Quote(*quote));
                 longest =
                     longest.saturating_add(usize::try_from(quote.bound()).unwrap_or(usize::MAX));
                 rest = tail;
             } else {
-                format.push('{');
+                text.push('{');
                 longest += 1;
                 rest = &after[1..];
             }
         }
-        Ok((format, longest))
+        if !text.is_empty() {
+            parts.push(ReasonPart::Text(text));
+        }
+        Ok((parts, longest))
     }
 
     fn hold_composed(&self, quotes: &[Quote], longest: usize) -> Result<(), ReasonError> {
@@ -932,16 +995,22 @@ pub fn template_function(
         .map_err(|error| refuse(error.to_string()))
 }
 
-/// The template function `reason_format(row, quotes, holes...)`: the C string
-/// literal of the `printf` format of a row that quotes values of the run
-/// ([`Reason::format`]). Each entry of `quotes` is the name of a bound the
-/// runtime publishes ([`PUBLISHED`]) or a number of bytes the document bounds
-/// the value at ([`Quote::Within`]).
-pub fn template_format_function(
+/// The template function `reason_message(row, quotes, values, holes...)`: the
+/// C block that writes a row that quotes values of the run into the machine's
+/// `message` scratch, which the site has reserved for the longest reason
+/// (`SCE_SCRATCH_BUF(message)`, `SCE_SCRATCH_CAP(message)`, docs/adr/0086,
+/// section 8.6 (d)), with the runtime's text writer ([`Reason::writes`]). Each
+/// entry of `quotes` is the name of a bound the runtime publishes
+/// ([`PUBLISHED`]) or a number of bytes the document bounds the value at
+/// ([`Quote::Within`]), and `values` the C expression of each quoted text, in
+/// the same order.
+pub fn template_message_function(
     name: String,
     quotes: Vec<minijinja::Value>,
+    values: Vec<String>,
     holes: minijinja::value::Rest<minijinja::Value>,
 ) -> Result<String, minijinja::Error> {
+    let values: Vec<&str> = values.iter().map(String::as_str).collect();
     let texts = hole_texts(&name, &holes)?;
     let filled: Vec<&str> = texts.iter().map(String::as_str).collect();
     let mut bounds = Vec::with_capacity(quotes.len());
@@ -954,7 +1023,15 @@ pub fn template_format_function(
         bounds.push(bound.map_err(|error| refuse(error.to_string()))?);
     }
     row(&name)
-        .and_then(|reason| reason.format(&filled, &bounds))
+        .and_then(|reason| {
+            reason.writes(
+                &filled,
+                &bounds,
+                &values,
+                "SCE_SCRATCH_BUF(message)",
+                "SCE_SCRATCH_CAP(message)",
+            )
+        })
         .map_err(|error| refuse(error.to_string()))
 }
 
@@ -1073,18 +1150,29 @@ mod tests {
     }
 
     /// A reason that quotes a value of the run is measured at its text plus
-    /// each quote's bound, and spelled as a `printf` format whose holes are
-    /// text: a `%` a document wrote is doubled, and a hole that spells `{v}`
-    /// is no quote.
+    /// each quote's bound, and written by the runtime's text writer, never a
+    /// formatter (docs/adr/0110, D1): its holes are text, so a `%` a document
+    /// wrote is written as it is and a hole that spells `{v}` is no quote.
     #[test]
     fn a_quoting_reason_is_measured_at_its_text_plus_each_bound() {
         let _scope = scope();
         let reason = row("lift_field_refused").expect("the row");
         assert_eq!(reason.quotes(), 1);
-        let format = reason
-            .format(&["a%b", "{v}"], &[Quote::Published(PAYLOAD_REFUSAL)])
+        let block = reason
+            .writes(
+                &["a%b", "{v}"],
+                &[Quote::Published(PAYLOAD_REFUSAL)],
+                &["_refusal"],
+                "_message",
+                "_message_cap",
+            )
             .expect("two holes and one quote");
-        assert_eq!(format, "\"`a%%b` payload: '{v}' %s\"");
+        assert_eq!(
+            block,
+            "{ sce_text_writer_t sce_reason_ = sce_text_writer(_message, _message_cap); \
+             sce_text_put_text(&sce_reason_, \"`a%b` payload: '{v}' \"); \
+             sce_text_put_text(&sce_reason_, _refusal); }"
+        );
         // "`a%b` payload: '{v}' " is 21 bytes, and the sentence at most 120.
         assert_eq!(seal(), 21 + PAYLOAD_REFUSAL.max_len);
 
@@ -1092,9 +1180,18 @@ mod tests {
         let variant = row("lift_not_variant").expect("the row");
         assert_eq!(
             variant
-                .format(&["e", "f", "Mode"], &[Quote::Within(7)])
+                .writes(
+                    &["e", "f", "Mode"],
+                    &[Quote::Within(7)],
+                    &["name"],
+                    "b",
+                    "c"
+                )
                 .expect("three holes and one quote"),
-            "\"`e` payload: 'f' (%.7s) is not a variant of Mode\""
+            "{ sce_text_writer_t sce_reason_ = sce_text_writer(b, c); \
+             sce_text_put_text(&sce_reason_, \"`e` payload: 'f' (\"); \
+             sce_text_put_within(&sce_reason_, name, 7u); \
+             sce_text_put_text(&sce_reason_, \") is not a variant of Mode\"); }"
         );
         assert_eq!(
             seal(),
@@ -1111,16 +1208,25 @@ mod tests {
         let _scope = scope();
         let reason = row("invoke_deadline_unreadable").expect("the row");
         assert_eq!(reason.quotes(), 3);
-        let format = reason
-            .format(
+        let block = reason
+            .writes(
                 &[],
                 &[Quote::Within(10), Quote::Within(3), Quote::Within(20)],
+                &["t", "i", "d"],
+                "b",
+                "c",
             )
             .expect("three quotes");
         assert_eq!(
-            format,
-            "\"<invoke type='%.10s' id='%.3s'>: _sce_deadline_ms='%.20s' is not a whole number \
-             of milliseconds\""
+            block,
+            "{ sce_text_writer_t sce_reason_ = sce_text_writer(b, c); \
+             sce_text_put_text(&sce_reason_, \"<invoke type='\"); \
+             sce_text_put_within(&sce_reason_, t, 10u); \
+             sce_text_put_text(&sce_reason_, \"' id='\"); \
+             sce_text_put_within(&sce_reason_, i, 3u); \
+             sce_text_put_text(&sce_reason_, \"'>: _sce_deadline_ms='\"); \
+             sce_text_put_within(&sce_reason_, d, 20u); \
+             sce_text_put_text(&sce_reason_, \"' is not a whole number of milliseconds\"); }"
         );
         let text =
             "<invoke type='' id=''>: _sce_deadline_ms='' is not a whole number of milliseconds";
@@ -1135,14 +1241,24 @@ mod tests {
     #[test]
     fn a_composed_lift_quotes_its_path_and_the_readers_sentence_at_their_bounds() {
         let _scope = scope();
-        let format = row("lift_place_refused")
+        let block = row("lift_place_refused")
             .expect("the row")
-            .format(
+            .writes(
                 &["batch.sent"],
                 &[Quote::Within(14), Quote::Published(PAYLOAD_REFUSAL)],
+                &["sce_path", "_refusal"],
+                "b",
+                "c",
             )
             .expect("two quotes");
-        assert_eq!(format, "\"`batch.sent` payload: '%.14s' %s\"");
+        assert_eq!(
+            block,
+            "{ sce_text_writer_t sce_reason_ = sce_text_writer(b, c); \
+             sce_text_put_text(&sce_reason_, \"`batch.sent` payload: '\"); \
+             sce_text_put_within(&sce_reason_, sce_path, 14u); \
+             sce_text_put_text(&sce_reason_, \"' \"); \
+             sce_text_put_text(&sce_reason_, _refusal); }"
+        );
         let text = "`batch.sent` payload: '' ";
         assert_eq!(seal(), text.len() as u64 + 14 + PAYLOAD_REFUSAL.max_len);
     }
@@ -1161,7 +1277,16 @@ mod tests {
             })
         );
         assert_eq!(
-            reason.format(&["e"], &[]),
+            reason.writes(&["e"], &[], &[], "b", "c"),
+            Err(ReasonError::Quotes {
+                row: "lift_payload_refused",
+                wanted: 1,
+                given: 0
+            })
+        );
+        // ... and one handed a value for each quote but one.
+        assert_eq!(
+            reason.writes(&["e"], &[Quote::Published(PAYLOAD_REFUSAL)], &[], "b", "c"),
             Err(ReasonError::Quotes {
                 row: "lift_payload_refused",
                 wanted: 1,
@@ -1182,10 +1307,22 @@ mod tests {
         let field = row("lift_field_refused").expect("the row");
         let whole = row("lift_payload_refused").expect("the row");
         field
-            .format(&["e", "f"], &[Quote::Published(PAYLOAD_REFUSAL)])
+            .writes(
+                &["e", "f"],
+                &[Quote::Published(PAYLOAD_REFUSAL)],
+                &["r"],
+                "b",
+                "c",
+            )
             .expect("a quote");
         whole
-            .format(&["e"], &[Quote::Published(PAYLOAD_REFUSAL)])
+            .writes(
+                &["e"],
+                &[Quote::Published(PAYLOAD_REFUSAL)],
+                &["r"],
+                "b",
+                "c",
+            )
             .expect("a quote");
         HOST_INVOKE_REFUSED
             .hold(&[], &[Quote::Published(HOST_INVOKE_REFUSAL)])
@@ -1195,7 +1332,13 @@ mod tests {
         assert!(checks.contains("(size_t)(SCE_PAYLOAD_REFUSAL_MAX_LEN) <= (size_t)120u"));
         assert!(checks.contains("(size_t)(SCE_HOST_INVOKE_REFUSAL_MAX_LEN) <= (size_t)255u"));
         assert_eq!(
-            whole.format(&["e"], &[Quote::Published(PAYLOAD_REFUSAL)]),
+            whole.writes(
+                &["e"],
+                &[Quote::Published(PAYLOAD_REFUSAL)],
+                &["r"],
+                "b",
+                "c"
+            ),
             Err(ReasonError::Unchecked("lift_payload_refused"))
         );
     }

@@ -1950,10 +1950,11 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     // from one table, by the name of its row, and is measured for the slot.
     env.add_function("reason", crate::forge::c11_reasons::template_function);
     // A reason that quotes a value of the run, each quote with a bound the
-    // build knows, and the check of the runtime's bounds the reasons quote.
+    // build knows, written into the machine's message scratch by the runtime's
+    // text writer, and the check of the runtime's bounds the reasons quote.
     env.add_function(
-        "reason_format",
-        crate::forge::c11_reasons::template_format_function,
+        "reason_message",
+        crate::forge::c11_reasons::template_message_function,
     );
     env.add_function(
         "reason_bounds_checked",

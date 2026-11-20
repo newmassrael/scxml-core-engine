@@ -22,10 +22,12 @@
 
 #include "sce/text.h"
 
-/* How a real is written: the one spelling every engine writes, in the runtime's
+/* How a real is written: handed whole to the seam `_sce_real_text`, which the
+ * runtime's text unit defines with the one spelling every engine writes, since a
+ * machine's core formats no real itself (docs/adr/0110, D1). In the runtime's
  * own include directory because the typed payload of a machine with no
- * `sce-static` datamodel writes it too. */
-#include <sce/number_text.h>
+ * `sce-static` datamodel writes one too. */
+#include <sce/real_text.h>
 
 #include "sce/forge/bytes.h"
 
@@ -298,7 +300,7 @@ static inline void sce_forge_wire_put_value(sce_forge_wire_t *w, sce_forge_wire_
          * text (`sce_forge_wire_text`). */
         if (value.as.r - value.as.r != 0.0) {
             sce_forge_wire_put(w, "null", 4u);
-        } else if (sce_number_text(value.as.r, number, sizeof(number)) != 0u) {
+        } else if (_sce_real_text(value.as.r, number, sizeof(number)) != 0u) {
             sce_forge_wire_put(w, number, sce_text_length(number));
         } else {
             w->overflow = true;
@@ -602,7 +604,7 @@ static inline bool sce_forge_wire_text(sce_forge_wire_value_t value, char *buf, 
     case SCE_FORGE_WIRE_WIDE_UINT:
         return sce_text_of_u64(value.as.u, buf, cap) != 0u;
     case SCE_FORGE_WIRE_REAL:
-        return sce_number_text(value.as.r, buf, cap) != 0u;
+        return _sce_real_text(value.as.r, buf, cap) != 0u;
     case SCE_FORGE_WIRE_STRING: {
         /* The empty string is placed whole with a length of 0, as is no other. */
         const size_t n = sce_text_length(value.as.s);

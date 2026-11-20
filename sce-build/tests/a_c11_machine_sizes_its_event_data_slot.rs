@@ -536,11 +536,17 @@ fn a_c11_deadline_whose_text_has_no_bound_is_refused_by_name() {
     };
     let flags = ["--host-invoker", "x-app-host"];
     let (_, source) = generated(&invoking("'soon'"), &[], &flags);
-    // The type `x-app-host` is 10 bytes, the id `ask` 3, the literal `soon` 4.
+    // The type `x-app-host` is 10 bytes, the id `ask` 3, the literal `soon` 4,
+    // each written within its bound by the runtime's text writer.
     assert!(
         source.contains(
-            "\"<invoke type='%.10s' id='%.3s'>: _sce_deadline_ms='%.4s' is not a whole number of \
-             milliseconds\""
+            "sce_text_put_text(&sce_reason_, \"<invoke type='\"); \
+             sce_text_put_within(&sce_reason_, start->processor_type, 10u); \
+             sce_text_put_text(&sce_reason_, \"' id='\"); \
+             sce_text_put_within(&sce_reason_, start->invoke_id, 3u); \
+             sce_text_put_text(&sce_reason_, \"'>: _sce_deadline_ms='\"); \
+             sce_text_put_within(&sce_reason_, unreadable, 4u); \
+             sce_text_put_text(&sce_reason_, \"' is not a whole number of milliseconds\"); }"
         ),
         "the reason quotes each text at the bound the build knows of it:\n{source}"
     );

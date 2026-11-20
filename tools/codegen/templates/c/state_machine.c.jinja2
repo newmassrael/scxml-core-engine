@@ -495,13 +495,13 @@
    methods below. */
 {% endif %}
 
-#include <string.h>
 /* W3C SCXML 6.2.4 + C.1: the one table a `targetexpr`'s value is read by. */
 #include <sce/send_target.h>
 {% if host_invoker_defs or host_invoke_request_checks %}
 /* SCE Accepted Subset 2.12: a typed host-run invoke's start site holds each
-   request value to its field, and its adapter reads the request back. */
-#include <stdlib.h>
+   request value to its field, and its adapter reads the request back, with
+   the request reader, which docs/adr/0110 D2 keeps in the host's unit: it is
+   hosted, and so is a machine that runs a typed host-run invocation. */
 #include <sce/request_field.h>
 {% for line in host_invoker_source_includes %}
 {# docs/adr/0055: a result's field that may be absent is written through the
@@ -513,14 +513,18 @@
 {{ section_attribute.define(model) }}
 
 {# §scxml-4.7: `<log>` and the runtime's diagnostics go through the log
-   seams (`sce/log.h`, included above when the machine logs), and the text
-   routines are the runtime's own (`sce/text.h`, through `sce/types.h`); see
-   docs/adr/0110. What still formats with the hosted library is a reason
-   text built from `reason_format` (an `error.*` event's sentence), a typed
-   record's JSON written by `c11_record_wire`, a `<sce:lift>`'s report and a
-   test component's log, each of which is to leave this unit (docs/adr/0110,
-   D2), and this include goes with the last of them. #}
-#include <stdio.h>  /* snprintf for reason texts and record JSON; fprintf for <sce:lift> */
+   seams (`sce/log.h`, included when the machine logs), a real number through
+   the real seams (`sce/real_text.h`), and the text routines are the runtime's
+   own (`sce/text.h`, through `sce/types.h`): a reason, a typed record's JSON
+   and a `<sce:lift>`'s report are built by its text writer (docs/adr/0110,
+   D1). A machine with a script engine is hosted, as the engine is, and its
+   bindings call the C library's string and format routines. A test
+   component's log is formatted by the profile's runtime it includes, which is
+   hosted by design (docs/SCE_TEST_PROFILE.md). #}
+{% if model.needs_script_engine %}
+#include <stdio.h>  /* snprintf of the script engine's bindings */
+#include <string.h> /* strlen and strcmp of the script engine's bindings */
+{% endif %}
 
 /* ── docs/adr/0086, sections 8.5 (d) and 8.6 (d): the scratch's accessors ── */
 /* Each role of the scratch that a machine with a script engine grows in its
@@ -654,6 +658,17 @@ SCE_SM_FN static SCE_C_UNUSED bool scratch_reserve({{ csym_prefix }}{{ model.nam
    defined by the deployment: `sce_c_runtime_posix` writes each line to
    stderr, and a bare-metal consumer supplies its own. */
 #include <sce/log.h>
+{% endif %}
+{# Included because the set of what this machine requires names `real`: its
+   core may write a real number as text or read one out of text, which it hands
+   to these seams (`RuntimeRequirement::Real`, docs/adr/0110 D1). #}
+{% if "real" in runtime_requires %}
+
+/* docs/adr/0110, D1: a real number becomes text, and text a real number, only
+   through the seams the deployment links (backends/c/runtime/include/sce/real_text.h):
+   the runtime's text unit (`sce_c_text`) defines both, and a bare-metal
+   deployment may define its own. */
+#include <sce/real_text.h>
 {% endif %}
 {% if model.needs_script_engine %}
 
@@ -7226,9 +7241,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
            document's texts, and the deadline's text is bounded by the expression
            it was written as, so the reason has a bound the build knows. #}
         if (SCE_SCRATCH_RESERVE(message, {{ data_slot.name }}_REASONS)) {
-            (void)snprintf(SCE_SCRATCH_BUF(message), SCE_SCRATCH_CAP(message),
-                           {{ reason_format("invoke_deadline_unreadable", data_slot.deadline_quotes) }},
-                           start->processor_type, start->invoke_id, unreadable);
+            {{ reason_message("invoke_deadline_unreadable", data_slot.deadline_quotes, ["start->processor_type", "start->invoke_id", "unreadable"]) }}
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_PARAM_UNFIT, SCE_SCRATCH_BUF(message));
         } else {

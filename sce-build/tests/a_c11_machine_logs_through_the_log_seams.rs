@@ -158,6 +158,9 @@ int main(void) {
         .arg(dir.path())
         .arg(dir.path().join("seam_log_sm.c"))
         .arg(repo_root().join("backends/c/runtime/posix/log.c"))
+        // docs/adr/0110, D2: the machine states `real`, and the text unit
+        // defines the real seams its core hands a real to.
+        .arg(repo_root().join("backends/c/runtime/text/real_text.c"))
         .arg(&driver)
         .arg("-o")
         .arg(&bin)

@@ -20215,15 +20215,34 @@ impl StaticTarget for CTarget {
         } else {
             "sce_lifted".to_string()
         };
-        let schema = filters::escape_c(lift.alias.to_string());
+        // What the lift says through the log seams (`sce/log.h`, docs/adr/0110,
+        // D2), spelled as every engine's lift says it: the line is built by the
+        // runtime's text writer, never the C library's formatter, in a buffer
+        // that holds the longest line (the path's bound, the reader's sentence's
+        // and room for the code's name and the bound's digits), and is cut
+        // rather than overrun should it not.
+        let read_as = format!("the text is a {what} of {}", lift.alias);
+        let read_as_len = read_as.len();
+        let read_as = filters::escape_c(read_as);
+        let not_read = filters::escape_c(format!("the text is no {what} of {}: ", lift.alias));
+        let line_cap = format!(
+            "{path_cap}u + SCE_PAYLOAD_REFUSAL_MAX_LEN + {}u",
+            // 64 bytes for the code's name and 21 for the bound's digits
+            // (`SCE_TEXT_DECIMAL_CAP`).
+            not_read.len() + 64 + 21
+        );
         Some(format!(
             "{{ {statements}\
-             if (sce_refusal == NULL) {{ (void)fprintf(stderr, \"<sce:lift>: the text is a {what} of %s\\n\", \
-             \"{schema}\"); {write} {absent} }} else {{ const uint8_t sce_code = \
-             sce_payload_refusal_code(sce_refusal); (void)fprintf(stderr, \"<sce:lift>: the text is no {what} \
-             of %s: %s at '%s', bound %lu (%s)\\n\", \"{schema}\", sce_payload_code_name(sce_code), {pointer}, \
-             sce_payload_code_has_bound(sce_code) ? (unsigned long){bound} : 0ul, sce_refusal); \
-             {refusal_ty} sce_why = {why}; {refused} }} }}",
+             if (sce_refusal == NULL) {{ _sce_log_write(SCE_LOG_INFO, \"<sce:lift>\", 10u, \"{read_as}\", \
+             {read_as_len}u); {write} {absent} }} else {{ const uint8_t sce_code = \
+             sce_payload_refusal_code(sce_refusal); char sce_line[{line_cap}]; sce_text_writer_t sce_said = \
+             sce_text_writer(sce_line, sizeof(sce_line)); sce_text_put_text(&sce_said, \"{not_read}\"); \
+             sce_text_put_text(&sce_said, sce_payload_code_name(sce_code)); sce_text_put_text(&sce_said, \
+             \" at '\"); sce_text_put_text(&sce_said, {pointer}); sce_text_put_text(&sce_said, \"', bound \"); \
+             sce_text_put_u64(&sce_said, sce_payload_code_has_bound(sce_code) ? (uint64_t){bound} : 0u); \
+             sce_text_put_text(&sce_said, \" (\"); sce_text_put_text(&sce_said, sce_refusal); \
+             sce_text_put_text(&sce_said, \")\"); _sce_log_write(SCE_LOG_WARNING, \"<sce:lift>\", 10u, \
+             sce_line, sce_said.len); {refusal_ty} sce_why = {why}; {refused} }} }}",
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
             why = self.record_value(&refusal_ty, &members),

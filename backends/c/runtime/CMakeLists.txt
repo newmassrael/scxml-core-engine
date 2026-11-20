@@ -52,6 +52,9 @@
 #   log   where a machine's `<log>` and the runtime's diagnostics go
 #         (`sce/log.h`'s `_sce_log_write` and `_sce_log_real`,
 #         docs/adr/0110 D2)
+#   real  a real number as text and text as a real, which a machine's core
+#         hands whole to `sce/real_text.h`'s `_sce_real_text` and
+#         `_sce_real_read` (docs/adr/0110 D1, D2)
 #
 # SCE_C_RUNTIME_REQUIREMENTS is every requirement the generator can state
 # (`RuntimeRequirement` in sce-build/src/generator.rs;
@@ -63,7 +66,7 @@
 # machines it cannot link here from the machines rather than from a list of
 # them. `sce_c_runtime_libraries` reads the two, and `sce_c_link_runtime`
 # links a target with what the generated machines it compiles require.
-set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS lua dom http clock log)
+set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS lua dom http clock log real)
 
 # ── What a program's own code requires, which no machine states ──
 #
@@ -236,10 +239,9 @@ target_include_directories(sce_c_runtime
 
 # ── Tier 2: sce_c_base (STATIC — freestanding helpers) ──────────
 # ⚠ The typed `_event.data` lift is NOT here. `sce/event_payload.h` is
-# header-only on purpose: the EventSchema native gate links no runtime library
-# at all, because a native value path that links nothing is the MCU-clean proof
-# the whole lowering exists for, and a lift in this library would have taken
-# that proof away from every machine that uses it.
+# header-only on purpose: it is part of a machine's freestanding core
+# (docs/adr/0110, D1), and the one thing it does not do itself, reading a real
+# number out of text, it hands to the seam the text unit below defines.
 add_library(sce_c_base STATIC base/dom.c)
 target_link_libraries(sce_c_base PUBLIC sce_c_runtime)
 set_target_properties(sce_c_base PROPERTIES
@@ -247,6 +249,21 @@ set_target_properties(sce_c_base PROPERTIES
     C_STANDARD_REQUIRED ON
     C_EXTENSIONS OFF
 )
+
+# ── The text unit: sce_c_text (STATIC — hosted, outside every core) ──
+# docs/adr/0110, D2: what a machine's core hands a real number to, defined with
+# the hosted C library (the spelling every engine writes, `strtod`). Built on
+# every configuration, since it needs nothing but the C library: a machine that
+# states `real` links it, and a bare-metal deployment that links no C library
+# defines the two seams of `sce/real_text.h` itself.
+add_library(sce_c_text STATIC text/real_text.c)
+target_link_libraries(sce_c_text PUBLIC sce_c_runtime)
+set_target_properties(sce_c_text PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_real sce_c_text)
 
 # ── Tier 3: sce_c_scripting (STATIC, optional — Lua bridges) ────
 # SCE_ENABLE_LUA mirrors the same option used by the cpp `sce_scripting`
