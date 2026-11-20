@@ -35,6 +35,12 @@
 //! decided, under that client's order, and what different clients' exchanges carried at once
 //! (docs/adr/0109, D15): their sessions then run beside each other, and their checkpoints share
 //! the pool's commits, while no `200` goes out before the commit that holds its envelopes.
+//!
+//! The server reports what it does through the metrics port its program gives it
+//! (docs/adr/0109, D16; [`HttpsServer::observed`]): each exchange by the status it was answered,
+//! the exchanges it holds open, each exchange it shed and each connection it closed at accept by
+//! why, and each `401` by its authenticator. [`HttpsServer::health`] says whether it takes
+//! exchanges in, whether a stop is going on, and whether the stores it reads answer.
 
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
@@ -62,6 +68,7 @@ use tokio::sync::Notify;
 
 use sce_rust_crypto::cose::{cose_key_ed25519_required, ed25519_of_cose_key};
 use sce_rust_crypto::ed25519::PUBLIC_KEY_BYTES;
+use sce_rust_metrics::{AuthenticatorKind, Counter, ExchangeStatus, Gauge, Metrics, ServerShed};
 
 use super::rate::{client_address, is_trusted, retry_seconds, Cidr, Edge, Verdict};
 pub use super::signature::ResponseSigner;
@@ -75,6 +82,7 @@ use super::{
     INSTALL_SCHEME, PATH_ROOT, VERSION,
 };
 use crate::endpoint::{Transport, TransportFailure};
+use crate::health::Health;
 use crate::outbox::{Outboxes, Wake};
 use crate::peers::{EdgeRate, EdgeRates, HttpsAuthenticator, Machine, PeerLink};
 use sce_rust_crypto::equal::same_secret;
@@ -323,6 +331,26 @@ impl Authenticator {
             tokens.check(name, token)
         }))
     }
+
+    /// Which authenticator it is, as the server reports a failure of it (docs/adr/0109, D16).
+    pub fn kind(&self) -> AuthenticatorKind {
+        match self {
+            Authenticator::Bearer(_) => AuthenticatorKind::Bearer,
+            Authenticator::Install(_) => AuthenticatorKind::Install,
+            Authenticator::Mtls(_) => AuthenticatorKind::Mtls,
+            Authenticator::Key(_) => AuthenticatorKind::Key,
+        }
+    }
+
+    /// The store of pins it reads, under `install` and `key`; none under `bearer` and `mtls`,
+    /// whose check is the program's.
+    fn pins(&self) -> Option<&Arc<dyn PinStore>> {
+        match self {
+            Authenticator::Install(pins) => Some(pins),
+            Authenticator::Key(keys) => Some(&keys.pins),
+            Authenticator::Bearer(_) | Authenticator::Mtls(_) => None,
+        }
+    }
 }
 
 /// Where the `key` authenticator keeps the key each name is proved by (ADR 0109, D3 and D9): the
@@ -519,6 +547,16 @@ enum NoEntry {
     Unrandom,
 }
 
+impl NoEntry {
+    /// Why an exchange that could make no entry is shed (docs/adr/0109, D16).
+    fn shed(self) -> ServerShed {
+        match self {
+            NoEntry::Full => ServerShed::MaxClients,
+            NoEntry::Unrandom => ServerShed::RandomSource,
+        }
+    }
+}
+
 impl Mailboxes {
     fn lock(&self) -> MutexGuard<'_, HashMap<String, Client>> {
         self.clients.lock().expect(HELD)
@@ -625,12 +663,38 @@ struct Shared {
     /// with `Retry-After`, and the signal ends the accept loop and every held exchange.
     stopping: AtomicBool,
     stopped: Notify,
+    /// What the server reports to (docs/adr/0109, D16).
+    metrics: Arc<dyn Metrics>,
 }
 
 impl Shared {
     /// Milliseconds since the server started: the clock the edge's limiters read.
     fn now_ms(&self) -> i64 {
         i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX)
+    }
+
+    /// Load shed for `reason` (SCE_MESH.md section 22.4): `status`, a `429` or `503`, with
+    /// `Retry-After` asking for `wait`, reported as a shed of its reason (docs/adr/0109, D16).
+    fn shed(
+        &self,
+        reason: ServerShed,
+        status: StatusCode,
+        wait: Duration,
+    ) -> Response<Full<Bytes>> {
+        self.metrics.count(Counter::ServerSheds { reason }, 1);
+        shed(status, wait)
+    }
+
+    /// A `401` naming the authenticator's scheme, reported as a failure of the authenticator
+    /// (docs/adr/0109, D16).
+    fn unauthorized(&self) -> Response<Full<Bytes>> {
+        self.metrics.count(
+            Counter::AuthenticationFailures {
+                authenticator: self.authenticator.kind(),
+            },
+            1,
+        );
+        unauthorized(&self.authenticator)
     }
 
     /// Ask the edge `judge` at the server's clock.
@@ -674,8 +738,8 @@ struct Open {
 
 impl Open {
     /// Count a connection from `address` open, unless the server holds `max_connections`, or
-    /// `max_connections_per_address` from its address ([`address_key`]).
-    fn admit(shared: &Arc<Shared>, address: IpAddr) -> Option<Open> {
+    /// `max_connections_per_address` from its address ([`address_key`]): the bound it met then.
+    fn admit(shared: &Arc<Shared>, address: IpAddr) -> Result<Open, ServerShed> {
         let settings = &shared.settings;
         // A trusted proxy carries many clients on its connections: it is held to the server's
         // bound alone.
@@ -685,16 +749,17 @@ impl Open {
         let from_address = counted
             .and_then(|key| connections.by_address.get(&key).copied())
             .unwrap_or(0);
-        if connections.open >= settings.max_connections
-            || (counted.is_some() && from_address >= settings.max_connections_per_address)
-        {
-            return None;
+        if connections.open >= settings.max_connections {
+            return Err(ServerShed::MaxConnections);
+        }
+        if counted.is_some() && from_address >= settings.max_connections_per_address {
+            return Err(ServerShed::MaxConnectionsPerAddress);
         }
         connections.open += 1;
         if let Some(key) = counted {
             connections.by_address.insert(key, from_address + 1);
         }
-        Some(Open {
+        Ok(Open {
             shared: Arc::clone(shared),
             address: counted,
         })
@@ -734,6 +799,23 @@ impl HttpsServer {
         is_bound: impl Fn(&str) -> bool + Send + Sync + 'static,
         host: impl ServerHost,
     ) -> Result<Self, crate::tls::Error> {
+        Self::observed(
+            settings,
+            authenticator,
+            is_bound,
+            host,
+            sce_rust_metrics::none(),
+        )
+    }
+
+    /// [`Self::new`], reporting what the server does to `metrics` (docs/adr/0109, D16).
+    pub fn observed(
+        settings: ServerSettings,
+        authenticator: Authenticator,
+        is_bound: impl Fn(&str) -> bool + Send + Sync + 'static,
+        host: impl ServerHost,
+        metrics: Arc<dyn Metrics>,
+    ) -> Result<Self, crate::tls::Error> {
         // Every mailbox draws its incarnation from the source: one that cannot be read refuses
         // the server now, not its first client.
         draw_epoch()?;
@@ -759,8 +841,38 @@ impl HttpsServer {
                 started: Instant::now(),
                 stopping: AtomicBool::new(false),
                 stopped: Notify::new(),
+                metrics,
             }),
         })
+    }
+
+    /// What the server says of itself to the program's readiness and liveness checks
+    /// (docs/adr/0109, D16): it accepts until [`Self::stop`] is called, is stopping while an
+    /// exchange it took in before is still in flight, and its stores are reachable when each it
+    /// reads answers a read now: the pool's store, when it answers durable clients from their
+    /// outboxes ([`Self::keep_outboxes`]), and the pin store of `install` and `key`. A `bearer`
+    /// or `mtls` check is the program's, which reads its own store. The reads block for as long
+    /// as a store does, so a program on an asynchronous runtime calls this on its blocking pool
+    /// (`tokio::task::spawn_blocking`).
+    pub fn health(&self) -> Health {
+        let shared = &self.shared;
+        let stopping = shared.stopping.load(Ordering::SeqCst);
+        let outboxes = shared
+            .mailboxes
+            .durable
+            .get()
+            .is_none_or(|outboxes| outboxes.store_answers());
+        // A name no client posts under, since it is no path segment: the read is the store's
+        // answer and nothing else.
+        let pins = shared
+            .authenticator
+            .pins()
+            .is_none_or(|pins| pins.pinned("").is_ok());
+        Health {
+            accepting: !stopping,
+            stopping: stopping && shared.exchanges.load(Ordering::Acquire) > 0,
+            store_reachable: outboxes && pins,
+        }
     }
 
     /// Answer the clients whose binding is durable from `outboxes`, the outboxes a keyed pool
@@ -883,9 +995,16 @@ impl HttpsServer {
                 Ok(accepted) => accepted,
                 Err(error) => break error,
             };
-            let Some(open) = Open::admit(&self.shared, remote.ip()) else {
-                drop(stream);
-                continue;
+            let open = match Open::admit(&self.shared, remote.ip()) {
+                Ok(open) => open,
+                Err(reason) => {
+                    // docs/adr/0109, D16: a connection closed at accept is a shed of its bound.
+                    self.shared
+                        .metrics
+                        .count(Counter::ServerSheds { reason }, 1);
+                    drop(stream);
+                    continue;
+                }
             };
             let server = self.clone();
             let acceptor = acceptor.clone();
@@ -967,7 +1086,17 @@ impl HttpsServer {
             let shared = Arc::clone(&shared);
             let certificate = certificate.clone();
             async move {
-                Ok::<_, Infallible>(exchange(shared, request, certificate, remote, scheme).await)
+                let metrics = Arc::clone(&shared.metrics);
+                let response = exchange(shared, request, certificate, remote, scheme).await;
+                // docs/adr/0109, D16: every exchange the server answers, by the status of its
+                // answer, counted before the answer leaves.
+                metrics.count(
+                    Counter::ServerExchanges {
+                        status: ExchangeStatus::of(response.status().as_u16()),
+                    },
+                    1,
+                );
+                Ok::<_, Infallible>(response)
             }
         });
         let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
@@ -1069,6 +1198,23 @@ async fn durable_past(shared: &Shared, sealed: u64, bound: Duration) -> bool {
             _ = &mut reported => {}
             _ = tokio::time::sleep_until(until) => {}
         }
+    }
+}
+
+/// Counts an exchange held open in `sce_server_held_exchanges` for as long as it lives
+/// (docs/adr/0109, D16), however the hold ends: answered, or dropped with its connection.
+struct Holding(Arc<dyn Metrics>);
+
+impl Holding {
+    fn new(metrics: Arc<dyn Metrics>) -> Self {
+        metrics.adjust(Gauge::HeldExchanges, 1);
+        Holding(metrics)
+    }
+}
+
+impl Drop for Holding {
+    fn drop(&mut self) {
+        self.0.adjust(Gauge::HeldExchanges, -1);
     }
 }
 
@@ -1348,7 +1494,11 @@ async fn exchange(
     // docs/adr/0109, D10: a server that is stopping takes nothing in; the client carries what it
     // sent again, to the server that serves next.
     if shared.stopping.load(Ordering::SeqCst) {
-        return shed(StatusCode::SERVICE_UNAVAILABLE, shared.settings.retry_after);
+        return shared.shed(
+            ServerShed::Stopping,
+            StatusCode::SERVICE_UNAVAILABLE,
+            shared.settings.retry_after,
+        );
     }
     // §mesh-22.4: the refusals below (`429`, `405`, `404`, `503`, `401`, `400`, `413`, `415`)
     // are each answered before the request's envelopes reach the core.
@@ -1368,7 +1518,7 @@ async fn exchange(
         ))
     });
     if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.exchange(address, now)) {
-        return shed(StatusCode::TOO_MANY_REQUESTS, wait);
+        return shared.shed(ServerShed::Rate, StatusCode::TOO_MANY_REQUESTS, wait);
     }
     if request.method() != Method::POST {
         let mut response = answer(StatusCode::METHOD_NOT_ALLOWED);
@@ -1387,7 +1537,11 @@ async fn exchange(
     }
     if shared.exchanges.fetch_add(1, Ordering::AcqRel) >= settings.max_exchanges {
         shared.exchanges.fetch_sub(1, Ordering::AcqRel);
-        return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        return shared.shed(
+            ServerShed::Concurrency,
+            StatusCode::SERVICE_UNAVAILABLE,
+            settings.retry_after,
+        );
     }
     let _counted = Counted(&shared.exchanges);
     // docs/adr/0109, D2: while the failed authentications of the name or of the address are past
@@ -1396,7 +1550,7 @@ async fn exchange(
     if let Verdict::Refused { wait } =
         shared.edge(|edge, now| edge.may_authenticate(&name, address, now))
     {
-        return shed(StatusCode::TOO_MANY_REQUESTS, wait);
+        return shared.shed(ServerShed::Rate, StatusCode::TOO_MANY_REQUESTS, wait);
     }
     // §mesh-22.9: what a signature covers of the request, read before its body
     // takes it: the target URI, and the acknowledgement and nonce a response's signature answers.
@@ -1422,22 +1576,26 @@ async fn exchange(
     let (pin, new) = match admit(&shared.authenticator, &name, &request, &judged) {
         Admission::Refused => {
             shared.edge(|edge, now| edge.failed(&name, address, now));
-            return unauthorized(&shared.authenticator);
+            return shared.unauthorized();
         }
         Admission::Admitted { pin, new } => (pin, new),
         // A store that failed is no failed authentication of the client's: it counts against no
         // rate.
         Admission::Unavailable => {
-            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after)
+            return shared.shed(
+                ServerShed::Store,
+                StatusCode::SERVICE_UNAVAILABLE,
+                settings.retry_after,
+            )
         }
     };
     if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.client(&name, now)) {
-        return shed(StatusCode::TOO_MANY_REQUESTS, wait);
+        return shared.shed(ServerShed::Rate, StatusCode::TOO_MANY_REQUESTS, wait);
     }
     // A name pinned for the first time is held to the rate at which its address pins new names.
     if new {
         if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.new_name(address, now)) {
-            return shed(StatusCode::TOO_MANY_REQUESTS, wait);
+            return shared.shed(ServerShed::Rate, StatusCode::TOO_MANY_REQUESTS, wait);
         }
     }
     let (Some(ack), Some(hold_ms), Some(acked_in)) = (
@@ -1474,11 +1632,22 @@ async fn exchange(
         let mut clients = shared.mailboxes.lock();
         // docs/adr/0109, D1: a name past `max_clients` is load shed, and so is one whose mailbox
         // could draw no incarnation.
-        let Ok(client) = shared.mailboxes.entry(&mut clients, &name) else {
-            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        let client = match shared.mailboxes.entry(&mut clients, &name) {
+            Ok(client) => client,
+            Err(why) => {
+                return shared.shed(
+                    why.shed(),
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    settings.retry_after,
+                )
+            }
         };
         if client.in_flight >= settings.max_exchanges_per_client {
-            return shed(StatusCode::TOO_MANY_REQUESTS, settings.retry_after);
+            return shared.shed(
+                ServerShed::Concurrency,
+                StatusCode::TOO_MANY_REQUESTS,
+                settings.retry_after,
+            );
         }
         client.in_flight += 1;
         client.last_seen = Instant::now();
@@ -1516,25 +1685,26 @@ async fn exchange(
         && !signed_digest.is_some_and(|digest| digest_matches(&digest, &body))
     {
         shared.edge(|edge, now| edge.failed(&name, address, now));
-        return unauthorized(&shared.authenticator);
+        return shared.unauthorized();
     }
     // §mesh-22.5: the name is pinned to the installation secret's SHA-256, or to the key whose
     // signature proved it, in one step with the check, so of two first exchanges that bring
     // different secrets or keys one is refused `401`.
     if let Some(wanted) = pin {
-        let pins = match &shared.authenticator {
-            Authenticator::Install(pins) => Some(pins),
-            Authenticator::Key(keys) => Some(&keys.pins),
-            Authenticator::Bearer(_) | Authenticator::Mtls(_) => None,
-        };
-        if let Some(pins) = pins {
+        if let Some(pins) = shared.authenticator.pins() {
             match pins.pin(&name, &wanted) {
                 Ok(held) if same_secret(&held, &wanted) => {}
                 Ok(_) => {
                     shared.edge(|edge, now| edge.failed(&name, address, now));
-                    return unauthorized(&shared.authenticator);
+                    return shared.unauthorized();
                 }
-                Err(_) => return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after),
+                Err(_) => {
+                    return shared.shed(
+                        ServerShed::Store,
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        settings.retry_after,
+                    )
+                }
             }
         }
     }
@@ -1554,7 +1724,11 @@ async fn exchange(
     if let Some(outboxes) = &durable_outboxes {
         let now = unix_millis();
         let Ok(drawn) = draw_epoch() else {
-            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+            return shared.shed(
+                ServerShed::RandomSource,
+                StatusCode::SERVICE_UNAVAILABLE,
+                settings.retry_after,
+            );
         };
         let outboxes = Arc::clone(outboxes);
         let client = name.clone();
@@ -1572,7 +1746,11 @@ async fn exchange(
         .await
         .unwrap_or(false);
         if !kept {
-            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+            return shared.shed(
+                ServerShed::Store,
+                StatusCode::SERVICE_UNAVAILABLE,
+                settings.retry_after,
+            );
         }
     }
 
@@ -1585,8 +1763,15 @@ async fn exchange(
         let (became_ready, arrived) = {
             let mut clients = shared.mailboxes.lock();
             // The exchange is in flight, so its entry is held: no sweep removes it.
-            let Ok(client) = shared.mailboxes.entry(&mut clients, &name) else {
-                return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+            let client = match shared.mailboxes.entry(&mut clients, &name) {
+                Ok(client) => client,
+                Err(why) => {
+                    return shared.shed(
+                        why.shed(),
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        settings.retry_after,
+                    )
+                }
             };
             let current = client.epoch.clone();
             client.acknowledge(ack, acked_in.as_deref(), &current);
@@ -1625,13 +1810,20 @@ async fn exchange(
         Durability::NotDurable => false,
     };
     if !durable {
-        return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        return shared.shed(
+            ServerShed::Durability,
+            StatusCode::SERVICE_UNAVAILABLE,
+            settings.retry_after,
+        );
     }
 
     // Held while the mailbox is empty, for at most the shorter of the two bounds: the long poll
     // of §mesh-22.3, answered as soon as an envelope arrives.
     let hold = Duration::from_millis(hold_ms).min(settings.max_hold);
     let until = tokio::time::Instant::now() + hold;
+    // docs/adr/0109, D16: counted held from its first wait until it is answered, or dropped
+    // with its connection.
+    let mut holding: Option<Holding> = None;
     loop {
         let notified = arrived.notified();
         tokio::pin!(notified);
@@ -1653,12 +1845,16 @@ async fn exchange(
         {
             break;
         }
+        if holding.is_none() {
+            holding = Some(Holding::new(Arc::clone(&shared.metrics)));
+        }
         tokio::select! {
             _ = &mut notified => {}
             _ = &mut stopped => {}
             _ = tokio::time::sleep_until(until) => {}
         }
     }
+    drop(holding);
 
     // At most `max_response_bytes` of the mailbox (docs/adr/0109, D1); the rest at the next
     // exchange, which the numbering of §mesh-22.3 allows. A durable client's is its outbox
@@ -1681,9 +1877,15 @@ async fn exchange(
     };
     drop(in_flight);
     let Some(epoch) = epoch else {
-        // The entry an exchange in flight holds is never removed, so this is not reached; a
-        // response naming no incarnation would number nothing.
-        return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        // The entry an exchange in flight holds is never removed, so a mailbox of the server's
+        // own always numbers; a durable client's outbox the process let go (another process
+        // appended to it) is read again at the next exchange. A response naming no incarnation
+        // would number nothing, so this one is shed as a store not read.
+        return shared.shed(
+            ServerShed::Store,
+            StatusCode::SERVICE_UNAVAILABLE,
+            settings.retry_after,
+        );
     };
     // §mesh-22.2: the body is the unacknowledged envelopes it carries as a CBOR sequence,
     // `Sce-Mesh-First` numbers its first (absent when it is empty), and every `200` names its
@@ -3397,5 +3599,391 @@ mod tests {
             !matches!(&after, Ok(response) if response.status == 200),
             "an exchange after the stop was taken in: {after:?}"
         );
+    }
+
+    /// A server of `phone` with `settings` on a loopback port, admitting the bearer token `t`,
+    /// with `host` behind it, reporting to a recording adapter it answers with (docs/adr/0109,
+    /// D16).
+    fn serving_recorded(
+        settings: ServerSettings,
+        host: impl ServerHost,
+    ) -> (Serving, Arc<sce_rust_metrics::recording::Recording>) {
+        let recording = Arc::new(sce_rust_metrics::recording::Recording::new());
+        let server = HttpsServer::observed(
+            settings,
+            Authenticator::Bearer(Arc::new(|name: &str, token: &str| {
+                name == "phone" && token == "t"
+            })),
+            |name: &str| name == "phone",
+            host,
+            Arc::clone(&recording) as Arc<dyn Metrics>,
+        )
+        .expect("a server");
+        (listening(server), recording)
+    }
+
+    /// Wait, at most five seconds, until `holds`; whether it did.
+    fn within_five_seconds(holds: impl Fn() -> bool) -> bool {
+        let until = Instant::now() + Duration::from_secs(5);
+        while !holds() {
+            if Instant::now() >= until {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        true
+    }
+
+    /// docs/adr/0109, D16: every exchange is counted by the status it was answered, a `401` by
+    /// the authenticator that refused it, and an exchange whose envelopes the host could not make
+    /// durable as a shed of durability; a refusal that sheds nothing (`404`, `401`) moves no shed.
+    /// Red if the server counts an exchange before it knows the answer, or counts a `401` or a
+    /// `404` as a shed.
+    #[test]
+    fn the_server_reports_each_exchange_by_status_and_each_401_by_its_authenticator() {
+        use super::super::HttpsTransport;
+        use sce_rust_metrics::SERVER_SHEDS;
+
+        let (
+            Serving {
+                _runtime,
+                address,
+                port,
+                ..
+            },
+            recording,
+        ) = serving_recorded(
+            ServerSettings::default(),
+            Unwritten {
+                received: Arc::new(AtomicUsize::new(0)),
+            },
+        );
+        let status = |request: super::super::HttpsRequest| {
+            port.exchange(request).expect("a response").status
+        };
+        assert_eq!(status(request_to(address, Vec::new())), 200, "a poll");
+        assert_eq!(status(request_as("tablet", address, Vec::new())), 404);
+        assert_eq!(
+            status(request_authorized(
+                "phone",
+                address,
+                Vec::new(),
+                "Bearer guess"
+            )),
+            401
+        );
+        assert_eq!(
+            status(request_to(address, alloc::vec![0x01])),
+            503,
+            "an envelope the host could not make durable"
+        );
+
+        let exchanges = |status| recording.counted(Counter::ServerExchanges { status });
+        assert_eq!(exchanges(ExchangeStatus::Ok), 1);
+        assert_eq!(exchanges(ExchangeStatus::NotFound), 1);
+        assert_eq!(exchanges(ExchangeStatus::Unauthorized), 1);
+        assert_eq!(exchanges(ExchangeStatus::ServiceUnavailable), 1);
+        assert_eq!(
+            recording.counted(Counter::AuthenticationFailures {
+                authenticator: AuthenticatorKind::Bearer
+            }),
+            1
+        );
+        assert_eq!(
+            recording.counted(Counter::ServerSheds {
+                reason: ServerShed::Durability
+            }),
+            1
+        );
+        assert_eq!(recording.counted_in(&SERVER_SHEDS), 1);
+    }
+
+    /// docs/adr/0109, D16: an exchange past the address's rate is a shed of rate, one past
+    /// `max_exchanges` a shed of concurrency, one whose name would pass `max_clients` a shed of
+    /// that bound. Red if `Shared::shed` is handed another reason than the refusal it answers.
+    #[test]
+    fn the_server_reports_each_shed_by_the_limit_that_refused_it() {
+        use super::super::HttpsTransport;
+
+        let cases = [
+            (
+                ServerSettings {
+                    rates: EdgeRates {
+                        address: Some(EdgeRate {
+                            interval_ms: 60_000,
+                            burst: 1,
+                        }),
+                        ..EdgeRates::NONE
+                    },
+                    ..ServerSettings::default()
+                },
+                ServerShed::Rate,
+                429,
+            ),
+            (
+                ServerSettings {
+                    max_exchanges: 0,
+                    ..ServerSettings::default()
+                },
+                ServerShed::Concurrency,
+                503,
+            ),
+            (
+                ServerSettings {
+                    max_clients: 0,
+                    ..ServerSettings::default()
+                },
+                ServerShed::MaxClients,
+                503,
+            ),
+        ];
+        for (settings, reason, refused) in cases {
+            let (
+                Serving {
+                    _runtime,
+                    address,
+                    port,
+                    ..
+                },
+                recording,
+            ) = serving_recorded(settings, |_: Vec<LinkEvent>| {});
+            let mut statuses = Vec::new();
+            for _ in 0..2 {
+                statuses.push(
+                    port.exchange(request_to(address, Vec::new()))
+                        .expect("a response")
+                        .status,
+                );
+            }
+            assert_eq!(statuses.last(), Some(&refused), "{reason:?}: {statuses:?}");
+            let shed = statuses.iter().filter(|status| **status == refused).count() as u64;
+            assert_eq!(
+                recording.counted(Counter::ServerSheds { reason }),
+                shed,
+                "{reason:?}"
+            );
+            assert_eq!(
+                recording.counted_in(&sce_rust_metrics::SERVER_SHEDS),
+                shed,
+                "{reason:?}: no other reason"
+            );
+        }
+    }
+
+    /// docs/adr/0109, D16: a connection past `max_connections_per_address` is closed at accept
+    /// and counted as a shed of that bound. Red if `Open::admit` refuses without the bound it met.
+    #[test]
+    fn a_connection_closed_at_accept_is_reported_as_a_shed_of_its_bound() {
+        let (
+            Serving {
+                _runtime, address, ..
+            },
+            recording,
+        ) = serving_recorded(
+            ServerSettings {
+                max_connections_per_address: 1,
+                ..ServerSettings::default()
+            },
+            |_: Vec<LinkEvent>| {},
+        );
+        let _first = std::net::TcpStream::connect(address).expect("a connection");
+        let second = raw_exchange(address, b"", Duration::from_secs(5));
+        assert!(second.is_empty());
+        let shed = Counter::ServerSheds {
+            reason: ServerShed::MaxConnectionsPerAddress,
+        };
+        assert!(
+            within_five_seconds(|| recording.counted(shed) == 1),
+            "{:?}",
+            recording.calls()
+        );
+        assert_eq!(
+            recording.counted(Counter::ServerSheds {
+                reason: ServerShed::MaxConnections
+            }),
+            0
+        );
+    }
+
+    /// docs/adr/0109, D16: an exchange held while its client's mailbox is empty counts held
+    /// until the stop answers it; after the stop the server neither accepts nor stops, and an
+    /// exchange on a connection it accepted before is shed as the server stopping. Red if the
+    /// held count is not given back when a hold ends, or a stopping server's refusal is counted
+    /// under another reason.
+    #[test]
+    fn the_server_reports_its_held_exchanges_and_a_shed_while_stopping() {
+        use super::super::HttpsTransport;
+        use std::io::{Read, Write};
+
+        let (
+            Serving {
+                _runtime,
+                server,
+                address,
+                port,
+            },
+            recording,
+        ) = serving_recorded(
+            ServerSettings {
+                max_hold: Duration::from_secs(20),
+                ..ServerSettings::default()
+            },
+            |_: Vec<LinkEvent>| {},
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn({
+            let port = Arc::clone(&port);
+            move || {
+                let _ = tx.send(port.exchange(request_acknowledging(address, 0, None, 20_000)));
+            }
+        });
+        assert!(
+            within_five_seconds(|| recording.level(Gauge::HeldExchanges) == 1),
+            "the poll is held"
+        );
+        // A connection the server accepted before its stop, served after it.
+        let mut open = std::net::TcpStream::connect(address).expect("a connection");
+        assert!(within_five_seconds(|| {
+            server.shared.connections.lock().expect(HELD).open >= 2
+        }));
+
+        assert!(_runtime.block_on(server.stop(Duration::from_secs(5))));
+        let answered = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the held exchange was answered")
+            .expect("a response");
+        assert_eq!(answered.status, 200);
+        assert_eq!(recording.level(Gauge::HeldExchanges), 0);
+        assert_eq!(recording.peak(Gauge::HeldExchanges), 1);
+        let stopped = server.health();
+        assert!(stopped.stopped(), "{stopped:?}");
+
+        open.write_all(
+            b"POST /sce-mesh/1/phone HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t\r\n\
+              Content-Length: 0\r\n\r\n",
+        )
+        .expect("written");
+        open.set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("a read timeout");
+        let mut head = [0u8; 12];
+        open.read_exact(&mut head).expect("a response head");
+        assert_eq!(&head, b"HTTP/1.1 503");
+        assert!(within_five_seconds(|| {
+            recording.counted(Counter::ServerSheds {
+                reason: ServerShed::Stopping,
+            }) == 1
+        }));
+    }
+
+    /// A host whose `deliver` waits until the test opens it.
+    #[derive(Clone, Default)]
+    struct Gate(Arc<(Mutex<bool>, std::sync::Condvar)>);
+
+    impl Gate {
+        fn set(&self, open: bool) {
+            let (state, signal) = &*self.0;
+            *state.lock().expect(HELD) = open;
+            signal.notify_all();
+        }
+    }
+
+    impl ServerHost for Gate {
+        fn deliver(&self, _: Vec<LinkEvent>) -> Durability {
+            let (state, signal) = &*self.0;
+            let until = Instant::now() + Duration::from_secs(5);
+            let mut open = state.lock().expect(HELD);
+            while !*open && Instant::now() < until {
+                open = signal
+                    .wait_timeout(open, Duration::from_millis(10))
+                    .expect(HELD)
+                    .0;
+            }
+            Durability::Now
+        }
+    }
+
+    /// docs/adr/0109, D16: a server accepts until its stop, is stopping while an exchange it took
+    /// in is still in flight, and stopped once that exchange ended. Red if `HttpsServer::health`
+    /// reads its state from the stop's flag alone.
+    #[test]
+    fn the_server_says_it_is_stopping_while_an_exchange_is_in_flight() {
+        use super::super::HttpsTransport;
+
+        let gate = Gate::default();
+        gate.set(true);
+        let (
+            Serving {
+                _runtime,
+                server,
+                address,
+                port,
+            },
+            _recording,
+        ) = serving_recorded(ServerSettings::default(), gate.clone());
+        assert_eq!(
+            port.exchange(request_to(address, Vec::new()))
+                .expect("a response")
+                .status,
+            200,
+            "the poll that makes the client ready"
+        );
+        assert!(server.health().ready());
+
+        gate.set(false);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn({
+            let port = Arc::clone(&port);
+            move || {
+                let _ = tx.send(port.exchange(request_to(address, alloc::vec![0x01])));
+            }
+        });
+        assert!(within_five_seconds(|| server
+            .shared
+            .exchanges
+            .load(Ordering::Acquire)
+            == 1));
+        assert!(
+            !_runtime.block_on(server.stop(Duration::from_millis(100))),
+            "the exchange in flight did not end"
+        );
+        let stopping = server.health();
+        assert!(stopping.stopping && !stopping.accepting, "{stopping:?}");
+
+        gate.set(true);
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("the exchange in flight ended")
+            .expect("a response");
+        assert!(within_five_seconds(|| server.health().stopped()));
+    }
+
+    /// docs/adr/0109, D16: a server whose pin store cannot be read is not ready, and one whose
+    /// authenticator reads no store of the server's reaches every store it reads. Red if
+    /// `HttpsServer::health` does not ask the pin store.
+    #[test]
+    fn a_server_whose_pin_store_cannot_be_read_is_not_ready() {
+        for reads_fail in [true, false] {
+            let server = HttpsServer::new(
+                ServerSettings::default(),
+                Authenticator::Install(Arc::new(FailingPins { reads_fail })),
+                |name: &str| name == "phone",
+                |_: Vec<LinkEvent>| {},
+            )
+            .expect("a server");
+            let health = server.health();
+            assert_eq!(
+                health.store_reachable, !reads_fail,
+                "reads fail: {reads_fail}"
+            );
+            assert_eq!(health.ready(), !reads_fail);
+            assert!(health.accepting && !health.stopping);
+        }
+        let server = HttpsServer::new(
+            ServerSettings::default(),
+            Authenticator::Bearer(Arc::new(|_: &str, _: &str| false)),
+            |_: &str| true,
+            |_: Vec<LinkEvent>| {},
+        )
+        .expect("a server");
+        assert!(server.health().ready());
     }
 }

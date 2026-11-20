@@ -37,6 +37,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sce_rust_crypto::cose::TrustedKey;
 use sce_rust_crypto::random::SystemRandom;
+use sce_rust_metrics::{Counter, ExchangeStatus, Metrics};
 
 use super::signature::{
     content_digest, draw_nonce, field_value, normalize_target_uri, verify_response, Answered,
@@ -171,6 +172,8 @@ struct Shared {
     state: Mutex<State>,
     /// Wakes the sender when the core transmits, and either thread when the client stops.
     wake: Condvar,
+    /// What the client reports each exchange to (docs/adr/0109, D16).
+    metrics: Arc<dyn Metrics>,
 }
 
 type EventSink = Box<dyn FnMut(LinkEvent) + Send>;
@@ -348,6 +351,12 @@ fn take_outcome(
     outcome: Result<HttpsResponse, HttpsFailure>,
     failures: &mut u32,
 ) -> Then {
+    // docs/adr/0109, D16: every exchange, by the status its server answered, or none.
+    let status = match &outcome {
+        Ok(response) => ExchangeStatus::of(response.status),
+        Err(_) => ExchangeStatus::NoResponse,
+    };
+    shared.metrics.count(Counter::ClientExchanges { status }, 1);
     let server = shared.settings.server.clone();
     // Read before the state is held: a verification is the response's alone.
     let unverified = match &outcome {
@@ -557,6 +566,17 @@ impl HttpsClient {
         port: Arc<dyn HttpsTransport>,
         events: impl FnMut(LinkEvent) + Send + 'static,
     ) -> Result<HttpsClient, ClientError> {
+        Self::start_observed(settings, port, events, sce_rust_metrics::none())
+    }
+
+    /// [`Self::start`], reporting each exchange by the status its server answered to `metrics`
+    /// (docs/adr/0109, D16).
+    pub fn start_observed(
+        settings: ClientSettings,
+        port: Arc<dyn HttpsTransport>,
+        events: impl FnMut(LinkEvent) + Send + 'static,
+        metrics: Arc<dyn Metrics>,
+    ) -> Result<HttpsClient, ClientError> {
         if !is_path_segment(&settings.own) {
             return Err(ClientError::NotAPathSegment(settings.own));
         }
@@ -587,6 +607,7 @@ impl HttpsClient {
                 events: Box::new(events),
             }),
             wake: Condvar::new(),
+            metrics,
         });
         let poller = {
             let shared = Arc::clone(&shared);
@@ -1671,5 +1692,53 @@ mod tests {
                 "{request:?}"
             );
         }
+    }
+
+    /// docs/adr/0109, D16: every exchange the client makes is reported by the status its server
+    /// answered, and one that got no response as `none`. Red if `take_outcome` reports a failure
+    /// at the transport under a status, or reports a `401` as anything but `401`.
+    #[test]
+    fn every_exchange_is_reported_by_the_status_its_server_answered() {
+        use sce_rust_metrics::recording::Recording;
+
+        let port = Arc::new(Scripted::default());
+        {
+            let mut polls = port.polls.lock().unwrap();
+            polls.push_back(Ok(ok(None, Vec::new())));
+            polls.push_back(Err(HttpsFailure::Connect));
+            polls.push_back(Ok(status(401, &[("WWW-Authenticate", "Bearer")])));
+            polls.push_back(Ok(status(502, &[])));
+        }
+        let recording = Arc::new(Recording::new());
+        let (tx, rx) = mpsc::channel();
+        let client = HttpsClient::start_observed(
+            settings(),
+            port.clone(),
+            move |event| {
+                let _ = tx.send(event);
+            },
+            Arc::clone(&recording) as Arc<dyn Metrics>,
+        )
+        .unwrap();
+        assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
+        let counted = |status| recording.counted(Counter::ClientExchanges { status });
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while counted(ExchangeStatus::Other) == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        client.stop();
+        assert!(counted(ExchangeStatus::Ok) >= 1);
+        assert_eq!(counted(ExchangeStatus::NoResponse), 1);
+        assert_eq!(counted(ExchangeStatus::Unauthorized), 1);
+        assert_eq!(
+            counted(ExchangeStatus::Other),
+            1,
+            "a 502 of an intermediary"
+        );
+        assert_eq!(
+            recording.counted_in(&sce_rust_metrics::SERVER_EXCHANGES),
+            0,
+            "a client reports no exchange of a server's"
+        );
     }
 }
