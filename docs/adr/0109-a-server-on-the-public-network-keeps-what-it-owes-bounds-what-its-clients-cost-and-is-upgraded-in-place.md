@@ -6,7 +6,24 @@
   requests of a downstream project. Every decision is a general facility of SCE; none of it is the logic of any one
   application. The owner set its scope the same day (D0): new facilities are built for Rust, the reference and the
   server's host core, and for C++, the client side; every other backend refuses by name what it does not serve.
-  Nothing of it has landed; "Order of work" lists the steps, each with the test that holds it.
+  "Order of work" lists the steps, each with the test that holds it.
+- Landed: steps 1 to 15 of "Order of work", D1 to D17, on Rust and C++ as D0 scopes them, each in the landing that
+  added the "Amended by: ADR 0109" lines of the documents it moved:
+  - the Rust host core: `sce-rust-mesh` (D1, D2, D9, D10, D15, D16), `sce-rust-session-store` (the stores of D3, D7,
+    D10, D13, D14, D15; layout 7), `sce-rust-crypto` (D3, D5 to D9, D14), `sce-rust-host-features` (D3 to D7, D13,
+    D14, D16, D17), `sce-rust-host-http` (D4) and `sce-rust-metrics` (D16);
+  - the C++ side: the reference host of `sce/include/host` (D3 to D8, D13, D14, D16, D17) and the generated
+    `TransportRouter`'s `https` arm (D9, D16);
+  - D1's window bound on every Mesh core: the Rust, Kotlin and Swift host cores and the generated C++ router;
+  - the generated machines of Rust and C++: the restore's upgrade that applies a migration (D11;
+    `saved_state::upgrade`, `upgradeSavedState`), the `<Machine>Deployment` reader (D12) and `<Machine>Limits` (D17);
+  - `sce-build`: the deploy parser's keys (D1, D2, D9, D10, D12, D15), the migration and the shape file (D11), the
+    deployment value (D12), the enum field of a typed request (step 4) and the named bounds' relations (D17);
+  - the documents: `docs/SCE_SERVER_DEPLOY.md` and `docs/SCE_HOST_FEATURES.md` section 9 brought to all of it (step
+    15).
+  Not landed: step 16 (D18, on measured need); D9's record-level half (after ADR 0101's steps 4a and 4b); a re-seal
+  pass for the outboxes and the audit log (D8 names one for every row); an in-place upgrade under load in the server
+  suite ("Conformance"); Open questions 5, 7, 8 and 9; and the later backend steps of D0.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0109" line in the landing that moves it):
   - `SCE_MESH.md` §10.5 (the windows an endpoint keeps are bounded by its links, D1), §10.11 (`persistence:` and
