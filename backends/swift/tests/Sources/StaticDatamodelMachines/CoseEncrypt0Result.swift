@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 6b0084ea803a3190eb9a90171a7f4ccdf5a805f872b91eb9e614810350d2fd40
+// source-hash: 6793bc4cda9999e24fe901f73cf66529ca72142cbfa5a4176be51c25bf0a73e3
 // source: sce:std/host/cose_encrypt0_result.scxml
 // SCE-MAP: cose_encrypt0_result.scxml:11 :: _forge_body
 
@@ -22,7 +22,7 @@ public enum CoseEncrypt0Result {
     /// The most UTF-8 bytes `error` holds (the bound its type writes), as this build resolved it.
     public static let errorMaxSize: UInt32 = 24
 
-    /// The most bytes `cose` holds (the bound its type writes), as this build resolved it.
+    /// The most bytes `cose` holds (the bound its type writes, named `cose_sealed`), as this build resolved it.
     public static let coseMaxSize: UInt32 = 4480
 
     /// The most bytes the event's `_event.data` JSON text takes: every list full, every text at its
@@ -35,7 +35,7 @@ public enum CoseEncrypt0Result {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_encrypt0_result:1\",\"x-sce-source-hash\":\"6b0084ea803a3190eb9a90171a7f4ccdf5a805f872b91eb9e614810350d2fd40\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"cose\":{\"type\":\"string\",\"maxLength\":4480,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"error\",\"cose\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_encrypt0_result:1\",\"x-sce-source-hash\":\"6793bc4cda9999e24fe901f73cf66529ca72142cbfa5a4176be51c25bf0a73e3\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"cose\":{\"type\":\"string\",\"maxLength\":4480,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"error\",\"cose\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built

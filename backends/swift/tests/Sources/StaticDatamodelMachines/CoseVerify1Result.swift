@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2f35e34a4d130a2d69cdd8a3d9ac571b0859e8d97e37cb88db9954c7e557aaa9
+// source-hash: af09ca9dbcb24f7b3f53fd92fe74258523721c7e24af8fc1b80e25f90e7a2083
 // source: sce:std/host/cose_verify1_result.scxml
-// SCE-MAP: cose_verify1_result.scxml:11 :: _forge_body
+// SCE-MAP: cose_verify1_result.scxml:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -25,7 +25,7 @@ public enum CoseVerify1Result {
     /// The most UTF-8 bytes `key_id` holds (the bound its type writes), as this build resolved it.
     public static let key_idMaxSize: UInt32 = 64
 
-    /// The most bytes `payload` holds (the bound its type writes), as this build resolved it.
+    /// The most bytes `payload` holds (the bound its type writes, named `cose_payload`), as this build resolved it.
     public static let payloadMaxSize: UInt32 = 4096
 
     /// The most bytes the event's `_event.data` JSON text takes: every list full, every text at its
@@ -38,7 +38,7 @@ public enum CoseVerify1Result {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_verify1_result:1\",\"x-sce-source-hash\":\"2f35e34a4d130a2d69cdd8a3d9ac571b0859e8d97e37cb88db9954c7e557aaa9\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"valid\":{\"type\":\"boolean\"},\"key_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"payload\":{\"type\":\"string\",\"maxLength\":4096,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"error\",\"valid\",\"key_id\",\"payload\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_verify1_result:1\",\"x-sce-source-hash\":\"af09ca9dbcb24f7b3f53fd92fe74258523721c7e24af8fc1b80e25f90e7a2083\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"valid\":{\"type\":\"boolean\"},\"key_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"payload\":{\"type\":\"string\",\"maxLength\":4096,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"error\",\"valid\",\"key_id\",\"payload\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built

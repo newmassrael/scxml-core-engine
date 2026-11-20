@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 36616996d06c7d4bffc34f62d09b21bae02fd2147366e7ff13b8eeaaf56fb9fb
+// source-hash: 71321b8852082e179ed7123b85f7c3bcbcc1889a71c9dea3bdf59fdfc4cdd3e1
 // source: sce:std/host/cose_verify1_request.scxml
-// SCE-MAP: cose_verify1_request.scxml:12 :: _forge_body
+// SCE-MAP: cose_verify1_request.scxml:13 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -22,7 +22,7 @@ public enum CoseVerify1Request {
     /// The most UTF-8 bytes `trust_set` holds (the bound its type writes), as this build resolved it.
     public static let trust_setMaxSize: UInt32 = 64
 
-    /// The most bytes `cose` holds (the bound its type writes), as this build resolved it.
+    /// The most bytes `cose` holds (the bound its type writes, named `cose_signed`), as this build resolved it.
     public static let coseMaxSize: UInt32 = 4352
 
     /// The most bytes `external_aad` holds (the bound its type writes), as this build resolved it.
@@ -38,7 +38,7 @@ public enum CoseVerify1Request {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_verify1_request:1\",\"x-sce-source-hash\":\"36616996d06c7d4bffc34f62d09b21bae02fd2147366e7ff13b8eeaaf56fb9fb\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"trust_set\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"cose\":{\"type\":\"string\",\"maxLength\":4352,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"},\"external_aad\":{\"type\":\"string\",\"maxLength\":256,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"trust_set\",\"cose\",\"external_aad\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:cose_verify1_request:1\",\"x-sce-source-hash\":\"71321b8852082e179ed7123b85f7c3bcbcc1889a71c9dea3bdf59fdfc4cdd3e1\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"trust_set\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"cose\":{\"type\":\"string\",\"maxLength\":4352,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"},\"external_aad\":{\"type\":\"string\",\"maxLength\":256,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"trust_set\",\"cose\",\"external_aad\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built
