@@ -957,14 +957,21 @@ fn a_machine_signs_verifies_seals_and_opens_through_its_host() {
 
 /// Raise `event` with `data` on `engine`, run it to completion, and answer what
 /// the machine publishes afterwards.
-fn told<P: StatePolicy>(engine: &mut Engine<P>, event: &str, data: &Value) -> Value {
+/// `save` is the machine's own saving, as [`replay`] is handed one, since the
+/// engine saves only a machine whose policy can.
+fn told<P: StatePolicy>(
+    engine: &mut Engine<P>,
+    save: impl Fn(&Engine<P>) -> SavedState,
+    event: &str,
+    data: &Value,
+) -> Value {
     assert!(
         P::resolve_event_by_name(event).is_some(),
         "the machine's events do not match `{event}`"
     );
     engine.raise_external_by_name(event, &data.to_string());
     settle(engine);
-    published(&engine.save_at(0).expect("saves"))
+    published(&save(engine))
 }
 
 /// docs/adr/0109, D17: the signing and sealing machine built with its records'
@@ -1014,10 +1021,13 @@ fn a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host() {
     engine.set_clock(SceClock::Manual(0));
     engine.initialize().expect("the machine starts");
     settle(&mut engine);
+    // A closure that captures nothing, so each call takes a copy of it.
+    let save = |engine: &Engine<LargePolicy>| engine.save_at(0).expect("saves");
 
     let payload = "p".repeat(bounds.cose_payload);
     let signed = told(
         &mut engine,
+        save,
         "host.cose.sign1.request",
         &json!({ "key_id": "k", "payload": payload, "external_aad": "" }),
     );
@@ -1033,6 +1043,7 @@ fn a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host() {
     );
     let verified = told(
         &mut engine,
+        save,
         "host.cose.verify1.request",
         &json!({ "trust_set": "mine", "cose": object, "external_aad": "" }),
     );
@@ -1044,6 +1055,7 @@ fn a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host() {
     let plaintext = "q".repeat(bounds.cose_plaintext);
     let sealed = told(
         &mut engine,
+        save,
         "host.cose.encrypt0.request",
         &json!({ "key_id": "box", "plaintext": plaintext, "external_aad": "" }),
     );
@@ -1059,6 +1071,7 @@ fn a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host() {
     );
     let opened = told(
         &mut engine,
+        save,
         "cose.held.open",
         &json!({ "key_id": "box", "external_aad": "" }),
     );
