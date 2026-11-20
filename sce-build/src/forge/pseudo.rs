@@ -1194,6 +1194,39 @@ fn fold_head(fold: &FoldBody) -> String {
     )
 }
 
+/// An algorithm's `put` or `remove` (docs/adr/0108, D3): `word` and the map
+/// on the head line, which opens the block of its clauses, and the key, the
+/// value a put writes and the outcome each on a line of its own beneath it.
+fn render_map_statement(
+    word: Word,
+    target: &str,
+    key: &str,
+    value: Option<&str>,
+    outcome: Option<&str>,
+    out: &mut Out<'_>,
+) {
+    out.line_of(vec![
+        Part::Word(word),
+        Part::Text(text(target).into_owned()),
+        Part::Glued(":".into()),
+    ]);
+    out.nested(|out| {
+        out.line_of(vec![
+            Part::Word(Word::Key),
+            Part::Text(text(key).into_owned()),
+        ]);
+        if let Some(value) = value {
+            out.line(&format!("value {}", text(value)));
+        }
+        if let Some(outcome) = outcome {
+            out.line_of(vec![
+                Part::Word(Word::Outcome),
+                Part::Text(text(outcome).into_owned()),
+            ]);
+        }
+    });
+}
+
 fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
     match stmt {
         AlgorithmStmt::Var {
@@ -1324,38 +1357,28 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
         // A map's statements (docs/adr/0108, D3): the map on the head line,
         // and each free-text value on a line of its own beneath it, as a
         // call's arguments are, so no value decides where another splits.
+        // The head opens the block of its clauses, so it names its word, as
+        // a statechart's `<sce:put>` and `<sce:remove>` do.
         AlgorithmStmt::Put {
             target,
             key,
             expr,
             outcome,
             ..
-        } => {
-            out.line(&format!("put {}:", text(target)));
-            out.nested(|out| {
-                out.line(&format!("key {}", text(key)));
-                if let Some(expr) = expr {
-                    out.line(&format!("value {}", text(expr)));
-                }
-                if let Some(outcome) = outcome {
-                    out.line(&format!("outcome {}", text(outcome)));
-                }
-            });
-        }
+        } => render_map_statement(
+            Word::Put,
+            target,
+            key,
+            expr.as_deref(),
+            outcome.as_deref(),
+            out,
+        ),
         AlgorithmStmt::Remove {
             target,
             key,
             outcome,
             ..
-        } => {
-            out.line(&format!("remove {}:", text(target)));
-            out.nested(|out| {
-                out.line(&format!("key {}", text(key)));
-                if let Some(outcome) = outcome {
-                    out.line(&format!("outcome {}", text(outcome)));
-                }
-            });
-        }
+        } => render_map_statement(Word::Remove, target, key, None, outcome.as_deref(), out),
         AlgorithmStmt::Clear { target, .. } => {
             out.line(&format!("clear {}", text(target)));
         }
