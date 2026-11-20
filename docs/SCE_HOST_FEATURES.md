@@ -38,6 +38,12 @@
   the scenario's `credentials` host state; sections 7 and 9 name them where they
   list the lanes and what is not provided, and section 9 no longer lists the
   durable keeping of the `install` authenticator's pins.
+- Amended by: ADR 0109 (D13): section 3, "Left to the host: durability" becomes
+  "Durability": a host states whether its store is durable, and the reference
+  durable store is the session store's SQLite file, which keeps each put-if's
+  first result in the transaction of its write; section 8, the Rust and C++
+  reference hosts take their store at construction; section 9 narrows the
+  durable key-value store to the lanes other than Rust.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -233,9 +239,22 @@ to `9`. A `prefix` and an `after` may be empty.
   is seen or missed by the later one, and an enumeration never repeats or skips a
   key that was neither written nor removed during it.
 
-Left to the host: durability (the reference hosts keep the store in memory), the
-quota, whether the stores of two applications on one device are kept apart, and
-encryption at rest.
+**Durability** (docs/adr/0109, D13). A host states whether its store is
+durable: whether a write that completed survives the host's restart, and with
+it the first result of each put-if, which a durable store keeps in the
+transaction of the write, so that a put-if a restore starts again is answered
+with its first result whether the host stopped before or after its answer
+left. A store that is not durable forgets both when its host stops. The
+reference hosts take their store when they are built, in memory unless the
+embedding gives another (section 8); the reference durable store is the
+session store's SQLite file (`sce_rust_session_store::SqliteStore`, layout 6),
+held with the store in memory to one contract (`KvStore`), and the removal of a
+session from it deletes the first results of that session's put-ifs in the same
+transaction. A server keeps it sealed at rest (`Sealed`,
+docs/SCE_SEALED_RECORD.md): each key as its keyed digest, each value sealed.
+
+Left to the host: the quota, whether the stores of two applications on one
+device are kept apart, and encryption at rest.
 
 ## 4. Notifications
 
@@ -598,6 +617,16 @@ starts afterwards is the next start, judged against the store as it is. The
 starts the host records carry the session's id and the start number beside the
 `<invoke>`'s id.
 
+The Rust and C++ reference hosts keep their store, with those first results, in
+the store they were built with (docs/adr/0109, D13): Rust's
+`ReferenceHost::with_kv_store` takes a `sce_rust_session_store::KvStore`, and
+C++'s `ReferenceHost(clock, transport, store)` a `KvStore` of
+`host/StandardHost.h`; each builds one in memory when given none. The Rust
+driver replays section 3's scenario against the SQLite store too, and holds a
+put-if whose process stopped before its answer reached the machine to its first
+result, answered by a host of the next process on the same file
+(`backends/rust/scenarios/tests/host_features.rs`).
+
 Three things differ by lane and are not hidden:
 
 - **The order of a response's fields.** The Python transport and the C++ libcurl
@@ -642,11 +671,13 @@ These are not built, and nothing here stands in for them:
   (SCE_MESH.md section 22.5), are kept in the session store's file
   (`SqliteStore` is a `KeyStore` and a `CredentialStore` too, layout 4), which a
   server keeps sealed at rest (`Sealed`, docs/SCE_SEALED_RECORD.md).
-- **A durable key-value store.** The reference stores of section 3 are in memory
-  on every lane, and so is the table of first results by which each answers a
-  put-if repeated under one identity (section 8): a host that stops forgets
-  both. Durability is left to the host (section 3). The session store above is
-  durable, but it keeps a pool's sessions, not this feature's values.
+- **A durable key-value store on the lanes other than Rust.** The Rust host
+  keeps section 3's values in a durable store when it is given one, the session
+  store's SQLite file (section 3, "Durability"); the reference stores of the
+  other lanes are in memory, and so is the table of first results by which each
+  answers a put-if repeated under one identity (section 8): a host of those
+  lanes that stops forgets both. The C++ host takes a store at construction
+  (`KvStore`), and SCE gives it none that is durable.
 - **A network HTTP transport for C and Swift.** Their reference hosts are
   the full semantics over a transport the embedding supplies, driven by a
   scripted one. The C runtime's client posts a form for a `<send>` and carries

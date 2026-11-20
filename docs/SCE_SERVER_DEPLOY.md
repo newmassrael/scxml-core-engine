@@ -33,6 +33,7 @@ says of "the program" is what such a program must do.
 | Message signatures: a `200` signed by the server's `sign` key and verified by a client under `verify:`, a request signed under the `key` authenticator | `sce_rust_mesh::https::signature` (server and Rust client); `SCE::Mesh::Https::Signatures` (C++ client), on libsodium | ADR 0109, D9; SCE_MESH.md section 22.9 |
 | A durable client's outbox: what a session sends it kept in the store, appended by the write of the session's checkpoint, until the client acknowledges it; its window and its expiry | `SessionStore::write` and the outbox calls of `sce-rust-session-store` (`SqliteStore` from layout 5, sealed under `Sealed`); `sce_rust_mesh::outbox::Outboxes`, kept by the pool (`Pool::outboxes`, `Pool::expire`) and answered from by the server (`HttpsServer::keep_outboxes`) | ADR 0109, D10; SCE_MESH.md sections 10.11 and 22.3 |
 | The orderly stop: the server answers what it holds and takes nothing in, the pool saves every session as a clean checkpoint | `HttpsServer::stop`, `Pool::stop` | ADR 0109, D10; SCE_MESH.md sections 14.4 and 22.4 |
+| The key-value feature's values kept durably, each put-if's first result in the transaction of its write, the first results of a session deleted with it | `KvStore` of `sce-rust-session-store` (`SqliteStore` from layout 6, sealed under `Sealed`), given to the host by `ReferenceHost::with_kv_store`; the pool names the sessions a removal ends (`Write::sessions`) | ADR 0109, D13; docs/SCE_HOST_FEATURES.md section 3 |
 | The dialing side of a durable `https` binding in Rust: acknowledges only what a durable checkpoint of its own holds, keeps what it sent until a `200` carried it | `HttpsClient::received`, `HttpsClient::held`, `LinkEvent::Carried`, and the router `Machine::router` builds | ADR 0109, D10; SCE_MESH.md section 10.11 |
 
 Not built, and a server must not count on them:
@@ -246,11 +247,11 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   system, never a network one. Beside `<file>` SQLite keeps `<file>-wal` and `<file>-shm`; all three are the store.
 - **Waiting for a lock.** A call that finds the database locked by another connection's write waits 5 s
   (`SqliteStore::BUSY_TIMEOUT`, or the bound given to `open_with_busy_timeout`) before it fails.
-- **Its layout.** The database's `user_version` names the layout, `5` today. A file of layout `1` to `4` is brought
-  to `5` when it is opened, in one transaction, its sessions, leases, keys and credentials kept. A file of a layout
-  this build does not know, or one that holds tables the store did not make, is refused. A later build that changes
-  the layout makes a rollback to an earlier build refuse the file: a build before layout 5 refuses a file this one
-  opened.
+- **Its layout.** The database's `user_version` names the layout, `6` today. A file of layout `1` to `5` is brought
+  to `6` when it is opened, in one transaction, its sessions, leases, keys, credentials and outboxes kept. A file of
+  a layout this build does not know, or one that holds tables the store did not make, is refused. A later build that
+  changes the layout makes a rollback to an earlier build refuse the file: a build before layout 6 refuses a file
+  this one opened.
 - **The outboxes** (ADR 0109, D10). Under `receipt: durable` what a session sends a client is appended to the
   client's outbox by the same transaction that writes the session's checkpoint (`SessionStore::write`), so either
   both are durable or neither; an acknowledgement deletes what it covers, and an expiry what is older than
@@ -295,9 +296,14 @@ from; and the keys a host generates and derives (`KeyStore`, docs/SCE_HOST_FEATU
 key-encryption key the file never holds, `key_generations` (which key each generation made) and `key_naming` (the
 wrapped naming key of derived keys); and the credentials of section 5 (`CredentialStore`): `credential_pins` (`name`,
 `digest`) and `credential_tokens` (`digest`, `name`, `issued_ms`, `expires_ms`, `revoked`, `sealed`), each digest the
-SHA-256 of a secret the file never holds. Under a sealed store, `session`, `id`, `generation`, `key` and `name` hold
-entries, `state`, `wrapped`, a pin's `digest` and a token's `sealed` hold records, a token's `digest` holds the keyed
-digest of its digest and its moments are 0. Every moment is milliseconds since the Unix epoch.
+SHA-256 of a secret the file never holds; and the values of the key-value feature a host keeps in the store
+(`KvStore`, docs/SCE_HOST_FEATURES.md section 3), the tables of layout 6: `kv_values` (`key`, `value`, `version`),
+`kv_numbers`, the feature's own counter of versions, and `kv_first_results` (`session`, `invoke`, `start`,
+`outcome`, `version`), the first result of each put-if by its invocation's identity, deleted with the session that
+started it. Under a sealed store, `session`, `id`, `generation`, `key`, `name` and a first result's `session` and
+`invoke` hold entries, `state`, `wrapped`, a pin's `digest`, a token's `sealed` and a value's `value` hold records, a
+token's `digest` holds the keyed digest of its digest and its moments are 0. Every moment is milliseconds since the
+Unix epoch.
 
 ## 4. What a restart does
 
