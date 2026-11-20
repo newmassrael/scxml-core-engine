@@ -493,6 +493,21 @@ install_inputs = ["scripts/install_wasm_bindgen.sh"]
 prefix_file = "bin/wasm-bindgen"
 needed_by = ["wasm32-scenarios"]
 
+# Bazel at the release SCE's Bazel channels are built against (`SCE_BAZEL_VERSION` in
+# `scripts/lib/bazel_pins.sh`), the release binary checked against its published SHA-256 by
+# `scripts/install_bazel.sh`. The hosted lane takes bazelisk from the runner image; no build machine
+# had a Bazel, so `embed-vendor` could not judge its Bazel half on the fleet (2026-11-20). The smoke
+# finds it through `sce_bazel_select`. `check` is the default, the version: the binary prints
+# `bazel 9.3.1`.
+[platform.linux.tools.bazel]
+version_file = "scripts/lib/bazel_pins.sh"
+version_pattern = '^SCE_BAZEL_VERSION="([0-9.]+)"'
+path = "~/.local/share/bazel/{version}/bin/bazel"
+install = "BAZEL_ROOT={prefix} bash scripts/install_bazel.sh {version}"
+install_inputs = ["scripts/install_bazel.sh"]
+prefix_file = "bin/bazel"
+needed_by = ["embed-vendor"]
+
 # Headless Chrome, pinned as a Chrome for Testing release (`scripts/install_chrome.sh`, which says
 # why and how it is checked). `prefix_link` makes the unpacked archive the store entry, because the
 # binary loads the files beside it. `check` is the default, the version: the binary prints

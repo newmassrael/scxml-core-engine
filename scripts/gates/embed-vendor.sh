@@ -46,5 +46,12 @@ bash scripts/smoke_embed_consumer.sh \
 # removed the native C++ rules, so a BUILD file that does not load them from
 # rules_cc fails here and not in a consumer's build.
 sce_gate_step "Bazel consumers through both channels"
-bash scripts/smoke_bazel_consumer.sh \
-    || sce_gate_fail "Bazel consumer smoke build"
+# The smoke ends 3 when no Bazel is on the machine: nothing was measured, which
+# is "could not run", never the tree's failure.
+bazel_rc=0
+bash scripts/smoke_bazel_consumer.sh || bazel_rc=$?
+case "$bazel_rc" in
+    0) ;;
+    3) sce_gate_cannot_run "no Bazel on this machine (bx installs the pinned one: [platform.linux.tools.bazel] in bx.toml)" ;;
+    *) sce_gate_fail "Bazel consumer smoke build" ;;
+esac
