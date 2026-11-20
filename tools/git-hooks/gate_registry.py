@@ -5537,14 +5537,18 @@ def self_test(repo_root: Path) -> int:
     failures = []
     cases = 0
 
-    def check(label, changed, want_full=None, want_has=(), want_lacks=()):
+    def check(label, changed, want_full=None, want_has=(), want_lacks=(),
+              landing=False):
         nonlocal cases
         cases += 1
-        keys, reason = select(repo_root, changed)
-        # "Full" is every gate a PUSH can run. `select` is what the hook
-        # calls, so a `ci_only` gate is not missing from its answer — it was
-        # never on offer, and counting it would make rule 1 unprovable here.
-        full = len(keys) == len(drop_ci_only(set(GATES)))
+        keys, reason = select(repo_root, changed, landing=landing)
+        # "Full" is every gate the push can run. `select` is what the hook
+        # calls, so for a push of another ref a `ci_only` gate is not missing
+        # from its answer — it was never on offer, and counting it would make
+        # rule 1 unprovable here. For an update to main (`landing`) the offer
+        # is every gate the fleet can run (`push_keeps`).
+        offered = push_keeps(repo_root, set(GATES), landing)
+        full = len(keys) == len(offered)
         if want_full is not None and full != want_full:
             failures.append(f"{label}: full={full}, wanted {want_full} ({reason})")
         for k in want_has:
@@ -5612,16 +5616,35 @@ def self_test(repo_root: Path) -> int:
     check("rust", ["sce-build/src/mesh/deploy.rs"], want_full=False,
           want_has=["codegen-build"],
           want_lacks=["workspace-tests", "clippy"])
+    # The same edit on an update to main: the landing queue's judgment runs
+    # the `ci_only` gates it reaches, so clippy and the workspace suite are in
+    # its answer, and it is still scoped (not every gate). This is the case
+    # that holds item 290's two `explicit_auto_deref` errors out of main: a
+    # landing that dropped clippy for a Rust edit would land them unjudged.
+    check("rust-landing", ["sce-build/src/mesh/deploy.rs"], want_full=False,
+          want_has=["codegen-build", "workspace-tests", "clippy"],
+          landing=True)
+    # Rule 1 on an update to main: every gate the fleet can run, `ci_only`
+    # included, and never a gate off the fleet.
+    check("unclassified-landing", ["some_new_top_level_dir/thing.txt"],
+          want_full=True, want_has=["mutation-rounds", "clippy"],
+          want_lacks=["windows-msvc"], landing=True)
     # Dependency closure: an example-only change still builds sce-codegen.
     # `example-codegen` is `ci_only` now, but the closure it pulls in is not:
     # the dependency must survive its dependent leaving, or a gate that
     # remains local loses the binary it executes.
     check("example-dep", ["examples/smart_light/smart_light.scxml"],
           want_has=["codegen-build"], want_lacks=["example-codegen"])
+    check("example-dep-landing", ["examples/smart_light/smart_light.scxml"],
+          want_has=["codegen-build", "example-codegen"], landing=True)
     # A template edit must reach the committed-tree drift gate.
     check("template", ["tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2"],
           want_full=False, want_has=["codegen-build"],
           want_lacks=["drift-suites"])
+    check("template-landing",
+          ["tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2"],
+          want_full=False, want_has=["codegen-build", "drift-suites"],
+          landing=True)
     # doc-check.yml edits must reach the gate that mirrors it. Under the
     # numbered table this gate was mapped to the no_std workflow, so an edit
     # to doc-check.yml alone did not select it.

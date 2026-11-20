@@ -49,8 +49,15 @@ fn read(rel: &str) -> String {
 /// "does a push run what CI runs", so the surface they read has to follow
 /// the commands rather than the filename — a test still pointed at the hook
 /// alone would find no `cargo test` at all and pass by reading nothing.
+///
+/// The hook hands the gates over through `run_gates` in
+/// `tools/git-hooks/prepush-gates.sh`, which it sources, and the selection it
+/// asks for (`--landing` for an update to main) is chosen there; that file is
+/// part of the surface for the same reason the gate scripts are.
 fn hook_surface() -> String {
     let mut out = read("tools/git-hooks/pre-push");
+    out.push('\n');
+    out.push_str(&read("tools/git-hooks/prepush-gates.sh"));
     let dir = repo_root().join("scripts/gates");
     let mut scripts: Vec<PathBuf> = fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))

@@ -1429,6 +1429,10 @@ fn registry_stdout(root: &Path, args: &[&str]) -> String {
 /// `select` says it does. A unit may keep no verdict its gate says may not be
 /// kept, carries HEAD's id exactly when a gate it runs reads HEAD, and asks
 /// bx for the largest memory peak among the gates it runs.
+///
+/// Each change is asked twice: as a push of another ref, and as an update to
+/// main (`--landing`), the landing queue's judgment, whose every unit says
+/// `--landing` so the runner counts no skip as a pass.
 #[test]
 fn the_push_hands_bx_the_set_the_registry_plans() {
     let root = repo_root();
@@ -1493,23 +1497,42 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
         seen
     };
 
-    for changed in [
+    let changes = [
         &["README.md"][..],
         &["sce-build/src/lib.rs"][..],
         &["backends/go/forge-runtime/go.mod"][..],
         // Selects `embed-manifest-stamp`, which reads HEAD, so the plan's
         // `--at` is asked of at least one unit.
         &["embed/MANIFEST.inputs"][..],
-    ] {
+    ];
+    for (changed, landing) in changes.iter().flat_map(|c| [(*c, false), (*c, true)]) {
         let mut ask = vec!["--changed"];
         ask.extend_from_slice(changed);
+        if landing {
+            ask.push("--landing");
+        }
         let selected: BTreeSet<String> = registry_stdout(&root, &ask)
             .lines()
             .map(str::to_string)
             .collect();
 
+        // A Rust edit reaches `clippy`, which is `ci_only`: a push of another
+        // ref leaves it to CI, and the landing queue's judgment runs it. Item
+        // 290 landed two clippy errors on main while the landing left it out.
+        if changed == ["sce-build/src/lib.rs"] {
+            assert_eq!(
+                selected.contains("clippy"),
+                landing,
+                "{changed:?} (landing: {landing}): clippy is selected exactly \
+                 when the push updates main: {selected:?}"
+            );
+        }
+
         let mut plan_ask = vec!["--plan", "--rust", "1.0.0", "--changed"];
         plan_ask.extend_from_slice(changed);
+        if landing {
+            plan_ask.push("--landing");
+        }
         let plan = registry_stdout(&root, &plan_ask);
 
         let mut covered = BTreeSet::new();
@@ -1560,8 +1583,18 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                 "{changed:?}: unit {name} does not run the runner as a unit at \
                  the planned release: {argv:?}"
             );
+            // A landing's unit says so, right after `--unit`; a unit of any
+            // other push does not.
+            let rest = &head[5..];
             assert_eq!(
-                head.len() == 7 && head[5] == "--at" && head[6].len() >= 40,
+                rest.first() == Some(&"--landing"),
+                landing,
+                "{changed:?} (landing: {landing}): unit {name} carries \
+                 `--landing` exactly when the push updates main: {argv:?}"
+            );
+            let rest = if landing { &rest[1..] } else { rest };
+            assert_eq!(
+                rest.len() == 2 && rest[0] == "--at" && rest[1].len() >= 40,
                 reads_head,
                 "{changed:?}: unit {name} carries HEAD's id exactly when a gate \
                  it runs reads HEAD: {argv:?}"
