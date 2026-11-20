@@ -126,6 +126,51 @@ pub const HTTPS: Binding = Binding {
     },
 };
 
+/// The client reaches the server over the HTTPS binding under `receipt: durable` (docs/adr/0109,
+/// D10): what the ledger sends it is kept in its outbox in the store, `mailbox` envelopes at most,
+/// each `retain_ms` unless the client acknowledges it. The parent carries the client's polls.
+pub fn durable_https(mailbox: u32, retain_ms: u64) -> Binding {
+    let PeerLink::HttpsAccept {
+        listen,
+        authenticator,
+        max_hold_ms,
+        max_body_bytes,
+        absence_ms,
+        max_clients,
+        max_response_bytes,
+        rate,
+        trusted_proxies,
+        sign,
+        max_skew_ms,
+        ..
+    } = HTTPS.link
+    else {
+        unreachable!("the HTTPS binding accepts");
+    };
+    Binding {
+        transport: "https",
+        link: PeerLink::HttpsAccept {
+            listen,
+            authenticator,
+            max_hold_ms,
+            max_body_bytes,
+            absence_ms,
+            mailbox,
+            max_clients,
+            max_response_bytes,
+            rate,
+            trusted_proxies,
+            sign,
+            max_skew_ms,
+            receipt: Receipt::Durable {
+                window: 256,
+                retry_ms: 1_000,
+            },
+            retain_ms,
+        },
+    }
+}
+
 /// The ledger as deploy.yaml would declare it: one peer, the client, reached over `binding`, and
 /// a keyed pool whose key is the `key` field of what the client sends, a session staying in
 /// memory for `idle_ms` after its last event.

@@ -56,6 +56,7 @@ fn delayed_sends_survive_kills(name: &str, sessions: u64) {
         lease_ttl_ms: 600_000,
         renew_every_ms: 300_000,
         halt: None,
+        durable: None,
     };
     let mut campaign = Campaign::new(server(), options, seed);
 

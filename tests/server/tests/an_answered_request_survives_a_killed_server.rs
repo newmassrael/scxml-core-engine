@@ -61,6 +61,7 @@ fn an_answered_request_keeps_its_effect_and_its_first_reply_across_kills() {
         lease_ttl_ms: 600_000,
         renew_every_ms: 300_000,
         halt: None,
+        durable: None,
     };
     let mut campaign = Campaign::new(server(), options, seed);
     // The requests of all sessions interleaved, in an order drawn for the run.

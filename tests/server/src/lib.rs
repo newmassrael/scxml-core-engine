@@ -16,6 +16,12 @@
 //!   on one value under `sce-host-kv-put-if`, never pass the limit the document states.
 //! * `two_servers_never_both_write_a_session`: two server processes on one store, one paused past
 //!   its lease, never both write a session.
+//! * `a_durable_outbox_survives_a_killed_server` (docs/adr/0109, D10): a client whose binding is
+//!   durable reads its outbox by polls, goes away for a while and loses responses, while the
+//!   server is killed at points of the commit that appends to the outbox, of an acknowledgement
+//!   and of an expiry; every reply is delivered at least once and taken in once.
+//! * `a_stopped_server_leaves_only_clean_checkpoints` (docs/adr/0109, D10): a server stopped in
+//!   order under load saves every session as a clean checkpoint, and a start after it answers.
 //! * `the_https_binding_reaches_a_pool`: a pool reached over the HTTPS binding through an explicit
 //!   proxy, through a proxy that inspects TLS under an authority the client trusts, with a
 //!   response lost on purpose, and with the store refusing a checkpoint, which no `200`

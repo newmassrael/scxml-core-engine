@@ -31,16 +31,39 @@ pub enum Stage {
     SendBefore,
     /// An envelope was handed to the client.
     SendAfter,
+    /// An acknowledgement is about to delete what it covers of a durable client's outbox
+    /// (docs/adr/0109, D10).
+    AckBefore,
+    /// An acknowledgement deleted what it covered, durably, and the server has not answered yet.
+    AckAfter,
+    /// An expiry of a durable client's outbox is about to run.
+    ExpireBefore,
+    /// An expiry ran, durably, and the pool has not told a session of it yet.
+    ExpireAfter,
 }
 
 impl Stage {
-    /// Every stage, in the order of a session's work.
+    /// Every stage of a session's work on a binding whose receipt is the transport's, in its
+    /// order: what a campaign draws its halts from unless it is told otherwise.
     pub const ALL: [Stage; 5] = [
         Stage::Load,
         Stage::CheckpointBefore,
         Stage::CheckpointAfter,
         Stage::SendBefore,
         Stage::SendAfter,
+    ];
+
+    /// Every stage of a server whose client's binding is durable (docs/adr/0109, D10): the
+    /// load, the commit that appends to the outbox with the checkpoint, the acknowledgement that
+    /// deletes from it, and the expiry. Nothing is handed to the client but by its own poll.
+    pub const DURABLE: [Stage; 7] = [
+        Stage::Load,
+        Stage::CheckpointBefore,
+        Stage::CheckpointAfter,
+        Stage::AckBefore,
+        Stage::AckAfter,
+        Stage::ExpireBefore,
+        Stage::ExpireAfter,
     ];
 
     pub fn name(self) -> &'static str {
@@ -50,11 +73,18 @@ impl Stage {
             Stage::CheckpointAfter => "checkpoint-after",
             Stage::SendBefore => "send-before",
             Stage::SendAfter => "send-after",
+            Stage::AckBefore => "ack-before",
+            Stage::AckAfter => "ack-after",
+            Stage::ExpireBefore => "expire-before",
+            Stage::ExpireAfter => "expire-after",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Stage> {
-        Stage::ALL.into_iter().find(|stage| stage.name() == name)
+        Stage::ALL
+            .into_iter()
+            .chain(Stage::DURABLE)
+            .find(|stage| stage.name() == name)
     }
 }
 
@@ -123,6 +153,15 @@ pub enum Report {
     Halted(Halt),
     /// Something the pool told its host, in its debug form.
     Error(String),
+    /// What a poll found in the durable client's outbox (docs/adr/0109, D10): the incarnation it
+    /// numbers in, and its envelopes by number, oldest first.
+    Mailbox {
+        epoch: String,
+        envelopes: Vec<(u64, Vec<u8>)>,
+    },
+    /// The pool stopped in order (docs/adr/0109, D10): how many sessions it saved as clean
+    /// checkpoints, and how many it could not.
+    Stopped { saved: u64, not_saved: u64 },
 }
 
 impl Report {
@@ -143,6 +182,16 @@ impl Report {
             } => format!("refused {key} {fence} {}", refusal.name()),
             Report::Halted(halt) => format!("halt {halt}"),
             Report::Error(text) => format!("error {}", text.replace(['\n', '\r'], " ")),
+            Report::Mailbox { epoch, envelopes } => {
+                let held: Vec<String> = envelopes
+                    .iter()
+                    .map(|(number, bytes)| format!("{number}:{}", hex(bytes)))
+                    .collect();
+                format!("mailbox {epoch} {}", held.join(","))
+                    .trim_end()
+                    .to_string()
+            }
+            Report::Stopped { saved, not_saved } => format!("stopped {saved} {not_saved}"),
         }
     }
 
@@ -169,6 +218,24 @@ impl Report {
             }),
             "halt" => Halt::parse(rest).map(Report::Halted),
             "error" => Some(Report::Error(rest.to_string())),
+            "mailbox" => {
+                let epoch = fields.next()?.to_string();
+                let envelopes = match fields.next() {
+                    None | Some("") => Vec::new(),
+                    Some(held) => held
+                        .split(',')
+                        .map(|entry| {
+                            let (number, bytes) = entry.split_once(':')?;
+                            Some((number.parse().ok()?, unhex(bytes)?))
+                        })
+                        .collect::<Option<Vec<_>>>()?,
+                };
+                Some(Report::Mailbox { epoch, envelopes })
+            }
+            "stopped" => Some(Report::Stopped {
+                saved: fields.next()?.parse().ok()?,
+                not_saved: fields.next()?.parse().ok()?,
+            }),
             _ => None,
         }
     }
@@ -182,6 +249,13 @@ pub enum Command {
     /// Stop serving for this many milliseconds, renewing no lease, as a process stalled by its
     /// machine does; then take the next command before anything else.
     Pause(u64),
+    /// The durable client's exchange (docs/adr/0109, D10): acknowledge everything numbered at
+    /// most `ack` in the incarnation `epoch` (none before the client learned one), and answer
+    /// with what its outbox holds ([`Report::Mailbox`]).
+    Poll { epoch: Option<String>, ack: u64 },
+    /// Stop the pool in order, within this many milliseconds, report [`Report::Stopped`], and
+    /// end.
+    Stop(u64),
 }
 
 impl Command {
@@ -190,6 +264,10 @@ impl Command {
         match self {
             Command::Envelope(bytes) => format!("envelope {}", hex(bytes)),
             Command::Pause(ms) => format!("pause {ms}"),
+            Command::Poll { epoch, ack } => {
+                format!("poll {} {ack}", epoch.as_deref().unwrap_or("-"))
+            }
+            Command::Stop(ms) => format!("stop {ms}"),
         }
     }
 
@@ -199,6 +277,14 @@ impl Command {
         match word {
             "envelope" => unhex(rest).map(Command::Envelope),
             "pause" => rest.parse().ok().map(Command::Pause),
+            "poll" => {
+                let (epoch, ack) = rest.split_once(' ')?;
+                Some(Command::Poll {
+                    epoch: (epoch != "-").then(|| epoch.to_string()),
+                    ack: ack.parse().ok()?,
+                })
+            }
+            "stop" => rest.parse().ok().map(Command::Stop),
             _ => None,
         }
     }
@@ -220,6 +306,19 @@ pub struct ServerOptions {
     pub renew_every_ms: u64,
     /// Where it stops and waits to be killed, if anywhere.
     pub halt: Option<Halt>,
+    /// The client's binding under `receipt: durable` (docs/adr/0109, D10), when it is: the
+    /// client's outbox is kept in the store and the client reads it by polls; `None` hands
+    /// every envelope to the client as it is sent.
+    pub durable: Option<Durable>,
+}
+
+/// A durable client binding's bounds (docs/adr/0109, D10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Durable {
+    /// deploy.yaml's `mailbox`: the durable window.
+    pub mailbox: u32,
+    /// deploy.yaml's `retain_ms`.
+    pub retain_ms: u64,
 }
 
 impl ServerOptions {
@@ -241,6 +340,12 @@ impl ServerOptions {
             args.push("--halt".to_string());
             args.push(halt.to_string());
         }
+        if let Some(durable) = self.durable {
+            args.push("--durable-mailbox".to_string());
+            args.push(durable.mailbox.to_string());
+            args.push("--retain-ms".to_string());
+            args.push(durable.retain_ms.to_string());
+        }
         args
     }
 
@@ -254,6 +359,7 @@ impl ServerOptions {
         };
         let (mut store, mut owner, mut halt) = (None, None, None);
         let (mut idle_ms, mut lease_ttl_ms, mut renew_every_ms) = (None, None, None);
+        let (mut mailbox, mut retain_ms) = (None, None);
         for pair in args.chunks(2) {
             let [flag, value] = pair else {
                 return Err(format!("{} takes a value", pair[0]));
@@ -264,6 +370,14 @@ impl ServerOptions {
                 "--idle-ms" => idle_ms = Some(number(flag, value)?),
                 "--lease-ttl-ms" => lease_ttl_ms = Some(number(flag, value)?),
                 "--renew-every-ms" => renew_every_ms = Some(number(flag, value)?),
+                "--durable-mailbox" => {
+                    mailbox = Some(
+                        value
+                            .parse::<u32>()
+                            .map_err(|_| format!("{flag} takes a count, not '{value}'"))?,
+                    )
+                }
+                "--retain-ms" => retain_ms = Some(number(flag, value)?),
                 "--halt" => {
                     halt = Some(
                         Halt::parse(value)
@@ -274,6 +388,11 @@ impl ServerOptions {
             }
         }
         let required = |name: &str| format!("{name} is required");
+        let durable = match (mailbox, retain_ms) {
+            (Some(mailbox), Some(retain_ms)) => Some(Durable { mailbox, retain_ms }),
+            (None, None) => None,
+            _ => return Err("--durable-mailbox and --retain-ms are given together".to_string()),
+        };
         Ok(ServerOptions {
             store: store.ok_or_else(|| required("--store"))?,
             owner: owner.ok_or_else(|| required("--owner"))?,
@@ -281,6 +400,7 @@ impl ServerOptions {
             lease_ttl_ms: lease_ttl_ms.ok_or_else(|| required("--lease-ttl-ms"))?,
             renew_every_ms: renew_every_ms.ok_or_else(|| required("--renew-every-ms"))?,
             halt,
+            durable,
         })
     }
 }
@@ -333,11 +453,54 @@ mod tests {
 
     #[test]
     fn every_command_is_read_back_as_the_command_it_writes() {
-        for command in [Command::Envelope(vec![1, 2, 255]), Command::Pause(2500)] {
+        for command in [
+            Command::Envelope(vec![1, 2, 255]),
+            Command::Pause(2500),
+            Command::Poll {
+                epoch: None,
+                ack: 0,
+            },
+            Command::Poll {
+                epoch: Some("00112233445566778899aabbccddeeff".to_string()),
+                ack: 17,
+            },
+            Command::Stop(5_000),
+        ] {
             assert_eq!(Command::parse(&command.line()), Some(command.clone()));
         }
         assert_eq!(Command::parse("envelope 0"), None);
         assert_eq!(Command::parse("pause soon"), None);
+        assert_eq!(Command::parse("poll - many"), None);
+    }
+
+    /// docs/adr/0109, D10: what a poll found and what a stop did are read back as written, an
+    /// outbox that holds nothing included.
+    #[test]
+    fn a_mailbox_and_a_stop_are_read_back_as_the_reports_they_write() {
+        for report in [
+            Report::Mailbox {
+                epoch: "00112233445566778899aabbccddeeff".to_string(),
+                envelopes: vec![(3, vec![0xa1, 0x00]), (4, vec![0x7f])],
+            },
+            Report::Mailbox {
+                epoch: "00112233445566778899aabbccddeeff".to_string(),
+                envelopes: Vec::new(),
+            },
+            Report::Stopped {
+                saved: 12,
+                not_saved: 0,
+            },
+            Report::Halted(Halt {
+                stage: Stage::AckAfter,
+                at: 2,
+            }),
+        ] {
+            assert_eq!(
+                Report::parse(&report.line()),
+                Some(report.clone()),
+                "{report:?}"
+            );
+        }
     }
 
     #[test]
@@ -352,6 +515,10 @@ mod tests {
                 stage: Stage::SendBefore,
                 at: 3,
             }),
+            durable: Some(Durable {
+                mailbox: 64,
+                retain_ms: 60_000,
+            }),
         };
         assert_eq!(
             ServerOptions::from_args(&options.args()),
@@ -359,6 +526,7 @@ mod tests {
         );
         let without = ServerOptions {
             halt: None,
+            durable: None,
             ..options
         };
         assert_eq!(

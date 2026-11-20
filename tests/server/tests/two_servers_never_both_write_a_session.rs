@@ -109,6 +109,7 @@ impl Pair {
                 lease_ttl_ms: LEASE_TTL_MS,
                 renew_every_ms: 500,
                 halt: None,
+                durable: None,
             };
             let server = ServerProcess::start(server(), &options)
                 .unwrap_or_else(|error| panic!("the server {owner} could not be started: {error}"));
@@ -300,7 +301,9 @@ impl Pair {
                 refusal,
             } => self.refused.push((from, key, refusal)),
             Report::Error(text) => self.errors.push(format!("{}: {text}", OWNERS[from])),
-            Report::Ready | Report::Halted(_) => {}
+            // Neither server keeps a durable outbox here, nor is stopped in order.
+            Report::Ready | Report::Halted(_) | Report::Mailbox { .. } | Report::Stopped { .. } => {
+            }
         }
     }
 

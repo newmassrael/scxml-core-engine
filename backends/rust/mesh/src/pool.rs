@@ -4121,6 +4121,13 @@ mod tests {
         let carried = outboxes.response("client", 65_536).expect("an outbox held");
         assert_eq!(carried.first, Some(1));
         assert_eq!(carried.body, outbox.entries[0].envelope);
+        assert_eq!(
+            outboxes.entries("client"),
+            Some((
+                outbox.incarnation.clone(),
+                vec![(1, outbox.entries[0].envelope.clone())]
+            ))
+        );
     }
 
     /// docs/adr/0109, D10: `mailbox` is the durable window of the client, shared by every

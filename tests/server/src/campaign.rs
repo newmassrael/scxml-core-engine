@@ -86,6 +86,30 @@ pub struct Delivery {
     pub seen: Seen,
 }
 
+/// The client of a server whose binding is durable (docs/adr/0109, D10): it reads its outbox by
+/// polls, acknowledging what it took in, goes away for a while now and then, and now and then
+/// loses a response, as a client whose exchange failed does.
+#[derive(Debug, Clone, Default)]
+struct DurableClient {
+    /// The incarnation the outbox numbers in, as the last poll the client took said.
+    epoch: Option<String>,
+    /// The highest number the client took in, in that incarnation: what it acknowledges.
+    ack: u64,
+    /// How often, in a hundred, the client goes away at a step, and for how long, in
+    /// milliseconds.
+    absent_percent: u64,
+    absent_ms: (u64, u64),
+    /// Until when it is away.
+    absent_until: Option<Instant>,
+    /// How often, in a hundred, a poll's response is lost before the client takes it in.
+    lost_percent: u64,
+    /// How many responses were lost, and how many times the client went away.
+    lost_responses: u64,
+    absences: u64,
+    /// How many incarnations the client saw its outbox number in.
+    incarnations: u64,
+}
+
 /// A server killed again and again while its client keeps asking. See the module documentation.
 pub struct Campaign {
     program: PathBuf,
@@ -102,6 +126,10 @@ pub struct Campaign {
     errors: Vec<String>,
     kills: u64,
     resent_answered: u64,
+    /// The stages a life's halt is drawn from.
+    stages: &'static [Stage],
+    /// The client of a durable binding, when the server keeps one.
+    durable: Option<DurableClient>,
 }
 
 impl Campaign {
@@ -123,7 +151,34 @@ impl Campaign {
             errors: Vec::new(),
             kills: 0,
             resent_answered: 0,
+            stages: &Stage::ALL,
+            durable: None,
         }
+    }
+
+    /// Make the campaign's client that of a durable binding (docs/adr/0109, D10), for a server
+    /// started with `ServerOptions::durable`: it reads the server's sends by polls, each
+    /// acknowledging what it took in; at each step it goes away with a chance of
+    /// `absent_percent` in a hundred, for between `absent_ms.0` and `absent_ms.1` milliseconds,
+    /// polling nothing meanwhile; and it loses a poll's response before taking it in with a chance
+    /// of `lost_percent`. A life's halt is drawn from [`Stage::DURABLE`]: the commit, the
+    /// acknowledgement and the expiry.
+    pub fn durable(&mut self, absent_percent: u64, absent_ms: (u64, u64), lost_percent: u64) {
+        self.stages = &Stage::DURABLE;
+        self.durable = Some(DurableClient {
+            absent_percent,
+            absent_ms,
+            lost_percent,
+            ..DurableClient::default()
+        });
+    }
+
+    /// How many poll responses the durable client lost, how many times it went away, and how
+    /// many incarnations it saw its outbox number in.
+    pub fn durable_counts(&self) -> (u64, u64, u64) {
+        self.durable.as_ref().map_or((0, 0, 0), |client| {
+            (client.lost_responses, client.absences, client.incarnations)
+        })
     }
 
     /// The campaign's own draw, for the scenario's choices of what to ask.
@@ -193,6 +248,7 @@ impl Campaign {
                         self.send(&server, index);
                     }
                     sent_new = upto;
+                    self.poll(&server, now);
                     next_step = now + STEP;
                 }
                 while let Some(&(due, index)) = self.owed.front() {
@@ -291,12 +347,12 @@ impl Campaign {
         )
     }
 
-    /// The halt of the life `life`: the stages in turn, so that a campaign of five kills or more
-    /// draws every one, then a life killed on the clock alone; each at a count drawn up to the
-    /// plan's reach.
+    /// The halt of the life `life`: the campaign's stages in turn, so that a campaign of as many
+    /// kills as it has stages draws every one, then a life killed on the clock alone; each at a
+    /// count drawn up to the plan's reach.
     fn draw_halt(&mut self, life: u64, plan: &Plan) -> Option<Halt> {
-        let turn = usize::try_from(life % (Stage::ALL.len() as u64 + 1)).unwrap_or(0);
-        let stage = *Stage::ALL.get(turn)?;
+        let turn = usize::try_from(life % (self.stages.len() as u64 + 1)).unwrap_or(0);
+        let stage = *self.stages.get(turn)?;
         Some(Halt {
             stage,
             at: self.draw.between(1, plan.halt_reach.max(1)),
@@ -317,33 +373,114 @@ impl Campaign {
 
     fn record(&mut self, reported: Reported) {
         match reported.report {
-            Report::Sent(bytes) => {
-                let Some(seen) = wire::read(bytes) else {
-                    self.errors
-                        .push("the server sent bytes that are no envelope".to_string());
-                    return;
-                };
-                if seen.event == REMINDED {
-                    self.delivered(reported.at_ms, seen);
-                    return;
-                }
-                let index = seen
-                    .wire_id
-                    .and_then(|wire_id| self.by_wire.get(&wire_id).copied());
-                let Some(index) = index else {
-                    self.strays.push(seen);
-                    return;
-                };
-                if seen.is_ok_reply() {
-                    self.asked[index].answers.push(seen);
-                } else {
-                    self.asked[index].refusals += 1;
-                    self.owed.push_back((Instant::now() + REFUSED_AGAIN, index));
-                }
-            }
+            Report::Sent(bytes) => self.received(reported.at_ms, bytes),
+            Report::Mailbox { epoch, envelopes } => self.polled(reported.at_ms, epoch, envelopes),
             Report::Halted(halt) => self.halts.push(halt),
             Report::Error(text) => self.errors.push(text),
-            Report::Ready | Report::Wrote { .. } | Report::Refused { .. } => {}
+            Report::Ready
+            | Report::Wrote { .. }
+            | Report::Refused { .. }
+            | Report::Stopped { .. } => {}
+        }
+    }
+
+    /// The client took in `bytes`, an envelope the server sent it, read at `at_ms`.
+    fn received(&mut self, at_ms: u64, bytes: Vec<u8>) {
+        let Some(seen) = wire::read(bytes) else {
+            self.errors
+                .push("the server sent bytes that are no envelope".to_string());
+            return;
+        };
+        if seen.event == REMINDED {
+            self.delivered(at_ms, seen);
+            return;
+        }
+        let index = seen
+            .wire_id
+            .and_then(|wire_id| self.by_wire.get(&wire_id).copied());
+        let Some(index) = index else {
+            self.strays.push(seen);
+            return;
+        };
+        if seen.is_ok_reply() {
+            self.asked[index].answers.push(seen);
+        } else {
+            self.asked[index].refusals += 1;
+            self.owed.push_back((Instant::now() + REFUSED_AGAIN, index));
+        }
+    }
+
+    /// Poll the durable client's outbox (docs/adr/0109, D10), acknowledging what it took in,
+    /// unless the client is away; at `now` it may go away.
+    fn poll(&mut self, server: &ServerProcess, now: Instant) {
+        let Some((absent_percent, absent_ms)) = self
+            .durable
+            .as_ref()
+            .map(|client| (client.absent_percent, client.absent_ms))
+        else {
+            return;
+        };
+        let away = self
+            .durable
+            .as_ref()
+            .and_then(|client| client.absent_until)
+            .is_some_and(|until| now < until);
+        if away {
+            return;
+        }
+        if self.draw.chance(absent_percent) {
+            let span = Duration::from_millis(self.draw.between(absent_ms.0, absent_ms.1));
+            if let Some(client) = self.durable.as_mut() {
+                client.absent_until = Some(now + span);
+                client.absences += 1;
+            }
+            return;
+        }
+        if let Some(client) = &self.durable {
+            server.send(&Command::Poll {
+                epoch: client.epoch.clone(),
+                ack: client.ack,
+            });
+        }
+    }
+
+    /// A poll found `envelopes` in the outbox, numbered in the incarnation `epoch`, read at
+    /// `at_ms`: unless the response is lost, the client takes in each it has not taken in yet,
+    /// in their order, and acknowledges them at its next poll. A response of another incarnation
+    /// than the one it knew is an outbox that numbers anew.
+    fn polled(&mut self, at_ms: u64, epoch: String, envelopes: Vec<(u64, Vec<u8>)>) {
+        let lost_percent = self
+            .durable
+            .as_ref()
+            .map_or(0, |client| client.lost_percent);
+        if self.durable.is_none() {
+            self.errors
+                .push("a mailbox reached a client that polls none".to_string());
+            return;
+        }
+        if !envelopes.is_empty() && self.draw.chance(lost_percent) {
+            if let Some(client) = self.durable.as_mut() {
+                client.lost_responses += 1;
+            }
+            return;
+        }
+        let mut fresh = Vec::new();
+        if let Some(client) = self.durable.as_mut() {
+            if client.epoch.as_deref() != Some(epoch.as_str()) {
+                client.epoch = Some(epoch);
+                client.ack = 0;
+                client.incarnations += 1;
+            }
+            for (number, bytes) in envelopes {
+                if number <= client.ack {
+                    continue;
+                }
+                client.ack = number;
+                fresh.push(bytes);
+            }
+        }
+        for bytes in fresh {
+            self.received(at_ms, bytes);
         }
     }
 
