@@ -18,11 +18,14 @@ use sce_rust_metrics::{
     REGISTRY,
 };
 
+/// The labels of a sample, each its name and its value, in the order the line gives them.
+type LabelPairs = Vec<(String, String)>;
+
 /// One sample line: its name, its labels in order, and its value.
 #[derive(Debug, Clone, PartialEq)]
 struct Sample {
     name: String,
-    labels: Vec<(String, String)>,
+    labels: LabelPairs,
     value: f64,
 }
 
@@ -152,15 +155,24 @@ fn escaped_until_quote(text: &str) -> Result<(String, &str), String> {
     Err("a string that is not closed".to_string())
 }
 
+/// The labels of a sample read from its line: the pairs in order, and what follows them.
+struct LabelsRead<'a> {
+    pairs: LabelPairs,
+    rest: &'a str,
+}
+
 /// `labels = "{" [label *(COMMA label)] "}"`, `label = label-name EQ DQUOTE escaped-string
 /// DQUOTE`. Answers the labels and what follows the closing brace.
-fn labels(text: &str) -> Result<(Vec<(String, String)>, &str), String> {
+fn labels(text: &str) -> Result<LabelsRead<'_>, String> {
     let mut rest = text
         .strip_prefix('{')
         .ok_or("labels that do not open with a brace")?;
-    let mut read: Vec<(String, String)> = Vec::new();
+    let mut read: LabelPairs = Vec::new();
     if let Some(after) = rest.strip_prefix('}') {
-        return Ok((read, after));
+        return Ok(LabelsRead {
+            pairs: read,
+            rest: after,
+        });
     }
     loop {
         let equals = rest.find('=').ok_or("a label with no value")?;
@@ -184,7 +196,10 @@ fn labels(text: &str) -> Result<(Vec<(String, String)>, &str), String> {
             continue;
         }
         if let Some(after) = after.strip_prefix('}') {
-            return Ok((read, after));
+            return Ok(LabelsRead {
+                pairs: read,
+                rest: after,
+            });
         }
         return Err("labels that do not close".to_string());
     }
@@ -197,12 +212,16 @@ fn sample(line: &str) -> Result<Sample, String> {
     if !is_metric_name(name) {
         return Err(format!("a metric name the grammar does not take: {name:?}"));
     }
-    let (labels, rest) = if line[end..].starts_with('{') {
+    let read = if line[end..].starts_with('{') {
         labels(&line[end..])?
     } else {
-        (Vec::new(), &line[end..])
+        LabelsRead {
+            pairs: Vec::new(),
+            rest: &line[end..],
+        }
     };
-    let rest = rest
+    let rest = read
+        .rest
         .strip_prefix(' ')
         .ok_or("a value not after one space")?;
     let mut tokens = rest.split(' ');
@@ -218,13 +237,13 @@ fn sample(line: &str) -> Result<Sample, String> {
     }
     Ok(Sample {
         name: name.to_string(),
-        labels,
+        labels: read.pairs,
         value,
     })
 }
 
 /// The labels of a histogram sample but `le`, which group its buckets into one series.
-fn series_of(sample: &Sample) -> Vec<(String, String)> {
+fn series_of(sample: &Sample) -> LabelPairs {
     sample
         .labels
         .iter()
@@ -252,7 +271,7 @@ fn judge(family: &Parsed) -> Result<(), String> {
             ));
         }
     }
-    let mut seen: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    let mut seen: Vec<(String, LabelPairs)> = Vec::new();
     for sample in &family.samples {
         let key = (sample.name.clone(), sample.labels.clone());
         if seen.contains(&key) {
@@ -276,7 +295,7 @@ fn judge(family: &Parsed) -> Result<(), String> {
             }
         }
         "histogram" => {
-            let mut groups: BTreeMap<Vec<(String, String)>, Vec<&Sample>> = BTreeMap::new();
+            let mut groups: BTreeMap<LabelPairs, Vec<&Sample>> = BTreeMap::new();
             for sample in &family.samples {
                 groups.entry(series_of(sample)).or_default().push(sample);
             }
