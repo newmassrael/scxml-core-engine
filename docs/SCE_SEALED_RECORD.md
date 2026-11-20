@@ -61,6 +61,9 @@ the store named in the second column with the row's entry:
 | Tokens (`TokenStore`, D3) | `credential_tokens` | the keyed digest of the token's digest | `[digest: bytes, name: text, issued_ms: uint, expires_ms: uint, sealed: bytes]` | the revocation; the row's name is the entry of the name, which a revocation matches; its moments are 0 |
 | Keys (`KeyStore`, D7) | `keys` | the entry of the key's id | `[id: text, label: text, wrapped: bytes]` | the use, the algorithm, the creation, the state; the label is empty |
 | The naming key of a key store | `key_naming` | empty | the wrapped naming key's bytes | nothing else |
+| Values of the key-value feature (`KvStore`, D13) | `kv_values` | the entry of the value's key | `[key: text, value: bytes]` | the version; a first result of a put-if is kept under its identity's session and invoke, each as its entry, its outcome and version in the clear |
+| Rows of an audit log (`AuditStore`, D14) | `audit_rows` | the entry of the stream's name, a colon and the row's sequence in decimal | `[stream: text, entry: bytes]` | the sequence, the moment, the chain (docs/SCE_AUDIT_LOG.md), which a reader verifies without the sealing keys; the head; an append's identity as a first result's is |
+| Checkpoints of an audit log (`AuditStore`, D14) | `audit_checkpoints` | as the row's | `[stream: text, signature: bytes]` | the sequence and the chain |
 
 A generation of a key is kept under the entry of its identity, naming the entry of its key. What the wrapped store
 keeps in the clear is what it compares or sets: a write's version and fence, the index of dues, a revocation, a key's
