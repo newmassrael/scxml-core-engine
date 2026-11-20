@@ -3101,7 +3101,10 @@ mod tests {
     /// The outboxes of `phone`, a client whose binding is durable, kept in `store`.
     fn phone_outboxes(store: &sce_rust_session_store::MemoryStore) -> Arc<Outboxes> {
         Arc::new(Outboxes::new(
-            Arc::new(store.clone()),
+            Arc::new(crate::commit::Committer::new(
+                Arc::new(store.clone()),
+                Duration::ZERO,
+            )),
             [(
                 "phone".to_string(),
                 crate::outbox::OutboxBinding {
