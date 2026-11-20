@@ -26,6 +26,15 @@
 // answer would have been a value the engine cannot hold. Both are counted and
 // printed, and neither is a disagreement. A failure that names another contract
 // name than the case's, or a value that differs, is.
+//
+// A map lent to an algorithm (docs/adr/0108, D6 items 1 and 2) is stated by the
+// reference in its saved form, the array of its entries, a 64-bit integer as the
+// text of its digits; the lowered function holds a map as that array with each
+// integer a Number or a BigInt, so the entries are read back into it by the
+// types the catalog gives the map's key and value. A read-only slot is handed
+// the array; an `inout` slot the holder `{map, capacity}` its caller lends, whose
+// `map` the call leaves the map in, compared with the one the case states under
+// `after`.
 
 #include "SCXMLTypes.h"
 #include "scripting/ScriptEngineProvider.h"
@@ -39,6 +48,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iostream>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
@@ -96,13 +106,22 @@ struct Fixture {
     std::string name;
     std::string document;
     std::string section;
+    /// What the catalog says each argument is; empty where no catalog entry
+    /// describes the fixture, whose arguments are then handed as written.
+    nlohmann::json args = nlohmann::json::array();
 };
 
+/// The fields of each record the catalog declares, by its fixture's name: what
+/// the saved entries of a map keyed or valued by the record are read by.
+using Records = std::map<std::string, nlohmann::json>;
+
 /// The algorithm entries of the catalog, in its order. The document of one is
-/// what the catalog names — a standard document — or, for a fixture the catalog
-/// gives none, the resource of the same name. Whether it can be lowered is not
-/// judged here: a record, list or bytes among its arguments or its result is
-/// refused by `sce-codegen lower-algorithm`, and the refusal is what is read.
+/// what the catalog names — a standard document, or a path resolved from the
+/// resources as an import is resolved from the document that names it — or, for
+/// a fixture the catalog gives none, the resource of the same name. Whether it
+/// can be lowered is not judged here: a record, list or bytes among its
+/// arguments or its result is refused by `sce-codegen lower-algorithm`, and the
+/// refusal is what is read.
 std::vector<Fixture> algorithmFixtures() {
     const nlohmann::json catalog = readJson(kCatalog);
     std::vector<Fixture> found;
@@ -113,11 +132,90 @@ std::vector<Fixture> algorithmFixtures() {
         Fixture fixture;
         fixture.name = entry.at("name").get<std::string>();
         fixture.section = entry.value("ref_section", std::string{"pure_functions"});
-        fixture.document = entry.contains("document") ? entry.at("document").get<std::string>()
-                                                      : (kResources / (fixture.name + ".scxml")).string();
+        if (entry.contains("document")) {
+            const std::string named = entry.at("document").get<std::string>();
+            fixture.document = named.rfind("sce:std/", 0) == 0 ? named : (kResources / named).string();
+        } else {
+            fixture.document = (kResources / (fixture.name + ".scxml")).string();
+        }
+        fixture.args = entry.value("args", nlohmann::json::array());
         found.push_back(std::move(fixture));
     }
     return found;
+}
+
+/// The records of the catalog: each event-schema entry's fields, each with the
+/// type its document declares.
+Records catalogRecords() {
+    const nlohmann::json catalog = readJson(kCatalog);
+    Records records;
+    for (const auto &entry : catalog.at("fixtures")) {
+        if (entry.value("kind", std::string{}) == "event-schema") {
+            records[entry.at("name").get<std::string>()] = entry.value("fields", nlohmann::json::array());
+        }
+    }
+    return records;
+}
+
+/// A scalar of a map's saved entries, of the type `type` (a canonical type of
+/// the catalog, `u64`, or a field's `sce:type`, `uint64`), as the reference
+/// writes a value everywhere else: a 64-bit integer from the text of its
+/// digits, every other scalar as it is.
+nlohmann::json plainScalar(const nlohmann::json &value, const std::string &type) {
+    const bool wide = type == "u64" || type == "i64" || type == "uint64" || type == "int64";
+    if (!wide || !value.is_string()) {
+        return value;
+    }
+    const std::string digits = value.get<std::string>();
+    if (!digits.empty() && digits.front() == '-') {
+        return nlohmann::json(static_cast<int64_t>(std::stoll(digits)));
+    }
+    return nlohmann::json(static_cast<uint64_t>(std::stoull(digits)));
+}
+
+/// A key or a value of a map's saved entries, of the part `part` the catalog
+/// names (a canonical type, or `{"record": "<fixture>"}`), read back as
+/// `plainScalar` reads a scalar; a record field by field, by the types its
+/// fixture's fields declare.
+nlohmann::json plainPart(const nlohmann::json &value, const nlohmann::json &part, const Records &records) {
+    if (part.is_object() && part.contains("record")) {
+        nlohmann::json plain = value;
+        const auto found = records.find(part.at("record").get<std::string>());
+        if (found == records.end() || !plain.is_object()) {
+            return plain;
+        }
+        for (const auto &field : found->second) {
+            const std::string name = field.at("name").get<std::string>();
+            if (plain.contains(name)) {
+                plain[name] = plainScalar(plain.at(name), field.value("sce_type", std::string{}));
+            }
+        }
+        return plain;
+    }
+    return plainScalar(value, part.is_string() ? part.get<std::string>() : std::string{});
+}
+
+/// A map in its saved form, of the map argument `descriptor` the catalog states
+/// (`{"map": {"key": ..., "value": ...}, "capacity": N}`), as the array of
+/// entries the lowered functions hold.
+nlohmann::json plainMap(const nlohmann::json &saved, const nlohmann::json &descriptor, const Records &records) {
+    if (!saved.is_array()) {
+        return saved;
+    }
+    nlohmann::json entries = nlohmann::json::array();
+    const auto &parts = descriptor.at("map");
+    for (const auto &entry : saved) {
+        nlohmann::json pair = nlohmann::json::array();
+        pair.push_back(plainPart(entry.at(0), parts.at("key"), records));
+        pair.push_back(plainPart(entry.at(1), parts.at("value"), records));
+        entries.push_back(std::move(pair));
+    }
+    return entries;
+}
+
+/// Whether the catalog says an argument is a map.
+bool isMap(const nlohmann::json &descriptor) {
+    return descriptor.is_object() && descriptor.contains("map");
 }
 
 /// `sce-codegen lower-algorithm <document>`: the install expression and the name
@@ -224,12 +322,15 @@ bool spell(const nlohmann::json &value, std::string &out) {
     return false;
 }
 
-/// What one call answered: a value, or a failure and the name it gave itself.
+/// What one call answered: a value, or a failure and the name it gave itself;
+/// and the map each `inout` holder was left holding, in the order of the
+/// arguments.
 struct Answer {
     bool failed = false;
     std::string failure;  // sceFailure, empty when the throw named none
     std::string message;
     nlohmann::json value;
+    nlohmann::json after = nlohmann::json::array();
 };
 
 /// JSON has no BigInt, so the answer carries one as `{"sceBigInt": "<digits>"}`
@@ -247,13 +348,26 @@ void restoreBigInts(nlohmann::json &value) {
     }
 }
 
+/// `SceStatic.algorithms.<symbol>(<arguments>)`, after `prelude` declares the
+/// holder each `inout` map argument is lent in, named by `holders` in the order
+/// of the arguments; the map each holder is left holding is read back however
+/// the call ends.
 Answer call(::SCE::IScriptEngine &engine, const std::string &session, const std::string &symbol,
-            const std::string &arguments) {
+            const std::string &arguments, const std::string &prelude = std::string{},
+            const std::vector<std::string> &holders = std::vector<std::string>{}) {
+    std::string left = "[";
+    for (size_t index = 0; index < holders.size(); ++index) {
+        left += (index == 0 ? "" : ", ") + holders[index] + ".map";
+    }
+    left += "]";
     const std::string source =
-        "(function () { try { return JSON.stringify({ ok: SceStatic.algorithms." + symbol + "(" + arguments +
-        ") }, function (key, value) { return typeof value === 'bigint' ? { sceBigInt: value.toString() } : value; "
-        "}); } catch (e) { return JSON.stringify({ failure: (e && e.sceFailure) || null, message: String(e && "
-        "e.message) }); } })()";
+        "(function () { var sceBigInts = function (key, value) { return typeof value === 'bigint' ? { sceBigInt: "
+        "value.toString() } : value; }; " +
+        prelude + "try { var sceOk = SceStatic.algorithms." + symbol + "(" + arguments +
+        "); return JSON.stringify({ ok: sceOk, after: " + left +
+        " }, sceBigInts); } catch (e) { return JSON.stringify({ failure: (e && e.sceFailure) || null, message: "
+        "String(e && e.message), after: " +
+        left + " }, sceBigInts); } })()";
     Answer answer;
     auto result = engine.evaluateExpression(session, source).get();
     if (!result.isSuccess()) {
@@ -272,6 +386,10 @@ Answer call(::SCE::IScriptEngine &engine, const std::string &session, const std:
         answer.failed = true;
         answer.message = "unreadable: " + std::get<std::string>(internal);
         return answer;
+    }
+    if (parsed.contains("after")) {
+        answer.after = parsed.at("after");
+        restoreBigInts(answer.after);
     }
     if (parsed.contains("ok")) {
         answer.value = parsed.at("ok");
@@ -348,7 +466,8 @@ std::string spelled(const nlohmann::json &args) {
     return args.dump();
 }
 
-Tally run(const Fixture &fixture, const Lowered &lowered, const nlohmann::json &cases) {
+Tally run(const Fixture &fixture, const Lowered &lowered, const nlohmann::json &cases,
+          const Records &records = Records{}) {
     Tally tally;
     auto &engine = ::SCE::ScriptEngineProvider::getScriptEngine();
     const std::string session = "algorithm_lowered_" + fixture.name;
@@ -363,12 +482,32 @@ Tally run(const Fixture &fixture, const Lowered &lowered, const nlohmann::json &
         const auto &entry = cases[index];
         ++tally.cases;
         std::string arguments;
+        std::string prelude;
+        std::vector<std::string> holders;
+        // The maps each `inout` holder must be left holding, read back from the
+        // saved form the case states them in, in the order of the arguments.
+        nlohmann::json left = nlohmann::json::array();
+        size_t written = 0;
         bool asked = true;
-        for (const auto &argument : entry.at("args")) {
+        const auto &given = entry.at("args");
+        for (size_t at = 0; at < given.size(); ++at) {
+            const nlohmann::json descriptor = at < fixture.args.size() ? fixture.args[at] : nlohmann::json();
+            const bool lent = isMap(descriptor);
             std::string one;
-            if (!spell(argument, one)) {
+            if (!spell(lent ? plainMap(given[at], descriptor, records) : given[at], one)) {
                 asked = false;
                 break;
+            }
+            if (lent && descriptor.value("inout", false)) {
+                const std::string holder = "__sceHeld" + std::to_string(at);
+                prelude += "var " + holder + " = { map: " + one +
+                           ", capacity: " + std::to_string(descriptor.at("capacity").get<uint64_t>()) + " }; ";
+                holders.push_back(holder);
+                one = holder;
+                if (entry.contains("after") && written < entry.at("after").size()) {
+                    left.push_back(plainMap(entry.at("after").at(written), descriptor, records));
+                }
+                ++written;
             }
             arguments += (arguments.empty() ? "" : ", ") + one;
         }
@@ -376,7 +515,7 @@ Tally run(const Fixture &fixture, const Lowered &lowered, const nlohmann::json &
             ++tally.notAsked;
             continue;
         }
-        const Answer answer = call(engine, session, lowered.symbol, arguments);
+        const Answer answer = call(engine, session, lowered.symbol, arguments, prelude, holders);
         if (answer.failed && answer.failure == "unrepresentable") {
             ++tally.unrepresentable;
             continue;
@@ -391,12 +530,20 @@ Tally run(const Fixture &fixture, const Lowered &lowered, const nlohmann::json &
             want = entry.at("expected").dump();
             agree = !answer.failed && sameValue(answer.value, entry.at("expected"));
         }
+        // A case that states the maps its `inout` slots are left holding agrees
+        // only where each holder holds that map, entry by entry in its order.
+        if (entry.contains("after")) {
+            want += ", leaving " + left.dump();
+            agree = agree && sameValue(answer.after, left);
+        }
         if (agree) {
             ++tally.agreed;
         } else {
-            const std::string got = answer.failed ? "fails " + (answer.failure.empty() ? "(unnamed)" : answer.failure) +
-                                                        " [" + answer.message + "]"
-                                                  : answer.value.dump();
+            const std::string got =
+                (answer.failed
+                     ? "fails " + (answer.failure.empty() ? "(unnamed)" : answer.failure) + " [" + answer.message + "]"
+                     : answer.value.dump()) +
+                (holders.empty() ? std::string{} : ", leaving " + answer.after.dump());
             tally.disagreements.push_back(fixture.name + " case " + std::to_string(index) + " " +
                                           spelled(entry.at("args")) + ": the Interpreter answers " + got +
                                           ", the reference says " + want);
@@ -411,6 +558,7 @@ Tally run(const Fixture &fixture, const Lowered &lowered, const nlohmann::json &
 TEST(AnAlgorithmRunsLoweredUnderTheInterpreter, EveryAlgorithmFixtureIsLoweredOrRefusedByName) {
     const nlohmann::json reference = readJson(kReference);
     const std::vector<Fixture> fixtures = algorithmFixtures();
+    const Records records = catalogRecords();
     ASSERT_FALSE(fixtures.empty()) << "the catalog names no algorithm fixture";
 
     size_t lowered = 0;
@@ -437,7 +585,7 @@ TEST(AnAlgorithmRunsLoweredUnderTheInterpreter, EveryAlgorithmFixtureIsLoweredOr
         ++lowered;
         const auto &section = reference.at(fixture.section);
         ASSERT_TRUE(section.contains(fixture.name)) << fixture.name << " has no cases in " << fixture.section;
-        const Tally tally = run(fixture, result, section.at(fixture.name).at("cases"));
+        const Tally tally = run(fixture, result, section.at(fixture.name).at("cases"), records);
         casesCompared += tally.compared;
         casesAgreed += tally.agreed;
         casesNotAsked += tally.notAsked;
