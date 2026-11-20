@@ -24,6 +24,7 @@
 //! goes against a [`destination::DestinationPolicy`] (docs/adr/0109, D4): the
 //! network transport of the `sce-rust-host-http` crate is built with one.
 
+pub mod audit;
 mod clock;
 pub mod cose;
 pub mod credentials;
@@ -38,6 +39,7 @@ mod serve;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+pub use audit::{AuditStreams, Personal, StreamPolicy};
 pub use clock::{ClockSource, Reading, ScriptedClock, SystemClock, Zone};
 pub use cose::{CoseKeys, NonceSource, ReservedKeyId, SystemNonces, TrustedKey};
 pub use http::{HttpRequest, HttpResponse, Transport, TransportFailure, HTTP_BODY_MAX_BYTES};
@@ -45,12 +47,14 @@ pub use model::{
     ExhaustiveProvider, GenerateRequest, Generation, ModelProvider, OutcomeClass, ScriptedAnswer,
     ScriptedProvider, ANSWER_MAX_BYTES, TEMPERATURE_MAX_MILLI,
 };
+pub use sce_rust_crypto::audit::{AuditError, Verdict as AuditVerdict};
+pub use sce_rust_crypto::keyring::KeyError;
 pub use sce_rust_crypto::keyring::Keyring;
 pub use sce_rust_crypto::random::{RandomSource, ScriptedRandom, SystemRandom};
 pub use sce_rust_runtime::AnswerSchema;
 pub use sce_rust_session_store::{
-    CredentialStore, Failure as StoreFailure, KvStore, MemoryCredentials, MemoryStore, TokenRow,
-    TokenStore,
+    AuditStore, CredentialStore, Failure as StoreFailure, KvStore, MemoryCredentials, MemoryStore,
+    TokenRow, TokenStore,
 };
 pub use serve::{serve, Shared};
 
@@ -98,7 +102,7 @@ impl Invocation {
 
 /// Every operation type of the standard host features, in the order the
 /// specification lists them.
-pub const TYPES: [&str; 26] = [
+pub const TYPES: [&str; 27] = [
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
@@ -125,6 +129,7 @@ pub const TYPES: [&str; 26] = [
     keys::KEY_RETIRE,
     credentials::CREDENTIAL_ISSUE,
     credentials::CREDENTIAL_REVOKE,
+    audit::AUDIT_APPEND,
 ];
 
 /// What a host answers a start with.
@@ -189,6 +194,12 @@ pub struct ReferenceHost<T: Transport> {
     /// memory until the embedding gives another (docs/SCE_HOST_FEATURES.md,
     /// section 14).
     pub(crate) credentials: Arc<dyn CredentialStore>,
+    /// The audit log the host appends to (docs/SCE_HOST_FEATURES.md, section
+    /// 15): in memory until the embedding gives another.
+    pub(crate) audit: Arc<dyn AuditStore>,
+    /// The streams the host keeps, each with its policy; an append to another
+    /// fails `unknown_stream`.
+    pub(crate) audit_streams: audit::AuditStreams,
 }
 
 /// A start the host was given: the operation, the invocation's id, the
@@ -239,7 +250,85 @@ impl<T: Transport> ReferenceHost<T> {
             random: Box::new(SystemRandom),
             nonces: None,
             credentials: Arc::new(MemoryCredentials::new()),
+            audit: Arc::new(MemoryStore::new()),
+            audit_streams: audit::AuditStreams::new(),
         }
+    }
+
+    /// Append audit entries to `store` from here on: the store the program
+    /// opened, durable when it is one (the session store's SQLite file), which
+    /// keeps every row before the append answers (docs/SCE_HOST_FEATURES.md
+    /// section 15). What the store held before is no longer the host's.
+    pub fn set_audit_store(&mut self, store: Arc<dyn AuditStore>) {
+        self.audit = store;
+    }
+
+    /// Keep the streams `streams` names, each with its policy, from here on, in
+    /// place of those kept before; an append to another stream fails
+    /// `unknown_stream`.
+    pub fn set_audit_streams(&mut self, streams: audit::AuditStreams) {
+        self.audit_streams = streams;
+    }
+
+    /// The audit log the host appends to, which a reader verifies
+    /// (`sce_rust_crypto::audit::verify`).
+    pub fn audit_store(&self) -> &Arc<dyn AuditStore> {
+        &self.audit
+    }
+
+    /// The public key of the host's audit key, which a reader of its log
+    /// verifies the checkpoints under: [`KeyError::Unknown`] until the host
+    /// signed a first checkpoint, which draws the key.
+    pub fn audit_public_key(&self) -> Result<[u8; 32], KeyError> {
+        self.keyring
+            .public_key(sce_rust_crypto::keyring::AUDIT_SIGNING_KEY_ID)
+    }
+
+    /// What a reader finds `stream` of the host's audit log to be, under the
+    /// host's audit key (`sce_rust_crypto::audit::verify`). Before the host
+    /// signed a first checkpoint it holds no audit key, and a stream with no
+    /// checkpoint is held to its chain alone.
+    pub fn audit_verify(&self, stream: &str) -> Result<AuditVerdict, StoreFailure> {
+        let public_key = self.audit_public_key().unwrap_or([0; 32]);
+        sce_rust_crypto::audit::verify(self.audit.as_ref(), stream, &public_key)
+    }
+
+    /// Sign the head of every stream the host keeps unless a checkpoint is kept
+    /// at it, at `now_ms`: what a host does at its orderly stop, so a
+    /// truncation of the rows after the last periodic checkpoint is told.
+    /// Answers each stream it signed, with the sequence.
+    pub fn audit_stop(&mut self, now_ms: u64) -> Result<Vec<(String, u64)>, AuditError> {
+        let mut writer = sce_rust_crypto::audit::Writer {
+            store: self.audit.as_ref(),
+            keyring: &self.keyring,
+            random: self.random.as_mut(),
+            now_ms,
+        };
+        let mut signed = Vec::new();
+        for stream in self.audit_streams.keys() {
+            if let Some(sequence) = writer.checkpoint_head(stream)? {
+                signed.push((stream.clone(), sequence));
+            }
+        }
+        Ok(signed)
+    }
+
+    /// Delete, from every stream the host keeps, the segments older than the
+    /// stream's `retain_days` before `now_ms`, each through a checkpoint that
+    /// anchors what remains; answers how many rows it deleted.
+    pub fn audit_retain(&self, now_ms: u64) -> Result<u64, StoreFailure> {
+        const DAY_MS: u64 = 86_400_000;
+        let mut deleted = 0u64;
+        for (stream, policy) in &self.audit_streams {
+            let before =
+                now_ms.saturating_sub(u64::from(policy.retain_days).saturating_mul(DAY_MS));
+            deleted = deleted.saturating_add(sce_rust_crypto::audit::retain(
+                self.audit.as_ref(),
+                stream,
+                before,
+            )?);
+        }
+        Ok(deleted)
     }
 
     /// Keep the tokens the host issues, and revoke tokens and pins, in `store`
@@ -432,6 +521,7 @@ impl<T: Transport> ReferenceHost<T> {
             of_credentials if credentials::OPERATIONS.contains(&of_credentials) => {
                 credentials::refuses(of_credentials, params)
             }
+            audit::AUDIT_APPEND => audit::refuses(params),
             _ => false,
         };
         if refused {
@@ -488,6 +578,7 @@ impl<T: Transport> ReferenceHost<T> {
             of_credentials if credentials::OPERATIONS.contains(&of_credentials) => {
                 credentials::perform(self, of_credentials, invocation, params)
             }
+            audit::AUDIT_APPEND => audit::perform(self, invocation, params),
             _ => unreachable!("the type was checked against TYPES"),
         }
     }
@@ -550,6 +641,7 @@ pub(crate) fn failure(operation: &str, code: &str) -> Outcome {
         keys::KEY_RETIRE => serde_json::json!({ "retired": false }),
         credentials::CREDENTIAL_ISSUE => serde_json::json!({ "token": "" }),
         credentials::CREDENTIAL_REVOKE => serde_json::json!({ "revoked": 0 }),
+        audit::AUDIT_APPEND => serde_json::json!({ "sequence": "0" }),
         other => unreachable!("`{other}` is not a standard host operation"),
     };
     let Outcome::Done(text) = record(zero) else {
