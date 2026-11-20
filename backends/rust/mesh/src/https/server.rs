@@ -68,7 +68,7 @@ use tokio::sync::Notify;
 
 use sce_rust_crypto::cose::{cose_key_ed25519_required, ed25519_of_cose_key};
 use sce_rust_crypto::ed25519::PUBLIC_KEY_BYTES;
-use sce_rust_metrics::{AuthenticatorKind, Counter, ExchangeStatus, Gauge, Metrics, ServerShed};
+use sce_rust_metrics::{AuthenticatorKind, Counter, Gauge, Metrics, ResponseStatus, ServerShed};
 
 use super::rate::{client_address, is_trusted, retry_seconds, Cidr, Edge, Verdict};
 pub use super::signature::ResponseSigner;
@@ -675,19 +675,14 @@ impl Shared {
 
     /// Load shed for `reason` (SCE_MESH.md section 22.4): `status`, a `429` or `503`, with
     /// `Retry-After` asking for `wait`, reported as a shed of its reason (docs/adr/0109, D16).
-    fn shed(
-        &self,
-        reason: ServerShed,
-        status: StatusCode,
-        wait: Duration,
-    ) -> Response<Full<Bytes>> {
+    fn shed(&self, reason: ServerShed, status: ResponseStatus, wait: Duration) -> Answer {
         self.metrics.count(Counter::ServerSheds { reason }, 1);
         shed(status, wait)
     }
 
     /// A `401` naming the authenticator's scheme, reported as a failure of the authenticator
     /// (docs/adr/0109, D16).
-    fn unauthorized(&self) -> Response<Full<Bytes>> {
+    fn unauthorized(&self) -> Answer {
         self.metrics.count(
             Counter::AuthenticationFailures {
                 authenticator: self.authenticator.kind(),
@@ -1087,16 +1082,16 @@ impl HttpsServer {
             let certificate = certificate.clone();
             async move {
                 let metrics = Arc::clone(&shared.metrics);
-                let response = exchange(shared, request, certificate, remote, scheme).await;
+                let answered = exchange(shared, request, certificate, remote, scheme).await;
                 // docs/adr/0109, D16: every exchange the server answers, by the status of its
                 // answer, counted before the answer leaves.
                 metrics.count(
                     Counter::ServerExchanges {
-                        status: ExchangeStatus::of(response.status().as_u16()),
+                        status: answered.status,
                     },
                     1,
                 );
-                Ok::<_, Infallible>(response)
+                Ok::<_, Infallible>(answered.response)
             }
         });
         let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
@@ -1244,26 +1239,51 @@ impl Drop for InFlight {
     }
 }
 
-fn answer(status: StatusCode) -> Response<Full<Bytes>> {
+/// The answer to an exchange: its response, built from one of the statuses the server sends
+/// ([`ResponseStatus`]), so the status it is reported by (docs/adr/0109, D16) is the one it
+/// carries and no other.
+struct Answer {
+    status: ResponseStatus,
+    response: Response<Full<Bytes>>,
+}
+
+/// The HTTP status code of `status`.
+fn status_code(status: ResponseStatus) -> StatusCode {
+    match status {
+        ResponseStatus::Ok => StatusCode::OK,
+        ResponseStatus::BadRequest => StatusCode::BAD_REQUEST,
+        ResponseStatus::Unauthorized => StatusCode::UNAUTHORIZED,
+        ResponseStatus::NotFound => StatusCode::NOT_FOUND,
+        ResponseStatus::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+        ResponseStatus::RequestTimeout => StatusCode::REQUEST_TIMEOUT,
+        ResponseStatus::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+        ResponseStatus::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        ResponseStatus::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+        ResponseStatus::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+    }
+}
+
+/// An answer of `status` with an empty body.
+fn answer(status: ResponseStatus) -> Answer {
     let mut response = Response::new(Full::new(Bytes::new()));
-    *response.status_mut() = status;
-    response
+    *response.status_mut() = status_code(status);
+    Answer { status, response }
 }
 
 /// Load shed (§mesh-22.4): `status`, a `429` or `503`, with `Retry-After` asking for `wait`,
 /// rounded up to a whole second, which the client waits at least before it sends what the request
 /// carried again.
-fn shed(status: StatusCode, wait: Duration) -> Response<Full<Bytes>> {
-    let mut response = answer(status);
+fn shed(status: ResponseStatus, wait: Duration) -> Answer {
+    let mut answered = answer(status);
     let seconds = retry_seconds(wait).to_string();
     if let Ok(value) = HeaderValue::from_str(&seconds) {
-        response.headers_mut().insert("Retry-After", value);
+        answered.response.headers_mut().insert("Retry-After", value);
     }
-    response
+    answered
 }
 
-fn unauthorized(authenticator: &Authenticator) -> Response<Full<Bytes>> {
-    let mut response = answer(StatusCode::UNAUTHORIZED);
+fn unauthorized(authenticator: &Authenticator) -> Answer {
+    let mut answered = answer(ResponseStatus::Unauthorized);
     // RFC 9110 section 15.5.2: a 401 names the scheme it asks for. A certificate is asked for by
     // TLS, not by a header, and is named here by the binding's own word.
     let scheme = match authenticator {
@@ -1272,10 +1292,11 @@ fn unauthorized(authenticator: &Authenticator) -> Response<Full<Bytes>> {
         Authenticator::Mtls(_) => "SCE-Certificate",
         Authenticator::Key(_) => KEY_SCHEME,
     };
-    response
+    answered
+        .response
         .headers_mut()
         .insert("WWW-Authenticate", HeaderValue::from_static(scheme));
-    response
+    answered
 }
 
 /// The client name a path posts under, when it is `<base>/sce-mesh/<version>/<name>` with the
@@ -1490,13 +1511,13 @@ async fn exchange(
     certificate: Option<Arc<Vec<u8>>>,
     remote: Option<IpAddr>,
     scheme: &'static str,
-) -> Response<Full<Bytes>> {
+) -> Answer {
     // docs/adr/0109, D10: a server that is stopping takes nothing in; the client carries what it
     // sent again, to the server that serves next.
     if shared.stopping.load(Ordering::SeqCst) {
         return shared.shed(
             ServerShed::Stopping,
-            StatusCode::SERVICE_UNAVAILABLE,
+            ResponseStatus::ServiceUnavailable,
             shared.settings.retry_after,
         );
     }
@@ -1518,28 +1539,29 @@ async fn exchange(
         ))
     });
     if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.exchange(address, now)) {
-        return shared.shed(ServerShed::Rate, StatusCode::TOO_MANY_REQUESTS, wait);
+        return shared.shed(ServerShed::Rate, ResponseStatus::TooManyRequests, wait);
     }
     if request.method() != Method::POST {
-        let mut response = answer(StatusCode::METHOD_NOT_ALLOWED);
-        response
+        let mut answered = answer(ResponseStatus::MethodNotAllowed);
+        answered
+            .response
             .headers_mut()
             .insert("Allow", HeaderValue::from_static("POST"));
-        return response;
+        return answered;
     }
     let settings = &shared.settings;
     let Some(name) = client_of(&settings.base_path, request.uri().path()) else {
-        return answer(StatusCode::NOT_FOUND);
+        return answer(ResponseStatus::NotFound);
     };
     let name = name.to_string();
     if !(shared.is_bound)(&name) {
-        return answer(StatusCode::NOT_FOUND);
+        return answer(ResponseStatus::NotFound);
     }
     if shared.exchanges.fetch_add(1, Ordering::AcqRel) >= settings.max_exchanges {
         shared.exchanges.fetch_sub(1, Ordering::AcqRel);
         return shared.shed(
             ServerShed::Concurrency,
-            StatusCode::SERVICE_UNAVAILABLE,
+            ResponseStatus::ServiceUnavailable,
             settings.retry_after,
         );
     }
@@ -1550,7 +1572,7 @@ async fn exchange(
     if let Verdict::Refused { wait } =
         shared.edge(|edge, now| edge.may_authenticate(&name, address, now))
     {
-        return shared.shed(ServerShed::Rate, StatusCode::TOO_MANY_REQUESTS, wait);
+        return shared.shed(ServerShed::Rate, ResponseStatus::TooManyRequests, wait);
     }
     // §mesh-22.9: what a signature covers of the request, read before its body
     // takes it: the target URI, and the acknowledgement and nonce a response's signature answers.
@@ -1584,18 +1606,18 @@ async fn exchange(
         Admission::Unavailable => {
             return shared.shed(
                 ServerShed::Store,
-                StatusCode::SERVICE_UNAVAILABLE,
+                ResponseStatus::ServiceUnavailable,
                 settings.retry_after,
             )
         }
     };
     if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.client(&name, now)) {
-        return shared.shed(ServerShed::Rate, StatusCode::TOO_MANY_REQUESTS, wait);
+        return shared.shed(ServerShed::Rate, ResponseStatus::TooManyRequests, wait);
     }
     // A name pinned for the first time is held to the rate at which its address pins new names.
     if new {
         if let Verdict::Refused { wait } = shared.edge(|edge, now| edge.new_name(address, now)) {
-            return shared.shed(ServerShed::Rate, StatusCode::TOO_MANY_REQUESTS, wait);
+            return shared.shed(ServerShed::Rate, ResponseStatus::TooManyRequests, wait);
         }
     }
     let (Some(ack), Some(hold_ms), Some(acked_in)) = (
@@ -1603,7 +1625,7 @@ async fn exchange(
         number_header(&request, HOLD_HEADER),
         epoch_header(&request),
     ) else {
-        return answer(StatusCode::BAD_REQUEST);
+        return answer(ResponseStatus::BadRequest);
     };
     let declared = request
         .headers()
@@ -1611,7 +1633,7 @@ async fn exchange(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok());
     if declared.is_some_and(|length| length > settings.max_body_bytes as u64) {
-        return answer(StatusCode::PAYLOAD_TOO_LARGE);
+        return answer(ResponseStatus::PayloadTooLarge);
     }
     let typed = request
         .headers()
@@ -1637,7 +1659,7 @@ async fn exchange(
             Err(why) => {
                 return shared.shed(
                     why.shed(),
-                    StatusCode::SERVICE_UNAVAILABLE,
+                    ResponseStatus::ServiceUnavailable,
                     settings.retry_after,
                 )
             }
@@ -1645,7 +1667,7 @@ async fn exchange(
         if client.in_flight >= settings.max_exchanges_per_client {
             return shared.shed(
                 ServerShed::Concurrency,
-                StatusCode::TOO_MANY_REQUESTS,
+                ResponseStatus::TooManyRequests,
                 settings.retry_after,
             );
         }
@@ -1668,16 +1690,16 @@ async fn exchange(
     )
     .await;
     let body = match collected {
-        Err(_) => return answer(StatusCode::REQUEST_TIMEOUT),
+        Err(_) => return answer(ResponseStatus::RequestTimeout),
         Ok(Ok(collected)) => collected.to_bytes(),
         Ok(Err(error)) if error.downcast_ref::<LengthLimitError>().is_some() => {
-            return answer(StatusCode::PAYLOAD_TOO_LARGE);
+            return answer(ResponseStatus::PayloadTooLarge);
         }
         // The connection ended or broke before the body was whole; nobody reads the answer.
-        Ok(Err(_)) => return answer(StatusCode::BAD_REQUEST),
+        Ok(Err(_)) => return answer(ResponseStatus::BadRequest),
     };
     if !body.is_empty() && typed.as_deref() != Some(CONTENT_TYPE) {
-        return answer(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        return answer(ResponseStatus::UnsupportedMediaType);
     }
     // §mesh-22.9: a signed request proves its body by the `Content-Digest` its
     // signature covers, so a body that is not the one signed is no request of the client's.
@@ -1701,7 +1723,7 @@ async fn exchange(
                 Err(_) => {
                     return shared.shed(
                         ServerShed::Store,
-                        StatusCode::SERVICE_UNAVAILABLE,
+                        ResponseStatus::ServiceUnavailable,
                         settings.retry_after,
                     )
                 }
@@ -1726,7 +1748,7 @@ async fn exchange(
         let Ok(drawn) = draw_epoch() else {
             return shared.shed(
                 ServerShed::RandomSource,
-                StatusCode::SERVICE_UNAVAILABLE,
+                ResponseStatus::ServiceUnavailable,
                 settings.retry_after,
             );
         };
@@ -1748,7 +1770,7 @@ async fn exchange(
         if !kept {
             return shared.shed(
                 ServerShed::Store,
-                StatusCode::SERVICE_UNAVAILABLE,
+                ResponseStatus::ServiceUnavailable,
                 settings.retry_after,
             );
         }
@@ -1768,7 +1790,7 @@ async fn exchange(
                 Err(why) => {
                     return shared.shed(
                         why.shed(),
-                        StatusCode::SERVICE_UNAVAILABLE,
+                        ResponseStatus::ServiceUnavailable,
                         settings.retry_after,
                     )
                 }
@@ -1812,7 +1834,7 @@ async fn exchange(
     if !durable {
         return shared.shed(
             ServerShed::Durability,
-            StatusCode::SERVICE_UNAVAILABLE,
+            ResponseStatus::ServiceUnavailable,
             settings.retry_after,
         );
     }
@@ -1883,7 +1905,7 @@ async fn exchange(
         // would number nothing, so this one is shed as a store not read.
         return shared.shed(
             ServerShed::Store,
-            StatusCode::SERVICE_UNAVAILABLE,
+            ResponseStatus::ServiceUnavailable,
             settings.retry_after,
         );
     };
@@ -1902,7 +1924,9 @@ async fn exchange(
         }
         _ => None,
     };
-    let mut response = Response::new(Full::new(Bytes::from(body)));
+    let mut answered = answer(ResponseStatus::Ok);
+    let response = &mut answered.response;
+    *response.body_mut() = Full::new(Bytes::from(body));
     response
         .headers_mut()
         .insert(CONTENT_TYPE_NAME, HeaderValue::from_static(CONTENT_TYPE));
@@ -1925,7 +1949,7 @@ async fn exchange(
             }
         }
     }
-    response
+    answered
 }
 
 /// A TLS configuration for the server: `chain` (each certificate DER, the server's own first)
@@ -3679,10 +3703,10 @@ mod tests {
         );
 
         let exchanges = |status| recording.counted(Counter::ServerExchanges { status });
-        assert_eq!(exchanges(ExchangeStatus::Ok), 1);
-        assert_eq!(exchanges(ExchangeStatus::NotFound), 1);
-        assert_eq!(exchanges(ExchangeStatus::Unauthorized), 1);
-        assert_eq!(exchanges(ExchangeStatus::ServiceUnavailable), 1);
+        assert_eq!(exchanges(ResponseStatus::Ok), 1);
+        assert_eq!(exchanges(ResponseStatus::NotFound), 1);
+        assert_eq!(exchanges(ResponseStatus::Unauthorized), 1);
+        assert_eq!(exchanges(ResponseStatus::ServiceUnavailable), 1);
         assert_eq!(
             recording.counted(Counter::AuthenticationFailures {
                 authenticator: AuthenticatorKind::Bearer

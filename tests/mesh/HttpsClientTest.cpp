@@ -923,7 +923,7 @@ TEST(HttpsClient, NoAdapterIsNoStart) {
 // other.
 TEST(HttpsClient, EveryExchangeIsReportedByTheStatusItsServerAnswered) {
     using SCE::Metrics::Counter;
-    using SCE::Metrics::ExchangeStatus;
+    using SCE::Metrics::ExchangeOutcome;
     Scripted transport;
     std::atomic<int> polls{0};
     transport.onPoll = [&polls](const HttpsRequest &request) {
@@ -953,10 +953,10 @@ TEST(HttpsClient, EveryExchangeIsReportedByTheStatusItsServerAnswered) {
     ASSERT_TRUE(client.start());
     ASSERT_TRUE(seen.waitFor([&polls] { return polls.load() >= 5; }));
     client.stop();
-    EXPECT_GE(recording.counted(Counter::clientExchanges(ExchangeStatus::Ok)), 1u);
-    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeStatus::NoResponse)), 1u);
-    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeStatus::Unauthorized)), 1u);
-    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeStatus::Other)), 1u);
+    EXPECT_GE(recording.counted(Counter::clientExchanges(ExchangeOutcome::Ok)), 1u);
+    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeOutcome::NoResponse)), 1u);
+    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeOutcome::Unauthorized)), 1u);
+    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeOutcome::Other)), 1u);
     EXPECT_EQ(recording.countedIn("sce_host_operation_failures"), 0u);
 }
 

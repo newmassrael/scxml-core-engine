@@ -32,9 +32,11 @@ namespace SCE::Metrics {
 /// The registry of names this header follows (SCE_WIRE_CONTRACTS.md, "Server metrics").
 inline constexpr const char *kRegistry = "sce-metrics-1";
 
-/// The status of an exchange's answer: each status the `https` server answers, `other` for any
-/// other (an intermediary's), and `none` for an exchange that got no response.
-enum class ExchangeStatus : std::uint8_t {
+/// What an exchange a client made came to: the status its server answered (each status an SCE
+/// `https` server answers), `other` for a status no SCE server answers (an intermediary's), and
+/// `none` when no response came. The label set of `sce_client_exchanges` alone: the server's
+/// `sce_server_exchanges` holds only the statuses it answers, which the C++ side does not report.
+enum class ExchangeOutcome : std::uint8_t {
     Ok,
     BadRequest,
     Unauthorized,
@@ -49,78 +51,78 @@ enum class ExchangeStatus : std::uint8_t {
     NoResponse,
 };
 
-/// Every exchange status, in the order of the enum.
-inline constexpr std::array<ExchangeStatus, 12> kExchangeStatuses = {
-    ExchangeStatus::Ok,
-    ExchangeStatus::BadRequest,
-    ExchangeStatus::Unauthorized,
-    ExchangeStatus::NotFound,
-    ExchangeStatus::MethodNotAllowed,
-    ExchangeStatus::RequestTimeout,
-    ExchangeStatus::PayloadTooLarge,
-    ExchangeStatus::UnsupportedMediaType,
-    ExchangeStatus::TooManyRequests,
-    ExchangeStatus::ServiceUnavailable,
-    ExchangeStatus::Other,
-    ExchangeStatus::NoResponse,
+/// Every exchange outcome, in the order of the enum.
+inline constexpr std::array<ExchangeOutcome, 12> kExchangeOutcomes = {
+    ExchangeOutcome::Ok,
+    ExchangeOutcome::BadRequest,
+    ExchangeOutcome::Unauthorized,
+    ExchangeOutcome::NotFound,
+    ExchangeOutcome::MethodNotAllowed,
+    ExchangeOutcome::RequestTimeout,
+    ExchangeOutcome::PayloadTooLarge,
+    ExchangeOutcome::UnsupportedMediaType,
+    ExchangeOutcome::TooManyRequests,
+    ExchangeOutcome::ServiceUnavailable,
+    ExchangeOutcome::Other,
+    ExchangeOutcome::NoResponse,
 };
 
-/// The label value `status` is.
-constexpr const char *value(ExchangeStatus status) {
-    switch (status) {
-    case ExchangeStatus::Ok:
+/// The label value `outcome` is.
+constexpr const char *value(ExchangeOutcome outcome) {
+    switch (outcome) {
+    case ExchangeOutcome::Ok:
         return "200";
-    case ExchangeStatus::BadRequest:
+    case ExchangeOutcome::BadRequest:
         return "400";
-    case ExchangeStatus::Unauthorized:
+    case ExchangeOutcome::Unauthorized:
         return "401";
-    case ExchangeStatus::NotFound:
+    case ExchangeOutcome::NotFound:
         return "404";
-    case ExchangeStatus::MethodNotAllowed:
+    case ExchangeOutcome::MethodNotAllowed:
         return "405";
-    case ExchangeStatus::RequestTimeout:
+    case ExchangeOutcome::RequestTimeout:
         return "408";
-    case ExchangeStatus::PayloadTooLarge:
+    case ExchangeOutcome::PayloadTooLarge:
         return "413";
-    case ExchangeStatus::UnsupportedMediaType:
+    case ExchangeOutcome::UnsupportedMediaType:
         return "415";
-    case ExchangeStatus::TooManyRequests:
+    case ExchangeOutcome::TooManyRequests:
         return "429";
-    case ExchangeStatus::ServiceUnavailable:
+    case ExchangeOutcome::ServiceUnavailable:
         return "503";
-    case ExchangeStatus::Other:
+    case ExchangeOutcome::Other:
         return "other";
-    case ExchangeStatus::NoResponse:
+    case ExchangeOutcome::NoResponse:
         return "none";
     }
     return "other";
 }
 
-/// The value of the status `code`: `other` for a code the server never answers.
-constexpr ExchangeStatus exchangeStatusOf(std::uint16_t code) {
+/// The outcome of a response of status `code`: `other` for a code an SCE server never answers.
+constexpr ExchangeOutcome exchangeOutcomeOf(std::uint16_t code) {
     switch (code) {
     case 200:
-        return ExchangeStatus::Ok;
+        return ExchangeOutcome::Ok;
     case 400:
-        return ExchangeStatus::BadRequest;
+        return ExchangeOutcome::BadRequest;
     case 401:
-        return ExchangeStatus::Unauthorized;
+        return ExchangeOutcome::Unauthorized;
     case 404:
-        return ExchangeStatus::NotFound;
+        return ExchangeOutcome::NotFound;
     case 405:
-        return ExchangeStatus::MethodNotAllowed;
+        return ExchangeOutcome::MethodNotAllowed;
     case 408:
-        return ExchangeStatus::RequestTimeout;
+        return ExchangeOutcome::RequestTimeout;
     case 413:
-        return ExchangeStatus::PayloadTooLarge;
+        return ExchangeOutcome::PayloadTooLarge;
     case 415:
-        return ExchangeStatus::UnsupportedMediaType;
+        return ExchangeOutcome::UnsupportedMediaType;
     case 429:
-        return ExchangeStatus::TooManyRequests;
+        return ExchangeOutcome::TooManyRequests;
     case 503:
-        return ExchangeStatus::ServiceUnavailable;
+        return ExchangeOutcome::ServiceUnavailable;
     default:
-        return ExchangeStatus::Other;
+        return ExchangeOutcome::Other;
     }
 }
 
@@ -262,8 +264,8 @@ class Counter {
 public:
     /// `sce_client_exchanges`: an exchange an `https` client made, by the status its server
     /// answered, `none` when no response came.
-    static constexpr Counter clientExchanges(ExchangeStatus status) {
-        return Counter(Family::ClientExchanges, static_cast<std::uint8_t>(status), 0);
+    static constexpr Counter clientExchanges(ExchangeOutcome outcome) {
+        return Counter(Family::ClientExchanges, static_cast<std::uint8_t>(outcome), 0);
     }
 
     /// `sce_host_operation_failures`: a start of `operation` answered with the failure `code`, or
@@ -296,7 +298,7 @@ public:
         Labels held;
         switch (family_) {
         case Family::ClientExchanges:
-            held.pairs[0] = {"status", value(static_cast<ExchangeStatus>(first_))};
+            held.pairs[0] = {"status", value(static_cast<ExchangeOutcome>(first_))};
             held.size = 1;
             break;
         case Family::HostOperationFailures:

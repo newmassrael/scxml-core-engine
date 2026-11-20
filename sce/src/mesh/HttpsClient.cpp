@@ -705,9 +705,10 @@ Client::Verdict Client::judge(const HttpsExchange &answer, const Mark &sent) {
     // docs/adr/0109, D16: every exchange is reported by the status its server
     // answered, and one that got no response as none.
     if (host_.metrics != nullptr) {
-        const auto status = answer.kind == HttpsExchange::Kind::Failure ? SCE::Metrics::ExchangeStatus::NoResponse
-                                                                        : SCE::Metrics::exchangeStatusOf(answer.status);
-        host_.metrics->count(SCE::Metrics::Counter::clientExchanges(status), 1);
+        const auto outcome = answer.kind == HttpsExchange::Kind::Failure
+                                 ? SCE::Metrics::ExchangeOutcome::NoResponse
+                                 : SCE::Metrics::exchangeOutcomeOf(answer.status);
+        host_.metrics->count(SCE::Metrics::Counter::clientExchanges(outcome), 1);
     }
     Verdict verdict;
     if (answer.kind == HttpsExchange::Kind::Failure) {

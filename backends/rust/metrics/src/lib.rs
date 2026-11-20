@@ -11,8 +11,8 @@
 //!
 //! **Fixed names, closed label sets.** Every series is a value of [`Counter`], [`Gauge`] or
 //! [`Histogram`]: its family is one of [`FAMILIES`], whose name and label names are fixed, and
-//! each label value is a variant of a closed enum of this crate ([`ExchangeStatus`],
-//! [`ServerShed`], ...). A caller cannot hand a label a text of its own, so no series carries a
+//! each label value is a variant of a closed enum of this crate ([`ResponseStatus`],
+//! [`ServerShed`], ...), which holds only the values its family's events produce. A caller cannot hand a label a text of its own, so no series carries a
 //! client's name, a session's key or anything else a client chose: the cardinality of every
 //! family is bounded by its enums, and what an exposition shows is fixed by this crate. The
 //! names are the registry of `docs/SCE_SERVER_DEPLOY.md` section 10, a wire surface of
@@ -363,10 +363,53 @@ macro_rules! label_set {
 }
 
 label_set! {
-    /// The status of an exchange's answer: each status the `https` server answers, `other` for
-    /// any other a client was answered (an intermediary's), and `none` for an exchange a client
-    /// got no response to.
-    ExchangeStatus {
+    /// The status code of a response the `https` server answers an exchange with (RFC 9110
+    /// section 15): exactly the codes it sends, so the server builds every response from one of
+    /// them and no other can be reported.
+    ResponseStatus {
+        Ok => "200",
+        BadRequest => "400",
+        Unauthorized => "401",
+        NotFound => "404",
+        MethodNotAllowed => "405",
+        RequestTimeout => "408",
+        PayloadTooLarge => "413",
+        UnsupportedMediaType => "415",
+        TooManyRequests => "429",
+        ServiceUnavailable => "503",
+    }
+}
+
+impl ResponseStatus {
+    /// The status code it is.
+    pub const fn code(self) -> u16 {
+        match self {
+            ResponseStatus::Ok => 200,
+            ResponseStatus::BadRequest => 400,
+            ResponseStatus::Unauthorized => 401,
+            ResponseStatus::NotFound => 404,
+            ResponseStatus::MethodNotAllowed => 405,
+            ResponseStatus::RequestTimeout => 408,
+            ResponseStatus::PayloadTooLarge => 413,
+            ResponseStatus::UnsupportedMediaType => 415,
+            ResponseStatus::TooManyRequests => 429,
+            ResponseStatus::ServiceUnavailable => 503,
+        }
+    }
+
+    /// The status `code` is, when the server answers with it; `None` for any other.
+    pub fn of(code: u16) -> Option<Self> {
+        ResponseStatus::ALL
+            .iter()
+            .copied()
+            .find(|status| status.code() == code)
+    }
+}
+
+label_set! {
+    /// What an exchange a client made came to: the status its server answered, `other` for a
+    /// status no SCE server answers (an intermediary's), and `none` when no response came.
+    ExchangeOutcome {
         Ok => "200",
         BadRequest => "400",
         Unauthorized => "401",
@@ -382,21 +425,26 @@ label_set! {
     }
 }
 
-impl ExchangeStatus {
-    /// The value of the status `code`.
-    pub fn of(code: u16) -> Self {
-        match code {
-            200 => ExchangeStatus::Ok,
-            400 => ExchangeStatus::BadRequest,
-            401 => ExchangeStatus::Unauthorized,
-            404 => ExchangeStatus::NotFound,
-            405 => ExchangeStatus::MethodNotAllowed,
-            408 => ExchangeStatus::RequestTimeout,
-            413 => ExchangeStatus::PayloadTooLarge,
-            415 => ExchangeStatus::UnsupportedMediaType,
-            429 => ExchangeStatus::TooManyRequests,
-            503 => ExchangeStatus::ServiceUnavailable,
-            _ => ExchangeStatus::Other,
+impl ExchangeOutcome {
+    /// The outcome of a response of status `code`: the server's status, or `other`.
+    pub fn of_status(code: u16) -> Self {
+        ResponseStatus::of(code).map_or(ExchangeOutcome::Other, ExchangeOutcome::from)
+    }
+}
+
+impl From<ResponseStatus> for ExchangeOutcome {
+    fn from(status: ResponseStatus) -> Self {
+        match status {
+            ResponseStatus::Ok => ExchangeOutcome::Ok,
+            ResponseStatus::BadRequest => ExchangeOutcome::BadRequest,
+            ResponseStatus::Unauthorized => ExchangeOutcome::Unauthorized,
+            ResponseStatus::NotFound => ExchangeOutcome::NotFound,
+            ResponseStatus::MethodNotAllowed => ExchangeOutcome::MethodNotAllowed,
+            ResponseStatus::RequestTimeout => ExchangeOutcome::RequestTimeout,
+            ResponseStatus::PayloadTooLarge => ExchangeOutcome::PayloadTooLarge,
+            ResponseStatus::UnsupportedMediaType => ExchangeOutcome::UnsupportedMediaType,
+            ResponseStatus::TooManyRequests => ExchangeOutcome::TooManyRequests,
+            ResponseStatus::ServiceUnavailable => ExchangeOutcome::ServiceUnavailable,
         }
     }
 }
@@ -591,7 +639,7 @@ impl Labels {
 #[non_exhaustive]
 pub enum Counter {
     /// An exchange the `https` server answered, by the status of the answer.
-    ServerExchanges { status: ExchangeStatus },
+    ServerExchanges { status: ResponseStatus },
     /// An exchange the `https` server shed, or a connection it closed at accept.
     ServerSheds { reason: ServerShed },
     /// An exchange the `https` server answered `401`.
@@ -616,7 +664,7 @@ pub enum Counter {
     /// An entry appended to the audit log.
     AuditAppends,
     /// An exchange an `https` client made, by the status its server answered.
-    ClientExchanges { status: ExchangeStatus },
+    ClientExchanges { status: ExchangeOutcome },
 }
 
 impl Counter {
@@ -641,9 +689,8 @@ impl Counter {
     /// Its labels, in the order its family names them.
     pub fn labels(&self) -> Labels {
         match *self {
-            Counter::ServerExchanges { status } | Counter::ClientExchanges { status } => {
-                Labels::one("status", status.value())
-            }
+            Counter::ServerExchanges { status } => Labels::one("status", status.value()),
+            Counter::ClientExchanges { status } => Labels::one("status", status.value()),
             Counter::ServerSheds { reason } => Labels::one("reason", reason.value()),
             Counter::AuthenticationFailures { authenticator } => {
                 Labels::one("authenticator", authenticator.value())
@@ -748,8 +795,10 @@ mod tests {
     /// Every counter series of the registry, each label set taken whole.
     fn every_counter() -> Vec<Counter> {
         let mut all = Vec::new();
-        for status in ExchangeStatus::ALL {
+        for status in ResponseStatus::ALL {
             all.push(Counter::ServerExchanges { status: *status });
+        }
+        for status in ExchangeOutcome::ALL {
             all.push(Counter::ClientExchanges { status: *status });
         }
         all.extend(
@@ -897,12 +946,16 @@ mod tests {
     /// Each closed set reads its own values back and refuses or folds what it does not name.
     #[test]
     fn a_value_is_read_back_into_its_closed_set() {
-        for status in ExchangeStatus::ALL {
-            if let Ok(code) = status.value().parse::<u16>() {
-                assert_eq!(ExchangeStatus::of(code), *status);
-            }
+        for status in ResponseStatus::ALL {
+            assert_eq!(status.value().parse::<u16>(), Ok(status.code()));
+            assert_eq!(ResponseStatus::of(status.code()), Some(*status));
+            assert_eq!(
+                ExchangeOutcome::of_status(status.code()).value(),
+                status.value()
+            );
         }
-        assert_eq!(ExchangeStatus::of(502), ExchangeStatus::Other);
+        assert_eq!(ResponseStatus::of(502), None);
+        assert_eq!(ExchangeOutcome::of_status(502), ExchangeOutcome::Other);
         for operation in HostOperation::ALL {
             assert_eq!(HostOperation::of(operation.value()), Some(*operation));
         }
