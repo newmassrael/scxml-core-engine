@@ -319,9 +319,20 @@ public:
     }
 
     /// The trust sets, each the ids of the signing keys a signature by which it trusts, by the set's name,
-    /// replacing those set before. An id that names no signing key when a signature is verified trusts none.
+    /// replacing those set before. An id names a signing key of this host, or else a public key of
+    /// `setTrustedKeys`; one that names neither when a signature is verified trusts none.
     void setTrustSets(std::map<std::string, std::vector<std::string>> sets) {
         trust_ = std::move(sets);
+    }
+
+    /// The public keys a trust set may name, each an Ed25519 public key of 32 bytes by its id, replacing
+    /// those set before: what a host that verifies a signer's objects holds of the signer, which never
+    /// signs as it, so that a client verifies what its server signed holding nothing but the server's
+    /// public key (docs/adr/0109, D9). A signing key of this host of the same id is tried first. False, and
+    /// nothing replaced, when a key is not 32 bytes or an id is empty, past its bound, or one of the key
+    /// ring's.
+    bool setTrustedKeys(const std::map<std::string, Cose::Bytes> &publicKeys) {
+        return replaceTable(trusted_, publicKeys, COSE_KEY_BYTES);
     }
 
     /// The ids of the keys the host generated and derived, in the order of their bytes.
@@ -645,14 +656,19 @@ private:
         }
         const Cose::Bytes toBeSigned = Cose::sigStructure(object->protectedHeader, externalAad, object->payload);
         for (const std::string &candidate : candidates) {
-            // A retired signing key still verifies what it signed.
+            // A retired signing key still verifies what it signed; a public key the host only trusts
+            // verifies with no seed held.
+            std::optional<Cose::Bytes> publicKey;
             const Found seed = keyFor(candidate, KeyPurpose::Export);
-            if (seed.key == nullptr) {
+            if (seed.key != nullptr) {
+                publicKey = crypto_.ed25519PublicKey(*seed.key);
+                if (!publicKey) {
+                    return failure(COSE_VERIFY1, "unavailable");
+                }
+            } else if (const auto trusted = trusted_.find(candidate); trusted != trusted_.end()) {
+                publicKey = trusted->second;
+            } else {
                 continue;
-            }
-            const auto publicKey = crypto_.ed25519PublicKey(*seed.key);
-            if (!publicKey) {
-                return failure(COSE_VERIFY1, "unavailable");
             }
             if (crypto_.ed25519Verify(*publicKey, toBeSigned, object->signature)) {
                 return detail::record({detail::boolean("valid", true), detail::text("key_id", candidate),
@@ -889,6 +905,8 @@ private:
     std::map<std::string, Cose::Bytes> sealing_;
     std::map<std::string, Cose::Bytes> mac_;
     std::map<std::string, std::vector<std::string>> trust_;
+    /// The public keys a trust set may name, which verify and sign nothing (`setTrustedKeys`).
+    std::map<std::string, Cose::Bytes> trusted_;
     /// The keys the host generated and derived, by id.
     std::map<std::string, KeptKey> keys_;
     /// The key each generation made, by the identity of the invocation that asked.
