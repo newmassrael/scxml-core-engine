@@ -698,7 +698,10 @@ fn a_restored_put_if_is_answered_with_the_first_result_of_its_invocation() {
     };
     assert_eq!((running.invoke_id.as_str(), running.start), ("putif", 1));
     assert_eq!(
-        host.lock().expect("the host").store_entries(),
+        host.lock()
+            .expect("the host")
+            .store_entries()
+            .expect("the store answers"),
         [("k".to_string(), "a".to_string())],
         "the host wrote once"
     );
@@ -721,7 +724,10 @@ fn a_restored_put_if_is_answered_with_the_first_result_of_its_invocation() {
     assert_eq!(variables["written"], true, "the first result");
     assert_eq!(variables["put_version"], "1");
     assert_eq!(
-        host.lock().expect("the host").store_entries(),
+        host.lock()
+            .expect("the host")
+            .store_entries()
+            .expect("the store answers"),
         [("k".to_string(), "a".to_string())],
         "nothing written twice"
     );
