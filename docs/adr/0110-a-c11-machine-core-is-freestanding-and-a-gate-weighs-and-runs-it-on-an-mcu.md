@@ -123,10 +123,26 @@ each figure, so a consumer can cite it as the evidence for its own image.
 
 ### D4. The toolchain is declared, so a build machine places the gate
 
-`bx.toml` declares `arm-none-eabi-gcc` (the distribution's `gcc-arm-none-eabi`, its version checked) and
-`qemu-system-arm` (the distribution's `qemu-system-arm`), each `needed_by = ["c11-mcu"]`, in the shape the other
-tools use. A machine without them ends the gate as "could not run" (`sce_gate_require_*` in `lib.sh`), never as a
-pass.
+(Amended 2026-11-21.) What the gate needs is declared by whether its release moves the verdict (bx RFC 0009,
+section 4.8):
+
+- **The compiler is a tool with pinned bytes.** The budget's figures are the compiler's, so `bx.toml` declares
+  `arm-none-eabi-gcc` as Arm's GNU Toolchain tarball of one release (13.2.rel1), which
+  `scripts/install_arm_gnu_toolchain.sh` downloads and refuses unless its SHA-256 is the one Arm publishes for the
+  host. The table reads the release from the script's `ARM_GNU_TOOLCHAIN_REV` line, checks the name Arm's build
+  prints (`Arm GNU Toolchain 13.2.rel1`), and is `needed_by = ["c11-mcu"]`. The gate reads the release from the
+  same line, puts that toolchain's `bin/` first on PATH, and refuses another build. The hosted lane installs it with
+  the same script, and the budget names that build as the one its figures are measured with.
+- **QEMU is a package of the gate's unit.** A run passes or fails on the scenario's expectations, on a counter clock
+  the scenario alone moves, so the emulator's release does not move the verdict. The gate's registry entry says
+  `packages = ["qemu-system-arm"]`, the plan puts it on the unit (bx RFC 0004, section 6), and bx places the unit
+  only on a machine that has the package.
+- **A link to `/usr/bin` is not a tool.** The first declaration linked the distribution's binaries into the store
+  entries. apt can replace the file behind such a link while the key it is checked by stays the same, and the
+  distribution's release differs by release of the distribution (Ubuntu 22.04 carries gcc-arm-none-eabi 10.3), so
+  the bytes were the machine's and not the declaration's.
+
+A machine without them ends the gate as "could not run" (`sce_gate_cannot_run` in `lib.sh`), never as a pass.
 
 ## Consequences
 
