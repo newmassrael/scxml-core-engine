@@ -31,6 +31,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCE_ROOT}/scripts/lib/bazel_pins.sh"
+sce_bazel_select
 
 if ! command -v bazel >/dev/null 2>&1; then
     echo "smoke_bazel_consumer: no bazel (bazelisk) on PATH — nothing measured" >&2
