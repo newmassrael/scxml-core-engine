@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/audit_append_result.scxml: the answer of
+  `sce-host-audit-append` (docs/SCE_HOST_FEATURES.md, "Audit log"):
+  `sequence` is the number the entry was appended at in its stream, a
+  64-bit unsigned integer as the text of its digits. The entry was durable
+  before the answer; an append repeated under one identity answers the
+  first sequence and appends nothing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="audit_append_result"
+       sce:event-name="host.audit.append.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="sequence" sce:type="string[20]" sce:direction="in"/>
+  </datamodel>
+</scxml>

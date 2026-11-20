@@ -942,3 +942,215 @@ fn an_answer_schema_with_no_grammar_is_refused() {
         "{text}"
     );
 }
+
+// ── The audit log (docs/SCE_HOST_FEATURES.md, section 15; docs/adr/0109, D14) ──
+
+/// The entry schema an audit probe names: an account marked personal and a
+/// password marked secret, beside a field kept as it is.
+const SIGN_IN: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="sign_in" sce:event-name="sign.in">
+  <datamodel>
+    <data id="account" sce:type="string[64]" sce:direction="in" sce:sensitivity="personal"/>
+    <data id="password" sce:type="string[32]" sce:direction="in" sce:sensitivity="secret"/>
+    <data id="result" sce:type="string[16]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// The marks the build writes for [`SIGN_IN`].
+const SIGN_IN_MARKS: &str = "/account=personal;/password=secret";
+
+/// A `sce-static` statechart that appends the record it holds to a stream,
+/// the invoke carrying `attrs` (its `sce:entry`) and the entry given as
+/// `entry`, with the extra `<param>`s `extra`.
+fn audit_append(attrs: &str, entry: &str, extra: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="probe">
+  <sce:import kind="event-schema" src="sce:std/host/audit_append_request.scxml" as="AppendRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/audit_append_result.scxml" as="AppendResult"/>
+  <sce:import kind="event-schema" src="sign_in.scxml" as="SignIn"/>
+  <datamodel>
+    <data id="attempt" sce:type="record:SignIn">
+      <sce:set name="account" expr="'alice'"/>
+      <sce:set name="password" expr="'hunter2'"/>
+      <sce:set name="result" expr="'accepted'"/>
+    </data>
+    <data id="note" sce:type="string[64]" expr="''"/>
+    <data id="sequence" sce:type="string[20]" expr="''" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="appending"/>
+  </state>
+  <state id="appending">
+    <invoke type="sce-host-audit-append" id="log"{attrs} sce:request="AppendRequest" sce:result="AppendResult">
+      <param name="stream" expr="'sign-ins'"/>
+      <param name="entry" expr="{entry}"/>{extra}
+    </invoke>
+    <transition event="done.invoke.log" target="idle">
+      <assign location="sequence" expr="_event.data.sequence"/>
+    </transition>
+  </state>
+</scxml>
+"#
+    )
+}
+
+/// docs/adr/0109, D0 and D14: the audit log is built for Rust and C++, and a
+/// build for every other emitting lane refuses a machine that appends to it by
+/// name, naming the two lanes that serve it; on the two, the build writes the
+/// marks of the entry's schema into the request.
+#[test]
+fn an_audit_append_is_served_on_rust_and_cpp_and_refused_elsewhere() {
+    let doc = audit_append(r#" sce:entry="SignIn""#, "attempt", "");
+    let siblings = [("sign_in.scxml", SIGN_IN)];
+    let lanes = languages();
+    for &language in &lanes {
+        let (ok, text) = run(&["check", "-l", language], &doc, &siblings);
+        if matches!(language, "rust" | "cpp") {
+            assert!(ok, "{language} refused an audit append: {text}");
+            assert!(
+                text.contains(r#""host_invoker_types":["sce-host-audit-append"]"#),
+                "{language}: the append was not served: {text}"
+            );
+        } else {
+            assert!(!ok, "{language} took an audit append: {text}");
+            assert!(
+                text.contains("codegen/standard-host-type-not-served")
+                    && text.contains("sce-host-audit-append")
+                    && text.contains("rust, cpp"),
+                "{language}: {text}"
+            );
+        }
+    }
+}
+
+/// The build writes the marks of the entry's schema into the request's
+/// `sensitivity` on the lanes that serve the append, where the generated
+/// machine holds them as a literal.
+#[test]
+fn the_build_writes_the_marks_of_the_entry_schema() {
+    let doc = audit_append(r#" sce:entry="SignIn""#, "attempt", "");
+    for language in ["rust", "cpp"] {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("sign_in.scxml"), SIGN_IN).expect("write sibling");
+        let path = dir.path().join("probe.scxml");
+        std::fs::write(&path, &doc).expect("write probe");
+        let out_dir = tempdir().expect("tempdir");
+        let out = Command::new(sce_codegen_bin())
+            .arg("--workspace-root")
+            .arg(repo_root())
+            .arg("--error-format=json")
+            .args(["generate", "-l", language])
+            .arg(&path)
+            .arg("-o")
+            .arg(out_dir.path())
+            .output()
+            .expect("invoke sce-codegen");
+        assert!(
+            out.status.success(),
+            "{language} did not generate: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let mut written = String::new();
+        for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {
+            let path = entry.expect("an entry").path();
+            if path.is_file() {
+                written.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+            }
+        }
+        assert!(
+            written.contains(SIGN_IN_MARKS),
+            "{language}: the request carries no marks {SIGN_IN_MARKS}"
+        );
+    }
+}
+
+/// The document does not write the field the build writes.
+#[test]
+fn a_document_does_not_write_the_marks_of_an_audit_entry() {
+    let doc = audit_append(
+        r#" sce:entry="SignIn""#,
+        "attempt",
+        "\n      <param name=\"sensitivity\" expr=\"''\"/>",
+    );
+    let (ok, text) = run(&["check"], &doc, &[("sign_in.scxml", SIGN_IN)]);
+    assert!(!ok, "a document wrote the marks itself: {text}");
+    assert!(
+        text.contains("validation/typed-invoke-request") && text.contains("sce:entry"),
+        "{text}"
+    );
+}
+
+/// An append names its entry's schema, on an append only, and the schema is an
+/// import; each refusal is `validation/audit-entry-schema`.
+#[test]
+fn an_entry_schema_is_named_on_an_append_and_imported() {
+    let siblings = [("sign_in.scxml", SIGN_IN)];
+    for (doc, why) in [
+        (audit_append("", "attempt", ""), "names none"),
+        (
+            audit_append(r#" sce:entry="SignOn""#, "attempt", ""),
+            "names no event schema this document imports",
+        ),
+        (
+            kv_get("256", REQUEST, RESULT, "key").replace(
+                r#"<invoke type="sce-host-kv-get" id="get""#,
+                r#"<invoke type="sce-host-kv-get" id="get" sce:entry="KvGetResult""#,
+            ),
+            "sce-host-audit-append",
+        ),
+    ] {
+        let (ok, text) = run(&["check"], &doc, &siblings);
+        assert!(
+            !ok,
+            "an entry schema the build cannot write was accepted: {text}"
+        );
+        assert!(
+            text.contains("validation/audit-entry-schema") && text.contains(why),
+            "{text}"
+        );
+    }
+}
+
+/// The entry is a value of the record its `sce:entry` names, and nothing else:
+/// a text is refused where it is written.
+#[test]
+fn an_entry_that_is_no_record_of_its_schema_is_refused() {
+    let doc = audit_append(r#" sce:entry="SignIn""#, "note", "");
+    let (ok, text) = run(
+        &["check", "-l", "rust"],
+        &doc,
+        &[("sign_in.scxml", SIGN_IN)],
+    );
+    assert!(!ok, "a text was taken for an entry: {text}");
+    assert!(
+        text.contains("scxml/static-datamodel-rule") && text.contains("record:SignIn"),
+        "{text}"
+    );
+}
+
+/// A mark that is none of the two, and `personal` on a field that holds no
+/// text, are refused where the schema is read.
+#[test]
+fn a_mark_is_secret_or_personal_and_personal_marks_a_text() {
+    for (schema, code) in [
+        (
+            SIGN_IN.replace(r#"sce:sensitivity="secret""#, r#"sce:sensitivity="hidden""#),
+            "validation/invalid-attribute",
+        ),
+        (
+            SIGN_IN.replace(
+                r#"<data id="result" sce:type="string[16]" sce:direction="in"/>"#,
+                r#"<data id="result" sce:type="uint8" sce:direction="in" sce:sensitivity="personal"/>"#,
+            ),
+            "validation/attribute-rule-violated",
+        ),
+    ] {
+        let doc = audit_append(r#" sce:entry="SignIn""#, "attempt", "");
+        let (ok, text) = run(&["check"], &doc, &[("sign_in.scxml", schema.as_str())]);
+        assert!(!ok, "a mark the build cannot carry was accepted: {text}");
+        assert!(text.contains(code) && text.contains("sce:sensitivity"), "{text}");
+    }
+}

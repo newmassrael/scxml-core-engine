@@ -1,10 +1,10 @@
 {
   "machine": "static_host_cose",
-  "about": "Signing and sealing, random bytes, keyed digests, keys and credentials of docs/SCE_HOST_FEATURES.md, sections 10 to 14, as a machine sees them through its host. `host_state.credentials` is each name the host issued a token for, to its tokens as `issued_ms`, `expires_ms` and `revoked`, in that order: a token's own bytes are the tag of the session's identity, which differs by lane, and are not stated. A `cose_keys` directive replaces the keys the host is configured with: `sign` maps a key id to the hexadecimal 32-byte seed of an Ed25519 key, `aead` a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key, `mac` a key id to a hexadecimal HMAC-SHA-256 key of any length, and `trust` a trust set's name to the ids of the signing keys whose public keys it holds; the keys the host generated and derived are kept. A `random` directive gives the hexadecimal bytes the host's random source gives next, before the operating system's: a draw, a generation (the id's 16 bytes, then the key's 32), the naming key of the store's first derivation (32 bytes) and a seal's nonce take them in the order the host draws. `jefe` and `rfc4231-1` are the keys of RFC 4231 test cases 2 and 1; the generated keys and their COSE_Key are those of tests/host_features/keys_cross_language.json. Byte strings travel as their byte-exact Latin-1 text. `11` is the key of RFC 8032 section 7.1 test 1 and of the COSE working group's EdDSA examples, `other` that of test 2, `sec-256` the key of the working group's ChaCha20/Poly1305 examples. The objects of a host's own signatures and of the objects sealed elsewhere were computed by an implementation that shares nothing with any reference host, which first reproduced the working group's signature of eddsa-sig-01.json. Expected values are derived from the specification, not observed from a host.",
+  "about": "Signing and sealing, random bytes, keyed digests, keys and credentials of docs/SCE_HOST_FEATURES.md, sections 10 to 14, as a machine sees them through its host. `host_state.credentials` is each name the host issued a token for, to its tokens as `issued_ms`, `expires_ms` and `revoked`, in that order: a token's own bytes are the tag of the session's identity, which differs by lane, and are not stated. A `cose_keys` directive replaces the keys the host is configured with: `sign` maps a key id to the hexadecimal 32-byte seed of an Ed25519 key, `aead` a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key, `mac` a key id to a hexadecimal HMAC-SHA-256 key of any length, and `trust` a trust set's name to the ids of the signing keys whose public keys it holds; the keys the host generated and derived are kept. A `random` directive gives the hexadecimal bytes the host's random source gives next, before the operating system's: a draw, a generation (the id's 16 bytes, then the key's 32), the naming key of the store's first derivation (32 bytes) and a seal's nonce take them in the order the host draws. `jefe` and `rfc4231-1` are the keys of RFC 4231 test cases 2 and 1; the generated keys and their COSE_Key are those of tests/host_features/keys_cross_language.json. Byte strings travel as their byte-exact Latin-1 text. `11` is the key of RFC 8032 section 7.1 test 1 and of the COSE working group's EdDSA examples, `other` that of test 2, `sec-256` the key of the working group's ChaCha20/Poly1305 examples. The objects of a host's own signatures and of the objects sealed elsewhere were computed by an implementation that shares nothing with any reference host, which first reproduced the working group's signature of eddsa-sig-01.json. An `audit` directive replaces the streams the host keeps (`streams`, each a name to its `checkpoint_every`, its `retain_days` and, optionally, `personal`: `pseudonymised` or `clear`); `host_state.audit` is, for each stream it names, its rows as `sequence`, `at_ms` and `entry`, the sequences of its checkpoints and whether a reader verifies it under the host's audit key (section 15); the entries and their keyed digests are those of tests/host_features/audit_cross_language.json, whose pseudonymisation key and audit seed the `random` directive gives in the order the host draws them. Expected values are derived from the specification, not observed from a host.",
   "steps": [
     { "note": "started: nothing is signed, sealed, derived, drawn, tagged, generated, exported, retired, issued or revoked",
       "expect": { "state": "idle",
-                  "variables": {"outcome": "", "signed_object": "", "valid": false, "signer": "", "payload": "", "sealed_object": "", "opened": false, "plaintext": "", "derived": "", "drawn": "", "tag": "", "tag_valid": false, "generated": "", "cose_key": "", "retired": false, "issued_token": "", "revoked": 0},
+                  "variables": {"outcome": "", "signed_object": "", "valid": false, "signer": "", "payload": "", "sealed_object": "", "opened": false, "plaintext": "", "derived": "", "drawn": "", "tag": "", "tag_valid": false, "generated": "", "cose_key": "", "retired": false, "issued_token": "", "revoked": 0, "audit_sequence": ""},
                   "host_invokes": [] } },
 
     { "note": "a signature is a completion: the tagged COSE_Sign1 of the payload, EdDSA on Ed25519, the key id in the protected header, byte for byte the deterministic encoding",
@@ -540,6 +540,56 @@
       "expect": { "state": "idle",
                   "variables": {"outcome": "unavailable", "revoked": 0},
                   "host_state": {"credentials": {"phone": [{"issued_ms": 1700000000000, "expires_ms": 1700003600000, "revoked": true}],
-                                                 "tablet": [{"issued_ms": 1700000060000, "expires_ms": 1700000120000, "revoked": false}]}} } }
+                                                 "tablet": [{"issued_ms": 1700000060000, "expires_ms": 1700000120000, "revoked": false}]}} } },
+
+    { "note": "an attempt is appended to a stream the host keeps: the account written as its keyed digest under the pseudonymisation key (the first 32 random bytes), the password never, the entry in its canonical form; the answer is its sequence (docs/adr/0109, D14)",
+      "host": {"fail": {}, "clock": {"utc_ms": 1767225600000},
+               "audit": {"streams": {"sign-ins": {"checkpoint_every": 2, "retain_days": 30}}},
+               "random": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"},
+      "event": "audit.sign_in",
+      "data": {"account": "alice@example.org", "password": "hunter2", "result": "accepted", "attempt": 1},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "done", "audit_sequence": "1"},
+                  "host_state": {"audit": {"sign-ins": {"rows": [{"sequence": 1, "at_ms": 1767225600000, "entry": "{\"account\":\"sce-personal:4da32f6e1bdd3ce977a6d49f84aab95d799270b8233a873ae65b13c112571684\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"accepted\"}"}],
+                                                        "checkpoints": [], "verified": true}}} } },
+
+    { "note": "the second entry is chained on the first and checkpointed under the audit key (the next 32 random bytes), every two rows; the stream verifies from its first row",
+      "host": {"clock": {"utc_ms": 1767225601000}},
+      "event": "audit.sign_in",
+      "data": {"account": "bob@example.org", "password": "letmein", "result": "refused", "attempt": 1},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "done", "audit_sequence": "2"},
+                  "host_state": {"audit": {"sign-ins": {"rows": [{"sequence": 1, "at_ms": 1767225600000, "entry": "{\"account\":\"sce-personal:4da32f6e1bdd3ce977a6d49f84aab95d799270b8233a873ae65b13c112571684\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"accepted\"}"},
+                                                                 {"sequence": 2, "at_ms": 1767225601000, "entry": "{\"account\":\"sce-personal:7c6bfba3407b0b9e957a5f868583418981d34d78f453d01d6e928edc50fb0935\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"refused\"}"}],
+                                                        "checkpoints": [2], "verified": true}}} } },
+
+    { "note": "an append to a stream the host keeps no policy for fails unknown_stream, and appends nothing",
+      "host": {"audit": {"streams": {}}},
+      "event": "audit.sign_in",
+      "data": {"account": "alice@example.org", "password": "hunter2", "result": "accepted", "attempt": 2},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "unknown_stream", "audit_sequence": "2"},
+                  "host_state": {"audit": {"sign-ins": {"rows": [{"sequence": 1, "at_ms": 1767225600000, "entry": "{\"account\":\"sce-personal:4da32f6e1bdd3ce977a6d49f84aab95d799270b8233a873ae65b13c112571684\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"accepted\"}"},
+                                                                 {"sequence": 2, "at_ms": 1767225601000, "entry": "{\"account\":\"sce-personal:7c6bfba3407b0b9e957a5f868583418981d34d78f453d01d6e928edc50fb0935\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"refused\"}"}],
+                                                        "checkpoints": [2], "verified": true}}} } },
+
+    { "note": "an append that fails unavailable appends nothing",
+      "host": {"audit": {"streams": {"sign-ins": {"checkpoint_every": 2, "retain_days": 30}}}, "fail": {"sce-host-audit-append": "unavailable"}},
+      "event": "audit.sign_in",
+      "data": {"account": "alice@example.org", "password": "hunter2", "result": "accepted", "attempt": 2},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "unavailable", "audit_sequence": "2"} } },
+
+    { "note": "a stream that keeps personal values in the clear writes the account as it is, and still never the password",
+      "host": {"fail": {}, "clock": {"utc_ms": 1767225602000},
+               "audit": {"streams": {"sign-ins": {"checkpoint_every": 2, "retain_days": 30, "personal": "clear"}}}},
+      "event": "audit.sign_in",
+      "data": {"account": "alice@example.org", "password": "hunter2", "result": "accepted", "attempt": 2},
+      "expect": { "state": "idle",
+                  "variables": {"outcome": "done", "audit_sequence": "3"},
+                  "host_state": {"audit": {"sign-ins": {"rows": [{"sequence": 1, "at_ms": 1767225600000, "entry": "{\"account\":\"sce-personal:4da32f6e1bdd3ce977a6d49f84aab95d799270b8233a873ae65b13c112571684\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"accepted\"}"},
+                                                                 {"sequence": 2, "at_ms": 1767225601000, "entry": "{\"account\":\"sce-personal:7c6bfba3407b0b9e957a5f868583418981d34d78f453d01d6e928edc50fb0935\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"refused\"}"},
+                                                                 {"sequence": 3, "at_ms": 1767225602000, "entry": "{\"account\":\"alice@example.org\",\"attempt\":2,\"password\":\"sce-secret\",\"result\":\"accepted\"}"}],
+                                                        "checkpoints": [2], "verified": true}}} } }
   ]
 }

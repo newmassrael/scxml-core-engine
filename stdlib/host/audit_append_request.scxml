@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/audit_append_request.scxml: the request of
+  `sce-host-audit-append` (docs/SCE_HOST_FEATURES.md, "Audit log").
+
+  `stream` names the stream the entry is appended to, one the host keeps:
+  not empty. `entry` is a record of the schema the invoke's `sce:entry`
+  names, written by the build as its JSON payload from the value the
+  document gives. `sensitivity` is the build's too, never the document's:
+  the marks the schema declares on its fields (`sce:sensitivity`), each
+  a field's pointer and its mark, which the host redacts the entry by
+  before it is written.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="audit_append_request"
+       sce:event-name="host.audit.append.request">
+  <datamodel>
+    <data id="stream" sce:type="string[64]" sce:direction="in"/>
+    <data id="entry" sce:type="string[audit_entry=4096]" sce:direction="in"/>
+    <data id="sensitivity" sce:type="string[audit_marks=1024]" sce:direction="in"/>
+  </datamodel>
+</scxml>

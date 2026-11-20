@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A sign-in attempt, as `static_host_cose.scxml` is told of one and appends it
+  to its host's audit log (docs/adr/0109, D14): the schema its `sce:entry`
+  names. The account names a person, so the log keeps its keyed digest; the
+  password is never written; the result and the attempt's number are kept as
+  they are.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_audit_sign_in"
+       sce:event-name="audit.sign_in">
+  <datamodel>
+    <data id="account" sce:type="string[64]" sce:direction="in" sce:sensitivity="personal"/>
+    <data id="password" sce:type="string[32]" sce:direction="in" sce:sensitivity="secret"/>
+    <data id="result" sce:type="string[16]" sce:direction="in"/>
+    <data id="attempt" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>
