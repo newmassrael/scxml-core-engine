@@ -23,6 +23,10 @@
 //! A transport that reaches the network for a server checks where each request
 //! goes against a [`destination::DestinationPolicy`] (docs/adr/0109, D4): the
 //! network transport of the `sce-rust-host-http` crate is built with one.
+//!
+//! A host given a metrics port ([`ReferenceHost::set_metrics`], docs/adr/0109,
+//! D16) reports how long each start took to answer and each failure code by
+//! the operation's type, and each entry appended to the audit log.
 
 pub mod audit;
 mod bounds;
@@ -39,6 +43,9 @@ mod serve;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Instant;
+
+use sce_rust_metrics::{Counter, Histogram, HostFailure, HostOperation, Metrics};
 
 pub use audit::{AuditStreams, Personal, StreamPolicy};
 pub use bounds::NamedBounds;
@@ -198,6 +205,9 @@ pub struct ReferenceHost<T: Transport> {
     /// request and its answer by: the library's until the embedding gives
     /// its build's (docs/adr/0109, D17).
     pub(crate) bounds: NamedBounds,
+    /// What the host reports to (docs/adr/0109, D16): none until the
+    /// embedding gives one.
+    pub(crate) metrics: Option<Arc<dyn Metrics>>,
 }
 
 /// A start the host was given: the operation, the invocation's id, the
@@ -251,7 +261,17 @@ impl<T: Transport> ReferenceHost<T> {
             audit: Arc::new(MemoryStore::new()),
             audit_streams: audit::AuditStreams::new(),
             bounds: NamedBounds::LIBRARY,
+            metrics: None,
         }
+    }
+
+    /// Report what the host does to `metrics` from here on (docs/adr/0109,
+    /// D16): how long each start of an operation took to answer and the
+    /// failure code of each that failed or was refused, by its type, and each
+    /// entry appended to the audit log. A host given none reports nothing and
+    /// reads no answer for it.
+    pub fn set_metrics(&mut self, metrics: Arc<dyn Metrics>) {
+        self.metrics = Some(metrics);
     }
 
     /// Append audit entries to `store` from here on: the store the program
@@ -486,6 +506,45 @@ impl<T: Transport> ReferenceHost<T> {
         if !TYPES.contains(&operation) {
             return None;
         }
+        let began = Instant::now();
+        let outcome = self.answer(operation, invocation, params);
+        self.report(operation, &outcome, began);
+        Some(outcome)
+    }
+
+    /// Report what the start of `operation`, begun at `began`, came to
+    /// (docs/adr/0109, D16): how long it took to answer, and the code of a
+    /// failure or a refusal. A start the host holds is answered later or never,
+    /// and is not measured.
+    fn report(&self, operation: &str, outcome: &Outcome, began: Instant) {
+        let (Some(metrics), Some(measured)) = (&self.metrics, HostOperation::of(operation)) else {
+            return;
+        };
+        let code = match outcome {
+            Outcome::Hold => return,
+            Outcome::Refuse(reason) => Some(member_text(reason, "reason").unwrap_or_default()),
+            Outcome::Done(data) => member_text(data, "error").filter(|code| !code.is_empty()),
+        };
+        metrics.observe(
+            Histogram::HostOperationDuration {
+                operation: measured,
+            },
+            began.elapsed().as_secs_f64(),
+        );
+        if let Some(code) = code {
+            metrics.count(
+                Counter::HostOperationFailures {
+                    operation: measured,
+                    code: HostFailure::of(&code),
+                },
+                1,
+            );
+        }
+    }
+
+    /// The answer to a start of `operation`, a standard type, as [`Self::start`]
+    /// describes it.
+    fn answer(&mut self, operation: &str, invocation: &Invocation, params: &Params) -> Outcome {
         let id = invocation.id.as_str();
         self.starts.push(Start {
             operation: operation.to_string(),
@@ -501,10 +560,10 @@ impl<T: Transport> ReferenceHost<T> {
                     invocation.start,
                     invocation.session_id
                 );
-                return Some(first);
+                return first;
             }
         }
-        Some(self.perform(operation, invocation, params))
+        self.perform(operation, invocation, params)
     }
 
     /// The operation itself, as [`Self::start`] describes it, for a start that is
@@ -600,6 +659,17 @@ impl<T: Transport> ReferenceHost<T> {
         self.held.retain(|held| held != id);
         self.cancelled.push(id.to_string());
     }
+}
+
+/// The text member `name` of the JSON object `json`: a failure's `error` in a
+/// result record, or a refusal's `reason`. `None` when `json` is no object, or
+/// the member is no text.
+fn member_text(json: &str, name: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()?
+        .get(name)?
+        .as_str()
+        .map(str::to_string)
 }
 
 /// A result record as the JSON a completion carries, its `error` empty. A

@@ -4062,6 +4062,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "sce-rust-crypto",
+ "sce-rust-metrics",
  "sce-rust-runtime",
  "sce-rust-session-store",
  "serde_json",

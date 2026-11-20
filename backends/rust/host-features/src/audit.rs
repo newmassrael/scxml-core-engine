@@ -334,6 +334,7 @@ pub(crate) fn perform<T: Transport>(
         keyring,
         random,
         audit,
+        metrics,
         ..
     } = host;
     let identity = crate::kv::identity(invocation);
@@ -374,7 +375,17 @@ pub(crate) fn perform<T: Transport>(
         policy.checkpoint_every,
         Some(&identity),
     ) {
-        Ok(sequence) => record(json!({ "sequence": sequence.to_string() })),
+        Ok(sequence) => {
+            // docs/adr/0109, D16: an entry appended; a repeat answered above appends none.
+            if let Some(metrics) = metrics.as_ref() {
+                sce_rust_metrics::Metrics::count(
+                    &**metrics,
+                    sce_rust_metrics::Counter::AuditAppends,
+                    1,
+                );
+            }
+            record(json!({ "sequence": sequence.to_string() }))
+        }
         Err(error) => {
             sce_rust_runtime::sce_log_error!("{AUDIT_APPEND} {}: {error}", invocation.id);
             failure(AUDIT_APPEND, error.code())
