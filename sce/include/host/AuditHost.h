@@ -38,6 +38,7 @@
 #include "host/Cose.h"
 #include "host/CoseCrypto.h"
 #include "host/CoseHost.h"
+#include "host/Metrics.h"
 #include "host/StandardHost.h"
 
 namespace SCE::StandardHost {
@@ -432,6 +433,12 @@ public:
         streams_ = std::move(streams);
     }
 
+    /// Report each entry appended to `metrics`, which outlives the feature, from here on (docs/adr/0109,
+    /// D16); a repeat under one identity appends nothing and is not reported.
+    void setMetrics(SCE::Metrics::Metrics &metrics) {
+        metrics_ = &metrics;
+    }
+
     /// The rows of `stream`, oldest first, as the log holds them: what a hand on the medium would edit.
     std::vector<AuditRow> &rows(const std::string &stream) {
         return rows_[stream];
@@ -668,6 +675,9 @@ public:
             checkpoints_[stream].push_back(AuditCheckpoint{sequence, *chain, *signature});
         }
         identities_[invocation] = sequence;
+        if (metrics_ != nullptr) {
+            metrics_->count(SCE::Metrics::Counter::auditAppends(), 1);
+        }
         return detail::record({detail::text("sequence", std::to_string(sequence))});
     }
 
@@ -724,6 +734,8 @@ private:
     /// The audit key's Ed25519 seed and the pseudonymisation key, each drawn at its first use.
     Cose::Bytes seed_;
     Cose::Bytes pseudonymKey_;
+    /// What each append is reported to (docs/adr/0109, D16): none until the embedding gives one.
+    SCE::Metrics::Metrics *metrics_ = nullptr;
 };
 
 }  // namespace SCE::StandardHost

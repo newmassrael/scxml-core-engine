@@ -14,7 +14,8 @@
  * an Outcome: a completion, a refusal, or nothing yet. It knows no engine, so the same
  * object serves a generated machine through serve(), a test, or another embedding. Time
  * comes from a ClockSource and the network from a Transport, both the embedding's to
- * supply.
+ * supply. A host given a metrics port (setMetrics, docs/adr/0109 D16) reports how long
+ * each start took to answer and each failure code, by the operation's type.
  */
 
 #include <algorithm>
@@ -37,6 +38,7 @@
 #include "core/HostProcessor.h"
 #include "core/LogMacros.h"
 #include "core/TypedHostInvokeRequest.h"
+#include "host/Metrics.h"
 
 // The ICU Windows ships (Windows 10 1903 and later; <icu.h> of its SDK), through which the system clock
 // names the IANA zone Windows is set to. Its C interface only: no <windows.h>, so none of that header's
@@ -714,6 +716,25 @@ inline Outcome failed(const std::string &code, std::vector<Field> zero) {
     return {Outcome::Kind::Done, object(zero)};
 }
 
+/// The text of `member` when it is the first member of the JSON object `json`, as `error` is of every
+/// result record record() and failed() write, and `reason` of every refusal: a failure's code or a
+/// refusal's reason, read without parsing the rest (docs/adr/0109, D16). Empty when the object opens
+/// with another member; a text with an escape in it is kept as written, which names no code.
+inline std::string leadingText(const std::string &json, const std::string &member) {
+    const std::string opening = "{" + jsonString(member) + ":\"";
+    if (json.compare(0, opening.size(), opening) != 0) {
+        return {};
+    }
+    std::string read;
+    for (std::size_t at = opening.size(); at < json.size(); ++at) {
+        if (json[at] == '"' && json[at - 1] != '\\') {
+            return read;
+        }
+        read += json[at];
+    }
+    return {};
+}
+
 /// The failure `code` of `operation`: its result record with the fields at their zero and `error` the
 /// code, so a machine reads the failure as a typed field.
 inline Outcome failure(const std::string &operation, const std::string &code) {
@@ -1024,6 +1045,54 @@ public:
     /// asked for was made once. The store keeps the first result in the step of the write (docs/adr/0109,
     /// D13), so a durable store answers it after the host's process stopped.
     std::optional<Outcome> start(const std::string &operation, const Invocation &invocation, const Params &params) {
+        const auto began = std::chrono::steady_clock::now();
+        std::optional<Outcome> outcome = answer(operation, invocation, params);
+        if (outcome) {
+            report(operation, *outcome, began);
+        }
+        return outcome;
+    }
+
+    /// Report what the host does to `metrics`, which outlives the host, from here on (docs/adr/0109,
+    /// D16): how long each start of a standard operation took to answer and the code of each failure and
+    /// refusal, by the operation's type. A host given none reports nothing.
+    void setMetrics(SCE::Metrics::Metrics &metrics) {
+        metrics_ = &metrics;
+    }
+
+    /// The host is told to stop invocation `id`, because its state exited or its deadline passed. What it
+    /// held for it is dropped.
+    void cancel(const std::string &id) {
+        held_.erase(std::remove(held_.begin(), held_.end(), id), held_.end());
+        cancelled_.push_back(id);
+    }
+
+private:
+    /// Report what the start of `operation`, begun at `began`, came to (docs/adr/0109, D16): how long it
+    /// took to answer and, for a failure or a refusal, its code, read from the answer itself. A start the
+    /// host holds is answered later or never, and is not measured; nor is a type that is no standard host
+    /// operation.
+    void report(const std::string &operation, const Outcome &outcome,
+                std::chrono::steady_clock::time_point began) const {
+        if (metrics_ == nullptr || outcome.kind == Outcome::Kind::Hold) {
+            return;
+        }
+        const auto measured = SCE::Metrics::hostOperationOf(operation);
+        if (!measured) {
+            return;
+        }
+        const std::chrono::duration<double> took = std::chrono::steady_clock::now() - began;
+        metrics_->observe(SCE::Metrics::Histogram::hostOperationDuration(*measured), took.count());
+        const std::string code = outcome.kind == Outcome::Kind::Refuse ? detail::leadingText(outcome.data, "reason")
+                                                                       : detail::leadingText(outcome.data, "error");
+        if (!code.empty()) {
+            metrics_->count(SCE::Metrics::Counter::hostOperationFailures(*measured, SCE::Metrics::hostFailureOf(code)),
+                            1);
+        }
+    }
+
+    /// The answer to a start, as `start` describes it.
+    std::optional<Outcome> answer(const std::string &operation, const Invocation &invocation, const Params &params) {
         const std::string &id = invocation.id;
         if (std::find(TYPES.begin(), TYPES.end(), operation) == TYPES.end()) {
             Feature *feature = featureServing(operation);
@@ -1048,14 +1117,6 @@ public:
         return perform(operation, invocation, params);
     }
 
-    /// The host is told to stop invocation `id`, because its state exited or its deadline passed. What it
-    /// held for it is dropped.
-    void cancel(const std::string &id) {
-        held_.erase(std::remove(held_.begin(), held_.end(), id), held_.end());
-        cancelled_.push_back(id);
-    }
-
-private:
     /// The operation whose first result a repeat of its invocation is answered with.
     static constexpr const char *PUT_IF = "sce-host-kv-put-if";
 
@@ -1431,6 +1492,9 @@ private:
     std::vector<Start> starts_;
     /// The features the embedding added, in the order added; each outlives the host.
     std::vector<Feature *> features_;
+    /// What the host reports to (docs/adr/0109, D16): none until the embedding gives one, which outlives
+    /// the host.
+    SCE::Metrics::Metrics *metrics_ = nullptr;
 };
 
 /**

@@ -75,6 +75,7 @@
 #pragma once
 
 #include "host/CoseCrypto.h"
+#include "host/Metrics.h"
 #include "mesh/CommunicationError.h"
 #include "mesh/MeshEnvelope.h"
 #include "mesh/transports/HttpsSignature.h"
@@ -318,6 +319,9 @@ struct ClientHost {
     HttpsTransport *transport = nullptr;
     Credentials *credentials = nullptr;
     StandardHost::CoseCrypto *crypto = nullptr;
+    /// What the client reports each exchange to, by the status its server answered (docs/adr/0109,
+    /// D16; host/Metrics.h): none reports nothing. It outlives the client.
+    SCE::Metrics::Metrics *metrics = nullptr;
 };
 
 // ── The wire, as functions the client and the conformance kit share ──

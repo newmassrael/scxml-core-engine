@@ -1139,6 +1139,9 @@ add_executable(standard_host_scenario_test
     # The destination policy of a server's HTTP transport (docs/adr/0109, D4), which
     # needs no network library.
     integration/AStandardHostDestinationPolicyTest.cpp
+    # What the reference host reports through the metrics port (docs/adr/0109, D16;
+    # host/Metrics.h), which needs no library either.
+    integration/AStandardHostMetricsTest.cpp
 )
 
 # The reference host's cpp-httplib transport, held against a local server:
