@@ -1431,12 +1431,15 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // binding that lets any caller claim a name is a security defect,
         // not a missing setting. Which side dials is the presence of `url`.
         required_binding_fields: &[],
-        // Dialing side: `url`, `hold_ms`. Accepting side: `listen`,
-        // `max_hold_ms`, `max_body_bytes`, `absence_ms`, `mailbox`, and what a
-        // client may cost the server (docs/adr/0109, D1 and D2):
-        // `max_clients`, `max_response_bytes`, `rate`, `trusted_proxies`.
-        // Both: `authenticator`. `topology::validate_https_extras_partial`
-        // refuses a key of one side on the other.
+        // Dialing side: `url`, `hold_ms`, and the trust set a response is
+        // verified under (`verify`, docs/adr/0109 D9). Accepting side:
+        // `listen`, `max_hold_ms`, `max_body_bytes`, `absence_ms`, `mailbox`,
+        // what a client may cost the server (docs/adr/0109, D1 and D2):
+        // `max_clients`, `max_response_bytes`, `rate`, `trusted_proxies`, and
+        // the key a response is signed with and the skew a signed request is
+        // held to (`sign`, `max_skew_ms`, D9). Both: `authenticator`.
+        // `topology::validate_https_extras_partial` refuses a key of one side
+        // on the other.
         optional_binding_fields: &[
             "url",
             "listen",
@@ -1450,6 +1453,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
             "max_response_bytes",
             "rate",
             "trusted_proxies",
+            "sign",
+            "verify",
+            "max_skew_ms",
         ],
         // What a lost response carried is carried again, and a request whose
         // exchange failed is sent again under a retry policy: the core's
@@ -1729,7 +1735,10 @@ mod tests {
                 "max_clients",
                 "max_response_bytes",
                 "rate",
-                "trusted_proxies"
+                "trusted_proxies",
+                "sign",
+                "verify",
+                "max_skew_ms"
             ]
         );
         // The first answered exchange is the ready edge.
@@ -1941,7 +1950,10 @@ mod tests {
                         "max_clients",
                         "max_response_bytes",
                         "rate",
-                        "trusted_proxies"
+                        "trusted_proxies",
+                        "sign",
+                        "verify",
+                        "max_skew_ms"
                     ]
                 ),
             ]

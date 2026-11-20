@@ -496,6 +496,82 @@ fn an_https_accepting_binding_reaches_the_rust_peer_table_with_its_bounds() {
     }
 }
 
+/// The HTTPS binding of [`HTTPS_DEPLOY`] with message signatures (docs/adr/0109, D9): the client
+/// signs its requests with its key and verifies what the server sends under a trust set, and the
+/// server signs with a key of its host and holds signed requests to a skew of its own.
+const HTTPS_SIGNED_DEPLOY: &str = r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        bindings:
+          "#server": { transport: https, url: "https://cal.example/api", authenticator: key, verify: servers }
+  cloud:
+    machines:
+      server:
+        source: server.scxml
+        bindings:
+          "#client": { transport: https, listen: "0.0.0.0:9443", authenticator: key, sign: "generated:0a1b", max_skew_ms: 60000 }
+"##;
+
+/// docs/adr/0109, D9: each side's link carries its half of the signatures: the trust set the
+/// client verifies under, and the key the server signs with and the skew it allows; and a binding
+/// that names none of them carries `None` and the default skew. Red if the Rust peer table drops a
+/// key or spells the `key` authenticator as another.
+#[test]
+fn an_https_binding_that_signs_reaches_the_rust_peer_table_with_its_keys() {
+    for (side, lines) in [
+        (
+            "client.scxml",
+            [
+                "authenticator: sce_rust_mesh::peers::HttpsAuthenticator::Key,",
+                "verify: Some(\"servers\"),",
+            ]
+            .as_slice(),
+        ),
+        (
+            "server.scxml",
+            [
+                "authenticator: sce_rust_mesh::peers::HttpsAuthenticator::Key,",
+                "sign: Some(\"generated:0a1b\"),",
+                "max_skew_ms: 60000,",
+            ]
+            .as_slice(),
+        ),
+    ] {
+        // A directory of its own for each side, so that the one table generated in it is that
+        // side's.
+        let dir = ScratchDir::new("mesh-https-signed-rust");
+        dir.write("client.scxml", ANSWERED_CLIENT_SCXML);
+        dir.write("server.scxml", REPLYING_SERVER_SCXML);
+        let deploy = dir.write("deploy.yaml", HTTPS_SIGNED_DEPLOY);
+        let scxml = dir.path().join(side);
+        let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+        assert!(
+            out.status.success(),
+            "the Rust host core carries https; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let table = generated_file_under(dir.path(), "_mesh_peers.rs");
+        for line in lines {
+            assert!(table.contains(line), "missing `{line}`:\n{table}");
+        }
+    }
+
+    let plain = ScratchDir::new("mesh-https-unsigned-rust");
+    plain.write("client.scxml", ANSWERED_CLIENT_SCXML);
+    let scxml = plain.write("server.scxml", REPLYING_SERVER_SCXML);
+    let deploy = plain.write("deploy.yaml", HTTPS_DEPLOY);
+    let out = run_with_deploy_for("rust", &scxml, &deploy, plain.path());
+    assert!(out.status.success());
+    let table = generated_file_under(plain.path(), "_mesh_peers.rs");
+    for line in ["sign: None,", "max_skew_ms: 300000,"] {
+        assert!(table.contains(line), "missing `{line}`:\n{table}");
+    }
+}
+
 #[test]
 fn zenoh_inbox_reaches_the_swift_peer_table_as_a_link_with_no_parameters() {
     // SCE_MESH.md §mesh-20.4: the Swift core carries the Zenoh binding over a

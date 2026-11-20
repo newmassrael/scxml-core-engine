@@ -1557,8 +1557,11 @@ template <std::size_t N>
 /// The https bindings (docs/adr/0107, D2) take their adapter and the
 /// host's credentials at construction: `https_host` names an
 /// `SCE::Mesh::HttpsTransport` (CurlHttpsTransport, WinHttpHttpsTransport,
-/// or the host's own) and, for the `bearer` and `install` authenticators,
-/// an `SCE::Mesh::Https::Credentials`. Both outlive the router.
+/// or the host's own) and, for the `bearer`, `install` and `key`
+/// authenticators and a binding that names `verify`, an
+/// `SCE::Mesh::Https::Credentials`; the `key` authenticator and `verify`
+/// take the host's `SCE::StandardHost::CoseCrypto` too (docs/adr/0109, D9).
+/// Each outlives the router.
 ///
 {% endif %}
 /// Usage:
@@ -4820,6 +4823,13 @@ struct TransportRouter {
             https_config.target = "{{ target.target }}";
             https_config.authenticator = SCE::Mesh::Https::Authenticator::{{ target.state.authenticator }};
             https_config.hold = std::chrono::milliseconds({{ target.state.hold_ms }});
+{% if target.state.verify %}
+            // SCE_MESH.md section 22.9: every `200` is verified under this
+            // trust set of the host's, and one that does not verify is taken
+            // nothing of (section 16.7 row 19). The client refuses to start
+            // when the host holds no such set.
+            https_config.verify = std::string({{ target.state.verify }});
+{% endif %}
 {% if target.state.retry %}
             // SCE_MESH.md section 16.7 row 3: the binding's retry policy,
             // which the client applies to an exchange no answer confirmed.

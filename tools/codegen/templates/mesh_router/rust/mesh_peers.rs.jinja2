@@ -4,7 +4,11 @@
 {#- The core's name for deploy.yaml's `authenticator` word of an HTTPS binding (SCE_MESH.md
     section 22.5), spelled in full so that a table without an HTTPS peer imports nothing for it. -#}
 {%- macro https_authenticator(word) -%}
-sce_rust_mesh::peers::HttpsAuthenticator::{% if word == "bearer" %}Bearer{% elif word == "install" %}Install{% else %}Mtls{% endif %}
+sce_rust_mesh::peers::HttpsAuthenticator::{% if word == "bearer" %}Bearer{% elif word == "install" %}Install{% elif word == "key" %}Key{% else %}Mtls{% endif %}
+{%- endmacro %}
+{#- A key id or a trust set's name the binding may leave out (docs/adr/0109, D9). -#}
+{%- macro optional_name(name) -%}
+{%- if name %}Some("{{ name | escape_rust }}"){% else %}None{% endif %}
 {%- endmacro %}
 {#- One limiter of an HTTPS server's edge (docs/adr/0109, D2), or none. -#}
 {%- macro edge_rate(rate) -%}
@@ -91,6 +95,7 @@ pub const MACHINE: Machine = Machine {
                 url: "{{ peer.link.url | escape_rust }}",
                 authenticator: {{ https_authenticator(peer.link.authenticator) }},
                 hold_ms: {{ peer.link.hold_ms }},
+                verify: {{ optional_name(peer.link.verify) }},
             },
 {%- elif peer.link.kind == "https_accept" %}
             link: PeerLink::HttpsAccept {
@@ -110,6 +115,8 @@ pub const MACHINE: Machine = Machine {
                     max_tracked: {{ peer.link.rate.max_tracked }},
                 },
                 trusted_proxies: &[{% for p in peer.link.trusted_proxies %}"{{ p | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+                sign: {{ optional_name(peer.link.sign) }},
+                max_skew_ms: {{ peer.link.max_skew_ms }},
             },
 {%- else %}
             link: PeerLink::WssAccept {

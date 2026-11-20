@@ -376,6 +376,19 @@ pub enum TransportState {
         /// The proxies whose `Forwarded` header names the client's address
         /// (docs/adr/0109, D2): CIDR blocks, each as written.
         trusted_proxies: Vec<String>,
+        /// The `sign` key of the server's host that signs every `200`
+        /// (docs/adr/0109, D9; SCE_MESH.md section 22.9), by its id. Read by
+        /// the server; `None` signs nothing.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sign: Option<String>,
+        /// The trust set of the client's host a response is verified under
+        /// (docs/adr/0109, D9), by its name. Read by the client; `None`
+        /// verifies nothing.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        verify: Option<String>,
+        /// How far a signed request's `created` may lie from the server's
+        /// clock under the `key` authenticator (docs/adr/0109, D9).
+        max_skew_ms: u32,
     },
     /// Zenoh binding of the host Mesh cores (§mesh-20). The
     /// binding carries no field: the peer is the `#peer` it is keyed by, the
@@ -431,11 +444,16 @@ pub enum HttpsAuthenticator {
     Install,
     /// A TLS client certificate the host configures on its HTTP stack.
     Mtls,
+    /// Every request signed by an Ed25519 key the client's host generated
+    /// once (docs/adr/0109, D9; SCE_MESH.md section 22.9); the server pins
+    /// the name to the key at the first exchange, or takes a key its host
+    /// registered. No `Authorization` is sent.
+    Key,
 }
 
 impl HttpsAuthenticator {
     /// Every authenticator, in the order a diagnostic lists them.
-    pub const ALL: [Self; 3] = [Self::Bearer, Self::Install, Self::Mtls];
+    pub const ALL: [Self; 4] = [Self::Bearer, Self::Install, Self::Mtls, Self::Key];
 
     /// The deploy.yaml spelling.
     pub fn as_str(self) -> &'static str {
@@ -443,6 +461,7 @@ impl HttpsAuthenticator {
             Self::Bearer => "bearer",
             Self::Install => "install",
             Self::Mtls => "mtls",
+            Self::Key => "key",
         }
     }
 
@@ -471,6 +490,13 @@ pub const HTTPS_DEFAULT_MAX_CLIENTS: u32 = 100_000;
 /// The keys each edge limiter tracks when the binding's `rate:` sets no
 /// `max_tracked` (docs/adr/0109, D2).
 pub const HTTPS_DEFAULT_RATE_MAX_TRACKED: u32 = 100_000;
+/// How far a signed request's `created` may lie from the server's clock when
+/// the binding sets no `max_skew_ms` (docs/adr/0109, D9): five minutes.
+pub const HTTPS_DEFAULT_MAX_SKEW_MS: u32 = 300_000;
+/// The longest id of a `sign` key or name of a trust set a binding may name:
+/// the bound of a key id in the host's records (docs/SCE_HOST_FEATURES.md
+/// section 10).
+pub const HTTPS_KEY_NAME_MAX_BYTES: usize = 64;
 
 /// One limiter of the edge (docs/adr/0109, D2), judged by the generic cell
 /// rate algorithm of `sce:std/rate/gcra_admit`: one permit regenerates every
@@ -2943,9 +2969,9 @@ fn check_positive_u32(value: &serde_yaml_ng::Value) -> Result<(), String> {
 }
 
 /// The keys only the dialing side of an `https` binding reads.
-const HTTPS_DIAL_KEYS: [&str; 2] = ["url", "hold_ms"];
+const HTTPS_DIAL_KEYS: [&str; 3] = ["url", "hold_ms", "verify"];
 /// The keys only the accepting side of an `https` binding reads.
-const HTTPS_ACCEPT_KEYS: [&str; 9] = [
+const HTTPS_ACCEPT_KEYS: [&str; 11] = [
     "listen",
     "max_hold_ms",
     "max_body_bytes",
@@ -2955,6 +2981,8 @@ const HTTPS_ACCEPT_KEYS: [&str; 9] = [
     "max_response_bytes",
     "rate",
     "trusted_proxies",
+    "sign",
+    "max_skew_ms",
 ];
 
 /// Validate an `https` binding's fields (ADR 0107, D2).
@@ -2964,11 +2992,14 @@ const HTTPS_ACCEPT_KEYS: [&str; 9] = [
 ///   - `url`: `https://<host>[:<port>][<base>]`, or `http://` to a loopback
 ///     host, under the rule the WebSocket binding's `url` follows;
 ///   - `listen`: `host:port`, the port a number from 1 to 65535;
-///   - `authenticator`: present, and one of `bearer`, `install`, `mtls`;
-///     a binding without one is refused by name
+///   - `authenticator`: present, and one of `bearer`, `install`, `mtls`,
+///     `key`; a binding without one is refused by name
 ///     ([`TopologyError::BindingWithoutAuthenticator`]);
 ///   - the numbers: positive integers that fit a u32 (`max_body_bytes`, a
-///     u64).
+///     u64);
+///   - `sign` and `verify` (docs/adr/0109, D9): a key id and a trust set's
+///     name, each 1 to 64 bytes; `max_skew_ms` only beside the `key`
+///     authenticator, which is the one that reads it.
 ///
 /// The closed key set itself is the registry's (`optional_binding_fields`),
 /// held at parse time; this checks the values and which side a key belongs to.
@@ -3110,6 +3141,41 @@ fn validate_https_extras_partial(
     }
     if let Some(v) = pt.extra.get("trusted_proxies") {
         trusted_proxies(v).map_err(|reason| invalid("trusted_proxies", reason))?;
+    }
+    // docs/adr/0109, D9: `sign` names a key of the server's host and `verify`
+    // a trust set of the client's, each by the id the host holds it under.
+    for key in ["sign", "verify"] {
+        if let Some(v) = pt.extra.get(key) {
+            check_key_name(v).map_err(|reason| invalid(key, reason))?;
+        }
+    }
+    if let Some(v) = pt.extra.get("max_skew_ms") {
+        check_positive_u32(v).map_err(|reason| invalid("max_skew_ms", reason))?;
+        // A bound that nothing reads is a setting that silently does
+        // nothing: only the `key` authenticator signs requests.
+        if pt.extra.get("authenticator").and_then(|a| a.as_str()) != Some("key") {
+            return Err(invalid(
+                "max_skew_ms",
+                "is read only by the `key` authenticator, which signs requests; \
+                 this binding names another"
+                    .to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Check the id of a key or the name of a trust set: a text of 1 to
+/// [`HTTPS_KEY_NAME_MAX_BYTES`] bytes.
+fn check_key_name(value: &serde_yaml_ng::Value) -> Result<(), String> {
+    let name = value
+        .as_str()
+        .ok_or_else(|| format!("must be a key id (got {})", render_yaml_value(value)))?;
+    if name.is_empty() || name.len() > HTTPS_KEY_NAME_MAX_BYTES {
+        return Err(format!(
+            "must be 1 to {HTTPS_KEY_NAME_MAX_BYTES} bytes (got {} bytes)",
+            name.len()
+        ));
     }
     Ok(())
 }
@@ -3322,6 +3388,9 @@ fn https_state(extra: &std::collections::HashMap<String, serde_yaml_ng::Value>) 
             .get("trusted_proxies")
             .map(|v| trusted_proxies(v).expect("validate_https_extras_partial proved the proxies"))
             .unwrap_or_default(),
+        sign: text("sign"),
+        verify: text("verify"),
+        max_skew_ms: number("max_skew_ms", HTTPS_DEFAULT_MAX_SKEW_MS),
     }
 }
 
@@ -6071,6 +6140,9 @@ topology:
                 max_response_bytes,
                 rate,
                 trusted_proxies,
+                sign,
+                verify,
+                max_skew_ms,
             } => {
                 assert_eq!(url.as_deref(), Some("https://cal.example:8443/api"));
                 // docs/adr/0109, D1 and D2: the edge's bounds at their defaults.
@@ -6078,6 +6150,10 @@ topology:
                 assert_eq!(*max_response_bytes, HTTPS_DEFAULT_MAX_BODY_BYTES);
                 assert_eq!(*rate, HttpsRates::DEFAULT);
                 assert!(trusted_proxies.is_empty());
+                // docs/adr/0109, D9: nothing signed or verified unless named.
+                assert_eq!(*sign, None);
+                assert_eq!(*verify, None);
+                assert_eq!(*max_skew_ms, HTTPS_DEFAULT_MAX_SKEW_MS);
                 assert_eq!(*listen, None);
                 assert_eq!(*authenticator, HttpsAuthenticator::Bearer);
                 assert_eq!(*hold_ms, HTTPS_DEFAULT_HOLD_MS);
@@ -6282,6 +6358,103 @@ topology:
                 assert!(reason.contains("other side"), "{reason}");
             }
             other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
+    }
+
+    /// docs/adr/0109, D9: `sign` is read on the side that accepts and
+    /// `verify` on the side that dials, each a key's id as written; the `key`
+    /// authenticator reads `max_skew_ms`, which no other authenticator may
+    /// name; and each is refused on the other side or out of its bounds. Red
+    /// if `max_skew_ms` is taken beside an authenticator that never reads it.
+    #[test]
+    fn an_https_binding_reads_its_signature_keys_on_their_sides() {
+        let dial = resolve_on(
+            "https",
+            "sender",
+            ", url: \"https://cal.example\", authenticator: key, verify: servers",
+        )
+        .expect("a client that verifies and signs");
+        assert!(
+            matches!(
+                &dial[0].state,
+                TransportState::Https {
+                    authenticator: HttpsAuthenticator::Key,
+                    verify: Some(set),
+                    sign: None,
+                    ..
+                } if set == "servers"
+            ),
+            "{:?}",
+            dial[0].state
+        );
+        let accept = resolve_on(
+            "https",
+            "sender",
+            ", listen: \"0.0.0.0:9443\", authenticator: key, sign: \"generated:0a1b\", \
+             max_skew_ms: 60000",
+        )
+        .expect("a server that signs and checks request signatures");
+        assert!(
+            matches!(
+                &accept[0].state,
+                TransportState::Https {
+                    sign: Some(key),
+                    verify: None,
+                    max_skew_ms: 60_000,
+                    ..
+                } if key == "generated:0a1b"
+            ),
+            "{:?}",
+            accept[0].state
+        );
+
+        let long = "k".repeat(HTTPS_KEY_NAME_MAX_BYTES + 1);
+        let long_sign = format!(", listen: \"0.0.0.0:9443\", authenticator: bearer, sign: {long}");
+        let cases = [
+            (
+                ", url: \"https://cal.example\", authenticator: bearer, sign: k",
+                "sign",
+                "other side",
+            ),
+            (
+                ", listen: \"0.0.0.0:9443\", authenticator: bearer, verify: servers",
+                "verify",
+                "other side",
+            ),
+            (
+                ", listen: \"0.0.0.0:9443\", authenticator: install, max_skew_ms: 1000",
+                "max_skew_ms",
+                "`key` authenticator",
+            ),
+            (
+                ", listen: \"0.0.0.0:9443\", authenticator: key, max_skew_ms: 0",
+                "max_skew_ms",
+                "between 1",
+            ),
+            (
+                ", url: \"https://cal.example\", authenticator: bearer, verify: \"\"",
+                "verify",
+                "1 to 64 bytes",
+            ),
+            (long_sign.as_str(), "sign", "1 to 64 bytes"),
+            (
+                ", listen: \"0.0.0.0:9443\", authenticator: bearer, sign: 7",
+                "sign",
+                "a key id",
+            ),
+        ];
+        for (fields, field, why) in cases {
+            match resolve_on("https", "sender", fields) {
+                Err(TopologyError::InvalidBindingField {
+                    field: refused,
+                    reason,
+                    ..
+                }) => {
+                    assert_eq!(refused, field, "{fields}");
+                    assert!(reason.contains(why), "{fields}: {reason}");
+                }
+                other => panic!("{fields}: expected InvalidBindingField, got {other:?}"),
+            }
         }
     }
 

@@ -45,6 +45,9 @@ pub enum PeerLink {
         authenticator: HttpsAuthenticator,
         /// deploy.yaml's `hold_ms`: how long a poll asks to be held.
         hold_ms: u32,
+        /// deploy.yaml's `verify`: the trust set of the host a response is verified under
+        /// (docs/adr/0109, D9; SCE_MESH.md section 22.9), by its name; `None` verifies nothing.
+        verify: Option<&'static str>,
     },
     /// The HTTPS binding: the peer posts its exchanges to this machine, which listens on
     /// `listen` (`<host>:<port>`) and keeps the peer's mailbox.
@@ -71,6 +74,12 @@ pub enum PeerLink {
         /// deploy.yaml's `trusted_proxies`: the CIDR blocks whose `Forwarded` header names the
         /// client's address (docs/adr/0109, D2), each as written and checked by the build.
         trusted_proxies: &'static [&'static str],
+        /// deploy.yaml's `sign`: the `sign` key of the host every `200` is signed with
+        /// (docs/adr/0109, D9; SCE_MESH.md section 22.9), by its id; `None` signs nothing.
+        sign: Option<&'static str>,
+        /// deploy.yaml's `max_skew_ms`: how far a signed request's `created` may lie from the
+        /// server's clock under the `key` authenticator (docs/adr/0109, D9).
+        max_skew_ms: u32,
     },
 }
 
@@ -143,6 +152,9 @@ pub enum HttpsAuthenticator {
     Install,
     /// A TLS client certificate.
     Mtls,
+    /// Every request signed by the client's Ed25519 key, pinned at the first exchange or
+    /// registered by the server's host (docs/adr/0109, D9; SCE_MESH.md section 22.9).
+    Key,
 }
 
 /// One peer: the name `#<name>` addresses, how the core treats envelopes to
@@ -333,6 +345,8 @@ mod tests {
                 max_response_bytes: 1_048_576,
                 rate: EdgeRates::DEFAULT,
                 trusted_proxies: &[],
+                sign: None,
+                max_skew_ms: 300_000,
             },
         }],
         sessions: None,

@@ -101,13 +101,22 @@ impl ClientSettings {
 
     /// The settings the generated peer table gives the machine `own` for `peer`, when this
     /// machine dials it over HTTPS ([`PeerLink::HttpsDial`]), proving its name with `credential`,
-    /// which the host holds. `None` for any other link, and for a credential of another kind than
-    /// the link's `authenticator`, which the server would refuse.
-    pub fn from_peer(own: &str, peer: &Peer, credential: Credential) -> Option<ClientSettings> {
+    /// which the host holds, and verifying what the server sends under `trusted`, the keys of the
+    /// trust set the link's `verify` names, which the host holds too. `None` for any other link,
+    /// for a credential of another kind than the link's `authenticator`, which the server would
+    /// refuse, and for keys given to a link that verifies nothing or none to one that verifies:
+    /// a deployment that asks for verification is never run without it.
+    pub fn from_peer(
+        own: &str,
+        peer: &Peer,
+        credential: Credential,
+        trusted: Option<Vec<TrustedKey>>,
+    ) -> Option<ClientSettings> {
         let PeerLink::HttpsDial {
             url,
             authenticator,
             hold_ms,
+            verify,
         } = peer.link
         else {
             return None;
@@ -119,9 +128,13 @@ impl ClientSettings {
             (HttpsAuthenticator::Bearer, Credential::Bearer(_))
                 | (HttpsAuthenticator::Install, Credential::Install(_))
                 | (HttpsAuthenticator::Mtls, Credential::Mtls)
+                | (HttpsAuthenticator::Key, Credential::Key(_))
         );
-        fits.then(|| ClientSettings {
+        // SCE_MESH.md section 22.9: the trust set is given exactly when the link names one.
+        let verifies = verify.is_some() == trusted.is_some();
+        (fits && verifies).then(|| ClientSettings {
             hold: Duration::from_millis(u64::from(hold_ms)),
+            verify: trusted,
             ..ClientSettings::new(url, own, peer.name, credential)
         })
     }
@@ -967,6 +980,7 @@ mod tests {
                 url: "https://cal.example/api",
                 authenticator,
                 hold_ms: 9_000,
+                verify: None,
             },
         }
     }
@@ -976,23 +990,78 @@ mod tests {
     #[test]
     fn a_dialing_link_gives_the_settings_and_takes_only_its_own_credential() {
         let peer = dialed(HttpsAuthenticator::Install);
-        let settings = ClientSettings::from_peer("phone", &peer, Credential::Install([1; 32]))
-            .expect("an installation secret for an `install` link");
+        let settings =
+            ClientSettings::from_peer("phone", &peer, Credential::Install([1; 32]), None)
+                .expect("an installation secret for an `install` link");
         assert_eq!(settings.base, "https://cal.example/api");
         assert_eq!(settings.own, "phone");
         assert_eq!(settings.server, "cloud");
         assert_eq!(settings.hold, Duration::from_millis(9_000));
-        assert!(ClientSettings::from_peer("phone", &peer, Credential::Mtls).is_none());
+        assert_eq!(settings.verify, None);
+        assert!(ClientSettings::from_peer("phone", &peer, Credential::Mtls, None).is_none());
         let bearer = dialed(HttpsAuthenticator::Bearer);
         assert!(
-            ClientSettings::from_peer("phone", &bearer, Credential::Bearer("t".into())).is_some()
+            ClientSettings::from_peer("phone", &bearer, Credential::Bearer("t".into()), None)
+                .is_some()
         );
         let accepted = Peer {
             link: PeerLink::ZenohInbox,
             ..bearer
         };
+        assert!(ClientSettings::from_peer(
+            "phone",
+            &accepted,
+            Credential::Bearer("t".into()),
+            None
+        )
+        .is_none());
+    }
+
+    /// docs/adr/0109, D9: a link that names `verify` gives the client the trust set's keys and is
+    /// refused without them, one that names none is refused keys, and the `key` authenticator
+    /// takes a key credential. Red if a deployment that asks for verification can be run without
+    /// it.
+    #[test]
+    fn a_dialing_link_that_verifies_is_never_run_without_its_trust_set() {
+        let keys = alloc::vec![TrustedKey {
+            id: "server-2026".to_string(),
+            public_key: [7u8; 32],
+        }];
+        let verifying = Peer {
+            link: PeerLink::HttpsDial {
+                url: "https://cal.example/api",
+                authenticator: HttpsAuthenticator::Key,
+                hold_ms: 9_000,
+                verify: Some("servers"),
+            },
+            ..dialed(HttpsAuthenticator::Key)
+        };
+        let key = || {
+            Credential::Key(super::super::signature::RequestSigner::new(
+                sce_rust_crypto::ed25519::KeyPair::from_seed(&[5u8; 32]),
+            ))
+        };
+        let settings = ClientSettings::from_peer("phone", &verifying, key(), Some(keys.clone()))
+            .expect("a key and the trust set");
+        assert_eq!(settings.verify, Some(keys.clone()));
         assert!(
-            ClientSettings::from_peer("phone", &accepted, Credential::Bearer("t".into())).is_none()
+            ClientSettings::from_peer("phone", &verifying, key(), None).is_none(),
+            "a link that verifies, given no trust set"
+        );
+        assert!(
+            ClientSettings::from_peer("phone", &dialed(HttpsAuthenticator::Key), key(), Some(keys))
+                .is_none(),
+            "keys for a link that verifies nothing"
+        );
+        assert!(
+            ClientSettings::from_peer(
+                "phone",
+                &dialed(HttpsAuthenticator::Key),
+                Credential::Bearer("t".into()),
+                None
+            )
+            .is_none(),
+            "a token for the `key` authenticator"
         );
     }
 

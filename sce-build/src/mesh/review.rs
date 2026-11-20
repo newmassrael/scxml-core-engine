@@ -317,6 +317,9 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             max_response_bytes,
             rate,
             trusted_proxies,
+            sign,
+            verify,
+            max_skew_ms,
         } => {
             // Which side this is: exactly one of `url` and `listen` is set
             // (ADR 0107, D2), and an absent one is not a default.
@@ -366,6 +369,14 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
                     trusted_proxies.join(", ")
                 },
             ));
+            // docs/adr/0109, D9: what signs a response and what verifies it.
+            // An absent one is not a default: it signs or verifies nothing.
+            out.push(Fact::new(at("sign"), sign.as_deref().unwrap_or("(none)")));
+            out.push(Fact::new(
+                at("verify"),
+                verify.as_deref().unwrap_or("(none)"),
+            ));
+            out.push(Fact::new(at("max-skew-ms"), max_skew_ms.to_string()));
         }
         // Nothing to settle: the binding names the peer and no more (the key
         // is derived from the two machine names, and the router endpoints

@@ -185,14 +185,18 @@ pub struct Listening {
     pub settings: ServerSettings,
     /// The authenticator every binding on the address names.
     pub authenticator: HttpsAuthenticator,
+    /// The id of the `sign` key every binding on the address names (docs/adr/0109, D9), which
+    /// the program resolves in its host's key ring into [`ServerSettings::signer`]; `None` signs
+    /// nothing.
+    pub sign: Option<&'static str>,
     /// The peers accepted on the address: the names a server built for it binds.
     pub peers: Vec<&'static str>,
 }
 
 impl Listening {
     /// What `machine` accepts over HTTPS on `listen` ([`PeerLink::HttpsAccept`]). `None` when no
-    /// peer is accepted there, or when the bindings there name different authenticators, which
-    /// one server cannot check by one rule.
+    /// peer is accepted there, or when the bindings there name different authenticators or
+    /// different `sign` keys, which one server cannot keep by one rule.
     pub fn on(machine: &Machine, listen: &str) -> Option<Listening> {
         let mut found: Option<Listening> = None;
         for peer in machine.peers {
@@ -207,6 +211,8 @@ impl Listening {
                 max_response_bytes,
                 rate,
                 trusted_proxies,
+                sign,
+                max_skew_ms,
             } = peer.link
             else {
                 continue;
@@ -227,10 +233,11 @@ impl Listening {
                     .iter()
                     .filter_map(|block| Cidr::parse(block))
                     .collect(),
+                max_skew: Duration::from_millis(u64::from(max_skew_ms)),
                 ..ServerSettings::default()
             };
             if let Some(held) = found.as_mut() {
-                if held.authenticator != authenticator {
+                if held.authenticator != authenticator || held.sign != sign {
                     return None;
                 }
                 let settings = &mut held.settings;
@@ -253,11 +260,13 @@ impl Listening {
                 settings
                     .trusted_proxies
                     .retain(|block| declared.trusted_proxies.contains(block));
+                settings.max_skew = settings.max_skew.min(declared.max_skew);
                 held.peers.push(peer.name);
             } else {
                 found = Some(Listening {
                     settings: declared,
                     authenticator,
+                    sign,
                     peers: alloc::vec![peer.name],
                 });
             }
@@ -1760,6 +1769,8 @@ mod tests {
                 max_response_bytes: u64::from(mailbox) * 64,
                 rate: crate::peers::EdgeRates::DEFAULT,
                 trusted_proxies: &[],
+                sign: None,
+                max_skew_ms: 300_000,
             },
         }
     }
@@ -1806,6 +1817,57 @@ mod tests {
         assert!(
             Listening::on(&machine, "0.0.0.0:8443").is_none(),
             "two authenticators on one address"
+        );
+    }
+
+    /// docs/adr/0109, D9: an address served by one server signs with the one key its bindings
+    /// name and holds signed requests to the smallest skew any declares; bindings that name two
+    /// keys cannot be one server's. Red if `Listening::on` drops `sign` or takes either key.
+    #[test]
+    fn an_address_signs_with_the_one_key_its_bindings_name() {
+        let signing = |name: &'static str, sign: Option<&'static str>, max_skew_ms: u32| {
+            let mut peer = accepted(name, "0.0.0.0:9443", HttpsAuthenticator::Key, 64);
+            if let PeerLink::HttpsAccept {
+                sign: at,
+                max_skew_ms: skew,
+                ..
+            } = &mut peer.link
+            {
+                *at = sign;
+                *skew = max_skew_ms;
+            }
+            peer
+        };
+        let peers: &'static [crate::peers::Peer] = Box::leak(Box::new([
+            signing("phone", Some("generated:0a"), 300_000),
+            signing("tablet", Some("generated:0a"), 60_000),
+        ]));
+        let machine = Machine {
+            name: "cloud",
+            dedup_window: 8,
+            gap_timeout_ms: 50,
+            peers,
+            sessions: None,
+        };
+        let listening = Listening::on(&machine, "0.0.0.0:9443").expect("two peers there");
+        assert_eq!(listening.sign, Some("generated:0a"));
+        assert_eq!(listening.settings.max_skew, Duration::from_secs(60));
+        assert_eq!(
+            listening.settings.signer, None,
+            "the key is the host's to resolve"
+        );
+
+        let two: &'static [crate::peers::Peer] = Box::leak(Box::new([
+            signing("phone", Some("generated:0a"), 300_000),
+            signing("tablet", Some("generated:0b"), 300_000),
+        ]));
+        let machine = Machine {
+            peers: two,
+            ..machine
+        };
+        assert!(
+            Listening::on(&machine, "0.0.0.0:9443").is_none(),
+            "two signing keys on one address"
         );
     }
 

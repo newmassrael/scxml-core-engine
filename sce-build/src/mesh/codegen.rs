@@ -389,6 +389,11 @@ enum TargetStateView {
         authenticator: &'static str,
         /// The hold the client asks for on a poll, in milliseconds.
         hold_ms: u32,
+        /// The trust set a response is verified under (docs/adr/0109, D9),
+        /// pre-escaped as a complete C++ string literal; `None` verifies
+        /// nothing.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        verify: Option<String>,
         /// The binding's §16.7 row 3 retry policy, carried by the client
         /// rather than by the router's `RetryingDispatcher`: an https send is
         /// confirmed when an exchange that carried it is answered, after
@@ -408,6 +413,7 @@ fn https_authenticator_enumerator(a: crate::mesh::topology::HttpsAuthenticator) 
         HttpsAuthenticator::Bearer => "Bearer",
         HttpsAuthenticator::Install => "Install",
         HttpsAuthenticator::Mtls => "Mtls",
+        HttpsAuthenticator::Key => "Key",
     }
 }
 
@@ -450,11 +456,13 @@ impl TargetStateView {
                 url: Some(url),
                 authenticator,
                 hold_ms,
+                verify,
                 ..
             } => Self::Https {
                 url: cpp_string_literal(url),
                 authenticator: https_authenticator_enumerator(*authenticator),
                 hold_ms: *hold_ms,
+                verify: verify.as_deref().map(cpp_string_literal),
                 retry: None,
             },
             TransportState::Https { url: None, .. } => unreachable!(
@@ -1756,12 +1764,14 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                     url,
                     authenticator,
                     hold_ms,
+                    verify,
                     ..
                 } => (
                     TargetStateView::Https {
                         url,
                         authenticator,
                         hold_ms,
+                        verify,
                         retry,
                     },
                     None,
@@ -2430,6 +2440,9 @@ enum HostLinkContext {
         url: String,
         authenticator: &'static str,
         hold_ms: u32,
+        /// The trust set a response is verified under (docs/adr/0109, D9); `None` verifies
+        /// nothing.
+        verify: Option<String>,
     },
     /// The HTTPS binding on the side that keeps the mailbox: the address it listens on, the
     /// `authenticator` word and the bounds of the accepting binding.
@@ -2445,6 +2458,10 @@ enum HostLinkContext {
         max_response_bytes: u64,
         rate: crate::mesh::topology::HttpsRates,
         trusted_proxies: Vec<String>,
+        /// The key every `200` is signed with, and the skew a signed request is held to
+        /// (docs/adr/0109, D9); `None` signs nothing.
+        sign: Option<String>,
+        max_skew_ms: u32,
     },
 }
 
@@ -2453,12 +2470,7 @@ enum HostLinkContext {
 fn https_authenticator_word(
     authenticator: &crate::mesh::topology::HttpsAuthenticator,
 ) -> &'static str {
-    use crate::mesh::topology::HttpsAuthenticator;
-    match authenticator {
-        HttpsAuthenticator::Bearer => "bearer",
-        HttpsAuthenticator::Install => "install",
-        HttpsAuthenticator::Mtls => "mtls",
-    }
+    authenticator.as_str()
 }
 
 /// The peer-table template for a host-core backend, under
@@ -2613,11 +2625,13 @@ fn generate_host_mesh(
                     url: Some(url),
                     authenticator,
                     hold_ms,
+                    verify,
                     ..
                 } => HostLinkContext::HttpsDial {
                     url: url.clone(),
                     authenticator: https_authenticator_word(authenticator),
                     hold_ms: *hold_ms,
+                    verify: verify.clone(),
                 },
                 TransportState::Https {
                     listen: Some(listen),
@@ -2630,6 +2644,8 @@ fn generate_host_mesh(
                     max_response_bytes,
                     rate,
                     trusted_proxies,
+                    sign,
+                    max_skew_ms,
                     ..
                 } => HostLinkContext::HttpsAccept {
                     listen: listen.clone(),
@@ -2642,6 +2658,8 @@ fn generate_host_mesh(
                     max_response_bytes: *max_response_bytes,
                     rate: *rate,
                     trusted_proxies: trusted_proxies.clone(),
+                    sign: sign.clone(),
+                    max_skew_ms: *max_skew_ms,
                 },
                 TransportState::Https { .. } => unreachable!(
                     "generate_host_mesh: an https binding with neither `url` nor `listen` passed \

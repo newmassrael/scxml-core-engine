@@ -117,6 +117,10 @@ pub const HTTPS: Binding = Binding {
         // (tests/the_https_edge_limits_rate.rs), on a binding that names them.
         rate: EdgeRates::NONE,
         trusted_proxies: &[],
+        // A bearer client that does not verify: what the scenarios on this binding judge is what
+        // the server keeps, not the message signatures, which the conformance kit judges.
+        sign: None,
+        max_skew_ms: 300_000,
     },
 };
 

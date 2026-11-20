@@ -301,6 +301,32 @@ fn the_retry_policy_is_the_clients_and_wraps_no_dispatcher() {
     );
 }
 
+/// docs/adr/0109, D9: a binding that names `verify` hands its client the
+/// trust set's name, and the `key` authenticator is the client's own
+/// enumerator; one that names no `verify` sets none, so its client takes a
+/// `200` as it comes. Red if the template drops `verify` or maps `key` to
+/// another authenticator.
+#[test]
+fn a_binding_that_verifies_names_its_trust_set_to_the_client() {
+    let code = generate(
+        "verify",
+        "            url: \"https://motor.example:9443/api\"\n            authenticator: key\n            verify: \"servers\"\n",
+        "",
+    )
+    .expect("a dialing https binding that signs and verifies generates");
+    assert!(code.contains("https_config.authenticator = SCE::Mesh::Https::Authenticator::Key;"));
+    assert!(
+        code.contains("https_config.verify = std::string(\"servers\");"),
+        "the client verifies under the trust set the binding names"
+    );
+
+    let plain = generate("verify-none", DIALING, "").expect("a dialing https binding generates");
+    assert!(
+        !plain.contains("https_config.verify"),
+        "a binding that names no trust set verifies nothing"
+    );
+}
+
 #[test]
 fn a_buffer_is_released_by_the_clients_first_answered_exchange() {
     let code = generate(
