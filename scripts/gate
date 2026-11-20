@@ -15,6 +15,9 @@
 #                                     to main: ci_only gates included, no skip
 #   scripts/gate --rust <release> ... run on that installed Rust release only
 #   scripts/gate --at <commit> ...    refuse to run unless HEAD is that commit
+#   scripts/gate --change-set A..B <slug>...
+#                                     run named gates, handing them what A..B
+#                                     changes as the set they read
 #
 # The order is derived, never typed: `tools/git-hooks/gate_registry.py`
 # holds each gate's dependencies and measured cost, and the runner sorts by
@@ -41,6 +44,11 @@
 # registry makes that choice (`push_keeps`), and a landing's plan puts the
 # flag in every unit. And it makes a skip a refusal: a gate that would skip
 # and exit 0 for want of a tool ends with 3, could not run, instead.
+#
+# `--change-set` is how a plan's unit hands a gate that works per changed path
+# (`commits: ["CHANGES"]` in the registry) the push's ranges. It selects
+# nothing, unlike `--changed-in`: the plan already chose the gate, and the
+# ranges are only what the gate reads (`SCE_GATE_CHANGED_FILE`).
 
 set -euo pipefail
 
@@ -54,6 +62,7 @@ ORDER=()
 MODE=""
 CHANGED_FILE=""
 CHANGED_RANGES=()
+CHANGE_SET_RANGES=()
 PLAN=0
 RUST_WANT=""
 AT_WANT=""
@@ -70,7 +79,8 @@ while (( $# )); do
         --at)           AT_WANT="${2:-}"; shift ;;
         --changed-from) MODE="changed"; CHANGED_FILE="$2"; shift ;;
         --changed-in)   MODE="changed"; CHANGED_RANGES+=("$2"); shift ;;
-        -h|--help)      sed -n '5,43p' "$0"; exit 0 ;;
+        --change-set)   CHANGE_SET_RANGES+=("${2:-}"); shift ;;
+        -h|--help)      sed -n '5,51p' "$0"; exit 0 ;;
         -*)             printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
         *)              SLUGS+=("$1"); MODE="${MODE:-named}" ;;
     esac
@@ -109,6 +119,12 @@ if (( LANDING )); then
     # scripts/gates/lib.sh reads this and ends with 3, could not run, where it
     # would otherwise exit 0. Exported, so a gate's own sub-scripts see it.
     export SCE_GATE_LANDING=1
+fi
+# The set a named gate reads is not a selection, so it goes with named gates
+# only; a run that selects by a change already hands its gates that change.
+if (( ${#CHANGE_SET_RANGES[@]} )) && [[ $PLAN -eq 1 || "$MODE" != "named" ]]; then
+    printf 'gate: --change-set hands named gates the set they read; it takes slugs, and not --plan, --all, --list or a selection by change\n' >&2
+    exit 2
 fi
 
 # ── The commit a plan named, and no other ──────────────────────────────
@@ -151,23 +167,32 @@ fi
 # A range that does not resolve is refused, not widened to every gate: the
 # caller resolved both ends before handing them over, so a missing commit here
 # means the history did not arrive, and that is the thing to report.
-if (( ${#CHANGED_RANGES[@]} )); then
+#
+# `--change-set` ranges are resolved the same way; the two never meet, since
+# `--change-set` goes only with named gates and `--changed-in` selects.
+RANGE_FLAG="--changed-in"
+RANGES=(${CHANGED_RANGES[@]+"${CHANGED_RANGES[@]}"})
+if (( ${#CHANGE_SET_RANGES[@]} )); then
+    RANGE_FLAG="--change-set"
+    RANGES=("${CHANGE_SET_RANGES[@]}")
+fi
+if (( ${#RANGES[@]} )); then
     if [[ -n "$CHANGED_FILE" ]]; then
         printf 'gate: --changed-from and --changed-in name the change set twice; pass one\n' >&2
         exit 2
     fi
     CHANGED_FILE="$(mktemp)"
     trap 'rm -f "$CHANGED_FILE"' EXIT
-    for range in "${CHANGED_RANGES[@]}"; do
+    for range in "${RANGES[@]}"; do
         base="${range%%..*}"
         tip="${range#*..}"
         if [[ "$range" != *..* || -z "$base" || -z "$tip" || "$tip" == *..* ]]; then
-            printf 'gate: --changed-in takes <base>..<tip>, got %q\n' "$range" >&2
+            printf 'gate: %s takes <base>..<tip>, got %q\n' "$RANGE_FLAG" "$range" >&2
             exit 2
         fi
         for end in "$base" "$tip"; do
             if ! git cat-file -e "${end}^{commit}" 2>/dev/null; then
-                printf 'gate: --changed-in %s: %s is no commit this checkout has\n' "$range" "$end" >&2
+                printf 'gate: %s %s: %s is no commit this checkout has\n' "$RANGE_FLAG" "$range" "$end" >&2
                 exit 2
             fi
         done
@@ -175,7 +200,7 @@ if (( ${#CHANGED_RANGES[@]} )); then
     done
     sort -u "$CHANGED_FILE" -o "$CHANGED_FILE"
     printf 'gate: %s changed path(s) in %s\n' \
-        "$(wc -l <"$CHANGED_FILE" | tr -d ' ')" "${CHANGED_RANGES[*]}" >&2
+        "$(wc -l <"$CHANGED_FILE" | tr -d ' ')" "${RANGES[*]}" >&2
 fi
 
 # ── The Rust release the gates run on ──────────────────────────────
@@ -278,7 +303,14 @@ if (( PLAN )); then
     PLAN_ARGS=(--repo-root "$REPO_ROOT" --plan "${LANDING_ARGS[@]}")
     case "$MODE" in
         all)     PLAN_ARGS+=(--all) ;;
-        changed) PLAN_ARGS+=(--changed-from "$CHANGED_FILE") ;;
+        changed)
+            PLAN_ARGS+=(--changed-from "$CHANGED_FILE")
+            # The ranges travel too: a unit whose gate reads the change set
+            # carries them, since the file is this machine's alone.
+            for range in ${CHANGED_RANGES[@]+"${CHANGED_RANGES[@]}"}; do
+                PLAN_ARGS+=(--changed-in "$range")
+            done
+            ;;
         named)   PLAN_ARGS+=(--named "${SLUGS[@]}") ;;
         *)
             printf 'gate: --plan needs a selection: --all, --changed-in, --changed-from or slugs\n' >&2
@@ -392,6 +424,11 @@ PYEOF
             printf 'gate: %s resolved to no gate at all; the registry answered nothing for a name it accepted\n' \
                 "${SLUGS[*]}" >&2
             exit 2
+        fi
+        # Named gates handed a change set (`--change-set`, a plan's unit) read
+        # its paths, as the `changed` branch above hands its gates theirs.
+        if (( ${#CHANGE_SET_RANGES[@]} )); then
+            export SCE_GATE_CHANGED_FILE="$CHANGED_FILE"
         fi
         ;;
     *)
@@ -524,6 +561,11 @@ gate_in_container() {
     if [[ -n "$AT_WANT" ]]; then
         inner+=(--at "$AT_WANT")
     fi
+    # The ranges a unit was handed mean the same inside: the checkout and its
+    # git directory are mounted at their own paths.
+    for range in ${CHANGE_SET_RANGES[@]+"${CHANGE_SET_RANGES[@]}"}; do
+        inner+=(--change-set "$range")
+    done
     inner+=("$slug")
     printf '\ngate: %s runs in %s (%s) on Rust %s from %s: %s\n' \
         "$slug" "$tag" "${user[*]}" "$release" "$sysroot" "${inner[*]}" >&2
