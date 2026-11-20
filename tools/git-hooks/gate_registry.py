@@ -508,6 +508,10 @@ PEAK_MEASURED: dict[str, str] = {
     "w3c-wasm": "5.3 GB at the peak of a cold emscripten configure and build "
                 "of both programs with three build slots (bx --local, "
                 "2026-11-04), before the gate script existed",
+    "workspace-tests": "10.5 to 12.8 GiB committed at the peak of four passing "
+                       "runs (bx peaks.tsv, 2026-11-10), and killed at its own "
+                       "16 GiB limit on hkl001 (2026-11-13); declared 5, it was "
+                       "killed at 5.2 and 7.8 GB in a landing (2026-11-20)",
 }
 
 # Every unit names this, so a machine runs one gate of a set at a time. The
@@ -1132,7 +1136,9 @@ GATES: dict[str, dict] = {
                            "(`lowering_decision_ledger`), which `commits` carries",
         "inputs": None,
         "commits": ["HEAD"],
-        "peak_gb": 5,
+        # The highest figure a run has reached (PEAK_MEASURED); the one run
+        # that reached it was killed there, so the true peak may lie above.
+        "peak_gb": 16,
     },
     # The one reader of the content axis. The header's `source-hash` covers
     # the INPUT documents, so an edit to the templates or to the emit code
