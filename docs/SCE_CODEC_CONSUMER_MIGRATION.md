@@ -3372,3 +3372,25 @@ builds `Outboxes` itself, writes a peer table by hand, or implements `ServerHost
   one client's events (a lost client's `LinkEvent::Lost` included, which was told for all absent clients in one
   call). A host whose state is shared by every client takes a lock of its own; a host over a keyed pool needs none.
 
+## A Rust record or enum unit is a key of a map, and a crate that compiles one names `sce-portable-bytes` (ADR 0108)
+
+Landing: ADR 0108 steps 6 to 7b (`350b7fedda5`, `8f64285f8af`, `430aa484a79`). Every Rust unit generated from an
+event schema or an enum document is regenerated.
+
+- A Rust enum unit, and a Rust event-schema unit whose every field is a key type (an integer, `bool`, an enum or a
+  bounded text), now implements `::sce_portable_bytes::MapKey` (ADR 0108, D1 and D6 item 4). The impl is in the
+  unit because a record that keys two machines' maps can be implemented only once. The impl names the crate by its
+  absolute path, so **a crate that includes such a unit as a module must depend on `sce-portable-bytes` directly**.
+  A re-export through `sce-rust-runtime` does not satisfy `::sce_portable_bytes`. Without the dependency the build
+  fails with `E0433` at each `impl ::sce_portable_bytes::MapKey`. A crate that already depended on it, because a
+  unit held a bounded text (`SceString<N>`), needs nothing more.
+- A map's record, enum and union entries are held in the type the document's own unit declares (Rust
+  `<schema>::<Schema>Payload`, C11 `<Schema>Payload_t`), not in the machine's own record type. A host that reads a
+  map through the snapshot gets entries in the types its codecs already use. A statechart's put and read cross one
+  entry to and from the machine's record.
+- A `--no-std` Rust machine that holds a map, or calls an algorithm that builds a map with no map to derive a seed
+  from, takes `map_seed: ::sce_rust_runtime::MapSeed` at construction (ADR 0108, D8). A host without entropy passes
+  a fixed seed and accepts the residue the generated header states. A C11 machine takes the seed the same way.
+- A new diagnostic code, `algorithm/inout-on-may-fail`: an `inout` map slot on an algorithm that declares
+  `may-fail`. A `match` over `DiagnosticCode` names `AlgorithmInoutOnMayFail`.
+
