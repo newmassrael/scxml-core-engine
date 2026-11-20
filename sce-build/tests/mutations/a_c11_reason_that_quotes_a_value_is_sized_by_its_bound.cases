@@ -8,10 +8,12 @@
 # value of the run (`{v}`), and each quote carries a bound the build knows: a
 # bound the runtime publishes, which the machine checks, or one the document's
 # text gives. The unit tests of `c11_reasons` measure a quoting reason, ask
-# for its format, ask which bounds a machine checks, and hold each published
-# bound to its header. Each case breaks one link: the quote adds nothing to
-# the measure, a published bound is not checked, a `%` of the document is
-# read as a conversion, the build's bound drifts from the header's.
+# for the statements that write it with the runtime's text writer
+# (docs/adr/0110, D1), ask which bounds a machine checks, and hold each
+# published bound to its header. Each case breaks one link: the quote adds
+# nothing to the measure, a published bound is not checked, a text the
+# document bounds is written past its bound, the build's bound drifts from the
+# header's.
 
 mutation_tests -p sce-build --lib forge::c11_reasons
 mutation_targets sce-build/src/forge/c11_reasons.rs
@@ -29,10 +31,10 @@ edit("sce-build/src/forge/c11_reasons.rs",
      "                let _ = bound;\n")
 PY
 
-mutation_case "a percent the document wrote is left a conversion" <<'PY'
+mutation_case "a text the document bounds is written past its bound" <<'PY'
 edit("sce-build/src/forge/c11_reasons.rs",
-     "                format.push_str(&hole.replace('%', \"%%\"));\n",
-     "                format.push_str(hole);\n")
+     "            Quote::Within(n) => format!(\"sce_text_put_within(&{writer}, {value}, {n}u);\"),\n",
+     "            Quote::Within(_) => format!(\"sce_text_put_text(&{writer}, {value});\"),\n")
 PY
 
 mutation_case "the build sizes a payload refusal shorter than its header publishes" <<'PY'
