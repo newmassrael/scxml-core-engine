@@ -44,6 +44,10 @@
   first result in the transaction of its write; section 8, the Rust and C++
   reference hosts take their store at construction; section 9 narrows the
   durable key-value store to the lanes other than Rust.
+- Amended by: ADR 0109 (D14): new section 15 (the audit log), served by the
+  Rust and C++ reference hosts; section 8, the scenario's `audit` directive and
+  host state; sections 7 and 9 name it where they list the lanes and what is
+  not provided.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -453,7 +457,7 @@ once. Not provided here: any binding to a real provider.
   `<invoke>` of it as `codegen/standard-host-type-not-served`, on that
   `<invoke>`, naming the type, the lane and the lanes that serve it; a child the
   document carries is held to the same lane. Every type of sections 2 to 6 is
-  served on every lane; the types of sections 10 to 14 are served on Rust and
+  served on every lane; the types of sections 10 to 15 are served on Rust and
   C++ (docs/adr/0109, D0).
   That every lane serves every type stays the goal, and is
   not a precondition of adding one: a type is added with the lanes whose
@@ -500,13 +504,13 @@ was asked:
 
 | Member | What it says |
 |---|---|
-| `host` | directives applied before the step: `clock` (`utc_ms`, `monotonic_ms`, `zone_id`, `utc_offset_s`, each optional), `permission` (what the platform says), `user_decision` (what the user would choose if asked: `granted`, `denied`, `none`), `fail` (operation type to the failure code it fails with; an empty object ends them), `quota` (the most keys the store holds), `http` (what the transport answers: `status`, `headers` as name and value pairs, and `body` as text, `body_hex` as bytes or `body_repeat` as a text and a count; or `fail`, a transport failure; or `hold`, which does not answer), `model` (what the scripted provider is like, each member optional: `answers`, the answers it gives, one a start, in order, each `text` or `text_repeat` (a text and a count) with `finish` (`stop` when not written), replacing those not given yet; `constrained`, whether it decodes under a grammar; `name`, what it says answered; `context`, the most tokens a prompt and `max_tokens` may take together; `hold`, true for a provider that does not answer), `cose_keys` (the keys of sections 10 and 12, replacing those configured before: `sign`, a key id to the hexadecimal 32-byte seed of an Ed25519 key; `aead`, a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key; `mac`, a key id to a hexadecimal HMAC-SHA-256 key of any length; `trust`, a trust set's name to the ids of `sign` keys of the same directive, whose public keys it holds; a table not named is empty, and the keys the host generated and derived are kept), `random` (hexadecimal bytes the host's random source gives next, before the operating system's: a draw, a generation, the naming key of the first derivation and a seal's nonce take them in the order the host draws, section 13) |
+| `host` | directives applied before the step: `clock` (`utc_ms`, `monotonic_ms`, `zone_id`, `utc_offset_s`, each optional), `permission` (what the platform says), `user_decision` (what the user would choose if asked: `granted`, `denied`, `none`), `fail` (operation type to the failure code it fails with; an empty object ends them), `quota` (the most keys the store holds), `http` (what the transport answers: `status`, `headers` as name and value pairs, and `body` as text, `body_hex` as bytes or `body_repeat` as a text and a count; or `fail`, a transport failure; or `hold`, which does not answer), `model` (what the scripted provider is like, each member optional: `answers`, the answers it gives, one a start, in order, each `text` or `text_repeat` (a text and a count) with `finish` (`stop` when not written), replacing those not given yet; `constrained`, whether it decodes under a grammar; `name`, what it says answered; `context`, the most tokens a prompt and `max_tokens` may take together; `hold`, true for a provider that does not answer), `cose_keys` (the keys of sections 10 and 12, replacing those configured before: `sign`, a key id to the hexadecimal 32-byte seed of an Ed25519 key; `aead`, a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key; `mac`, a key id to a hexadecimal HMAC-SHA-256 key of any length; `trust`, a trust set's name to the ids of `sign` keys of the same directive, whose public keys it holds; a table not named is empty, and the keys the host generated and derived are kept), `random` (hexadecimal bytes the host's random source gives next, before the operating system's: a draw, a generation, the naming key of the first derivation, a seal's nonce, and the audit log's pseudonymisation key and audit key at their first use take them in the order the host draws, section 13), `audit` (the streams of the audit log, replacing those kept before: `streams`, a stream's name to its `checkpoint_every`, its `retain_days` and, optionally, `personal`, `pseudonymised` or `clear`, section 15) |
 | `advance_ms` | moves the engine's manual clock on, which is how a deadline passes |
 | `event`, `data` | an external event and its payload |
 | `expect.state` | the atomic state the machine is in |
 | `expect.variables` | what the machine published |
 | `expect.host_invokes` | the operations the host was started with in this step, refused ones included, oldest first: `{"type", "id", "request"}`, the request as the record |
-| `expect.host_state` | what the host holds afterwards, for the members named: `store` (key to value), `waiting` and `shown` (the notification ids, in the order posted), `http` (what the transport was given in all: method, URL, request header lines as name and value, body), `cancelled` (the invocations the host was told to stop), `credentials` (each name the host issued a token for, to its tokens as `issued_ms`, `expires_ms` and `revoked`, in the order of those three; a token's own bytes depend on the session's id, which differs by lane, section 14) |
+| `expect.host_state` | what the host holds afterwards, for the members named: `store` (key to value), `waiting` and `shown` (the notification ids, in the order posted), `http` (what the transport was given in all: method, URL, request header lines as name and value, body), `cancelled` (the invocations the host was told to stop), `credentials` (each name the host issued a token for, to its tokens as `issued_ms`, `expires_ms` and `revoked`, in the order of those three; a token's own bytes depend on the session's id, which differs by lane, section 14), `audit` (for each stream named, its rows as `sequence`, `at_ms` and `entry`, the sequences of its checkpoints, and whether a reader verifies it under the host's audit key, section 15) |
 
 **The reference stores' versions.** Every lane's store numbers versions from one
 counter of the store, which starts at `0`: each put, each put-if that wrote and
@@ -692,8 +696,11 @@ These are not built, and nothing here stands in for them:
 - **Delivery of a scheduled notification while the application is not running**,
   and any user interface for a permission request. A reference host answers the
   permission as the scenario sets it.
-- **Signing and sealing, random bytes, keyed digests, keys and credentials on
-  the lanes other than Rust and C++** (sections 10 to 14). Each is a later step
+- **A durable audit log for C++.** The C++ reference host keeps its audit log
+  in memory, for its own life, with an audit key and a pseudonymisation key it
+  draws anew (section 15); the durable log is the Rust host core's.
+- **Signing and sealing, random bytes, keyed digests, keys, credentials and the
+  audit log on the lanes other than Rust and C++** (sections 10 to 15). Each is a later step
   of docs/adr/0107 and docs/adr/0109 (D0), taken when a consumer needs it; until
   it lands, a build for that lane refuses a machine that asks for one of the
   operations, by name (section 7).
@@ -1045,7 +1052,7 @@ random bytes, and every configured signing key's `COSE_Key`: Rust in
 `backends/rust/host-features/tests/keys_cross_language.rs`, C++ in
 `AStandardHostKeys.KeysAndTagsCrossBetweenTheHosts`
 (`tests/integration/AStandardHostKeysTest.cpp`). `static_host_cose` and its
-scenario hold both hosts to sections 10 to 14 through a machine.
+scenario hold both hosts to sections 10 to 15 through a machine.
 
 ## 14. Credentials
 
@@ -1114,3 +1121,83 @@ The two hosts agree byte for byte on the token of one identity and name under
 one issuing key: Rust in `backends/rust/host-features/tests/credentials.rs`, C++
 in `AStandardHostCredentials.ATokenIsTheTagOfTheIdentityAndTheNameUnderTheIssuingKey`
 (`tests/integration/AStandardHostCredentialsTest.cpp`).
+
+## 15. Audit log
+
+A statechart appends what happened to a durable log its host keeps
+(docs/adr/0109, D14): append-only, each entry chained on the one before,
+checkpointed under the host's audit key, redacted by the schema of the entry,
+and kept for a time each stream states. A reader who holds the audit public key
+proves that an entry was changed, removed or cut from the end. It is not the
+bounded log of docs/adr/0062, which forgets its oldest entry, nor `<log>`, which
+is diagnostic output. Served by the Rust and C++ reference hosts (section 7).
+
+| Operation | `type` | Request | Result |
+|---|---|---|---|
+| Append | `sce-host-audit-append` | `audit_append_request`: `stream` (64), `entry` (`audit_entry`=4096), `sensitivity` (`audit_marks`=1024) | `audit_append_result`: `sequence` string (20) |
+
+Failure codes: `unknown_stream` (the host keeps no policy for the stream),
+`key_retired` (the operator retired the audit key or the pseudonymisation key)
+and `unavailable` (the log, the clock, a key or the random source could not be
+used).
+
+Refusal (`invalid_argument`): an empty `stream`, or a value past its bound; an
+`entry` that is not a JSON object, or that lacks a member its marks name, or a
+`personal` mark on a value that is no text (which a typed request cannot carry,
+see below).
+
+**The entry is a record of a schema.** `<invoke type="sce-host-audit-append"
+sce:entry="SignIn">` names an imported event schema, and the `<param
+name="entry">` is a variable, or a field of a record variable, of that record:
+the build writes it as its JSON payload, the form every lane writes an event's
+payload in, and refuses anything else where it is written (SCE Accepted Subset
+§2.12). The document writes `stream` and `entry`; `sensitivity` is the build's.
+
+**Redaction is declared once, on the schema.** A field may carry
+`sce:sensitivity="secret"`, never written to the log (the entry holds
+`sce-secret` in its place), or `sce:sensitivity="personal"`, on a text or an
+optional text, written as `sce-personal:` and the lowercase hexadecimal of its
+HMAC-SHA-256 under the log's pseudonymisation key, so that equal values still
+correlate and none is in the clear. The build writes the schema's marks into
+the request's `sensitivity` (`/password=secret;/email=personal`), and the host
+redacts by them before anything is written. A stream may keep personal values in
+the clear (`personal: clear`); a secret is never written by any stream. A record
+nested in an entry is not redacted by its own marks yet, so the build refuses an
+entry schema that holds one.
+
+**Durable before it answers.** The host writes the entry in its canonical form,
+chains it (`chain_n = SHA-256(chain_(n-1) || [stream, n, at_ms, entry])`), and,
+when `n` is a multiple of the stream's `checkpoint_every`, signs a checkpoint, a
+`COSE_Sign1` over `["sce-audit-1", stream, n, chain_n]` under its audit key, all
+in one transaction of its store, and answers `sequence` only once it is durable.
+At its orderly stop a host signs the head of every stream. The bytes are
+docs/SCE_AUDIT_LOG.md.
+
+- An append repeated under one identity (section 1), as a restore starts the
+  invocation again, answers the first sequence and appends nothing: the store
+  keeps the identity in the transaction of the append.
+- **Retention.** A stream keeps its entries for its `retain_days`; a host's pass
+  deletes older entries by whole segments, each ending at a checkpoint, which
+  then anchors what remains, so the rest stays verifiable.
+- **The keys.** The audit key is a signing key the host draws at its first
+  checkpoint and the pseudonymisation key a MAC key it draws at its first
+  personal value, both from its random source (section 11); the Rust host keeps
+  them in its key ring (`audit:sign`, `audit:pseudonym`, section 13), the C++
+  host in memory for its own life.
+
+**The streams.** A host keeps the streams its embedding configures, each with
+its `checkpoint_every`, its `retain_days` and how it writes a personal value:
+Rust's `ReferenceHost::set_audit_streams`, C++'s `AuditFeature::setStreams`. The
+Rust host appends to the audit store it is given (`set_audit_store`, an
+`sce_rust_session_store::AuditStore`: in memory unless the embedding gives
+another; the reference durable store is the session store's SQLite file,
+`SqliteStore`, layout 7, which a server keeps sealed at rest), signs at its stop
+with `audit_stop` and retains with `audit_retain`; a reader verifies a stream
+with `sce_rust_crypto::audit::verify`. The C++ host keeps its log in memory
+(`AuditFeature`, host/AuditHost.h; section 9).
+
+The two hosts agree byte for byte on `tests/host_features/audit_cross_language.json`:
+every redaction, chain and checkpoint of the file. Rust in
+`backends/rust/crypto/tests/audit.rs` and
+`backends/rust/host-features/tests/audit.rs`, C++ in
+`tests/integration/AStandardHostAuditTest.cpp`.

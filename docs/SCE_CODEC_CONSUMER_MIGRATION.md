@@ -3300,3 +3300,28 @@ reads its store, writes a session store's `Write` by hand, or implements a sessi
   and that outlives it; `ReferenceHost(clock, transport)` builds one on a `MemoryKvStore` of its own, as before.
   `ReferenceHost` is no longer copied. `storeEntries()` answers `std::optional`, nothing when the store cannot list.
 
+## A host keeps a durable audit log, and a schema marks the fields it redacts (ADR 0109 D14)
+
+Landing: the commits that add this section. The standard library gains `stdlib/host/audit_append_request.scxml`
+and `audit_append_result.scxml`, and the fixture `static_host_cose.scxml` an append, so the static-datamodel trees
+are regenerated; a consumer regenerates a machine only when it appends to the log.
+
+- A new standard operation `sce-host-audit-append` (request `stream`, `entry`, `sensitivity`; result `sequence`),
+  served on Rust and C++ and refused on every other lane by `codegen/standard-host-type-not-served`. An `<invoke>`
+  of it names its entry's schema with `sce:entry`, and its `entry` is a record of that schema; a field of an event
+  schema may carry `sce:sensitivity="secret"` or `"personal"`. A new diagnostic code,
+  `validation/audit-entry-schema`; a `match` over `DiagnosticCode` names `ValidationAuditEntrySchema`, and one over
+  `ValidationError` names `AuditEntrySchema`.
+- `ForgeField` has a field `sensitivity: Option<Sensitivity>`, which a field built field by field gives as `None`;
+  `UnsupportedInvokeInfo` has `entry_schema` and `entry_schema_at`, which `..Default::default()` fills.
+- `sce_rust_session_store::AuditStore` is the contract of the log, held to `audit_conformance`; `MemoryStore` and
+  `SqliteStore` implement it, and `SqliteStore`'s layout is 7: a file of layout 1 to 6 is brought to it when opened,
+  and a build before this one refuses a file of layout 7. `Sealed<S>` implements it over a store that does. A
+  removal of a session (`Write::sessions`) deletes the identities its appends were kept under too.
+- `sce_rust_crypto::audit` holds the chain, the checkpoints, `Writer`, `verify` and `retain`; the key ring has
+  `audit_seed` and `audit_pseudonym` (`AUDIT_SIGNING_KEY_ID`, `AUDIT_PSEUDONYM_KEY_ID`).
+- Rust `ReferenceHost` has `set_audit_store`, `set_audit_streams`, `audit_store`, `audit_public_key`,
+  `audit_verify`, `audit_stop` and `audit_retain`; `TYPES` holds 27 types. C++ has `AuditFeature`
+  (host/AuditHost.h), which an embedding adds to its host as it adds the COSE feature.
+- The scenario format has a host directive `audit` and a host state `audit` (docs/SCE_HOST_FEATURES.md section 8).
+
