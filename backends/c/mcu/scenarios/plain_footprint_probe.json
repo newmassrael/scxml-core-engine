@@ -1,0 +1,20 @@
+{
+  "machine": "plain_footprint_probe",
+  "about": "The footprint probe's machine of no <history> and no <parallel> (sce-build/tests/fixtures/no_std/plain_footprint_probe.scxml), replayed by the c11-mcu gate on its target (docs/adr/0110, D3), which no other scenario covers: it starts in `down` inside `link`; `e1` takes it to `settling`, whose eventless transition enters `up` and its initial `idle`, whose raised `e2` is taken by `up`'s internal transition into `busy`, which sends itself `stop` 5 ms later; once 5 ms pass, `stop` ends the run in the top-level final `done`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the initial configuration",
+      "expect": { "configuration": ["link", "down"] } },
+
+    { "note": "e1, the eventless transition out of settling, and the raised e2 taken by up's internal transition",
+      "event": "e1",
+      "expect": { "configuration": ["link", "up", "busy"], "ended": false } },
+
+    { "note": "4 ms is not yet when the delayed stop is due",
+      "advance_ms": 4,
+      "expect": { "configuration": ["link", "up", "busy"] } },
+
+    { "note": "at 5 ms the delayed stop is taken into the final",
+      "advance_ms": 1,
+      "expect": { "ended": true } }
+  ]
+}
