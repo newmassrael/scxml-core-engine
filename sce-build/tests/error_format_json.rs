@@ -1444,7 +1444,9 @@ fn template_missing_required_param_emits_add_attribute_fix() {
     assert!(!out.status.success());
     let diag = single_diagnostic(&String::from_utf8(out.stderr).unwrap());
     assert_eq!(diag["code"], "xml/template-missing-param");
-    assert_eq!(diag["actual"], "port");
+    // The param is missing, so the call site holds nothing of it to name
+    // (SCE_ERROR_CONTRACT.md §2.1): `actual` is absent and the fix names it.
+    assert!(diag.get("actual").is_none(), "{diag}");
     // Structured fix must name the missing attribute so repair bots
     // can patch without re-parsing the message.
     assert_eq!(diag["fix"]["kind"], "add_attribute");

@@ -7779,7 +7779,9 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             code: DiagnosticCode::XmlTemplateMissingParam,
             stage: Stage::Xml,
             expected: None,
-            actual: Some(param.clone()),
+            // The param is missing, so nothing of it is written for a
+            // consumer to find (SCE_ERROR_CONTRACT.md §2.1): the fix names it.
+            actual: None,
             fix: Some(Fix::AddAttribute {
                 element: "sce:use".to_string(),
                 attr: param.clone(),

@@ -4513,6 +4513,12 @@ pub struct SCXMLModel {
     /// ⚠ Not the document's initial transition. Read
     /// [`initial_targets`](Self::initial_targets) for that.
     pub initial: String,
+    /// The root's `initial` attribute as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives: a refusal of a state it names
+    /// stands on the column the value is written at, not where `<scxml>`
+    /// begins. `None` when the root writes no `initial`. Not part of the IR.
+    #[serde(skip)]
+    pub initial_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// §scxml-3.2: the target set of the document's initial transition —
     /// one id per token of `<scxml initial>`, as written, or the first
     /// child state in document order when the attribute is absent. What

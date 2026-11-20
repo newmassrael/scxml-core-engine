@@ -198,12 +198,22 @@ fn located_on_action(
 }
 
 /// Where `action`'s `name` is written, which a site that reports the name as
-/// its `actual` stands at (SCE_ERROR_CONTRACT.md §2.2): the value's start
-/// when its spelling places it, the element's start otherwise.
+/// its `actual` stands at (SCE_ERROR_CONTRACT.md §2.2).
 fn name_written_at(action: &Action) -> Option<SourceLocation> {
+    written_at(action, "name")
+}
+
+/// Where `action`'s attribute `attribute` is written, which a site that
+/// reports its value as `actual` stands at (SCE_ERROR_CONTRACT.md §2.2): the
+/// value's start when its spelling places it, the element's start otherwise.
+fn written_at(action: &Action, attribute: &str) -> Option<SourceLocation> {
     let element = action.source_location.clone()?;
     Some(
-        match action.spellings.get("name").and_then(|name| name.value()) {
+        match action
+            .spellings
+            .get(attribute)
+            .and_then(|value| value.value())
+        {
             Some(written) => SourceLocation {
                 line: Some(written.row),
                 col: Some(written.col),
@@ -531,10 +541,11 @@ fn state_natives(state: &crate::model::State) -> Vec<&Action> {
         .collect()
 }
 
-/// A refusal of a `released-by`, on the action that states it.
+/// A refusal of a `released-by`, on the action that states it, where the
+/// release it names is written: the record's `actual` is that name.
 fn release_err(action: &Action, diag_label: &str, detail: String) -> Located<ForgeError> {
-    located_on_action(
-        action,
+    located_at(
+        written_at(action, "released-by").as_ref(),
         diag_label,
         ValidationError::NativeActionRelease {
             name: action.native_action_name.clone(),

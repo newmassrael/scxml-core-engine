@@ -3332,6 +3332,7 @@ impl SCXMLParser {
             // `apply_parallel_initial_overrides` rewrite `initial`.
             initial_targets: initial.split_whitespace().map(str::to_string).collect(),
             initial,
+            initial_spelling: AttributeSpelling::of(&root, None, "initial"),
             binding: root.attribute("binding").unwrap_or("early").to_string(),
             datamodel: resolve_declared_datamodel(root.attribute("datamodel"))
                 .map_err(|e| crate::forge::error::Located::new(e.into(), diag_label, None, None))?,

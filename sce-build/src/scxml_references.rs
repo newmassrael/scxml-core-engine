@@ -235,20 +235,15 @@ pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forg
     Ok(())
 }
 
-/// The position `written` begins at, in the coordinates the element's
-/// recorded position is in, for [`located`] to resolve: a refusal names the
-/// value it refuses on the column it is written at (SCE_ERROR_CONTRACT.md
-/// §2.2), which the element's own column does not begin. `None` where the
+/// Where `written` begins, labelled as the element it is written on is, for
+/// [`located`] to resolve (see [`Written::source_location`]). `None` where the
 /// value was not read from a document.
 fn site_of(
     written: Option<Written<'_>>,
     element: Option<&SourceLocation>,
 ) -> Option<SourceLocation> {
-    written.map(|written| SourceLocation {
-        file: element.map(|at| at.file.clone()).unwrap_or_default(),
-        line: Some(written.row),
-        col: Some(written.col),
-    })
+    let file = element.map_or("", |at| at.file.as_str());
+    written.map(|written| written.source_location(file))
 }
 
 /// Where the id `token` is written in a whitespace-separated list of ids:

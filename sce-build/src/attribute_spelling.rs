@@ -154,6 +154,19 @@ impl<'a> Written<'a> {
     pub fn on_one_row(&self) -> Option<&'a str> {
         (!self.text.contains(['\n', '\r'])).then_some(self.text)
     }
+
+    /// Where this piece begins, as a model element records its own position
+    /// (`file` being the element's artifact label), for
+    /// [`crate::model::SCXMLModel::locate`] to resolve: a refusal of a value
+    /// stands on the column the value is written at (SCE_ERROR_CONTRACT.md
+    /// §2.2), which the element's own column does not begin.
+    pub fn source_location(&self, file: &str) -> crate::forge::error::SourceLocation {
+        crate::forge::error::SourceLocation {
+            file: file.to_string(),
+            line: Some(self.row),
+            col: Some(self.col),
+        }
+    }
 }
 
 impl AttributeSpelling {

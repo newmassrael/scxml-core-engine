@@ -89,6 +89,14 @@ pub(crate) fn related_at(
     }
 }
 
+/// Where on `node` the token `actual` begins, by the rule [`located`] places a
+/// record by: for a producer that keeps a row and a column of its own rather
+/// than a [`Located`], as the XInclude and `<sce:use>` expanders do. The
+/// element's start when `actual` is `None`.
+pub(crate) fn token_position(node: &roxmltree::Node, actual: Option<&str>) -> roxmltree::TextPos {
+    token_place(node, actual).0
+}
+
 /// Where on `node` the token `actual` begins, and the token as written when
 /// the document escapes the value it decodes to: the one rule a record and
 /// each of its `related` sites are placed by (SCE_ERROR_CONTRACT.md §2.2).

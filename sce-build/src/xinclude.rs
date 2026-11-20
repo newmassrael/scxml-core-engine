@@ -303,6 +303,9 @@ fn expand_impl(
             .attribute("href")
             .filter(|v| !v.is_empty())
             .ok_or((XIncludeError::MissingHref, loc))?;
+        // A refusal that names the href stands where it is written
+        // (SCE_ERROR_CONTRACT.md §2.2), not where the element begins.
+        let at_href = include_site(&node, Some(href));
 
         let resolved =
             crate::resolve::resolve_fragment(href, base_dir, extra_dirs).map_err(|tried| {
@@ -311,7 +314,7 @@ fn expand_impl(
                         href: href.to_string(),
                         searched: tried.join(", "),
                     },
-                    loc,
+                    at_href,
                 )
             })?;
 
@@ -329,7 +332,7 @@ fn expand_impl(
                     href: href.to_string(),
                     chain,
                 },
-                loc,
+                at_href,
             ));
         }
 
@@ -339,7 +342,7 @@ fn expand_impl(
                     href: href.to_string(),
                     source: e,
                 },
-                loc,
+                at_href,
             )
         })?;
 
@@ -369,12 +372,12 @@ fn expand_impl(
             // inner location is still available via the
             // nested error's own rendering inside `detail`.
             let _ = nested_loc;
-            (remap_nested(err, href), loc)
+            (remap_nested(err, href), at_href)
         })?;
         stack.pop();
 
         let (rendered, rendered_range) =
-            render_root_children(&expanded, href).map_err(|e| (e, loc))?;
+            render_root_children(&expanded, href).map_err(|e| (e, at_href))?;
         let splice_start = out.len();
         out.push_str(&rendered);
         // Compose the nested map for exactly the bytes we just
@@ -475,7 +478,7 @@ fn reject_unsupported(
                     feature: format!("parse=\"{mode}\" (only parse=\"xml\" is supported)"),
                     observed: spelled(mode),
                 },
-                *loc,
+                include_site(node, Some(mode)),
             ));
         }
     }
@@ -486,7 +489,7 @@ fn reject_unsupported(
                 feature: "xpointer selection is not implemented".to_string(),
                 observed: spelled(expression),
             },
-            *loc,
+            include_site(node, Some(expression)),
         ));
     }
     for child in node.children() {
@@ -605,6 +608,18 @@ fn written_name(element: &str) -> &str {
 /// node with a position the diagnostic pipeline can surface.
 fn doc_loc(doc: &roxmltree::Document, offset: usize) -> XIncludeLocation {
     let pos = doc.text_pos_at(offset);
+    XIncludeLocation {
+        row: pos.row,
+        col: pos.col,
+    }
+}
+
+/// Where a refusal of the `<xi:include>` `node` stands: where the token it
+/// reports as `actual` begins on the element, by the rule every node-placed
+/// refusal is placed by (SCE_ERROR_CONTRACT.md §2.2); where the element begins
+/// when it reports none.
+fn include_site(node: &roxmltree::Node, actual: Option<&str>) -> XIncludeLocation {
+    let pos = crate::forge::parser::token_position(node, actual);
     XIncludeLocation {
         row: pos.row,
         col: pos.col,

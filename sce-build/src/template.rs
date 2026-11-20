@@ -315,6 +315,9 @@ fn expand_impl(
             .attribute("template")
             .filter(|v| !v.is_empty())
             .ok_or((TemplateError::MissingTemplateAttribute, loc))?;
+        // A refusal that names the template stands where its href is
+        // written (SCE_ERROR_CONTRACT.md §2.2), not where the element begins.
+        let at_href = use_site(&node, Some(template_attr));
 
         let resolved = crate::resolve::resolve_fragment(template_attr, base_dir, extra_dirs)
             .map_err(|tried| {
@@ -323,7 +326,7 @@ fn expand_impl(
                         template: template_attr.to_string(),
                         searched: tried.join(", "),
                     },
-                    loc,
+                    at_href,
                 )
             })?;
 
@@ -338,7 +341,7 @@ fn expand_impl(
                     template: template_attr.to_string(),
                     chain,
                 },
-                loc,
+                at_href,
             ));
         }
 
@@ -348,7 +351,7 @@ fn expand_impl(
                     template: template_attr.to_string(),
                     source: e,
                 },
-                loc,
+                at_href,
             )
         })?;
 
@@ -378,7 +381,16 @@ fn expand_impl(
             loc.row,
             loc.col,
         )
-        .map_err(|e| (e, loc))?;
+        .map_err(|e| {
+            // A param bound at the call site stands where its name is
+            // written; a missing one is written nowhere, so the element.
+            let at = match &e {
+                TemplateError::UnknownParam { param, .. } => use_site(&node, Some(param)),
+                TemplateError::MissingParam { .. } => loc,
+                _ => at_href,
+            };
+            (e, at)
+        })?;
 
         // Recurse on the substituted template. Cycle detection and
         // depth bound guard against pathological chains. The nested
@@ -396,7 +408,7 @@ fn expand_impl(
             acc,
             &intermediate_map,
         )
-        .map_err(|(err, _)| (remap_nested(err, template_attr), loc))?;
+        .map_err(|(err, _)| (remap_nested(err, template_attr), at_href))?;
         acc.stack.pop();
 
         // Extract body (children of `<sce:template>` minus
@@ -406,7 +418,7 @@ fn expand_impl(
         // each segment composes the matching slice of
         // `expanded_map` into the outer map.
         let body_ranges = extract_template_body_ranges(&expanded_template, template_attr)
-            .map_err(|e| (e, loc))?;
+            .map_err(|e| (e, at_href))?;
         for range in &body_ranges {
             let seg_splice_start = out.len();
             out.push_str(&expanded_template[range.start..range.end]);
@@ -897,6 +909,18 @@ pub fn is_sce_use_element(node: &roxmltree::Node) -> bool {
 /// surface.
 fn doc_loc(doc: &roxmltree::Document, offset: usize) -> TemplateLocation {
     let pos = doc.text_pos_at(offset);
+    TemplateLocation {
+        row: pos.row,
+        col: pos.col,
+    }
+}
+
+/// Where a refusal of the `<sce:use>` `node` stands: where the token it
+/// reports as `actual` begins on the element, by the rule every node-placed
+/// refusal is placed by (SCE_ERROR_CONTRACT.md §2.2); where the element begins
+/// when it reports none.
+fn use_site(node: &roxmltree::Node, actual: Option<&str>) -> TemplateLocation {
+    let pos = crate::forge::parser::token_position(node, actual);
     TemplateLocation {
         row: pos.row,
         col: pos.col,
@@ -1483,6 +1507,32 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.1.row, 2);
+    }
+
+    #[test]
+    fn a_refusal_of_the_href_stands_where_the_href_is_written() {
+        // SCE_ERROR_CONTRACT.md §2.2: the record's `actual` is the href, so
+        // its column is the href's, `    <sce:use template="` being 23
+        // columns, and not the element's 5.
+        let tmp = TempDir::new().unwrap();
+        let main_src =
+            "<root xmlns:sce=\"http://sce.dev/ext\">\n    <sce:use template=\"ghost.xml\"/>\n</root>";
+        let main_path = write(tmp.path(), "main.xml", main_src);
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let err = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &[],
+            &input_map,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err.0, TemplateError::NotFound { .. }),
+            "{:?}",
+            err.0
+        );
+        assert_eq!((err.1.row, err.1.col), (2, 24));
     }
 
     #[test]

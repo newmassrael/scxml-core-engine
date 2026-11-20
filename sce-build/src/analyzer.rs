@@ -1290,16 +1290,23 @@ fn can_generate_static_impl(
         // available list feeds the structured `ReplaceOneOf` fix.
         let available: Vec<String> = model.states.keys().cloned().collect();
         // The unresolved name is the root element's `initial`
-        // attribute, so the root's own coordinate is the edit site —
-        // placed by the model's own `locate`, which resolves the
-        // authored file and the call site the way every record over a
-        // model is placed.
+        // attribute, so the record stands where that value is written
+        // (SCE_ERROR_CONTRACT.md §2.2), and where the root begins for a
+        // model no document wrote — placed by the model's own `locate`,
+        // which resolves the authored file and the call site the way
+        // every record over a model is placed.
         let err = ForgeError::Scxml(Box::new(ScxmlSemanticError::InitialStateUnknown {
             state_id: model.initial.clone(),
             scope: InitialStateScope::DocumentRoot,
             available,
         }));
-        return Err(model.locate(err, model.source_location.as_ref(), diag_label));
+        let root = model.source_location.as_ref();
+        let written = model
+            .initial_spelling
+            .as_ref()
+            .and_then(crate::attribute_spelling::AttributeSpelling::value)
+            .map(|value| value.source_location(root.map_or("", |at| at.file.as_str())));
+        return Err(model.locate(err, written.as_ref().or(root), diag_label));
     }
     // State-reference resolution — the rules and their spec
     // citations live in `crate::scxml_references`. Hosted here rather

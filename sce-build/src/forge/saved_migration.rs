@@ -88,6 +88,21 @@ pub struct ShapeFile {
     /// shape is known ([`plan`]): a parse with no directory reads none.
     #[serde(skip)]
     pub text: Result<String, String>,
+    /// Where the path is written: a refusal that names the file stands on the
+    /// column the path begins at (SCE_ERROR_CONTRACT.md §2.2), not where the
+    /// `<sce:migration>` does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+impl ShapeFile {
+    /// Where a refusal that names this file stands: its path as written, and
+    /// the `<sce:migration>` that names it for a step no document wrote.
+    fn site(&self, migration: &Migration) -> Option<SourceLocation> {
+        self.source_location
+            .clone()
+            .or_else(|| migration.source_location.clone())
+    }
 }
 
 /// One child of a `<sce:migration>`.
@@ -252,9 +267,16 @@ pub(crate) fn read(
                 source_location: Some(location_of(&child, diag_label)),
             });
         }
+        let written = |name: &str| {
+            crate::attribute_spelling::AttributeSpelling::of(&element, None, name)
+                .as_ref()
+                .and_then(crate::attribute_spelling::AttributeSpelling::value)
+                .map(|value| value.source_location(&crate::parser::artifact_label(diag_label)))
+        };
+        let (from_at, to_at) = (written("from"), written("to"));
         migrations.push(Migration {
-            from: shape_file(from, dir, &mut files),
-            to: shape_file(to, dir, &mut files),
+            from: shape_file(from, from_at, dir, &mut files),
+            to: shape_file(to, to_at, dir, &mut files),
             changes,
             source_location: Some(location_of(&element, diag_label)),
         });
@@ -291,8 +313,14 @@ fn location_of(node: &roxmltree::Node, diag_label: &str) -> SourceLocation {
     }
 }
 
-/// The shape file `path` names, read from `dir`; a file read is added to `files`.
-fn shape_file(path: String, dir: Option<&Path>, files: &mut Vec<PathBuf>) -> ShapeFile {
+/// The shape file `path` names, written at `at`, read from `dir`; a file read is
+/// added to `files`.
+fn shape_file(
+    path: String,
+    at: Option<SourceLocation>,
+    dir: Option<&Path>,
+    files: &mut Vec<PathBuf>,
+) -> ShapeFile {
     let text = match dir {
         None => Err("the document was read with no directory to read it from".to_string()),
         Some(dir) => {
@@ -306,7 +334,11 @@ fn shape_file(path: String, dir: Option<&Path>, files: &mut Vec<PathBuf>) -> Sha
             }
         }
     };
-    ShapeFile { path, text }
+    ShapeFile {
+        path,
+        text,
+        source_location: at,
+    }
 }
 
 // ── A shape text, read ───────────────────────────────────────────────────
@@ -595,7 +627,7 @@ pub fn plan(
                          without the save API"
                     .to_string(),
             },
-            first.source_location.clone(),
+            first.from.site(first),
         ));
     };
     // Each step's two shapes, read.
@@ -649,7 +681,7 @@ fn read_shape<'m>(
                 path: file.path.clone(),
                 detail,
             },
-            migration.source_location.clone(),
+            file.site(migration),
         )
     };
     let text = file
@@ -676,7 +708,7 @@ fn judge_chain(migrations: &[Migration], shape: &SavedShape) -> Result<(), Gener
                 path: file.path.clone(),
                 detail,
             },
-            migration.source_location.clone(),
+            file.site(migration),
         )
     };
     let mut starts: BTreeSet<String> = BTreeSet::new();

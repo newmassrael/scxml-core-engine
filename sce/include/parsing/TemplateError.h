@@ -124,7 +124,7 @@ class TemplateMissingParam : public TemplateError {
 public:
     TemplateMissingParam(std::string templateHref, std::string param)
         : TemplateError("<sce:use template=\"" + templateHref + "\">: missing required parameter \'" + param + "\'",
-                        {templateHref, param}, param),
+                        {templateHref, param}, std::nullopt),
           param_(std::move(param)) {}
 
     std::string_view code() const noexcept override {
