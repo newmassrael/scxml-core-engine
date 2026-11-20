@@ -69,6 +69,15 @@ echo "installing emsdk $EMSDK_REV in $EMSDK_ROOT"
 "$EMSDK_ROOT/emsdk" install "$EMSDK_REV"
 "$EMSDK_ROOT/emsdk" activate "$EMSDK_REV"
 
+# FROZEN CACHE. The release ships its system libraries prebuilt in the cache,
+# and bx seals a store entry read-only once its install ends. Unfrozen, emcc
+# still writes beside them (`cache/symbol_lists` at every link), so on a build
+# machine every link failed with EACCES: CMake's own probes failed with it, and
+# `visualizer-wasm` stopped at "Could NOT find Threads" (2026-11-20, hkl001).
+# Frozen, emcc reads the cache and writes nothing there; a library the release
+# did not ship is then a loud error, not a silent build into a sealed tree.
+printf '\nFROZEN_CACHE = True\n' >>"$EMSDK_ROOT/.emscripten"
+
 # The postcondition, asserted rather than assumed: the compiler answers with
 # the pinned release, and the environment script the gates source is there.
 "$EMCC" --version | grep -F " $EMSDK_REV " >/dev/null || {
@@ -77,6 +86,13 @@ echo "installing emsdk $EMSDK_REV in $EMSDK_ROOT"
 }
 [[ -f "$EMSDK_ROOT/emsdk_env.sh" ]] || {
     echo "install_emsdk: $EMSDK_ROOT/emsdk_env.sh is missing after activate" >&2
+    exit 1
+}
+# A link with the frozen cache, the step that wrote into it: a program that
+# includes pthread.h, as CMake's FindThreads probe does.
+printf '#include <pthread.h>\nint main(void) { return 0; }\n' >"$WORK/probe.c"
+EM_CONFIG="$EMSDK_ROOT/.emscripten" "$EMCC" "$WORK/probe.c" -o "$WORK/probe.js" || {
+    echo "install_emsdk: $EMCC could not link a program from the frozen cache" >&2
     exit 1
 }
 echo "emsdk $EMSDK_REV installed at $EMSDK_ROOT"
