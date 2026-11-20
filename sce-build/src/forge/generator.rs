@@ -6476,7 +6476,18 @@ pub(crate) fn c11_record_wire(fields: &[EntryField], receiver: &str) -> C11Recor
 /// the text writer `_w` of a [`C11RecordWire`] body (`sce/text.h`), which keeps
 /// what fits and says when a part did not; the body asks it once, at its end.
 fn c11_wire_put(text: &str) -> String {
-    format!("    sce_text_put_text(&_w, \"{text}\");\n")
+    format!("    {}\n", c11_put_literal("&_w", text))
+}
+
+/// The C statement that puts the string literal of content `literal` (already
+/// spelled as C writes it, escapes included) with the text writer `writer`, a
+/// `sce_text_writer_t *` expression (`sce/text.h`): at the literal's own
+/// length, which the compiler knows (`SCE_TEXT_PUT_LITERAL`), so no length is
+/// measured at run time and an optimizer bounds the copy by the literal. Every
+/// text the C lowering spells is put by this; a text of the run is put by
+/// `sce_text_put_text`.
+pub(crate) fn c11_put_literal(writer: &str, literal: &str) -> String {
+    format!("SCE_TEXT_PUT_LITERAL({writer}, \"{literal}\");")
 }
 
 /// The statement that runs `call`, the text writer's call of a value
@@ -6588,9 +6599,11 @@ if (_name_{id} == NULL) {{\n            return false;\n        }}\n    }}\n"
             }
             SceType::Bool => {
                 body.push_str(&c11_wire_put(&key));
-                body.push_str(&c11_wire_put_with(&format!(
-                    "sce_text_put_text(&_w, {receiver}->{id} ? \"true\" : \"false\")"
-                )));
+                body.push_str(&format!(
+                    "    if ({receiver}->{id}) {{\n        {}\n    }} else {{\n        {}\n    }}\n",
+                    c11_put_literal("&_w", "true"),
+                    c11_put_literal("&_w", "false")
+                ));
             }
             // A real is written as ECMAScript spells it on every engine
             // (ARCHITECTURE.md, "JSON Number Text"), in place like a text
@@ -6637,6 +6650,8 @@ if (_name_{id} == NULL) {{\n            return false;\n        }}\n    }}\n"
                     "sce_text_put_i64(&_w, (int64_t){receiver}->{id})"
                 )));
             }
+            // The variant's declared name, quoted, each a literal of its own; a
+            // value no variant names is refused.
             SceType::Enum(r) => {
                 let e = static_enum_of(static_enums, &r.alias);
                 let arms: String = e
@@ -6644,21 +6659,19 @@ if (_name_{id} == NULL) {{\n            return false;\n        }}\n    }}\n"
                     .iter()
                     .map(|v| {
                         format!(
-                            "case {}: _name_{id} = \"\\\"{}\\\"\"; break; ",
+                            "case {}: {} break; ",
                             v.ident,
-                            filters::escape_c(v.declared.clone())
+                            c11_put_literal(
+                                "&_w",
+                                &format!("\\\"{}\\\"", filters::escape_c(v.declared.clone()))
+                            )
                         )
                     })
                     .collect();
-                body.push_str(&format!(
-                    "    const char *_name_{id} = NULL;\n    \
-switch ({receiver}->{id}) {{ {arms}default: break; }}\n    \
-if (_name_{id} == NULL) {{\n        return false;\n    }}\n"
-                ));
                 body.push_str(&c11_wire_put(&key));
-                body.push_str(&c11_wire_put_with(&format!(
-                    "sce_text_put_text(&_w, _name_{id})"
-                )));
+                body.push_str(&format!(
+                    "    switch ({receiver}->{id}) {{ {arms}default: return false; }}\n"
+                ));
             }
         }
     }

@@ -20231,18 +20231,24 @@ impl StaticTarget for CTarget {
             // (`SCE_TEXT_DECIMAL_CAP`).
             not_read.len() + 64 + 21
         );
+        let literal = |text: &str| crate::forge::generator::c11_put_literal("&sce_said", text);
         Some(format!(
             "{{ {statements}\
              if (sce_refusal == NULL) {{ _sce_log_write(SCE_LOG_INFO, \"<sce:lift>\", 10u, \"{read_as}\", \
              {read_as_len}u); {write} {absent} }} else {{ const uint8_t sce_code = \
              sce_payload_refusal_code(sce_refusal); char sce_line[{line_cap}]; sce_text_writer_t sce_said = \
-             sce_text_writer(sce_line, sizeof(sce_line)); sce_text_put_text(&sce_said, \"{not_read}\"); \
-             sce_text_put_text(&sce_said, sce_payload_code_name(sce_code)); sce_text_put_text(&sce_said, \
-             \" at '\"); sce_text_put_text(&sce_said, {pointer}); sce_text_put_text(&sce_said, \"', bound \"); \
+             sce_text_writer(sce_line, sizeof(sce_line)); {} \
+             sce_text_put_text(&sce_said, sce_payload_code_name(sce_code)); {} \
+             sce_text_put_text(&sce_said, {pointer}); {} \
              sce_text_put_u64(&sce_said, sce_payload_code_has_bound(sce_code) ? (uint64_t){bound} : 0u); \
-             sce_text_put_text(&sce_said, \" (\"); sce_text_put_text(&sce_said, sce_refusal); \
-             sce_text_put_text(&sce_said, \")\"); _sce_log_write(SCE_LOG_WARNING, \"<sce:lift>\", 10u, \
+             {} sce_text_put_text(&sce_said, sce_refusal); \
+             {} _sce_log_write(SCE_LOG_WARNING, \"<sce:lift>\", 10u, \
              sce_line, sce_said.len); {refusal_ty} sce_why = {why}; {refused} }} }}",
+            literal(&not_read),
+            literal(" at '"),
+            literal("', bound "),
+            literal(" ("),
+            literal(")"),
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
             why = self.record_value(&refusal_ty, &members),

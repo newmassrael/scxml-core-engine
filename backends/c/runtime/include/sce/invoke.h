@@ -111,7 +111,7 @@ SCE_C_UNUSED static inline void sce_invoke_format_id(char *buf, size_t bufsz, co
     sce_text_put_text(&w, state_id != NULL ? state_id : "");
     sce_text_put_char(&w, '.');
     sce_text_put_hex(&w, (uint64_t)(uintptr_t)sm_ptr, 1u);
-    sce_text_put_text(&w, "._invoke_");
+    SCE_TEXT_PUT_LITERAL(&w, "._invoke_");
     sce_text_put_i64(&w, (int64_t)invoke_idx);
 }
 
@@ -147,7 +147,7 @@ SCE_C_UNUSED static inline void sce_invoke_format_done_event_name(char *buf, siz
         return;
     }
     sce_text_writer_t w = sce_text_writer(buf, bufsz);
-    sce_text_put_text(&w, "done.invoke.");
+    SCE_TEXT_PUT_LITERAL(&w, "done.invoke.");
     sce_text_put_text(&w, invoke_id != NULL ? invoke_id : "");
 }
 

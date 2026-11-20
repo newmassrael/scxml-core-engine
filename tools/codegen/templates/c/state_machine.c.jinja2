@@ -6268,7 +6268,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
         static unsigned long _sce_session_seq;
         ++_sce_session_seq;
         sce_text_writer_t _id = sce_text_writer(sm->session_id, sizeof(sm->session_id));
-        sce_text_put_text(&_id, "{{ model.name | escape_c }}_session_");
+        SCE_TEXT_PUT_LITERAL(&_id, "{{ model.name | escape_c }}_session_");
         sce_text_put_u64(&_id, (uint64_t)_sce_session_seq);
     }
     /* W3C SCXML C.1.1: the published address is the id, spelled as the

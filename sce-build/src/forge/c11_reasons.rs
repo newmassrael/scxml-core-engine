@@ -749,8 +749,11 @@ impl Reason {
         for part in parts {
             match part {
                 ReasonPart::Text(text) => block.push_str(&format!(
-                    " sce_text_put_text(&{WRITER}, \"{}\");",
-                    crate::filters::escape_c(text)
+                    " {}",
+                    crate::forge::generator::c11_put_literal(
+                        &format!("&{WRITER}"),
+                        &crate::filters::escape_c(text)
+                    )
                 )),
                 ReasonPart::Quote(quote) => {
                     let value = value
@@ -1170,7 +1173,7 @@ mod tests {
         assert_eq!(
             block,
             "{ sce_text_writer_t sce_reason_ = sce_text_writer(_message, _message_cap); \
-             sce_text_put_text(&sce_reason_, \"`a%b` payload: '{v}' \"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"`a%b` payload: '{v}' \"); \
              sce_text_put_text(&sce_reason_, _refusal); }"
         );
         // "`a%b` payload: '{v}' " is 21 bytes, and the sentence at most 120.
@@ -1189,9 +1192,9 @@ mod tests {
                 )
                 .expect("three holes and one quote"),
             "{ sce_text_writer_t sce_reason_ = sce_text_writer(b, c); \
-             sce_text_put_text(&sce_reason_, \"`e` payload: 'f' (\"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"`e` payload: 'f' (\"); \
              sce_text_put_within(&sce_reason_, name, 7u); \
-             sce_text_put_text(&sce_reason_, \") is not a variant of Mode\"); }"
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \") is not a variant of Mode\"); }"
         );
         assert_eq!(
             seal(),
@@ -1220,13 +1223,13 @@ mod tests {
         assert_eq!(
             block,
             "{ sce_text_writer_t sce_reason_ = sce_text_writer(b, c); \
-             sce_text_put_text(&sce_reason_, \"<invoke type='\"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"<invoke type='\"); \
              sce_text_put_within(&sce_reason_, t, 10u); \
-             sce_text_put_text(&sce_reason_, \"' id='\"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"' id='\"); \
              sce_text_put_within(&sce_reason_, i, 3u); \
-             sce_text_put_text(&sce_reason_, \"'>: _sce_deadline_ms='\"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"'>: _sce_deadline_ms='\"); \
              sce_text_put_within(&sce_reason_, d, 20u); \
-             sce_text_put_text(&sce_reason_, \"' is not a whole number of milliseconds\"); }"
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"' is not a whole number of milliseconds\"); }"
         );
         let text =
             "<invoke type='' id=''>: _sce_deadline_ms='' is not a whole number of milliseconds";
@@ -1254,9 +1257,9 @@ mod tests {
         assert_eq!(
             block,
             "{ sce_text_writer_t sce_reason_ = sce_text_writer(b, c); \
-             sce_text_put_text(&sce_reason_, \"`batch.sent` payload: '\"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"`batch.sent` payload: '\"); \
              sce_text_put_within(&sce_reason_, sce_path, 14u); \
-             sce_text_put_text(&sce_reason_, \"' \"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"' \"); \
              sce_text_put_text(&sce_reason_, _refusal); }"
         );
         let text = "`batch.sent` payload: '' ";

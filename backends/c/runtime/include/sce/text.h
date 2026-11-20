@@ -242,6 +242,13 @@ static inline void sce_text_put(sce_text_writer_t *w, const char *text, size_t n
     w->buf[w->len] = '\0';
 }
 
+/* The string literal `literal` (a literal, never a pointer), its length the
+ * compiler's: a text the program spells is put at the size it is known to have,
+ * so no length is measured at run time and an optimizer can bound every copy
+ * by the literal's own storage. A text of the run is put by
+ * `sce_text_put_text`. */
+#define SCE_TEXT_PUT_LITERAL(w, literal) sce_text_put((w), (literal), sizeof(literal) - 1u)
+
 static inline void sce_text_put_text(sce_text_writer_t *w, const char *text) {
     sce_text_put(w, text, sce_text_length(text));
 }

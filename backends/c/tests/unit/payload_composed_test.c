@@ -14,6 +14,9 @@
 #include <sce/event_payload.h>
 #include <sce/forge/bounded_list.h>
 #include <sce/forge/wire.h>
+/* The spelling of a real the text unit writes with (docs/adr/0110, D2), which a
+   machine's core reaches only through `_sce_real_text`. */
+#include <sce/number_text.h>
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -897,9 +897,11 @@ typedef struct {
     {{ _t }}_state_t owner;
 } {{ _t }}_saved_host_owner_t;
 
-/* How many there are; a document that declares a host invoker may run none of its own (a child
-   session does, and its parent only serves the type), and an array has no zero length, so the
-   table ends in an entry no invocation names. */
+{# A document that declares a host invoker may run none of its own (a child
+   session does, and its parent only serves the type): the table is emitted only
+   where the unit reads it, which is where the document runs one. #}
+{% if (model.invokes | host_invoker | list) | length > 0 %}
+/* How many there are, and the table, which ends in an entry no invocation names. */
 #define {{ _u }}_SAVED_HOST_OWNER_COUNT {{ (model.invokes | host_invoker | list) | length }}u
 
 static const {{ _t }}_saved_host_owner_t {{ _t }}_saved_host_owners[] = {
@@ -908,6 +910,7 @@ static const {{ _t }}_saved_host_owner_t {{ _t }}_saved_host_owners[] = {
 {% endfor %}
     { NULL, NULL, ({{ _t }}_state_t)0 }
 };
+{% endif %}
 
 /* The host-run invocations `s` holds, judged and, given the machine, re-armed: each is started
    again from the request it was started with at the top of the first macrostep the host drives,

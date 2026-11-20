@@ -285,7 +285,7 @@ fn a_lift_reason_is_measured_at_its_text_plus_the_published_refusal_bound() {
     assert!(
         source.contains(&format!(
             "{{ sce_text_writer_t sce_reason_ = sce_text_writer(_message, _message_cap); \
-             sce_text_put_text(&sce_reason_, \"{text}\"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"{text}\"); \
              sce_text_put_text(&sce_reason_, _refusal); }}"
         )),
         "the lift writes the field's refusal through the table, quoting the sentence:\n{source}"
@@ -544,13 +544,13 @@ fn a_c11_deadline_whose_text_has_no_bound_is_refused_by_name() {
     // each written within its bound by the runtime's text writer.
     assert!(
         source.contains(
-            "sce_text_put_text(&sce_reason_, \"<invoke type='\"); \
+            "SCE_TEXT_PUT_LITERAL(&sce_reason_, \"<invoke type='\"); \
              sce_text_put_within(&sce_reason_, start->processor_type, 10u); \
-             sce_text_put_text(&sce_reason_, \"' id='\"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"' id='\"); \
              sce_text_put_within(&sce_reason_, start->invoke_id, 3u); \
-             sce_text_put_text(&sce_reason_, \"'>: _sce_deadline_ms='\"); \
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"'>: _sce_deadline_ms='\"); \
              sce_text_put_within(&sce_reason_, unreadable, 4u); \
-             sce_text_put_text(&sce_reason_, \"' is not a whole number of milliseconds\"); }"
+             SCE_TEXT_PUT_LITERAL(&sce_reason_, \"' is not a whole number of milliseconds\"); }"
         ),
         "the reason quotes each text at the bound the build knows of it:\n{source}"
     );
