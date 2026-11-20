@@ -68,6 +68,7 @@ namespace CodeUnit = ::SCE::Generated::CborComposedCode;
 using Code = CodeUnit::CborComposedCode;
 using Point = ::SCE::Generated::CborComposedPoint::CborComposedPointPayload;
 using Reading = ::SCE::Generated::CborComposedReading::CborComposedReadingPayload;
+using Revised = ::SCE::Generated::CborComposedRevised::CborComposedRevisedPayload;
 using Card = ::SCE::Generated::CborComposedCard::CborComposedCardPayload;
 using Batch = ::SCE::Generated::CborComposedBatch::CborComposedBatchPayload;
 using Choice = ::SCE::Generated::CborComposedChoice::CborComposedChoice;
@@ -206,6 +207,21 @@ Reading reading(const Json &v) {
     return r;
 }
 
+/// A record of the schema that grew, every field of its second revision
+/// written, `memo` where it is present.
+Revised revised(const Json &v) {
+    Revised r{};
+    r.id = integer<std::uint8_t>(v.at("id"));
+    r.gain = integer<std::int16_t>(v.at("gain"));
+    r.mode = level(v.at("mode"));
+    r.label = OwnedText<4>::make(v.at("label").get<std::string>()).value();
+    r.tags = list<std::uint8_t, 2>(v.at("tags"), integer<std::uint8_t>);
+    if (const Json *memo = member(v, "memo")) {
+        r.memo = OwnedText<4>::make(memo->get<std::string>()).value();
+    }
+    return r;
+}
+
 /// A value of the union: an object of one member, named by its case.
 Choice choice(const Json &v) {
     CHECK(v.is_object() && v.size() == 1, "a union is an object of one member: " + v.dump());
@@ -250,6 +266,7 @@ struct Parts {
     OwnedList<Choice, 3> choices;
     std::optional<Choice> maybe;
     std::optional<std::string> note;
+    std::optional<Revised> revised;
 };
 
 /// The parts of the value the corpus writes as `v`.
@@ -281,6 +298,9 @@ Parts parts(const Json &v) {
     if (const Json *note = member(v, "note")) {
         p.note = note->get<std::string>();
     }
+    if (const Json *record = member(v, "revised")) {
+        p.revised = revised(*record);
+    }
     return p;
 }
 
@@ -292,7 +312,7 @@ Value made(const Parts &p) {
         CHECK(note.has_value(), "the note is within its bound");
     }
     return Value(p.small, p.wide, p.ratio, p.precise, p.level, p.color, p.code, p.octets, p.sparse, p.grid, p.flags,
-                 p.reading, p.spare, p.choice, p.choices, p.maybe, note);
+                 p.reading, p.spare, p.choice, p.choices, p.maybe, note, p.revised);
 }
 
 /// The refusal the corpus names `name` (docs/adr/0101, section 3.3).

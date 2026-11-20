@@ -48,6 +48,11 @@ mod cbor_composed_reading {
 }
 
 #[allow(dead_code)]
+mod cbor_composed_revised {
+    include!(concat!(env!("OUT_DIR"), "/cbor_composed_revised.rs"));
+}
+
+#[allow(dead_code)]
 mod cbor_composed_card {
     include!(concat!(env!("OUT_DIR"), "/cbor_composed_card.rs"));
 }
@@ -80,6 +85,7 @@ use cbor_composed_color::CborComposedColor as Color;
 use cbor_composed_level::CborComposedLevel as Level;
 use cbor_composed_point::CborComposedPointPayload as Point;
 use cbor_composed_reading::CborComposedReadingPayload as Reading;
+use cbor_composed_revised::CborComposedRevisedPayload as Revised;
 use codec_cbor_composed::{CodecCborComposed, CodecCborComposedOwned};
 use sce_forge_runtime::codec::{
     Bounded, BoundedList, CodecError, Heap, SceCursor, SceString, VecSink,
@@ -210,6 +216,22 @@ fn reading(v: &Value) -> Reading {
     }
 }
 
+/// A record of the schema that grew, every field of its second revision
+/// written, `memo` where it is present.
+fn revised(v: &Value) -> Revised {
+    Revised {
+        id: int(&v["id"]),
+        gain: int(&v["gain"]),
+        mode: level(&v["mode"]),
+        label: SceString::from_text(v["label"].as_str().expect("a text"))
+            .expect("within the label's bound"),
+        tags: list(&v["tags"], int::<u8>),
+        memo: present(&v["memo"]).map(|t| {
+            SceString::from_text(t.as_str().expect("a text")).expect("within the memo's bound")
+        }),
+    }
+}
+
 /// A value of the union: an object of one member, named by its case.
 fn choice(v: &Value) -> Choice {
     let object = v.as_object().expect("a union is an object");
@@ -249,6 +271,7 @@ fn value(v: &Value) -> CodecCborComposed<'_> {
         maybe: present(&v["maybe"]).map(choice),
         note: present(&v["note"])
             .map(|t| Bounded::new(t.as_str().expect("a text")).expect("within the note's bound")),
+        revised: present(&v["revised"]).map(revised),
     }
 }
 
