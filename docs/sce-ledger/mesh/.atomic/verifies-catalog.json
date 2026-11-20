@@ -189,6 +189,12 @@
       ]
     },
     {
+      "file": "tests/mesh/HttpsSignatureTest.cpp",
+      "section_ids": [
+        "mesh-22.9"
+      ]
+    },
+    {
       "file": "tests/mesh/InvokeCorrelationTest.cpp",
       "section_ids": [
         "mesh-9.5"
