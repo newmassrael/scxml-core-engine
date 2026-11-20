@@ -46,7 +46,14 @@ endif()
 # C library, threads and the unwinder on Linux; kernel32, ws2_32, bcrypt and
 # the rest on Windows), and rustc is the one that knows. It reports the list
 # for the target it built; a list written here would be one platform's.
-list(APPEND _cargo_args -- --print native-static-libs)
+#
+# These are rustc's arguments, which cargo takes after a `--` that ends its
+# own. They are kept in a list of their own and placed last when the command
+# is put together, so that a cargo argument added below (the nightly's
+# `-Z build-std`) stays cargo's: appended after the `--` it reached rustc,
+# which refused it as an option of its own, and the threaded emscripten tree
+# could not build the library at all.
+set(_rustc_args --print native-static-libs)
 if(SCE_LOWERING_TARGET_DIR)
     list(APPEND _cargo_env "CARGO_TARGET_DIR=${SCE_LOWERING_TARGET_DIR}")
 endif()
@@ -60,14 +67,11 @@ endif()
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env ${_cargo_env} "${SCE_CARGO}" ${_cargo_args}
+            -- ${_rustc_args}
     WORKING_DIRECTORY "${SCE_LOWERING_ROOT}"
     OUTPUT_VARIABLE _messages
     RESULT_VARIABLE _rc
 )
-if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR "cargo rustc exited ${_rc}")
-endif()
-
 if(SCE_LOWERING_STATICLIB_SUFFIX STREQUAL "")
     message(FATAL_ERROR "SCE_LOWERING_STATICLIB_SUFFIX was not passed")
 endif()
@@ -77,14 +81,35 @@ endif()
 # because cargo emits an entry per crate in the graph and sce-build's own is
 # the one that closes the build. rustc's list of native libraries arrives as
 # a `compiler-message` whose text starts `native-static-libs:`.
-string(REPLACE "\n" ";" _lines "${_messages}")
+#
+# When cargo fails, the compiler's diagnostics are in this stream too and
+# nowhere else: `--message-format=json` puts them on stdout, which
+# OUTPUT_VARIABLE holds, so cargo's stderr says only that a crate "could not
+# compile". Each carries the text rustc would have printed as
+# `message.rendered`, and those are printed, so a failed build says why in
+# the log of the tree that ran it.
+#
+# The lines are walked by the position of each newline, not as a CMake list:
+# a rendered diagnostic holds `;` and `[`, and a list split at the one and
+# joined across the other would hand the JSON parser half an object, which
+# drops that diagnostic and any artifact on the lines it swallowed.
 set(_found "")
 set(_native "")
 set(_native_seen FALSE)
 set(_native_prefix "native-static-libs:")
 string(LENGTH "${_native_prefix}" _native_prefix_len)
 string(LENGTH "${SCE_LOWERING_STATICLIB_SUFFIX}" _suffix_len)
-foreach(_line IN LISTS _lines)
+set(_rest "${_messages}")
+while(NOT _rest STREQUAL "")
+    string(FIND "${_rest}" "\n" _nl)
+    if(_nl EQUAL -1)
+        set(_line "${_rest}")
+        set(_rest "")
+    else()
+        string(SUBSTRING "${_rest}" 0 ${_nl} _line)
+        math(EXPR _nl "${_nl} + 1")
+        string(SUBSTRING "${_rest}" ${_nl} -1 _rest)
+    endif()
     if(NOT _line MATCHES "^{")
         continue()
     endif()
@@ -110,6 +135,13 @@ foreach(_line IN LISTS _lines)
             endif()
         endforeach()
     elseif(_reason STREQUAL "compiler-message")
+        if(NOT _rc EQUAL 0)
+            string(JSON _rendered ERROR_VARIABLE _err GET "${_line}" message rendered)
+            if(NOT _err AND NOT _rendered STREQUAL "")
+                message("${_rendered}")
+            endif()
+            continue()
+        endif()
         string(JSON _text ERROR_VARIABLE _err GET "${_line}" message message)
         if(_err)
             continue()
@@ -121,7 +153,11 @@ foreach(_line IN LISTS _lines)
             set(_native_seen TRUE)
         endif()
     endif()
-endforeach()
+endwhile()
+
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "cargo rustc exited ${_rc}; rustc's diagnostics are above")
+endif()
 
 if(_found STREQUAL "")
     message(FATAL_ERROR
