@@ -602,13 +602,14 @@ COMMIT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 # matches nothing is most often a trigger left behind by a rename. These are the
 # other kind: a file whose creation changes the verdict, so its absence is part
 # of what the unit was judged on. The value is the reason.
-ABSENT_INPUTS: dict[str, str] = {
-    ".clippy.toml": "clippy reads it from the workspace root when one exists, "
-                    "and a new one changes every lint verdict (clippy-check.yml "
-                    "watches it for that reason)",
-    "clippy.toml": "the other name clippy reads its configuration under, "
-                   "watched for the same reason",
-}
+#
+# Empty while no narrowed unit holds such a pattern. The two the map was written
+# for, `clippy.toml` and `.clippy.toml` (clippy reads either from the workspace
+# root when one exists, and clippy-check.yml watches both), are in the trigger
+# of `clippy` and `rust-version`, whose units keep the whole tree: their builds
+# read past their trigger (`not_isolated_reason` of each). A pattern here that
+# no unit holds describes nothing, and the self-test refuses it.
+ABSENT_INPUTS: dict[str, str] = {}
 
 # A line of a gate script that asks git about history: a commit other than the
 # tree's content, an ancestor, a ref or the index. `git ls-files` and `git grep`
@@ -1044,10 +1045,15 @@ GATES: dict[str, dict] = {
         # The lint set moves with each stable release, which is why the plan
         # names the release in every unit's argv: a new one is a new key.
         "cache": True,
-        # Isolated: one cargo clippy over the workspace into the linked
-        # `target/`; no git beyond the root, no writes outside the copy but
-        # that build cache.
-        "isolated": True,
+        "isolated": False,
+        "not_isolated_reason": "it compiles every workspace crate with its "
+                               "build script: sce-build's embeds "
+                               "tools/codegen/templates/ and stdlib/, and the "
+                               "Rust test crates' write their trees from "
+                               "tools/codegen/trees/ and the fixtures they "
+                               "name (docs/adr/0097), none of which its trigger "
+                               "holds, so a copy of it would lack what the "
+                               "build reads",
         "commits": [],
         "peak_gb": 5,
     },
@@ -1066,10 +1072,15 @@ GATES: dict[str, dict] = {
         "summary": "every package builds with the Rust it declares",
         # Each toolchain it installs is the version a tracked manifest declares.
         "cache": True,
-        # Isolated: `cargo metadata --no-deps` and one `cargo check` per declared
-        # release into `target/rust-version/<release>` under the linked cache;
-        # the toolchains go to rustup's home. No git beyond the root.
-        "isolated": True,
+        "isolated": False,
+        "not_isolated_reason": "its `cargo check` of each package runs the "
+                               "package's build script: sce-build's embeds "
+                               "tools/codegen/templates/ and stdlib/, and the "
+                               "Rust test crates' write their trees from "
+                               "tools/codegen/trees/ and the fixtures they "
+                               "name (docs/adr/0097), none of which its trigger "
+                               "holds, so a copy of it would lack what the "
+                               "build reads",
         "commits": [],
         "peak_gb": 5,
     },
@@ -1104,9 +1115,12 @@ GATES: dict[str, dict] = {
         "cost_s": 4,
         "summary": "cargo doc broken intra-doc links, both profiles",
         "cache": True,
-        # Isolated: two `cargo doc` runs of one crate into the linked `target/`;
-        # no git beyond the root.
-        "isolated": True,
+        "isolated": False,
+        "not_isolated_reason": "the crate it documents is a workspace member "
+                               "that inherits its package fields from the root "
+                               "Cargo.toml, which cargo reads to load it and "
+                               "its trigger does not hold, so in a copy of the "
+                               "trigger cargo could not load the crate",
         "commits": [],
         "peak_gb": 5,
     },
@@ -2807,10 +2821,14 @@ GATES: dict[str, dict] = {
                    "runs this arm on every push.",
         "summary": "W3C conformance, Rust AOT",
         "cache": True,
-        # Isolated: generates with the generator its closure built and runs the
-        # Rust suite through cargo into the linked `target/`; no git beyond the
-        # root.
-        "isolated": True,
+        "isolated": False,
+        "not_isolated_reason": "cargo loads the workspace from the root "
+                               "Cargo.toml and builds sce-build with its build "
+                               "script for the test crate's own build script "
+                               "(docs/adr/0097), and its trigger holds neither "
+                               "the workspace manifests nor sce-build's "
+                               "manifest and build script, so in a copy of the "
+                               "trigger cargo could not build the suite",
         "commits": [],
         "peak_gb": 5,
     },
