@@ -148,6 +148,7 @@ pub const MACHINE: Machine = Machine {
         idle_ms: {{ sessions.idle_ms }},
         max_live: {{ sessions.max_live }},
         max_inbox: {{ sessions.max_inbox }},
+        commit_delay_us: {{ sessions.commit_delay_us }},
     }),
 {%- else %}
     sessions: None,
