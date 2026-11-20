@@ -12,8 +12,16 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <map>
+#include <nlohmann/json.hpp>
+#include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -159,6 +167,94 @@ TEST(AStandardHostReportsToItsMetrics, AFailureCodeIsReadFromTheRecordsFirstMemb
     EXPECT_EQ(detail::leadingText(detail::record({detail::text("state", "granted")}).data, "error"), "");
     EXPECT_EQ(detail::leadingText(R"({"reason":"invalid_argument"})", "reason"), "invalid_argument");
     EXPECT_EQ(detail::leadingText(R"({"state":"x","error":"unavailable"})", "error"), "");
+}
+
+/// A family as the header reports it: its type, its label names in order, and the set of values some series
+/// gives each label.
+struct Reported {
+    std::string type;
+    std::vector<std::string> labels;
+    std::vector<std::set<std::string>> values;
+};
+
+/// Every series the header can build, gathered by family.
+std::map<std::string, Reported> reportedByTheHeader() {
+    std::map<std::string, Reported> reported;
+    const auto note = [&reported](const char *family, const char *type, const SCE::Metrics::Labels &labels) {
+        auto found = reported.find(family);
+        if (found == reported.end()) {
+            Reported fresh;
+            fresh.type = type;
+            for (std::size_t i = 0; i < labels.size; ++i) {
+                fresh.labels.emplace_back(labels.pairs[i].name);
+            }
+            fresh.values.resize(labels.size);
+            found = reported.emplace(family, std::move(fresh)).first;
+        }
+        ASSERT_EQ(found->second.labels.size(), labels.size) << family;
+        for (std::size_t i = 0; i < labels.size; ++i) {
+            EXPECT_EQ(found->second.labels[i], labels.pairs[i].name) << family;
+            found->second.values[i].insert(labels.pairs[i].value);
+        }
+    };
+    for (const auto status : SCE::Metrics::kExchangeStatuses) {
+        const auto series = Counter::clientExchanges(status);
+        note(series.family(), "counter", series.labels());
+    }
+    for (std::size_t i = 0; i < SCE::Metrics::kHostOperationTypes.size(); ++i) {
+        const auto operation = static_cast<HostOperation>(i);
+        const auto duration = Histogram::hostOperationDuration(operation);
+        note(duration.family(), "histogram", duration.labels());
+        for (std::size_t j = 0; j < SCE::Metrics::kHostFailureCodes.size(); ++j) {
+            const auto failure = Counter::hostOperationFailures(operation, static_cast<HostFailure>(j));
+            note(failure.family(), "counter", failure.labels());
+        }
+    }
+    const auto appends = Counter::auditAppends();
+    note(appends.family(), "counter", appends.labels());
+    return reported;
+}
+
+// The header's families and label spellings held to the vector both lanes read
+// (tests/metrics/metric_names.json; the Rust crate is held to it by
+// backends/rust/metrics/tests/metric_names.rs): every family listed for cpp is
+// one the header reports, with its type, its labels in order and each label's
+// closed set of values, and the header reports none the vector does not list
+// for cpp. Red if a family, a label or a value is renamed, added or removed in
+// host/Metrics.h and not in the vector, or the reverse.
+TEST(AStandardHostReportsToItsMetrics, EveryFamilyTheHeaderReportsIsTheVectors) {
+    std::ifstream in(std::filesystem::path(SCE_PROJECT_ROOT) / "tests" / "metrics" / "metric_names.json");
+    ASSERT_TRUE(in.good()) << "the vector file is readable";
+    const nlohmann::json vector = nlohmann::json::parse(in);
+    EXPECT_EQ(vector.at("registry").get<std::string>(), SCE::Metrics::kRegistry);
+
+    const std::map<std::string, Reported> reported = reportedByTheHeader();
+    std::set<std::string> listed;
+    for (const auto &family : vector.at("families")) {
+        const auto lanes = family.at("lanes").get<std::vector<std::string>>();
+        if (std::find(lanes.begin(), lanes.end(), "cpp") == lanes.end()) {
+            continue;
+        }
+        const auto name = family.at("name").get<std::string>();
+        EXPECT_TRUE(listed.insert(name).second) << name << " is listed twice";
+        const auto found = reported.find(name);
+        ASSERT_TRUE(found != reported.end()) << name << " is listed for cpp and the header reports no such family";
+        EXPECT_EQ(family.at("type").get<std::string>(), found->second.type) << name;
+        const auto &labels = family.at("labels");
+        ASSERT_EQ(labels.size(), found->second.labels.size()) << name;
+        for (std::size_t i = 0; i < labels.size(); ++i) {
+            EXPECT_EQ(labels.at(i).at("name").get<std::string>(), found->second.labels[i]) << name;
+            const auto values = labels.at(i).at("values").get<std::vector<std::string>>();
+            const std::set<std::string> distinct(values.begin(), values.end());
+            EXPECT_EQ(distinct.size(), values.size()) << name << ": a value listed twice";
+            EXPECT_EQ(distinct, found->second.values[i]) << name << "." << found->second.labels[i];
+        }
+    }
+    std::set<std::string> ours;
+    for (const auto &entry : reported) {
+        ours.insert(entry.first);
+    }
+    EXPECT_EQ(listed, ours) << "the header reports a family the vector does not list for cpp, or the reverse";
 }
 
 }  // namespace
