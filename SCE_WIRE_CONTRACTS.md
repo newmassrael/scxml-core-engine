@@ -287,6 +287,14 @@ promises it does not make and enforcement that does not exist.
    the TTCN-3 side replay the one file, so a stamp of either side would name a
    producer the other is not. The suite and the test case it names tie it to
    its documents. Registered the same way.
+
+   The Mesh checkpoint deliberately does **not** carry it either. It is
+   written by a host core while it runs, as often as its machine steps, and
+   read back by a later build of the same program after a crash: what a
+   restore must know is that it reads the format (`format`) and that the saved
+   tree fits the machine (the state's own `shape`), and the commit that built
+   the writer is the host's to record. A stamp would also make two checkpoints
+   of the same state differ by build. Registered the same way.
 3. **Additive growth is compatible.** Adding a new optional field is
    compatible within the current version and does NOT bump it.
    Consumers MUST ignore unknown fields.
@@ -305,6 +313,7 @@ promises it does not make and enforcement that does not exist.
    - `payload_schema.rs::tests::schema_file_declares_status`
    - `ttcn3_export/manifest.rs::tests::schema_file_declares_status`
    - `ttcn3_export/witness.rs::tests::schema_file_declares_status`
+   - `checkpoint.rs::tests::schema_file_declares_status` (`sce-rust-mesh`)
    - `test/test_log.rs::tests::schema_file_declares_status` (Rust runtime)
      and `TheTestLog.TheSchemaFileDeclaresTheStatusThisRuntimeDoes`
      (C++ runtime, `tests/test_runtime/TestLogTest.cpp`) — one per producer
