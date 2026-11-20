@@ -25,7 +25,7 @@ use crate::cose::{
     UNKNOWN_KEY,
 };
 use crate::{failure, record, Invocation, Outcome, Params, ReferenceHost, Transport};
-use crate::{INVALID_ARGUMENT, MAC_MESSAGE_MAX, RANDOM_BYTES_MAX};
+use crate::{NamedBounds, INVALID_ARGUMENT};
 
 /// The operation that draws random bytes.
 pub const RANDOM_BYTES: &str = "sce-host-random-bytes";
@@ -82,24 +82,24 @@ enum Request<'p> {
 /// The request `params` makes of `operation`, or `None` when the host refuses
 /// it: a length of 0 or past the bound, an empty key id, a use that is not one
 /// of the four a key is generated for, or a value its record's field does not
-/// hold.
-fn request<'p>(operation: &str, params: &'p Params) -> Option<Request<'p>> {
+/// hold at the bounds `bounds` gives the named ones.
+fn request<'p>(operation: &str, params: &'p Params, bounds: &NamedBounds) -> Option<Request<'p>> {
     let arguments = Arguments(params);
     Some(match operation {
         RANDOM_BYTES => {
             let length: usize = arguments.text("length").parse().ok()?;
-            if !(1..=RANDOM_BYTES_MAX).contains(&length) {
+            if !(1..=bounds.random_bytes).contains(&length) {
                 return None;
             }
             Request::Random { length }
         }
         MAC => Request::Mac {
             key_id: arguments.id("key_id")?,
-            message: arguments.bytes("message", MAC_MESSAGE_MAX)?,
+            message: arguments.bytes("message", bounds.mac_message)?,
         },
         MAC_VERIFY => Request::MacVerify {
             key_id: arguments.id("key_id")?,
-            message: arguments.bytes("message", MAC_MESSAGE_MAX)?,
+            message: arguments.bytes("message", bounds.mac_message)?,
             tag: arguments.bytes("tag", TAG_BYTES)?,
         },
         KEY_GENERATE => {
@@ -122,9 +122,9 @@ fn request<'p>(operation: &str, params: &'p Params) -> Option<Request<'p>> {
     })
 }
 
-/// Whether the host refuses `operation` with `params`.
-pub(crate) fn refuses(operation: &str, params: &Params) -> bool {
-    request(operation, params).is_none()
+/// Whether the host refuses `operation` with `params` at `bounds`.
+pub(crate) fn refuses(operation: &str, params: &Params, bounds: &NamedBounds) -> bool {
+    request(operation, params, bounds).is_none()
 }
 
 /// The identity a generation is kept under: the invocation's, which a restore
@@ -140,7 +140,8 @@ pub(crate) fn perform<T: Transport>(
     invocation: &Invocation,
     params: &Params,
 ) -> Outcome {
-    let Some(request) = request(operation, params) else {
+    let bounds = host.bounds;
+    let Some(request) = request(operation, params, &bounds) else {
         return Outcome::Refuse(INVALID_ARGUMENT);
     };
     match request {

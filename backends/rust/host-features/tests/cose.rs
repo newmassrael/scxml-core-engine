@@ -18,8 +18,9 @@ use sce_rust_host_features::cose::{
     decrypt0, derive_key, encrypt0, public_key_of, sign1, verify1, IV_BYTES,
 };
 use sce_rust_host_features::{
-    CoseKeys, HttpRequest, HttpResponse, Invocation, NonceSource, Outcome, Params, ReferenceHost,
-    ReservedKeyId, ScriptedClock, ScriptedRandom, Transport, TransportFailure, TrustedKey,
+    CoseKeys, HttpRequest, HttpResponse, Invocation, NamedBounds, NonceSource, Outcome, Params,
+    ReferenceHost, ReservedKeyId, ScriptedClock, ScriptedRandom, Transport, TransportFailure,
+    TrustedKey,
 };
 
 struct Unreachable;
@@ -622,4 +623,152 @@ fn the_host_holds_no_key_until_it_is_given_one() {
             "{operation}"
         );
     }
+}
+
+/// The bounds a host given none judges by are the numbers the library's records
+/// write, the bounds of a build given no limit (docs/adr/0109, D17).
+#[test]
+fn a_host_given_no_bounds_holds_the_librarys_numbers() {
+    assert_eq!(
+        NamedBounds::LIBRARY,
+        NamedBounds {
+            cose_payload: 4096,
+            cose_signed: 4352,
+            cose_plaintext: 4352,
+            cose_sealed: 4480,
+            mac_message: 4096,
+            random_bytes: 256,
+        }
+    );
+    assert_eq!(NamedBounds::default(), NamedBounds::LIBRARY);
+    let mut host = host();
+    let past = "p".repeat(4097);
+    assert!(refused(host.start(
+        "sce-host-cose-sign1",
+        &invocation("sign"),
+        &params(&[("key_id", "11"), ("payload", &past), ("external_aad", "")]),
+    )));
+    let fits = "p".repeat(4096);
+    assert_eq!(
+        done(host.start(
+            "sce-host-cose-sign1",
+            &invocation("sign"),
+            &params(&[("key_id", "11"), ("payload", &fits), ("external_aad", "")]),
+        ))["error"],
+        ""
+    );
+}
+
+/// The bounds of a build that moved them (`--limit cose_payload=8192` and its
+/// neighbours, which keep the relations of the table of standard types).
+const MOVED: NamedBounds = NamedBounds {
+    cose_payload: 8192,
+    cose_signed: 8448,
+    cose_plaintext: 8448,
+    cose_sealed: 8576,
+    mac_message: 4096,
+    random_bytes: 256,
+};
+
+/// docs/adr/0109, D17: a host given its build's bounds signs a payload at the
+/// moved bound and verifies the object, and seals a plaintext at the moved
+/// bound and opens it; a host at the library's numbers refuses the same
+/// requests, and its verification of the larger object, by name.
+#[test]
+fn a_host_given_its_builds_bounds_signs_and_seals_at_them() {
+    let mut moved = host();
+    moved.set_named_bounds(MOVED);
+    let mut library = host();
+
+    let payload = "p".repeat(MOVED.cose_payload);
+    let sign = params(&[
+        ("key_id", "11"),
+        ("payload", &payload),
+        ("external_aad", ""),
+    ]);
+    assert!(
+        refused(library.start("sce-host-cose-sign1", &invocation("sign"), &sign)),
+        "a payload past the library's bound"
+    );
+    let signed = done(moved.start("sce-host-cose-sign1", &invocation("sign"), &sign));
+    assert_eq!(signed["error"], "");
+    let object = signed["cose"].as_str().expect("an object").to_string();
+    let object_bytes = object.chars().count();
+    assert!(
+        object_bytes > MOVED.cose_payload && object_bytes <= MOVED.cose_signed,
+        "a signed object of {object_bytes} bytes"
+    );
+    let verify = params(&[("trust_set", "wg"), ("cose", &object), ("external_aad", "")]);
+    assert_eq!(
+        done(moved.start("sce-host-cose-verify1", &invocation("verify"), &verify)),
+        serde_json::json!({ "error": "", "valid": true, "key_id": "11", "payload": payload })
+    );
+    assert!(
+        refused(library.start("sce-host-cose-verify1", &invocation("verify"), &verify)),
+        "an object past the library's bound"
+    );
+
+    let plaintext = "q".repeat(MOVED.cose_plaintext);
+    let seal = params(&[
+        ("key_id", "sec-256"),
+        ("plaintext", &plaintext),
+        ("external_aad", ""),
+    ]);
+    assert!(
+        refused(library.start("sce-host-cose-encrypt0", &invocation("seal"), &seal)),
+        "a plaintext past the library's bound"
+    );
+    let sealed = done(moved.start("sce-host-cose-encrypt0", &invocation("seal"), &seal));
+    assert_eq!(sealed["error"], "");
+    let object = sealed["cose"].as_str().expect("an object").to_string();
+    let object_bytes = object.chars().count();
+    assert!(
+        object_bytes > MOVED.cose_plaintext && object_bytes <= MOVED.cose_sealed,
+        "a sealed object of {object_bytes} bytes"
+    );
+    assert_eq!(
+        done(moved.start(
+            "sce-host-cose-decrypt0",
+            &invocation("open"),
+            &params(&[
+                ("key_id", "sec-256"),
+                ("cose", &object),
+                ("external_aad", "")
+            ]),
+        )),
+        serde_json::json!({ "error": "", "opened": true, "plaintext": plaintext })
+    );
+}
+
+/// A host whose payload bound is below what an object it verifies carries
+/// answers the object as one that does not verify, the payload no record of
+/// the build holds (docs/SCE_HOST_FEATURES.md, section 10, "Verify").
+#[test]
+fn a_verified_payload_past_the_hosts_bound_does_not_verify() {
+    let mut moved = host();
+    moved.set_named_bounds(MOVED);
+    let payload = "p".repeat(4097);
+    let signed = done(moved.start(
+        "sce-host-cose-sign1",
+        &invocation("sign"),
+        &params(&[
+            ("key_id", "11"),
+            ("payload", &payload),
+            ("external_aad", ""),
+        ]),
+    ));
+    let object = signed["cose"].as_str().expect("an object").to_string();
+    let mut narrow = host();
+    narrow.set_named_bounds(NamedBounds {
+        cose_signed: MOVED.cose_signed,
+        ..NamedBounds::LIBRARY
+    });
+    assert_eq!(
+        done(narrow.start(
+            "sce-host-cose-verify1",
+            &invocation("verify"),
+            &params(&[("trust_set", "wg"), ("cose", &object), ("external_aad", "")]),
+        )),
+        serde_json::json!({ "error": "", "valid": false, "key_id": "", "payload": "" })
+    );
 }
