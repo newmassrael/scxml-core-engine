@@ -182,7 +182,9 @@ An algorithm takes a `map<K, V>` or `set<K>` slot, filled by the name of a varia
 section "State an algorithm takes and gives back". It walks the slot with `<sce:foreach in="slot" item="v" key="k">`,
 reads it with `len`, `has` and `m[k]`, and may declare a map local and a map return. It writes them with the same
 `<sce:put>`, `<sce:remove>` and `<sce:clear>`, with the same outcomes. A map return declares `may-fail`, and the
-variable it is assigned to must hold its bound, as a list return must. It is also the
+variable it is assigned to must hold its bound, as a list return must. The map is built in storage of the return's
+own bound that the caller holds, and only a call that succeeds empties the variable and puts each entry into it
+under the variable's own seed: a call that fails leaves the variable as it was (§scxml-4.9). It is also the
 loop the Interpreter's algorithm lowering refuses today for a bounded-collection import (D9), now over a slot a
 statechart fills.
 
@@ -393,15 +395,21 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
    keys chosen to collide under one seed spread under another.
 6. (Landed 2026-11-20.) C11: the runtime macros, storage in the machine, the seed argument, the lowering, the saved form and the
    snapshot. The same scenarios and unit tests run, and `no_c11_frame_grows_with_a_list_bound` is extended to a map.
-7. Algorithms: map slots as views, `inout` slots, locals and returns, `<sce:foreach in>` with `key`, `<sce:call>` in a
-   statechart, on the Interpreter, Rust and C11, held by the numerical reference
-   (`tests/forge/conformance/numerical_reference.json`). A test holds the copies of D6: a read-only slot and a loop
+7. (Landed 2026-11-20.) Algorithms: map slots as views, `inout` slots, locals and returns, `<sce:foreach in>` with
+   `key`, `<sce:call>` in a statechart, a map return taken whole into a map variable, and the seed of an algorithm's
+   own map (D8), on the Interpreter, Rust and C11. A test holds the copies of D6: a read-only slot and a loop
    whose body does not write the map copy nothing in the generated Rust and C11. A scenario runs an algorithm that
    keeps each peer's latest generation in an `inout` map keyed by a two-`uint64` record and returns a union of
    `Taken`, `Duplicate` (the last generation) and `NoRoom`, taken by `<sce:call location>`, through a full table,
    on the Interpreter, Rust and C11. §2.15's bounded-collection paragraph is rewritten (D9). The Rust and C11
    machines of steps 5 and 6 hold a map's record, enum and union entries in their units' types (D6, item 4), and
    the six scenarios of step 4 still pass unchanged on both.
+7b. The numerical reference (`tests/forge/conformance/numerical_reference.json`) holds step 7's algorithms on every
+   lane that lowers an algorithm's map. Its cases state a map argument in its saved form and, for each `inout`
+   parameter, the map the call leaves; a union output is stated as a union value; a lane that lowers no algorithm
+   map skips such a case by name. The cases come from the same model the reference's other cases come from
+   (`gen_cases.py`), and the Interpreter's algorithm runner hands an `inout` slot its holder. Moved out of step 7 so
+   that step could land on the scenarios that already held it on all three lanes.
 8. C++, Kotlin, Go, Python, Swift, one landing each, each removing its `generate/unsupported-feature`.
 
 ## Open questions
