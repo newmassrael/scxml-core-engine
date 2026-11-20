@@ -628,7 +628,8 @@ put-if killed between its write and its completion, answered with its first resu
   meanwhile, so no delay is added (an optional `commit_delay_us`, default 0, as PostgreSQL's `commit_delay`).
   D10's acknowledgement deletes join the same batches.
 - **The contract** gains `put_many`, durable as a whole on return and decided item by item; the conformance kit holds
-  both.
+  both. It landed as `write_many`: the contract's one write is `write` (D10), of which `put` is the narrower form that
+  only keeps a state, and a batch also removes sessions, appends to outboxes and deletes what acknowledgements cover.
 - **The server delivers per client, not one at a time.** The `telling` lock is replaced by an order per client: what
   it protected is the order of what one client's exchanges tell the host, and exchanges of different clients reach the
   host at once. `ServerHost::deliver` is called concurrently for different clients and one call at a time per client

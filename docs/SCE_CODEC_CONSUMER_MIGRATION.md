@@ -3325,3 +3325,27 @@ are regenerated; a consumer regenerates a machine only when it appends to the lo
   (host/AuditHost.h), which an embedding adds to its host as it adds the COSE feature.
 - The scenario format has a host directive `audit` and a host state `audit` (docs/SCE_HOST_FEATURES.md section 8).
 
+## A pool commits its sessions' checkpoints together, and a server tells its host per client (ADR 0109 D15)
+
+Landing: the commits that add this section. No generated tree is committed with a change; a consumer regenerates its
+Rust Mesh peer tables, which carry the new deploy key, and changes the code that implements or wraps a session store,
+builds `Outboxes` itself, writes a peer table by hand, or implements `ServerHost`.
+
+- `SessionStore` has `write_many(&[Batched]) -> Result<Vec<Decided>, Failure>`: a batch in one transaction, durable as
+  a whole on return and decided item by item (`Batched::Write`, `Batched::Acknowledge`; `Committed::Written`,
+  `Committed::Acknowledged`). It is provided: a store of the consumer's own keeps working, each item its own
+  transaction, and implements it to share one; a store that wraps another forwards it, as `Sealed` does, or the
+  wrapper's batches lose the wrapped store's single transaction. It is held to
+  `conformance::a_batch_is_decided_item_by_item`, `conformance::a_batch_sees_its_earlier_items_and_is_seen_whole_on_return`
+  and `outbox_conformance::a_batch_appends_and_acknowledges_item_by_item`.
+- `sce_rust_mesh::commit::Committer` commits a store's writes in groups; the pool builds one over its store
+  (`Pool::committer`). `Outboxes::new` and `Outboxes::of_machine` take an `Arc<Committer>` where they took the store;
+  `Outboxes::acknowledge` waits for the commit that holds the deletion, so a caller on an asynchronous runtime calls
+  it where it may block (`spawn_blocking`).
+- The peer table's `Sessions` has `commit_delay_us: u64`; a generated table has it, and one written by hand adds
+  `commit_delay_us: 0`. deploy.yaml's `sessions:` takes `commit_delay_us` (at most 100000, refused past it as
+  `mesh/deploy-invalid-sessions`).
+- `ServerHost::deliver` is called concurrently for different clients, one call at a time for each, each call carrying
+  one client's events (a lost client's `LinkEvent::Lost` included, which was told for all absent clients in one
+  call). A host whose state is shared by every client takes a lock of its own; a host over a keyed pool needs none.
+
