@@ -339,10 +339,8 @@ pub fn parse_dictionary(text: &str) -> Option<Vec<(String, Member)>> {
             return None;
         }
         reader.skip_whitespace();
-        // A trailing comma ends no member.
-        if reader.peek().is_none() {
-            return None;
-        }
+        // A comma is followed by a member: a trailing comma, which ends the text, is refused.
+        reader.peek()?;
     }
     Some(members)
 }
