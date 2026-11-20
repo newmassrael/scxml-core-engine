@@ -770,7 +770,35 @@ Each has a recommendation; the owner's acceptance decides them as recommended un
 8. Trace context (W3C Trace Context) in an envelope. Recommended: a record of its own: it is a field of the envelope,
    an ADR 0044 revision of a surface every Mesh core shares (D0, exception 1).
 9. Whether `<log>` honours `sce:sensitivity`. Recommended: yes, as a later step of this record, so a mark declared for
-   the audit log holds wherever the value is written.
+   the audit log holds wherever the value is written. **Decided: yes, by the build, on every lane.**
+   - **Where it is honoured.** Under `datamodel="sce-static"` the build knows the type of every place an expression
+     reads, so a `<log expr>` that reads a marked field at any depth (a payload's, a record variable's, one a list, a
+     map or a union holds), or a value that holds one, is lowered as the literal of its marker. The whole value is
+     replaced, since a value computed from a marked one (its length, a text joined to it, a comparison) says
+     something of it, and the stronger mark wins where both are read. The marker replaces the expression where the
+     one walk every lane shares lowers it, so Rust, C++, Kotlin, Go, Python, Swift, C11, the Interpreter's lowering,
+     a test component's log and the TTCN-3 export write the same text and no runtime differs. This is not a change
+     to a surface the lanes share in D0's sense (exception 1): no runtime, port or wire format moves.
+   - **`secret`** is written `sce-secret`, the marker the audit entry holds.
+   - **`personal`** is written `sce-personal`, without a digest. The audit log keys its digest so that equal values
+     correlate under a key the host's key store holds (D7), with a retention and a reader of its own; a diagnostic
+     log has none of those, an unkeyed digest of an identifier is reversed by trying identifiers, and a keyed one
+     would put the pseudonymisation key in every lane's log sink (ADR 0059, ADR 0060) to make a diagnostic line
+     name a person by proxy. Correlation is what the audit log is for, not a log line.
+   - **Where the type cannot be established.** Under `ecmascript` no value has a type: a marked value read from
+     `_event.data` can be assigned to a variable, handed to a `<script>` or logged in a `<finalize>`, and the event
+     an `<onentry>`'s `<log>` sees is not known before it runs. Redaction there would need every runtime to know
+     the marks; instead a statechart under any data model but `sce-static` that imports an event schema or a union
+     marking a field, at any depth, is refused at the `<sce:import>` (`validation/attribute-rule-violated` on its
+     `src`, naming the field and the mark), as a schema that grew is refused there under the same data models.
+   - **What it does not follow.** A value carried out of a marked field into a place of no mark (a variable, an
+     unmarked field, a child's parameter) is no longer marked, as an audit entry's unmarked field is written as it
+     stands: the mark is a property of the field, held by type.
+   - **Landed** (2026-11-21): `sce-build/src/forge/sensitivity.rs` (the marks of every record a statechart's types
+     reach, read in the walk that reads its type scope; the marker; the refusal), the `<log>` arms of
+     `crate::forge::static_lowering` and of the TTCN-3 export; held by
+     `sce-build/tests/a_log_writes_a_marked_value_as_its_marker.rs` and the module's own tests. SCE Accepted Subset
+     §2.12 and §2.15 ("What a `<log>` shows") and docs/SCE_HOST_FEATURES.md section 15 amended.
 
 ## Alternatives rejected
 

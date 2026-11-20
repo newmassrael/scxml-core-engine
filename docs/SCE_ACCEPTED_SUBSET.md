@@ -3194,6 +3194,9 @@ driven on the six AOT channels.
   `entry` is a record of the schema it names, crossing as its JSON payload, and
   `sce:sensitivity` on a field of an event schema, whose marks the build writes
   into the request's `sensitivity`; `validation/audit-entry-schema`.
+- Amended by: ADR 0109 (Open question 9): a mark of `sce:sensitivity` holds in
+  a `<log>` too, which writes `sce-secret` or `sce-personal` in place of a
+  value read from a marked field (§2.15, "What a `<log>` shows").
 - Amended by: ADR 0109 (D17): the signing and sealing records name their
   bounds (`cose_payload`, `cose_signed`, `cose_plaintext`, `cose_sealed`),
   which `--limit` moves, and a build whose bounds break a relation of the
@@ -4062,6 +4065,28 @@ and is refused before its type is asked, as it is anywhere an expression reads
 one (`expression/unsupported-construct`, see **List variables** below). The
 rule is the static data model's alone: under `ecmascript` a `<log expr>` is
 evaluated by the script engine, which shows any value at run time.
+
+**A value a schema marks** (docs/adr/0109, Open question 9). A `<log expr>` that
+reads a field an event schema marks with `sce:sensitivity` (the payload's,
+`_event.data.password`; a record variable's, `attempt.password`; a field of a
+record a list, a map or a union holds, at any depth), or reads a value that holds
+one, writes the mark's marker in place of the whole value: `sce-secret` for a
+`secret` field, the text an audit entry holds in its place, and `sce-personal` for
+a `personal` one, with no digest, since a log line has no pseudonymisation key.
+The whole value is replaced, not the read alone: a value computed from a marked
+field (`len(attempt.password)`, a text joined to it, a comparison with it) says
+something of it. Where it reads both marks, `sce-secret` is written. The build
+lowers the marker's literal where the expression stood, so Rust, Go, Kotlin,
+Python, C++, Swift, C11, the Interpreter's lowering and a test component's log
+write the same text, and a `<log>` of an unmarked field is written as before. A
+value carried out of a marked field into a place of no mark (an `<assign>` to a
+text variable, a `<param>` of an unmarked field) is no longer marked, as an audit
+entry's unmarked field is written as it stands: a document keeps a secret in a
+field that marks it. Under `ecmascript` no value has a type a mark can follow, so
+a statechart of any data model but `sce-static` that imports an event schema, or a
+union, marking a field at any depth is refused at the `<sce:import>`, naming the
+field and its mark (`validation/attribute-rule-violated` on `src`), as a schema
+that grew is.
 
 **An enum field of a payload.** An event whose schema declares an enum field
 (`<data id="layout" sce:type="enum:ViewMode" sce:direction="in"/>`) is read as
@@ -5291,7 +5316,10 @@ that holds a record or a union in a field (whose own marks the build does not ca
 one whose JSON may be longer than the request's `entry` holds (`audit_entry`, which
 `--limit` moves) and one whose marks are longer than `sensitivity` holds. Rust and C++
 serve the operation (docs/adr/0109, D0); every other lane refuses it as
-`codegen/standard-host-type-not-served`.
+`codegen/standard-host-type-not-served`. The marks hold in a `<log>` as well, on
+every lane: a `<log>` of a marked value writes `sce-secret` or `sce-personal` in its
+place, and a statechart of another data model that imports a marked schema is
+refused (docs/adr/0109, Open question 9; "What a `<log>` shows" above).
 
 **The bounds of the signing and sealing records** (docs/adr/0109, D17;
 docs/SCE_HOST_FEATURES.md, "Signing and sealing"). The library's records name the bound

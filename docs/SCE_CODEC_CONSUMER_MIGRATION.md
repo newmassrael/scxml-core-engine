@@ -3445,3 +3445,19 @@ machines has. It is now the runtime's `test-component` feature.
 - C11 and C++ need nothing: C11 writes the step into a test component's machine only, and the C++ engine dispatches
   it at compile time to a policy that declares `takeTransition`. The Go, Kotlin, Python and Swift runtimes keep the
   step in every build (docs/SCE_TEST_PROFILE.md §4.4 says why).
+
+## A `<log>` writes a marked value as its marker, and only a `sce-static` statechart imports a marked schema (ADR 0109 Open question 9)
+
+Landing: the commits that add this section. No committed generated tree changes: no fixture logs a marked field.
+
+- A `sce-static` machine's `<log expr>` that reads a field its schema marks with `sce:sensitivity`, at any depth, or a
+  value computed from one, now writes `sce-secret` (a `secret` field) or `sce-personal` (a `personal` one) where it
+  wrote the value, on every lane and in the Interpreter's lowering, the label unchanged. A reader of the log line
+  that parsed the value finds the marker; a `<log>` of an unmarked field writes what it wrote before. A consumer
+  regenerates a machine whose `<log>` reads a marked field.
+- A statechart under `datamodel="ecmascript"` or `"null"` that imports an event schema or a union marking a field, at
+  any depth, is refused at the `<sce:import>` as `validation/attribute-rule-violated` on its `src`. Declare
+  `datamodel="sce-static"`, or import a schema that marks nothing. No diagnostic code is added.
+- `SCXMLModel` has a field `imported_marks`, which `..Default::default()` fills;
+  `crate::forge::import_source::type_scope_and_marks` reads it with the type scope, and `type_scope` answers as
+  before. `Sensitivity` has `stronger` and `log_marker`.

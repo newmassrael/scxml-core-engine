@@ -1236,6 +1236,18 @@ the clear (`personal: clear`); a secret is never written by any stream. A record
 nested in an entry is not redacted by its own marks yet, so the build refuses an
 entry schema that holds one.
 
+**The marks hold in a `<log>` too** (docs/adr/0109, Open question 9). Under
+`datamodel="sce-static"` a `<log expr>` that reads a field a schema marks, at any
+depth, or a value computed from one, writes `sce-secret` for a secret and
+`sce-personal` for a personal value in its place: the build lowers the marker
+where the expression stood, so every lane and the Interpreter's lowering write
+the same text and no host is asked anything. A log line writes no keyed digest:
+a diagnostic log has no pseudonymisation key, and a value that correlates there
+would still name the person to whoever reads the log. A statechart under any
+other data model that imports a schema marking a field is refused at the
+import, since no value of it has a type a mark can follow (SCE Accepted Subset
+§2.15, "What a `<log>` shows").
+
 **Durable before it answers.** The host writes the entry in its canonical form,
 chains it (`chain_n = SHA-256(chain_(n-1) || [stream, n, at_ms, entry])`), and,
 when `n` is a multiple of the stream's `checkpoint_every`, signs a checkpoint, a
