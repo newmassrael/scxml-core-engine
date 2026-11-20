@@ -116,9 +116,11 @@ public:
 
 /// A reference host with the COSE feature over the primitives it is given: two signing keys, `device`
 /// (RFC 8032's seed) and `other`, a sealing key `box`, and the trust sets `devices` (of `device`), `both`
-/// (of `other`, then `device`) and `none` (of no key).
+/// (of `other`, then `device`) and `none` (of no key). The feature judges by `bounds`, the library's numbers
+/// unless a test gives a build's.
 struct CoseRig {
-    explicit CoseRig(host::CoseCrypto &crypto) : feature(crypto) {
+    explicit CoseRig(host::CoseCrypto &crypto, host::NamedBounds bounds = host::NamedBounds{})
+        : feature(crypto, bounds) {
         EXPECT_TRUE(reference.addFeature(feature));
         EXPECT_TRUE(feature.setSigningKeys({{"device", hex(kEd25519Seed)}, {"other", Bytes(32, uint8_t{0x42})}}));
         EXPECT_TRUE(feature.setSealingKeys({{"box", hex(kAeadKey)}}));
@@ -513,7 +515,7 @@ TEST(AStandardHostCose, TheHostKeepsTheContractOfEveryOperationForTheFeature) {
               host::Outcome::Kind::Refuse)
         << "a payload with a character past U+00FF, which no byte spells";
     EXPECT_EQ(rig.start(host::COSE_SIGN1, {{"key_id", "device"},
-                                           {"payload", std::string(host::CoseBounds::PAYLOAD + 1, 'p')},
+                                           {"payload", std::string(host::NamedBounds{}.cosePayload + 1, 'p')},
                                            {"external_aad", ""}})
                   .kind,
               host::Outcome::Kind::Refuse)
@@ -547,6 +549,102 @@ TEST(AStandardHostCose, TheHostKeepsTheContractOfEveryOperationForTheFeature) {
               (json{{"error", "unavailable"}, {"opened", false}, {"plaintext", ""}}));
     EXPECT_EQ(down.done(host::KEY_DERIVE, {{"secret", "s"}, {"input_key_id", ""}, {"salt", ""}, {"info", ""}}),
               (json{{"error", "unavailable"}, {"key_id", ""}}));
+}
+
+namespace {
+
+/// The bounds of a build that moved them (`--limit cose_payload=8192` and its neighbours, which keep the
+/// relations of the table of standard types; docs/adr/0109, D17).
+host::NamedBounds movedBounds() {
+    host::NamedBounds moved;
+    moved.cosePayload = 8192;
+    moved.coseSigned = 8448;
+    moved.cosePlaintext = 8448;
+    moved.coseSealed = 8576;
+    return moved;
+}
+
+}  // namespace
+
+/// A feature given no bounds judges by the numbers the library's records write, the bounds of a build given
+/// no limit (docs/adr/0109, D17); a payload at the bound is signed and one byte past it is refused.
+TEST(AStandardHostCose, AFeatureGivenNoBoundsHoldsTheLibrarysNumbers) {
+    const host::NamedBounds library;
+    EXPECT_EQ(library.cosePayload, 4096u);
+    EXPECT_EQ(library.coseSigned, 4352u);
+    EXPECT_EQ(library.cosePlaintext, 4352u);
+    EXPECT_EQ(library.coseSealed, 4480u);
+    EXPECT_EQ(library.macMessage, 4096u);
+    EXPECT_EQ(library.randomBytes, 256u);
+    host::SodiumCoseCrypto crypto;
+    CoseRig rig(crypto);
+    EXPECT_EQ(rig.feature.namedBounds().cosePayload, library.cosePayload);
+    EXPECT_EQ(
+        rig.done(host::COSE_SIGN1, {{"key_id", "device"}, {"payload", std::string(4096, 'p')}, {"external_aad", ""}})
+            .at("error"),
+        "");
+    EXPECT_EQ(
+        rig.start(host::COSE_SIGN1, {{"key_id", "device"}, {"payload", std::string(4097, 'p')}, {"external_aad", ""}})
+            .kind,
+        host::Outcome::Kind::Refuse);
+}
+
+/// docs/adr/0109, D17: a feature given its build's bounds signs a payload at the moved bound and verifies the
+/// object, and seals a plaintext at the moved bound and opens it; a feature at the library's numbers refuses
+/// the same requests, and the verification of the larger object.
+TEST(AStandardHostCose, AFeatureGivenItsBuildsBoundsSignsAndSealsAtThem) {
+    const host::NamedBounds moved = movedBounds();
+    host::SodiumCoseCrypto crypto;
+    CoseRig large(crypto, moved);
+    host::SodiumCoseCrypto libraryCrypto;
+    CoseRig library(libraryCrypto);
+
+    const std::string payload(moved.cosePayload, 'p');
+    const host::Params sign = {{"key_id", "device"}, {"payload", payload}, {"external_aad", ""}};
+    EXPECT_EQ(library.start(host::COSE_SIGN1, sign).kind, host::Outcome::Kind::Refuse)
+        << "a payload past the library's bound";
+    const json signedObject = large.done(host::COSE_SIGN1, sign);
+    ASSERT_EQ(signedObject.at("error"), "");
+    const std::string object = signedObject.at("cose").get<std::string>();
+    const size_t objectBytes = bytesOfLatin1(object).size();
+    EXPECT_GT(objectBytes, moved.cosePayload);
+    EXPECT_LE(objectBytes, moved.coseSigned);
+    const host::Params verify = {{"trust_set", "devices"}, {"cose", object}, {"external_aad", ""}};
+    EXPECT_EQ(large.done(host::COSE_VERIFY1, verify),
+              (json{{"error", ""}, {"valid", true}, {"key_id", "device"}, {"payload", payload}}));
+    EXPECT_EQ(library.start(host::COSE_VERIFY1, verify).kind, host::Outcome::Kind::Refuse)
+        << "an object past the library's bound";
+
+    const std::string plaintext(moved.cosePlaintext, 'q');
+    const host::Params seal = {{"key_id", "box"}, {"plaintext", plaintext}, {"external_aad", ""}};
+    EXPECT_EQ(library.start(host::COSE_ENCRYPT0, seal).kind, host::Outcome::Kind::Refuse)
+        << "a plaintext past the library's bound";
+    const json sealedObject = large.done(host::COSE_ENCRYPT0, seal);
+    ASSERT_EQ(sealedObject.at("error"), "");
+    const std::string sealedText = sealedObject.at("cose").get<std::string>();
+    const size_t sealedBytes = bytesOfLatin1(sealedText).size();
+    EXPECT_GT(sealedBytes, moved.cosePlaintext);
+    EXPECT_LE(sealedBytes, moved.coseSealed);
+    EXPECT_EQ(large.done(host::COSE_DECRYPT0, {{"key_id", "box"}, {"cose", sealedText}, {"external_aad", ""}}),
+              (json{{"error", ""}, {"opened", true}, {"plaintext", plaintext}}));
+}
+
+/// A feature whose payload bound is below what an object it verifies carries answers the object as one that
+/// does not verify: the payload is one no record of its build holds (docs/SCE_HOST_FEATURES.md, section 10).
+TEST(AStandardHostCose, AVerifiedPayloadPastTheFeaturesBoundDoesNotVerify) {
+    host::SodiumCoseCrypto crypto;
+    CoseRig large(crypto, movedBounds());
+    const json made =
+        large.done(host::COSE_SIGN1, {{"key_id", "device"}, {"payload", std::string(4097, 'p')}, {"external_aad", ""}});
+    ASSERT_EQ(made.at("error"), "");
+    host::NamedBounds narrowBounds;
+    narrowBounds.coseSigned = movedBounds().coseSigned;
+    host::SodiumCoseCrypto narrowCrypto;
+    CoseRig narrow(narrowCrypto, narrowBounds);
+    EXPECT_EQ(
+        narrow.done(host::COSE_VERIFY1,
+                    {{"trust_set", "devices"}, {"cose", made.at("cose").get<std::string>()}, {"external_aad", ""}}),
+        (json{{"error", ""}, {"valid", false}, {"key_id", ""}, {"payload", ""}}));
 }
 
 /// The objects the Rust and the C++ reference hosts agree on, byte for byte (docs/SCE_HOST_FEATURES.md, section
