@@ -64,6 +64,6 @@ PY
 
 mutation_case "C11 delivers a blank target expression to itself" <<'PY'
 edit("backends/c/runtime/include/sce/send_target.h",
-     """    return target == NULL || target[0] == '\\0' || strcmp(target, "undefined") == 0 ||""",
-     """    return target == NULL || strcmp(target, "undefined") == 0 ||""")
+     """    return target == NULL || target[0] == '\\0' || sce_text_compare(target, "undefined") == 0 ||""",
+     """    return target == NULL || sce_text_compare(target, "undefined") == 0 ||""")
 PY

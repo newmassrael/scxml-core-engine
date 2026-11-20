@@ -30,6 +30,6 @@ PY
 
 mutation_case "each part is written over the start of the join" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
-     "        len += strlen(buf + len);\n",
+     "        len += sce_text_length(buf + len);\n",
      "        len += 0u;\n")
 PY

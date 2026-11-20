@@ -65,8 +65,8 @@ PY
 
 mutation_case "a string handed to a child is not held to the child's bound" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/algorithm.h",
-     "    if (strlen(value) > (size_t)capacity) {\n        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);",
-     "    if (strlen(value) > (size_t)capacity && capacity == 0u) {\n        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);")
+     "    if (sce_text_length(value) > (size_t)capacity) {\n        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);",
+     "    if (sce_text_length(value) > (size_t)capacity && capacity == 0u) {\n        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);")
 PY
 
 mutation_case "a value that failed is not reported" <<'PY'

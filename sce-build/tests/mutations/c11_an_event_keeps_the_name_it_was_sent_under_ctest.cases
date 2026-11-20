@@ -33,7 +33,7 @@ mutation_oracles backends/c/tests/integration/test_an_event_keeps_the_name_it_wa
 
 mutation_case "the resolver never records the name it was cut back from" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "            if (strlen(candidate) != len) {\n                memcpy(arrival, name, len);\n                arrival[len] = '\\0';\n            }\n",
+     "            if (sce_text_length(candidate) != len) {\n                memcpy(arrival, name, len);\n                arrival[len] = '\\0';\n            }\n",
      "")
 PY
 
