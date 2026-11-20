@@ -780,6 +780,7 @@ mod tests {
                 "sce-host-key-retire",
                 "sce-host-credential-issue",
                 "sce-host-credential-revoke",
+                "sce-host-audit-append",
             ]
         );
         for standard in cose {
