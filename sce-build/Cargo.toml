@@ -2114,5 +2114,19 @@ name = "a_declared_migration_is_planned_from_its_shape_files"
 path = "tests/a_declared_migration_is_planned_from_its_shape_files.rs"
 required-features = ["cli"]
 
+# Spawns `sce-codegen check` on a record variable that holds a composition
+# beside the union fixtures, so it carries the `cli` gate.
+[[test]]
+name = "a_record_variable_that_holds_a_composition_is_built_where_it_is_declared"
+path = "tests/a_record_variable_that_holds_a_composition_is_built_where_it_is_declared.rs"
+required-features = ["cli"]
+
+# Spawns `sce-codegen check --host-invoker` on a typed host request with an
+# enum field, so it carries the `cli` gate.
+[[test]]
+name = "an_enum_field_of_a_typed_host_request"
+path = "tests/an_enum_field_of_a_typed_host_request.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
