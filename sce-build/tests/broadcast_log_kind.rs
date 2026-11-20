@@ -1393,6 +1393,102 @@ fn rust_stores_the_flag_inputs_an_element_asks_its_caller_for() {
     );
 }
 
+/// An element whose value says its one flag input `S` in some of its values only (ADR 0065
+/// §6 R4e).
+fn partly_said_flag() -> BroadcastLogElementFacts {
+    BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string()],
+        partly_said_flag_inputs: vec!["S".to_string()],
+        ..BroadcastLogElementFacts::default()
+    }
+}
+
+/// An element whose value says `S` in every value, `T` in some (ADR 0065 §6 R4e) and `U`
+/// in none.
+fn said_partly_and_given_flags() -> BroadcastLogElementFacts {
+    BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string(), "U".to_string()],
+        said_flag_inputs: vec!["S".to_string()],
+        partly_said_flag_inputs: vec!["T".to_string()],
+        ..BroadcastLogElementFacts::default()
+    }
+}
+
+#[test]
+fn rust_stores_a_flag_the_element_says_in_some_values_as_said_and_else_as_given() {
+    // An element whose value says `S` in some of its values only (ADR 0065 §6 R4e) answers
+    // `None` from `input_s` where it says nothing: the log stores what the value says where
+    // it says it, and what the caller gives where it does not, and the encode, which does
+    // not take `S`, is handed nothing. A `None` read as clear would store a flag the
+    // caller never gave.
+    let code = compile_single(
+        &event_ring(),
+        &resolution_options(None, 4, partly_said_flag()),
+    )
+    .expect("a log over an element that says a flag in some values is generated");
+    assert_holds(
+        &code,
+        &[
+            concat!(
+                "/// The flag inputs `publish` takes from its caller: those the element's value does not\n",
+                "/// say in every value, each used where the value says nothing of it. The log reads the\n",
+                "/// others off the element (ADR 0065 section 6, R4a, R4e).\n",
+            ),
+            "pub struct EventRingGivenFlags {\n    pub s: bool,\n}",
+            "    element: &EventRecord,\n    given: EventRingGivenFlags,\n) -> Result<u64, CodecError> {",
+            "        s: super::event_record::EventRecordWire::input_s(element).unwrap_or(given.s),\n",
+            "    element.encode(&mut sink)?;",
+            "entry[1 + 0] |= u64::from(flags.s) << 0;",
+            "let element = EventRecord::decode(&mut cursor, u8::from(flags.s))?;",
+        ],
+    );
+    for wrong in [
+        "EventRecordWire::input_s(element),\n",
+        "        s: given.s,\n",
+        "unwrap_or(false)",
+        "unwrap_or_default()",
+        "element.encode(&mut sink, u8::from(flags.s))",
+    ] {
+        assert!(
+            !code.contains(wrong),
+            "a value that says nothing of the flag does not set it, and the encode is not \
+             handed it (`{wrong}`):\n{code}"
+        );
+    }
+}
+
+#[test]
+fn rust_derives_each_flag_of_several_on_a_line_of_its_own() {
+    // `S` is said by every value of the element, `T` by some (ADR 0065 §6 R4e) and `U` by
+    // none, so `publish` reads `S` off the element, `T` off it where it says it and else
+    // from the caller, and takes `U` from the caller. The caller gives `T` and `U` in
+    // `EventRingGivenFlags`, and the encode is handed `U` alone.
+    let code = compile_single(
+        &event_ring(),
+        &resolution_options(None, 4, said_partly_and_given_flags()),
+    )
+    .expect("a log over an element that says some of its flags is generated");
+    assert_holds(
+        &code,
+        &[
+            "pub struct EventRingGivenFlags {\n    pub t: bool,\n    pub u: bool,\n}",
+            "    given: EventRingGivenFlags,\n) -> Result<u64, CodecError> {",
+            concat!(
+                "    let flags = EventRingFlags {\n",
+                "        s: super::event_record::EventRecordWire::input_s(element),\n",
+                "        t: super::event_record::EventRecordWire::input_t(element).unwrap_or(given.t),\n",
+                "        u: given.u,\n",
+                "    };\n",
+            ),
+            "    element.encode(&mut sink, u8::from(flags.u))?;",
+            "entry[1 + 0] |= u64::from(flags.s) << 0;",
+            "entry[1 + 0] |= u64::from(flags.t) << 1;",
+            "entry[1 + 0] |= u64::from(flags.u) << 2;",
+            "EventRecord::decode(&mut cursor, u8::from(flags.s), u8::from(flags.t), u8::from(flags.u))?",
+        ],
+    );
+}
+
 #[test]
 fn rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own() {
     // Two flag inputs fit one word; the tag takes the next. The bytes follow the
@@ -2687,6 +2783,125 @@ fn c11_stores_the_flag_inputs_an_element_asks_its_caller_for() {
     );
 }
 
+/// The options of a single compile of `event_ring` over an element with `facts`, which
+/// the C11 backend prints from its plan.
+fn c11_printed_options(facts: BroadcastLogElementFacts) -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        element_type_c11_printed: Some(std::collections::HashSet::from([
+            "event_record".to_string()
+        ])),
+        ..resolution_options(None, 4, facts)
+    }
+}
+
+/// The lines of a C11 `{log}_publish` over `said_partly_and_given_flags` that derive its
+/// flags, one line for a flag the value says, two for one it says in some values, one for
+/// one it gives.
+const C11_DERIVED_SAID_PARTLY_AND_GIVEN: &str = concat!(
+    "    event_ring_flags_t held_flags;\n",
+    "    held_flags.s = event_record_input_s(event_record_value_source(), element) != 0u;\n",
+    "    const sce_optional_uint8_t said_t = event_record_input_t(event_record_value_source(), element);\n",
+    "    held_flags.t = said_t.present ? said_t.value != 0u : given->t;\n",
+    "    held_flags.u = given->u;\n",
+    "    const event_ring_flags_t *flags = &held_flags;\n",
+);
+
+#[test]
+fn c11_stores_a_flag_the_element_says_in_some_values_as_said_and_else_as_given() {
+    // A printed element whose value says `S` in some of its values only (ADR 0065 §6 R4e)
+    // answers an absent value from `event_record_input_s` where it says nothing: the log
+    // stores what the value says where it says it, and what the caller gives where it does
+    // not, and the printed encode takes no `S`. An absent value read as clear would store a
+    // flag the caller never gave.
+    let code = compile_single_c(&event_ring(), &c11_printed_options(partly_said_flag()))
+        .expect("a log over an element that says a flag in some values is generated");
+    assert_holds(
+        &code,
+        &[
+            " * `event_ring_publish` takes the flags the element's value does not say in every \
+             value, and `event_ring_read` returns them all with the item.",
+            concat!(
+                "/* The flag inputs `event_ring_publish` takes from its caller: those the element's value\n",
+                " * does not say in every value, each used where the value says nothing of it. The log\n",
+                " * reads the others off the element (ADR 0065 section 6, R4a, R4e). */\n",
+                "typedef struct {\n    bool s;\n} event_ring_given_flags_t;",
+            ),
+            "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
+             *publisher, const event_record_t *element, const event_ring_given_flags_t *given)\n{\n",
+            concat!(
+                "    event_ring_flags_t held_flags;\n",
+                "    const sce_optional_uint8_t said_s = event_record_input_s(event_record_value_source(), element);\n",
+                "    held_flags.s = said_s.present ? said_s.value != 0u : given->s;\n",
+                "    const event_ring_flags_t *flags = &held_flags;\n",
+            ),
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length);",
+            "event_record_decode(&cursor, out, event_ring_flag_input(result.flags.s))",
+        ],
+    );
+    for wrong in [
+        "event_record_input_s(event_record_value_source(), element) != 0u;",
+        "held_flags.s = given->s;",
+        "&length, event_ring_flag_input(flags->s))",
+    ] {
+        assert!(
+            !code.contains(wrong),
+            "a value that says nothing of the flag does not set it, and the encode is not \
+             handed it (`{wrong}`):\n{code}"
+        );
+    }
+}
+
+#[test]
+fn c11_derives_each_flag_of_several_on_a_line_of_its_own() {
+    // `S` is said by every value of the element, `T` by some (ADR 0065 §6 R4e) and `U` by
+    // none, so `event_ring_publish` reads `S` off the element, `T` off it where it says it
+    // and else from the caller, and takes `U` from the caller. The caller gives `T` and `U`
+    // in `event_ring_given_flags_t`, and the printed encode is handed `U` alone.
+    let code = compile_single_c(
+        &event_ring(),
+        &c11_printed_options(said_partly_and_given_flags()),
+    )
+    .expect("a log over an element that says some of its flags is generated");
+    assert_holds(
+        &code,
+        &[
+            "typedef struct {\n    bool t;\n    bool u;\n} event_ring_given_flags_t;",
+            "const event_record_t *element, const event_ring_given_flags_t *given)\n{\n",
+            C11_DERIVED_SAID_PARTLY_AND_GIVEN,
+            "&length, event_ring_flag_input(flags->u));",
+            "entry[1u + 0u] |= UINT64_C(1) << 1u;",
+            "event_record_decode(&cursor, out, event_ring_flag_input(result.flags.s), \
+             event_ring_flag_input(result.flags.t), event_ring_flag_input(result.flags.u))",
+        ],
+    );
+}
+
+#[test]
+fn c11_the_narrow_row_derives_a_flag_the_element_says_in_some_values() {
+    // The narrow header derives the flags as the wide one does: `T`, which the value says in
+    // some of its values only (ADR 0065 §6 R4e), is what it says where it says it and the
+    // caller's elsewhere, and the encode is handed `U` alone.
+    let options = ForgeCompileOptions {
+        element_type_c11_printed: Some(std::collections::HashSet::from([
+            "event_record".to_string()
+        ])),
+        ..narrow_options_over(said_partly_and_given_flags())
+    };
+    let code = compile_single_c(&event_ring(), &options)
+        .unwrap_or_else(|e| panic!("a 32-bit target derives the flags: {:?}", e.error));
+    assert_holds(
+        &code,
+        &[
+            "#include <sce/forge/broadcast_log_narrow.h>",
+            "typedef struct {\n    bool t;\n    bool u;\n} event_ring_given_flags_t;",
+            "const event_record_t *element, const event_ring_given_flags_t *given)\n{\n",
+            C11_DERIVED_SAID_PARTLY_AND_GIVEN,
+            "&length, event_ring_flag_input(flags->u));",
+            "entry[1u + 0u] |= UINT32_C(1) << 1u;",
+        ],
+    );
+}
+
 #[test]
 fn c11_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own() {
     // Two flag inputs fit one word; the tag takes the next. The bytes follow the
@@ -3875,6 +4090,135 @@ fn cpp_stores_the_flag_inputs_an_element_asks_its_caller_for() {
     assert!(
         read_back < decoded,
         "the decode is given the flag stored with the entry:\n{code}"
+    );
+}
+
+/// The options of a single compile of `event_ring` over an element with `facts`, which
+/// the C++ backend prints from its plan.
+fn cpp_printed_options(facts: BroadcastLogElementFacts) -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        element_type_cpp_printed: Some(std::collections::HashSet::from([
+            "event_record".to_string()
+        ])),
+        ..resolution_options(None, 4, facts)
+    }
+}
+
+/// The options of a single compile of `event_ring` for a 32-bit target, which takes the
+/// narrow row, over an element with `facts`.
+fn narrow_options_over(facts: BroadcastLogElementFacts) -> ForgeCompileOptions {
+    let mut options = target_options(None, None, Some("thumbv7em-none-eabihf"), Some(1_000_000));
+    options
+        .broadcast_log_resolutions
+        .as_mut()
+        .and_then(|resolutions| resolutions.get_mut("event_ring"))
+        .expect("the log has a resolution")
+        .element = facts;
+    options
+}
+
+/// The lines of a C++ `publish` over `said_partly_and_given_flags` that derive its
+/// flags, one line for a flag the value says, two for one it says in some values, one for
+/// one it gives.
+const CPP_DERIVED_SAID_PARTLY_AND_GIVEN: &str = concat!(
+    "    EventRingFlags flags{};\n",
+    "    flags.s = ::SCE::Generated::EventRecord::input_s(element) != 0;\n",
+    "    const std::optional<std::uint8_t> said_t = ::SCE::Generated::EventRecord::input_t(element);\n",
+    "    flags.t = said_t.has_value() ? *said_t != 0 : given.t;\n",
+    "    flags.u = given.u;\n",
+);
+
+#[test]
+fn cpp_stores_a_flag_the_element_says_in_some_values_as_said_and_else_as_given() {
+    // A printed element whose value says `S` in some of its values only (ADR 0065 §6 R4e)
+    // answers no value from `input_s` where it says nothing: the log stores what the value
+    // says where it says it, and what the caller gives where it does not, and the printed
+    // encode takes no `S`. No value read as clear would store a flag the caller never gave.
+    let code = compile_single_cpp(&event_ring(), &cpp_printed_options(partly_said_flag()))
+        .expect("a log over an element that says a flag in some values is generated");
+    assert_holds(
+        &code,
+        &[
+            "// `publish` takes the flags the element's value does not say in every value, and the \
+             item `read` returns holds them all.",
+            concat!(
+                "/// The flag inputs `publish` takes from its caller: those the element's value does not\n",
+                "/// say in every value, each used where the value says nothing of it. The log reads the\n",
+                "/// others off the element (ADR 0065 section 6, R4a, R4e).\n",
+                "struct EventRingGivenFlags {\n    bool s = false;\n};",
+            ),
+            "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
+             const EventRecordType &element, const EventRingGivenFlags &given) noexcept {",
+            concat!(
+                "    EventRingFlags flags{};\n",
+                "    const std::optional<std::uint8_t> said_s = ::SCE::Generated::EventRecord::input_s(element);\n",
+                "    flags.s = said_s.has_value() ? *said_s != 0 : given.s;\n",
+            ),
+            "refused = element.encode(sink)) {",
+            "EventRecordType::decode(cursor, flag_input(flags.s))",
+        ],
+    );
+    for wrong in [
+        "::SCE::Generated::EventRecord::input_s(element) != 0;",
+        "flags.s = given.s;",
+        "value_or(",
+        "element.encode(sink, flag_input(flags.s))",
+    ] {
+        assert!(
+            !code.contains(wrong),
+            "a value that says nothing of the flag does not set it, and the encode is not \
+             handed it (`{wrong}`):\n{code}"
+        );
+    }
+}
+
+#[test]
+fn cpp_derives_each_flag_of_several_on_a_line_of_its_own() {
+    // `S` is said by every value of the element, `T` by some (ADR 0065 §6 R4e) and `U` by
+    // none, so `publish` reads `S` off the element, `T` off it where it says it and else
+    // from the caller, and takes `U` from the caller. The caller gives `T` and `U` in
+    // `EventRingGivenFlags`, and the printed encode is handed `U` alone.
+    let code = compile_single_cpp(
+        &event_ring(),
+        &cpp_printed_options(said_partly_and_given_flags()),
+    )
+    .expect("a log over an element that says some of its flags is generated");
+    assert_holds(
+        &code,
+        &[
+            "struct EventRingGivenFlags {\n    bool t = false;\n    bool u = false;\n};",
+            "const EventRecordType &element, const EventRingGivenFlags &given) noexcept {",
+            CPP_DERIVED_SAID_PARTLY_AND_GIVEN,
+            "refused = element.encode(sink, flag_input(flags.u))) {",
+            "entry[1 + 0] |= std::uint64_t{1} << 1;",
+            "EventRecordType::decode(cursor, flag_input(flags.s), flag_input(flags.t), flag_input(flags.u))",
+        ],
+    );
+}
+
+#[test]
+fn cpp_the_narrow_row_derives_a_flag_the_element_says_in_some_values() {
+    // The narrow header derives the flags as the wide one does: `T`, which the value says in
+    // some of its values only (ADR 0065 §6 R4e), is what it says where it says it and the
+    // caller's elsewhere, and the encode is handed `U` alone.
+    let options = ForgeCompileOptions {
+        element_type_cpp_printed: Some(std::collections::HashSet::from([
+            "event_record".to_string()
+        ])),
+        ..narrow_options_over(said_partly_and_given_flags())
+    };
+    let code = compile_single_cpp(&event_ring(), &options)
+        .unwrap_or_else(|e| panic!("a 32-bit target derives the flags: {:?}", e.error));
+    assert_holds(
+        &code,
+        &[
+            "#include \"sce/forge/broadcast_log_narrow.h\"",
+            "struct EventRingGivenFlags {\n    bool t = false;\n    bool u = false;\n};",
+            "const EventRecordType &element, const EventRingGivenFlags &given) noexcept {",
+            CPP_DERIVED_SAID_PARTLY_AND_GIVEN,
+            "refused = element.encode(sink, flag_input(flags.u))) {",
+            "entry[1 + 0] |= std::uint32_t{1} << 1;",
+        ],
     );
 }
 

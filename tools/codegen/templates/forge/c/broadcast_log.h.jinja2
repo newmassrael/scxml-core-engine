@@ -26,7 +26,7 @@
  *
  * Operations (the runtime's `sce_blog_*`, typed here over the element):
  *   {{ snake }}_publisher_acquire(log, &publisher)   takes the one place of the publisher
- *   {{ snake }}_publish(&publisher, &element{% if context.flags and context.given_flags %}, &{% if context.said_flags %}given{% else %}flags{% endif %}{% endif %})        wait-free; the entry's sequence number
+ *   {{ snake }}_publish(&publisher, &element{% if context.flags and context.given_flags %}, &{% if context.derives_flags %}given{% else %}flags{% endif %}{% endif %})        wait-free; the entry's sequence number
  *   {{ snake }}_read(log, &reader, &out)             wait-free; an item, nothing new, or
  *                                                    how many entries were missed
  * A reader is `{{ snake }}_reader_oldest`, `{{ snake }}_reader_deferred`,
@@ -39,13 +39,18 @@
  * section 4).
 {% if context.flags %}
 {% if context.given_flags %}
- * `{{ snake }}_publish` takes the flags{% if context.said_flags %} the element's value does not say{% endif %}, and `{{ snake }}_read` returns them{% if context.said_flags %} all{% endif %} with the item.
+ * `{{ snake }}_publish` takes the flags{% if context.derives_flags %} the element's value does not say{% if context.partly_flags %} in every value{% endif %}{% endif %}, and `{{ snake }}_read` returns them{% if context.derives_flags %} all{% endif %} with the item.
 {% else %}
  * `{{ snake }}_read` returns the flags with the item.
 {% endif %}
 {% if context.said_flags %}
  * A flag input the element's value says is not taken: `{{ snake }}_publish` reads it
  * off the element, as its encode does (ADR 0065 section 6, R4a).
+{% endif %}
+{% if context.partly_flags %}
+ * A flag input the element's value says in some of its values only is what it says
+ * where it says it, and what the caller gives where it says nothing; its encode does
+ * not take it (ADR 0065 section 6, R4e).
 {% endif %}
 {% endif %}
 {% if context.has_tag %}
@@ -150,10 +155,16 @@ typedef struct {
     bool {{ flag.snake }};
 {% endfor %}
 } {{ snake }}_flags_t;
-{% if context.said_flags and context.given_flags %}
+{% if context.derives_flags and context.given_flags %}
 
+{% if context.partly_flags %}
+/* The flag inputs `{{ snake }}_publish` takes from its caller: those the element's value
+ * does not say in every value, each used where the value says nothing of it. The log
+ * reads the others off the element (ADR 0065 section 6, R4a, R4e). */
+{% else %}
 /* The flag inputs `{{ snake }}_publish` takes from its caller: those the element's value
  * does not say. The log reads the others off the element (ADR 0065 section 6, R4a). */
+{% endif %}
 typedef struct {
 {% for flag in context.flags %}
 {% if not flag.said %}
@@ -285,12 +296,14 @@ static inline {{ snake }}_reader_t {{ snake }}_reader_at(const {{ snake }}_t *lo
 {% if context.present %}
  *
 {% if context.flags %}
-{% if context.said_flags %}
+{% if context.derives_flags %}
  * The flag inputs the element's codec takes from its caller are stored in the entry's
  * context words (after the length word, before the bytes), so that every reader decodes
  * the entry under what it was published under. A flag the element's value says is read
  * off `*element` and stored as it says it, so no entry is stored under a flag its bytes
- * disagree with{% if context.given_flags %}. `*given` holds the others, encoded under here; the log
+ * disagree with{% if context.partly_flags %}; one it says in some of its values only is read off
+ * `*element` where it says it, and is the one `*given` holds where it says nothing (ADR
+ * 0065 section 6, R4e){% endif %}{% if context.given_flags %}. `*given` holds the others, encoded under here; the log
  * does not check that they agree with `*element`, the publisher gives what it knows, as
  * every caller of this codec does{% endif %}.
 {% else %}
@@ -313,13 +326,19 @@ static inline {{ snake }}_reader_t {{ snake }}_reader_at(const {{ snake }}_t *lo
  * codec (SCE_FORGE_CODEC_BUFFER_OVERFLOW from its bounded writer) and nothing is
  * published: the codec never reports more bytes than the buffer it was given
  * holds, so the packing below never indexes past the entry. */
-static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publisher_t *publisher, const {{ element_snake }}_t *element{% if context.flags and context.given_flags %}, const {{ snake }}_{% if context.said_flags %}given_{% endif %}flags_t *{% if context.said_flags %}given{% else %}flags{% endif %}{% endif %})
+static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publisher_t *publisher, const {{ element_snake }}_t *element{% if context.flags and context.given_flags %}, const {{ snake }}_{% if context.derives_flags %}given_{% endif %}flags_t *{% if context.derives_flags %}given{% else %}flags{% endif %}{% endif %})
 {
-{% if context.said_flags %}
+{% if context.derives_flags %}
+{# A flag the element's value says is read off it by the input's own function (docs/adr/0065
+   §6 R4a); one it says in some of its values only answers an absent value where it says
+   nothing, and is the caller's there (R4e). #}
     {{ snake }}_flags_t held_flags;
 {% for flag in context.flags %}
 {% if flag.said %}
     held_flags.{{ flag.snake }} = {{ element_snake }}_input_{{ flag.snake }}({{ element_snake }}_value_source(), element) != 0u;
+{% elif flag.partly %}
+    const sce_optional_uint8_t said_{{ flag.snake }} = {{ element_snake }}_input_{{ flag.snake }}({{ element_snake }}_value_source(), element);
+    held_flags.{{ flag.snake }} = said_{{ flag.snake }}.present ? said_{{ flag.snake }}.value != 0u : given->{{ flag.snake }};
 {% else %}
     held_flags.{{ flag.snake }} = given->{{ flag.snake }};
 {% endif %}
@@ -333,7 +352,7 @@ static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publi
     {{ snake }}_publish_result_t result;
     result.status = {{ upper_name }}_PUBLISH_OK;
     result.seq = 0u;
-    result.codec_status = {{ element_snake }}_encode_to_buf(element, bytes, {{ upper_name }}_MAX_ENCODED_BYTES, &length{% for flag in context.flags %}{% if not flag.said %}, {{ snake }}_flag_input(flags->{{ flag.snake }}){% endif %}{% endfor %});
+    result.codec_status = {{ element_snake }}_encode_to_buf(element, bytes, {{ upper_name }}_MAX_ENCODED_BYTES, &length{% for flag in context.flags if not (flag.said or flag.partly) %}, {{ snake }}_flag_input(flags->{{ flag.snake }}){% endfor %});
     if (result.codec_status != SCE_FORGE_CODEC_OK) {
         result.status = {{ upper_name }}_PUBLISH_ENCODE_FAILED;
         return result;
