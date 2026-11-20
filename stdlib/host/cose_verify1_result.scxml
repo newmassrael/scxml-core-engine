@@ -6,7 +6,8 @@
   `sce-host-cose-verify1` (docs/SCE_HOST_FEATURES.md, "Signing and sealing").
   `valid` is true when a key of the trust set signed the object: `key_id` is
   that key's id and `payload` what it signed. An object that does not verify
-  is an answer, `valid` false, with `key_id` and `payload` empty.
+  is an answer, `valid` false, with `key_id` and `payload` empty. `payload` is
+  bounded by the named bound `cose_payload`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -18,6 +19,6 @@
     <data id="error" sce:type="string[24]" sce:direction="in"/>
     <data id="valid" sce:type="bool" sce:direction="in"/>
     <data id="key_id" sce:type="string[64]" sce:direction="in"/>
-    <data id="payload" sce:type="bytes[4096]" sce:direction="in"/>
+    <data id="payload" sce:type="bytes[cose_payload=4096]" sce:direction="in"/>
   </datamodel>
 </scxml>

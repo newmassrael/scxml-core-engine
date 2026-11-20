@@ -6,7 +6,8 @@
   `sce-host-cose-decrypt0` (docs/SCE_HOST_FEATURES.md, "Signing and sealing").
   `opened` is true when the key opened the object, and `plaintext` is then what
   was sealed. An object that does not open is an answer, `opened` false, with
-  `plaintext` empty.
+  `plaintext` empty. `plaintext` is bounded by the named bound
+  `cose_plaintext`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -17,6 +18,6 @@
   <datamodel>
     <data id="error" sce:type="string[24]" sce:direction="in"/>
     <data id="opened" sce:type="bool" sce:direction="in"/>
-    <data id="plaintext" sce:type="bytes[4352]" sce:direction="in"/>
+    <data id="plaintext" sce:type="bytes[cose_plaintext=4352]" sce:direction="in"/>
   </datamodel>
 </scxml>

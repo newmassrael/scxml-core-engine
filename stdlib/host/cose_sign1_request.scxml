@@ -8,7 +8,9 @@
   `key_id` names a signing key of the host's configuration; the key itself
   never reaches the statechart. `payload` is the bytes signed, and
   `external_aad` the bytes the signature covers without carrying them: empty
-  when there are none.
+  when there are none. `payload` is bounded by the named bound
+  `cose_payload`, which a build moves with `cose_signed`, the bound of the
+  object signed, at least 256 bytes above it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -18,7 +20,7 @@
        sce:event-name="host.cose.sign1.request">
   <datamodel>
     <data id="key_id" sce:type="string[64]" sce:direction="in"/>
-    <data id="payload" sce:type="bytes[4096]" sce:direction="in"/>
+    <data id="payload" sce:type="bytes[cose_payload=4096]" sce:direction="in"/>
     <data id="external_aad" sce:type="bytes[256]" sce:direction="in"/>
   </datamodel>
 </scxml>

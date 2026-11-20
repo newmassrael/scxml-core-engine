@@ -43,6 +43,11 @@
   Only `outcome` is written by a failure or a refusal; what an earlier
   operation published stays.
 
+  The variables that hold a payload, a plaintext and the objects made of them
+  name the bounds of the records they are handed to and from (cose_payload,
+  cose_signed, cose_plaintext, cose_sealed; docs/adr/0109, D17), so a build
+  that moves those bounds moves the machine with them.
+
   The operations are served by the Rust and C++ reference hosts
   (docs/adr/0107, D7 and D8; docs/adr/0109, D0), and a build for any other
   lane refuses this machine on its first `<invoke>`.
@@ -83,16 +88,16 @@
   <datamodel>
     <!-- The arguments of the operation the machine is asking for. -->
     <data id="sign_key" sce:type="string[64]" expr="''"/>
-    <data id="sign_payload" sce:type="bytes[4096]" expr="''"/>
+    <data id="sign_payload" sce:type="bytes[cose_payload=4096]" expr="''"/>
     <data id="sign_aad" sce:type="bytes[256]" expr="''"/>
     <data id="trust_set" sce:type="string[64]" expr="''"/>
-    <data id="verify_cose" sce:type="bytes[4352]" expr="''"/>
+    <data id="verify_cose" sce:type="bytes[cose_signed=4352]" expr="''"/>
     <data id="verify_aad" sce:type="bytes[256]" expr="''"/>
     <data id="seal_key" sce:type="string[64]" expr="''"/>
-    <data id="seal_plaintext" sce:type="bytes[4352]" expr="''"/>
+    <data id="seal_plaintext" sce:type="bytes[cose_plaintext=4352]" expr="''"/>
     <data id="seal_aad" sce:type="bytes[256]" expr="''"/>
     <data id="open_key" sce:type="string[64]" expr="''"/>
-    <data id="open_cose" sce:type="bytes[4480]" expr="''"/>
+    <data id="open_cose" sce:type="bytes[cose_sealed=4480]" expr="''"/>
     <data id="open_aad" sce:type="bytes[256]" expr="''"/>
     <data id="secret" sce:type="bytes[256]" expr="''"/>
     <data id="input_key" sce:type="string[64]" expr="''"/>
@@ -116,13 +121,13 @@
     </data>
     <!-- What the machine publishes. -->
     <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
-    <data id="signed_object" sce:type="bytes[4352]" expr="''" sce:direction="out"/>
+    <data id="signed_object" sce:type="bytes[cose_signed=4352]" expr="''" sce:direction="out"/>
     <data id="valid" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="signer" sce:type="string[64]" expr="''" sce:direction="out"/>
-    <data id="payload" sce:type="bytes[4096]" expr="''" sce:direction="out"/>
-    <data id="sealed_object" sce:type="bytes[4480]" expr="''" sce:direction="out"/>
+    <data id="payload" sce:type="bytes[cose_payload=4096]" expr="''" sce:direction="out"/>
+    <data id="sealed_object" sce:type="bytes[cose_sealed=4480]" expr="''" sce:direction="out"/>
     <data id="opened" sce:type="bool" expr="false" sce:direction="out"/>
-    <data id="plaintext" sce:type="bytes[4352]" expr="''" sce:direction="out"/>
+    <data id="plaintext" sce:type="bytes[cose_plaintext=4352]" expr="''" sce:direction="out"/>
     <data id="derived" sce:type="string[64]" expr="''" sce:direction="out"/>
     <data id="drawn" sce:type="bytes[random_bytes=256]" expr="''" sce:direction="out"/>
     <data id="tag" sce:type="bytes[32]" expr="''" sce:direction="out"/>

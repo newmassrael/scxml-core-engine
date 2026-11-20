@@ -5,7 +5,7 @@
   sce:std/host/cose_sign1_result.scxml — the answer of `sce-host-cose-sign1`
   (docs/SCE_HOST_FEATURES.md, "Signing and sealing"): `cose` is the tagged
   COSE_Sign1 of the payload (RFC 9052), signed with EdDSA on Ed25519, the key's
-  id in its protected header.
+  id in its protected header, bounded by the named bound `cose_signed`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -15,6 +15,6 @@
        sce:event-name="host.cose.sign1.result">
   <datamodel>
     <data id="error" sce:type="string[24]" sce:direction="in"/>
-    <data id="cose" sce:type="bytes[4352]" sce:direction="in"/>
+    <data id="cose" sce:type="bytes[cose_signed=4352]" sce:direction="in"/>
   </datamodel>
 </scxml>

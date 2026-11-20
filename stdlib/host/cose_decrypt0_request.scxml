@@ -7,7 +7,8 @@
 
   `key_id` names the symmetric key to open with, whatever key id the object
   carries. `cose` is the tagged COSE_Encrypt0 to open, and `external_aad` the
-  bytes it was sealed over beside its plaintext.
+  bytes it was sealed over beside its plaintext. `cose` is bounded by the
+  named bound `cose_sealed`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -17,7 +18,7 @@
        sce:event-name="host.cose.decrypt0.request">
   <datamodel>
     <data id="key_id" sce:type="string[64]" sce:direction="in"/>
-    <data id="cose" sce:type="bytes[4480]" sce:direction="in"/>
+    <data id="cose" sce:type="bytes[cose_sealed=4480]" sce:direction="in"/>
     <data id="external_aad" sce:type="bytes[256]" sce:direction="in"/>
   </datamodel>
 </scxml>
