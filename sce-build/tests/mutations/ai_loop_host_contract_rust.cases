@@ -52,7 +52,7 @@ mutation_targets rust-integration:backends/rust/tests/src/integration/ai_loop/ai
 # every failed guard still answers `false`, and nothing anywhere counted it.
 mutation_case "a guard that could not be evaluated is swallowed" <<'PY'
 edit("rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
-     "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, reason));",
+     "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, reason));",
      "let _ = reason;")
 PY
 
