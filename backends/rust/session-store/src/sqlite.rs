@@ -13,6 +13,7 @@ use crate::audit::{
     rules as audit_rules, AuditAppend, AuditCheckpoint, AuditHead, AuditRow, AuditStore, Chain,
     NoCheckpointAt, CHAIN_BYTES,
 };
+use crate::batch::{Batched, Committed, Decided};
 use crate::credentials::{
     CredentialStore, Digest, PinRow, PinStore, Revoked, TokenRow, TokenStore, DIGEST_BYTES,
 };
@@ -374,50 +375,44 @@ impl SessionStore for SqliteStore {
     fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
-        rules::admit_write(
-            holding(&transaction, key)?.as_ref(),
-            write.fence,
-            version_of(&transaction, key)?,
-            write.expected_version,
-        )?;
-        let version = match write.change {
-            Change::Keep {
-                state,
-                earliest_due,
-            } => {
-                let version = next_number(&transaction)?;
-                transaction
-                    .prepare_cached(
-                        "INSERT OR REPLACE INTO sessions (session, state, version, earliest_due) \
-                         VALUES (?1, ?2, ?3, ?4)",
-                    )?
-                    .execute((key, state, version, earliest_due.map(moment)))?;
-                transaction
-                    .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1 AND id <= ?2")?
-                    .execute((key, write.notes_through))?;
-                version
-            }
-            Change::Remove => {
-                transaction
-                    .prepare_cached("DELETE FROM sessions WHERE session = ?1")?
-                    .execute((key,))?;
-                transaction
-                    .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1")?
-                    .execute((key,))?;
-                for &session in write.sessions {
-                    transaction
-                        .prepare_cached("DELETE FROM kv_first_results WHERE session = ?1")?
-                        .execute((session,))?;
-                    transaction
-                        .prepare_cached("DELETE FROM audit_identities WHERE session = ?1")?
-                        .execute((session,))?;
-                }
-                0
-            }
-        };
-        let appended = append_in(&transaction, write.outbox, write.now_ms)?;
+        let written = write_in(&transaction, key, write)?;
         transaction.commit()?;
-        Ok(Written { version, appended })
+        Ok(written)
+    }
+
+    /// One `IMMEDIATE` transaction, one savepoint per item: an item refused or failed is rolled
+    /// back to its savepoint, and the others are kept. The commit syncs the log once
+    /// (`synchronous=FULL`), so the batch is durable as a whole when this returns.
+    fn write_many(&self, batch: &[Batched<'_>]) -> Result<Vec<Decided>, Failure> {
+        let mut connection = self.connection();
+        let mut transaction = begin(&mut connection)?;
+        let mut decided = Vec::with_capacity(batch.len());
+        for item in batch {
+            let savepoint = transaction.savepoint()?;
+            let done = match *item {
+                Batched::Write { key, write } => {
+                    write_in(&savepoint, key, &write).map(Committed::Written)
+                }
+                Batched::Acknowledge {
+                    client,
+                    incarnation,
+                    through,
+                    now_ms,
+                } => acknowledge_in(&savepoint, client, incarnation, through, now_ms)
+                    .map(Committed::Acknowledged)
+                    .map_err(WriteError::from),
+            };
+            // A savepoint that cannot be released or rolled back leaves the transaction in a
+            // state no item can be judged against: the batch fails whole, and keeps nothing.
+            if done.is_ok() {
+                savepoint.commit()?;
+            } else {
+                savepoint.finish()?;
+            }
+            decided.push(done);
+        }
+        transaction.commit()?;
+        Ok(decided)
     }
 
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -543,23 +538,9 @@ impl SessionStore for SqliteStore {
     ) -> Result<u64, Failure> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
-        let held: Option<String> = transaction
-            .prepare_cached("SELECT incarnation FROM outbox_heads WHERE client = ?1")?
-            .query_row((client,), |row| row.get(0))
-            .optional()?;
-        if !rules::acknowledges(held.as_deref(), incarnation) {
-            return Ok(0);
-        }
-        let removed = transaction
-            .prepare_cached("DELETE FROM outbox_entries WHERE client = ?1 AND number <= ?2")?
-            .execute((client, through))?;
-        if removed > 0 {
-            transaction
-                .prepare_cached("UPDATE outbox_heads SET touched_ms = ?2 WHERE client = ?1")?
-                .execute((client, moment(now_ms)))?;
-        }
+        let removed = acknowledge_in(&transaction, client, incarnation, through, now_ms)?;
         transaction.commit()?;
-        Ok(u64::try_from(removed).unwrap_or(u64::MAX))
+        Ok(removed)
     }
 
     fn expire(&self, client: &str, before_ms: u64, limit: usize) -> Result<Expiry, Failure> {
@@ -640,6 +621,83 @@ impl SessionStore for SqliteStore {
             .collect::<rusqlite::Result<Vec<Note>>>()?;
         Ok(notes)
     }
+}
+
+/// What [`SessionStore::write`] does with `write` to the session `key` names, in the transaction
+/// (or the savepoint of one) `connection` holds: refused before it writes anything unless the
+/// rules admit it. A statement that fails after that leaves what the ones before it wrote, which
+/// the caller rolls back with the rest of its transaction or savepoint.
+fn write_in(connection: &Connection, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+    rules::admit_write(
+        holding(connection, key)?.as_ref(),
+        write.fence,
+        version_of(connection, key)?,
+        write.expected_version,
+    )?;
+    let version = match write.change {
+        Change::Keep {
+            state,
+            earliest_due,
+        } => {
+            let version = next_number(connection)?;
+            connection
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO sessions (session, state, version, earliest_due) \
+                     VALUES (?1, ?2, ?3, ?4)",
+                )?
+                .execute((key, state, version, earliest_due.map(moment)))?;
+            connection
+                .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1 AND id <= ?2")?
+                .execute((key, write.notes_through))?;
+            version
+        }
+        Change::Remove => {
+            connection
+                .prepare_cached("DELETE FROM sessions WHERE session = ?1")?
+                .execute((key,))?;
+            connection
+                .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1")?
+                .execute((key,))?;
+            for &session in write.sessions {
+                connection
+                    .prepare_cached("DELETE FROM kv_first_results WHERE session = ?1")?
+                    .execute((session,))?;
+                connection
+                    .prepare_cached("DELETE FROM audit_identities WHERE session = ?1")?
+                    .execute((session,))?;
+            }
+            0
+        }
+    };
+    let appended = append_in(connection, write.outbox, write.now_ms)?;
+    Ok(Written { version, appended })
+}
+
+/// What [`SessionStore::acknowledge`] does, in the transaction (or the savepoint of one)
+/// `connection` holds: how many entries it deleted.
+fn acknowledge_in(
+    connection: &Connection,
+    client: &str,
+    incarnation: &str,
+    through: u64,
+    now_ms: u64,
+) -> rusqlite::Result<u64> {
+    let held: Option<String> = connection
+        .prepare_cached("SELECT incarnation FROM outbox_heads WHERE client = ?1")?
+        .query_row((client,), |row| row.get(0))
+        .optional()?;
+    if !rules::acknowledges(held.as_deref(), incarnation) {
+        return Ok(0);
+    }
+    let removed = connection
+        .prepare_cached("DELETE FROM outbox_entries WHERE client = ?1 AND number <= ?2")?
+        .execute((client, through))?;
+    if removed > 0 {
+        connection
+            .prepare_cached("UPDATE outbox_heads SET touched_ms = ?2 WHERE client = ?1")?
+            .execute((client, moment(now_ms)))?;
+    }
+    Ok(u64::try_from(removed).unwrap_or(u64::MAX))
 }
 
 /// Append `appends` at `now_ms` in the transaction `connection` holds, each to its client's

@@ -21,10 +21,14 @@
 //! * [`an_old_entry_expires_and_its_sender_is_noted`]: an expiry deletes what is older than its
 //!   moment, writes a note for each entry's sender and makes it due at once, closes an outbox
 //!   left empty and untouched, and a write of the sender takes its notes, a removal all of them.
+//! * [`a_batch_appends_and_acknowledges_item_by_item`] (ADR 0109, D15): a batch's
+//!   acknowledgements and writes are decided in order, item by item, and a write it refuses
+//!   appends nothing.
 //!
 //! Each function needs a harness whose store holds nothing when it starts. The clock is the one
 //! the functions give; nothing here waits on time. A failed expectation panics, as a test's does.
 
+use crate::batch::{Batched, Committed};
 use crate::conformance::Harness;
 use crate::outbox::{Append, Appended, Write};
 use crate::{Conflict, Lease, SessionStore, WriteError, LATEST_MOMENT};
@@ -475,6 +479,105 @@ pub fn an_old_entry_expires_and_its_sender_is_noted(harness: &impl Harness) {
         (reopened[0].incarnation.as_str(), reopened[0].number),
         (SECOND, 1),
         "a closed outbox opens anew, in another incarnation"
+    );
+}
+
+/// ADR 0109, D15: a batch's acknowledgements and writes are decided item by item, in order. An
+/// acknowledgement deletes what it covers; a write fenced out appends nothing, so the next kept
+/// append takes the number it would have taken; a kept write appends with its session; and an
+/// acknowledgement of another incarnation deletes nothing.
+pub fn a_batch_appends_and_acknowledges_item_by_item(harness: &impl Harness) {
+    let store = harness.handle();
+    let k1 = lease(&store, "k1");
+    let k2 = lease(&store, "k2");
+    let opening = appends("phone", Some("k1"), &[b"one", b"two"]);
+    let opened = store
+        .write(
+            "k1",
+            &Write {
+                outbox: &opening,
+                now_ms: 1_000,
+                ..Write::put(b"sent two", None, 0, k1.fence)
+            },
+        )
+        .expect("a write that opens the outbox");
+    // The holder of k2 asks again: the first grant's writes are fenced out.
+    let k2_again = lease(&store, "k2");
+    let refused_appends = appends("phone", Some("k2"), &[b"refused"]);
+    let kept_appends = appends("phone", Some("k1"), &[b"three"]);
+    let decided = store
+        .write_many(&[
+            Batched::Acknowledge {
+                client: "phone",
+                incarnation: FIRST,
+                through: 1,
+                now_ms: 1_100,
+            },
+            Batched::Write {
+                key: "k2",
+                write: Write {
+                    outbox: &refused_appends,
+                    now_ms: 1_100,
+                    ..Write::put(b"fenced", None, 0, k2.fence)
+                },
+            },
+            Batched::Write {
+                key: "k1",
+                write: Write {
+                    outbox: &kept_appends,
+                    now_ms: 1_100,
+                    ..Write::put(b"sent three", None, opened.version, k1.fence)
+                },
+            },
+            Batched::Acknowledge {
+                client: "phone",
+                incarnation: SECOND,
+                through: 3,
+                now_ms: 1_100,
+            },
+        ])
+        .expect("a batch the store could make");
+    assert_eq!(decided.len(), 4, "{decided:?}");
+    assert!(
+        matches!(decided[0], Ok(Committed::Acknowledged(1))),
+        "the acknowledgement of entry 1: {:?}",
+        decided[0]
+    );
+    match &decided[1] {
+        Err(WriteError::Conflict(conflict)) => assert_eq!(
+            *conflict,
+            Conflict::Fence {
+                presented: k2.fence,
+                current: Some(k2_again.fence)
+            }
+        ),
+        other => panic!("a fenced-out item of a batch gave {other:?}"),
+    }
+    match &decided[2] {
+        Ok(Committed::Written(written)) => {
+            assert_eq!(
+                numbers(&written.appended),
+                vec![3],
+                "a refused item of the batch took a number"
+            );
+            assert_eq!(written.appended[0].incarnation, FIRST);
+        }
+        other => panic!("a kept item of a batch gave {other:?}"),
+    }
+    assert!(
+        matches!(decided[3], Ok(Committed::Acknowledged(0))),
+        "an acknowledgement of another incarnation: {:?}",
+        decided[3]
+    );
+    assert_eq!(
+        held(&harness.handle(), "phone"),
+        vec![(2, b"two".to_vec()), (3, b"three".to_vec())],
+        "what the batch kept of the outbox, for every handle"
+    );
+    assert_eq!(
+        store.get("k2").expect("the fenced-out session"),
+        None,
+        "a refused item wrote its session"
     );
 }
 

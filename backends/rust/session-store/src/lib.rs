@@ -27,7 +27,10 @@
 //!   is, decides whose writes land, so two server processes never both write one session.
 //!
 //! Everything one call writes is one transaction: a put writes the state, its version and its
-//! earliest due, after the lease check, or writes nothing.
+//! earliest due, after the lease check, or writes nothing. Many writes may share one transaction
+//! ([`SessionStore::write_many`], ADR 0109 D15; module [`batch`]): the batch is made durable once,
+//! and each of its items is decided on its own, so that a host commits the checkpoints of many
+//! sessions together and pays for one sync.
 //!
 //! * [`MemoryStore`] keeps it all in the process, for the tests of the crates that are given a
 //!   store.
@@ -90,6 +93,7 @@ use std::fmt;
 
 pub mod audit;
 pub mod audit_conformance;
+pub mod batch;
 pub mod conformance;
 pub mod credential_conformance;
 pub mod credentials;
@@ -107,6 +111,7 @@ mod sqlite;
 pub use audit::{
     AuditAppend, AuditCheckpoint, AuditHead, AuditRow, AuditStore, Chain, NoCheckpointAt,
 };
+pub use batch::{Batched, Committed, Decided};
 pub use credentials::{
     CredentialStore, Digest, MemoryCredentials, PinRow, PinStore, Revoked, TokenRow, TokenStore,
 };
@@ -160,6 +165,44 @@ pub trait SessionStore: Send + Sync {
     /// incarnation; an outbox it holds keeps its own. Each append takes the next number of its
     /// outbox, in the order given, and is kept at [`Write::now_ms`].
     fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError>;
+
+    /// Write `batch` in one transaction, durable as a whole when this returns, and decided item by
+    /// item, in the order given (ADR 0109, D15; module [`batch`]): each item is judged as
+    /// [`SessionStore::write`] or [`SessionStore::acknowledge`] would judge it alone, against what
+    /// the items before it left, and one the store refuses for its version or its fence
+    /// ([`WriteError::Conflict`]), or that fails alone ([`WriteError::Failed`]), leaves nothing of
+    /// itself while the others are kept. Answers each item's decision, in the order given.
+    ///
+    /// Refused as a whole, keeping nothing of any item, when the transaction cannot be made or
+    /// made durable ([`Failure`]): a medium that failed. A store answers an item failed only when
+    /// it can leave that item out and still keep the others.
+    ///
+    /// The name is the contract's word for a change of the store: a batch keeps and removes
+    /// sessions, appends to outboxes and takes notes, as [`SessionStore::write`] does, and deletes
+    /// what acknowledgements cover; [`SessionStore::put`] is the narrower word for a write that
+    /// only keeps a state.
+    ///
+    /// As it stands, each item is its own transaction: correct, durable on return, and no cheaper
+    /// than the items written one by one. A store that can share one transaction among them
+    /// implements this, as both stores of this crate do, held to
+    /// [`conformance::a_batch_is_decided_item_by_item`] and its neighbours.
+    fn write_many(&self, batch: &[Batched<'_>]) -> Result<Vec<Decided>, Failure> {
+        Ok(batch
+            .iter()
+            .map(|item| match *item {
+                Batched::Write { key, write } => self.write(key, &write).map(Committed::Written),
+                Batched::Acknowledge {
+                    client,
+                    incarnation,
+                    through,
+                    now_ms,
+                } => self
+                    .acknowledge(client, incarnation, through, now_ms)
+                    .map(Committed::Acknowledged)
+                    .map_err(WriteError::Failed),
+            })
+            .collect())
+    }
 
     /// Keep `state` as the session `key` names, with `earliest_due` as the earliest moment one of
     /// its waiting sends comes due (`None` when none waits), and answer its new version: a
