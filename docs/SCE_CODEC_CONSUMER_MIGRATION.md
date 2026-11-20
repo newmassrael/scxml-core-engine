@@ -3325,3 +3325,26 @@ are regenerated; a consumer regenerates a machine only when it appends to the lo
   (host/AuditHost.h), which an embedding adds to its host as it adds the COSE feature.
 - The scenario format has a host directive `audit` and a host state `audit` (docs/SCE_HOST_FEATURES.md section 8).
 
+## The bounds of the signing and sealing records are named, and a host is given its build's (ADR 0109 D17)
+
+Landing: the commits that add this section. The records `stdlib/host/cose_*.scxml` name their bounds, and the
+fixture `static_host_cose.scxml` names them on its variables, so the static-datamodel trees are regenerated; a
+consumer built with no `--limit` keeps every bound at its number and regenerates only to take the new
+`source-hash` lines.
+
+- The bounds are `cose_payload` (4096), `cose_signed` (4352), `cose_plaintext` (4352) and `cose_sealed` (4480),
+  which `--limit` moves. A machine that imports the records declares each as a constant of its `<Machine>Limits`,
+  which a machine that signs or seals gains where it had none. A variable a consumer hands to or takes from one of
+  the fields at a moved bound names the bound in its type (`bytes[cose_payload=4096]`), or a build that moves the
+  bound refuses the assignment as it refuses any text wider than its variable.
+- A new diagnostic code, `codegen/standard-host-bound-relation`: a build whose `cose_signed` is below
+  `cose_payload` and 256, or whose `cose_sealed` is below `cose_plaintext` and 128. A `match` over `DiagnosticCode`
+  names `CodegenStandardHostBoundRelation`, and one over `GenerateError` names it with its fields. The table of
+  relations is `sce_build::forge::standard_host::BOUND_RELATIONS`.
+- Rust `sce_rust_host_features`: `RANDOM_BYTES_MAX` and `MAC_MESSAGE_MAX` are gone; `NamedBounds` (with
+  `NamedBounds::LIBRARY`) holds the six named bounds of sections 10 to 12 and `ReferenceHost::set_named_bounds`
+  gives a host its build's. A host given none judges by the library's numbers, as before.
+- C++ `host/CoseHost.h`: `CoseBounds::PAYLOAD`, `SIGN1`, `PLAINTEXT`, `ENCRYPT0`, `RANDOM_DRAW` and `MAC_MESSAGE`
+  are gone; `NamedBounds` holds them, and `CoseFeature(crypto, bounds)` takes one, the library's numbers when
+  omitted (`CoseFeature(crypto)` keeps its meaning). `namedBounds()` answers what the feature judges by.
+
