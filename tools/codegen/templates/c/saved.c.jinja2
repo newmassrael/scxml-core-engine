@@ -29,6 +29,9 @@
 {% include 'license_header.jinja2' %}
 {%- import '_macros/c_child_begin.jinja2' as child_begin %}
 {%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
+{#- A format-1 state's running `<invoke>` is started again as entering its
+    state starts it: one text with the core's (`c/state_machine.c.jinja2`). -#}
+{%- import '_macros/c_invoke_defer.jinja2' as invoke_defer %}
 {%- import '_macros/c_section_attribute.jinja2' as section_attribute %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {#- A scalar's saved form, one text with a test component's read of its module
