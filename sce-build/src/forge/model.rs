@@ -1295,6 +1295,43 @@ pub struct ForgeField<T = SceType> {
     /// this model is. See [`crate::attribute_spelling`].
     #[serde(skip)]
     pub default_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// `sce:sensitivity` — on a field of an event schema, how a host that
+    /// writes a record of the schema to a durable log redacts the field
+    /// (docs/adr/0109, D14): never written, or written as its keyed digest.
+    /// `None` for a field written as it is, and for a field of any other kind.
+    /// The build writes a schema's marks into the request of an audit append
+    /// (`crate::forge::audit_entry`); not part of the IR this export writes.
+    #[serde(skip)]
+    pub sensitivity: Option<Sensitivity>,
+}
+
+/// How a field of an event schema is redacted where a record of the schema is
+/// written to a durable log (`sce:sensitivity`, docs/adr/0109, D14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sensitivity {
+    /// Never written: a marker takes its place.
+    Secret,
+    /// Written as its HMAC-SHA-256 under the log's pseudonymisation key, so
+    /// equal values still correlate; a text alone.
+    Personal,
+}
+
+impl Sensitivity {
+    /// Every mark, in the order of the enum.
+    pub const ALL: [Sensitivity; 2] = [Sensitivity::Secret, Sensitivity::Personal];
+
+    /// The name a document writes the mark as, and the request carries it as.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Sensitivity::Secret => "secret",
+            Sensitivity::Personal => "personal",
+        }
+    }
+
+    /// The mark `name` names, if it names one.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mark| mark.name() == name)
+    }
 }
 
 /// A field of an event schema: of any type of the one type grammar, every
@@ -1426,6 +1463,7 @@ impl<T> ForgeField<T> {
             optional_since: self.optional_since,
             default: self.default.clone(),
             default_spelling: self.default_spelling.clone(),
+            sensitivity: self.sensitivity,
         }
     }
 

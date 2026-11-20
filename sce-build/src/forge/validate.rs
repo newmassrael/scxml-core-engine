@@ -293,6 +293,7 @@ mod tests {
                 optional_since: None,
                 default: None,
                 default_spelling: None,
+                sensitivity: None,
             }],
             helpers: vec![ProcedureHelper {
                 name: "computeKey".to_string(),

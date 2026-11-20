@@ -3868,6 +3868,7 @@ mod tests {
             optional_since: None,
             default: None,
             default_spelling: None,
+            sensitivity: None,
         };
         assert_eq!(
             target
@@ -3958,6 +3959,7 @@ mod tests {
             optional_since: None,
             default: None,
             default_spelling: None,
+            sensitivity: None,
         };
         assert_eq!(
             target

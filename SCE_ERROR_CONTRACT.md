@@ -1007,6 +1007,7 @@ references against a real document and drift silently.
 | `traceability/state-id-collision` | `generate` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.O |
 | `traceability/symbol-name-exceeds-c-identifier-limit` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
 | `validation/attribute-rule-violated` | `validation` | no |  |
+| `validation/audit-entry-schema` | `validation` | no | ADR 0109 D14 |
 | `validation/bound-attribute-superseded` | `validation` | `move_bound_into_type` | ADR 0086 §1.3 |
 | `validation/bytes-comparison-not-equality` | `validation` | no |  |
 | `validation/bytes-max-size-violation` | `validation` | no |  |

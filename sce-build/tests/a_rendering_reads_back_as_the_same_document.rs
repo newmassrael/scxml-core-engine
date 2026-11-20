@@ -276,6 +276,7 @@ fn every_field_clause_survives_the_round_trip() {
         // everything after the first ` = ` as the expression would split.
         default: Some("left = right".to_string()),
         default_spelling: None,
+        sensitivity: None,
     };
 
     let document = ForgeDocument::Transform(TransformModel {

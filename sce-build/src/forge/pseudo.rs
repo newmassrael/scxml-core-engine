@@ -308,6 +308,7 @@
 //!
 //! A `<field-clause>` is any of `max-size <n>`,
 //! `quantity <scale> <offset> <unit>`, `retain <scope>`, `initial <value>`,
+//! `since <n>`, `optional-since <n>`, `default <text>`, `sensitivity <mark>`,
 //! `default-covers <a> <b> ...`, `= <expr>`, each written only when the
 //! model carries it, always in that order. A retained field carries both
 //! of the middle two (`retain nvm initial 7`); a field a transform reads
@@ -1537,6 +1538,11 @@ fn render_typed_field<T>(f: &ForgeField<T>, ty: &str, out: &mut Out<'_>) {
     if let Some(default) = &f.default {
         let quoted = serde_json::to_string(default).expect("a string is JSON");
         let _ = write!(line, " default {}", word(&quoted));
+    }
+    // How a field is redacted where a record of its schema is written to a
+    // durable log (docs/adr/0109, D14), its own clause.
+    if let Some(mark) = f.sensitivity {
+        let _ = write!(line, " sensitivity {}", mark.name());
     }
     if !f.default_covers.is_empty() {
         let covers: Vec<String> = f.default_covers.iter().map(|c| word(c)).collect();
@@ -2865,6 +2871,9 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                 }
                 if !i.answer_schema.is_empty() {
                     out.line(&format!("answer {}", text(&i.answer_schema)));
+                }
+                if !i.entry_schema.is_empty() {
+                    out.line(&format!("entry {}", text(&i.entry_schema)));
                 }
             }
         }

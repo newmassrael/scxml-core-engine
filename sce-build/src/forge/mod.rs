@@ -8,6 +8,7 @@
 
 pub mod algorithm_union;
 pub mod ast_export;
+pub mod audit_entry;
 pub mod bit_layout;
 pub mod bound_spelling;
 pub mod buffer_pool_fsm;

@@ -936,6 +936,10 @@ pub enum DiagnosticCode {
     /// machine reads and never writes.
     #[serde(rename = "validation/deployment-value-assigned")]
     ValidationDeploymentValueAssigned,
+    /// `<invoke sce:entry>` (docs/adr/0109, D14): an audit entry's schema the
+    /// build cannot write an entry of, or an append that names none.
+    #[serde(rename = "validation/audit-entry-schema")]
+    ValidationAuditEntrySchema,
     /// A type whose largest encoding is past 2^64 - 1 bytes (docs/adr/0101,
     /// section 4.4): a CBOR codec's entry or map, or an event schema's or a
     /// union's payload, that no number the build holds sizes.
@@ -4094,6 +4098,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMapKeyType,
         ValidationMapInWirePosition,
         ValidationDeploymentValueAssigned,
+        ValidationAuditEntrySchema,
         ValidationEncodedSizeOverflow,
         TestProfileDatamodel,
         TestProfileMatcherType,
@@ -4913,6 +4918,9 @@ impl DiagnosticCode {
 
             // ── A value the deployment supplies (docs/adr/0109, D12) ──
             ValidationDeploymentValueAssigned => Some("ADR 0109 D12"),
+
+            // ── An audit entry's schema (docs/adr/0109, D14) ──
+            ValidationAuditEntrySchema => Some("ADR 0109 D14"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
             ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
@@ -5894,6 +5902,7 @@ impl DiagnosticCode {
             | ValidationMapKeyType
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
+            | ValidationAuditEntrySchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -6454,6 +6463,7 @@ impl DiagnosticCode {
             ValidationMapKeyType => "validation/map-key-type",
             ValidationMapInWirePosition => "validation/map-in-wire-position",
             ValidationDeploymentValueAssigned => "validation/deployment-value-assigned",
+            ValidationAuditEntrySchema => "validation/audit-entry-schema",
             ValidationEncodedSizeOverflow => "validation/encoded-size-overflow",
             TestProfileDatamodel => "test-profile/datamodel",
             TestProfileMatcherType => "test-profile/matcher-type",
@@ -8739,6 +8749,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             detail,
         } => DiagnosticPayload {
             code: DiagnosticCode::ValidationModelAnswerSchema,
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!alias.is_empty()).then(|| alias.clone()),
+            fix: None,
+            key_fragments: vec![invoke_id.clone(), alias.clone(), detail.clone()],
+        },
+        // docs/adr/0109, D14: the alias as written is `actual`; each repair
+        // (import the schema, flatten a nested record, tighten a bound, name
+        // the schema) is a choice, so no fix.
+        ValidationError::AuditEntrySchema {
+            invoke_id,
+            alias,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationAuditEntrySchema,
             stage: Stage::Validation,
             expected: None,
             actual: (!alias.is_empty()).then(|| alias.clone()),
@@ -14313,6 +14338,18 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:012767744d6bf3a7","code":"validation/model-answer-schema","stage":"validation","spec":"ADR 0087 §4.1","message":"<invoke id=\"gen\" sce:answer=\"Answr\">: names no event schema this document imports","actual":"Answr"}"#,
+            ),
+            (
+                // An audit append names an entry schema the document does not
+                // import (docs/adr/0109, D14).
+                "forge/audit-entry-schema",
+                ValidationError::AuditEntrySchema {
+                    invoke_id: "log".into(),
+                    alias: "SignIn".into(),
+                    detail: "names no event schema this document imports".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:3151fa4032abed22","code":"validation/audit-entry-schema","stage":"validation","spec":"ADR 0109 D14","message":"<invoke id=\"log\" sce:entry=\"SignIn\">: names no event schema this document imports","actual":"SignIn"}"#,
             ),
             (
                 // A code identifier in shape — but Rust reserves `override`,
@@ -21444,6 +21481,7 @@ mod tests {
             | ValidationMapKeyType
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
+            | ValidationAuditEntrySchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
@@ -22486,6 +22524,7 @@ mod tests {
                 | ValidationUnionCases | ValidationUnionTagCollision
                 | ValidationMapKeyType | ValidationMapInWirePosition
                 | ValidationDeploymentValueAssigned
+                | ValidationAuditEntrySchema
                 | ValidationEncodedSizeOverflow
                 | TestProfileDatamodel | TestProfileMatcherType | TestProfileLiteral
                 | TestProfileTemplateParameter | TestProfileTemplateFloat
@@ -23606,6 +23645,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMapKeyType
             | ValidationMapInWirePosition
             | ValidationDeploymentValueAssigned
+            | ValidationAuditEntrySchema
             | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType

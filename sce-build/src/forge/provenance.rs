@@ -566,6 +566,7 @@ mod tests {
             optional_since: None,
             default: None,
             default_spelling: None,
+            sensitivity: None,
         };
         let cases: Vec<ForgeDocument> = vec![
             ForgeDocument::Transform(TransformModel {

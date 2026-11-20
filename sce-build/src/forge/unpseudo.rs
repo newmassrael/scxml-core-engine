@@ -714,6 +714,7 @@ fn parse_typed_field<T>(
         optional_since: None,
         default: None,
         default_spelling: None,
+        sensitivity: None,
     };
 
     // ⚠ The expression is taken from the LINE, not rebuilt from its
@@ -809,6 +810,22 @@ fn parse_typed_field<T>(
                         "`{quoted}` is not a quoted default this renderer could have written"
                     ),
                 })?);
+                i += 2;
+            }
+            // `sensitivity <mark>` — how the field is redacted where a record
+            // of its schema is written to a durable log (docs/adr/0109, D14).
+            "sensitivity" => {
+                let written = rest.get(i + 1).copied().unwrap_or("");
+                f.sensitivity = Some(
+                    crate::forge::model::Sensitivity::from_name(written).ok_or_else(|| {
+                        ParseError {
+                            line: line.number,
+                            why: format!(
+                                "`{written}` is not a mark this renderer could have written"
+                            ),
+                        }
+                    })?,
+                );
                 i += 2;
             }
             // `default-covers <a> <b> ...` — variadic, so it runs to the
@@ -3621,6 +3638,7 @@ fn parse_scxml_invoke(
     let mut request_schema = String::new();
     let mut result_schema = String::new();
     let mut answer_schema = String::new();
+    let mut entry_schema = String::new();
 
     let mut traced = Traced::default();
     for (k, sub) in group(kids) {
@@ -3660,6 +3678,7 @@ fn parse_scxml_invoke(
             "request" => request_schema = undo(value, k.number)?,
             "result" => result_schema = undo(value, k.number)?,
             "answer" => answer_schema = undo(value, k.number)?,
+            "entry" => entry_schema = undo(value, k.number)?,
             "candidates" => {
                 let written = undo(value, k.number)?;
                 hybrid.candidates = Vec::new();
@@ -3765,6 +3784,8 @@ fn parse_scxml_invoke(
             result_schema_at: None,
             answer_schema,
             answer_schema_at: None,
+            entry_schema,
+            entry_schema_at: None,
             // What lowering fills in, and no source to take a spelling from.
             ..UnsupportedInvokeInfo::default()
         }),

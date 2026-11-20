@@ -1487,6 +1487,10 @@ struct TypedInvokeAttrs {
     /// resolve (`crate::forge::model_answer::resolve`).
     answer: String,
     answer_at: Option<crate::forge::error::SourceLocation>,
+    /// `sce:entry` (docs/adr/0109, D14), judged where the imports resolve
+    /// (`crate::forge::audit_entry::resolve`).
+    entry: String,
+    entry_at: Option<crate::forge::error::SourceLocation>,
 }
 
 /// Read `sce:request` / `sce:result` from `node`, refusing them where they
@@ -1539,6 +1543,39 @@ fn collect_typed_invoke_attrs(
             }
             attrs.answer = attribute.value().to_string();
             attrs.answer_at = Some(crate::forge::error::SourceLocation {
+                file: artifact_label(source_name),
+                line: Some(pos.row),
+                col: Some(pos.col),
+            });
+            continue;
+        }
+        if attribute.name() == "entry" {
+            // An audit entry's schema names the record an append writes, and
+            // only an invoke the host runs appends one. Whether its type is the
+            // audit's operation and its alias an import is judged where the
+            // imports resolve, under its own code.
+            crate::sce_attr::note(node, &attribute);
+            let pos = node.document().text_pos_at(attribute.range_value().start);
+            if !host_runnable {
+                return Err(Located::new(
+                    ValidationError::AuditEntrySchema {
+                        invoke_id: node.attribute("id").unwrap_or("").to_string(),
+                        alias: attribute.value().to_string(),
+                        detail: format!(
+                            "is written on an <invoke> of type \"{invoke_type}\", which SCE runs \
+                             itself or resolves at run time, and only {} appends a record of an \
+                             entry schema",
+                            crate::forge::audit_entry::AUDIT_APPEND
+                        ),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                ));
+            }
+            attrs.entry = attribute.value().to_string();
+            attrs.entry_at = Some(crate::forge::error::SourceLocation {
                 file: artifact_label(source_name),
                 line: Some(pos.row),
                 col: Some(pos.col),
@@ -3626,6 +3663,10 @@ impl SCXMLParser {
             // map, and folded here into the machine's table of answer schemas,
             // before the request it writes a field of is judged.
             model.answer_schemas = crate::forge::model_answer::resolve(&model, diag_label)?;
+            // The entry schema an audit append names (docs/adr/0109, D14) is an
+            // imported schema too, judged against the same map before the
+            // request it writes a field of is judged.
+            crate::forge::audit_entry::resolve(&model, diag_label)?;
             // A host-run `<invoke>`'s typed interface names imported
             // schemas by alias, so it is judged against the alias map just
             // resolved — and its completion is bound to its result schema
@@ -6099,6 +6140,8 @@ impl SCXMLParser {
                 result_schema_at: typed.result_at,
                 answer_schema: typed.answer,
                 answer_schema_at: typed.answer_at,
+                entry_schema: typed.entry,
+                entry_schema_at: typed.entry_at,
                 // What lowering fills in, for a document that has it lowered.
                 ..UnsupportedInvokeInfo::default()
             })));

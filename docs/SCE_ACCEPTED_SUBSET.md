@@ -3187,6 +3187,10 @@ driven on the six AOT channels.
   own enum where it is written, crossing as the name its enum declares and read
   back by that name on the Rust and C++ lanes; every other lane refuses it by
   name (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`).
+- Amended by: ADR 0109 (D14): `sce:entry` on an `sce-host-audit-append`, whose
+  `entry` is a record of the schema it names, crossing as its JSON payload, and
+  `sce:sensitivity` on a field of an event schema, whose marks the build writes
+  into the request's `sensitivity`; `validation/audit-entry-schema`.
 
 A host-run invoke may name the records its request and its completion
 carry, each an alias of an imported event schema:
@@ -5251,6 +5255,28 @@ Go, Kotlin, Python, C++, Swift and C11 declare the table; the Interpreter's lowe
 declares none and refuses the invoke by name (`generate/unsupported-feature`, "a
 model's generation"), since the lowered document would carry neither the table nor
 the `answer_schema` the build writes (docs/adr/0087, section 7.1).
+
+**The entry of an audit append: `sce:entry`, and the marks of a schema:
+`sce:sensitivity`** (docs/adr/0109, D14; docs/SCE_HOST_FEATURES.md, "Audit log").
+`<invoke type="sce-host-audit-append" sce:entry="SignIn">` names the imported event
+schema whose record the append writes; the `<param name="entry">` is a variable or a
+field of that very record type, which crosses to the host as the record's JSON payload,
+the form an event's payload is written in, and nothing else is admitted there. A field of
+an event schema may carry `sce:sensitivity="secret"` (any type: never written to the log,
+a marker in its place) or `sce:sensitivity="personal"` (a text or an optional text:
+written as its keyed digest under the log's pseudonymisation key); the parse refuses any
+other value (`validation/invalid-attribute`) and `personal` on a field of another type
+(`validation/attribute-rule-violated`). The build writes the request's `sensitivity` from
+the schema's marks, each a field's pointer and its mark (`/password=secret;/email=personal`),
+and the document does not: a `<param name="sensitivity">` is
+`validation/typed-invoke-request`. `validation/audit-entry-schema` refuses an
+`sce-host-audit-append` that names no `sce:entry`, the attribute on an invoke of another
+type, an empty one, one naming no event schema the document imports or a union, a schema
+that holds a record or a union in a field (whose own marks the build does not carry yet),
+one whose JSON may be longer than the request's `entry` holds (`audit_entry`, which
+`--limit` moves) and one whose marks are longer than `sensitivity` holds. Rust and C++
+serve the operation (docs/adr/0109, D0); every other lane refuses it as
+`codegen/standard-host-type-not-served`.
 
 **Enum variables.** `sce:type="enum:<alias>"` holds a variable in a variant of
 the enum the document imports as `<alias>` (`<sce:import kind="enum">`). It
@@ -10701,6 +10727,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/map-key-type` | Validation |
 | `validation/map-in-wire-position` | Validation |
 | `validation/deployment-value-assigned` | Validation |
+| `validation/audit-entry-schema` | Validation |
 | `validation/encoded-size-overflow` | Validation |
 | `test-profile/datamodel` | Validation |
 | `test-profile/matcher-type` | Validation |
