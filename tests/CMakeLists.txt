@@ -1234,6 +1234,50 @@ endforeach()
 
 add_test(NAME standard_host_scenario COMMAND standard_host_scenario_test)
 
+# The signing and sealing machine built with the bounds of its records moved (docs/adr/0109, D17), each as
+# the relation the table of standard types holds it to asks, into a directory of its own and an executable of
+# its own, so that no header of the machine built as written above is read in its place and the two machines,
+# which share their namespace, never meet in one program. The reference host's COSE feature is given the
+# machine's `StaticHostCoseLimits` and signs and seals at them; the Rust twin is
+# a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host.
+if(TARGET sce_host_cose)
+    set(_NAMED_BOUNDS_DIR "${CMAKE_CURRENT_BINARY_DIR}/standard_host_named_bounds_generated")
+    file(MAKE_DIRECTORY "${_NAMED_BOUNDS_DIR}")
+    sce_codegen_generation(_NAMED_BOUNDS
+        DOCUMENT "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_host_cose.scxml"
+        OUTPUT_DIR "${_NAMED_BOUNDS_DIR}"
+        LANGUAGE cpp
+        CHILD_GENERATIONS
+        ARGS --limit cose_payload=8192 --limit cose_signed=8448
+             --limit cose_plaintext=8448 --limit cose_sealed=8576
+        COMMENT "Generating static_host_cose (cpp) with its records' bounds moved")
+    add_executable(standard_host_named_bounds_test
+        integration/AStandardHostNamedBoundsTest.cpp
+        ${_NAMED_BOUNDS_HEADERS}
+        ${_NAMED_BOUNDS_SOURCES}
+    )
+    target_include_directories(standard_host_named_bounds_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/tests
+            "${_NAMED_BOUNDS_DIR}"
+    )
+    target_link_libraries(standard_host_named_bounds_test
+        PRIVATE
+            sce_base
+            sce_host_cose
+            GTest::gtest_main
+            Threads::Threads
+    )
+    target_compile_definitions(standard_host_named_bounds_test
+        PRIVATE
+            SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+    )
+    apply_sce_test_policies(standard_host_named_bounds_test)
+    add_test(NAME standard_host_named_bounds COMMAND standard_host_named_bounds_test)
+endif()
+
 # ============================================================================
 # How a string is written into JSON text (ARCHITECTURE.md, "JSON Text (Single
 # Source of Truth)"): SCE::JsonText, nlohmann and the script engines'
