@@ -6,3 +6,9 @@ commit = "5786174fb628ef8c7504962bef0ddc1684a795bb"
 base = "f4a5739a1abafa9aa3559e9e28bcad5f2c503075"
 machine = "mf977c53d872e"
 at = 1795167175
+
+[return]
+reason = "conflict"
+detail = "docs/SCE_SERVER_DEPLOY.md"
+report = "m6a944ec3ba29:0000000323-fb26472f5207/attempt-2.log"
+at = 1795168803
