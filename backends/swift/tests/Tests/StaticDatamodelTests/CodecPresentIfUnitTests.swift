@@ -67,7 +67,7 @@ final class CodecPresentIfUnitTests: XCTestCase {
 
     func testAGatedTailIsTheRestOfTheFrameWhenOpen() throws {
         var open = SceCursor([0x01, 0xAA, 0xBB])
-        XCTAssertEqual(try CodecPresentIfTail.decode(&open).payload, [0xAA, 0xBB])
+        XCTAssertEqual(try CodecPresentIfTail.decode(&open).payload?.bytes, [0xAA, 0xBB])
         var closed = SceCursor([0x00, 0xAA])
         let frame = try CodecPresentIfTail.decode(&closed)
         XCTAssertNil(frame.payload)
