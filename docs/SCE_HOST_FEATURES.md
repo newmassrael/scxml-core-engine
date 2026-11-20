@@ -48,6 +48,12 @@
   Rust and C++ reference hosts; section 8, the scenario's `audit` directive and
   host state; sections 7 and 9 name it where they list the lanes and what is
   not provided.
+- Amended by: ADR 0109 (D9, its record-level half; ADR 0107, Open question
+  1): section 10, a record signed, verified, sealed and opened by name
+  (`sce:payload`), which crosses as its deterministic CBOR and comes back as
+  the record, and the failure `not_a_record` of a verification or an opening
+  whose bytes are no value of it; the C++ reference host's trust sets name
+  public keys it holds no seed of (`CoseFeature::setTrustedKeys`).
 - Amended by: ADR 0109 (D17): section 10, the bounds of the signing and
   sealing records are named (`cose_payload`, `cose_signed`, `cose_plaintext`,
   `cose_sealed`), `--limit` moves them, a build that breaks their relations is
@@ -866,8 +872,11 @@ symmetric key or the input key the request names is not one the host holds, or
 is a key of the key ring of a use the operation does not take, section 13),
 `key_retired` for a signing, a seal and a derivation (the key of the key ring
 the request names is retired: it still verifies and opens, and makes nothing
-new), and `unavailable` (the host's key service cannot be reached, or the random
-source gave no nonce for a seal or no naming key for a derivation).
+new), `unavailable` (the host's key service cannot be reached, or the random
+source gave no nonce for a seal or no naming key for a derivation), and
+`not_a_record` for a verification and an opening whose invoke names a record
+(`sce:payload`, below): the object verified or opened, and the bytes it holds
+are no value of that record.
 
 Refusal (`invalid_argument`): an empty `key_id` (sign, seal, open) or
 `trust_set` (verify); a derivation given both a `secret` and an `input_key_id`, or
@@ -944,6 +953,90 @@ numbers (section 8): a request past one is refused, and a verification or an
 opening whose payload or plaintext is past one is answered as one that does not
 verify or open. A payload of megabytes, a detached payload over a stored blob,
 is not this mechanism (docs/adr/0109, Open question 7).
+
+**A record signed and sealed by name** (docs/adr/0109, D9, its record-level
+half, as docs/adr/0107, Open question 1 decided it). A document that signs or
+seals a document of its own does not hold its bytes: it names the record's
+event schema on the invoke, and the build carries the record across.
+
+```xml
+<invoke type="sce-host-cose-sign1" id="sign_note" sce:payload="Note"
+        sce:request="Sign1Request" sce:result="Sign1Result">
+  <param name="key_id" expr="'device-a'"/>
+  <param name="payload" expr="note"/>
+  <param name="external_aad" expr="''"/>
+</invoke>
+<invoke type="sce-host-cose-verify1" id="verify_note" sce:payload="Note"
+        sce:request="Verify1Request" sce:result="Verify1Result">
+  <param name="trust_set" expr="'devices'"/>
+  <param name="cose" expr="object"/>
+  <param name="external_aad" expr="''"/>
+</invoke>
+<transition event="done.invoke.verify_note" cond="_event.data.error === ''" target="idle">
+  <assign location="verified_note" expr="_event.data.payload"/>
+</transition>
+```
+
+- **Sign and seal.** On `sce-host-cose-sign1` and `sce-host-cose-encrypt0`,
+  the `<param>` of `payload` (`plaintext`) is a variable, or a field of a record
+  variable, of the record the attribute names, and nothing else. Where the
+  invocation starts, the machine writes it as its deterministic CBOR
+  (docs/adr/0101, section 2: a map of the fields present, each keyed by its id,
+  the keys in the order their encodings sort, every head shortest), and those
+  bytes are the request's byte string: the host signs or seals them as any
+  payload, and its request is what it would be had the document written the
+  bytes itself. A record no encoding holds (a list below its lower count) is a
+  value its field cannot hold: `error.execution`, and the host is not asked.
+- **Verify and open.** On `sce-host-cose-verify1` and
+  `sce-host-cose-decrypt0`, the completion's `payload` (`plaintext`) is an
+  `optional<record:...>` of that record, never bytes: the build derives the
+  completion's record from the library's result, the byte string replaced by
+  the record, and binds `done.invoke.<id>` to it. Where the completion is read,
+  the bytes the host answered are read as the record: present when `valid`
+  (`opened`) is true and `error` empty, absent otherwise. Bytes that are no
+  value of the record (an item of another type, a key given twice, a field
+  missing, a value outside its type, a variant no enum declares, bytes after
+  the record; a float that is not finite and a text that holds U+0000, which a
+  payload spells none of) make the completion the operation's failure
+  `not_a_record`: `error` the code, `valid` (`opened`) false, every other field
+  at its zero, the record absent. The object verified or opened, so the
+  failure is not an answer about the signature or the seal: it says the signer
+  or the sealer did not state a record of the kind the machine asked for.
+- **Refused at parse** (`validation/payload-record-schema`): the attribute on
+  an `<invoke>` of any other type, an empty one, one that names no event schema
+  the document imports (an enum or a union included, which no record codec
+  writes), a record whose type has no CBOR form, and a record whose largest
+  deterministic CBOR is past the bound of the byte string it crosses in: `C` of
+  the record (docs/adr/0101, section 4.1), the `<NAME>_MAX_BYTES` a codec
+  holding it states, against `cose_payload` for a signing and a verification
+  and `cose_plaintext` for a seal and an opening, as this build resolved them,
+  so `--limit` that raises the bound admits the record. A `<param>` that is no
+  record of the schema is refused where it is written
+  (`scxml/static-datamodel-rule`).
+- **The lanes.** Rust and C++ serve it (docs/adr/0109, D0): the record codec
+  is `sce_rust_runtime::record_cbor` (the runtime's feature `record-cbor`) and
+  `common/RecordCbor.h`, each the one map between the record's JSON, as a
+  machine writes and reads a payload, and its CBOR, under the description of
+  the record's type the build writes once. Every other lane refuses the
+  machine by name: `codegen/standard-host-type-not-served` while it serves no
+  COSE operation, and `generate/unsupported-feature` naming `sce:payload` once
+  it serves them and not the record codec.
+- **Offline verification.** A client verifies what its server signed holding
+  nothing but the server's public key: a Rust trust set holds public keys
+  (`TrustedKey`), and a C++ trust set names a signing key the host holds or a
+  public key it was given (`CoseFeature::setTrustedKeys`), so no seed and no
+  server is in the path. `AMachineVerifiesASignedRecordFromAFileWithNoServer`
+  (`tests/integration/APayloadRecordTest.cpp`) reads a `COSE_Sign1` from a
+  file and receives the record.
+- **The two lanes agree byte for byte** on
+  `tests/host_features/payload_record_cross_language.json`: the description of
+  the note of `static_host_cose`, the note's deterministic CBOR, its
+  `COSE_Sign1` under an Ed25519 key and its `COSE_Encrypt0` under a fixed
+  nonce, and bytes that are no note with their objects, computed by an
+  implementation that shares nothing with either lane. Rust is held to it by
+  `backends/rust/host-features/tests/payload_record_cross_language.rs`, C++ by
+  `tests/integration/APayloadRecordTest.cpp`, and the scenario of
+  `static_host_cose` signs, verifies, seals and opens the note on both.
 
 **Derive.** The input keying material is `secret` or the key `input_key_id`
 names: a configured symmetric key, a derived key, or a generated key of use
