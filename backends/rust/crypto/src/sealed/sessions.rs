@@ -162,11 +162,20 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
             .zip(write.outbox)
             .map(|(held, append)| held.append(append.incarnation))
             .collect();
+        // The sessions whose first results go with a removal, as the wrapped store keeps their
+        // identities: each the entry of its id (module `kv`).
+        let ended: Vec<String> = write
+            .sessions
+            .iter()
+            .map(|session| self.digest_of(session))
+            .collect();
+        let ended: Vec<&str> = ended.iter().map(String::as_str).collect();
         let written = self.inner.write(
             &entry,
             &Write {
                 change,
                 outbox: &appends,
+                sessions: &ended,
                 ..*write
             },
         )?;

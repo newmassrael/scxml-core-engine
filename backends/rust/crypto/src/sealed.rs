@@ -8,7 +8,8 @@
 //! since a saved state holds a document's values in the clear. [`Sealed`] does that for each store
 //! contract a server keeps, over any implementation of it: the sessions of ADR 0107
 //! (`SessionStore`) with the outboxes of D10 their writes append to, the credentials of D3
-//! (`PinStore`, `TokenStore`, `CredentialStore`) and the keys of D7 (`KeyStore`).
+//! (`PinStore`, `TokenStore`, `CredentialStore`), the keys of D7 (`KeyStore`) and the values of
+//! the key-value feature of D13 (`KvStore`), with the first results of its put-ifs.
 //!
 //! An outbox's envelopes are not re-sealed by a pass: each lives until its client acknowledges
 //! it or the binding's `retain_ms` expires it, so once that long has passed after a rotation, a
@@ -29,9 +30,9 @@
 //! - **Rotation.** Each record names its sealing key, and a write seals under the active one. A
 //!   re-seal pass ([`Sealed::reseal_sessions`], [`Sealed::reseal_credentials`],
 //!   [`Sealed::reseal_keys`]) writes the rows sealed under any other key again through the store's
-//!   ordinary write: a session's versioned and fenced put, under a lease the pass takes; a pin's or
-//!   a token's replacement from the bytes it read. Once a pass leaves nothing, a retired key opens
-//!   nothing and may be destroyed.
+//!   ordinary write: a session's versioned and fenced put, under a lease the pass takes; a pin's,
+//!   a token's or a value's replacement from the bytes it read ([`Sealed::reseal_values`]). Once
+//!   a pass leaves nothing, a retired key opens nothing and may be destroyed.
 //! - **The keys** ([`SealingKeys`]) are keys of a key ring ([`Keyring`]) kept in the store's own key
 //!   store, wrapped under the key-encryption key the program holds apart from the store: the index
 //!   key [`INDEX_KEY_ID`] and the sealing keys `sealing:<hex>`. Those rows are the ones a sealing
@@ -63,9 +64,11 @@ use crate::random::{RandomSource, SystemRandom};
 
 mod credentials;
 mod keys;
+mod kv;
 mod outbox;
 mod sessions;
 
+pub use kv::STORE_KV_VALUES;
 pub use outbox::STORE_OUTBOX;
 
 /// What every sealed record begins with: the version of its form.

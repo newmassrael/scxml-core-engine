@@ -22,6 +22,7 @@ use sce_rust_crypto::wrap::KeyEncryptionKey;
 use sce_rust_session_store::conformance::{self, Harness};
 use sce_rust_session_store::credential_conformance::{self, CredentialHarness};
 use sce_rust_session_store::key_conformance::{self, KeyHarness};
+use sce_rust_session_store::kv_conformance::{self, KvHarness};
 use sce_rust_session_store::outbox_conformance;
 use sce_rust_session_store::{
     Append, CredentialStore, KeyRow, KeyState, KeyStore, KeyUse, MemoryCredentials, MemoryKeys,
@@ -276,6 +277,16 @@ impl KeyHarness for SealedInMemory {
     }
 }
 
+/// The values of the key-value feature are kept beside the sessions, so that a removal of a
+/// session deletes its identities' first results: one store serves both kits.
+impl KvHarness for SealedInMemory {
+    type Store = Sealed<MemoryStore>;
+
+    fn handle(&self) -> Sealed<MemoryStore> {
+        Sealed::new(self.sessions.clone(), first_keys())
+    }
+}
+
 /// A database file of its own, sealed under the first key; every handle opens a connection to it.
 struct SealedOnSqlite(Scratch);
 
@@ -309,6 +320,14 @@ impl CredentialHarness for SealedOnSqlite {
 }
 
 impl KeyHarness for SealedOnSqlite {
+    type Store = Sealed<SqliteStore>;
+
+    fn handle(&self) -> Sealed<SqliteStore> {
+        self.sealed()
+    }
+}
+
+impl KvHarness for SealedOnSqlite {
     type Store = Sealed<SqliteStore>;
 
     fn handle(&self) -> Sealed<SqliteStore> {
@@ -460,6 +479,173 @@ mod keys_on_sqlite {
             handles_share_the_keys,
         ]
     );
+}
+
+mod values_in_memory {
+    use super::kv_conformance;
+    kit!(
+        kv_conformance,
+        in_memory,
+        [
+            a_value_is_read_at_the_version_its_write_gave_it,
+            a_put_if_writes_only_over_the_version_it_names,
+            the_quota_is_judged_only_for_a_write_that_would_be_made,
+            a_put_if_repeated_under_its_identity_answers_its_first_result,
+            the_keys_are_walked_in_the_order_of_their_bytes,
+            the_values_are_listed_a_page_at_a_time,
+            a_value_is_replaced_only_from_the_bytes_it_holds,
+            handles_share_the_values,
+            a_removal_of_a_session_deletes_its_identities_first_results,
+        ]
+    );
+}
+
+mod values_on_sqlite {
+    use super::kv_conformance;
+    kit!(
+        kv_conformance,
+        on_sqlite,
+        [
+            a_value_is_read_at_the_version_its_write_gave_it,
+            a_put_if_writes_only_over_the_version_it_names,
+            the_quota_is_judged_only_for_a_write_that_would_be_made,
+            a_put_if_repeated_under_its_identity_answers_its_first_result,
+            the_keys_are_walked_in_the_order_of_their_bytes,
+            the_values_are_listed_a_page_at_a_time,
+            a_value_is_replaced_only_from_the_bytes_it_holds,
+            handles_share_the_values,
+            a_removal_of_a_session_deletes_its_identities_first_results,
+        ]
+    );
+}
+
+/// ADR 0109, D13 under D8: the file of a sealed store holds none of the keys and values a host
+/// wrote, nor the session an identity names; a value moved to another key does not open; and a
+/// re-seal pass moves every value to the active key, its version kept.
+mod values_sealed {
+    use sce_rust_crypto::sealed::{record_key_id, Sealed};
+    use sce_rust_session_store::{Identity, KvStore, PutIf, SqliteStore};
+
+    use super::{keys_of, on_sqlite, ID_1, ID_2, KEY_1, KEY_2};
+
+    #[test]
+    fn a_file_read_without_the_key_holds_none_of_the_values() {
+        let harness = on_sqlite("kv-medium");
+        let store = harness.sealed();
+        let start = Identity {
+            session: "session-of-alice",
+            invoke: "claim",
+            start: 1,
+        };
+        store
+            .put("alice@example.org", b"the value of alice", None)
+            .expect("a value");
+        assert_eq!(
+            store
+                .put_if("ticket", b"seat 14", Some(0), None, Some(&start))
+                .expect("a put-if under an identity"),
+            PutIf::Written { version: 2 }
+        );
+        drop(store);
+        let medium = harness.0.every_byte();
+        for clear in [
+            &b"alice@example.org"[..],
+            b"the value of alice",
+            b"seat 14",
+            b"session-of-alice",
+        ] {
+            assert!(
+                !medium.windows(clear.len()).any(|window| window == clear),
+                "{} is in the clear on the medium",
+                String::from_utf8_lossy(clear)
+            );
+        }
+        let store = harness.sealed();
+        assert_eq!(
+            store
+                .get("alice@example.org")
+                .expect("read back")
+                .map(|entry| entry.value),
+            Some(b"the value of alice".to_vec())
+        );
+        assert_eq!(
+            store.first_result(&start).expect("its first result"),
+            Some(PutIf::Written { version: 2 })
+        );
+        assert_eq!(
+            store.next_key("", "").expect("a walk"),
+            Some("alice@example.org".to_string()),
+            "the walk is by the keys, not by their entries"
+        );
+    }
+
+    #[test]
+    fn a_value_moved_to_another_key_does_not_open() {
+        let harness = on_sqlite("kv-moved");
+        let store = harness.sealed();
+        store.put("a", b"of a", None).expect("a value");
+        store.put("b", b"of b", None).expect("another");
+        let inner: &SqliteStore = store.inner();
+        let of_a = inner
+            .get(&store.digest_of("a"))
+            .expect("the wrapped row")
+            .expect("held");
+        assert!(inner
+            .reseal(
+                &store.digest_of("b"),
+                &inner
+                    .get(&store.digest_of("b"))
+                    .expect("the wrapped row")
+                    .expect("held")
+                    .value,
+                &of_a.value
+            )
+            .expect("the record copied over another row"));
+        assert!(
+            store.get("b").is_err(),
+            "a record moved to another key is refused"
+        );
+        assert!(store.get("a").is_ok(), "the row it came from still opens");
+    }
+
+    #[test]
+    fn a_reseal_pass_moves_every_value_to_the_active_key() {
+        let harness = on_sqlite("kv-reseal");
+        let first = harness.sealed();
+        first.put("a", b"1", None).expect("a value");
+        first.put("b", b"2", None).expect("another");
+        drop(first);
+        let rotated = Sealed::new(
+            SqliteStore::open(harness.0.database()).expect("the store"),
+            keys_of(ID_2, &[(ID_1, KEY_1), (ID_2, KEY_2)]),
+        );
+        let resealed = rotated.reseal_values().expect("a pass");
+        assert_eq!(
+            (resealed.resealed, resealed.left, resealed.refused),
+            (2, 0, 0)
+        );
+        for key in ["a", "b"] {
+            let row = rotated
+                .inner()
+                .get(&rotated.digest_of(key))
+                .expect("the wrapped row")
+                .expect("held");
+            assert_eq!(record_key_id(&row.value).expect("a record"), ID_2);
+        }
+        assert_eq!(
+            rotated
+                .get("a")
+                .expect("read back")
+                .map(|entry| entry.version),
+            Some(1),
+            "a pass keeps the version"
+        );
+        assert_eq!(
+            rotated.reseal_values().expect("a second pass").resealed,
+            0,
+            "nothing is left under the retired key"
+        );
+    }
 }
 
 /// A session written under a lease the writer gives back: its version.
