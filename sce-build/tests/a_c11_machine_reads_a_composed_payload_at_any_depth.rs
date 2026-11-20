@@ -220,8 +220,12 @@ fn the_lift_reads_each_field_by_the_function_of_its_type() {
              sce_path, sce_path_cap, sce_bound);",
             // The bound a refused value broke, which a delivery's reason does not name.
             "    uint32_t sce_bound_at = 0u;\n    uint32_t *const sce_bound = &sce_bound_at;\n",
-            "snprintf(_message, _message_cap, \"`batch.sent` payload: '%.14s' %s\", sce_path, \
-             _refusal);",
+            // docs/adr/0110, D1: written by the runtime's text writer, the path
+            // within its bound and the reader's sentence whole.
+            "{ sce_text_writer_t sce_reason_ = sce_text_writer(_message, _message_cap); \
+             sce_text_put_text(&sce_reason_, \"`batch.sent` payload: '\"); \
+             sce_text_put_within(&sce_reason_, sce_path, 14u); \
+             sce_text_put_text(&sce_reason_, \"' \"); sce_text_put_text(&sce_reason_, _refusal); }",
             "sce_payload_list_open_within(sce_value, 0u, 3u, &sce_cursor)",
             "const char *const sce_refusal = sce_payload_value_text(sce_value, sce_out->data, \
              8u);",

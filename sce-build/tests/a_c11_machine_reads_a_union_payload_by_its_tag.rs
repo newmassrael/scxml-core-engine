@@ -228,7 +228,9 @@ fn a_text_is_lifted_into_the_union_by_its_reader() {
             "sce_refusal = sce_composed_read_static_union_union_union_shape(sce_at, sce_into, \
              sce_path, sce_path_cap, sce_bound);",
             "(void)sce_payload_pointer_of_path(sce_pointer, sizeof(sce_pointer), sce_path);",
-            "<sce:lift>: the text is no value of %s",
+            // docs/adr/0110, D2: the lift says why not through the log seam.
+            "sce_text_put_text(&sce_said, \"the text is no value of ",
+            "_sce_log_write(SCE_LOG_WARNING, \"<sce:lift>\", 10u, sce_line, sce_said.len);",
             "sce_optional_record_static_union_union_union_shape_some(sce_lifted)",
         ],
     );

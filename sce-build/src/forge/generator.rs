@@ -6472,23 +6472,27 @@ pub(crate) fn c11_record_wire(fields: &[EntryField], receiver: &str) -> C11Recor
     c11_record_wire_of(fields, receiver, &[])
 }
 
-/// The statement that writes the `snprintf` format `format`, with `args`, at
-/// the cursor of a [`C11RecordWire`] body, and moves the cursor past it; the
-/// function returns false when it does not fit.
-fn c11_wire_put(format: &str, args: &str) -> String {
-    format!(
-        "    _put = snprintf(out + _used, cap - _used, \"{format}\"{args});\n    \
-if (_put < 0 || (size_t)_put >= cap - _used) {{\n        return false;\n    }}\n    \
-_used += (size_t)_put;\n"
-    )
+/// The statement that writes `text`, the content of a C string literal, with
+/// the text writer `_w` of a [`C11RecordWire`] body (`sce/text.h`), which keeps
+/// what fits and says when a part did not; the body asks it once, at its end.
+fn c11_wire_put(text: &str) -> String {
+    format!("    sce_text_put_text(&_w, \"{text}\");\n")
 }
 
-/// The statement that runs `call`, a writer at the cursor of a
-/// [`C11RecordWire`] body that answers whether it wrote, and moves the cursor
-/// past what it wrote; the function returns false when it did not.
+/// The statement that runs `call`, the text writer's call of a value
+/// (`sce_text_put_u64(&_w, ...)`), in a [`C11RecordWire`] body.
+fn c11_wire_put_with(call: &str) -> String {
+    format!("    {call};\n")
+}
+
+/// The statement that runs `call`, a writer of its own at the end of what `_w`
+/// holds (`out + _w.len`, `cap - _w.len`) that answers whether it wrote, and
+/// moves `_w` past what it wrote; the function returns false when it did not,
+/// or when `_w` had already cut a part.
 fn c11_wire_wrote(call: &str) -> String {
     format!(
-        "    if (!({call})) {{\n        return false;\n    }}\n    _used += sce_text_length(out + _used);\n"
+        "    if (_w.cut || !({call})) {{\n        return false;\n    }}\n    \
+_w.len += sce_text_length(out + _w.len);\n"
     )
 }
 
@@ -6501,7 +6505,9 @@ fn c11_record_wire_of(
     receiver: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> C11RecordWire {
-    let mut body = String::from("    size_t _used = 0u;\n    int _put;\n");
+    // Written by the runtime's text writer, never the C library's formatter,
+    // which a machine's core does not call (docs/adr/0110, D1).
+    let mut body = String::from("    sce_text_writer_t _w = sce_text_writer(out, cap);\n");
     // What goes before the next key: the object's opening brace, and a comma
     // between each two members after it.
     let mut before = "{";
@@ -6558,85 +6564,78 @@ if (_name_{id} == NULL) {{\n            return false;\n        }}\n    }}\n"
                     format!("sce_forge_wire_string(_name_{id})")
                 }
             };
-            body.push_str(&c11_wire_put(&key, ""));
+            body.push_str(&c11_wire_put(&key));
             body.push_str(&c11_wire_wrote(&format!(
-                "sce_forge_wire_json({field}.present ? {present} : sce_forge_wire_null(), out + _used, \
-                 cap - _used)"
+                "sce_forge_wire_json({field}.present ? {present} : sce_forge_wire_null(), out + _w.len, \
+                 cap - _w.len)"
             )));
             continue;
         }
         match f.sce_type.present_type() {
             SceType::Bytes => {
-                body.push_str(&c11_wire_put(&key, ""));
+                body.push_str(&c11_wire_put(&key));
                 body.push_str(&c11_wire_wrote(&format!(
                     "{receiver}->{id}_len <= sizeof({receiver}->{id}) && \
-                     sce_payload_quote_bytes({receiver}->{id}, {receiver}->{id}_len, out + _used, \
-                     cap - _used)"
+                     sce_payload_quote_bytes({receiver}->{id}, {receiver}->{id}_len, out + _w.len, \
+                     cap - _w.len)"
                 )));
             }
             SceType::String => {
-                body.push_str(&c11_wire_put(&key, ""));
+                body.push_str(&c11_wire_put(&key));
                 body.push_str(&c11_wire_wrote(&format!(
-                    "sce_payload_quote({receiver}->{id}, out + _used, cap - _used)"
+                    "sce_payload_quote({receiver}->{id}, out + _w.len, cap - _w.len)"
                 )));
             }
             SceType::Bool => {
-                body.push_str(&c11_wire_put(
-                    &format!("{key}%s"),
-                    &format!(", {receiver}->{id} ? \"true\" : \"false\""),
-                ));
-            }
-            // A 64-bit real is written as ECMAScript spells it on every engine
-            // (ARCHITECTURE.md, "JSON Number Text"), in place like a text
-            // field; JSON has no spelling for a value that is not finite, so the
-            // writer refuses it. `sce_number_text` is in the runtime's own
-            // include directory, which a machine with no `sce-static` datamodel
-            // has and a forge header would not be. It answers the length it
-            // wrote, 0 for none.
-            SceType::Float64 => {
-                body.push_str(&format!(
-                    "    if (!isfinite({receiver}->{id})) {{\n        return false;\n    }}\n"
-                ));
-                body.push_str(&c11_wire_put(&key, ""));
-                body.push_str(&c11_wire_wrote(&format!(
-                    "sce_number_text({receiver}->{id}, out + _used, cap - _used) != 0u"
+                body.push_str(&c11_wire_put(&key));
+                body.push_str(&c11_wire_put_with(&format!(
+                    "sce_text_put_text(&_w, {receiver}->{id} ? \"true\" : \"false\")"
                 )));
             }
-            // A 32-bit real is written as its platform spells it: the contract
-            // fixes only the 64-bit form.
-            SceType::Float32 => {
+            // A real is written as ECMAScript spells it on every engine
+            // (ARCHITECTURE.md, "JSON Number Text"), in place like a text
+            // field, by the seam `_sce_real_text` (`sce/real_text.h`): the core
+            // formats no real itself (docs/adr/0110, D1). A 32-bit one is the
+            // double it widens to. JSON has no spelling for a value that is not
+            // finite, so the writer refuses it, told apart without `<math.h>`:
+            // a value less itself is zero exactly when it is finite. The seam
+            // answers the length it wrote, 0 for none.
+            SceType::Float64 | SceType::Float32 => {
+                let real = format!("(double){receiver}->{id}");
                 body.push_str(&format!(
-                    "    if (!isfinite((double){receiver}->{id})) {{ return false; }}\n"
+                    "    if (!({real} - {real} == 0.0)) {{\n        return false;\n    }}\n"
                 ));
-                body.push_str(&c11_wire_put(
-                    &format!("{key}%.17g"),
-                    &format!(", (double){receiver}->{id}"),
-                ));
+                body.push_str(&c11_wire_put(&key));
+                body.push_str(&c11_wire_wrote(&format!(
+                    "_sce_real_text({real}, out + _w.len, cap - _w.len) != 0u"
+                )));
             }
             // A 64-bit integer crosses as the text of its digits.
             SceType::Uint64 => {
-                body.push_str(&c11_wire_put(
-                    &format!("{key}\\\"%llu\\\""),
-                    &format!(", (unsigned long long){receiver}->{id}"),
-                ));
+                body.push_str(&c11_wire_put(&format!("{key}\\\"")));
+                body.push_str(&c11_wire_put_with(&format!(
+                    "sce_text_put_u64(&_w, (uint64_t){receiver}->{id})"
+                )));
+                body.push_str(&c11_wire_put("\\\""));
             }
             SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
-                body.push_str(&c11_wire_put(
-                    &format!("{key}%lu"),
-                    &format!(", (unsigned long){receiver}->{id}"),
-                ));
+                body.push_str(&c11_wire_put(&key));
+                body.push_str(&c11_wire_put_with(&format!(
+                    "sce_text_put_u64(&_w, (uint64_t){receiver}->{id})"
+                )));
             }
             SceType::Int64 => {
-                body.push_str(&c11_wire_put(
-                    &format!("{key}\\\"%lld\\\""),
-                    &format!(", (long long){receiver}->{id}"),
-                ));
+                body.push_str(&c11_wire_put(&format!("{key}\\\"")));
+                body.push_str(&c11_wire_put_with(&format!(
+                    "sce_text_put_i64(&_w, (int64_t){receiver}->{id})"
+                )));
+                body.push_str(&c11_wire_put("\\\""));
             }
             SceType::Int8 | SceType::Int16 | SceType::Int32 => {
-                body.push_str(&c11_wire_put(
-                    &format!("{key}%ld"),
-                    &format!(", (long){receiver}->{id}"),
-                ));
+                body.push_str(&c11_wire_put(&key));
+                body.push_str(&c11_wire_put_with(&format!(
+                    "sce_text_put_i64(&_w, (int64_t){receiver}->{id})"
+                )));
             }
             SceType::Enum(r) => {
                 let e = static_enum_of(static_enums, &r.alias);
@@ -6656,13 +6655,18 @@ if (_name_{id} == NULL) {{\n            return false;\n        }}\n    }}\n"
 switch ({receiver}->{id}) {{ {arms}default: break; }}\n    \
 if (_name_{id} == NULL) {{\n        return false;\n    }}\n"
                 ));
-                body.push_str(&c11_wire_put(&format!("{key}%s"), &format!(", _name_{id}")));
+                body.push_str(&c11_wire_put(&key));
+                body.push_str(&c11_wire_put_with(&format!(
+                    "sce_text_put_text(&_w, _name_{id})"
+                )));
             }
         }
     }
-    // The closing brace, and the opening one too for a record of no fields.
+    // The closing brace, and the opening one too for a record of no fields; an
+    // object one part of which did not fit is refused whole.
     let close = if fields.is_empty() { "{}" } else { "}" };
-    body.push_str(&c11_wire_put(close, ""));
+    body.push_str(&c11_wire_put(close));
+    body.push_str("    if (_w.cut) {\n        return false;\n    }\n");
     C11RecordWire { body }
 }
 
@@ -6723,17 +6727,17 @@ fn c11_payload_field_decl(l: &LangCtx, f: &EntryField) -> String {
 /// The statement that writes into the lift's `_message` the reason `row` of
 /// the machine's table, its holes `holes`, quoting `value`, a text of the run
 /// whose bound is `quote` (docs/adr/0086, section 8.6 (b)): the reason is
-/// measured for the slot at its row's text plus that bound.
+/// measured for the slot at its row's text plus that bound, and written by the
+/// runtime's text writer (docs/adr/0110, D1).
 fn c11_lift_reason(
     row: &str,
     holes: &[&str],
     quote: crate::forge::c11_reasons::Quote,
     value: &str,
 ) -> String {
-    let format = crate::forge::c11_reasons::row(row)
-        .and_then(|reason| reason.format(holes, &[quote]))
-        .expect("a lift emits its reasons, each a row of the table, before the slot is computed");
-    format!("snprintf(_message, _message_cap, {format}, {value});")
+    crate::forge::c11_reasons::row(row)
+        .and_then(|reason| reason.writes(holes, &[quote], &[value], "_message", "_message_cap"))
+        .expect("a lift emits its reasons, each a row of the table, before the slot is computed")
 }
 
 /// [`c11_lift_reason`] for the sentence a payload reader refused the field
@@ -6799,7 +6803,7 @@ fn c11_payload_enum_read(
     let mut chain = String::new();
     for v in &e.variants {
         chain.push_str(&format!(
-            "if (strcmp(_name_{id}, \"{}\") == 0) {{\n            \
+            "if (sce_text_compare(_name_{id}, \"{}\") == 0) {{\n            \
 {dest} = {};\n        }} else ",
             filters::escape_c(v.declared.clone()),
             v.ident
@@ -7000,11 +7004,14 @@ fn c11_composed_payload(
             .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
         path_len = path_len.max(field.id.len() as u64 + below);
     }
-    let format = crate::forge::c11_reasons::row("lift_place_refused")
+    let refused = crate::forge::c11_reasons::row("lift_place_refused")
         .and_then(|reason| {
-            reason.format(
+            reason.writes(
                 &[event],
                 &[Quote::Within(path_len), Quote::Published(PAYLOAD_REFUSAL)],
+                &["sce_path", "_refusal"],
+                "_message",
+                "_message_cap",
             )
         })
         .expect("a lift emits its reasons, each a row of the table, before the slot is computed");
@@ -7026,7 +7033,7 @@ sce_path[0] = '\\0';\n        \
 _refusal = sce_payload_field(&_fields, \"{named}\", &sce_at);\n        \
 if (_refusal == NULL) {{\n            _refusal = {read};\n        }}\n        \
 if (_refusal != NULL) {{\n            \
-snprintf(_message, _message_cap, {format}, sce_path, _refusal);\n            \
+{refused}\n            \
 return false;\n        }}\n    }}\n"
         ));
     }

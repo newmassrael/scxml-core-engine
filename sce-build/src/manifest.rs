@@ -455,7 +455,7 @@ pub struct Manifest<'a> {
     /// What the machines this run wrote need linked beside them that the
     /// header-only contracts of their runtime do not provide, by the names of
     /// [`crate::generator::RuntimeRequirement::wire_name`] (`lua`, `dom`,
-    /// `http`, `clock`), in that order: the set the backend decided while
+    /// `http`, `clock`, `log`, `real`), in that order: the set the backend decided while
     /// rendering them, and the reason for each interface they include.
     ///
     /// The flags above do not answer it. `needs_script_engine` says a host
@@ -1603,7 +1603,7 @@ mod tests {
         ));
         assert_eq!(
             every["runtime_requires"],
-            serde_json::json!(["lua", "dom", "http", "clock", "log"])
+            serde_json::json!(["lua", "dom", "http", "clock", "log", "real"])
         );
         assert_valid(&every.to_string());
 

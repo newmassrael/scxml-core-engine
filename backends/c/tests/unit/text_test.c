@@ -120,11 +120,30 @@ static void a_writer_keeps_what_fits_as_snprintf_does(void) {
     expect(w.cut && w.len == 0u, "a writer over no buffer keeps nothing and says it cut");
 }
 
+// A text written within a bound is what `%.<n>s` writes of it: at most the
+// bound, and no more than the text holds.
+static void a_text_within_a_bound_is_what_a_precision_writes(void) {
+    static const char *const texts[] = {"", "ab", "abcdef"};
+    for (size_t i = 0u; i < sizeof(texts) / sizeof(texts[0]); ++i) {
+        for (size_t max = 0u; max < 8u; ++max) {
+            char buf[16];
+            char want[16];
+            sce_text_writer_t w = sce_text_writer(buf, sizeof(buf));
+            sce_text_put_text(&w, "[");
+            sce_text_put_within(&w, texts[i], max);
+            sce_text_put_text(&w, "]");
+            (void)snprintf(want, sizeof(want), "[%.*s]", (int)max, texts[i]);
+            expect(!w.cut && strcmp(buf, want) == 0, "a text within a bound is what %.*s writes");
+        }
+    }
+}
+
 int main(void) {
     the_comparisons_agree_with_the_hosted_ones();
     the_last_place_and_a_byte_are_found();
     the_text_of_an_integer_is_printfs();
     a_writer_keeps_what_fits_as_snprintf_does();
+    a_text_within_a_bound_is_what_a_precision_writes();
     if (failures != 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

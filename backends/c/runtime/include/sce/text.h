@@ -246,6 +246,16 @@ static inline void sce_text_put_text(sce_text_writer_t *w, const char *text) {
     sce_text_put(w, text, sce_text_length(text));
 }
 
+/* At most `max` bytes of `text`, which ends at its first NUL or there: what
+ * `%.<max>s` of `printf` writes. */
+static inline void sce_text_put_within(sce_text_writer_t *w, const char *text, size_t max) {
+    size_t n = 0u;
+    while (n < max && text[n] != '\0') {
+        ++n;
+    }
+    sce_text_put(w, text, n);
+}
+
 static inline void sce_text_put_char(sce_text_writer_t *w, char c) {
     sce_text_put(w, &c, 1u);
 }

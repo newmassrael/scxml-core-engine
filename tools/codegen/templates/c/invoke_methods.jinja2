@@ -724,9 +724,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                    the build knows, and the message role holds any reason
                    (`_DATA_LEN_REASONS`). #}
                 if (SCE_SCRATCH_RESERVE(message, {{ data_slot.name }}_REASONS)) {
-                    snprintf(SCE_SCRATCH_BUF(message), SCE_SCRATCH_CAP(message),
-                             {{ reason_format("invoke_param_request_field_refused", ["request_refusal"], param.name) }},
-                             _host_inv_refusal_{{ loop.index0 }});
+                    {{ reason_message("invoke_param_request_field_refused", ["request_refusal"], ["_host_inv_refusal_" ~ loop.index0], param.name) }}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_PARAM_UNFIT, SCE_SCRATCH_BUF(message));
                 } else {

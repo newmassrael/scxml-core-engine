@@ -857,11 +857,24 @@ pub enum RuntimeRequirement {
     /// the machine writes a line, for a `<log>` or one of the runtime's own
     /// diagnostics ([`c11_logs`]).
     Log,
+    /// The real-number seams (`sce/real_text.h`'s `_sce_real_text` and
+    /// `_sce_real_read`), which the runtime's text unit implements
+    /// (docs/adr/0110, D1, D2): the machine's core may write a real as text or
+    /// read one out of text, and never formats or parses one itself
+    /// ([`c11_hands_reals_to_text`]).
+    Real,
 }
 
 impl RuntimeRequirement {
     /// Every requirement a backend can state, in the order a set lists them.
-    pub const ALL: [Self; 5] = [Self::Lua, Self::Dom, Self::Http, Self::Clock, Self::Log];
+    pub const ALL: [Self; 6] = [
+        Self::Lua,
+        Self::Dom,
+        Self::Http,
+        Self::Clock,
+        Self::Log,
+        Self::Real,
+    ];
 
     /// The name a plan states the requirement by
     /// (`\trequires\t<generation>\t<name>`), and a build maps to a library.
@@ -872,6 +885,7 @@ impl RuntimeRequirement {
             Self::Http => "http",
             Self::Clock => "clock",
             Self::Log => "log",
+            Self::Real => "real",
         }
     }
 
@@ -885,8 +899,24 @@ impl RuntimeRequirement {
             Self::Http => "#include <sce/http_client.h>",
             Self::Clock => "#include <sce/clock.h>",
             Self::Log => "#include <sce/log.h>",
+            Self::Real => "#include <sce/real_text.h>",
         }
     }
+}
+
+/// Whether a C11 machine's core may write a real number as text or read one out
+/// of text, which it hands to the seams of `sce/real_text.h` (docs/adr/0110, D1):
+/// one that writes an event's data through the wire writer (`static_datamodel`,
+/// whose writer holds a real's case), one whose events carry a typed payload,
+/// which it writes and reads (`typed_payload`), and one that holds a host-run
+/// invocation's typed request or result (`typed_host_invoke`). A machine of none
+/// of these references neither seam.
+fn c11_hands_reals_to_text(
+    static_datamodel: bool,
+    typed_payload: bool,
+    typed_host_invoke: bool,
+) -> bool {
+    static_datamodel || typed_payload || typed_host_invoke
 }
 
 /// What a C11 machine generated from `model` requires
@@ -924,6 +954,8 @@ pub fn c11_runtime_requirements(model: &SCXMLModel) -> BTreeSet<RuntimeRequireme
 /// - a `<log>` anywhere in its executable content, and a
 ///   `<sce:render>` of a `sce-static` machine, which says what it wrote as a
 ///   `<log>` would;
+/// - a `<sce:lift>` of a `sce-static` machine, which says whether the text
+///   read as the record it was lifted into, and why not;
 /// - a machine that schedules, whose `_advance_time_ms` says once that a host
 ///   moved a clock it does not own;
 /// - a machine with a script engine, which says when its engine failed to read
@@ -934,7 +966,10 @@ fn c11_logs(model: &SCXMLModel) -> bool {
     }
     let mut logs = false;
     crate::host_processor_analyzer::walk_model_actions(model, &mut |_state, action| {
-        logs |= matches!(action.action_type.as_str(), "log" | "sce_render");
+        logs |= matches!(
+            action.action_type.as_str(),
+            "log" | "sce_render" | "sce_lift"
+        );
     });
     logs
 }
@@ -4297,7 +4332,19 @@ fn render_c11(
     // What the machine needs linked, decided once, from the model the
     // templates render: they include each requirement's interface because
     // this set names it, and the output states the same set to the build.
-    let requires = c11_runtime_requirements(&model_lowered);
+    let mut requires = c11_runtime_requirements(&model_lowered);
+    // docs/adr/0110, D1 and D2: a machine whose core may write a real as text
+    // or read one out of text hands it to the seams of `sce/real_text.h`,
+    // which its build links the text unit for. Its core writes an event's
+    // data through the wire writer (`sce-static`), writes and reads a typed
+    // payload, or holds a host-run invocation's typed request and result.
+    if c11_hands_reals_to_text(
+        model.datamodel == crate::model::Datamodel::SceStatic,
+        payload.active,
+        !host_invoker.defs.is_empty() || !host_invoke_request_checks.is_empty(),
+    ) {
+        requires.insert(RuntimeRequirement::Real);
+    }
     let runtime_requires: Vec<&str> = requires
         .iter()
         .copied()

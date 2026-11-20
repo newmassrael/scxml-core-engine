@@ -5400,7 +5400,8 @@ endif()
 # ("JSON Number Text"). Header-only code, so the test needs nothing a
 # configuration can leave out.
 add_executable(sce_c_json_text_unit_test unit/json_text_test.c)
-target_link_libraries(sce_c_json_text_unit_test PRIVATE sce_c_runtime)
+# The real numbers it reads and writes are the text unit's (docs/adr/0110, D2).
+target_link_libraries(sce_c_json_text_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_include_directories(sce_c_json_text_unit_test PRIVATE
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
 target_compile_definitions(sce_c_json_text_unit_test PRIVATE
@@ -5610,7 +5611,7 @@ endforeach()
 # each integer width fits its bound, and a join never ends truncated.
 # Header-only code, so the test needs nothing a configuration can leave out.
 add_executable(sce_c_forge_concat_unit_test unit/forge_concat_test.c)
-target_link_libraries(sce_c_forge_concat_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_forge_concat_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_include_directories(sce_c_forge_concat_unit_test PRIVATE
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
 set_target_properties(sce_c_forge_concat_unit_test PROPERTIES
@@ -5632,7 +5633,7 @@ set_tests_properties(c11_unit_forge_concat PROPERTIES
 # it that the table cannot say (a value left out, a run of three, an object that
 # does not fit). Header-only code.
 add_executable(sce_c_forge_wire_repeat_unit_test unit/forge_wire_repeat_test.c)
-target_link_libraries(sce_c_forge_wire_repeat_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_forge_wire_repeat_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_include_directories(sce_c_forge_wire_repeat_unit_test PRIVATE
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
 target_compile_definitions(sce_c_forge_wire_repeat_unit_test PRIVATE
@@ -5656,7 +5657,7 @@ set_tests_properties(c11_unit_forge_wire_repeat PROPERTIES
 # any of them, so the tables here are text in memory, each wrong in one way.
 # Header-only code.
 add_executable(sce_c_shared_table_refusals_unit_test unit/shared_table_refusals_test.c)
-target_link_libraries(sce_c_shared_table_refusals_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_shared_table_refusals_unit_test PRIVATE sce_c_runtime sce_c_text)
 set_target_properties(sce_c_shared_table_refusals_unit_test PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
@@ -5675,7 +5676,7 @@ set_tests_properties(c11_unit_shared_table_refusals PROPERTIES
 # string cannot hold a 0x00, and what it wrote is read back with the payload reader.
 # Header-only code.
 add_executable(sce_c_forge_wire_bytes_unit_test unit/forge_wire_bytes_test.c)
-target_link_libraries(sce_c_forge_wire_bytes_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_forge_wire_bytes_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_include_directories(sce_c_forge_wire_bytes_unit_test PRIVATE
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
 set_target_properties(sce_c_forge_wire_bytes_unit_test PROPERTIES
@@ -5697,7 +5698,7 @@ set_tests_properties(c11_unit_forge_wire_bytes PROPERTIES
 # absent value crosses the wire as `null`, and the payload reader tells a value,
 # `null` and a missing key apart. Header-only code.
 add_executable(sce_c_forge_optional_unit_test unit/forge_optional_test.c)
-target_link_libraries(sce_c_forge_optional_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_forge_optional_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_include_directories(sce_c_forge_optional_unit_test PRIVATE
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
 set_target_properties(sce_c_forge_optional_unit_test PROPERTIES
@@ -5740,7 +5741,7 @@ set_tests_properties(c11_unit_forge_map PROPERTIES
 # (ARCHITECTURE.md, "Durations (Single Source of Truth)"). Header-only code,
 # so the test needs nothing a configuration can leave out.
 add_executable(sce_c_duration_unit_test unit/duration_test.c)
-target_link_libraries(sce_c_duration_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_duration_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_compile_definitions(sce_c_duration_unit_test PRIVATE
     SCE_DURATION_TABLE="${CMAKE_SOURCE_DIR}/tests/durations/css2_time.json")
 set_target_properties(sce_c_duration_unit_test PROPERTIES
@@ -5761,7 +5762,7 @@ set_tests_properties(c11_unit_duration PROPERTIES
 # engine's reader and the build's read (docs/SCE_ACCEPTED_SUBSET.md §2.13).
 # Header-only code, so the test needs nothing a configuration can leave out.
 add_executable(sce_c_document_stem_unit_test unit/document_stem_test.c)
-target_link_libraries(sce_c_document_stem_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_document_stem_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_compile_definitions(sce_c_document_stem_unit_test PRIVATE
     SCE_DOCUMENT_STEM_TABLE="${CMAKE_SOURCE_DIR}/tests/document_stem/document_stem.json")
 set_target_properties(sce_c_document_stem_unit_test PROPERTIES
@@ -5782,7 +5783,7 @@ set_tests_properties(c11_unit_document_stem PROPERTIES
 # ASCII or writes the characters as they are, with a character past U+00FF refused.
 # Header-only code, so the test needs nothing a configuration can leave out.
 add_executable(sce_c_payload_bytes_unit_test unit/payload_bytes_test.c)
-target_link_libraries(sce_c_payload_bytes_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_payload_bytes_unit_test PRIVATE sce_c_runtime sce_c_text)
 set_target_properties(sce_c_payload_bytes_unit_test PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
@@ -5802,7 +5803,7 @@ set_tests_properties(c11_unit_payload_bytes PROPERTIES
 # and the codes held to the enum stdlib/lift/refusal_code.scxml declares.
 # Header-only code, so the test needs nothing a configuration can leave out.
 add_executable(sce_c_payload_refusal_unit_test unit/payload_refusal_test.c)
-target_link_libraries(sce_c_payload_refusal_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_payload_refusal_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_compile_definitions(sce_c_payload_refusal_unit_test PRIVATE
     SCE_JSON_PAYLOAD_REFUSAL_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/payload_refusal.json"
     SCE_STDLIB_REFUSAL_CODE="${CMAKE_SOURCE_DIR}/stdlib/lift/refusal_code.scxml")
@@ -5824,7 +5825,7 @@ set_tests_properties(c11_unit_payload_refusal PROPERTIES
 # nested containers of the wire writer, and the bounded list of
 # `sce/forge/bounded_list.h`. Header-only code.
 add_executable(sce_c_payload_composed_unit_test unit/payload_composed_test.c)
-target_link_libraries(sce_c_payload_composed_unit_test PRIVATE sce_c_runtime)
+target_link_libraries(sce_c_payload_composed_unit_test PRIVATE sce_c_runtime sce_c_text)
 target_include_directories(sce_c_payload_composed_unit_test PRIVATE
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
 set_target_properties(sce_c_payload_composed_unit_test PROPERTIES

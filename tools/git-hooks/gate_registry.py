@@ -1035,6 +1035,9 @@ GATES: dict[str, dict] = {
             # `a_c11_machine_logs_through_the_log_seams` links a machine with
             # and reads the lines of.
             "backends/c/runtime/posix/log.c",
+            # The runtime's text unit, the real seams' definitions, which the
+            # same test links a machine with (docs/adr/0110, D2).
+            "backends/c/runtime/text/real_text.c",
             # The standard library, whose statecharts that save are held to
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.

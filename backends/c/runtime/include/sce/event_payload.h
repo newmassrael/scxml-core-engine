@@ -18,18 +18,20 @@
    that carries the refusal is taken in its place (docs/adr/0086, section 4.2),
    where a guard that cannot be evaluated is only false (§scxml-3.13).
 
-   ⚠ HEADER-ONLY, and that is a requirement rather than a convenience: the C11
-   EventSchema gate links NO runtime library, because a native value path that
-   links nothing is the MCU-clean proof the whole lowering exists for. A lift in
-   a library would have taken that proof away from every machine that uses it.
-   `static inline` keeps it in the one translation unit each machine already is.
+   ⚠ HEADER-ONLY, and that is a requirement rather than a convenience: the
+   reader is part of the machine's core, which includes only what a freestanding
+   implementation provides and calls no library function but the four memory
+   functions (docs/adr/0110, D1). `static inline` keeps it in the one translation
+   unit each machine already is. Its text routines are the runtime's own
+   (`sce/text.h`): a whole number is read digit by digit. A real number is the
+   one thing it does not read itself: its text is handed whole to the seam
+   `_sce_real_read` (`sce/real_text.h`), which the runtime's text unit defines
+   and a machine that may read one states it requires.
 
    ⚠ No allocator and no copy of the payload either: the fields keep a pointer
    into the event record's own `data`, and each read scans it for one name. A
    payload is tens of bytes and a schema names a handful of fields, so the scan
-   is bounded by the same small numbers either way. What it does take from the C
-   library is `<stdlib.h>`'s `strtoull` / `strtod` and `<string.h>`'s `strncmp`,
-   which every freestanding toolchain this backend targets provides.
+   is bounded by the same small numbers either way.
 
    ⚠ Every refusal is a STATIC sentence about the field, with no name in it:
    the caller composes "`<event>` payload: '<field>' <reason>" from its own
@@ -53,17 +55,14 @@
 #ifndef SCE_EVENT_PAYLOAD_H
 #define SCE_EVENT_PAYLOAD_H
 
-#include <errno.h>
 #include <float.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
-#include "sce/number_text.h"
 #include "sce/portability.h"
+#include "sce/real_text.h"
+#include "sce/text.h"
 #include "sce/types.h"
 
 #ifdef __cplusplus
@@ -455,7 +454,7 @@ SCE_C_UNUSED static inline const char *sce_payload_past_string(const char *p) {
                 } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
                     return NULL;
                 }
-            } else if (*p == '\0' || strchr("\"\\/bfnrt", *p) == NULL) {
+            } else if (*p == '\0' || sce_text_find_byte("\"\\/bfnrt", (unsigned char)*p, 8u) == NULL) {
                 return NULL;
             }
         }
@@ -534,10 +533,10 @@ SCE_C_UNUSED static inline const char *sce_payload_past_value(const char *p) {
         }
         return NULL;
     }
-    if (strncmp(p, "true", 4) == 0 || strncmp(p, "null", 4) == 0) {
+    if (sce_text_compare_n(p, "true", 4u) == 0 || sce_text_compare_n(p, "null", 4u) == 0) {
         return p + 4;
     }
-    if (strncmp(p, "false", 5) == 0) {
+    if (sce_text_compare_n(p, "false", 5u) == 0) {
         return p + 5;
     }
     return sce_payload_past_number(p);
@@ -793,7 +792,7 @@ SCE_C_UNUSED static inline const char *sce_payload_decode_with_defaults(const ch
 /* Whether the value at `p` is the keyword `null`, and not a longer word that
    starts with it. */
 SCE_C_UNUSED static inline bool sce_payload_is_null(const char *p) {
-    if (strncmp(p, "null", 4) != 0) {
+    if (sce_text_compare_n(p, "null", 4u) != 0) {
         return false;
     }
     const char after = p[4];
@@ -822,11 +821,15 @@ SCE_C_UNUSED static inline const char *sce_payload_value_whole(const char *p, bo
     if (*digits < '0' || *digits > '9') {
         return SCE_PAYLOAD_REFUSE_NOT_NUMBER;
     }
-    errno = 0;
-    char *end = NULL;
-    const unsigned long long value = strtoull(digits, &end, 10);
-    if (end == digits || errno == ERANGE) {
-        return SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH;
+    /* Digit by digit, a number past 64 bits refused as one past every width. */
+    uint64_t value = 0u;
+    const char *end = digits;
+    for (; *end >= '0' && *end <= '9'; end++) {
+        const uint64_t digit = (uint64_t)(*end - '0');
+        if (value > (UINT64_MAX - digit) / 10u) {
+            return SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH;
+        }
+        value = value * 10u + digit;
     }
     /* A fraction or an exponent is a different value, and rounding it would
        answer a guard for something nobody sent. */
@@ -1038,13 +1041,14 @@ SCE_C_UNUSED static inline const char *sce_payload_value_floating(const char *p,
     if (*p != '-' && (*p < '0' || *p > '9')) {
         return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_NUMBER);
     }
-    errno = 0;
-    char *end = NULL;
-    const double value = strtod(p, &end);
-    if (end == p) {
+    /* The number's text, held to the JSON grammar, handed whole to the seam
+       (docs/adr/0110, D1): the core reads no real itself. */
+    const char *end = sce_payload_past_number(p);
+    if (end == NULL) {
         return SCE_PAYLOAD_REFUSE_NOT_NUMBER;
     }
-    if (errno == ERANGE) {
+    double value = 0.0;
+    if (!_sce_real_read(p, (size_t)(end - p), &value)) {
         return SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH;
     }
     *out = value;
@@ -1086,11 +1090,11 @@ SCE_C_UNUSED static inline const char *sce_payload_read_f64(const sce_payload_fi
 }
 
 SCE_C_UNUSED static inline const char *sce_payload_value_bool(const char *p, bool *out) {
-    if (strncmp(p, "true", 4) == 0) {
+    if (sce_text_compare_n(p, "true", 4u) == 0) {
         *out = true;
         return NULL;
     }
-    if (strncmp(p, "false", 5) == 0) {
+    if (sce_text_compare_n(p, "false", 5u) == 0) {
         *out = false;
         return NULL;
     }
@@ -1330,7 +1334,7 @@ SCE_C_UNUSED static inline const char *sce_payload_text_into(const char *p, char
     /* A text holding U+0000 would end at it here, where a text is held
        NUL-terminated, so no runtime holds one and every reader refuses it
        (docs/adr/0087, section 2.3). A byte string may hold the byte zero. */
-    if (memchr(out, '\0', sink.len) != NULL) {
+    if (sce_text_find_byte(out, '\0', sink.len) != NULL) {
         return SCE_PAYLOAD_REFUSE_NUL_IN_TEXT;
     }
     out[sink.len] = '\0';
@@ -1518,8 +1522,8 @@ SCE_C_UNUSED static inline bool sce_payload_path_join(char *out, size_t cap, con
     if (cap == 0u) {
         return false;
     }
-    const size_t head = (prefix != NULL) ? strlen(prefix) : 0u;
-    const size_t tail = strlen(name);
+    const size_t head = (prefix != NULL) ? sce_text_length(prefix) : 0u;
+    const size_t tail = sce_text_length(name);
     const size_t slash = (head > 0u) ? 1u : 0u;
     if (head + slash + tail + 1u > cap) {
         if (head < cap && prefix != NULL && prefix != out) {
@@ -1568,7 +1572,7 @@ SCE_C_UNUSED static inline bool sce_payload_pointer_join(char *out, size_t cap, 
     if (cap == 0u) {
         return false;
     }
-    const size_t head = (prefix != NULL) ? strlen(prefix) : 0u;
+    const size_t head = (prefix != NULL) ? sce_text_length(prefix) : 0u;
     size_t tail = 0u;
     for (const char *c = name; *c != '\0'; ++c) {
         tail += (*c == '~' || *c == '/') ? 2u : 1u;
@@ -2050,7 +2054,8 @@ SCE_C_UNUSED static inline bool sce_payload_quote_bytes(const uint8_t *bytes, si
 }
 
 SCE_C_UNUSED static inline bool sce_payload_quote(const char *text, char *out, size_t cap) {
-    return sce_payload_quote_span((const unsigned char *)text, text != NULL ? strlen(text) : 0u, false, out, cap);
+    return sce_payload_quote_span((const unsigned char *)text, text != NULL ? sce_text_length(text) : 0u, false, out,
+                                  cap);
 }
 
 #ifdef __cplusplus

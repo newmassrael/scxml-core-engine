@@ -5,9 +5,11 @@
 # `scripts/mutate sce-build/tests/mutations/a_c_wire_writes_a_real_as_ecmascript_spells_it.cases`.
 #
 # `sce_number_text` (`sce/number_text.h`, in the runtime's include directory) is
-# what a C11 machine writes a `float64` with: in the typed payload it puts into an
-# event's `data`, and in a `sce-static` machine in a data object's pair and in the
-# text a host request carries a param as (`sce/forge/wire.h`). Three oracles hold
+# what a C11 machine writes a `float64` with, through the seam `_sce_real_text`
+# the runtime's text unit defines with it (docs/adr/0110, D1): in the typed
+# payload it puts into an event's `data`, and in a `sce-static` machine in a data
+# object's pair and in the text a host request carries a param as
+# (`sce/forge/wire.h`). Three oracles hold
 # it: `c11_unit_json_text` reads `tests/json_text/real_text.json` and writes each
 # double through the writer, `c11_integration_static_host_params` drives
 # `statechart_static_host_params`, whose `ratio` is a real the machine holds, and
@@ -62,8 +64,8 @@ edit("backends/c/forge-runtime/include/sce/forge/wire.h",
      "        if (false) {")
 PY
 
-mutation_case "a request carries a real as printf's %g writes it" <<'PY'
+mutation_case "a request carries a real as the digits of its whole part" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
-     "        return sce_number_text(value.as.r, buf, cap) != 0u;",
-     "        written = snprintf(buf, cap, \"%g\", value.as.r);\n        break;")
+     "        return _sce_real_text(value.as.r, buf, cap) != 0u;",
+     "        return sce_text_of_i64((int64_t)value.as.r, buf, cap) != 0u;")
 PY
