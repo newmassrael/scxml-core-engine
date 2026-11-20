@@ -323,6 +323,11 @@ Landing: the commit that adds this section.
   tree; the chain that holds one keeps its declaration.
 - A carrier flag bound to such a body stays the value's: it is checked against the body where the body says the input,
   and a disagreement is `PresentIfMismatch`. A broadcast log's `publish` still takes such an input.
+- A broadcast log over an element that says an input in some of its values only takes it in `{Log}GivenFlags`
+  (`publish(&mut publisher, &element, given)`): it stores what the value says where it says it
+  (`{Codec}Wire::input_{i}` answers `Some`) and the given bit where it says nothing, and hands the encode no such
+  input. The item a read returns still holds every flag in `{Log}Flags`. The fix was landed after this section; the
+  logs before it did not compile.
 - The other backends do not change.
 
 ## A list whose entries say the flag it hands them holds it as its start (ADR 0065 §6 R8a)
@@ -1209,6 +1214,10 @@ resources, 69 in all, the wire expression and the declarations that hold it amon
   `publish(publisher, element, flags)`. A log whose element also takes a flag its value does not say takes those as
   `{Log}GivenFlags`. The item a read returns still holds every flag in `{Log}Flags`. The fix was landed after the
   chain section below; the trees before it did not compile such a log.
+- A flag the value says in some of its values only (ADR 0065 §6 R4e), whose `input_<name>(value)` answers a
+  `std::optional<std::uint8_t>`, is given in `{Log}GivenFlags` as well: `publish` stores what the value says where
+  it says it and the given bit where it says nothing, and hands the encode no such input. The fix was landed after
+  this section; the logs before it did not compile.
 
 ## A printed C++ codec holds a list to its bound as a type and derives its count (ADR 0081 step 4)
 
@@ -3115,6 +3124,10 @@ resources), each of whose other forms the printer already lowered.
   element and stores it as the element says it. Where the element says some flags and not others, `{log}_publish`
   takes `const {log}_given_flags_t *given` with the others; where it says all of them, it takes no flags. The read
   result still returns every flag.
+- A flag the value says in some of its values only, whose `{codec}_input_<name>` answers a `sce_optional_uint8_t`,
+  is given in `{log}_given_flags_t` as well: `{log}_publish` stores what the value says where it says it (`present`)
+  and the given bit where it says nothing, and hands the encode no such input. The fix was landed after this section;
+  the logs before it did not compile.
 
 ## A printed C11 codec derives the tag of the arm its value holds (ADR 0081 step 4)
 
