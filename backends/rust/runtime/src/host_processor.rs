@@ -648,9 +648,16 @@ pub(crate) struct HostProcessorRegistry {
     next_token: u64,
     /// How many times each `<invoke>` has started in this session, by its id,
     /// for each started at least once: what numbers a start
-    /// ([`HostInvokeRequest::start`]). Ordered by the id's bytes, the order a
-    /// saved state writes them in.
-    starts: std::collections::BTreeMap<String, u64>,
+    /// ([`HostInvokeRequest::start`]). Sorted by the id's bytes, the order a
+    /// saved state writes them in, and each id once.
+    ///
+    /// A sorted vector rather than an ordered map: a session holds as many
+    /// entries as its document has `<invoke>` ids, and a `BTreeMap<String,
+    /// u64>` is a type of its own wherever the runtime is linked, whose drop and
+    /// iteration code a consumer measured at about 2.7 KB of text, with its
+    /// unwind tables, in a library that held no other map of that type
+    /// (2026-11-21). The vector's search is the map's order.
+    starts: Vec<(String, u64)>,
 }
 
 /// A host-run invocation that was started and has neither completed nor been
@@ -767,9 +774,20 @@ impl HostProcessorRegistry {
         self.next_token = self.next_token.wrapping_add(1);
         request.token = token;
         if !request.restarted {
-            let count = self.starts.entry(request.invoke_id.clone()).or_insert(0);
-            *count = count.saturating_add(1);
-            request.start = *count;
+            request.start = match self
+                .starts
+                .binary_search_by(|(id, _)| id.as_str().cmp(request.invoke_id.as_str()))
+            {
+                Ok(at) => {
+                    let count = &mut self.starts[at].1;
+                    *count = count.saturating_add(1);
+                    *count
+                }
+                Err(at) => {
+                    self.starts.insert(at, (request.invoke_id.clone(), 1));
+                    1
+                }
+            };
         }
         let processor_type = request.processor_type.clone();
         self.started.insert(
@@ -811,8 +829,18 @@ impl HostProcessorRegistry {
     /// Number starts on from `starts`, the counts a saved state carried: what a
     /// restore does so that a start it makes is never given the number of one
     /// a host already saw, and a restart keeps the number it had.
+    ///
+    /// The counts are held sorted by id with each id once; an id given twice
+    /// keeps the count given last, as collecting them into a map would.
     pub(crate) fn set_starts(&mut self, starts: impl IntoIterator<Item = (String, u64)>) {
-        self.starts = starts.into_iter().collect();
+        let mut held: Vec<(String, u64)> = Vec::new();
+        for (id, count) in starts {
+            match held.binary_search_by(|(held_id, _)| held_id.as_str().cmp(id.as_str())) {
+                Ok(at) => held[at].1 = count,
+                Err(at) => held.insert(at, (id, count)),
+            }
+        }
+        self.starts = held;
     }
 
     /// Take the running invocation `(processor_type, invoke_id, token)` out of
@@ -1189,5 +1217,26 @@ pub(crate) fn is_host_invoke_completion(
         None => {
             event_name == crate::invoke::DONE_INVOKE_EVENT && host_invoke_ids.contains(&invoke_id)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HostProcessorRegistry;
+
+    /// The start counts a restore hands the registry come back sorted by the
+    /// id's bytes, each id once with the count given last: the order and the
+    /// answer an ordered map gave, which a saved state relies on.
+    #[test]
+    fn the_start_counts_read_back_by_id_bytes_each_once() {
+        let mut registry = HostProcessorRegistry::default();
+        registry.set_starts([
+            ("watch".to_string(), 2),
+            ("Fetch".to_string(), 1),
+            ("fetch".to_string(), 4),
+            ("watch".to_string(), 5),
+        ]);
+        let read: Vec<(&str, u64)> = registry.starts().collect();
+        assert_eq!(read, [("Fetch", 1), ("fetch", 4), ("watch", 5)]);
     }
 }
