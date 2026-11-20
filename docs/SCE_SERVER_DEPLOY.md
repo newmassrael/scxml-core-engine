@@ -8,12 +8,26 @@ to tell a session that is stuck from one that is idle. Every key name and defaul
 from SCE_MESH.md, and each says where.
 
 Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
-decisions D1 and D2: what a client may cost the server (section 2); D8: the store sealed at rest, its keys and what an
-SQL read of it shows (sections 3, 8 and 9); D9: message signatures, the `key` authenticator and the deploy keys
-`sign`, `verify` and `max_skew_ms` (sections 0, 1, 2, 5 and 7); D10: `persistence:` and `receipt:`, a durable client's
-outbox in the store, its window and its expiry, and the orderly stop (sections 0 to 4, 8 and 9); D15: the checkpoints
-of many sessions committed together, `sessions.commit_delay_us`, and the host told per client (sections 0 to 3); D16:
-the metrics port, the registry of the names it reports and the health checks (sections 0, 1, 9 and 10).
+and brought to every step of it that landed by its step 15:
+
+- D1 and D2: what a client may cost the server, and the edge's rate limits (section 2);
+- D3: the credential store, its tokens and its pins (sections 0, 1, 3 and 5);
+- D4: the server's outbound HTTP, built with a destination policy (sections 0 and 1);
+- D5 to D7: the key ring, its key-encryption key and its keys (sections 0, 1, 3 and 8);
+- D8: the store sealed at rest, its keys, their rotation and what an SQL read of it shows (sections 3, 8 and 9);
+- D9: message signatures, the `key` authenticator and the deploy keys `sign`, `verify` and `max_skew_ms` (sections 0,
+  1, 2, 5 and 7);
+- D10: `persistence:` and `receipt:`, a durable client's outbox in the store, its window and its expiry, and the
+  orderly stop (sections 0 to 4, 8 and 9);
+- D11: a server upgraded in place, each session migrated by the migration its document declares (section 4.2);
+- D12: the values a machine's deployment supplies, `config:` and `config_file:` (sections 1 and 2.4);
+- D13 and D14: the key-value feature's durable store and the audit log, kept in the session store's file (sections 0,
+  1, 3, 4.1 and 8);
+- D15: the checkpoints of many sessions committed together, `sessions.commit_delay_us`, and the host told per client
+  (sections 0 to 3);
+- D16: the metrics port, the registry of the names it reports and the health checks (sections 0, 1, 9 and 10);
+- D17: the named bounds of the signing and sealing records, which a build moves and the host is given (sections 1 and
+  11).
 
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
@@ -38,24 +52,49 @@ says of "the program" is what such a program must do.
 | Group commit: the checkpoints of many sessions and the acknowledgements of durable clients written in one transaction, each answered once it is durable; the server tells its host per client | `sce_rust_mesh::commit::Committer` (`Pool::committer`) over `SessionStore::write_many` (`SqliteStore`: one savepoint per write, one sync; sealed under `Sealed`); `ServerHost::deliver` called at once for different clients | ADR 0109, D15; SCE_MESH.md sections 10.11, 14.4 and 22.8 |
 | The key-value feature's values kept durably, each put-if's first result in the transaction of its write, the first results of a session deleted with it | `KvStore` of `sce-rust-session-store` (`SqliteStore` from layout 6, sealed under `Sealed`), given to the host by `ReferenceHost::with_kv_store`; the pool names the sessions a removal ends (`Write::sessions`) | ADR 0109, D13; docs/SCE_HOST_FEATURES.md section 3 |
 | An audit log: entries redacted by their schema, chained, checkpointed under the audit key, durable before the append answers, retained by segments | `AuditStore` of `sce-rust-session-store` (`SqliteStore` from layout 7, sealed under `Sealed`), `sce_rust_crypto::audit` (the chain, the checkpoints, `verify`, `retain`), given to the host by `ReferenceHost::set_audit_store` and `set_audit_streams`; `audit_stop` at the orderly stop, `audit_retain` on the host's schedule | ADR 0109, D14; docs/SCE_HOST_FEATURES.md section 15; docs/SCE_AUDIT_LOG.md |
+| The key ring: the keys a host generates and derives, its issuing key of tokens and its audit keys, and the index and sealing keys of a sealed store, each kept wrapped under a key-encryption key the store never holds | `Keyring` of `sce_rust_crypto::keyring` over a `KeyStore` of `sce-rust-session-store` (`SqliteStore` from layout 2); the `KeyWrap` port and its reference adapter `KeyEncryptionKey` of `sce_rust_crypto::wrap` (`from_file`, `from_variable`); given to the host by `ReferenceHost::set_keyring` | ADR 0109, D7 and D8; docs/SCE_HOST_FEATURES.md section 13; section 3.2 |
+| The standard host features a server's machine asks for, the clock, key-value, HTTP, signing and sealing, random bytes, keyed digests, keys, credentials and the audit log among them, served by one reference host | `ReferenceHost` of `sce-rust-host-features` (`ReferenceHost::new` or `with_kv_store`, and its setters, section 1), joined to a generated machine by `sce_rust_host_features::serve` | docs/SCE_HOST_FEATURES.md; ADR 0109, D3 to D7, D13, D14 |
+| Outbound HTTP from a server: each request judged by a destination policy before anything is sent, connected to the address judged, no redirect followed, bounded in time and size | `NetworkTransport::new(policy, settings)` of `sce-rust-host-http`, the reference host's transport; `DestinationPolicy::allow_list` or `public_internet` of `sce_rust_host_features::destination` | ADR 0109, D4; docs/SCE_HOST_FEATURES.md section 5 |
+| The edge's bounds and rate limits: client entries, connections and their timeouts, a response's size, the four limiters, `Forwarded` read from trusted proxies only; the pool's bounds on the sessions in memory and on one session's inbox | `ServerSettings` and `sce_rust_mesh::https::rate` (each decision a call of `sce:std/rate/gcra_admit`, generated into the crate); `sessions.max_live` and `max_inbox`, read by `Pool` | ADR 0109, D1 and D2; section 2 |
 | The dialing side of a durable `https` binding in Rust: acknowledges only what a durable checkpoint of its own holds, keeps what it sent until a `200` carried it | `HttpsClient::received`, `HttpsClient::held`, `LinkEvent::Carried`, and the router `Machine::router` builds | ADR 0109, D10; SCE_MESH.md section 10.11 |
+| An upgrade in place: a session saved by one version of its document restored into the next by the migration the document declares, from the shape files the author commits | `sce-codegen shape`; `<sce:migration>`, planned by the build and applied by the restore's upgrade (`saved_state::upgrade` in Rust, `upgradeSavedState` in C++) | ADR 0109, D11; SCE Accepted Subset §2.15, "A declared migration"; section 4.2 |
+| The values a machine's deployment supplies, checked against the types its document declares | deploy.yaml's `config:` (checked by the build and written beside the machine as `<machine>.config.json`) or `config_file:`; the generated `<Machine>Deployment::read`, which every constructor of the machine takes the result of | ADR 0109, D12; SCE Accepted Subset §2.15, "A value the deployment supplies"; section 2.4 |
+| The named bounds of the signing and sealing records, moved by `--limit` and given to the host as the build resolved them | the records' bounds `cose_payload`, `cose_signed`, `cose_plaintext`, `cose_sealed`, `mac_message`, `random_bytes`; `<Machine>Limits`; `NamedBounds` and `ReferenceHost::set_named_bounds` (C++: `CoseFeature(crypto, bounds)`) | ADR 0109, D17; docs/SCE_HOST_FEATURES.md section 10; section 11 |
 | The metrics port: what the server, the pool, the store's committer, the reference hosts and the `https` clients report, by fixed names and closed label sets, and the reference adapter that renders the OpenMetrics text exposition | `sce-rust-metrics` (`Metrics`, `openmetrics::OpenMetrics`, `recording::Recording`), given by `HttpsServer::observed`, `Pool::observed`, `ReferenceHost::set_metrics` and `HttpsClient::start_observed`; C++ `host/Metrics.h`, given by `ReferenceHost::setMetrics`, `AuditFeature::setMetrics` and `ClientHost::metrics` | ADR 0109, D16; section 10 |
 | Health: whether a part takes work in, is stopping, and reaches its store | `HttpsServer::health`, `Pool::health` (`sce_rust_mesh::health::Health`) | ADR 0109, D16; section 10.4 |
 
+The suite of ADR 0107 D10 holds these parts together, under `tests/server`: sessions killed at random points and
+restored, two processes against one store, the binding through proxies with responses lost on purpose, a durable
+outbox through kills of its commit, acknowledgement and expiry, an orderly stop under load, and the edge's rate
+limits. It is a test suite, not a guarantee of a deployment's own composition.
+
 Not built, and a server must not count on them:
 
-- The rest of the suite of ADR 0107 D10 (ten thousand sessions killed at random points, two processes against one
-  store, the binding through proxies with responses lost on purpose) is under `tests/server`, the outbox's kills with
-  it (ADR 0109, D10); it is a test suite, not a guarantee of a deployment's own composition.
+- A server program (ADR 0107; ADR 0109, "Not in scope"): each deployment writes its own (section 1).
+- A store on media several machines share, and an exchange routed to the process that holds its key's lease (ADR
+  0109, D18): its direction is decided and it is built only once a deployment measures one active process with a
+  standby as not enough (section 6).
+- An upgrade under load in the server suite (ADR 0109, Conformance): a migration is held machine by machine
+  (`a_saved_state_is_migrated_into_the_next_version`, on Rust and C++), and no test stops a loaded server and
+  starts the next build on its store.
+- A re-seal pass for the outboxes and the audit log: a rotation's passes write sessions, credentials, keys and
+  values again, and an outbox entry or an audit row sealed under a retired key stays so until it is deleted (section
+  3, "Rotation").
 - The Windows CI lane of ADR 0107 D11. The WinHTTP adapter is built and has its conformance test
   (`tests/cmake/mesh_https.cmake`), but no CI job runs it.
 - A durable receipt on any backend but Rust's: the generated C++ router, whose `https` client holds no envelope for a
   checkpoint, and the Kotlin and Swift host cores refuse `persistence:` and `receipt: durable` by name
   (`mesh/codegen-durable-receipt-unsupported`).
 - A client of the `https` binding on the Kotlin and Swift host cores (SCE_MESH.md section 22.8).
-- The removal of expired and revoked tokens from the credential store (section 5).
+- The removal of expired and revoked tokens from the credential store: a revoked token is kept so that an issue
+  repeated under its identity cannot make it live again, and no call of the store removes one (section 5).
 - A record signed by name and kept beyond the exchange (`sce:payload`, ADR 0107 Open question 1): ADR 0109 D9's
   record-level half, a later step after ADR 0101's steps 4a and 4b. Message signatures cover one exchange.
+- What ADR 0109 leaves to records or steps of their own (its Open questions 5, 7, 8 and 9): a migration from a state
+  of another product-line configuration, a signed payload of megabytes, a trace context in an envelope, and a
+  `<log>` that honours `sce:sensitivity`, so a value the audit log redacts is written by `<log>` as it is.
+- The facilities of ADR 0109 on Kotlin, Go, Python, Swift and C11 (its D0): a build for one of them refuses a
+  document that asks for one by name.
 
 ## 1. What the program supplies
 
@@ -63,15 +102,20 @@ Not built, and a server must not count on them:
 |---|---|---|
 | The generated machine and its peer table (`sce-codegen generate --deploy`, `--lang rust`) | `Pool::new` | SCE_MESH.md section 19, "Peer table" |
 | How a session's machine is started and restored (`SessionFactory`, `SessionMachine`) | `Pool::new` | `pool.rs` |
+| For a machine that declares values its deployment supplies, those values: `<Machine>Deployment::read` of the `<machine>.config.json` the build wrote from `config:`, or of the file `config_file:` names, read once at start. A text that does not read is the lift's refusal and builds no machine | the `SessionFactory`, which builds every session's machine from it | section 2.4 |
 | Its name as the holder of leases, the lease's length and its renewal period (`PoolConfig`: `owner`, `lease_ttl_ms`, `renew_every_ms`) | `Pool::new` | section 4 |
 | The session store, opened on a file, sealed under the keys of its key ring | `Pool::new` | section 3 |
-| The key-encryption key (`KeyEncryptionKey::from_file` or `from_variable`), held apart from the store | the key ring the sealing keys are read from, and the host's | sections 3 and 8 |
+| The key-encryption key (`KeyEncryptionKey::from_file` or `from_variable`), held apart from the store | the key ring the sealing keys are read from, and the host's | sections 3, 3.2 and 8 |
 | The authenticator's check (`StoredTokens` or a `BearerCheck`, a `PinStore`, `CertificateCheck`, or `KeyPins` over a `PinStore`), and the credential store it and the machine's host share | `HttpsServer::new`, `ReferenceHost::set_credentials` | section 5 |
 | The key that signs every `200` when the binding names `sign` (`ServerSettings::signer`, read from the key ring) | `HttpsServer::new` | section 5, "Message signatures" |
 | The server's certificate chain and key, and for `mtls` the client authorities | `server_tls` | section 5 |
-| The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, sleeping until `Pool::next_wake_ms` between them, and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation |
+| The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, and `Pool::expire` when a binding is durable, sleeping until `Pool::next_wake_ms` between them (which counts the outbox entries read in this process as they come to expire), and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation |
 | The checkpoint each exchange waits for: `ServerHost::deliver` answers the endpoint's `sealed_through()`, and `HttpsServer::durable` is told each checkpoint reported durable. The server calls `deliver` at once for different clients and one at a time for each: a host over a keyed pool runs the sessions it is handed on the calling thread, and one over a single endpoint takes a lock of its own | the server | SCE_MESH.md section 22.8 |
-| The standard host features its machine asks for (section 9 of `docs/SCE_HOST_FEATURES.md` names what their reference hosts keep in memory) | the machine | `docs/SCE_HOST_FEATURES.md` |
+| The standard host features its machine asks for: a `ReferenceHost` over a clock and a transport (`ReferenceHost::new`), or over the key-value store it is given (`ReferenceHost::with_kv_store(clock, transport, store)`, the sealed store of section 3 for one that outlives the process) | the machine, through `sce_rust_host_features::serve` | `docs/SCE_HOST_FEATURES.md` sections 3, 8 and 9 |
+| The transport of the host's HTTP feature, built with the destination policy that says where the machine may reach: `NetworkTransport::new(DestinationPolicy::allow_list(..), NetworkSettings::default())`, or `public_internet()` | `ReferenceHost::new`, `with_kv_store` | `docs/SCE_HOST_FEATURES.md` section 5, "Destination policy" |
+| The host's stores beside the key-value one, each the sealed store of section 3 for a server: its key ring (`Keyring::new(Box::new(store), Box::new(kek))`), its credentials and its audit log, with the streams it keeps and their policies | `ReferenceHost::set_keyring`, `set_credentials`, `set_audit_store`, `set_audit_streams` | section 3.2; `docs/SCE_HOST_FEATURES.md` sections 13 to 15 |
+| The audit log's two passes: retention on the program's schedule (`ReferenceHost::audit_retain(now_ms)`, which deletes each stream's segments older than its `retain_days`), and the signature of every stream's head at the orderly stop (`ReferenceHost::audit_stop(now_ms)`) | the host | section 4.1; `docs/SCE_HOST_FEATURES.md` section 15 |
+| The numbers of the named bounds the machine's build resolved, read from the machine's `<Machine>Limits` | `ReferenceHost::set_named_bounds` | section 11 |
 | The adapter of the metrics port, and the route its exposition is served on; the readiness and liveness checks | `HttpsServer::observed`, `Pool::observed`, `ReferenceHost::set_metrics` | section 10 |
 
 `PoolConfig::renew_every_ms` must be above zero and below `lease_ttl_ms`; `Pool::new` refuses any other pair
@@ -110,6 +154,11 @@ The keys and their defaults are SCE_MESH.md section 22's table; the defaults are
 | client | `verify` | the trust set of the client's host every `200` is verified under (section 7) | none: a `200` is taken as it comes | a trust set's name, 1 to 64 bytes |
 | client | the retry keys every binding spells | SCE_MESH.md section 10.10; a request that failed at the transport is sent again under them | none | as section 10.10 says |
 
+A value outside the last column is refused when the deployment is read, as `mesh/topology-invalid-binding-field`
+naming the key and why; so is `max_skew_ms` beside another authenticator and `retain_ms` under `receipt: transport`
+or below `absence_ms`. A key no side of the binding reads is `mesh/deploy-unknown-binding-field`, with the nearest
+key it may have meant.
+
 What these mean for an operator:
 
 - **One address, one rule.** Several bindings may listen on one address only when they name one authenticator and one
@@ -146,7 +195,7 @@ What these mean for an operator:
   | `address` | every exchange, before it is authenticated | the remote address (an IPv4 address, an IPv6 /64) | 100 a second, burst 200 (`interval_ms: 10, burst: 200`) |
   | `client` | every exchange that authenticated | the client's name | 20 a second, burst 40 (`interval_ms: 50, burst: 40`) |
   | `failed_auth` | each `401`; while it refuses, an exchange is answered `429` without running the authenticator | the name, and the address | 10 a minute, burst 10 (`interval_ms: 6000, burst: 10`) |
-  | `new_names` | each name the `install` authenticator pins for the first time | the remote address | 20 an hour, burst 20 (`interval_ms: 180000, burst: 20`) |
+  | `new_names` | each name the `install` authenticator, or the `key` authenticator on first use, pins for the first time | the remote address | 20 an hour, burst 20 (`interval_ms: 180000, burst: 20`) |
 
   Each limiter tracks at most `rate.max_tracked` keys (default 100000), dropping the key of the earliest arrival to
   make room; a restart starts every limiter fresh. `rate: none` turns every limiter off, and `<limiter>: none` one.
@@ -197,16 +246,18 @@ sessions:
 ```
 
 `key_from` and `idle_ms` are required when the block is present, and neither has a default; `max_live` and
-`max_inbox` are at least 1 (ADR 0109, D1); `commit_delay_us` is at most 100000 (ADR 0109, D15; section 3, "Group
-commit"). `key_from: client` keys a session by the
-name the client posts under, so one client is one session; `key_from: data.<field>` keys it by a field of the
-request's data, which the event schema of every `service.request.*` the machine handles must declare as a
-`string[N]` of at most 256 bytes or as an integer (`mesh/deploy-sessions-key-not-in-request`). The block stands beside no `server:` block, no binding with
-`ordering: required` and no binding with `delivery: causal` (`mesh/deploy-invalid-sessions`). Only the Rust host core
-serves it; every other backend refuses it (`mesh/codegen-keyed-pool-unsupported`).
+`max_inbox` are at least 1 (ADR 0109, D1); `commit_delay_us` is at most 100000 (ADR 0109, D15; section 3.1). A
+`key_from` that is neither form below, an `idle_ms` past what a Mesh core counts to, a `max_live` or `max_inbox` of 0,
+and a `commit_delay_us` past its bound are each refused as `mesh/deploy-invalid-sessions`, with the reason.
+`key_from: client` keys a session by the name the client posts under, so one client is one session; `key_from:
+data.<field>` keys it by a field of the request's data, which the event schema of every `service.request.*` the
+machine handles must declare as a `string[N]` of at most 256 bytes or as an integer
+(`mesh/deploy-sessions-key-not-in-request`). The block stands beside no `server:` block, no binding with `ordering:
+required` and no binding with `delivery: causal` (`mesh/deploy-invalid-sessions`). Only the Rust host core serves it;
+every other backend refuses it (`mesh/codegen-keyed-pool-unsupported`).
 
 `idle_ms` is how long a session stays in memory after its last event. A session is dropped only when it also holds
-nothing pending (section 7), so `idle_ms` bounds the memory of quiet sessions and nothing else.
+nothing pending (section 9), so `idle_ms` bounds the memory of quiet sessions and nothing else.
 
 `max_live` bounds the sessions in memory whatever their activity. At the bound, a request for a key not in memory
 saves and drops the session idle longest that holds nothing pending, and when none can be dropped the request is
@@ -242,6 +293,37 @@ reads `HttpsClient::received()` before it applies what the client handed it, tak
 checkpoint is durable, calls `HttpsClient::held(&received)`; it hands each `LinkEvent::Carried` to the endpoint as every
 other event.
 
+### 2.4 What the deployment hands a machine: `config:` and `config_file:`
+
+ADR 0109, D12; SCE Accepted Subset §2.15, "A value the deployment supplies". A document declares each value its
+deployment supplies, `<data id="limits" sce:type="record:ServerLimits" sce:from="deployment"/>`, and the machine reads
+it and never writes it. The machine's entry gives the values in one of two places:
+
+```yaml
+machines:
+  ledger:
+    source: ledger.scxml
+    config:                              # checked when the machine is generated
+      limits: { max_rows: 200, label: "main" }
+      hosts: [ "a.example", "b.example" ]
+    # or: config_file: /etc/ledger/config.json   # read by the program at start
+```
+
+`config:` is checked when the machine is generated with the deployment, against the type each value's declaration
+states, and written beside the generated machine as `<machine>.config.json`: a value the document declares and the
+entry leaves out is `mesh/deploy-config-missing`, a key the document declares no value of is
+`mesh/deploy-config-unknown`, and a value that is no value of its type is `mesh/deploy-config-invalid`, naming the
+place by its JSON pointer. `config_file:` names a file of the same JSON, the operator's, which the build cannot see: the
+program reads it at start through the same reader, and a value that does not read refuses the machine's start with
+the lift's code, pointer and bound. An entry with both, a `config_file:` that names no file, and a `config_file:` on a
+machine that declares no value are refused as `mesh/deploy-config-invalid`.
+
+The values are part of the machine's interface and not of its state: no checkpoint holds them, so a session restored
+after a change of configuration runs on the new values, which take effect at the next start of the process. They are
+in the machine's memory and in reach of `<log>`, so a key or a credential is never one: it stays in the host, named by
+its id (sections 3.2 and 5). Rust and C++ build a machine from them; every other backend refuses the declaration by
+name.
+
 ## 3. The session store
 
 The reference store is `SqliteStore` (`backends/rust/session-store/src/sqlite.rs`): one SQLite database file, opened
@@ -276,54 +358,59 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   checkpoint encrypted at rest, since the saved state in it holds the document's values in the clear. The program
   opens the store sealed: `Sealed::new(SqliteStore::open(path)?, keys)`, where `keys` is
   `SealingKeys::from_keyring(&keyring, now_ms, &mut SystemRandom)` over a key ring on the same file
-  (`Keyring::new(Box::new(SqliteStore::open(path)?), Box::new(kek))`, `kek` the key-encryption key of section 8).
+  (`Keyring::new(Box::new(SqliteStore::open(path)?), Box::new(kek))`, `kek` the key-encryption key of section 3.2).
   Every value the sealed store writes is a record of XChaCha20-Poly1305 under a sealing key, bound to its store and
   its row, and every key (a session's key, a client's name, a key's id, a token's digest) is kept as its **entry**,
   the HMAC-SHA-256 of the key under the store's index key. The sealed store is the one handed to `Pool::new`, to the
-  server's authenticator and to the host (`ReferenceHost::set_credentials`, and its key ring's store): it is a
-  `SessionStore`, a `CredentialStore` and a `KeyStore`, as the file is. A store opened without the sealing keys reads
-  every row as a record it cannot open; a record moved to another row, changed by a byte, or read under another key
-  is refused (`Failure`), and the pool answers that session's requests as it answers a store that failed.
+  server's authenticator and to the host (`ReferenceHost::with_kv_store`, `set_credentials`, `set_audit_store`, and
+  its key ring's store): it is a `SessionStore`, a `CredentialStore`, a `KeyStore`, a `KvStore` and an `AuditStore`,
+  as the file is, so one `Arc` of it serves the pool, the authenticator and each store the host takes by `Arc`, and
+  the key ring, which owns its store, takes a handle of its own (section 3.2). A store opened without the sealing
+  keys reads every row as a record it cannot open; a record moved to another row, changed by a byte, or read under
+  another key is refused (`Failure`), and the pool answers that session's requests as it answers a store that
+  failed.
 - **What the file shows.** Every value is a record, and every key an entry; in the clear are what the store compares
-  or sets: a session's version, earliest due and lease (owner, fence, expiry), a token's revocation, and a key's use,
-  algorithm, creation and state. The index key (`index:sealed`) and the sealing keys (`sealing:<hex>`) are rows of
-  the `keys` table wrapped under the key-encryption key, the one thing the sealed store keeps as it is given.
+  or sets: a session's version, earliest due and lease (owner, fence, expiry), a token's revocation, a key's use,
+  algorithm, creation and state, an outbox's incarnation and numbers, a value's version, and the audit log's
+  sequences, moments and chain (the table below). The index key (`index:sealed`) and the sealing keys
+  (`sealing:<hex>`) are rows of the `keys` table wrapped under the key-encryption key, the one thing the sealed store
+  keeps as it is given.
 - **Rotation.** `SealingKeys::rotate(&keyring, now_ms, &mut SystemRandom)` makes a new sealing key and retires the
   one before, which still opens what it sealed. Give each process the keys read again (`Sealed::set_keys`, or a
   restart), then run the re-seal passes: `Sealed::reseal_sessions(owner, lease_ttl_ms, now_ms)`, which takes each
   session's lease under the name `owner` and writes it again from the version it read, leaving one another process
-  holds; `Sealed::reseal_credentials()`; and `Sealed::reseal_keys()`, never beside a rotation of the key-encryption key.
-  Each answers `Resealed`: rows written again, rows `left` (run the pass again later), rows `refused` (they do not
-  open: changed on the medium, or sealed under a key the process was not given). Once a pass answers no row left and
-  none refused, the retired key opens nothing and may be destroyed. The index key is never rotated.
+  holds; `Sealed::reseal_credentials()`; `Sealed::reseal_values()`, the key-value feature's; and
+  `Sealed::reseal_keys()`, never beside a rotation of the key-encryption key. Each answers `Resealed`: rows written
+  again (`resealed`), rows `left` (run the pass again later), rows `refused` (they do not open: changed on the medium,
+  or sealed under a key the process was not given). The outboxes and the audit log have no pass: an outbox entry
+  sealed under the retired key stays so until an acknowledgement or an expiry deletes it, at most `retain_ms` after it
+  was written; an expiry's note until the checkpoint of the session it is for is next written; an audit row until
+  retention deletes its segment, `retain_days` of its stream after it was written; and an audit checkpoint for as
+  long as it anchors what remains. So the retired key may be destroyed only once every pass answers no row left and
+  none refused, and no such row names it. Each record names the key that sealed it in the clear, after its magic
+  (`docs/SCE_SEALED_RECORD.md` section 1), so a read shows what still needs it:
+  `SELECT count(*) FROM audit_rows WHERE CAST(substr(entry, 14, 40) AS TEXT) = '<the retired id>'`, and the same of
+  `outbox_entries.envelope`, `outbox_notes.envelope` and `audit_checkpoints.signature`. The index key is never
+  rotated.
 - **What sealing does not give.** Freshness against someone who can write the medium: a row replaced by an earlier
   sealing of the same row opens, and a token's revocation, kept in the clear, can be set back by hand. The lease's
   fence and the version stop a process that is wrong, not a medium written by hand; keep the file where only the
   server's account writes it.
 
-The tables (`LAYOUT_1` to `LAYOUT_5` in `sqlite.rs`): `outbox_heads` (`client`, `incarnation`, `next`,
-`touched_ms`), `outbox_entries` (`client`, `number`, `at_ms`, `sender`, `envelope`) and `outbox_notes` (`id`,
-`session`, `client`, `number`, `at_ms`, `envelope`), the outboxes of layout 5; `sessions` (`session`, `state`, `version`, `earliest_due`),
-`leases` (`session`, `owner`, `fence`, `expires_ms`), and `numbers`, the one counter versions and fences are drawn
-from; and the keys a host generates and derives (`KeyStore`, docs/SCE_HOST_FEATURES.md section 13): `keys` (`id`,
-`key_use`, `algorithm`, `wrapped`, `label`, `created_ms`, `state`), each key's material wrapped under a
-key-encryption key the file never holds, `key_generations` (which key each generation made) and `key_naming` (the
-wrapped naming key of derived keys); and the credentials of section 5 (`CredentialStore`): `credential_pins` (`name`,
-`digest`) and `credential_tokens` (`digest`, `name`, `issued_ms`, `expires_ms`, `revoked`, `sealed`), each digest the
-SHA-256 of a secret the file never holds; and the values of the key-value feature a host keeps in the store
-(`KvStore`, docs/SCE_HOST_FEATURES.md section 3), the tables of layout 6: `kv_values` (`key`, `value`, `version`),
-`kv_numbers`, the feature's own counter of versions, and `kv_first_results` (`session`, `invoke`, `start`,
-`outcome`, `version`), the first result of each put-if by its invocation's identity, deleted with the session that
-started it; and the audit log (`AuditStore`, docs/SCE_HOST_FEATURES.md section 15, docs/SCE_AUDIT_LOG.md), the
-tables of layout 7: `audit_heads` (`stream`, `sequence`, `chain`), each stream's last row, which retention leaves,
-`audit_rows` (`stream`, `sequence`, `at_ms`, `entry`, `chain`), `audit_checkpoints` (`stream`, `sequence`, `chain`,
-`signature`) and `audit_identities` (`session`, `invoke`, `start`, `sequence`), the sequence each append's identity
-was appended at, deleted with its session; a row is never updated, and deleted only with its segment. Under a sealed
-store, a stream is its entry, a row's `entry` and a checkpoint's `signature` hold records, and the chain is kept as
-it is, so the log is verified without the sealing keys. Under a sealed store, `session`, `id`, `generation`, `key`, `name` and a first result's `session` and
-`invoke` hold entries, `state`, `wrapped`, a pin's `digest`, a token's `sealed` and a value's `value` hold records, a
-token's `digest` holds the keyed digest of its digest and its moments are 0. Every moment is milliseconds since the
-Unix epoch.
+The tables, by the layout that added them (`LAYOUT_1` to `LAYOUT_7` in `sqlite.rs`), and what each column holds under
+a sealed store (`docs/SCE_SEALED_RECORD.md` section 3). An entry is the keyed digest of a key, a record a sealed
+value; a column the last column does not name is kept in the clear, since the store compares or sets it.
+
+| Layout | Tables | Under a sealed store |
+|---|---|---|
+| 1, the sessions (ADR 0107) | `sessions` (`session`, `state`, `version`, `earliest_due`); `leases` (`session`, `owner`, `fence`, `expires_ms`); `numbers`, the one counter versions and fences are drawn from | `session` an entry, `state` a record |
+| 2, the key ring (`KeyStore`, docs/SCE_HOST_FEATURES.md section 13) | `keys` (`id`, `key_use`, `algorithm`, `wrapped`, `label`, `created_ms`, `state`), each key's material wrapped under a key-encryption key the file never holds; `key_generations` (`generation`, `key`), which key each generation made; `key_naming`, the wrapped naming key of derived keys | `id`, `generation` and `key` entries, `wrapped` and the naming key records, `label` empty; the sealed store's own keys (`index:sealed`, `sealing:<hex>`) are kept as they are given, wrapped |
+| 3 and 4, the credentials of section 5 (`CredentialStore`) | `credential_pins` (`name`, `digest`); `credential_tokens` (`digest`, `name`, `issued_ms`, `expires_ms`, `revoked`, and from layout 4 `sealed`); each digest the SHA-256 of a secret the file never holds | `name` an entry, a pin's `digest` and a token's `sealed` records; a token's `digest` the keyed digest of its digest, its moments 0 |
+| 5, the outboxes of section 2.3 | `outbox_heads` (`client`, `incarnation`, `next`, `touched_ms`); `outbox_entries` (`client`, `number`, `at_ms`, `sender`, `envelope`); `outbox_notes` (`id`, `session`, `client`, `number`, `at_ms`, `envelope`), an expiry's note for the session that sent the entry | `client`, `sender` and a note's `session` entries, `envelope` a record |
+| 6, the key-value feature (`KvStore`, docs/SCE_HOST_FEATURES.md section 3) | `kv_values` (`key`, `value`, `version`); `kv_numbers`, the feature's own counter of versions; `kv_first_results` (`session`, `invoke`, `start`, `outcome`, `version`), the first result of each put-if by its invocation's identity, deleted with the session that started it | `key`, and a first result's `session` and `invoke`, entries; `value` a record |
+| 7, the audit log (`AuditStore`, docs/SCE_HOST_FEATURES.md section 15, docs/SCE_AUDIT_LOG.md) | `audit_heads` (`stream`, `sequence`, `chain`), each stream's last row, which retention leaves; `audit_rows` (`stream`, `sequence`, `at_ms`, `entry`, `chain`), never updated and deleted only with their segment; `audit_checkpoints` (`stream`, `sequence`, `chain`, `signature`); `audit_identities` (`session`, `invoke`, `start`, `sequence`), the sequence each append's identity was appended at, deleted with its session | `stream`, and an identity's `session` and `invoke`, entries; a row's `entry` and a checkpoint's `signature` records; the chain is kept as it is, so the log is verified without the sealing keys |
+
+Every moment is milliseconds since the Unix epoch.
 
 ### 3.1 Group commit
 
@@ -370,6 +457,40 @@ stay near what the disk syncs in the run's time while each commit holds more inp
 | 16 | 3200 | 411 | 7.79 | 992 |
 | 64 | 12800 | 401 | 31.92 | 2539 |
 
+### 3.2 The key ring and its key-encryption key
+
+ADR 0109, D7 and D8; docs/SCE_HOST_FEATURES.md section 13. Every key a server keeps in its store is a row of the
+`keys` table, its material wrapped under a **key-encryption key** the store never holds: the keys a machine generated
+(`generated:<hex>`) and derived (`derived:<hex>`), the key tokens are issued under (`issuing:credentials`, section 5),
+the audit log's signing and pseudonymisation keys (`audit:sign`, `audit:pseudonym`), and a sealed store's index key
+and sealing keys (`index:sealed`, `sealing:<hex>`, section 3). A `Keyring` (`sce_rust_crypto::keyring`) reads and
+writes them through a `KeyStore` and the `KeyWrap` port.
+
+- **The key-encryption key.** 32 bytes the program supplies. The reference adapter, `KeyEncryptionKey` of
+  `sce_rust_crypto::wrap`, reads them from a file the operator names (`KeyEncryptionKey::from_file(path)`: the 32
+  bytes, or their 64 hexadecimal digits) or from an environment variable (`KeyEncryptionKey::from_variable(name)`:
+  the 64 digits), and wraps each key with XChaCha20-Poly1305 under a 192-bit random nonce, bound to the key's id and
+  use, so a row's material moved to another row does not unwrap. It is never printed. A key management service
+  serves the same port by implementing `KeyWrap`.
+- **Two rings on one file.** The sealed store's keys are read from a ring over the file itself (section 3,
+  `SealingKeys::from_keyring`), and the host's from a ring over the sealed store, given with
+  `ReferenceHost::set_keyring(Keyring::new(Box::new(Sealed::new(SqliteStore::open(path)?, keys.clone())),
+  Box::new(kek)))`, so its keys' ids and labels are entries and records like every other row. Each ring takes the
+  key-encryption key read for it.
+- **Without a store.** A host given no key ring keeps one in memory (`Keyring::in_memory`) under a key-encryption key
+  drawn for the process: its keys, its issuing key and its audit keys are gone when the process stops (section 4).
+- **Rotating the key-encryption key.** `Keyring::rewrap_all(Box::new(new_kek))` on the ring over the sealed store,
+  which holds the sealed store's own keys as they are given and opens every other row, wraps every key and the naming
+  key under the new one, each in a write of its own, leaving a key that already unwraps under it; a rotation that
+  stopped part of the way is finished by running it again with the same two keys. A ring over the bare file reads
+  the host's keys as records it cannot unwrap and stops at the first. Run it with every other process of the store
+  stopped and no re-seal pass running, then give each process the new key. A backup wrapped under the old key needs
+  the old key to restore (section 8).
+- **Retiring a key.** A machine retires the keys it generated (`sce-host-key-retire`); the operator retires the
+  issuing key or an audit key with `Keyring::retire(id)` on the host's ring, after which it makes nothing new and
+  still verifies and opens what it made (`key_retired`, docs/SCE_HOST_FEATURES.md sections 13 to 15). No call destroys
+  a key: destroying one is the operator's, once nothing in the store or its backups was made under it.
+
 ## 4. What a restart does
 
 A session is kept as its last durable checkpoint: its machine's saved state and its endpoint's state (the duplicate
@@ -402,9 +523,11 @@ leaves before the checkpoint that holds it is durable. So, when the process stop
   refuses its previous life's writes (`SessionStore::acquire`). A process under another name waits for the old leases
   to run out, `lease_ttl_ms` after their last renewal; until then a request for such a key is answered
   `RpcStatus::Unavailable` (section 6).
-- **In-memory host state is gone.** Pins and tokens kept by `MemoryCredentials` (section 5), the reference hosts'
-  key-value stores and their first results of a put-if, and the COSE keys a host derived (`docs/SCE_HOST_FEATURES.md`
-  section 9): a `derived:<n>` id a restored session holds names no key, or another one.
+- **What the host kept in memory is gone.** A host given no store keeps each of its own in memory: pins and tokens in
+  `MemoryCredentials` (section 5), the key-value store of `ReferenceHost::new` with its first results of a put-if,
+  the key ring of `Keyring::in_memory` (section 3.2), so a `generated:` or `derived:` id a restored session holds
+  names no key, and the audit log. The COSE keys the host is configured with (`ReferenceHost::set_cose_keys`) are the
+  program's to give again. A host given the sealed store of section 3 for each keeps all of it.
 
 ### 4.1 Stopping in order
 
@@ -441,6 +564,42 @@ for (key, reason) in &report.not_saved {
 
 `Pool::stop` blocks on the store, so it runs on a thread of its own (here tokio's blocking pool), not on a runtime's
 worker. A process killed before it ends, or a session the report names as not saved, restores as section 4 says.
+
+A host that keeps an audit log signs the head of every stream it keeps once the pool has stopped,
+`ReferenceHost::audit_stop(now_ms)`, so that a cut of the rows written after the last periodic checkpoint is seen by
+a reader (docs/SCE_HOST_FEATURES.md section 15). From the moment the server's stop begins,
+`server.health().and(pool.health()).ready()` is false, so a load balancer that reads it sends the process nothing
+more (section 10.4).
+
+### 4.2 Upgrading in place
+
+ADR 0109, D11; SCE Accepted Subset §2.15, "A declared migration". A server is upgraded by stopping it in order
+(section 4.1) and starting the next build on the same store; each session is migrated when it is loaded, at its next
+request or due, and saved under its new shape at its next checkpoint.
+
+- **What decides whether a session restores.** A saved state names the shape of the document that saved it: its
+  states with their kinds and parents, its histories, invocations and variables with their types and bounds. A
+  change of a guard, an action, an initial value or a comment leaves the shape, and a session restores as it is. A
+  state, history, invocation or variable renamed, re-typed, re-parented or re-bounded changes it, and a session saved
+  before the change restores only through a migration the new document declares.
+- **What a release commits.** `sce-codegen shape <document> -o shapes/<version>.shape` writes the shape of each
+  version released; the next version declares each step from one released shape to the next, `<sce:migration
+  from="shapes/2.shape" to="shapes/3.shape">` with its renames, mapped states, dropped and added variables,
+  conversions and dropped invocations. The build refuses a chain that is broken, a step that is not total, and a type
+  carried with no widening or conversion (`validation/migration-*`), so a build that generates is one that migrates
+  every state a released version saved.
+- **What is refused.** A session whose saved shape no step starts from is not restored: each request for its key is
+  `PoolError::NotBuilt` and answered `RpcStatus::InternalError` (section 9), and its checkpoint is left as it is for
+  a build that reads it. The old build refuses a state the new one saved, by its shape, so the old and the new build
+  never serve one store at once, and a rollback after a session was saved under the new shape needs a migration
+  back, which the old build does not have. A change of the store's layout (section 3) is a second reason a rollback
+  is refused.
+- **What is not migrated.** The Mesh endpoint's sections of a checkpoint, keyed by the deployment's machine names,
+  which a migration does not rename: keep the names of deploy.yaml's machines across an upgrade. A state of another
+  product-line configuration (ADR 0057 §7). A deployment value (section 2.4), which no checkpoint holds.
+- **A moved bound is a change of shape.** A build that moves a named bound (`--limit`, section 11) moves the bound of
+  every variable that names it: raising one is a widening, which a step from the old shape carries with no element;
+  lowering one is refused unless the step drops or converts the variable.
 
 ## 5. Authentication and TLS on the server
 
@@ -508,8 +667,10 @@ Open question 2). The deployment this supports is one active process with a stan
   standby on another machine needs a `SessionStore` on a medium both reach; SCE does not provide one. The contract's
   conformance kit, `sce_rust_session_store::conformance`, is what such a store is held to.
 - **Every exchange of a client reaches the process that holds its session.** A mailbox is in the memory of the process
-  whose server keeps it, and routing a key to the process that holds its lease is not built (ADR 0107, Open question
-  2). Send all traffic to the active process, and move it to the standby only once the active one is gone.
+  whose server keeps it (under `receipt: durable`, a cache of the client's outbox in the store, whose held exchanges
+  and reservations are still that process's), and routing a key to the process that holds its lease is not built
+  (ADR 0107, Open question 2; ADR 0109, D18, which builds it only on measured need). Send all traffic to the active
+  process, and move it to the standby only once the active one is gone.
 - **What the standby does meanwhile.** A request that reaches it for a key the active process leases is answered
   `RpcStatus::Unavailable`, which tells the client to try again, and the key is left alone until that lease runs out
   (`PoolError::LeaseHeld`). A session that comes due is left to the process that leases it (`Pool::due`).
@@ -571,15 +732,16 @@ inspecting proxy is a machine that does not trust the proxy's authority, and `Pr
 
 | What | Why | How |
 |---|---|---|
-| The session store: `<file>`, with its `-wal` and `-shm` | every session, its replies and its timers, and every durable client's outbox | a consistent copy while the server runs, by SQLite's own backup (the `sqlite3` shell's `.backup`, or `VACUUM INTO` on SQLite 3.27 or later); a plain file copy only while no process has the store open. The store has no backup command of its own. |
+| The session store: `<file>`, with its `-wal` and `-shm` | every session, its replies and its timers; every durable client's outbox; the credentials; the key ring's keys, wrapped; the key-value feature's values with their first results; the audit log | a consistent copy while the server runs, by SQLite's own backup (the `sqlite3` shell's `.backup`, or `VACUUM INTO` on SQLite 3.27 or later); a plain file copy only while no process has the store open. The store has no backup command of its own. |
 | The server's TLS key and certificate chain | the clients' trust in the server | as the program keeps them |
 | The client authorities of `mtls`, and the material a `BearerCheck` of the program's own verifies with | who may claim a name | as the program keeps them; the pins and tokens of the credential store are in the session store's file, backed up with it |
-| The key-encryption key of the key ring | the sealing keys and the index key of a sealed store (section 3), the issuing key of tokens, and the keys a host generated and derived: without it a copy of the store opens nothing, and with it beside the copy the copy is in the clear | apart from the store and from its backups, which hold every key it protects wrapped and none of them in the clear: in the program's secret store or a key management service, with a copy kept where a loss of the server's machine does not reach it |
+| The key-encryption key of the key ring (section 3.2) | the sealing keys and the index key of a sealed store (section 3), the issuing key of tokens, the audit keys, and the keys a host generated and derived: without it a copy of the store opens nothing, and with it beside the copy the copy is in the clear | apart from the store and from its backups, which hold every key it protects wrapped and none of them in the clear: in the program's secret store or a key management service, with a copy kept where a loss of the server's machine does not reach it |
 | The COSE keys the host is configured with: signing seeds, sealing keys, trust sets (`docs/SCE_HOST_FEATURES.md` section 10) | what the machine signs and opens | as the program keeps them; never in the store, since a checkpoint holds no key (SCE_MESH.md section 10.11) |
 | deploy.yaml, the documents, and the build of the program | what the store's checkpoints are a state of | with the release |
 
-Nothing else of a server outlives its process: its mailboxes under `receipt: transport`, `MemoryCredentials`, and the
-keys a host keeps in a key ring in memory are in memory (section 4).
+Nothing else of a server outlives its process: its mailboxes under `receipt: transport`, and whatever its host keeps
+in a store of its own in memory (`MemoryCredentials`, the key-value store of `ReferenceHost::new`, a key ring of
+`Keyring::in_memory`, the audit log a host was given no store for) are in memory (section 4).
 
 A store sealed at rest (section 3) keeps its sealing keys and its index key in its own `keys` table, so a backup of
 the file carries the keys its rows were sealed under, wrapped, whatever was rotated since: what restores it is that
@@ -591,7 +753,9 @@ Restoring a copy of the store moves every session back to the moment of the copy
 store first, and start them after: a process left running holds leases and fences from the newer store, and the copy's
 counter of versions and fences is behind the numbers it handed out since. After the restore a session restores from a
 checkpoint that is not clean and raises `restored`, and a request it answered after the copy is no duplicate any more:
-sent again, it is handled again.
+sent again, it is handled again. The rest of the file moves back with it: a token issued or a key generated after the
+copy is gone, a revocation made after it is undone, a durable client's outbox holds what it held at the copy, and
+the audit log ends at the copy's last entry.
 
 ## 9. A stuck session or an idle one
 
@@ -754,3 +918,38 @@ for the server the pool's store when it answers durable clients and the pin stor
 
 `health` reads the store, and blocks for as long as the store does: a program on tokio calls it on the blocking pool
 (`tokio::task::spawn_blocking`), as it calls `Pool::stop`.
+
+## 11. The bounds of signing and sealing
+
+ADR 0109, D17; docs/SCE_HOST_FEATURES.md sections 8 and 10 to 12. What a machine signs, seals and tags, and what it
+draws, is bounded by named bounds of the library's records, each a number of bytes:
+
+| Bound | What it bounds | Library's number |
+|---|---|---|
+| `cose_payload` | what `sce-host-cose-sign1` signs and `sce-host-cose-verify1` answers | 4096 |
+| `cose_signed` | the object a signing makes and a verification reads | 4352 |
+| `cose_plaintext` | what `sce-host-cose-encrypt0` seals and `sce-host-cose-decrypt0` answers | 4352 |
+| `cose_sealed` | the object a seal makes and an opening reads | 4480 |
+| `mac_message` | the message `sce-host-mac` tags and `sce-host-mac-verify` verifies | 4096 |
+| `random_bytes` | the most bytes `sce-host-random-bytes` draws | 256 |
+
+- **A build moves them.** `sce-codegen --limit cose_payload=8192 --limit cose_signed=8448 generate ...` moves each
+  bound in the records and in every variable of the machine that names it, and a build given no limit keeps the
+  library's numbers. Two relations hold, which the build checks on every `<invoke>` of an operation that reads both:
+  `cose_signed` is at least `cose_payload` and 256, and `cose_sealed` at least `cose_plaintext` and 128
+  (`sce_build::forge::standard_host::BOUND_RELATIONS`); a build that breaks one is refused as
+  `codegen/standard-host-bound-relation`, naming the two bounds, their numbers and the `--limit` that repairs it.
+- **The host is given the build's numbers.** The machine declares each bound it names as a constant of the number
+  its build resolved (`<Machine>Limits::COSE_PAYLOAD` and its neighbours). The program gives the host those numbers,
+  `ReferenceHost::set_named_bounds(NamedBounds { cose_payload: <Machine>Limits::COSE_PAYLOAD as usize, ..,
+  ..NamedBounds::LIBRARY })` (C++: `CoseFeature(crypto, bounds)` with a `NamedBounds` of `host/CoseHost.h`); a host
+  given none judges by `NamedBounds::LIBRARY`. A host given numbers below its machine's refuses requests the machine
+  may make, and one given numbers above them may answer with an object the machine's record cannot hold, so the two
+  are given one build's numbers.
+- **Moving a bound of a running server** changes the shape of every machine that names it in a variable: a raised
+  bound is a widening the next version's migration step carries with no element, and a lowered one is no widening,
+  so the build refuses the step (`validation/migration-type-change`) unless it drops or converts the variable
+  (section 4.2). The bounds of the `https` binding (`max_body_bytes`, `max_response_bytes`, section 2.1)
+  are apart from these and are moved in deploy.yaml.
+- **Not this mechanism.** A payload of megabytes, a detached payload over a stored blob, is a record of its own (ADR
+  0109, Open question 7).
