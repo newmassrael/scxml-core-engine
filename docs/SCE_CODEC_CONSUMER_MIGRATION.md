@@ -3480,3 +3480,26 @@ implements or wraps an audit store, or wraps a session store that keeps outboxes
 - `Sealed::reseal_outboxes()` and `Sealed::reseal_audit()` join the other passes of a rotation
   (`docs/SCE_SERVER_DEPLOY.md` section 3, "Rotation"); a retired sealing key may be destroyed once every pass
   answers no row left and none refused.
+
+## A CBOR decode reads a record of an earlier revision of its schema (ADR 0101 §3.6, ADR 0044)
+
+Landing: the branch `cbor-decode-revisions`. Every generated CBOR codec that reaches a record whose event schema
+declares a field with `sce:since` is regenerated; a codec whose records all have one revision generates the bytes it
+generated before.
+
+- What a decode accepts widens. A record's map that lacks the key of a field a later revision added used to be
+  refused as `CborRequiredKeyMissing`; it now reads that field's `sce:default`, or the empty list for a list.
+  A consumer that relied on the refusal to detect a peer built at an older revision of the schema no longer gets
+  one: the decoded value holds the default, as the JSON lift's does. A map that lacks a field of the first
+  revision is still refused.
+- An optional field whose key is missing reads absent, as it did, even where it declares `sce:default`: a
+  codec spells absence by leaving the key out, so it cannot tell an older writer from one whose field is absent.
+  A consumer that wants the default for such a field reads it from the schema; the JSON lift, whose wire spells
+  absence `null`, reads the default there.
+- The encode is unchanged: it writes every field of the value, a defaulted one under its key, so a map read from
+  an earlier revision is written again in the later revision's form.
+- Rust, `sce_build::forge::value_type::ScopedRecord` has a new public member, `added` (the fields a later
+  revision added, by id, each an `AddedField { since, default }`); a literal that builds one names it, as
+  `added: Default::default()` where the record has one revision. `TypeEnv` has a provided method,
+  `record_added`, which an implementation that reads records with revisions answers. `encode_plan::CborField`
+  has a new public member, `default`, the deterministic CBOR of what a missing key reads.

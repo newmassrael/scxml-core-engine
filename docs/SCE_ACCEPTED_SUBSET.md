@@ -10481,6 +10481,14 @@ to one answer.
   every other producer fill the data wire, which the same lift reads. The
   defaults apply to each.
 - A host-run invocation's result whose schema grew is lifted the same way.
+- A record a CBOR codec holds is decoded the same way (SCE_FORGE.md section
+  4.6.1, "A record whose schema grew"; docs/adr/0101, section 3.6): a map a
+  build of an earlier revision wrote lacks the keys of the fields a later
+  revision added, and each reads its default, or the empty list for a list. An
+  optional field whose key is missing reads absent there even where it
+  declares a default, because the codec spells absence by leaving the key out,
+  where the lift's wire spells it `null`. A map that lacks a field of the
+  first revision is refused (`CborRequiredKeyMissing`).
 - A `record:<alias>` variable is not a delivery. A record is built whole by its
   `<sce:set>`s or from a payload already lifted, so no running machine reads a
   default for it. A SAVED record does (§2.15, "A record schema that grew"): the

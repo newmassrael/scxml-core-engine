@@ -1331,6 +1331,47 @@ key given twice is `CborDuplicateKey`; a required key that is absent is
 `CborRequiredKeyMissing`; a value its width cannot hold is `CborOutOfRange`;
 and an exact-length byte string of another length is `CborWrongLength`.
 
+**A record whose schema grew.** A record a CBOR codec holds is read as every
+reader of a delivery reads an event schema that grew (docs/adr/0044;
+docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows"): a map a build of
+an earlier revision wrote lacks the keys of the fields a later revision
+added, and a decode built at the later revision reads it. Where a record's map
+lacks a field's key:
+
+- a field a later revision added (`sce:since`) that declares `sce:default`
+  reads its default, and a list a later revision added, which declares none,
+  reads the empty list, as the lift reads a delivery that lacks the field;
+- an optional field reads absent, at every revision. A codec spells absence by
+  leaving the key out (docs/adr/0101, sections 2.1 and 2.5), so a writer of the
+  later revision whose field is absent and a writer of an earlier revision
+  that never had the field write the same map, and a default the field
+  declares is not read here: reading it would read the first writer's absence
+  as a value. The lift, whose wire spells absence `null`, reads that default
+  where a delivery lacks the key; this is the one place the two readers part;
+- a field of the first revision that is not optional is refused as
+  `CborRequiredKeyMissing`: every writer of every revision writes it.
+
+The generator spells each default once, as its deterministic CBOR, in the
+codec's plan (`CborField::default`), and every backend's decode reads those
+bytes with the reader of the field's own value, so a default is held to every
+rule a written value is held to and there is no second reader of it, as the
+lift reads its defaults with the reader of a delivery. Every backend that
+lowers the record applies the rule: Rust and C++ for a record at any depth,
+and Go, Kotlin, Python, C11 and Swift for a record a list holds (docs/adr/0085,
+Landing order step 3a). The encode writes every field of the reader's
+revision, a defaulted field under its key. None of this departs from the one
+deterministic form of docs/adr/0101: that form is what an encode writes, and
+a decode is variation-tolerant within the profile (section 3); the map of a
+record of an earlier revision is that revision's deterministic form, valid
+and well-formed, and what the decode reads from it is a value of its own
+revision. The corpus's `codec_cbor_composed` holds Rust and C++ to the rule:
+a variant of a record of its first revision read with its defaults and
+written again with each default under its key, and a reject of one that lacks
+its field of the first revision. The codec's own map has no revisions:
+`sce:revision`, `sce:since` and `sce:default` are read on an event schema
+only, so an entry a codec gains after its first peers were built is an
+`optional<T>` entry, which a map of an older writer leaves absent.
+
 The runtimes of Rust, Go, Swift and C11 hold the items the rest of
 docs/adr/0101 builds on, each with its tests (`cbor_runtime_test` on C11,
 the module's tests on Rust, `cbor_test.go`, `CborTests.swift`): a signed
