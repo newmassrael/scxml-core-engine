@@ -404,8 +404,8 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
    on the Interpreter, Rust and C11. §2.15's bounded-collection paragraph is rewritten (D9). The Rust and C11
    machines of steps 5 and 6 hold a map's record, enum and union entries in their units' types (D6, item 4), and
    the six scenarios of step 4 still pass unchanged on both.
-7b. The numerical reference (`tests/forge/conformance/numerical_reference.json`) holds step 7's algorithms on every
-   lane that lowers an algorithm's map. Its cases state a map argument in its saved form and, for each `inout`
+7b. (Landed 2026-11-20.) The numerical reference (`tests/forge/conformance/numerical_reference.json`) holds step 7's
+   algorithms on every lane that lowers an algorithm's map. Its cases state a map argument in its saved form and, for each `inout`
    parameter, the map the call leaves; a union output is stated as a union value; a lane that lowers no algorithm
    map skips such a case by name. The cases come from the same model the reference's other cases come from
    (`gen_cases.py`), and the Interpreter's algorithm runner hands an `inout` slot its holder. Moved out of step 7 so
