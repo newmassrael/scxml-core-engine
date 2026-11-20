@@ -19,6 +19,13 @@
 //! link was interrupted (an exchange failed at the transport, while the server keeps the mailbox
 //! and so every reply in it), the server started again without the mailbox (a response of a new
 //! incarnation), and the server was lost (the client stopped, and takes nothing in any more).
+//!
+//! Message signatures (SCE_MESH.md section 22.9) are part of these semantics, so every adapter
+//! gets them: under `verify:` ([`ClientSettings::verify`]) a `200` is taken only when a key of
+//! the trust set signed it for the request it answers, and one that does not verify is taken
+//! nothing of, acknowledges nothing, hands back what its request carried as not sent, and is told
+//! once per edge ([`LinkEvent::Unauthenticated`], section 16.7 row 19); under the `key`
+//! authenticator ([`Credential::Key`]) every request is signed by the client's key.
 
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
@@ -26,8 +33,15 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use sce_rust_crypto::cose::TrustedKey;
+use sce_rust_crypto::random::SystemRandom;
+
+use super::signature::{
+    content_digest, draw_nonce, field_value, normalize_target_uri, verify_response, Answered,
+    CONTENT_DIGEST_HEADER, NONCE_HEADER,
+};
 use super::{
     is_epoch, is_path_segment, retry_after, split_sequence, Credential, HttpsFailure, HttpsRequest,
     HttpsResponse, HttpsTransport, LinkEvent, ACK_HEADER, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER,
@@ -58,6 +72,10 @@ pub struct ClientSettings {
     pub max_body_bytes: usize,
     /// The waits between polls after a failed one.
     pub backoff: Backoff,
+    /// deploy.yaml's `verify:`: the keys of the trust set it names, by id, when the binding
+    /// verifies what its server sends (SCE_MESH.md section 22.9). `None` takes a `200` as it
+    /// comes.
+    pub verify: Option<Vec<TrustedKey>>,
 }
 
 impl ClientSettings {
@@ -77,6 +95,7 @@ impl ClientSettings {
             exchange_timeout: Duration::from_secs(30),
             max_body_bytes: super::DEFAULT_MAX_BODY_BYTES as usize,
             backoff: Backoff::default(),
+            verify: None,
         }
     }
 
@@ -123,6 +142,8 @@ struct Shared {
     settings: ClientSettings,
     /// The URL every exchange posts to.
     url: String,
+    /// The same URL as a signature covers it (`@target-uri`, SCE_MESH.md section 22.9).
+    target_uri: String,
     /// The `Authorization` header, when the credential is one.
     authorization: Option<String>,
     port: Arc<dyn HttpsTransport>,
@@ -141,9 +162,20 @@ struct State {
     mark: Mark,
     ready: bool,
     stopped: bool,
+    /// Whether the last `200` did not verify under `verify:`, so that a run of them is told once
+    /// (SCE_MESH.md section 16.7 row 19, once per edge).
+    unauthenticated: bool,
     /// Where the host is told what happened. Called with the state held, so that what the two
     /// threads observe reaches the host in the order it was observed.
     events: EventSink,
+}
+
+/// What a request was sent with that its response is read against: where its acknowledgement
+/// stood, and, when the client verifies, what of it the response's signature covers.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Sent {
+    mark: Mark,
+    answered: Option<Answered>,
 }
 
 /// Where an acknowledgement stands (§mesh-22.3): the highest mailbox number handed to the core,
@@ -161,7 +193,14 @@ impl Shared {
         self.state.lock().expect(HELD)
     }
 
-    fn request(&self, body: Vec<u8>, mark: &Mark, hold: Duration) -> HttpsRequest {
+    /// The request that carries `body`, acknowledging `mark` and asking for `hold`, and what it
+    /// was sent with. Refused as [`HttpsFailure::Other`] when a nonce it needs could not be drawn.
+    fn request(
+        &self,
+        body: Vec<u8>,
+        mark: &Mark,
+        hold: Duration,
+    ) -> Result<(HttpsRequest, Sent), HttpsFailure> {
         // §mesh-22.1: what every request carries besides its body, the media type of the
         // §mesh-22.2 framing, the acknowledgement and the incarnation it counts in (none before
         // the first `200`), the hold, and the credential.
@@ -176,12 +215,65 @@ impl Shared {
         if let Some(authorization) = &self.authorization {
             headers.push(("Authorization".to_string(), authorization.clone()));
         }
-        HttpsRequest {
+        // SCE_MESH.md section 22.9: a client that verifies or signs draws a nonce for each
+        // exchange, which a response's signature covers so that it answers this request and no
+        // other; a client of the `key` authenticator signs the request over its body's digest.
+        let signer = self.settings.credential.request_signer();
+        let mut answered = None;
+        if self.settings.verify.is_some() || signer.is_some() {
+            let nonce = draw_nonce(&mut SystemRandom).ok_or_else(|| {
+                HttpsFailure::Other("the random source could not be read".to_string())
+            })?;
+            headers.push((NONCE_HEADER.to_string(), nonce.clone()));
+            if self.settings.verify.is_some() {
+                answered = Some(Answered {
+                    target_uri: self.target_uri.clone(),
+                    ack: mark.ack.to_string(),
+                    nonce,
+                });
+            }
+        }
+        if let Some(signer) = signer {
+            headers.push((CONTENT_DIGEST_HEADER.to_string(), content_digest(&body)));
+            let created = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|since| i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
+                .unwrap_or(0);
+            let signed = signer
+                .sign(&self.target_uri, &headers, created)
+                .ok_or_else(|| {
+                    HttpsFailure::Other(
+                        "the request lacks a field its signature covers".to_string(),
+                    )
+                })?;
+            headers.extend(signed);
+        }
+        let request = HttpsRequest {
             url: self.url.clone(),
             headers,
             body,
             timeout: hold.saturating_add(self.settings.exchange_timeout),
-        }
+        };
+        Ok((
+            request,
+            Sent {
+                mark: mark.clone(),
+                answered,
+            },
+        ))
+    }
+
+    /// Why `response`, a `200`, is not one the client may take: `None` when the binding does not
+    /// verify or the response verifies (SCE_MESH.md section 22.9).
+    fn unverified(&self, sent: &Sent, response: &HttpsResponse) -> Option<String> {
+        let trusted = self.settings.verify.as_ref()?;
+        let Some(answered) = &sent.answered else {
+            return Some("the request was sent without a nonce".to_string());
+        };
+        let field = |name: &str| field_value(&response.headers, name);
+        verify_response(trusted, response.status, &field, &response.body, answered)
+            .err()
+            .map(|refusal| refusal.to_string())
     }
 }
 
@@ -194,17 +286,22 @@ enum Then {
     Wait(Duration),
 }
 
-/// Take what an exchange returned. `carried` are the envelopes the request carried and `sent` the
-/// acknowledgement it sent. Returns what the thread should do next; a response the server shed
-/// puts `carried` back at the front of the outbox, to go again after the wait.
+/// Take what an exchange returned. `carried` are the envelopes the request carried and `sent` what
+/// it was sent with. Returns what the thread should do next; a response the server shed puts
+/// `carried` back at the front of the outbox, to go again after the wait.
 fn take_outcome(
     shared: &Shared,
     carried: Vec<Vec<u8>>,
-    sent: &Mark,
+    sent: &Sent,
     outcome: Result<HttpsResponse, HttpsFailure>,
     failures: &mut u32,
 ) -> Then {
     let server = shared.settings.server.clone();
+    // Read before the state is held: a verification is the response's alone.
+    let unverified = match &outcome {
+        Ok(response) if response.status == 200 => shared.unverified(sent, response),
+        _ => None,
+    };
     let mut state = shared.lock();
     if state.stopped {
         // The client stopped while the exchange was in flight: it has told the host its server is
@@ -215,13 +312,32 @@ fn take_outcome(
         return Then::Continue;
     }
     match outcome {
+        // SCE_MESH.md section 22.9: a `200` that did not verify proves nothing of the server. The
+        // client takes nothing of it and acknowledges nothing, so what the mailbox holds stays
+        // there for a response that verifies; what the request carried is handed back as not
+        // sent, since nothing says the server took it; readiness stands as it was; and the host
+        // is told once per edge (section 16.7 row 19). The client tries again on its backoff.
+        Ok(_) if unverified.is_some() => {
+            for envelope in carried {
+                (state.events)(LinkEvent::Unsent(server.clone(), envelope));
+            }
+            if !state.unauthenticated {
+                state.unauthenticated = true;
+                let why = unverified.unwrap_or_default();
+                (state.events)(LinkEvent::Unauthenticated(server, why));
+            }
+            let wait = shared.settings.backoff.delay(*failures);
+            *failures = failures.saturating_add(1);
+            Then::Wait(wait)
+        }
         Ok(response) if response.status == 200 => {
             *failures = 0;
+            state.unauthenticated = false;
             if !state.ready {
                 state.ready = true;
                 (state.events)(LinkEvent::Ready(server.clone()));
             }
-            take_mailbox(&mut state, &server, sent, &response);
+            take_mailbox(&mut state, &server, &sent.mark, &response);
             Then::Continue
         }
         // §mesh-22.4: load shed is neither a failure nor a lost server. What the request carried
@@ -389,9 +505,13 @@ impl HttpsClient {
         // §mesh-22.1: every exchange posts to `<base>/sce-mesh/1/<client>`; the path is the only
         // place the client's machine name travels.
         let url = alloc::format!("{base}{PATH_PREFIX}{}", settings.own);
+        let Some(target_uri) = normalize_target_uri(&url) else {
+            return Err(ClientError::BadBase(settings.base));
+        };
         let shared = Arc::new(Shared {
             authorization: settings.credential.authorization(),
             url,
+            target_uri,
             settings,
             port,
             state: Mutex::new(State {
@@ -399,6 +519,7 @@ impl HttpsClient {
                 mark: Mark::default(),
                 ready: false,
                 stopped: false,
+                unauthenticated: false,
                 events: Box::new(events),
             }),
             wake: Condvar::new(),
@@ -526,14 +647,33 @@ fn poll(shared: &Shared) {
             }
             state.mark.clone()
         };
-        let outcome = shared
-            .port
-            .exchange(shared.request(Vec::new(), &mark, shared.settings.hold));
-        if let Then::Wait(wait) = take_outcome(shared, Vec::new(), &mark, outcome, &mut failures) {
+        let (outcome, sent) = exchange(shared, Vec::new(), &mark, shared.settings.hold);
+        if let Then::Wait(wait) = take_outcome(shared, Vec::new(), &sent, outcome, &mut failures) {
             if pause(shared, wait) {
                 return;
             }
         }
+    }
+}
+
+/// Make one exchange carrying `body`, acknowledging `mark` and asking for `hold`: what the port
+/// answered, and what the request was sent with. A request that could not be made is answered as
+/// a failure at the transport, and was sent with nothing.
+fn exchange(
+    shared: &Shared,
+    body: Vec<u8>,
+    mark: &Mark,
+    hold: Duration,
+) -> (Result<HttpsResponse, HttpsFailure>, Sent) {
+    match shared.request(body, mark, hold) {
+        Ok((request, sent)) => (shared.port.exchange(request), sent),
+        Err(failure) => (
+            Err(failure),
+            Sent {
+                mark: mark.clone(),
+                answered: None,
+            },
+        ),
     }
 }
 
@@ -565,10 +705,8 @@ fn send(shared: &Shared) {
             (carried, state.mark.clone())
         };
         let body = super::join_sequence(carried.iter().map(Vec::as_slice));
-        let outcome = shared
-            .port
-            .exchange(shared.request(body, &mark, Duration::ZERO));
-        if let Then::Wait(wait) = take_outcome(shared, carried, &mark, outcome, &mut failures) {
+        let (outcome, sent) = exchange(shared, body, &mark, Duration::ZERO);
+        if let Then::Wait(wait) = take_outcome(shared, carried, &sent, outcome, &mut failures) {
             if pause(shared, wait) {
                 return;
             }
@@ -690,6 +828,7 @@ mod tests {
                 mark: Mark::default(),
                 ready: true,
                 stopped: false,
+                unauthenticated: false,
                 events: Box::new(move |event| {
                     let _ = tx.send(event);
                 }),
@@ -1136,5 +1275,177 @@ mod tests {
             "nothing to tell the host"
         );
         client.stop();
+    }
+
+    use super::super::signature::{
+        digest_matches, RequestSignature, RequestSigner, ResponseSigner,
+    };
+    use sce_rust_crypto::ed25519::KeyPair;
+
+    /// A port that answers every exchange as a server under `sign:` does: mailbox number 1,
+    /// `[0x05]`, in [`EPOCH`] until a request acknowledges it, then nothing, each response signed
+    /// for the request it answers. The first `tampered` responses that carry the envelope have
+    /// `Sce-Mesh-First` rewritten after signing, as an intermediary that alters the exchange
+    /// would. Records what it was asked.
+    struct SigningPort {
+        signer: ResponseSigner,
+        tampered: Mutex<usize>,
+        asked: Mutex<Vec<HttpsRequest>>,
+    }
+
+    impl HttpsTransport for SigningPort {
+        fn exchange(&self, request: HttpsRequest) -> Result<HttpsResponse, HttpsFailure> {
+            self.asked.lock().unwrap().push(request.clone());
+            let header = |name: &str| field_value(&request.headers, name).unwrap_or_default();
+            let acknowledged = header(ACK_HEADER).parse::<u64>().unwrap_or(0) >= 1;
+            let body = if acknowledged {
+                // An empty mailbox holds a poll a little, so a test's loop does not spin.
+                std::thread::sleep(Duration::from_millis(20));
+                Vec::new()
+            } else {
+                alloc::vec![0x05]
+            };
+            let first = (!body.is_empty()).then_some("1");
+            let answered = Answered {
+                target_uri: normalize_target_uri(&request.url).expect("a URL the client posts to"),
+                ack: header(ACK_HEADER),
+                nonce: header(NONCE_HEADER),
+            };
+            let digest = content_digest(&body);
+            let mut headers = alloc::vec![
+                (EPOCH_HEADER.to_string(), EPOCH.to_string()),
+                (CONTENT_DIGEST_HEADER.to_string(), digest.clone()),
+            ];
+            if let Some(first) = first {
+                headers.push((FIRST_HEADER.to_string(), first.to_string()));
+            }
+            headers.extend(self.signer.sign(&digest, EPOCH, first, &answered));
+            let mut tampered = self.tampered.lock().unwrap();
+            if first.is_some() && *tampered > 0 {
+                *tampered -= 1;
+                for (name, value) in headers.iter_mut() {
+                    if name == FIRST_HEADER {
+                        *value = "2".to_string();
+                    }
+                }
+            }
+            Ok(HttpsResponse {
+                status: 200,
+                headers,
+                body,
+            })
+        }
+    }
+
+    /// SCE_MESH.md section 22.9: under `verify:`, two responses whose `Sce-Mesh-First` an
+    /// intermediary rewrote are taken nothing of: no envelope reaches the core, the server is not
+    /// made ready, every request meanwhile acknowledges nothing, and the host is told once (row
+    /// 19). The next response, which verifies, is taken as it is. Red if the client takes an
+    /// unverified `200` (the envelope would arrive numbered 2 and be acknowledged), or tells each
+    /// one.
+    #[test]
+    fn a_response_that_does_not_verify_is_taken_nothing_of_and_told_once() {
+        let key = KeyPair::from_seed(&[3u8; 32]);
+        let port = Arc::new(SigningPort {
+            signer: ResponseSigner::new("server-2026", key.clone()),
+            tampered: Mutex::new(2),
+            asked: Mutex::new(Vec::new()),
+        });
+        let verifying = ClientSettings {
+            verify: Some(alloc::vec![TrustedKey {
+                id: "server-2026".to_string(),
+                public_key: key.public_key(),
+            }]),
+            ..settings()
+        };
+        let (tx, rx) = mpsc::channel();
+        let client = HttpsClient::start(verifying, port.clone(), move |event| {
+            let _ = tx.send(event);
+        })
+        .unwrap();
+        assert!(
+            matches!(next(&rx), LinkEvent::Unauthenticated(peer, _) if peer == "cloud"),
+            "told once, before anything is taken"
+        );
+        assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
+        assert_eq!(
+            next(&rx),
+            LinkEvent::Received("cloud".to_string(), alloc::vec![0x05])
+        );
+        assert!(
+            rx.recv_timeout(Duration::from_millis(100)).is_err(),
+            "the second altered response is not told again, and the envelope arrives once"
+        );
+        client.stop();
+
+        let asked = port.asked.lock().unwrap();
+        assert!(asked.len() >= 4, "{} exchanges", asked.len());
+        for request in &asked[..3] {
+            assert_eq!(
+                header_of(request, ACK_HEADER).as_deref(),
+                Some("0"),
+                "nothing is acknowledged before a response verified"
+            );
+        }
+        assert_eq!(header_of(&asked[3], ACK_HEADER).as_deref(), Some("1"));
+        let nonces: Vec<String> = asked
+            .iter()
+            .map(|request| header_of(request, NONCE_HEADER).expect("a nonce on every request"))
+            .collect();
+        assert_ne!(nonces[0], nonces[1], "a nonce is drawn for each exchange");
+    }
+
+    /// SCE_MESH.md section 22.9: a client of the `key` authenticator signs every request, a poll
+    /// and a send alike, over its body's digest, sends no `Authorization`, and offers its public
+    /// key. Red if a request leaves unsigned or its signature misses a covered field.
+    #[test]
+    fn a_client_of_the_key_authenticator_signs_every_request() {
+        let key = KeyPair::from_seed(&[6u8; 32]);
+        let port = Arc::new(Scripted::default());
+        let signing = ClientSettings {
+            credential: Credential::Key(RequestSigner::new(key.clone())),
+            ..settings()
+        };
+        let (tx, rx) = mpsc::channel();
+        let client = HttpsClient::start(signing, port.clone(), move |event| {
+            let _ = tx.send(event);
+        })
+        .unwrap();
+        assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
+        client.transport().transmit("cloud", &[0x09]).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !port
+            .asked
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|request| !request.body.is_empty())
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        client.stop();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|since| i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
+            .unwrap_or(0);
+        let asked = port.asked.lock().unwrap();
+        assert!(asked.iter().any(|request| !request.body.is_empty()));
+        for request in asked.iter() {
+            let field = |name: &str| field_value(&request.headers, name);
+            assert_eq!(field("Authorization"), None);
+            assert!(digest_matches(
+                &field(CONTENT_DIGEST_HEADER).expect("a digest"),
+                &request.body
+            ));
+            let target = normalize_target_uri(&request.url).expect("a target");
+            let signature = RequestSignature::read(&field).expect("a signature of the profile");
+            assert_eq!(
+                signature.verify(&key.public_key(), &target, &field, now, 300),
+                Ok(()),
+                "{request:?}"
+            );
+        }
     }
 }

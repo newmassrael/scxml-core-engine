@@ -196,6 +196,11 @@ pub enum Credential {
     Install([u8; 32]),
     /// A TLS client certificate, which the adapter presents; no header is sent.
     Mtls,
+    /// An Ed25519 key pair the client's host generated once and keeps (the `key` authenticator,
+    /// SCE_MESH.md sections 22.5 and 22.9): every request is signed by it, and the server pins the
+    /// name to its public key at the first exchange it answers `200`. No `Authorization` is sent,
+    /// so nothing an intermediary reads lets it act as the client.
+    Key(signature::RequestSigner),
 }
 
 impl fmt::Debug for Credential {
@@ -205,12 +210,14 @@ impl fmt::Debug for Credential {
             Credential::Bearer(_) => f.write_str("Bearer(..)"),
             Credential::Install(_) => f.write_str("Install(..)"),
             Credential::Mtls => f.write_str("Mtls"),
+            Credential::Key(_) => f.write_str("Key(..)"),
         }
     }
 }
 
 impl Credential {
-    /// The `Authorization` header's value, or `None` for a certificate.
+    /// The `Authorization` header's value, or `None` for a certificate or a key, which prove the
+    /// name otherwise.
     pub fn authorization(&self) -> Option<String> {
         match self {
             Credential::Bearer(token) => Some(alloc::format!("{BEARER_SCHEME} {token}")),
@@ -218,7 +225,15 @@ impl Credential {
                 "{INSTALL_SCHEME} {}",
                 base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret)
             )),
-            Credential::Mtls => None,
+            Credential::Mtls | Credential::Key(_) => None,
+        }
+    }
+
+    /// The key the client signs its requests with, under the `key` authenticator.
+    pub fn request_signer(&self) -> Option<&signature::RequestSigner> {
+        match self {
+            Credential::Key(signer) => Some(signer),
+            _ => None,
         }
     }
 }
@@ -438,6 +453,12 @@ mod tests {
             alloc::format!("{:?}", Credential::Bearer("secret".to_string())),
             "Bearer(..)"
         );
+        let key = Credential::Key(signature::RequestSigner::new(
+            sce_rust_crypto::ed25519::KeyPair::from_seed(&[1u8; 32]),
+        ));
+        assert_eq!(key.authorization(), None, "a key sends no Authorization");
+        assert!(key.request_signer().is_some());
+        assert_eq!(alloc::format!("{key:?}"), "Key(..)");
     }
 
     #[test]
