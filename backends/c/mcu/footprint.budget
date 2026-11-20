@@ -1,0 +1,74 @@
+# What each C11 machine of the `c11-mcu` gate costs a Cortex-M4 image, in bytes,
+# and how far each figure may drift (docs/adr/0110, D3 item 2).
+#
+# Read by `scripts/gates/c11-mcu.sh`, which sources this file. The shape and the
+# rule are the Rust lane's (`backends/rust/probes/nostd-footprint/footprint.budget`):
+#
+#   - Every figure is MEASURED, by the gate, with the toolchain named in
+#     MEASURED_WITH, never estimated.
+#   - A figure moves only by a commit that changes this file and says in its
+#     message what the bytes bought. RE-PINNING IS A DECISION, NOT A CHORE.
+#   - The gate fails on a figure outside its band in EITHER direction: a figure
+#     that falls without a reason means the instrument stopped seeing.
+#
+# WHAT IS WEIGHED. For each machine, the `.text`, `.rodata`, `.data` and `.bss`
+# of the objects compiled from what the generator wrote for it (its `.c`, and
+# the units of what it imports), with the gate's flags (D3 item 1): the
+# machine's own code and the runtime it pulls in, which is header-only and so
+# compiled into those objects. Not weighed: the gate's startup, memory
+# functions, seams, the scenario table and its runner, which are the test
+# board's and not the machine's. The linked image's sections and the members of
+# libgcc it pulls in are written to `target/c11-mcu/report.md` beside these.
+# The codec, which no statechart imports yet, is weighed as the object of the
+# program that writes and reads one value of it (`backends/c/mcu/codec_main.c`):
+# its unit is header-only, so that object is where its code is.
+#
+# Each machine's figures are `<MACHINE>_TEXT`, `<MACHINE>_RODATA`,
+# `<MACHINE>_DATA` and `<MACHINE>_BSS`, `<MACHINE>` its name in upper case.
+#
+# UNMEASURED. This first entry holds no figure: the gate was written where no
+# ARM compiler could run, and a guessed budget is the thing this file exists to
+# refuse. The gate REFUSES TO PASS while any figure below is empty, and prints
+# every figure it measured as the `NAME=value` lines to put here. The first run
+# on a machine with the declared toolchain (`[platform.linux.tools.arm-none-eabi-gcc]`
+# and `[platform.linux.tools.qemu-system-arm]` in bx.toml) measures them; that
+# commit sets MEASURED_WITH and TOLERANCE_BYTES too, and says why the tolerance
+# is what it is.
+
+# The toolchain the figures were measured with, as `arm-none-eabi-gcc --version`
+# prints its first line. Printed beside the running one when a figure is out of
+# its band, so a red that is only the toolchain says so.
+MEASURED_WITH=''
+
+# Drift allowed either way before the gate speaks, in bytes, for each figure.
+TOLERANCE_BYTES=''
+
+STATIC_COUNTER_TEXT=''
+STATIC_COUNTER_RODATA=''
+STATIC_COUNTER_DATA=''
+STATIC_COUNTER_BSS=''
+
+PLAIN_FOOTPRINT_PROBE_TEXT=''
+PLAIN_FOOTPRINT_PROBE_RODATA=''
+PLAIN_FOOTPRINT_PROBE_DATA=''
+PLAIN_FOOTPRINT_PROBE_BSS=''
+
+STATIC_MAP_TEXT=''
+STATIC_MAP_RODATA=''
+STATIC_MAP_DATA=''
+STATIC_MAP_BSS=''
+
+STATIC_MAP_TAKE_TEXT=''
+STATIC_MAP_TAKE_RODATA=''
+STATIC_MAP_TAKE_DATA=''
+STATIC_MAP_TAKE_BSS=''
+
+STATIC_STATE_ALGORITHM_TEXT=''
+STATIC_STATE_ALGORITHM_RODATA=''
+STATIC_STATE_ALGORITHM_DATA=''
+STATIC_STATE_ALGORITHM_BSS=''
+
+CODEC_CBOR_MAP_TEXT=''
+CODEC_CBOR_MAP_RODATA=''
+CODEC_CBOR_MAP_DATA=''
+CODEC_CBOR_MAP_BSS=''
