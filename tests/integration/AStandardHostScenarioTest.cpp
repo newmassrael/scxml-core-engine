@@ -882,7 +882,49 @@ TEST(AStandardHostScenario, APutIfWithANulInItsKeyIsRefused) {
                                      {{"key", std::string("a\0b", 3)}, {"value", "v"}, {"expected_version", "0"}});
     ASSERT_TRUE(nul.has_value());
     EXPECT_EQ(nul->kind, host::Outcome::Kind::Refuse);
-    EXPECT_TRUE(reference.storeEntries().empty());
+    const auto entries = reference.storeEntries();
+    ASSERT_TRUE(entries.has_value());
+    EXPECT_TRUE(entries->empty());
+}
+
+/// docs/adr/0109, D13: a host built on a store the embedding gives keeps its values and the first result
+/// of each put-if there, so a host of the next process on the same store answers a put-if the restore
+/// starts again with its first result, and writes nothing.
+TEST(AStandardHostScenario, AHostOnTheStoreItWasGivenAnswersARepeatedPutIfWithItsFirstResult) {
+    host::ScriptedClock clock;
+    ScriptTransport transport;
+    host::MemoryKvStore store;
+    const host::Invocation putIf{"session-1", "putif", 1};
+    const host::Params params = {{"key", "k"}, {"value", "a"}, {"expected_version", "0"}};
+    std::string first;
+    {
+        host::ReferenceHost before(clock, transport, store);
+        const auto wrote = before.start("sce-host-kv-put-if", putIf, params);
+        ASSERT_TRUE(wrote.has_value());
+        first = wrote->data;
+        EXPECT_EQ(json::parse(first).at("written"), true);
+    }
+    host::ReferenceHost after(clock, transport, store);
+    const std::map<std::string, std::string> once = {{"k", "a"}};
+    EXPECT_EQ(after.storeEntries(), once) << "the store outlived the host that wrote";
+    const auto again = after.start("sce-host-kv-put-if", putIf, params);
+    ASSERT_TRUE(again.has_value());
+    EXPECT_EQ(again->data, first) << "the first result, where the store alone answers a lost race";
+    EXPECT_EQ(after.storeEntries(), once) << "nothing written twice";
+    const auto next = after.start("sce-host-kv-put-if", host::Invocation{"session-1", "putif", 2}, params);
+    ASSERT_TRUE(next.has_value());
+    EXPECT_EQ(json::parse(next->data).at("written"), false) << "the next start is judged against the store";
+
+    // A failure the embedding injected is a first result too.
+    after.setFaults({{"sce-host-kv-put-if", "unavailable"}});
+    const host::Invocation failed{"session-1", "putif", 3};
+    const auto injected = after.start("sce-host-kv-put-if", failed, params);
+    ASSERT_TRUE(injected.has_value());
+    EXPECT_EQ(json::parse(injected->data).at("error"), "unavailable");
+    after.setFaults({});
+    const auto repeated = after.start("sce-host-kv-put-if", failed, params);
+    ASSERT_TRUE(repeated.has_value());
+    EXPECT_EQ(repeated->data, injected->data) << "the repeat is answered with the injected failure";
 }
 
 /// Keys are ordered by their UTF-8 bytes.

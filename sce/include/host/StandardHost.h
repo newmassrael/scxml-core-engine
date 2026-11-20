@@ -93,6 +93,204 @@ struct Invocation {
     }
 };
 
+// ── The key-value store (docs/SCE_HOST_FEATURES.md, section 3; docs/adr/0109, D13) ──
+//
+// A host keeps the values of the key-value feature in the store it was built with: MemoryKvStore unless
+// the embedding gives another. A store numbers versions from one counter of its own, and keeps the first
+// result of each put-if by the identity of its invocation in the step that judged it, so a durable store
+// answers a put-if a restore starts again with its first result, whether the process that wrote stopped
+// before or after the answer left. Every method answers nothing when the store cannot be used, which the
+// host answers `unavailable`, and changes nothing then.
+
+/// A value as a store keeps it, with the version its write gave the key.
+struct KvEntry {
+    std::string value;
+    uint64_t version = 0;
+
+    bool operator==(const KvEntry &other) const {
+        return value == other.value && version == other.version;
+    }
+};
+
+/// What a put did: `overQuota` when the key is new and the store holds as many keys as the quota allows,
+/// and nothing was written; otherwise the value was written at `version`, `replaced` whether the key held
+/// one.
+struct KvPut {
+    bool overQuota = false;
+    bool replaced = false;
+    uint64_t version = 0;
+};
+
+/// What a put-if answered, which a repeat of its invocation is answered with.
+struct KvPutIf {
+    enum class Kind {
+        /// The value was written; the key is at `version`.
+        Written,
+        /// The key was at another version, `version` (0 for an absent key), and nothing was written.
+        Unwritten,
+        /// The version matched, the key is new and the store holds as many keys as the quota allows.
+        OverQuota,
+        /// The host failed the invocation with `code` before the store was asked (an injected failure).
+        Failed,
+    };
+    Kind kind = Kind::Unwritten;
+    uint64_t version = 0;
+    std::string code;
+
+    bool operator==(const KvPutIf &other) const {
+        return kind == other.kind && version == other.version && code == other.code;
+    }
+};
+
+/// A read that found a value or did not.
+struct KvRead {
+    bool found = false;
+    KvEntry entry;
+};
+
+/// A first result a store keeps, or none.
+struct KvKept {
+    bool kept = false;
+    KvPutIf result;
+};
+
+/// A store of the key-value feature. A key is compared as its bytes, which for UTF-8 is the order of its
+/// code points. Each method is one step: it reads and writes what it names, or, answering nothing, writes
+/// nothing.
+class KvStore {
+public:
+    virtual ~KvStore() = default;
+    /// The value `key` holds, if it holds one.
+    virtual std::optional<KvRead> get(const std::string &key) = 0;
+    /// Write `value` under `key` at the counter's next number, unless the key is new and the store holds
+    /// `quota` keys or more.
+    virtual std::optional<KvPut> put(const std::string &key, const std::string &value,
+                                     std::optional<uint64_t> quota) = 0;
+    /// Write `value` under `key` only when the key's version is `expected` (0 for an absent key; none, a
+    /// number past the largest 64-bit unsigned integer, is never matched), the quota judged only for a write
+    /// that would be made. With `identity`, a result kept under it is answered and nothing written, and the
+    /// result of a start that is not a repeat is kept under it in the same step.
+    virtual std::optional<KvPutIf> putIf(const std::string &key, const std::string &value,
+                                         std::optional<uint64_t> expected, std::optional<uint64_t> quota,
+                                         const Invocation *identity) = 0;
+    /// Remove the value of `key`: true when it held one, which takes the counter's next number.
+    virtual std::optional<bool> remove(const std::string &key) = 0;
+    /// The least key, in the order of its bytes, greater than `after` (any key, for an empty one) that begins
+    /// with `prefix`, if one is held.
+    virtual std::optional<std::optional<std::string>> nextKey(const std::string &after, const std::string &prefix) = 0;
+    /// Every value held, by its key.
+    virtual std::optional<std::map<std::string, KvEntry>> entries() = 0;
+    /// The first result kept under `identity`.
+    virtual std::optional<KvKept> firstResult(const Invocation &identity) = 0;
+    /// Keep `result` under `identity` unless one is kept there, and answer the one kept afterwards.
+    virtual std::optional<KvPutIf> keepFirst(const Invocation &identity, const KvPutIf &result) = 0;
+};
+
+/// The values in memory, for the life of the store: what a host keeps when it is given no durable store.
+class MemoryKvStore : public KvStore {
+public:
+    std::optional<KvRead> get(const std::string &key) override {
+        const auto found = values_.find(key);
+        if (found == values_.end()) {
+            return KvRead{};
+        }
+        return KvRead{true, found->second};
+    }
+
+    std::optional<KvPut> put(const std::string &key, const std::string &value, std::optional<uint64_t> quota) override {
+        const bool replaced = values_.count(key) != 0;
+        if (overQuota(replaced, quota)) {
+            return KvPut{true, false, 0};
+        }
+        return KvPut{false, replaced, write(key, value)};
+    }
+
+    std::optional<KvPutIf> putIf(const std::string &key, const std::string &value, std::optional<uint64_t> expected,
+                                 std::optional<uint64_t> quota, const Invocation *identity) override {
+        if (identity != nullptr) {
+            if (const auto first = firstResults_.find(*identity); first != firstResults_.end()) {
+                return first->second;
+            }
+        }
+        const auto found = values_.find(key);
+        const uint64_t current = found == values_.end() ? 0 : found->second.version;
+        KvPutIf result;
+        if (expected != current) {
+            result = {KvPutIf::Kind::Unwritten, current, {}};
+        } else if (overQuota(found != values_.end(), quota)) {
+            result = {KvPutIf::Kind::OverQuota, 0, {}};
+        } else {
+            result = {KvPutIf::Kind::Written, write(key, value), {}};
+        }
+        if (identity != nullptr) {
+            firstResults_.emplace(*identity, result);
+        }
+        return result;
+    }
+
+    std::optional<bool> remove(const std::string &key) override {
+        const bool existed = values_.erase(key) != 0;
+        if (existed) {
+            ++lastVersion_;
+        }
+        return existed;
+    }
+
+    std::optional<std::optional<std::string>> nextKey(const std::string &after, const std::string &prefix) override {
+        // A `std::string` compares by its bytes, as unsigned characters, which for UTF-8 is the order of the
+        // code points; the keys with the prefix are contiguous in it.
+        for (auto stored = values_.lower_bound(after.empty() || after < prefix ? prefix : after);
+             stored != values_.end(); ++stored) {
+            const std::string &key = stored->first;
+            if (!after.empty() && key <= after) {
+                continue;
+            }
+            if (key.compare(0, prefix.size(), prefix) != 0) {
+                break;
+            }
+            return std::optional<std::optional<std::string>>(std::in_place, key);
+        }
+        return std::optional<std::optional<std::string>>(std::in_place);
+    }
+
+    std::optional<std::map<std::string, KvEntry>> entries() override {
+        return values_;
+    }
+
+    std::optional<KvKept> firstResult(const Invocation &identity) override {
+        const auto first = firstResults_.find(identity);
+        if (first == firstResults_.end()) {
+            return KvKept{};
+        }
+        return KvKept{true, first->second};
+    }
+
+    std::optional<KvPutIf> keepFirst(const Invocation &identity, const KvPutIf &result) override {
+        return firstResults_.emplace(identity, result).first->second;
+    }
+
+private:
+    /// Whether writing a key would hold more keys than `quota` allows; `held` is whether the store holds
+    /// the key, which a write replaces.
+    bool overQuota(bool held, std::optional<uint64_t> quota) const {
+        return !held && quota && values_.size() >= *quota;
+    }
+
+    /// Keep `value` under `key` at the counter's next number; that number.
+    uint64_t write(const std::string &key, const std::string &value) {
+        const uint64_t version = ++lastVersion_;
+        values_[key] = KvEntry{value, version};
+        return version;
+    }
+
+    std::map<std::string, KvEntry> values_;
+    /// The last number a write or a removal took (docs/SCE_HOST_FEATURES.md, section 8): a key is never given
+    /// a version it had, even after it was removed.
+    uint64_t lastVersion_ = 0;
+    /// The first result of each put-if, by the identity of its invocation.
+    std::map<Invocation, KvPutIf> firstResults_;
+};
+
 /// A start the host was given: the operation, the invocation's id and the request's parameters, with the
 /// rest of the invocation's identity: the session that started it and which start of its `<invoke>` it is.
 struct Start {
@@ -704,10 +902,21 @@ public:
     virtual Outcome run(const std::string &operation, const Invocation &invocation, const Params &params) = 0;
 };
 
-/// The standard host features' semantics, over a clock and a transport.
+/// The standard host features' semantics, over a clock, a transport and a key-value store.
 class ReferenceHost {
 public:
-    ReferenceHost(ClockSource &clock, Transport &transport) : clock_(clock), transport_(transport) {}
+    /// A host whose key-value store is in memory, its own: a host that stops forgets what it held.
+    ReferenceHost(ClockSource &clock, Transport &transport) : clock_(clock), transport_(transport), kv_(&memory_) {}
+
+    /// A host whose key-value store is `store`, which outlives the host: the store the embedding opened,
+    /// durable when it is one, in which the host keeps each put-if's first result with its write
+    /// (docs/SCE_HOST_FEATURES.md, section 3; docs/adr/0109, D13).
+    ReferenceHost(ClockSource &clock, Transport &transport, KvStore &store)
+        : clock_(clock), transport_(transport), kv_(&store) {}
+
+    /// The host holds its own store or points at the embedding's, so it is neither copied nor moved.
+    ReferenceHost(const ReferenceHost &) = delete;
+    ReferenceHost &operator=(const ReferenceHost &) = delete;
 
     /// Inject failures: each operation type named fails with the code it maps to, once the request has
     /// been accepted. An empty map ends them.
@@ -730,10 +939,14 @@ public:
         userDecision_ = std::move(decision);
     }
 
-    /// The store's keys and values, in key order.
-    std::map<std::string, std::string> storeEntries() const {
+    /// The store's keys and values, in key order; nothing when the store cannot list them.
+    std::optional<std::map<std::string, std::string>> storeEntries() const {
+        const auto held = kv_->entries();
+        if (!held) {
+            return std::nullopt;
+        }
         std::map<std::string, std::string> entries;
-        for (const auto &[key, entry] : store_) {
+        for (const auto &[key, entry] : *held) {
             entries.emplace(key, entry.value);
         }
         return entries;
@@ -808,7 +1021,8 @@ public:
     /// A put-if whose invocation was answered before is answered with that first result, a failure
     /// included, and changes nothing: the engine starts a running invocation again under the same identity
     /// when it restores a state saved before the answer was taken (docs/adr/0107, D4), and the write it
-    /// asked for was made once.
+    /// asked for was made once. The store keeps the first result in the step of the write (docs/adr/0109,
+    /// D13), so a durable store answers it after the host's process stopped.
     std::optional<Outcome> start(const std::string &operation, const Invocation &invocation, const Params &params) {
         const std::string &id = invocation.id;
         if (std::find(TYPES.begin(), TYPES.end(), operation) == TYPES.end()) {
@@ -820,19 +1034,18 @@ public:
             return startFeature(*feature, operation, invocation, params);
         }
         starts_.push_back({operation, id, params, invocation.sessionId, invocation.start});
-        const bool keepsFirst = operation == "sce-host-kv-put-if";
-        if (keepsFirst) {
-            if (const auto first = firstResults_.find(invocation); first != firstResults_.end()) {
+        if (operation == PUT_IF) {
+            const auto first = kv_->firstResult(invocation);
+            if (!first) {
+                return detail::failure(PUT_IF, "unavailable");
+            }
+            if (first->kept) {
                 SCE_LOG_INFO("{} {}: start {} of session {} repeated, answered as first", operation, id,
                              invocation.start, invocation.sessionId);
-                return first->second;
+                return putIfOutcome(first->result);
             }
         }
-        Outcome outcome = perform(operation, id, params);
-        if (keepsFirst && outcome.kind == Outcome::Kind::Done) {
-            firstResults_[invocation] = outcome;
-        }
-        return outcome;
+        return perform(operation, invocation, params);
     }
 
     /// The host is told to stop invocation `id`, because its state exited or its deadline passed. What it
@@ -843,8 +1056,29 @@ public:
     }
 
 private:
+    /// The operation whose first result a repeat of its invocation is answered with.
+    static constexpr const char *PUT_IF = "sce-host-kv-put-if";
+
+    /// The completion a put-if's result is: a record, or its failure.
+    static Outcome putIfOutcome(const KvPutIf &result) {
+        switch (result.kind) {
+        case KvPutIf::Kind::Written:
+            return detail::record(
+                {detail::boolean("written", true), detail::text("version", std::to_string(result.version))});
+        case KvPutIf::Kind::Unwritten:
+            return detail::record(
+                {detail::boolean("written", false), detail::text("version", std::to_string(result.version))});
+        case KvPutIf::Kind::OverQuota:
+            return detail::failure(PUT_IF, "quota_exceeded");
+        case KvPutIf::Kind::Failed:
+            break;
+        }
+        return detail::failure(PUT_IF, result.code);
+    }
+
     /// The operation itself, as `start` describes it, for a standard type and a start that is not a repeat.
-    Outcome perform(const std::string &operation, const std::string &id, const Params &params) {
+    Outcome perform(const std::string &operation, const Invocation &invocation, const Params &params) {
+        const std::string &id = invocation.id;
         const auto argument = [&params](const char *name) {
             const auto found = params.find(name);
             return found == params.end() ? std::string() : found->second;
@@ -874,6 +1108,11 @@ private:
         }
         if (const auto fault = faults_.find(operation); fault != faults_.end()) {
             SCE_LOG_INFO("{} {}: fails {}, injected", operation, id, fault->second);
+            // A put-if's failure is its first result too, which a repeat is answered with.
+            if (operation == PUT_IF) {
+                const auto kept = kv_->keepFirst(invocation, KvPutIf{KvPutIf::Kind::Failed, 0, fault->second});
+                return kept ? putIfOutcome(*kept) : detail::failure(PUT_IF, "unavailable");
+            }
             return detail::failure(operation, fault->second);
         }
         if (operation == MODEL_GENERATE) {
@@ -891,8 +1130,8 @@ private:
         if (operation == "sce-host-kv-put") {
             return kvPut(argument("key"), argument("value"));
         }
-        if (operation == "sce-host-kv-put-if") {
-            return kvPutIf(argument("key"), argument("value"), argument("expected_version"));
+        if (operation == PUT_IF) {
+            return kvPutIf(invocation, argument("key"), argument("value"), argument("expected_version"));
         }
         if (operation == "sce-host-kv-delete") {
             return kvDelete(argument("key"));
@@ -967,73 +1206,65 @@ private:
         return detail::record({detail::text("zone_id", zone->id), detail::number("utc_offset_s", zone->utcOffsetS)});
     }
 
+    /// The failure `unavailable` of `operation`, for a store that could not be used.
+    static Outcome storeUnavailable(const char *operation) {
+        SCE_LOG_ERROR("{}: the key-value store could not be used", operation);
+        return detail::failure(operation, "unavailable");
+    }
+
     Outcome kvGet(const std::string &key) {
-        const auto found = store_.find(key);
-        if (found == store_.end()) {
+        const auto read = kv_->get(key);
+        if (!read) {
+            return storeUnavailable("sce-host-kv-get");
+        }
+        if (!read->found) {
             return detail::record(
                 {detail::boolean("found", false), detail::text("value", ""), detail::text("version", "0")});
         }
-        return detail::record({detail::boolean("found", true), detail::text("value", found->second.value),
-                               detail::text("version", std::to_string(found->second.version))});
+        return detail::record({detail::boolean("found", true), detail::text("value", read->entry.value),
+                               detail::text("version", std::to_string(read->entry.version))});
     }
 
     Outcome kvPut(const std::string &key, const std::string &value) {
-        if (overQuota(key)) {
+        const auto put = kv_->put(key, value, quota_);
+        if (!put) {
+            return storeUnavailable("sce-host-kv-put");
+        }
+        if (put->overQuota) {
             return detail::failure("sce-host-kv-put", "quota_exceeded");
         }
-        const bool replaced = store_.count(key) != 0;
-        write(key, value);
-        return detail::record({detail::boolean("replaced", replaced)});
+        return detail::record({detail::boolean("replaced", put->replaced)});
     }
 
     /// Write `value` under `key` only when the key is at `expected`, a text of digits the refusal already
-    /// judged. It is compared as a number, so leading zeros do not count, and one past the largest 64-bit
-    /// unsigned integer names no version.
-    Outcome kvPutIf(const std::string &key, const std::string &value, const std::string &expected) {
-        const auto found = store_.find(key);
-        const uint64_t current = found == store_.end() ? 0 : found->second.version;
-        if (detail::versionNumber(expected) != current) {
-            return detail::record(
-                {detail::boolean("written", false), detail::text("version", std::to_string(current))});
-        }
-        if (overQuota(key)) {
-            return detail::failure("sce-host-kv-put-if", "quota_exceeded");
-        }
-        const uint64_t version = write(key, value);
-        return detail::record({detail::boolean("written", true), detail::text("version", std::to_string(version))});
+    /// judged, and keep the result under the invocation's identity in the same step. It is compared as a
+    /// number, so leading zeros do not count, and one past the largest 64-bit unsigned integer names no
+    /// version.
+    Outcome kvPutIf(const Invocation &invocation, const std::string &key, const std::string &value,
+                    const std::string &expected) {
+        const auto result = kv_->putIf(key, value, detail::versionNumber(expected), quota_, &invocation);
+        return result ? putIfOutcome(*result) : storeUnavailable(PUT_IF);
     }
 
     Outcome kvDelete(const std::string &key) {
-        const bool existed = store_.erase(key) != 0;
-        if (existed) {
-            ++lastVersion_;
+        const auto existed = kv_->remove(key);
+        if (!existed) {
+            return storeUnavailable("sce-host-kv-delete");
         }
-        return detail::record({detail::boolean("existed", existed)});
-    }
-
-    /// Whether writing `key` would hold one key more than the quota allows.
-    bool overQuota(const std::string &key) const {
-        return store_.count(key) == 0 && quota_ && store_.size() >= *quota_;
-    }
-
-    /// Keep `value` under `key` at the counter's next number; that number.
-    uint64_t write(const std::string &key, const std::string &value) {
-        const uint64_t version = ++lastVersion_;
-        store_[key] = StoredValue{value, version};
-        return version;
+        return detail::record({detail::boolean("existed", *existed)});
     }
 
     /// The first key, in ascending order of UTF-8 bytes, that is greater than `after` and begins with
-    /// `prefix`; `after` is excluded, and an empty `after` starts at the least key. A `std::string` compares
-    /// by its bytes, as unsigned characters, which for UTF-8 is that order.
+    /// `prefix`; `after` is excluded, and an empty `after` starts at the least key.
     Outcome kvNextKey(const std::string &after, const std::string &prefix) {
-        for (const auto &stored : store_) {
-            const std::string &key = stored.first;
-            if ((after.empty() || key > after) && key.compare(0, prefix.size(), prefix) == 0) {
-                return detail::record({detail::boolean("found", true), detail::text("key", key)});
-            }
+        const auto walked = kv_->nextKey(after, prefix);
+        if (!walked) {
+            return storeUnavailable("sce-host-kv-next-key");
         }
-        return detail::record({detail::boolean("found", false), detail::text("key", "")});
+        if (!*walked) {
+            return detail::record({detail::boolean("found", false), detail::text("key", "")});
+        }
+        return detail::record({detail::boolean("found", true), detail::text("key", **walked)});
     }
 
     /// Remove what `id` names from both lists; whether it named anything.
@@ -1181,18 +1412,12 @@ private:
     /// The machine's table of answer schemas, which a generation's `answer_schema` is resolved through.
     std::vector<SCE::AnswerSchema> answerSchemas_;
 
-    /// A stored value and the version its write gave the key.
-    struct StoredValue {
-        std::string value;
-        uint64_t version = 0;
-    };
-
-    std::map<std::string, StoredValue> store_;
-    /// The last number a write or a removal took: versions are numbered from this one counter of the store
-    /// (docs/SCE_HOST_FEATURES.md, section 8), so a key is never given a version it had, even after it was
-    /// removed.
-    uint64_t lastVersion_ = 0;
-    std::optional<size_t> quota_;
+    /// The store the host keeps when it is given none, and the store it keeps its values in: `memory_` or
+    /// the embedding's. `memory_` is declared first, so it is made before `kv_` points at it.
+    MemoryKvStore memory_;
+    KvStore *kv_;
+    /// The most keys the store holds, set by the embedding; none for no bound.
+    std::optional<uint64_t> quota_;
     std::string permission_ = "undetermined";
     std::string userDecision_ = "none";
     /// The ids of the notifications kept to be shown at their instant, and of those handed to the platform,
@@ -1204,9 +1429,6 @@ private:
     std::vector<std::string> cancelled_;
     std::optional<int64_t> monotonicFloor_;
     std::vector<Start> starts_;
-    /// The first result of each put-if, by the identity of its invocation: what a repeat of that identity
-    /// is answered with (docs/adr/0107, D4).
-    std::map<Invocation, Outcome> firstResults_;
     /// The features the embedding added, in the order added; each outlives the host.
     std::vector<Feature *> features_;
 };
