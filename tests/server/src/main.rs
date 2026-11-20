@@ -25,8 +25,9 @@ use std::time::{Duration, Instant};
 use sce_rust_mesh::endpoint::{Transport, TransportFailure};
 use sce_rust_mesh::pool::{Pool, PoolConfig};
 use sce_rust_session_store::{
-    AcquireError, Append, Appended, Change, Conflict, Due, Expiry, Failure, Lease, LeaseError,
-    Note, Outbox, SessionStore, SqliteStore, Stored, Write, WriteError, Written,
+    AcquireError, Append, Appended, Batched, Change, Committed, Conflict, Decided, Due, Expiry,
+    Failure, Lease, LeaseError, Note, Outbox, SessionStore, SqliteStore, Stored, Write, WriteError,
+    Written,
 };
 use sce_server_suite::clock::{wall_ms, WallClock};
 use sce_server_suite::ledger::{self, Ledgers, CLIENT, PIPE};
@@ -248,28 +249,26 @@ struct Observed {
     expiries: AtomicU64,
 }
 
-impl SessionStore for Observed {
-    fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
-        let n = self.loads.fetch_add(1, Ordering::SeqCst) + 1;
-        halt_at(self.halt, Stage::Load, n);
-        self.inner.get(key)
-    }
-
-    /// A checkpoint (a write that keeps the session) is reported and may halt; a removal is
-    /// passed on as it is.
-    fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+impl Observed {
+    /// The number of the checkpoint `write` is, once the server did not halt before it; `None`
+    /// for a removal, which is neither counted nor reported.
+    fn checkpoint_before(&self, write: &Write<'_>) -> Option<u64> {
         if matches!(write.change, Change::Remove) {
-            return self.inner.write(key, write);
+            return None;
         }
-        let fence = write.fence;
         let n = self.puts.fetch_add(1, Ordering::SeqCst) + 1;
         halt_at(self.halt, Stage::CheckpointBefore, n);
-        let written = self.inner.write(key, write);
-        match &written {
-            Ok(done) => {
+        Some(n)
+    }
+
+    /// Report checkpoint `n` of `key`, written under `fence`, as the store decided it: its
+    /// version, or why it was refused; and halt after one that is durable.
+    fn checkpoint_after(&self, key: &str, fence: u64, n: u64, decided: Result<u64, &WriteError>) {
+        match decided {
+            Ok(version) => {
                 report(&Report::Wrote {
                     key: key.to_string(),
-                    version: done.version,
+                    version,
                     fence,
                 });
                 halt_at(self.halt, Stage::CheckpointAfter, n);
@@ -284,7 +283,78 @@ impl SessionStore for Observed {
             }),
             Err(WriteError::Failed(_)) => {}
         }
+    }
+
+    /// The number of the acknowledgement about to be made, once the server did not halt before
+    /// it.
+    fn acknowledgement_before(&self) -> u64 {
+        let n = self.acks.fetch_add(1, Ordering::SeqCst) + 1;
+        halt_at(self.halt, Stage::AckBefore, n);
+        n
+    }
+
+    /// Halt after acknowledgement `n` once it deleted, durably, what it covers.
+    fn acknowledgement_after(&self, n: u64, kept: bool) {
+        if kept {
+            halt_at(self.halt, Stage::AckAfter, n);
+        }
+    }
+}
+
+impl SessionStore for Observed {
+    fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+        let n = self.loads.fetch_add(1, Ordering::SeqCst) + 1;
+        halt_at(self.halt, Stage::Load, n);
+        self.inner.get(key)
+    }
+
+    /// A checkpoint (a write that keeps the session) is reported and may halt; a removal is
+    /// passed on as it is.
+    fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+        let Some(n) = self.checkpoint_before(write) else {
+            return self.inner.write(key, write);
+        };
+        let written = self.inner.write(key, write);
+        self.checkpoint_after(
+            key,
+            write.fence,
+            n,
+            written.as_ref().map(|done| done.version),
+        );
         written
+    }
+
+    /// A batch (docs/adr/0109, D15) halts and reports as its items would one by one: each
+    /// checkpoint and acknowledgement of it may halt before the batch's transaction, and, once
+    /// the transaction is durable and before any session is told, after it, in the batch's order.
+    /// The committer adds no point of its own between them: a commit is durable or not, and its
+    /// answers are told only after it.
+    fn write_many(&self, batch: &[Batched<'_>]) -> Result<Vec<Decided>, Failure> {
+        let numbered: Vec<Option<u64>> = batch
+            .iter()
+            .map(|item| match item {
+                Batched::Write { write, .. } => self.checkpoint_before(write),
+                Batched::Acknowledge { .. } => Some(self.acknowledgement_before()),
+            })
+            .collect();
+        let decided = self.inner.write_many(batch)?;
+        for ((item, n), done) in batch.iter().zip(&numbered).zip(&decided) {
+            let Some(n) = *n else {
+                continue;
+            };
+            match item {
+                Batched::Write { key, write } => {
+                    let version = match done {
+                        Ok(Committed::Written(written)) => Ok(written.version),
+                        Ok(Committed::Acknowledged(_)) => continue,
+                        Err(refused) => Err(refused),
+                    };
+                    self.checkpoint_after(key, write.fence, n, version);
+                }
+                Batched::Acknowledge { .. } => self.acknowledgement_after(n, done.is_ok()),
+            }
+        }
+        Ok(decided)
     }
 
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -343,12 +413,9 @@ impl SessionStore for Observed {
         through: u64,
         now_ms: u64,
     ) -> Result<u64, Failure> {
-        let n = self.acks.fetch_add(1, Ordering::SeqCst) + 1;
-        halt_at(self.halt, Stage::AckBefore, n);
+        let n = self.acknowledgement_before();
         let deleted = self.inner.acknowledge(client, incarnation, through, now_ms);
-        if deleted.is_ok() {
-            halt_at(self.halt, Stage::AckAfter, n);
-        }
+        self.acknowledgement_after(n, deleted.is_ok());
         deleted
     }
 

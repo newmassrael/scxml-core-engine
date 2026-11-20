@@ -22,6 +22,9 @@
 //!   and of an expiry; every reply is delivered at least once and taken in once.
 //! * `a_stopped_server_leaves_only_clean_checkpoints` (docs/adr/0109, D10): a server stopped in
 //!   order under load saves every session as a clean checkpoint, and a start after it answers.
+//! * `group_commit_throughput` (docs/adr/0109, D15): ignored, a measurement: the inputs a pool
+//!   takes in a second on the reference store, and the inputs a transaction holds, as the
+//!   clients that send at once grow; its numbers are recorded in docs/SCE_SERVER_DEPLOY.md.
 //! * `the_https_binding_reaches_a_pool`: a pool reached over the HTTPS binding through an explicit
 //!   proxy, through a proxy that inspects TLS under an authority the client trusts, with a
 //!   response lost on purpose, and with the store refusing a checkpoint, which no `200`
