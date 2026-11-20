@@ -380,7 +380,9 @@ struct Rig {
         for (const auto &[name, ignored] : wanted.items()) {
             if (name == "store") {
                 json store = json::object();
-                for (const auto &[key, value] : host.storeEntries()) {
+                const auto entries = host.storeEntries();
+                EXPECT_TRUE(entries.has_value()) << "the host's key-value store lists its values";
+                for (const auto &[key, value] : entries.value_or(std::map<std::string, std::string>{})) {
                     store[key] = value;
                 }
                 state[name] = store;
