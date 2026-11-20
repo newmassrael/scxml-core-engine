@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e8f320f75dfeb19d8a1c86b952355e53aa00519f4b2e9108eb558cc94a73e2ba
+// source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
 // source: error_reason.scxml
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
 
@@ -52,6 +52,7 @@ const (
 	ErrorReasonNotificationDeadlineMissed ErrorReason = 81
 	ErrorReasonRestored ErrorReason = 82
 	ErrorReasonCausalViewMismatch ErrorReason = 83
+	ErrorReasonResponseUnauthenticated ErrorReason = 84
 )
 
 // ToUnderlying returns the carrier value this holds.
@@ -142,6 +143,8 @@ func (v ErrorReason) DeclaredName() optional.Of[string] {
 		return optional.Some("restored")
 	case ErrorReasonCausalViewMismatch:
 		return optional.Some("causalViewMismatch")
+	case ErrorReasonResponseUnauthenticated:
+		return optional.Some("responseUnauthenticated")
 	}
 	return optional.None[string]()
 }
@@ -226,6 +229,8 @@ func ErrorReasonFromUnderlying(raw uint8) optional.Of[ErrorReason] {
 		return optional.Some(ErrorReasonRestored)
 	case 83:
 		return optional.Some(ErrorReasonCausalViewMismatch)
+	case 84:
+		return optional.Some(ErrorReasonResponseUnauthenticated)
 	}
 	return optional.None[ErrorReason]()
 }

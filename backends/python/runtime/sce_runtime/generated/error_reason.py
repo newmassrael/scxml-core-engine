@@ -1,5 +1,5 @@
 # SCE-GENERATED — DO NOT EDIT
-# source-hash: e8f320f75dfeb19d8a1c86b952355e53aa00519f4b2e9108eb558cc94a73e2ba
+# source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
 # source: error_reason.scxml
 # SCE-MAP: error_reason.scxml:60 :: _forge_body
 
@@ -51,6 +51,7 @@ class ErrorReason(IntEnum):
     NOTIFICATION_DEADLINE_MISSED = 81
     RESTORED = 82
     CAUSAL_VIEW_MISMATCH = 83
+    RESPONSE_UNAUTHENTICATED = 84
 
     def to_underlying(self) -> int:
         """The carrier value this holds."""
@@ -111,4 +112,5 @@ _ErrorReason_DECLARED = {
     81: "notificationDeadlineMissed",
     82: "restored",
     83: "causalViewMismatch",
+    84: "responseUnauthenticated",
 }

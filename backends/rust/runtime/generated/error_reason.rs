@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e8f320f75dfeb19d8a1c86b952355e53aa00519f4b2e9108eb558cc94a73e2ba
+// source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
 // source: error_reason.scxml
 #![doc = "SCE-MAP: error_reason.scxml:60 :: _forge_body"]
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
@@ -50,6 +50,7 @@ pub enum ErrorReason {
     NotificationDeadlineMissed = 81,
     Restored = 82,
     CausalViewMismatch = 83,
+    ResponseUnauthenticated = 84,
 }
 
 #[allow(dead_code)]
@@ -101,6 +102,7 @@ impl ErrorReason {
             81 => Some(Self::NotificationDeadlineMissed),
             82 => Some(Self::Restored),
             83 => Some(Self::CausalViewMismatch),
+            84 => Some(Self::ResponseUnauthenticated),
             _ => None,
         }
     }
@@ -146,6 +148,7 @@ impl ErrorReason {
             Self::NotificationDeadlineMissed => "notificationDeadlineMissed",
             Self::Restored => "restored",
             Self::CausalViewMismatch => "causalViewMismatch",
+            Self::ResponseUnauthenticated => "responseUnauthenticated",
         }
     }
 }

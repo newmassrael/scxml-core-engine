@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 55e9ecc57d956027bb6dd08c16d46cb9a2c0a99fe474a4b0312c33d8ac0ac34c
+// source-hash: fb1eeed123f42f3296325dbe82d0f13d59735d2dd54c45dc37e7ae5bfb73fb0f
 // source: sce:std/engine/error_reason.scxml
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
 
@@ -53,6 +53,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
     case notificationDeadlineMissed = 81
     case restored = 82
     case causalViewMismatch = 83
+    case responseUnauthenticated = 84
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -95,6 +96,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
         case .notificationDeadlineMissed: return "notificationDeadlineMissed"
         case .restored: return "restored"
         case .causalViewMismatch: return "causalViewMismatch"
+        case .responseUnauthenticated: return "responseUnauthenticated"
         }
     }
 
@@ -150,6 +152,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
         case "notificationDeadlineMissed": self = .notificationDeadlineMissed
         case "restored": self = .restored
         case "causalViewMismatch": self = .causalViewMismatch
+        case "responseUnauthenticated": self = .responseUnauthenticated
         default: return nil
         }
     }
