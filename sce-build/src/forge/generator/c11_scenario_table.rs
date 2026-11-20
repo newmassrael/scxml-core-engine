@@ -17,15 +17,32 @@
 //! `_in_state`, `_active_states`, `_is_in_final_state` and the readers of its
 //! published variables (`_get_<id>`).
 //!
-//! A value is compared as the type the document declares it in, read through the
-//! reader the machine publishes it by: a number or a bool, a list of them, and a
-//! record or a list of records whose fields are. What has no reader on the
-//! target or no comparison written here (a map, a set, a union, an enum, a text,
-//! a real, a value that may be absent, a variable the machine does not publish,
-//! what a machine asked of its host or sent its peers) is not judged on the
-//! target: the table names each one, and the host C11 lane judges it on the same
-//! scenario. A step the target cannot make at all (a restore, an event for a
-//! child) is refused, since a table without it would replay another scenario.
+//! A variable is stated in the form a saved state writes it in, and is compared
+//! here as the type the document declares it in, read through the reader the
+//! machine publishes it by, in the C the lowering holds it in:
+//!
+//!   - a number or a bool as itself, a 64-bit integer stated as its digits too;
+//!   - a real by its 64 bits against the double the scenario states (a scenario
+//!     states a real exactly or not at all), so the image holds no formatter;
+//!   - a value of an enum by the number its enum document declares for the name;
+//!   - a text and a byte string by their length and their bytes (a byte string
+//!     is stated as its Latin-1 text);
+//!   - a value that may be absent by its presence, then its value;
+//!   - a list by its length, then each element;
+//!   - a record field by field, and a union by its tag, then the fields of its
+//!     case (`tag` and `as.<case>`);
+//!   - a map or a set by its length, then each entry in the map's order, walked
+//!     through the runtime's view (`entries`, `first`, each slot's
+//!     `links.next`), a map's entry `[key, value]` and a set's its key.
+//!
+//! What the target does not judge is a variable the machine does not publish and
+//! what a machine asked of its host, sent its peers or handed its parent
+//! (`host_calls`, `sent`, `child_hosts`, `donedata`): the table names each one,
+//! and the host C11 lane judges it on the same scenario. A step the target cannot
+//! make at all is refused, since a table without it would replay another
+//! scenario: a `restore` (saved state is a hosted unit, docs/adr/0110 D2, which
+//! the image does not link) and an `invoke` (the image routes no event to a
+//! child, and no machine of the gate's set starts one).
 //!
 //! Each piece of text the runner writes is a literal with its length beside it:
 //! the image has no `strlen`.
@@ -39,8 +56,9 @@ use serde_json::{Map, Value};
 
 use super::c11_test_template::c_literal;
 use crate::filters;
-use crate::forge::model::{Direction, EntrySchema, SceType};
-use crate::forge::value_type::{TypeOf, WrittenType};
+use crate::forge::composed_lowering::{c11_case_ident, C11_UNION_CASES, C11_UNION_TAG};
+use crate::forge::model::{Direction, EnumModel, SceType};
+use crate::forge::value_type::{ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope};
 use crate::model::{SCXMLModel, Variable};
 
 /// The seed every map of a tabled machine hashes its keys under: the host C11
@@ -60,7 +78,8 @@ pub struct C11ScenarioTable {
     pub source: String,
     /// How many steps the table replays: every step of the scenario.
     pub steps: usize,
-    /// How many expectations the target judges.
+    /// How many checks the target makes: one for each state, end, count,
+    /// presence, tag and scalar the scenario states.
     pub judged: usize,
     /// Each expectation the target does not judge, as `step <n>: <what>`; the
     /// host C11 lane judges it on the same scenario.
@@ -94,14 +113,17 @@ pub fn render_c11_scenario_table(
         .filter(|steps| !steps.is_empty())
         .ok_or_else(|| "the scenario has no steps".to_string())?;
     let names = Names::of(model);
-    let records = model.entry_records();
+    let scope = crate::forge::value_path::statechart_scope(model);
+    let enums = model.held_enums();
     let seeded = crate::forge::static_lowering::takes_map_seed(model, Some(document_dir));
 
     let mut table = Table {
         names: &names,
         model,
-        records: &records,
+        scope: &scope,
+        enums: &enums,
         judged: 0,
+        walks: 0,
         unjudged: Vec::new(),
     };
     let mut functions = String::new();
@@ -141,7 +163,7 @@ pub fn render_c11_scenario_table(
         judged, unjudged, ..
     } = table;
     let summary = format!(
-        "{} step(s) replayed, {judged} expectation(s) judged on the target",
+        "{} step(s) replayed, {judged} check(s) made on the target",
         steps.len()
     );
     let left = if unjudged.is_empty() {
@@ -309,39 +331,81 @@ fn signed_literal(n: i64) -> String {
     }
 }
 
-/// The C condition that holds when `expr`, a value of the scalar `ty`, is not
-/// `value`; `None` for a scalar compared nowhere on the target (a real, a text,
-/// bytes, a value of an enum).
-fn differs(expr: &str, ty: &SceType, value: &Value) -> Result<Option<String>, String> {
-    match ty {
-        SceType::Bool => match value.as_bool() {
-            Some(true) => Ok(Some(format!("!({expr})"))),
-            Some(false) => Ok(Some(format!("({expr})"))),
-            None => Err(format!("{value} is not a bool")),
-        },
-        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
-            let n =
-                unsigned_of(value).ok_or_else(|| format!("{value} is not an unsigned integer"))?;
-            Ok(Some(format!("(uint64_t)({expr}) != UINT64_C({n})")))
-        }
-        SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => {
-            let n = signed_of(value).ok_or_else(|| format!("{value} is not an integer"))?;
-            Ok(Some(format!("(int64_t)({expr}) != {}", signed_literal(n))))
-        }
-        SceType::Float32
-        | SceType::Float64
-        | SceType::String
-        | SceType::Bytes
-        | SceType::Enum(_) => Ok(None),
+/// The C condition that holds when `expr`, a number, is not `n`: compared as an
+/// unsigned 64-bit number where `unsigned` says its type is one or `n` is past
+/// what a signed one holds, and as a signed one otherwise.
+fn number_differs(expr: &str, n: i128, unsigned: bool) -> Result<String, String> {
+    if unsigned || n > i128::from(i64::MAX) {
+        let n = u64::try_from(n).map_err(|_| format!("{n} is no unsigned 64-bit number"))?;
+        Ok(format!("(uint64_t)({expr}) != UINT64_C({n})"))
+    } else {
+        let n = i64::try_from(n).map_err(|_| format!("{n} is no signed 64-bit number"))?;
+        Ok(format!("(int64_t)({expr}) != {}", signed_literal(n)))
     }
+}
+
+/// `bytes` as a C string literal, each byte an octal escape: a byte string may
+/// hold any byte, and an octal escape never runs into the character after it.
+fn bytes_literal(bytes: &[u8]) -> String {
+    let mut literal = String::from("\"");
+    for byte in bytes {
+        let _ = write!(literal, "\\{byte:03o}");
+    }
+    literal.push('"');
+    literal
+}
+
+/// The bytes of a byte string stated as its Latin-1 text, the form a saved state
+/// writes one in: each character one byte, none past U+00FF.
+fn latin1_bytes(text: &str) -> Option<Vec<u8>> {
+    text.chars()
+        .map(|c| u8::try_from(u32::from(c)).ok())
+        .collect()
+}
+
+/// The first of `scopes` that declares the enum `alias`.
+fn enum_in<'s>(scopes: &[&'s TypeScope], alias: &str) -> Option<&'s ScopedEnum> {
+    scopes.iter().find_map(|scope| scope.enums.get(alias))
+}
+
+/// The first of `scopes` that declares the record `alias`.
+fn record_in<'s>(scopes: &[&'s TypeScope], alias: &str) -> Option<&'s ScopedRecord> {
+    scopes.iter().find_map(|scope| scope.records.get(alias))
+}
+
+/// The first of `scopes` that declares the union `alias`.
+fn union_in<'s>(scopes: &[&'s TypeScope], alias: &str) -> Option<&'s ScopedUnion> {
+    scopes.iter().find_map(|scope| scope.unions.get(alias))
+}
+
+/// `inner` searched before `outer`: a type a record or a union holds is read in
+/// its own scope first, then in the one it was named in.
+fn within<'s>(inner: &'s TypeScope, outer: &[&'s TypeScope]) -> Vec<&'s TypeScope> {
+    std::iter::once(inner)
+        .chain(outer.iter().copied())
+        .collect()
+}
+
+/// One line of a judge: a check, which holds when its condition does not and
+/// otherwise answers `what`, or a statement the checks after it read (the
+/// position a walk of a map has reached).
+enum Line {
+    Check { condition: String, what: String },
+    Code(String),
 }
 
 /// The table being written: what it has judged and left so far.
 struct Table<'a> {
     names: &'a Names,
     model: &'a SCXMLModel,
-    records: &'a BTreeMap<String, EntrySchema>,
+    scope: &'a TypeScope,
+    /// Every enum the machine holds, by alias: where a value of an enum no scope
+    /// declares is read.
+    enums: &'a BTreeMap<String, EnumModel>,
     judged: usize,
+    /// How many walks of a map the table has written, each of which names the
+    /// position it has reached by its number.
+    walks: usize,
     unjudged: Vec<String>,
 }
 
@@ -350,13 +414,17 @@ impl Table<'_> {
     /// moves the machine's clock on by, in the order the host's replay makes them.
     /// `None` for a step that does neither.
     fn act(&self, number: usize, step: &Map<String, Value>) -> Result<Option<String>, String> {
-        for refused in ["restore", "invoke"] {
-            if step.contains_key(refused) {
-                return Err(format!(
-                    "step {number} states `{refused}`, which the target cannot make: it neither saves \
-                     a machine nor routes an event to a child"
-                ));
-            }
+        if step.contains_key("restore") {
+            return Err(format!(
+                "step {number} states `restore`, which the target cannot make: saved state is a \
+                 hosted unit (docs/adr/0110, D2), which the image does not link"
+            ));
+        }
+        if step.contains_key("invoke") {
+            return Err(format!(
+                "step {number} states `invoke`, which the target cannot make: the image routes no \
+                 event to a child, and no machine of the gate's set starts one"
+            ));
         }
         let sm = &self.names.sm;
         let mut body = String::new();
@@ -416,120 +484,129 @@ impl Table<'_> {
     /// The body of step `number`'s judge: one check for each expectation the
     /// target judges, each returning the sentence of its failure.
     fn judge(&mut self, number: usize, step: &Map<String, Value>) -> Result<String, String> {
+        let mut lines = Vec::new();
+        if let Some(expect) = step.get("expect") {
+            let expect = expect
+                .as_object()
+                .ok_or_else(|| format!("step {number}'s `expect` is not an object"))?;
+            for (member, value) in expect {
+                self.expectation(number, member, value, &mut lines)?;
+            }
+        }
         let mut body = String::new();
-        let Some(expect) = step.get("expect") else {
-            return Ok(body);
-        };
-        let expect = expect
-            .as_object()
-            .ok_or_else(|| format!("step {number}'s `expect` is not an object"))?;
-        for (member, value) in expect {
-            match member.as_str() {
-                "state" => {
-                    let state = value
-                        .as_str()
-                        .ok_or_else(|| format!("step {number}'s `state` is not a state id"))?;
-                    self.state_active(number, state, &mut body)?;
-                }
-                "configuration" => {
-                    let states = value.as_array().ok_or_else(|| {
-                        format!("step {number}'s `configuration` is not an array")
-                    })?;
-                    for state in states {
-                        let state = state.as_str().ok_or_else(|| {
-                            format!("step {number}'s `configuration` holds something that is no state id")
-                        })?;
-                        self.state_active(number, state, &mut body)?;
-                    }
-                    self.check(
-                        number,
-                        &format!(
-                            "sce_mcu_bits({}_active_states(m)) != {}u",
-                            self.names.sm,
-                            states.len()
-                        ),
-                        &format!("other than {} state(s) are active", states.len()),
-                        &mut body,
+        for line in lines {
+            match line {
+                Line::Check { condition, what } => {
+                    self.judged += 1;
+                    let _ = writeln!(
+                        body,
+                        "    if ({condition}) {{\n        SCE_MCU_FAIL({});\n    }}",
+                        c_literal(&format!("step {number}: {what}"))
                     );
                 }
-                "ended" => {
-                    let ended = value
-                        .as_bool()
-                        .ok_or_else(|| format!("step {number}'s `ended` is not a bool"))?;
-                    let is_final = format!("{}_is_in_final_state(m)", self.names.sm);
-                    let (condition, what) = if ended {
-                        (format!("!{is_final}"), "the run has not ended")
-                    } else {
-                        (is_final, "the run has ended")
-                    };
-                    self.check(number, &condition, what, &mut body);
-                }
-                "variables" => {
-                    let variables = value
-                        .as_object()
-                        .ok_or_else(|| format!("step {number}'s `variables` is not an object"))?;
-                    for (name, value) in variables {
-                        self.variable(number, name, value, &mut body)?;
-                    }
-                }
-                "donedata" | "host_calls" | "child_hosts" | "sent" => {
-                    self.unjudged.push(format!("step {number}: `{member}`"));
-                }
-                other => {
-                    return Err(format!(
-                        "step {number} expects `{other}`, which no replay reads"
-                    ))
+                Line::Code(code) => {
+                    let _ = writeln!(body, "    {code}");
                 }
             }
         }
         Ok(body)
     }
 
-    /// One check: `condition` holds when the expectation does not, and `what`
-    /// says which, in the words the runner writes.
-    fn check(&mut self, number: usize, condition: &str, what: &str, body: &mut String) {
-        self.judged += 1;
-        let _ = writeln!(
-            body,
-            "    if ({condition}) {{\n        SCE_MCU_FAIL({});\n    }}",
-            c_literal(&format!("step {number}: {what}"))
-        );
-    }
-
-    fn state_active(
+    /// The lines of the member `member` of a step's `expect`, stated as `value`.
+    fn expectation(
         &mut self,
         number: usize,
-        state: &str,
-        body: &mut String,
+        member: &str,
+        value: &Value,
+        lines: &mut Vec<Line>,
     ) -> Result<(), String> {
+        let sm = self.names.sm.clone();
+        match member {
+            "state" => {
+                let state = value
+                    .as_str()
+                    .ok_or_else(|| format!("step {number}'s `state` is not a state id"))?;
+                lines.push(self.state_active(number, state)?);
+            }
+            "configuration" => {
+                let states = value
+                    .as_array()
+                    .ok_or_else(|| format!("step {number}'s `configuration` is not an array"))?;
+                for state in states {
+                    let state = state.as_str().ok_or_else(|| {
+                        format!(
+                            "step {number}'s `configuration` holds something that is no state id"
+                        )
+                    })?;
+                    lines.push(self.state_active(number, state)?);
+                }
+                lines.push(Line::Check {
+                    condition: format!("sce_mcu_bits({sm}_active_states(m)) != {}u", states.len()),
+                    what: format!("other than {} state(s) are active", states.len()),
+                });
+            }
+            "ended" => {
+                let ended = value
+                    .as_bool()
+                    .ok_or_else(|| format!("step {number}'s `ended` is not a bool"))?;
+                let is_final = format!("{sm}_is_in_final_state(m)");
+                lines.push(if ended {
+                    Line::Check {
+                        condition: format!("!{is_final}"),
+                        what: "the run has not ended".to_string(),
+                    }
+                } else {
+                    Line::Check {
+                        condition: is_final,
+                        what: "the run has ended".to_string(),
+                    }
+                });
+            }
+            "variables" => {
+                let variables = value
+                    .as_object()
+                    .ok_or_else(|| format!("step {number}'s `variables` is not an object"))?;
+                for (name, value) in variables {
+                    self.variable(number, name, value, lines)?;
+                }
+            }
+            "donedata" | "host_calls" | "child_hosts" | "sent" => {
+                self.unjudged.push(format!("step {number}: `{member}`"));
+            }
+            other => {
+                return Err(format!(
+                    "step {number} expects `{other}`, which no replay reads"
+                ))
+            }
+        }
+        Ok(())
+    }
+
+    fn state_active(&self, number: usize, state: &str) -> Result<Line, String> {
         if !self.model.states.contains_key(state) {
             return Err(format!(
                 "step {number} names the state `{state}`, which `{}` does not declare",
                 self.names.sm
             ));
         }
-        let condition = format!(
-            "!{}_in_state(m, {})",
-            self.names.sm,
-            self.names.state(state)
-        );
-        self.check(
-            number,
-            &condition,
-            &format!("state `{state}` is not active"),
-            body,
-        );
-        Ok(())
+        Ok(Line::Check {
+            condition: format!(
+                "!{}_in_state(m, {})",
+                self.names.sm,
+                self.names.state(state)
+            ),
+            what: format!("state `{state}` is not active"),
+        })
     }
 
     /// The checks of the variable `name` stated as `value`, or its place among
-    /// the expectations left to the host.
+    /// the expectations left to the host when the machine publishes no reader of it.
     fn variable(
         &mut self,
         number: usize,
         name: &str,
         value: &Value,
-        body: &mut String,
+        lines: &mut Vec<Line>,
     ) -> Result<(), String> {
         let declared = variable(self.model, name).ok_or_else(|| {
             format!(
@@ -537,112 +614,443 @@ impl Table<'_> {
                 self.names.sm
             )
         })?;
-        let left = format!("step {number}: variable `{name}`");
         let (Some(Direction::Out), Some(ty)) = (&declared.direction, &declared.value_type) else {
             // No reader: the machine does not publish it.
-            self.unjudged.push(left);
+            self.unjudged
+                .push(format!("step {number}: variable `{name}`"));
             return Ok(());
         };
         let read = self.names.read(name);
-        let mut checks = Vec::new();
-        let judged = self.value_checks(name, &read, ty, value, &mut checks)?;
-        if !judged {
-            self.unjudged.push(left);
-            return Ok(());
-        }
-        for (condition, what) in checks {
-            self.check(number, &condition, &what, body);
-        }
-        Ok(())
+        let scope = self.scope;
+        self.value_checks(
+            &[scope],
+            &format!("`{name}`"),
+            &read,
+            false,
+            ty,
+            value,
+            lines,
+        )
+        .map_err(|e| format!("step {number}: {e}"))
     }
 
-    /// The checks `value` stated for the value `read` reads, of the type `ty`,
-    /// pushed onto `checks` as `(condition, what)`; false, with nothing pushed,
-    /// for a value whose whole is not compared on the target.
-    fn value_checks(
-        &self,
+    /// The checks `value` states of the value `read` reads, of the type `ty`
+    /// whose names `scopes` declare, pushed onto `lines`. `held` says the value
+    /// is held inside a struct (a record's field, a list's element, a map's entry,
+    /// a present value): a text is then its buffer, whose `data` is the text,
+    /// where a variable's reader answers the text itself. `place` names the value
+    /// in a failure.
+    #[allow(clippy::too_many_arguments)]
+    fn value_checks<B>(
+        &mut self,
+        scopes: &[&TypeScope],
         place: &str,
         read: &str,
-        ty: &WrittenType,
+        held: bool,
+        ty: &TypeOf<B>,
         value: &Value,
-        checks: &mut Vec<(String, String)>,
-    ) -> Result<bool, String> {
+        lines: &mut Vec<Line>,
+    ) -> Result<(), String> {
         match ty {
             TypeOf::Scalar(scalar) => {
-                let Some(condition) =
-                    differs(read, scalar, value).map_err(|e| format!("`{place}`: {e}"))?
-                else {
-                    return Ok(false);
-                };
-                checks.push((condition, format!("`{place}` is not {value}")));
-                Ok(true)
+                self.scalar_checks(scopes, place, read, held, scalar, value, lines)
+            }
+            TypeOf::Text { .. } => {
+                lines.push(text_check(place, read, held, value)?);
+                Ok(())
+            }
+            TypeOf::Bytes { .. } => {
+                lines.push(bytes_check(place, read, value)?);
+                Ok(())
+            }
+            TypeOf::Optional { elem } => {
+                if value.is_null() {
+                    lines.push(Line::Check {
+                        condition: format!("{read}.present"),
+                        what: format!("{place} is present, and the scenario states it absent"),
+                    });
+                    return Ok(());
+                }
+                lines.push(Line::Check {
+                    condition: format!("!{read}.present"),
+                    what: format!("{place} is absent, and the scenario states a value"),
+                });
+                self.value_checks(
+                    scopes,
+                    place,
+                    &format!("{read}.value"),
+                    true,
+                    &**elem,
+                    value,
+                    lines,
+                )
             }
             TypeOf::List { elem, .. } => {
                 let elements = value
                     .as_array()
-                    .ok_or_else(|| format!("`{place}` is a list, and {value} is not an array"))?;
-                let mut inner = Vec::new();
-                for (at, element) in elements.iter().enumerate() {
-                    let element_read = format!("{read}.data[{at}]");
-                    let element_place = format!("{place}[{at}]");
-                    if !self.value_checks(
-                        &element_place,
-                        &element_read,
-                        elem,
-                        element,
-                        &mut inner,
-                    )? {
-                        return Ok(false);
-                    }
-                }
+                    .ok_or_else(|| format!("{place} is a list, and {value} is not an array"))?;
                 // The count first: an element past it is not read.
-                checks.push((
-                    format!("{read}.len != {}u", elements.len()),
-                    format!("`{place}` does not hold {} element(s)", elements.len()),
-                ));
-                checks.extend(inner);
-                Ok(true)
+                lines.push(Line::Check {
+                    condition: format!("{read}.len != {}u", elements.len()),
+                    what: format!("{place} does not hold {} element(s)", elements.len()),
+                });
+                for (at, element) in elements.iter().enumerate() {
+                    self.value_checks(
+                        scopes,
+                        &format!("{place}[{at}]"),
+                        &format!("{read}.data[{at}]"),
+                        true,
+                        &**elem,
+                        element,
+                        lines,
+                    )?;
+                }
+                Ok(())
             }
             TypeOf::Record { alias } => {
-                let schema = self.records.get(alias).ok_or_else(|| {
-                    format!("`{place}` is a record of `{alias}`, which the machine does not import")
-                })?;
-                let fields = value.as_object().ok_or_else(|| {
-                    format!("`{place}` is a record, and {value} is not an object")
-                })?;
-                let mut inner = Vec::new();
-                for (field, stated) in fields {
-                    let declared = schema
-                        .fields
-                        .iter()
-                        .find(|f| f.id == *field)
-                        .ok_or_else(|| format!("`{place}` has no field `{field}`"))?;
-                    let Some(scalar) = declared.sce_type.scalar() else {
-                        return Ok(false);
-                    };
-                    if !is_c_identifier(field) {
-                        return Ok(false);
-                    }
-                    let field_read = format!("{read}.{field}");
-                    let field_place = format!("{place}.{field}");
-                    let Some(condition) = differs(&field_read, scalar, stated)
-                        .map_err(|e| format!("`{field_place}`: {e}"))?
-                    else {
-                        return Ok(false);
-                    };
-                    inner.push((condition, format!("`{field_place}` is not {stated}")));
-                }
-                checks.extend(inner);
-                Ok(true)
+                let record = record_in(scopes, alias)
+                    .ok_or_else(|| format!("{place} is a record `{alias}` no scope declares"))?;
+                let inner = within(&record.scope, scopes);
+                self.fields_checks(&inner, place, read, record, value, &[], lines)
             }
-            TypeOf::Text { .. }
-            | TypeOf::Bytes { .. }
-            | TypeOf::Optional { .. }
-            | TypeOf::Union { .. }
-            | TypeOf::Map { .. }
-            | TypeOf::Set { .. } => Ok(false),
+            TypeOf::Union { alias } => {
+                let union = union_in(scopes, alias)
+                    .ok_or_else(|| format!("{place} is a union `{alias}` no scope declares"))?;
+                let inner = within(&union.scope, scopes);
+                self.union_checks(&inner, place, read, union, value, lines)
+            }
+            TypeOf::Map {
+                key,
+                value: held_value,
+                ..
+            } => {
+                let entries = value.as_array().ok_or_else(|| {
+                    format!("{place} is a map, and {value} is not an array of entries")
+                })?;
+                let key: &TypeOf<B> = key;
+                let held_value: &TypeOf<B> = held_value;
+                self.walk(
+                    place,
+                    read,
+                    entries,
+                    lines,
+                    |table, slot, at, entry, lines| {
+                        let pair = entry
+                            .as_array()
+                            .filter(|pair| pair.len() == 2)
+                            .ok_or_else(|| format!("{place}'s entry {at} is not `[key, value]`"))?;
+                        table.value_checks(
+                            scopes,
+                            &format!("{place}'s key {at}"),
+                            &format!("{slot}.key"),
+                            true,
+                            key,
+                            &pair[0],
+                            lines,
+                        )?;
+                        table.value_checks(
+                            scopes,
+                            &format!("{place}'s value {at}"),
+                            &format!("{slot}.value"),
+                            true,
+                            held_value,
+                            &pair[1],
+                            lines,
+                        )
+                    },
+                )
+            }
+            TypeOf::Set { key, .. } => {
+                let entries = value.as_array().ok_or_else(|| {
+                    format!("{place} is a set, and {value} is not an array of keys")
+                })?;
+                let key: &TypeOf<B> = key;
+                self.walk(
+                    place,
+                    read,
+                    entries,
+                    lines,
+                    |table, slot, at, entry, lines| {
+                        table.value_checks(
+                            scopes,
+                            &format!("{place}'s key {at}"),
+                            &format!("{slot}.key"),
+                            true,
+                            key,
+                            entry,
+                            lines,
+                        )
+                    },
+                )
+            }
         }
     }
+
+    /// The walk of the map or set `read` reads, stated as `entries`: its length,
+    /// then each entry in the map's order, the slot of each handed to `entry` as
+    /// the C place `slot`. The position starts at the view's `first` and moves to
+    /// each slot's `links.next`; the slot at position `p` is `entries[p - 1]`
+    /// (`sce/forge/map.h`).
+    fn walk(
+        &mut self,
+        place: &str,
+        read: &str,
+        entries: &[Value],
+        lines: &mut Vec<Line>,
+        mut entry: impl FnMut(&mut Self, &str, usize, &Value, &mut Vec<Line>) -> Result<(), String>,
+    ) -> Result<(), String> {
+        lines.push(Line::Check {
+            condition: format!("{read}.len != {}u", entries.len()),
+            what: format!("{place} does not hold {} entr(ies)", entries.len()),
+        });
+        if entries.is_empty() {
+            return Ok(());
+        }
+        self.walks += 1;
+        let at = format!("sce_mcu_at_{}", self.walks);
+        lines.push(Line::Code("{".to_string()));
+        lines.push(Line::Code(format!("uint32_t {at} = {read}.first;")));
+        for (index, stated) in entries.iter().enumerate() {
+            lines.push(Line::Check {
+                condition: format!("{at} == 0u"),
+                what: format!("{place} ends before its entry {index}"),
+            });
+            let slot = format!("{read}.entries[{at} - 1u]");
+            entry(self, &slot, index, stated, lines)?;
+            lines.push(Line::Code(format!("{at} = {slot}.links.next;")));
+        }
+        lines.push(Line::Code("}".to_string()));
+        Ok(())
+    }
+
+    /// The checks of the fields `value` states of the record `record`, whose
+    /// fields `read` holds, but for `skip` (a union's tag, which is no field of
+    /// its case).
+    #[allow(clippy::too_many_arguments)]
+    fn fields_checks(
+        &mut self,
+        scopes: &[&TypeScope],
+        place: &str,
+        read: &str,
+        record: &ScopedRecord,
+        value: &Value,
+        skip: &[&str],
+        lines: &mut Vec<Line>,
+    ) -> Result<(), String> {
+        let fields = value
+            .as_object()
+            .ok_or_else(|| format!("{place} is a record, and {value} is not an object"))?;
+        for (field, stated) in fields {
+            if skip.contains(&field.as_str()) {
+                continue;
+            }
+            let (_, ty) = record
+                .fields
+                .iter()
+                .find(|(id, _)| id == field)
+                .ok_or_else(|| format!("{place} has no field `{field}`"))?;
+            if !is_c_identifier(field) {
+                return Err(format!("{place}'s field `{field}` is no C member name"));
+            }
+            self.value_checks(
+                scopes,
+                &format!("{place}.{field}"),
+                &format!("{read}.{field}"),
+                true,
+                ty,
+                stated,
+                lines,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// The checks of the union `union` stated as `value`: its tag, by the number
+    /// the tag's enum declares for the case the scenario names, then the fields of
+    /// that case's record, held in `as.<case>`.
+    fn union_checks(
+        &mut self,
+        scopes: &[&TypeScope],
+        place: &str,
+        read: &str,
+        union: &ScopedUnion,
+        value: &Value,
+        lines: &mut Vec<Line>,
+    ) -> Result<(), String> {
+        let object = value
+            .as_object()
+            .ok_or_else(|| format!("{place} is a union, and {value} is not an object"))?;
+        let variant = object
+            .get(&union.tag)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("{place} states no case under `{}`", union.tag))?;
+        let case = union
+            .cases
+            .iter()
+            .find(|case| case.variant.name == variant)
+            .ok_or_else(|| {
+                format!("{place} states the case `{variant}`, which the union has not")
+            })?;
+        let unsigned = enum_in(scopes, &union.tag_enum).is_some_and(|e| e.underlying.is_unsigned());
+        lines.push(Line::Check {
+            condition: number_differs(
+                &format!("{read}.{C11_UNION_TAG}"),
+                case.variant.value,
+                unsigned,
+            )?,
+            what: format!("{place} is not the case `{variant}`"),
+        });
+        let case_read = format!("{read}.{C11_UNION_CASES}.{}", c11_case_ident(variant));
+        match case.record.as_deref() {
+            Some(held) => {
+                let record = record_in(scopes, held).ok_or_else(|| {
+                    format!("{place}'s case `{variant}` holds a record `{held}` no scope declares")
+                })?;
+                let inner = within(&record.scope, scopes);
+                self.fields_checks(
+                    &inner,
+                    place,
+                    &case_read,
+                    record,
+                    value,
+                    &[union.tag.as_str()],
+                    lines,
+                )
+            }
+            None if object.len() == 1 => Ok(()),
+            None => Err(format!(
+                "{place}'s case `{variant}` holds no field, and the scenario states some"
+            )),
+        }
+    }
+
+    /// The check of a scalar `ty` read by `read`, stated as `value`.
+    #[allow(clippy::too_many_arguments)]
+    fn scalar_checks(
+        &self,
+        scopes: &[&TypeScope],
+        place: &str,
+        read: &str,
+        held: bool,
+        ty: &SceType,
+        value: &Value,
+        lines: &mut Vec<Line>,
+    ) -> Result<(), String> {
+        let what = format!("{place} is not {value}");
+        let condition = match ty {
+            SceType::Bool => match value.as_bool() {
+                Some(true) => format!("!({read})"),
+                Some(false) => format!("({read})"),
+                None => return Err(format!("{place}: {value} is not a bool")),
+            },
+            SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
+                let n = unsigned_of(value)
+                    .ok_or_else(|| format!("{place}: {value} is not an unsigned integer"))?;
+                format!("(uint64_t)({read}) != UINT64_C({n})")
+            }
+            SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => {
+                let n = signed_of(value)
+                    .ok_or_else(|| format!("{place}: {value} is not an integer"))?;
+                format!("(int64_t)({read}) != {}", signed_literal(n))
+            }
+            // The 64 bits of the double the scenario states, which a float32 is
+            // widened to exactly, as a saved state writes it.
+            SceType::Float32 | SceType::Float64 => {
+                let real = value
+                    .as_f64()
+                    .ok_or_else(|| format!("{place}: {value} is not a real"))?;
+                format!(
+                    "sce_mcu_real_bits((double)({read})) != UINT64_C(0x{:016x})",
+                    real.to_bits()
+                )
+            }
+            SceType::String => {
+                lines.push(text_check(place, read, held, value)?);
+                return Ok(());
+            }
+            SceType::Bytes => {
+                lines.push(bytes_check(place, read, value)?);
+                return Ok(());
+            }
+            SceType::Enum(reference) => {
+                let alias = &reference.alias;
+                let name = value
+                    .as_str()
+                    .ok_or_else(|| format!("{place}: {value} is not the name of a value"))?;
+                // The enum as the scope the value was named in declares it, else as the
+                // machine holds it (its imports and its schemas' enums).
+                let (number, unsigned) = match enum_in(scopes, alias) {
+                    Some(declared) => (
+                        declared
+                            .variants
+                            .iter()
+                            .find(|v| v.name == name)
+                            .map(|v| v.value),
+                        declared.underlying.is_unsigned(),
+                    ),
+                    None => {
+                        let declared = self.enums.get(alias).ok_or_else(|| {
+                            format!(
+                                "{place} is a value of the enum `{alias}`, which no scope declares"
+                            )
+                        })?;
+                        (
+                            declared
+                                .variants
+                                .iter()
+                                .find(|v| v.name == name)
+                                .map(|v| v.value),
+                            declared.underlying_type.is_unsigned(),
+                        )
+                    }
+                };
+                let number =
+                    number.ok_or_else(|| format!("{place}: `{name}` is no value of `{alias}`"))?;
+                number_differs(read, number, unsigned)?
+            }
+        };
+        lines.push(Line::Check { condition, what });
+        Ok(())
+    }
+}
+
+/// The check of a text read by `read`, stated as `value`: its bytes and its
+/// length. `held` says `read` is the buffer that holds the text, whose `data` is
+/// the text; otherwise it is the text.
+fn text_check(place: &str, read: &str, held: bool, value: &Value) -> Result<Line, String> {
+    let text = value
+        .as_str()
+        .ok_or_else(|| format!("{place}: {value} is not a text"))?;
+    let got = if held {
+        format!("{read}.data")
+    } else {
+        read.to_string()
+    };
+    Ok(Line::Check {
+        condition: format!(
+            "!sce_mcu_text_is({got}, {}, {}u)",
+            bytes_literal(text.as_bytes()),
+            text.len()
+        ),
+        what: format!("{place} is not {value}"),
+    })
+}
+
+/// The check of a byte string read by `read` (its `data` and its `len`), stated
+/// as its Latin-1 text `value`.
+fn bytes_check(place: &str, read: &str, value: &Value) -> Result<Line, String> {
+    let bytes = value
+        .as_str()
+        .and_then(latin1_bytes)
+        .ok_or_else(|| format!("{place}: {value} is not the Latin-1 text of a byte string"))?;
+    Ok(Line::Check {
+        condition: format!(
+            "!sce_mcu_bytes_are({read}.data, {read}.len, (const uint8_t *){}, {}u)",
+            bytes_literal(&bytes),
+            bytes.len()
+        ),
+        what: format!("{place} is not {value}"),
+    })
 }
 
 #[cfg(test)]
@@ -683,12 +1091,8 @@ mod tests {
             "tests/fixtures/static_datamodel/scenarios/static_counter.json",
         );
         assert_eq!(table.steps, 7, "every step of the scenario is a row");
-        assert!(
-            table.unjudged.is_empty(),
-            "a counter's numbers and bool are all judged here: {:?}",
-            table.unjudged
-        );
-        // Six states stated, twelve variables and one end: nineteen judged.
+        assert!(table.unjudged.is_empty(), "{:?}", table.unjudged);
+        // Six states stated, twelve variables and one end: nineteen checks.
         assert_eq!(table.judged, 19);
         assert!(table
             .source
@@ -709,23 +1113,44 @@ mod tests {
     }
 
     #[test]
-    fn a_map_is_left_to_the_host_and_named() {
+    fn a_map_is_walked_entry_by_entry_in_its_order() {
         let table = table_of(
             "tests/fixtures/static_datamodel/static_map.scxml",
             "tests/fixtures/static_datamodel/scenarios/static_map.json",
         );
-        assert!(table
-            .unjudged
-            .iter()
-            .any(|what| what == "step 1: variable `amounts`"));
-        assert!(table
-            .unjudged
-            .iter()
-            .any(|what| what == "step 1: variable `removed`"));
+        assert!(
+            table.unjudged.is_empty(),
+            "the map and the enum are judged on the target: {:?}",
+            table.unjudged
+        );
         // The map is held under the host lane's seed, so its machine starts with it.
         assert!(table.source.contains(
             "static_map_init((static_map_t *)machine, sce_map_seed_from_halves(UINT64_C(0x0123456789abcdef), UINT64_C(0xfedcba9876543210)))"
         ));
+        // Step 4 states `[[7, 5]]`, the first map with an entry: its length, the walk
+        // from the view's first position, the key and the value of the slot there,
+        // and the position after it.
+        for line in [
+            "static_map_get_amounts(m).len != 1u",
+            "uint32_t sce_mcu_at_1 = static_map_get_amounts(m).first;",
+            "if (sce_mcu_at_1 == 0u)",
+            "(uint64_t)(static_map_get_amounts(m).entries[sce_mcu_at_1 - 1u].key) != UINT64_C(7)",
+            "(int64_t)(static_map_get_amounts(m).entries[sce_mcu_at_1 - 1u].value) != INT64_C(5)",
+            "sce_mcu_at_1 = static_map_get_amounts(m).entries[sce_mcu_at_1 - 1u].links.next;",
+            // An empty map is its length alone.
+            "static_map_get_amounts(m).len != 0u",
+        ] {
+            assert!(
+                table.source.contains(line),
+                "no `{line}` in:\n{}",
+                table.source
+            );
+        }
+        // The enum by the number its document declares for the name.
+        assert!(table.source.contains("(static_map_get_removed(m)) != "));
+        assert!(table
+            .source
+            .contains("(int64_t)(static_map_get_seven(m)) != INT64_C(5)"));
         // The step's data, compact; the order of its members is the JSON map's own.
         assert!(
             table
@@ -737,9 +1162,24 @@ mod tests {
             "{}",
             table.source
         );
-        assert!(table
-            .source
-            .contains("(int64_t)(static_map_get_seven(m)) != INT64_C(5)"));
+    }
+
+    #[test]
+    fn a_union_and_a_map_keyed_by_a_record_are_judged() {
+        let table = table_of(
+            "tests/fixtures/static_datamodel/static_map_take.scxml",
+            "tests/fixtures/static_datamodel/scenarios/static_map_take.json",
+        );
+        assert!(table.unjudged.is_empty(), "{:?}", table.unjudged);
+        for line in [
+            "(uint64_t)(static_map_take_get_resets(m).entries[sce_mcu_at_1 - 1u].key.low) != UINT64_C(1)",
+            "(uint64_t)(static_map_take_get_resets(m).entries[sce_mcu_at_1 - 1u].value) != UINT64_C(1)",
+            "(uint64_t)(static_map_take_get_took(m).as.duplicate.last) != UINT64_C(1)",
+            "static_map_take_get_took(m).tag) != ",
+            "(uint64_t)(static_map_take_get_generation(m)) != UINT64_C(2)",
+        ] {
+            assert!(table.source.contains(line), "no `{line}` in:\n{}", table.source);
+        }
     }
 
     #[test]
@@ -748,18 +1188,84 @@ mod tests {
             "tests/fixtures/static_datamodel/static_state_algorithm.scxml",
             "tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json",
         );
-        assert!(table
-            .source
-            .contains("(int64_t)(static_state_algorithm_get_total(m).sum) != INT64_C(50)"));
-        assert!(table
-            .source
-            .contains("static_state_algorithm_get_entries(m).len != 2u"));
-        assert!(table.source.contains(
-            "(int64_t)(static_state_algorithm_get_entries(m).data[1].amount) != INT64_C(150)"
-        ));
-        assert!(table
-            .source
-            .contains("(uint64_t)(static_state_algorithm_get_ids(m).data[2]) != UINT64_C(3)"));
+        assert!(table.unjudged.is_empty(), "{:?}", table.unjudged);
+        for line in [
+            "(int64_t)(static_state_algorithm_get_total(m).sum) != INT64_C(50)",
+            "static_state_algorithm_get_entries(m).len != 2u",
+            "(int64_t)(static_state_algorithm_get_entries(m).data[1].amount) != INT64_C(150)",
+            "(uint64_t)(static_state_algorithm_get_ids(m).data[2]) != UINT64_C(3)",
+        ] {
+            assert!(
+                table.source.contains(line),
+                "no `{line}` in:\n{}",
+                table.source
+            );
+        }
+    }
+
+    #[test]
+    fn a_text_bytes_a_real_and_an_absent_value_are_spelled_exactly() {
+        let text =
+            text_check("`name`", "m_get_name(m)", false, &Value::from("a\u{e9}")).expect("a text");
+        let Line::Check { condition, .. } = text else {
+            panic!("a text is a check")
+        };
+        assert_eq!(
+            condition,
+            "!sce_mcu_text_is(m_get_name(m), \"\\141\\303\\251\", 3u)"
+        );
+        let bytes =
+            bytes_check("`raw`", "m_get_raw(m)", &Value::from("\u{0}\u{ff}")).expect("bytes");
+        let Line::Check { condition, .. } = bytes else {
+            panic!("bytes are a check")
+        };
+        assert_eq!(
+            condition,
+            "!sce_mcu_bytes_are(m_get_raw(m).data, m_get_raw(m).len, (const uint8_t *)\"\\000\\377\", 2u)"
+        );
+        assert!(
+            bytes_check("`raw`", "r", &Value::from("\u{100}")).is_err(),
+            "a character past U+00FF is no byte"
+        );
+        assert_eq!(
+            number_differs("e", 3, true).expect("a number"),
+            "(uint64_t)(e) != UINT64_C(3)"
+        );
+        assert_eq!(
+            number_differs("e", -1, false).expect("a number"),
+            "(int64_t)(e) != INT64_C(-1)"
+        );
+        let mut real = Vec::new();
+        let table = Table {
+            names: &Names {
+                sm: "m".to_string(),
+                upper: "M".to_string(),
+            },
+            model: &SCXMLModel::default(),
+            scope: &TypeScope::default(),
+            enums: &BTreeMap::new(),
+            judged: 0,
+            walks: 0,
+            unjudged: Vec::new(),
+        };
+        table
+            .scalar_checks(
+                &[],
+                "`r`",
+                "m_get_r(m)",
+                false,
+                &SceType::Float32,
+                &Value::from(0.5),
+                &mut real,
+            )
+            .expect("a real");
+        let [Line::Check { condition, .. }] = real.as_slice() else {
+            panic!("a real is one check")
+        };
+        assert_eq!(
+            condition,
+            "sce_mcu_real_bits((double)(m_get_r(m))) != UINT64_C(0x3fe0000000000000)"
+        );
     }
 
     #[test]
@@ -773,7 +1279,14 @@ mod tests {
             serde_json::json!({"machine": "static_counter", "steps": [{"restore": true}]});
         let refused = render_c11_scenario_table(&model, "static_counter", dir, &restore)
             .expect_err("a restore is refused");
-        assert!(refused.contains("`restore`"), "{refused}");
+        assert!(
+            refused.contains("`restore`") && refused.contains("hosted unit"),
+            "{refused}"
+        );
+        let invoke = serde_json::json!({"machine": "static_counter", "steps": [{"event": "tick", "invoke": "child"}]});
+        let refused = render_c11_scenario_table(&model, "static_counter", dir, &invoke)
+            .expect_err("an event for a child is refused");
+        assert!(refused.contains("`invoke`"), "{refused}");
         let unknown =
             serde_json::json!({"machine": "static_counter", "steps": [{"event": "nothing"}]});
         let refused = render_c11_scenario_table(&model, "static_counter", dir, &unknown)

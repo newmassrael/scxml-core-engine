@@ -77,4 +77,44 @@ static inline size_t sce_mcu_bits(uint32_t bits) {
     return count;
 }
 
+/* Whether the text `got` ends after exactly the `len` bytes of `want`, each the
+   same: a text a scenario states, compared by its length and its bytes. */
+static inline bool sce_mcu_text_is(const char *got, const char *want, size_t len) {
+    if (got == NULL) {
+        return false;
+    }
+    for (size_t at = 0u; at < len; ++at) {
+        if (got[at] != want[at]) {
+            return false;
+        }
+    }
+    return got[len] == '\0';
+}
+
+/* Whether the `got_len` bytes at `got` are the `len` bytes of `want`. */
+static inline bool sce_mcu_bytes_are(const uint8_t *got, size_t got_len, const uint8_t *want, size_t len) {
+    if (got_len != len) {
+        return false;
+    }
+    for (size_t at = 0u; at < len; ++at) {
+        if (got[at] != want[at]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The 64 bits of `value`: a real a scenario states is compared by them, exactly,
+   so the image holds no formatter and no tolerance. */
+static inline uint64_t sce_mcu_real_bits(double value) {
+    union {
+        double real;
+        uint64_t bits;
+    } both;
+
+    _Static_assert(sizeof(double) == sizeof(uint64_t), "a double is 64 bits");
+    both.real = value;
+    return both.bits;
+}
+
 #endif /* SCE_MCU_SCENARIO_H */
