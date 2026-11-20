@@ -53,9 +53,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include <sce/forge/atomics.h>
+#include <sce/text.h>
 
 #ifdef __cplusplus
 extern "C" {

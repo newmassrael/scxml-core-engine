@@ -1687,7 +1687,7 @@ memset(&request, 0, sizeof(request));\n            \
 /* The start site checked every field, so a reading that fails is a broken\n               \
 promise between two halves of generated code; stop rather than hand the\n               \
 host a record the document never sent. */\n            \
-if (!({})) {{\n                abort();\n            }}\n",
+if (!({})) {{\n                SCE_UNREACHED();\n            }}\n",
                         reads.join(" &&\n                  ")
                     )
                 }
@@ -1719,10 +1719,10 @@ out->oversized = true;\n                \
                 )
             };
             start_arms.push_str(&format!(
-                "        if (strcmp(event->invoke_id, \"{id}\") == 0) {{\n{read_request}{start}            return;\n        }}\n"
+                "        if (sce_text_compare(event->invoke_id, \"{id}\") == 0) {{\n{read_request}{start}            return;\n        }}\n"
             ));
             cancel_arms.push_str(&format!(
-                "        if (strcmp(event->invoke_id, \"{id}\") == 0) {{\n            \
+                "        if (sce_text_compare(event->invoke_id, \"{id}\") == 0) {{\n            \
 invoker->cancel_{snake}(invoker->user_data, event->token);\n            return;\n        }}\n"
             ));
             if invoke.result.is_some() {

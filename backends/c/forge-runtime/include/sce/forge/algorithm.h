@@ -28,9 +28,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
-#include "sce/forge/bytes.h" /* sce_forge_bytes_view_t, which a byte string's bound is held on */
+#include "sce/forge/bytes.h"
+#include "sce/text.h" /* sce_forge_bytes_view_t, which a byte string's bound is held on */
 
 /* Why a `may-fail` algorithm has no value to return. */
 typedef enum {
@@ -105,7 +105,7 @@ static inline bool sce_forge_algorithm_held_within(sce_forge_algorithm_failure_t
  */
 static inline const char *sce_forge_bounded_string(sce_forge_algorithm_failure_t *f, const char *value,
                                                    uint32_t capacity) {
-    if (strlen(value) > (size_t)capacity) {
+    if (sce_text_length(value) > (size_t)capacity) {
         sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);
         return "";
     }

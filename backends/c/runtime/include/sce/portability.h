@@ -141,4 +141,24 @@
 #define SCE_WARN_UNUSED
 #endif
 
+/*
+ * The end of a path the generated code proved no value reaches: a narrowing
+ * that tested every case of a union, or a read the start site already checked.
+ * Reaching it is a defect between two halves of generated code, and the program
+ * stops there rather than hand on a value it does not hold.
+ *
+ * Not `abort()`: that is the hosted library's, and a machine's core calls none
+ * of it (docs/adr/0110, D1). GCC and Clang stop with a trap instruction, which
+ * needs no library and no seam; any other compiler stops by never leaving.
+ * Either way the statement after it is never reached, so a function that ends
+ * in it returns nothing there.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define SCE_UNREACHED() __builtin_trap()
+#else
+#define SCE_UNREACHED()                                                                                                \
+    for (;;) {                                                                                                         \
+    }
+#endif
+
 #endif /* SCE_PORTABILITY_H */

@@ -13,14 +13,17 @@
 
 {# docs/adr/0092, section 7, the C11 row, and its items 1 and 3. The tag's enum
    and each case's record through the header of its document, and only the
-   documents the type names. `memset` zeroes a value before its case is written,
-   and `abort` is what an algorithm over the union ends in where every case of
-   it returned (docs/adr/0092, section 6.1 item 4), so a unit that names the
-   union has both. #}
+   documents the type names. `memset` zeroes a value before its case is written
+   and a variant's name is compared as text (`sce/text.h`), and
+   `SCE_UNREACHED` is what an algorithm over the union ends in where every case
+   of it returned (docs/adr/0092, section 6.1 item 4; `sce/portability.h`), so a
+   unit that names the union has both, and neither from the hosted library
+   (docs/adr/0110, D1). #}
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
+
+#include "sce/portability.h"
+#include "sce/text.h"
 {% for line in c_type_includes %}
 {{ line }}
 {% endfor %}

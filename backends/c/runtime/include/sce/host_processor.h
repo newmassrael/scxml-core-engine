@@ -29,8 +29,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
+#include "sce/text.h"
 #include "sce/types.h"
 
 #ifdef __cplusplus
@@ -183,7 +183,7 @@ static inline const char *sce_host_send_param(const sce_host_send_request_t *req
         return NULL;
     }
     for (int i = 0; i < request->param_count; i++) {
-        if (strcmp(request->params[i].name, name) == 0) {
+        if (sce_text_compare(request->params[i].name, name) == 0) {
             return request->params[i].value;
         }
     }
@@ -285,7 +285,7 @@ static inline bool sce_host_response_push(sce_host_send_response_list_t *out, co
         return false;
     }
     const char *data = (event_data != NULL) ? event_data : "";
-    if (strlen(event_name) >= sizeof(out->entries[0].event_name)) {
+    if (sce_text_length(event_name) >= sizeof(out->entries[0].event_name)) {
         out->overflowed = true;
         return false;
     }
@@ -311,7 +311,7 @@ static inline bool sce_host_response_push(sce_host_send_response_list_t *out, co
     }
     sce_host_send_response_t *slot = &out->entries[out->count];
     memset(slot, 0, sizeof(*slot));
-    strcpy(slot->event_name, event_name);
+    sce_text_copy(slot->event_name, event_name);
     slot->event_data = data[0] != '\0' ? text : "";
     out->count++;
     return true;
@@ -468,7 +468,8 @@ typedef struct sce_host_processor_registry_s {
  * a type one of them refuses is one they all refuse.
  */
 static inline bool sce_is_reserved_host_type(const char *type) {
-    return type != NULL && strncmp(type, SCE_RESERVED_HOST_TYPE_PREFIX, sizeof(SCE_RESERVED_HOST_TYPE_PREFIX) - 1) == 0;
+    return type != NULL &&
+           sce_text_compare_n(type, SCE_RESERVED_HOST_TYPE_PREFIX, sizeof(SCE_RESERVED_HOST_TYPE_PREFIX) - 1) == 0;
 }
 
 /**
@@ -497,11 +498,11 @@ static inline bool sce_host_registry_put(sce_host_processor_registry_t *registry
     if (registry == NULL || type == NULL || handler == NULL) {
         return false;
     }
-    if (strlen(type) >= sizeof(registry->entries[0].type)) {
+    if (sce_text_length(type) >= sizeof(registry->entries[0].type)) {
         return false;
     }
     for (int i = 0; i < registry->count; i++) {
-        if (strcmp(registry->entries[i].type, type) == 0) {
+        if (sce_text_compare(registry->entries[i].type, type) == 0) {
             registry->entries[i].handler = handler;
             registry->entries[i].user_data = user_data;
             return true;
@@ -512,7 +513,7 @@ static inline bool sce_host_registry_put(sce_host_processor_registry_t *registry
     }
     sce_host_processor_entry_t *slot = &registry->entries[registry->count];
     memset(slot, 0, sizeof(*slot));
-    strcpy(slot->type, type);
+    sce_text_copy(slot->type, type);
     slot->handler = handler;
     slot->user_data = user_data;
     registry->count++;
@@ -582,7 +583,7 @@ static inline const sce_host_processor_entry_t *sce_host_registry_find(const sce
         return NULL;
     }
     for (int i = 0; i < registry->count; i++) {
-        if (strcmp(registry->entries[i].type, type) == 0) {
+        if (sce_text_compare(registry->entries[i].type, type) == 0) {
             return &registry->entries[i];
         }
     }
@@ -917,7 +918,7 @@ static inline bool sce_host_invoke_answer_refusal(sce_host_invoke_response_t *ou
     out->has_done_data = false;
     out->done_data = NULL;
     out->refusal = "";
-    if (reason != NULL && strlen(reason) > (size_t)SCE_HOST_INVOKE_REFUSAL_MAX_LEN) {
+    if (reason != NULL && sce_text_length(reason) > (size_t)SCE_HOST_INVOKE_REFUSAL_MAX_LEN) {
         out->oversized = true;
         return false;
     }
@@ -969,11 +970,11 @@ static inline bool sce_host_invoker_put(sce_host_invoker_registry_t *registry, c
     if (registry == NULL || type == NULL || handler == NULL) {
         return false;
     }
-    if (strlen(type) >= (size_t)SCE_MAX_ID_LEN) {
+    if (sce_text_length(type) >= (size_t)SCE_MAX_ID_LEN) {
         return false;
     }
     for (i = 0; i < registry->count; i++) {
-        if (strcmp(registry->entries[i].type, type) == 0) {
+        if (sce_text_compare(registry->entries[i].type, type) == 0) {
             registry->entries[i].handler = handler;
             registry->entries[i].user_data = user_data;
             return true;
@@ -1026,7 +1027,7 @@ static inline const sce_host_invoker_entry_t *sce_host_invoker_find(const sce_ho
         return NULL;
     }
     for (i = 0; i < registry->count; i++) {
-        if (strcmp(registry->entries[i].type, type) == 0) {
+        if (sce_text_compare(registry->entries[i].type, type) == 0) {
             return &registry->entries[i];
         }
     }
@@ -1099,7 +1100,7 @@ static inline int sce_host_invocation_find_(const sce_host_invocation_set_t *set
                                             const char *invoke_id) {
     int i;
     for (i = 0; i < set->count; i++) {
-        if (strcmp(set->types[i], type) == 0 && strcmp(set->ids[i], invoke_id) == 0) {
+        if (sce_text_compare(set->types[i], type) == 0 && sce_text_compare(set->ids[i], invoke_id) == 0) {
             return i;
         }
     }
@@ -1203,7 +1204,7 @@ static inline bool sce_host_invocation_take_token(sce_host_invocation_set_t *set
    address does not fit. */
 static inline bool sce_event_origin_mesh_(sce_event_origin_t *origin, const char *processor, const char *peer) {
     const size_t scheme_len = sizeof(SCE_MESH_ORIGIN_SCHEME) - 1u;
-    const size_t peer_len = strlen(peer);
+    const size_t peer_len = sce_text_length(peer);
     if (scheme_len + peer_len >= sizeof(origin->address) || !sce_event_origin_set(origin, processor, "")) {
         sce_event_origin_clear(origin);
         return false;

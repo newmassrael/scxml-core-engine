@@ -203,7 +203,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
+
+#include "sce/text.h"
 
 SCE_C_UNUSED static inline void sce_copy_bounded_n(char *dst, const char *src, size_t cap) {
     const char *s = src != NULL ? src : "";
@@ -283,7 +284,7 @@ SCE_C_UNUSED static inline bool sce_parse_delay_ms(const char *text, uint64_t *o
     if (text == NULL || out_ms == NULL) {
         return false;
     }
-    end = strlen(text);
+    end = sce_text_length(text);
     while (begin < end && (text[begin] == ' ' || text[begin] == '\t' || text[begin] == '\n' || text[begin] == '\r' ||
                            text[begin] == '\f' || text[begin] == '\v')) {
         begin++;
@@ -356,7 +357,7 @@ SCE_C_UNUSED static inline bool sce_parse_delay_ms(const char *text, uint64_t *o
    caller makes a refusal visible. */
 SCE_C_UNUSED static inline bool sce_copy_text_whole(char *dst, size_t cap, const char *src) {
     const char *s = src != NULL ? src : "";
-    const size_t len = strlen(s);
+    const size_t len = sce_text_length(s);
     if (len >= cap) {
         return false;
     }
@@ -388,7 +389,7 @@ SCE_C_UNUSED static inline bool sce_text_alloc_copy(sce_alloc_fn alloc, void *co
     if (alloc == NULL) {
         return false;
     }
-    const size_t size = strlen(src) + 1u;
+    const size_t size = sce_text_length(src) + 1u;
     char *copy = (char *)alloc(context, NULL, 0u, size);
     if (copy == NULL) {
         return false;
@@ -520,8 +521,8 @@ SCE_C_UNUSED static inline bool sce_event_origin_set(sce_event_origin_t *origin,
                                                      const char *address) {
     const char *p = processor != NULL ? processor : "";
     const char *a = address != NULL ? address : "";
-    const size_t p_len = strlen(p);
-    const size_t a_len = strlen(a);
+    const size_t p_len = sce_text_length(p);
+    const size_t a_len = sce_text_length(a);
     if (p_len >= sizeof(origin->processor) || a_len >= sizeof(origin->address)) {
         sce_event_origin_clear(origin);
         return false;
@@ -612,7 +613,7 @@ SCE_C_UNUSED static inline bool sce_session_id_from_scxml_location(char *dst, si
         return false;
     }
     dst[0] = '\0';
-    if (uri == NULL || strncmp(uri, SCE_SCXML_LOCATION_PREFIX, prefix_len) != 0 || uri[prefix_len] == '\0') {
+    if (uri == NULL || sce_text_compare_n(uri, SCE_SCXML_LOCATION_PREFIX, prefix_len) != 0 || uri[prefix_len] == '\0') {
         return false;
     }
     for (s = (const unsigned char *)uri + prefix_len; *s != '\0'; ++s) {
@@ -684,7 +685,8 @@ SCE_C_UNUSED static inline bool sce_event_origin_sender(const sce_event_origin_t
         return false;
     }
     dst[0] = '\0';
-    if (from_session == 0u || origin == NULL || strcmp(origin->processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0) {
+    if (from_session == 0u || origin == NULL ||
+        sce_text_compare(origin->processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0) {
         return false;
     }
     return sce_session_id_from_scxml_location(dst, cap, origin->address);
@@ -700,10 +702,10 @@ SCE_C_UNUSED static inline bool sce_event_origin_sender(const sce_event_origin_t
    spelling (C++ `IOProcessorHelper::canonicalProcessorType`, the build's
    `canonical_send_type`). Any other value is answered as written. */
 SCE_C_UNUSED static inline const char *sce_canonical_processor_type(const char *send_type) {
-    if (send_type != NULL && strcmp(send_type, "scxml") == 0) {
+    if (send_type != NULL && sce_text_compare(send_type, "scxml") == 0) {
         return SCE_SCXML_EVENT_PROCESSOR_TYPE;
     }
-    if (send_type != NULL && strcmp(send_type, "basichttp") == 0) {
+    if (send_type != NULL && sce_text_compare(send_type, "basichttp") == 0) {
         return SCE_BASIC_HTTP_EVENT_PROCESSOR_TYPE;
     }
     return send_type;

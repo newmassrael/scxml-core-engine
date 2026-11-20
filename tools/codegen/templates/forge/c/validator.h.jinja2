@@ -14,7 +14,7 @@
 #include <stdint.h>
 {% if uses_forge_algorithm %}#include "sce/forge/algorithm.h"
 {% endif %}#include <stdbool.h>
-#include <string.h>
+#include "sce/text.h"
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}

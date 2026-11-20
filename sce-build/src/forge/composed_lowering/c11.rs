@@ -569,7 +569,7 @@ pub(crate) fn c11_union_crossing(
                 String::new()
             };
             format!(
-                "    if (strcmp(variant, \"{}\") == 0) {{\n{bound}        return {};\n    }}\n",
+                "    if (sce_text_compare(variant, \"{}\") == 0) {{\n{bound}        return {};\n    }}\n",
                 crate::filters::escape_c(arm.variant.clone()),
                 arm.value
             )
@@ -579,7 +579,7 @@ pub(crate) fn c11_union_crossing(
         "/* {why} */\n\
          static inline {to_ty} {name}({from_ty} value) {{\n    \
          const char *const variant = {}_variant(&value);\n    \
-         if (variant == NULL) {{\n        abort();\n    }}\n{arms}    abort();\n}}",
+         if (variant == NULL) {{\n        SCE_UNREACHED();\n    }}\n{arms}    SCE_UNREACHED();\n}}",
         stem(from_ty)
     )
 }
@@ -833,7 +833,7 @@ impl ComposedSpelling for C11Composed<'_> {
                  const char *{C11_READ_BINDING} = NULL;\n    \
                  const char *sce_refusal = sce_payload_list_open_within(sce_value, {least}u, {max}u, \
                  &sce_cursor);\n    \
-                 const size_t sce_head = strlen({C11_PATH});\n    \
+                 const size_t sce_head = sce_text_length({C11_PATH});\n    \
                  sce_out->len = 0u;\n    \
                  if (sce_refusal != NULL) {{\n        \
                  *{C11_BOUND} = (sce_refusal == SCE_PAYLOAD_REFUSE_SHORT_COUNT) ? {least}u : \
@@ -882,7 +882,7 @@ impl ComposedSpelling for C11Composed<'_> {
             format!(
                 "    sce_payload_fields_t sce_fields;\n    \
                  const char *sce_refusal = sce_payload_record_open(sce_value, {defaults}, &sce_fields);\n    \
-                 const size_t sce_head = strlen({C11_PATH});\n    \
+                 const size_t sce_head = sce_text_length({C11_PATH});\n    \
                  if (sce_refusal != NULL) {{\n        return sce_refusal;\n    }}\n\
                  {reads}    return NULL;\n"
             )
@@ -947,7 +947,7 @@ impl ComposedSpelling for C11Composed<'_> {
     fn write_text(&self, held: &Held) -> String {
         let value = value_of(held);
         format!(
-            "if (memchr({value}.data, '\\0', sizeof({value}.data)) == NULL) {{\n    \
+            "if (sce_text_find_byte({value}.data, '\\0', sizeof({value}.data)) == NULL) {{\n    \
              sce_forge_wire_refuse({C11_WIRE});\n}} else {{\n    {}}}\n",
             Self::put(&format!("sce_forge_wire_string({value}.data)"))
         )
@@ -1552,7 +1552,7 @@ impl ComposedSpelling for C11Composed<'_> {
             places.push_str(&format!(
                 "\n\n/* The field `{id}` the cases that declare it share, written where a test of \
                  the tag\n   proved the value is in one of them. */\n\
-                 static inline {fty} *{stem}_{place}({ty} *value) {{\n{arms}    abort();\n}}"
+                 static inline {fty} *{stem}_{place}({ty} *value) {{\n{arms}    SCE_UNREACHED();\n}}"
             ));
         }
         format!(
@@ -1650,13 +1650,13 @@ impl ComposedSpelling for C11Composed<'_> {
                 let written = self.write_record(&members);
                 match &arm.fields {
                     Some(_) => format!(
-                        " else if (strcmp({named}, \"{variant}\") == 0) {{\n    \
+                        " else if (sce_text_compare({named}, \"{variant}\") == 0) {{\n    \
                          __typeof__({union}->{C11_UNION_CASES}.{case}) const *const {item} = \
                          &{union}->{C11_UNION_CASES}.{case};\n{written}}}",
                         case = arm.case_ident
                     ),
                     None => {
-                        format!(" else if (strcmp({named}, \"{variant}\") == 0) {{\n{written}}}")
+                        format!(" else if (sce_text_compare({named}, \"{variant}\") == 0) {{\n{written}}}")
                     }
                 }
             })
@@ -2183,7 +2183,7 @@ mod tests {
         );
         let text = write("string[8]");
         assert!(
-            text.contains("if (memchr((p).data, '\\0', sizeof((p).data)) == NULL) {")
+            text.contains("if (sce_text_find_byte((p).data, '\\0', sizeof((p).data)) == NULL) {")
                 && text.contains("sce_forge_wire_string((p).data)"),
             "{text}"
         );
@@ -2375,7 +2375,7 @@ mod tests {
             "static inline uint16_t *m_union_shape_proven_field_radius_place(m_union_shape_t \
              *value) {\n    if (value->tag == Circle) {\n        return \
              &value->as.circle.radius;\n    }\n    if (value->tag == Disc) {\n        return \
-             &value->as.disc.radius;\n    }\n    abort();\n}",
+             &value->as.disc.radius;\n    }\n    SCE_UNREACHED();\n}",
         ] {
             assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
         }
@@ -2503,7 +2503,7 @@ mod tests {
             "__typeof__((p)) const *const sce_union_0 = &(p);",
             "const char *const sce_variant_0 = m_union_shape_variant(sce_union_0);",
             "if (sce_variant_0 == NULL) {\n        sce_forge_wire_refuse(sce_wire);\n    }",
-            " else if (strcmp(sce_variant_0, \"disc\") == 0) {\n    \
+            " else if (sce_text_compare(sce_variant_0, \"disc\") == 0) {\n    \
              __typeof__(sce_union_0->as.disc) const *const sce_item_0 = &sce_union_0->as.disc;",
             "sce_forge_wire_put_value(sce_wire, sce_forge_wire_string(sce_variant_0));",
             "sce_forge_wire_uint((uint64_t)((*sce_item_0).radius))",
@@ -2967,14 +2967,14 @@ mod tests {
             "#ifndef M_UNION_SHAPE_FROM_SHAPE\n#define M_UNION_SHAPE_FROM_SHAPE\n",
             "static inline m_union_shape_t m_union_shape_from_shape(shape_t value) {\n    \
              const char *const variant = shape_variant(&value);\n    \
-             if (variant == NULL) {\n        abort();\n    }\n",
-            "    if (strcmp(variant, \"dot\") == 0) {\n        \
+             if (variant == NULL) {\n        SCE_UNREACHED();\n    }\n",
+            "    if (sce_text_compare(variant, \"dot\") == 0) {\n        \
              return m_union_shape_case_dot();\n    }\n",
-            "    if (strcmp(variant, \"circle\") == 0) {\n        \
+            "    if (sce_text_compare(variant, \"circle\") == 0) {\n        \
              const __typeof__(value.as.circle) *const sce_copied = &value.as.circle;\n        \
              return m_union_shape_case_circle((m_record_radius_t){ .radius = \
              ((*sce_copied).radius) });\n    }\n",
-            "    abort();\n}\n#endif\n",
+            "    SCE_UNREACHED();\n}\n#endif\n",
         ] {
             assert!(
                 functions.contains(fragment),

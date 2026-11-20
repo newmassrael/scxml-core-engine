@@ -93,7 +93,7 @@ const EXPECTED: &[(&str, [&str; 3])] = &[
         [
             "sm->pending_payload.as.job_completed.elapsed_ms == 0",
             "sm->pending_payload.as.job_completed.retried == true",
-            "strcmp(sm->pending_payload.as.job_completed.job_id, \"sentinel\") == 0",
+            "sce_text_compare(sm->pending_payload.as.job_completed.job_id, \"sentinel\") == 0",
         ],
     ),
     (

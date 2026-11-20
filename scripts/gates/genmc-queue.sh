@@ -73,7 +73,9 @@ trap 'rm -rf "$WORK"' EXIT
 # The options every run shares. The model is RC11, GenMC's default, named so a
 # change of default is not a change of what is checked.
 GENMC_OPTIONS=(--rc11 "--unroll=$UNROLL" --disable-estimation --print-exec-graphs)
-INCLUDES=(-I backends/c/forge-runtime/include -I "$GENMC_ROOT/include/genmc/runtime")
+# The C runtime's own include directory holds `sce/text.h`, which declares the
+# memory functions the queue copies with (docs/adr/0110, D1).
+INCLUDES=(-I backends/c/forge-runtime/include -I backends/c/runtime/include -I "$GENMC_ROOT/include/genmc/runtime")
 # C++17, and not the C++20 the runtime is built with. The two queue headers
 # compile under both and write the same `std::memory_order_*` under both, and
 # GenMC reads only what they write. Under C++20 <memory> pulls in <ostream> and so

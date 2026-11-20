@@ -37,9 +37,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/text.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -662,7 +662,7 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_variant(sce_forge_cur
         return s;
     }
     for (i = 0; i < count; ++i) {
-        if (strlen(names[i]) == len && (len == 0U || memcmp(names[i], text, len) == 0)) {
+        if (sce_text_length(names[i]) == len && (len == 0U || memcmp(names[i], text, len) == 0)) {
             *index = i;
             return SCE_FORGE_CODEC_OK;
         }

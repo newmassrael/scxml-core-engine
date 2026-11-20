@@ -14024,14 +14024,15 @@ fn c_checked_index(
     ))
 }
 
-/// What `len(arg)` reads in C: a string's UTF-8 bytes, which `strlen` counts over
-/// the NUL-terminated text every C string is read as (from `<string.h>`, which the
-/// lowering of a string comparison already needs), and the `len` member of a list's
-/// or a byte string's view.
+/// What `len(arg)` reads in C: a string's UTF-8 bytes, which `sce_text_length`
+/// counts over the NUL-terminated text every C string is read as (from
+/// `sce/text.h`, which the lowering of a string comparison already needs; a
+/// machine's core calls no hosted library, docs/adr/0110), and the `len` member
+/// of a list's or a byte string's view.
 fn c_length(arg: &TypedExpr) -> Result<String, ExprError> {
     let measured = emit_c(arg, InferredType::Unknown)?;
     Ok(if arg.ty == InferredType::Str {
-        format!("strlen({measured})")
+        format!("sce_text_length({measured})")
     } else {
         format!("({measured}).len")
     })
@@ -14175,20 +14176,22 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // String comparison lowering. C lacks operator
             // overloading; `a == b` on `const char *` is pointer equality, not
             // content equality. Lower any string-typed comparison (==, !=, <,
-            // >, <=, >=) to `strcmp(a, b) <op> 0`, which is the lexicographic
-            // semantic the other backends already provide natively (cpp via
-            // std::string operator==, Rust via PartialOrd, Python lex order).
-            // The validator template adds <string.h> when this lowering can
-            // fire; non-validator kinds that import the result get the
-            // include via the same mechanism if they ever exercise string
-            // comparison in their expressions.
+            // >, <=, >=) to `sce_text_compare(a, b) <op> 0`, which is the
+            // lexicographic semantic the other backends already provide natively
+            // (cpp via std::string operator==, Rust via PartialOrd, Python lex
+            // order), and `strcmp`'s, from the runtime's own `sce/text.h`
+            // rather than the hosted library (docs/adr/0110, D1). The units
+            // whose expressions this lowers include that header.
             if op.is_comparison()
                 && matches!(left.ty, InferredType::Str)
                 && matches!(right.ty, InferredType::Str)
             {
                 let l_raw = emit_c(left, InferredType::Str)?;
                 let r_raw = emit_c(right, InferredType::Str)?;
-                return Ok(format!("strcmp({l_raw}, {r_raw}) {} 0", cpp_binop(*op)));
+                return Ok(format!(
+                    "sce_text_compare({l_raw}, {r_raw}) {} 0",
+                    cpp_binop(*op)
+                ));
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_c(left, operand_ty)?;
@@ -15038,37 +15041,49 @@ mod tests {
         assert_eq!(tp("x === 'a === b'", ExprTarget::Cpp), "x == \"a === b\"");
     }
 
-    // ── C11 V3: string compare → strcmp lowering ────────────────
+    // ── C11 V3: string compare → the runtime's text comparison ──
 
     #[test]
-    fn c_string_eq_lowers_to_strcmp() {
+    fn c_string_eq_lowers_to_a_text_compare() {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("engineState", InferredType::Str);
         assert_eq!(
             tp_with("engineState === 'STOP'", ExprTarget::C, &ctx),
-            "strcmp(engine_state, \"STOP\") == 0"
+            "sce_text_compare(engine_state, \"STOP\") == 0"
         );
     }
 
     #[test]
-    fn c_string_neq_lowers_to_strcmp() {
+    fn c_string_neq_lowers_to_a_text_compare() {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("engineState", InferredType::Str);
         assert_eq!(
             tp_with("engineState !== 'STOP'", ExprTarget::C, &ctx),
-            "strcmp(engine_state, \"STOP\") != 0"
+            "sce_text_compare(engine_state, \"STOP\") != 0"
         );
     }
 
     #[test]
-    fn c_string_lex_compare_lowers_to_strcmp() {
+    fn c_string_lex_compare_lowers_to_a_text_compare() {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("a", InferredType::Str);
         ctx.insert_var("b", InferredType::Str);
-        assert_eq!(tp_with("a < b", ExprTarget::C, &ctx), "strcmp(a, b) < 0");
-        assert_eq!(tp_with("a > b", ExprTarget::C, &ctx), "strcmp(a, b) > 0");
-        assert_eq!(tp_with("a <= b", ExprTarget::C, &ctx), "strcmp(a, b) <= 0");
-        assert_eq!(tp_with("a >= b", ExprTarget::C, &ctx), "strcmp(a, b) >= 0");
+        assert_eq!(
+            tp_with("a < b", ExprTarget::C, &ctx),
+            "sce_text_compare(a, b) < 0"
+        );
+        assert_eq!(
+            tp_with("a > b", ExprTarget::C, &ctx),
+            "sce_text_compare(a, b) > 0"
+        );
+        assert_eq!(
+            tp_with("a <= b", ExprTarget::C, &ctx),
+            "sce_text_compare(a, b) <= 0"
+        );
+        assert_eq!(
+            tp_with("a >= b", ExprTarget::C, &ctx),
+            "sce_text_compare(a, b) >= 0"
+        );
     }
 
     /// A context that reads a join where it computes it, over a `uint32`
@@ -15781,7 +15796,7 @@ mod tests {
         ctx.insert_var("engineState", InferredType::Str);
         assert_eq!(
             tp_with("rpm === 0 || engineState !== 'STOP'", ExprTarget::C, &ctx),
-            "rpm == 0 || strcmp(engine_state, \"STOP\") != 0"
+            "rpm == 0 || sce_text_compare(engine_state, \"STOP\") != 0"
         );
     }
 
@@ -18250,7 +18265,7 @@ mod tests {
             (ExprTarget::Go, "len(label)"),
             (ExprTarget::Kotlin, "(label).encodeToByteArray().size"),
             (ExprTarget::Python, "len((label).encode(\"utf-8\"))"),
-            (ExprTarget::C, "strlen(label)"),
+            (ExprTarget::C, "sce_text_length(label)"),
         ] {
             assert_eq!(tp_with("len(label)", target, &ctx), expected, "{target:?}");
         }

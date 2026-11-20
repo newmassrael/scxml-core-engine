@@ -595,7 +595,7 @@ fn a_log_is_recorded_in_the_test_log() {
         "the asker logs the job of the message the branch took through the context:\n{asker}"
     );
     assert!(
-        !asker.contains("(void)fprintf(stderr, \"%s: %llu\\n\", \"answered\""),
+        !asker.contains("_sce_log_write(SCE_LOG_INFO, \"answered\""),
         "a test component's log is not the engine's"
     );
     assert!(text("answerer").contains("sce_test_context_log(&sm->test_context, \"asked\");"));
@@ -1329,13 +1329,13 @@ fn a_message_holding_a_union_its_content_reads_is_made_by_functions_on_c11() {
         "the crossing stands under the guard of its name:\n{code}"
     );
     for arm in [
-        "    if (strcmp(variant, \"card\") == 0) {\n        \
+        "    if (sce_text_compare(variant, \"card\") == 0) {\n        \
          const __typeof__(value.as.card) *const sce_copied = &value.as.card;\n        \
          return payment_reader_union_order_payment_case_card((payment_reader_record_card_t){ \
          .last4 = ((*sce_copied).last4), .amount = ((*sce_copied).amount) });\n    }\n",
-        "    if (strcmp(variant, \"cash\") == 0) {\n        \
+        "    if (sce_text_compare(variant, \"cash\") == 0) {\n        \
          return payment_reader_union_order_payment_case_cash();\n    }\n",
-        "    if (strcmp(variant, \"voucher\") == 0) {\n        \
+        "    if (sce_text_compare(variant, \"voucher\") == 0) {\n        \
          const __typeof__(value.as.voucher) *const sce_copied = &value.as.voucher;\n        \
          return payment_reader_union_order_payment_case_voucher(\
          (payment_reader_record_voucher_t){ .voucher_code = sce_static_bytes_4_of(\

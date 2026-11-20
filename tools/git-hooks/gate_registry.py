@@ -1550,6 +1550,7 @@ GATES: dict[str, dict] = {
         # which the self-test holds.
         "extra": [
             "backends/c/forge-runtime/include/**",
+            "backends/c/runtime/include/sce/text.h",
             "backends/c/forge-runtime/tests/genmc/**",
             "backends/c/forge-runtime/tests/conformance/sce_atomic_host.c",
             "backends/cpp/forge-runtime/include/sce/forge/queue.h",

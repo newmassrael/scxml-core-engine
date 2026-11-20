@@ -35,7 +35,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 {% if has_memcpy_fields %}
-#include <string.h>
+#include "sce/text.h"
 {% endif %}
 
 {% if has_dma_aligned_fields %}

@@ -5412,6 +5412,23 @@ set_target_properties(sce_c_json_text_unit_test PROPERTIES
     C_EXTENSIONS OFF
 )
 add_test(NAME c11_unit_json_text COMMAND sce_c_json_text_unit_test)
+# The text routines a machine's core calls in place of the hosted library
+# (sce/text.h, docs/adr/0110 D1), held to the hosted routines they stand in
+# for, under the conversion warnings a bare-metal consumer builds with.
+# Header-only, so the test needs nothing a configuration can leave out.
+add_executable(sce_c_text_unit_test unit/text_test.c)
+target_link_libraries(sce_c_text_unit_test PRIVATE sce_c_runtime)
+target_compile_options(sce_c_text_unit_test PRIVATE -Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion)
+set_target_properties(sce_c_text_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_text COMMAND sce_c_text_unit_test)
+set_tests_properties(c11_unit_text PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
 # The writer and the reader a saved state's text goes through (docs/adr/0045, section 7),
 # held to the same cases as the C++ unit suite and to every shared saved text. Header-only
 # and allocation-free, so the test needs nothing a configuration can leave out.

@@ -28,10 +28,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
 #include "sce/forge/algorithm.h" /* sce_forge_algorithm_failure_t, which a rendering that did not fit records */
+#include "sce/text.h"
 
 /* A rendering in progress: the buffer, its capacity with the terminator, the
  * bytes written so far, and whether a part did not fit. */
@@ -66,21 +65,19 @@ static inline void sce_forge_text_put_bytes(sce_forge_text_t *text, const char *
 
 /* Append the NUL-terminated `part`. */
 static inline void sce_forge_text_put(sce_forge_text_t *text, const char *part) {
-    sce_forge_text_put_bytes(text, part, strlen(part));
+    sce_forge_text_put_bytes(text, part, sce_text_length(part));
 }
 
 /* Append the decimal digits of an unsigned integer. */
 static inline void sce_forge_text_put_uint(sce_forge_text_t *text, uint64_t value) {
-    char digits[21];
-    int n = snprintf(digits, sizeof digits, "%llu", (unsigned long long)value);
-    sce_forge_text_put_bytes(text, digits, n > 0 ? (size_t)n : 0u);
+    char digits[SCE_TEXT_DECIMAL_CAP];
+    sce_forge_text_put_bytes(text, digits, sce_text_of_u64(value, digits, sizeof digits));
 }
 
 /* Append the decimal digits of a signed integer, `-` before a negative one. */
 static inline void sce_forge_text_put_int(sce_forge_text_t *text, int64_t value) {
-    char digits[21];
-    int n = snprintf(digits, sizeof digits, "%lld", (long long)value);
-    sce_forge_text_put_bytes(text, digits, n > 0 ? (size_t)n : 0u);
+    char digits[SCE_TEXT_DECIMAL_CAP];
+    sce_forge_text_put_bytes(text, digits, sce_text_of_i64(value, digits, sizeof digits));
 }
 
 /* Remove every occurrence of `open` and `close` from the `len` bytes at `text`,
@@ -88,8 +85,8 @@ static inline void sce_forge_text_put_int(sce_forge_text_t *text, int64_t value)
  * empty marker is no marker (a template's fence holds none; the build refuses
  * it). */
 static inline size_t sce_forge_text_remove_markers(char *text, size_t len, const char *open, const char *close) {
-    size_t open_len = strlen(open);
-    size_t close_len = strlen(close);
+    size_t open_len = sce_text_length(open);
+    size_t close_len = sce_text_length(close);
     size_t longest = open_len > close_len ? open_len : close_len;
     size_t from = 0u;
     for (;;) {

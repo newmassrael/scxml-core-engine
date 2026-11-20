@@ -137,8 +137,8 @@ fn an_optional_text_bytes_and_enum_entry_hold_what_a_statechart_variable_does() 
             "SCE_OPTIONAL_DECLARE(enum_rpc_status, rpc_status_enum_t, SCE_OPTIONAL_SAME_VALUE)",
             // The text is the buffer of its bound, with no length beside it.
             "s = sce_forge_codec_note_capacity(sce_forge_cbor_read_text(&c, 262144U, 262144, v->subject.value.data, &text_len), &over);",
-            "if (strlen(v->subject.value.data) != text_len) {",
-            "s = sce_forge_cbor_write_text(w, self->subject.value.data, strlen(self->subject.value.data));",
+            "if (sce_text_length(v->subject.value.data) != text_len) {",
+            "s = sce_forge_cbor_write_text(w, self->subject.value.data, sce_text_length(self->subject.value.data));",
             // The byte string is that buffer and its length.
             "s = sce_forge_cbor_read_bytes_exact(&c, 16, v->correlation_id.value.data);",
             "v->correlation_id.value.len = 16;",
@@ -204,7 +204,7 @@ fn a_content_line_entry_and_parameter_that_may_be_absent_are_the_optional_struct
             "if (self->organizer.present) {",
             "if (self->organizer_cn.present) {",
             "} else if (self->organizer_cn.present) {",
-            "sce_forge_cl_writer_param(&out, \"CN\", self->organizer_cn.value.data, strlen(self->organizer_cn.value.data), 24U)",
+            "sce_forge_cl_writer_param(&out, \"CN\", self->organizer_cn.value.data, sce_text_length(self->organizer_cn.value.data), 24U)",
             "sce_forge_cl_writer_uint(&out, (uint64_t)self->sequence.value)",
             "sce_forge_cl_writer_int(&out, (int64_t)self->priority.value)",
             "sce_forge_cl_writer_bool(&out, self->all_day.value)",

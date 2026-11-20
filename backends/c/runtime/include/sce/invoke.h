@@ -17,9 +17,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
+#include "sce/text.h"
 #include "sce/types.h"
 
 #ifdef __cplusplus
@@ -108,8 +107,12 @@ SCE_C_UNUSED static inline void sce_invoke_format_id(char *buf, size_t bufsz, co
     if (buf == NULL || bufsz == 0u) {
         return;
     }
-    (void)snprintf(buf, bufsz, "%s.%lx._invoke_%d", state_id != NULL ? state_id : "", (unsigned long)(uintptr_t)sm_ptr,
-                   invoke_idx);
+    sce_text_writer_t w = sce_text_writer(buf, bufsz);
+    sce_text_put_text(&w, state_id != NULL ? state_id : "");
+    sce_text_put_char(&w, '.');
+    sce_text_put_hex(&w, (uint64_t)(uintptr_t)sm_ptr, 1u);
+    sce_text_put_text(&w, "._invoke_");
+    sce_text_put_i64(&w, (int64_t)invoke_idx);
 }
 
 /* The id a child session's start is made under: `<state_id>.<start>.<invoke_id>`,
@@ -123,8 +126,12 @@ SCE_C_UNUSED static inline void sce_invoke_format_start_id(char *buf, size_t buf
     if (buf == NULL || bufsz == 0u) {
         return;
     }
-    (void)snprintf(buf, bufsz, "%s.%llu.%s", state_id != NULL ? state_id : "", (unsigned long long)start,
-                   invoke_id != NULL ? invoke_id : "");
+    sce_text_writer_t w = sce_text_writer(buf, bufsz);
+    sce_text_put_text(&w, state_id != NULL ? state_id : "");
+    sce_text_put_char(&w, '.');
+    sce_text_put_u64(&w, start);
+    sce_text_put_char(&w, '.');
+    sce_text_put_text(&w, invoke_id != NULL ? invoke_id : "");
 }
 
 /* §scxml-6.4.3: Format `done.invoke.<id>` event name.
@@ -139,7 +146,9 @@ SCE_C_UNUSED static inline void sce_invoke_format_done_event_name(char *buf, siz
     if (buf == NULL || bufsz == 0u) {
         return;
     }
-    (void)snprintf(buf, bufsz, "done.invoke.%s", invoke_id != NULL ? invoke_id : "");
+    sce_text_writer_t w = sce_text_writer(buf, bufsz);
+    sce_text_put_text(&w, "done.invoke.");
+    sce_text_put_text(&w, invoke_id != NULL ? invoke_id : "");
 }
 
 /* §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a hybrid
@@ -169,11 +178,11 @@ SCE_C_UNUSED static inline void sce_document_stem(const char *value, char *out, 
             name = p + 1;
         }
     }
-    if (strncmp(name, "file:", 5u) == 0) {
+    if (sce_text_starts_with(name, "file:", 5u)) {
         name += 5;
     }
-    const char *dot = strrchr(name, '.');
-    size_t len = (dot != NULL && dot > name) ? (size_t)(dot - name) : strlen(name);
+    const char *dot = sce_text_find_last(name, '.');
+    size_t len = (dot != NULL && dot > name) ? (size_t)(dot - name) : sce_text_length(name);
     if (len >= cap) {
         len = cap - 1u;
     }
