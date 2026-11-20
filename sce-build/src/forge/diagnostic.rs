@@ -17199,7 +17199,7 @@ mod tests {
                     param: "port".into(),
                 })
                 .into(),
-                r#"{"v":1,"id":"fnv1a:58b212f0a042eeea","code":"xml/template-missing-param","stage":"xml","message":"<sce:use template=\"guard.sce-template.xml\">: missing required parameter 'port'","actual":"port","fix":{"kind":"add_attribute","element":"sce:use","attr":"port"}}"#,
+                r#"{"v":1,"id":"fnv1a:58b212f0a042eeea","code":"xml/template-missing-param","stage":"xml","message":"<sce:use template=\"guard.sce-template.xml\">: missing required parameter 'port'","fix":{"kind":"add_attribute","element":"sce:use","attr":"port"}}"#,
             ),
             (
                 "forge/template-unknown-param",
@@ -23083,9 +23083,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            561,
+            562,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 561 distinct variants to match the DiagnosticCode \
+             expected 562 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
