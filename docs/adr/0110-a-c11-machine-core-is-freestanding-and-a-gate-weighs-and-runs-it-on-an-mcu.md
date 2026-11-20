@@ -67,13 +67,20 @@ deployment does not link is never built in the first place.
    - `_sce_log_real(level, label, label_len, value)`: a `<log>` of a real value, which the seam formats as it likes.
      The core holds no float formatter.
    - The hosted implementation of both is `backends/c/runtime/posix/log.c`, writing to `stderr` as today.
+   - `_sce_real_text` and `_sce_real_read` (`sce/real_text.h`): a real number written as text and read back from
+     it, for the event data the core still carries as text (item 2). (Amended 2026-11-20.) The hosted
+     implementation is `backends/c/runtime/text/real_text.c`, the library `sce_c_text`, over `number_text.h`.
 2. **Separate units.** A deployment that wants these compiles them beside the core and may use the hosted library
    there.
    - **Saved state:** `<machine>_saved.c` and the `saved_*.h` headers. The core declares the save and the restore,
      and the unit defines them. A deployment that does not persist does not link them.
-   - **Text and payload parsing:** `number_text.h`, `wire.h`'s text half, and `event_payload.h`'s text reader. A
-     machine's core receives typed events. Turning text into a typed event is the boundary's work (ADR 0079; the
-     boundary-coupling record that follows this one decides how a codec feeds the door).
+   - **Text and payload parsing:** `number_text.h` and its real-number parsing and formatting. (Amended
+     2026-11-20.) The core still carries an event's data as JSON text: a `<send>`'s params, done data and a child's
+     events are written as text inside the machine and read back at its door. Making them typed is the
+     boundary-coupling record's work, which follows this one. Until then the core's JSON reader and writer
+     (`wire.h`, `event_payload.h`) stay in the core, written over freestanding headers and `sce/text.h`. Integers
+     are read and written digit by digit there, and a real crosses only through the two real-number seams of item
+     1, so nothing hosted is reached.
    - **Host processors and invoke** (`host_processor.h`, `invoke.h`): their text building moves onto `sce/text.h`,
      and what still needs the hosted library (`request_field.h`, the HTTP client) stays in the host's unit.
 
