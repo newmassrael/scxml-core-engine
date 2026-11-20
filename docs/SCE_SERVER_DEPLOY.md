@@ -77,9 +77,6 @@ Not built, and a server must not count on them:
 - An upgrade under load in the server suite (ADR 0109, Conformance): a migration is held machine by machine
   (`a_saved_state_is_migrated_into_the_next_version`, on Rust and C++), and no test stops a loaded server and
   starts the next build on its store.
-- A re-seal pass for the outboxes and the audit log: a rotation's passes write sessions, credentials, keys and
-  values again, and an outbox entry or an audit row sealed under a retired key stays so until it is deleted (section
-  3, "Rotation").
 - The Windows CI lane of ADR 0107 D11. The WinHTTP adapter is built and has its conformance test
   (`tests/cmake/mesh_https.cmake`), but no CI job runs it.
 - A durable receipt on any backend but Rust's: the generated C++ router, whose `https` client holds no envelope for a
@@ -379,19 +376,19 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   one before, which still opens what it sealed. Give each process the keys read again (`Sealed::set_keys`, or a
   restart), then run the re-seal passes: `Sealed::reseal_sessions(owner, lease_ttl_ms, now_ms)`, which takes each
   session's lease under the name `owner` and writes it again from the version it read, leaving one another process
-  holds; `Sealed::reseal_credentials()`; `Sealed::reseal_values()`, the key-value feature's; and
-  `Sealed::reseal_keys()`, never beside a rotation of the key-encryption key. Each answers `Resealed`: rows written
-  again (`resealed`), rows `left` (run the pass again later), rows `refused` (they do not open: changed on the medium,
-  or sealed under a key the process was not given). The outboxes and the audit log have no pass: an outbox entry
-  sealed under the retired key stays so until an acknowledgement or an expiry deletes it, at most `retain_ms` after it
-  was written; an expiry's note until the checkpoint of the session it is for is next written; an audit row until
-  retention deletes its segment, `retain_days` of its stream after it was written; and an audit checkpoint for as
-  long as it anchors what remains. So the retired key may be destroyed only once every pass answers no row left and
-  none refused, and no such row names it. Each record names the key that sealed it in the clear, after its magic
-  (`docs/SCE_SEALED_RECORD.md` section 1), so a read shows what still needs it:
+  holds; `Sealed::reseal_credentials()`; `Sealed::reseal_values()`, the key-value feature's;
+  `Sealed::reseal_outboxes()`, every durable client's outbox and every expiry's note; `Sealed::reseal_audit()`, every
+  audit row's entry and every checkpoint's signature, each row's sequence, moment and chain kept, so a reader verifies
+  the stream as before; and `Sealed::reseal_keys()`, never beside a rotation of the key-encryption key. Each writes a
+  row again by the store's replacement from the bytes it read, so a row another process changed or deleted in between
+  is left, not overwritten. Each answers `Resealed`: rows written again (`resealed`), rows `left` (run the pass again
+  later), rows `refused` (they do not open: changed on the medium, or sealed under a key the process was not given).
+  Once every pass answers no row left and none refused, the retired key opens nothing the store holds and may be
+  destroyed; a backup carries the keys its own rows were sealed under (section 8). Each record names the key that
+  sealed it in the clear, after its magic (`docs/SCE_SEALED_RECORD.md` section 1), so a read confirms it:
   `SELECT count(*) FROM audit_rows WHERE CAST(substr(entry, 14, 40) AS TEXT) = '<the retired id>'`, and the same of
-  `outbox_entries.envelope`, `outbox_notes.envelope` and `audit_checkpoints.signature`. The index key is never
-  rotated.
+  `sessions.state`, `outbox_entries.envelope`, `outbox_notes.envelope`, `audit_checkpoints.signature` and the other
+  sealed columns of the table below. The index key is never rotated.
 - **What sealing does not give.** Freshness against someone who can write the medium: a row replaced by an earlier
   sealing of the same row opens, and a token's revocation, kept in the clear, can be set back by hand. The lease's
   fence and the version stop a process that is wrong, not a medium written by hand; keep the file where only the
