@@ -314,6 +314,68 @@ pub fn lookup(invoke_type: &str) -> Option<&'static StandardHostType> {
     TYPES.iter().find(|t| t.invoke_type == invoke_type)
 }
 
+/// A relation between two named bounds of the library's records
+/// (docs/adr/0109, D17): the bound of the object a host makes of a value is at
+/// least the value's bound and the most bytes the object adds to it. A build
+/// moves each bound with `--limit`; one that moved the value's and not the
+/// object's would hand a host a value whose object no record of the operation
+/// holds, so a machine that runs the operation is refused where it is written
+/// ([`refuse_broken_bound_relations`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoundRelation {
+    /// The named bound of what the operation signs or seals.
+    pub content: &'static str,
+    /// The named bound of the object made of it.
+    pub object: &'static str,
+    /// The most bytes the object adds to what it holds, rounded up: its tag,
+    /// its headers with a key id at its bound, the head of the content's byte
+    /// string, and the signature or the authentication tag.
+    pub overhead: u32,
+    /// The operations whose records hold both bounds, one in the request and
+    /// the other in the result, in the order of [`TYPES`].
+    pub operations: &'static [&'static str],
+}
+
+impl BoundRelation {
+    /// The least bound of the object for a content bound of `content`.
+    pub fn least_object(&self, content: u32) -> u64 {
+        u64::from(content) + u64::from(self.overhead)
+    }
+
+    /// Whether an object bound of `object` holds the object of every content a
+    /// bound of `content` admits.
+    pub fn holds(&self, content: u32, object: u32) -> bool {
+        u64::from(object) >= self.least_object(content)
+    }
+}
+
+/// The relations the table of standard types holds between the named bounds of
+/// its records (docs/adr/0109, D17), at the library's numbers 4096 and 4352
+/// for a signature and 4352 and 4480 for a seal:
+///
+/// - a `COSE_Sign1` (RFC 9052 section 4.2) adds at most 146 bytes to its
+///   payload: its tag and array heads, a protected header of the algorithm and
+///   a key id of 64 bytes, an empty unprotected one, the payload's head and a
+///   signature of 64 bytes with its head; the bound is 256 above;
+/// - a `COSE_Encrypt0` (section 5.2) adds at most 110 to its plaintext: its
+///   tag and array heads, a protected header of the algorithm, an unprotected
+///   one of a key id of 64 bytes and a nonce of 12, the ciphertext's head and
+///   a tag of 16; the bound is 128 above.
+pub const BOUND_RELATIONS: &[BoundRelation] = &[
+    BoundRelation {
+        content: "cose_payload",
+        object: "cose_signed",
+        overhead: 256,
+        operations: &["sce-host-cose-sign1", "sce-host-cose-verify1"],
+    },
+    BoundRelation {
+        content: "cose_plaintext",
+        object: "cose_sealed",
+        overhead: 128,
+        operations: &["sce-host-cose-encrypt0", "sce-host-cose-decrypt0"],
+    },
+];
+
 /// The fields of `invoke_type`'s request that the build writes and a document
 /// does not: the answer schema of a model's generation, written from
 /// `sce:answer` (docs/adr/0087, section 4.1, item 2), and the marks of an
@@ -461,6 +523,57 @@ pub fn refuse_enum_request_fields(model: &SCXMLModel, lane: HostLane) -> Result<
                 .clone()
                 .or_else(|| info.base.source_location.clone()),
         ));
+    }
+    Ok(())
+}
+
+/// Refuse `model` when a host-run `<invoke>` of an operation a relation of
+/// [`BOUND_RELATIONS`] names reads records whose bounds, as this build
+/// resolved them, break it: the first such `<invoke>`, in document order, as
+/// `codegen/standard-host-bound-relation`, naming the two bounds, their
+/// numbers and the least number the object's bound takes (docs/adr/0109,
+/// D17). The numbers are the records' own, so the relation is judged on what
+/// the machine is written with, whatever `--limit` gave. A record that names
+/// neither bound is passed over: [`validate`] holds a standard type to the
+/// library's records, which name both. Asked where [`refuse_unserved`] is, and
+/// after it, since a lane that serves no signing has no bound to judge.
+pub fn refuse_broken_bound_relations(model: &SCXMLModel) -> Result<(), GenerateError> {
+    let records = model.entry_records();
+    for info in host_invokes(model) {
+        for relation in BOUND_RELATIONS {
+            let Some(invoke_type) = relation
+                .operations
+                .iter()
+                .copied()
+                .find(|operation| *operation == info.invoke_type)
+            else {
+                continue;
+            };
+            // The bound the build resolved for the field of the request or the
+            // result that names `limit`.
+            let bound = |limit: &str| {
+                [&info.request_schema, &info.result_schema]
+                    .into_iter()
+                    .filter_map(|alias| records.get(alias))
+                    .flat_map(|record| record.fields.iter())
+                    .find(|field| field.limit.as_deref() == Some(limit))
+                    .and_then(|field| field.max_size)
+            };
+            let (Some(content), Some(object)) = (bound(relation.content), bound(relation.object))
+            else {
+                continue;
+            };
+            if !relation.holds(content, object) {
+                return Err(GenerateError::CodegenStandardHostBoundRelation {
+                    invoke_id: info.base.invoke_id.clone(),
+                    invoke_type,
+                    relation,
+                    content,
+                    object,
+                    at: info.base.source_location.clone(),
+                });
+            }
+        }
     }
     Ok(())
 }
@@ -802,6 +915,40 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// docs/adr/0109, D17: an object's bound holds the object of every content
+    /// its relation admits at the library's numbers and above, and one byte
+    /// short of that does not, with no number wrapping past 32 bits.
+    #[test]
+    fn a_relation_holds_at_its_overhead_and_not_a_byte_below() {
+        let [signed, sealed] = BOUND_RELATIONS else {
+            panic!("the table holds the relation of a signature and of a seal");
+        };
+        assert!(signed.holds(4096, 4352) && sealed.holds(4352, 4480));
+        assert!(signed.holds(8192, 8448) && sealed.holds(8448, 8576));
+        assert!(!signed.holds(4096, 4351) && !sealed.holds(4352, 4479));
+        assert!(!signed.holds(8192, 4352), "a payload moved alone");
+        assert!(!signed.holds(u32::MAX, u32::MAX), "no sum wraps");
+        assert_eq!(signed.least_object(u32::MAX), u64::from(u32::MAX) + 256);
+    }
+
+    /// Each relation names operations of the table, each served where signing
+    /// and sealing are, and no operation twice.
+    #[test]
+    fn each_relation_names_signing_or_sealing_operations_of_the_table() {
+        let mut named: Vec<&str> = Vec::new();
+        for relation in BOUND_RELATIONS {
+            assert_ne!(relation.content, relation.object);
+            for &operation in relation.operations {
+                let standard = lookup(operation)
+                    .unwrap_or_else(|| panic!("{operation} is no operation of the table"));
+                assert_eq!(standard.served_by, COSE_REFERENCE_HOSTS, "{operation}");
+                assert!(!named.contains(&operation), "{operation} is named twice");
+                named.push(operation);
+            }
+        }
+        assert_eq!(named.len(), 4, "sign, verify, seal and open: {named:?}");
     }
 
     /// Each entry lists at least one lane, each once, in the order of

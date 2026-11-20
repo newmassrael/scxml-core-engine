@@ -6460,6 +6460,27 @@ fn lane_names(lanes: &[crate::forge::standard_host::HostLane]) -> String {
         .join(", ")
 }
 
+/// The message of [`GenerateError::CodegenStandardHostBoundRelation`]: the
+/// `<invoke>`, the two bounds by their names and the numbers the build gave
+/// them, the bytes an object adds, and the least number the object's bound
+/// takes, which is the `--limit` that repairs the build.
+fn bound_relation_message(
+    invoke_id: &str,
+    invoke_type: &str,
+    relation: &crate::forge::standard_host::BoundRelation,
+    content: u32,
+    object: u32,
+) -> String {
+    let least = relation.least_object(content);
+    format!(
+        "<invoke id=\"{invoke_id}\"> runs the standard host type '{invoke_type}', whose records \
+         hold {content} bytes under `{}` and {object} under `{}`: an object takes up to {} bytes \
+         more than what it holds, so `{}` is at least {least}; build with --limit {}={least} or \
+         more",
+        relation.content, relation.object, relation.overhead, relation.object, relation.object
+    )
+}
+
 /// The message of [`ValidationError::ExactlyOneAttribute`]: which attributes
 /// the element takes one of, and whether it carries none or one too many.
 fn atomic_width_contradiction_message(
@@ -6800,6 +6821,31 @@ pub enum GenerateError {
         invoke_type: &'static str,
         lane: crate::forge::standard_host::HostLane,
         served_by: &'static [crate::forge::standard_host::HostLane],
+        at: Option<SourceLocation>,
+    },
+
+    /// A machine runs an `<invoke>` of a standard host operation whose
+    /// records, at the bounds this build resolved them to (`--limit`), break
+    /// a relation of the table of standard types: the bound of the object the
+    /// operation makes or reads is below the bound of what it signs or seals
+    /// and the bytes the object adds to it (docs/adr/0109, D17). Writing it
+    /// would give the machine a record that holds a value whose object no
+    /// record of the operation holds. Producer:
+    /// [`crate::forge::standard_host::refuse_broken_bound_relations`], asked
+    /// where a machine is written. `relation` is the table's own entry,
+    /// borrowed as the lanes of the refusal above are, so the variant stays
+    /// under `clippy::result_large_err`; `content` and `object` are the two
+    /// bounds as the build resolved them; `at` is the `<invoke>`.
+    #[error(
+        "{}",
+        bound_relation_message(.invoke_id, .invoke_type, .relation, *.content, *.object)
+    )]
+    CodegenStandardHostBoundRelation {
+        invoke_id: String,
+        invoke_type: &'static str,
+        relation: &'static crate::forge::standard_host::BoundRelation,
+        content: u32,
+        object: u32,
         at: Option<SourceLocation>,
     },
 

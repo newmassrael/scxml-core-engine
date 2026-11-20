@@ -3191,6 +3191,10 @@ driven on the six AOT channels.
   `entry` is a record of the schema it names, crossing as its JSON payload, and
   `sce:sensitivity` on a field of an event schema, whose marks the build writes
   into the request's `sensitivity`; `validation/audit-entry-schema`.
+- Amended by: ADR 0109 (D17): the signing and sealing records name their
+  bounds (`cose_payload`, `cose_signed`, `cose_plaintext`, `cose_sealed`),
+  which `--limit` moves, and a build whose bounds break a relation of the
+  table of standard types is refused; `codegen/standard-host-bound-relation`.
 
 A host-run invoke may name the records its request and its completion
 carry, each an alias of an imported event schema:
@@ -5277,6 +5281,23 @@ one whose JSON may be longer than the request's `entry` holds (`audit_entry`, wh
 `--limit` moves) and one whose marks are longer than `sensitivity` holds. Rust and C++
 serve the operation (docs/adr/0109, D0); every other lane refuses it as
 `codegen/standard-host-type-not-served`.
+
+**The bounds of the signing and sealing records** (docs/adr/0109, D17;
+docs/SCE_HOST_FEATURES.md, "Signing and sealing"). The library's records name the bound
+of what a host signs (`cose_payload`, 4096), of the object signed (`cose_signed`, 4352),
+of what it seals (`cose_plaintext`, 4352) and of the object sealed (`cose_sealed`, 4480),
+as `mac_message` and `random_bytes` bound a keyed digest's message and a draw, and
+`--limit` moves each as it moves every named bound. The table of standard types holds
+two relations between them: an object takes up to 256 bytes more than the payload it
+signs and up to 128 more than the plaintext it seals, so a build whose records hold a
+`cose_signed` below `cose_payload` and 256, or a `cose_sealed` below `cose_plaintext`
+and 128, is refused on each `<invoke>` of an operation that reads both
+(`codegen/standard-host-bound-relation`, naming the two bounds, their numbers and the
+least number the object's bound takes). The relation is judged on the records' bounds
+as the build resolved them, so a build that moves both together, or only the object's
+up, is taken. A generated machine declares each of these bounds it names as a constant
+(`<Machine>Limits`, "A bound is read by its name" below), which is what a host is given
+to judge a request by.
 
 **Enum variables.** `sce:type="enum:<alias>"` holds a variable in a variant of
 the enum the document imports as `<alias>` (`<sce:import kind="enum">`). It
@@ -10628,7 +10649,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (560 codes)
+## Appendix — `DiagnosticCode` index (561 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11188,6 +11209,7 @@ or SCE-internal issues.
 | `codegen/feature-selection-required` | Generate | A statechart carrying feature conditions generated with no `--features` for a backend that writes one variant at a time (ADR 0057 §6) |
 | `codegen/feature-lifting-mismatch` | Generate | A machine generated for every build of a product line that is not, for some build, what that build's variant generates alone, or a difference between variants no selector can stand before: a defect of the generator's merge (ADR 0057 §9) |
 | `codegen/standard-host-type-not-served` | Generate | A machine that runs an `<invoke>` of a standard host type generated for a lane, or lowered for the Interpreter (`sce-codegen lower`), whose reference host does not serve it: the table of standard types names the lanes that serve each type (`docs/SCE_HOST_FEATURES.md` section 7, ADR 0107 D8) |
+| `codegen/standard-host-bound-relation` | Generate | A machine that runs a standard signing or sealing operation built with bounds (`--limit`) that break a relation of the table of standard types: the bound of a signed object at least 256 bytes above its payload's, of a sealed one at least 128 above its plaintext's (`docs/SCE_HOST_FEATURES.md` section 10, ADR 0109 D17) |
 | `io/filesystem` | Io | Generic filesystem failure |
 | `cli/read-input` | Cli | Input file read error |
 | `cli/write-output` | Cli | Output file write error |

@@ -2104,6 +2104,10 @@ fn lower_parsed(
         crate::forge::standard_host::HostLane::Interpreter,
     )
     .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
+    // docs/adr/0109, D17: a build whose record bounds break a relation of the
+    // table is refused whatever its lane, the Interpreter's among them.
+    crate::forge::standard_host::refuse_broken_bound_relations(model)
+        .map_err(|refused| crate::locate_codegen_error(refused, label, model))?;
     // docs/adr/0109, D0: the Interpreter is no lane that reads an enum field of
     // a typed host-run request, and a lowering is its build.
     crate::forge::standard_host::refuse_enum_request_fields(

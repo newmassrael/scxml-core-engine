@@ -1553,6 +1553,7 @@ fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
             | GenerateError::SourceHashUnavailable { at, .. }
             | GenerateError::InlineChildUnreturnable { at, .. }
             | GenerateError::CodegenStandardHostTypeNotServed { at, .. }
+            | GenerateError::CodegenStandardHostBoundRelation { at, .. }
             | GenerateError::Migration { at, .. } => at.clone(),
             _ => None,
         },
@@ -2133,6 +2134,12 @@ pub fn emit_model_artifacts(
         forge::standard_host::HostLane::Generated(language),
     )
     .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
+    // docs/adr/0109, D17: the records of a signing or a sealing the machine
+    // runs hold their bounds as this build resolved them, and a build that
+    // moved one bound of a relation and not the other is refused here, where
+    // the machine is written, on the `<invoke>` that reads both.
+    forge::standard_host::refuse_broken_bound_relations(model)
+        .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
     // docs/adr/0109, D0: an enum field of a typed host-run request is read on
     // the lanes that build it, and refused by name on every other, here for
     // the same reason the refusal above is.
