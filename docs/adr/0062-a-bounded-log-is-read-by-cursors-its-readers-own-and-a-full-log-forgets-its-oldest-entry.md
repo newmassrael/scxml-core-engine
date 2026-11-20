@@ -1162,7 +1162,9 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   before it writes a byte, as the Rust codec does (`PresentIfMismatch`; see "The codecs refuse a flag their element
   contradicts" below), so `publish` raises it and takes no sequence number. The log judges nothing of its own: it stores
   what the codec accepted.
-  `test_a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published` holds it.
+  `test_a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published` held it until 2026-11-20, when a
+  printed element came to say its flags itself and the test went with the flag `publish` no longer takes (see "A printed
+  Python element says its flags" below).
 - **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the Python module for flags alone, for flags and a tag, for a tag
   alone, for 65 flags (flag 63 closes the first context word, flag 64 opens the second), and for an element with no caller
   input; the refusal test for Python is now one of acceptance, and the registry-driven tests follow the list.
@@ -1666,6 +1668,31 @@ one that does not write the slot does not. A language added to `Language` is not
 The test that held the lists against each other went with them; `what_a_caller_must_give_is_stored_with_the_entry_in_every_language`
 holds that no language refuses an element for a flag input or a tag, and the casefile
 `a_broadcast_log_stores_the_callers_inputs_beside_its_bytes.cases` drops the four cases whose code is gone (14 remain).
+
+### A printed Python element says its flags (2026-11-20)
+
+The Python codec of an element is printed from its encode plan (docs/adr/0081 step 4), and a printed encode takes no flag
+input the element's value says (docs/adr/0065 section 6, R4a): it reads the flag off the value. A log over such an element
+that still took `flags` and handed them to `encode` raised `TypeError` on `publish`. Since 66cc35452b4 the Python
+template does what the C++ and Swift ones do for a printed element:
+
+- **`publish` reads a said flag off the element** through the element module's `input_<name>`, and stores it as the value
+  says it, so no entry is stored under a flag its bytes disagree with. A flag the value says in some of its values only
+  (R4e) is what the value says where it says it, and what the caller gives where it says nothing (`input_<name>` answers
+  `None` there). The flags the value does not say in every value are the caller's, in `<Pascal>GivenFlags`
+  (`publish(publisher, element, given)`); an element that says every flag takes none (`publish(publisher, element)`). The
+  item a read returns still holds every flag in `<Pascal>Flags`, and the entry stores them as before.
+- **The encode is handed only the flags its value does not say at all.** A said flag can no longer contradict the element,
+  so the refusal the section above describes is not reachable through `publish` for a printed element, and its Python test
+  was removed. What holds the behaviour is `test_an_entry_is_stored_under_the_flag_its_element_says`,
+  `test_a_reader_gets_back_the_flag_an_entry_was_published_under`,
+  `test_every_reader_of_an_entry_decodes_it_under_the_same_flag` and
+  `test_a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_published_under` in
+  `backends/python/forge-runtime/tests/test_broadcast_log_generated.py`, and in `sce-build/tests/broadcast_log_kind.rs`
+  `python_stores_a_flag_the_element_says_in_some_values_as_said_and_else_as_given` and
+  `python_derives_each_flag_of_several_on_a_line_of_its_own`.
+- **An element that is not printed** keeps the API of "What the caller inputs landed for Python": `publish` takes `flags`
+  and hands each to `encode`.
 
 ### What is still undone
 
