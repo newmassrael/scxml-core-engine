@@ -3241,3 +3241,37 @@ routers, which carry the new deploy keys.
   compiled into `sce_mesh_common`): it links no cryptographic library, and a router whose bindings sign or verify is
   handed `SodiumCoseCrypto` (`host/SodiumCoseCrypto.h`, the `sce_host_cose` target on libsodium).
 
+## A server keeps what it sends a durable client until the client acknowledges it, and stops in order (ADR 0109 D10)
+
+Landing: the commits that add this section. No generated tree changes; a consumer regenerates its Rust Mesh peer
+tables, which carry the new deploy keys, and changes the code that implements or wraps a session store, matches on
+`LinkEvent`, or writes a peer table by hand.
+
+- `SessionStore`'s one write is `write(key, &Write)`, which keeps or removes the session (`Change`), appends to
+  outboxes (`Write::outbox`, each an `Append`) and takes the session's notes (`Write::notes_through`) in one
+  transaction, and answers `Written` (the version, `0` once removed, and where each append was kept). `put` and
+  `delete` are provided methods built on it and are no longer implemented: a store of the consumer's own implements
+  `write`, and a store that wraps another forwards `write` where it forwarded `put` and `delete`, telling a removal
+  by `Change::Remove`. The outbox calls (`append`, `outbox`, `open_outbox`, `acknowledge`, `expire`, `notes`) answer
+  `NoOutbox` by default; a store that serves a durable binding implements them, held to
+  `sce_rust_session_store::outbox_conformance`. `SqliteStore`'s layout is 5, and a file of layout 1 to 4 is brought
+  to it when opened; a build before this one refuses a file of layout 5.
+- Rust `LinkEvent` has a variant more, `Carried(peer, envelopes)`: what a `200` carried under `receipt: durable`,
+  which `deliver` hands to `Endpoint::peer_carried`. A `match` over `LinkEvent` names it; a host that hands every
+  event to `deliver` changes nothing.
+- The peer table's `PeerLink::HttpsDial` carries `receipt: Receipt` and `PeerLink::HttpsAccept` carries `receipt`
+  and `retain_ms`. A generated table has them; one written by hand adds `receipt: Receipt::Transport` and
+  `retain_ms: 2_592_000_000`. `Machine::router` makes a router checkpoint and send durably to a dialing `https` peer
+  under `Receipt::Durable`. `ConfigError` has `BadReceipt`, and `PoolError` has `OutboxExpired`; a `match` over
+  either names it.
+- A pool whose accepting `https` binding is durable keeps each client's outbox (`Pool::outboxes`): the host gives it
+  to the server before the server serves (`HttpsServer::keep_outboxes`), calls `Pool::expire` on its clock loop's
+  schedule, and stops with `HttpsServer::stop` and then `Pool::stop` (`docs/SCE_SERVER_DEPLOY.md` section 4.1).
+  `HttpsServer::serve` answers an error of kind `Interrupted` once the server was stopped. `ClientSettings` has a
+  field `durable: bool`, which `ClientSettings::new` leaves false and `from_peer` reads from the link; a Rust client
+  under it acknowledges what `HttpsClient::held` was told.
+- deploy.yaml takes `persistence: checkpoint` and a `receipt: { window, retry_ms }` block on a machine, `receipt:` on
+  a binding and `retain_ms` on an accepting `https` binding (`docs/SCE_ACCEPTED_SUBSET.md` section 2.8), with four
+  new codes: `mesh/deploy-invalid-receipt`, `mesh/deploy-receipt-without-persistence`,
+  `mesh/codegen-durable-receipt-unsupported` and `mesh/codegen-persistence-without-saved-state`.
+

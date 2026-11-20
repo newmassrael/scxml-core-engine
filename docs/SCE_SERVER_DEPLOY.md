@@ -10,7 +10,8 @@ from SCE_MESH.md, and each says where.
 Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
 decisions D1 and D2: what a client may cost the server (section 2); D8: the store sealed at rest, its keys and what an
 SQL read of it shows (sections 3, 8 and 9); D9: message signatures, the `key` authenticator and the deploy keys
-`sign`, `verify` and `max_skew_ms` (sections 0, 1, 2, 5 and 7).
+`sign`, `verify` and `max_skew_ms` (sections 0, 1, 2, 5 and 7); D10: `persistence:` and `receipt:`, a durable client's
+outbox in the store, its window and its expiry, and the orderly stop (sections 0 to 4, 8 and 9).
 
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
@@ -30,19 +31,21 @@ says of "the program" is what such a program must do.
 | The `https` client, Rust | `sce_rust_mesh::https::client::HttpsClient` over `HyperTransport` | SCE_MESH.md sections 22.6 and 22.8 |
 | The `https` client, C++ | the generated `TransportRouter`'s `https` arm over `SCE::Mesh::HttpsTransport`, with `CurlHttpsTransport` or `WinHttpHttpsTransport` | SCE_MESH.md sections 22.6 and 22.8 |
 | Message signatures: a `200` signed by the server's `sign` key and verified by a client under `verify:`, a request signed under the `key` authenticator | `sce_rust_mesh::https::signature` (server and Rust client); `SCE::Mesh::Https::Signatures` (C++ client), on libsodium | ADR 0109, D9; SCE_MESH.md section 22.9 |
+| A durable client's outbox: what a session sends it kept in the store, appended by the write of the session's checkpoint, until the client acknowledges it; its window and its expiry | `SessionStore::write` and the outbox calls of `sce-rust-session-store` (`SqliteStore` from layout 5, sealed under `Sealed`); `sce_rust_mesh::outbox::Outboxes`, kept by the pool (`Pool::outboxes`, `Pool::expire`) and answered from by the server (`HttpsServer::keep_outboxes`) | ADR 0109, D10; SCE_MESH.md sections 10.11 and 22.3 |
+| The orderly stop: the server answers what it holds and takes nothing in, the pool saves every session as a clean checkpoint | `HttpsServer::stop`, `Pool::stop` | ADR 0109, D10; SCE_MESH.md sections 14.4 and 22.4 |
+| The dialing side of a durable `https` binding in Rust: acknowledges only what a durable checkpoint of its own holds, keeps what it sent until a `200` carried it | `HttpsClient::received`, `HttpsClient::held`, `LinkEvent::Carried`, and the router `Machine::router` builds | ADR 0109, D10; SCE_MESH.md section 10.11 |
 
 Not built, and a server must not count on them:
 
-- The suite of ADR 0107 D10 (ten thousand sessions killed at random points, two processes against one store, the
-  binding through proxies with responses lost on purpose). Each part above has its own tests; their composition under
-  load and kills is not held by a suite yet.
+- The rest of the suite of ADR 0107 D10 (ten thousand sessions killed at random points, two processes against one
+  store, the binding through proxies with responses lost on purpose) is under `tests/server`, the outbox's kills with
+  it (ADR 0109, D10); it is a test suite, not a guarantee of a deployment's own composition.
 - The Windows CI lane of ADR 0107 D11. The WinHTTP adapter is built and has its conformance test
   (`tests/cmake/mesh_https.cmake`), but no CI job runs it.
-- The deploy keys `persistence:` and `receipt:` (SCE_MESH.md section 10.11, "Status"). The parser refuses both as
-  unknown. A keyed pool checkpoints its sessions without them, and its bindings take `receipt: transport`
-  (SCE_MESH.md section 14.4, "What a pool does not keep").
+- A durable receipt on any backend but Rust's: the generated C++ router, whose `https` client holds no envelope for a
+  checkpoint, and the Kotlin and Swift host cores refuse `persistence:` and `receipt: durable` by name
+  (`mesh/codegen-durable-receipt-unsupported`).
 - A client of the `https` binding on the Kotlin and Swift host cores (SCE_MESH.md section 22.8).
-- An orderly stop of a pool that saves every session it holds as a clean checkpoint (section 4).
 - The removal of expired and revoked tokens from the credential store (section 5).
 - A record signed by name and kept beyond the exchange (`sce:payload`, ADR 0107 Open question 1): ADR 0109 D9's
   record-level half, a later step after ADR 0101's steps 4a and 4b. Message signatures cover one exchange.
@@ -91,6 +94,8 @@ The keys and their defaults are SCE_MESH.md section 22's table; the defaults are
 | server | `trusted_proxies` | the proxies whose `Forwarded` header names the client's address | none | a list of CIDR blocks (`10.0.0.0/8`, `2001:db8::/32`, or a bare address) |
 | server | `sign` | the `sign` key of the server's key ring every `200` is signed with (section 5, "Message signatures") | none: nothing is signed | a key's id, 1 to 64 bytes |
 | server | `max_skew_ms` | how far a signed request's `created` may lie from the server's clock | 300000 | a positive integer that fits 32 bits, beside `authenticator: key` only |
+| both | `receipt` | `durable` keeps each client's mailbox as an outbox in the session store (section 3), and a client acknowledges only what a checkpoint of its own holds | `transport` | `transport`, `durable`; `durable` needs both machines checkpointed (section 2.3) |
+| server | `retain_ms` | how long an outbox entry is kept unless its client acknowledges it | 2592000000 (thirty days) | a positive integer, at least `absence_ms`, beside `receipt: durable` only |
 | client | `url` | `https://<host>[:<port>][<base>]`, before the binding's path, with no query or fragment; `http://` only to a loopback host | required | as said |
 | client | `authenticator` | as on the server | required | as on the server |
 | client | `hold_ms` | how long a poll asks the server to hold it | 25000 | a positive integer that fits 32 bits |
@@ -108,9 +113,17 @@ What these mean for an operator:
   transport failure (SCE_MESH.md section 22.4) and answers with its backoff. Where an intermediary's limit cannot be
   raised, lower the client's `hold_ms` below it; the server grants the smaller of `Sce-Mesh-Hold-Ms` and
   `max_hold_ms` (SCE_MESH.md section 22.3).
-- **A full mailbox drops.** A send to a client whose mailbox holds `mailbox` envelopes is dropped as SCE_MESH.md
-  section 16.7 row 9 (`backpressureDrop`). A client absent for longer than `absence_ms` is told to its machine as row
-  1 (`transportUnavailable`), and its mailbox stays (SCE_MESH.md section 22.4).
+- **A full mailbox drops; a full durable outbox refuses.** Under `receipt: transport` a send to a client whose
+  mailbox holds `mailbox` envelopes is dropped as SCE_MESH.md section 16.7 row 9 (`backpressureDrop`). Under
+  `receipt: durable` `mailbox` is the client's durable window: a send admitted while the client's outbox and what the
+  pool's sessions produced for it and no write appended yet hold `mailbox` envelopes is refused at admit as row 9,
+  told to the session that sent it, and nothing accepted is ever dropped. A client absent for longer than
+  `absence_ms` is told to its machine as row 1 (`transportUnavailable`), and its mailbox stays (SCE_MESH.md section
+  22.4).
+- **A durable outbox expires.** An entry kept longer than `retain_ms` without its client acknowledging it is deleted
+  by `Pool::expire`, which the clock loop calls on its schedule; the program is told (`PoolError::OutboxExpired`), and
+  the session that sent it is told at its next run as row 15 (`outboundStaleDrop`). Choose `retain_ms` as the longest
+  a client may be gone and still be owed what was sent to it.
 - **A client costs a stated bound** (ADR 0109, D1). A client's entry is removed once its mailbox is empty, no
   exchange of it is in flight and it is not ready, so the names that make one exchange and go away are forgotten
   `absence_ms` after; `max_clients` bounds the entries held at once, and a name past it is answered `503` with
@@ -193,6 +206,32 @@ session, and one past it is shed the same way; each shed the program is told of 
 started for a key the store holds nothing for is written only if its first run does not end in a final state, so a
 document that answers a key it does not know and finishes costs the store nothing.
 
+### 2.3 What is kept across a crash: `persistence:` and `receipt:`
+
+SCE_MESH.md section 10.11 (ADR 0109, D10). A machine entry may declare
+
+```yaml
+persistence: checkpoint            # the host core checkpoints the machine
+receipt: { window: 256, retry_ms: 1000 }   # optional: how its durable bindings send
+```
+
+and a binding `receipt: durable` (or `transport`, the default). A durable binding needs both machines it joins
+checkpointed: by `persistence: checkpoint`, by being a keyed pool (`sessions:`, whose sessions are kept as their
+checkpoints), or by being held in the tree of a machine that is; otherwise the deployment is refused naming the
+machine that is not (`mesh/deploy-receipt-without-persistence`). A `receipt:` block with a field below 1, or on a
+machine with no durable binding, is refused (`mesh/deploy-invalid-receipt`); `persistence: checkpoint` on a document
+that saves nothing is refused when the machine is generated (`mesh/codegen-persistence-without-saved-state`); and
+only the Rust host core keeps either, so every other backend refuses the machine by name
+(`mesh/codegen-durable-receipt-unsupported`).
+
+On the server, `receipt: durable` on the accepting `https` binding keeps each client's mailbox as an outbox in the
+session store (section 3): nothing a session sent the client is lost by a crash or a restart, its numbering included,
+until the client acknowledges it or `retain_ms` expires it. On a Rust client, it makes the client acknowledge only what
+a durable checkpoint of its own holds and keep what it sent in its checkpoint until a `200` carried it: the program
+reads `HttpsClient::received()` before it applies what the client handed it, takes its checkpoint, and, once the
+checkpoint is durable, calls `HttpsClient::held(&received)`; it hands each `LinkEvent::Carried` to the endpoint as every
+other event.
+
 ## 3. The session store
 
 The reference store is `SqliteStore` (`backends/rust/session-store/src/sqlite.rs`): one SQLite database file, opened
@@ -207,10 +246,17 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   system, never a network one. Beside `<file>` SQLite keeps `<file>-wal` and `<file>-shm`; all three are the store.
 - **Waiting for a lock.** A call that finds the database locked by another connection's write waits 5 s
   (`SqliteStore::BUSY_TIMEOUT`, or the bound given to `open_with_busy_timeout`) before it fails.
-- **Its layout.** The database's `user_version` names the layout, `4` today. A file of layout `1`, `2` or `3` is
-  brought to `4` when it is opened, in one transaction, its sessions, leases, keys and credentials kept. A file of a
-  layout this build does not know, or one that holds tables the store did not make, is refused. A later build that
-  changes the layout makes a rollback to an earlier build refuse the file.
+- **Its layout.** The database's `user_version` names the layout, `5` today. A file of layout `1` to `4` is brought
+  to `5` when it is opened, in one transaction, its sessions, leases, keys and credentials kept. A file of a layout
+  this build does not know, or one that holds tables the store did not make, is refused. A later build that changes
+  the layout makes a rollback to an earlier build refuse the file: a build before layout 5 refuses a file this one
+  opened.
+- **The outboxes** (ADR 0109, D10). Under `receipt: durable` what a session sends a client is appended to the
+  client's outbox by the same transaction that writes the session's checkpoint (`SessionStore::write`), so either
+  both are durable or neither; an acknowledgement deletes what it covers, and an expiry what is older than
+  `retain_ms`, writing in the same transaction a note for the session that sent it and making that session due at
+  once, so it is told at its next run. Under the sealed store every envelope is a record sealed for the entry of its
+  client's name, the client's name and the sending session's key inside it.
 - **Sealed at rest** (ADR 0109, D8; `docs/SCE_SEALED_RECORD.md`). SCE_MESH.md section 10.11 asks the host to store a
   checkpoint encrypted at rest, since the saved state in it holds the document's values in the clear. The program
   opens the store sealed: `Sealed::new(SqliteStore::open(path)?, keys)`, where `keys` is
@@ -240,7 +286,9 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   fence and the version stop a process that is wrong, not a medium written by hand; keep the file where only the
   server's account writes it.
 
-The tables (`LAYOUT_1` to `LAYOUT_4` in `sqlite.rs`): `sessions` (`session`, `state`, `version`, `earliest_due`),
+The tables (`LAYOUT_1` to `LAYOUT_5` in `sqlite.rs`): `outbox_heads` (`client`, `incarnation`, `next`,
+`touched_ms`), `outbox_entries` (`client`, `number`, `at_ms`, `sender`, `envelope`) and `outbox_notes` (`id`,
+`session`, `client`, `number`, `at_ms`, `envelope`), the outboxes of layout 5; `sessions` (`session`, `state`, `version`, `earliest_due`),
 `leases` (`session`, `owner`, `fence`, `expires_ms`), and `numbers`, the one counter versions and fences are drawn
 from; and the keys a host generates and derives (`KeyStore`, docs/SCE_HOST_FEATURES.md section 13): `keys` (`id`,
 `key_use`, `algorithm`, `wrapped`, `label`, `created_ms`, `state`), each key's material wrapped under a
@@ -262,19 +310,23 @@ leaves before the checkpoint that holds it is durable. So, when the process stop
   (`Pool::due`, woken by `Pool::next_wake_ms`). A delayed `<send>` that came due while the process was down is
   delivered once, after the load, and a restored machine arms a send already due as due now (SCE_MESH.md section
   10.11, "Timers of sessions that are not loaded").
-- **`RESTORED` or not.** A session that was dropped as idle was saved as a clean checkpoint, and its restore raises
-  nothing. A session that was in memory when the process stopped restores from a checkpoint that is not clean, and
-  its machine receives SCE_MESH.md section 16.7 row 17 (`restored`) once per peer source it holds state for: an
-  envelope that source sent after the checkpoint may have been taken in and lost. No call of the pool saves every
-  session clean before a stop.
+- **`RESTORED` or not.** A session that was dropped as idle, or saved by an orderly stop (below), was saved as a
+  clean checkpoint, and its restore raises nothing. A session that was in memory when the process stopped without
+  one restores from a checkpoint that is not clean, and its machine receives SCE_MESH.md section 16.7 row 17
+  (`restored`) once per peer source it holds state for: an envelope that source sent after the checkpoint may have
+  been taken in and lost.
 - **Repeated requests get the first answer.** A request the client's core sends again (under the binding's retry
   policy, after a transport failure) is answered from the reply cache the checkpoint holds (ADR 0107, D4), across the
   restart.
-- **The mailboxes start empty.** `HttpsServer::new` draws a new incarnation and the mailboxes number from 1 again
-  (SCE_MESH.md section 22.3); a client learns it from `Sce-Mesh-Epoch` and starts its acknowledgement over. What waited
-  in a mailbox at the stop is lost with the process: a `<send>` to the client among it is not delivered, and a request
-  whose reply was among it ends at its deadline (SCE_MESH.md section 9.5). Durable receipt, which would keep them, is
-  not read by the pool yet (section 0).
+- **A durable client's mailbox outlives the process** (ADR 0109, D10). Under `receipt: durable` the mailbox is the
+  client's outbox in the store, so the restarted server answers the client's next exchange with what it held, in the
+  same incarnation and numbering, and the client acknowledges on where it stopped; nothing it was sent is lost, and a
+  copy it took in before is dropped by its duplicate window. Give the server the pool's outboxes before it serves
+  (`server.keep_outboxes(Arc::clone(pool.outboxes().expect("a durable binding")))`).
+- **Other mailboxes start empty.** Under `receipt: transport` a mailbox draws a new incarnation when its entry is made
+  and numbers from 1 again (SCE_MESH.md section 22.3); a client learns it from `Sce-Mesh-Epoch` and starts its
+  acknowledgement over. What waited in such a mailbox at the stop is lost with the process: a `<send>` to the client
+  among it is not delivered, and a request whose reply was among it ends at its deadline (SCE_MESH.md section 9.5).
 - **Leases.** A process that starts again under the same `owner` takes each key's lease at once, with a new fence that
   refuses its previous life's writes (`SessionStore::acquire`). A process under another name waits for the old leases
   to run out, `lease_ttl_ms` after their last renewal; until then a request for such a key is answered
@@ -282,6 +334,42 @@ leaves before the checkpoint that holds it is durable. So, when the process stop
 - **In-memory host state is gone.** Pins and tokens kept by `MemoryCredentials` (section 5), the reference hosts'
   key-value stores and their first results of a put-if, and the COSE keys a host derived (`docs/SCE_HOST_FEATURES.md`
   section 9): a `derived:<n>` id a restored session holds names no key, or another one.
+
+### 4.1 Stopping in order
+
+An orderly stop leaves only clean checkpoints, so the next start raises no `restored` and has nothing to recover
+(ADR 0109, D10; SCE_MESH.md sections 14.4 and 22.4). It is two calls, the server's first: `HttpsServer::stop(within)`
+accepts no connection more, answers every new exchange `503` with `Retry-After` (the clients send again to whatever
+serves next), answers every held exchange at once with what its mailbox holds, and waits for the exchanges in flight
+to end; `Pool::stop(deadline)` admits nothing more, runs what each session's inbox holds, waits for a run another
+thread is in the middle of, saves every session as a clean checkpoint, and releases its leases. It answers a report:
+`saved`, and `not_saved` with the reason of each (a run still going at the deadline, a write that failed, a lease
+lost); a session not saved restores with `restored`, as after a crash, so report them.
+
+Catching the signal is the program's. On Unix a service manager sends `SIGTERM` and waits before `SIGKILL`
+(systemd's `TimeoutStopSec=`, 90 s by default; Kubernetes' `terminationGracePeriodSeconds`, 30 s): give the two
+calls together less than that. With tokio's `signal` feature:
+
+```rust
+let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+tokio::select! {
+    _ = terminate.recv() => {}
+    _ = tokio::signal::ctrl_c() => {}
+}
+let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+server.stop(std::time::Duration::from_secs(5)).await;
+let report = tokio::task::spawn_blocking({
+    let pool = Arc::clone(&pool);
+    move || pool.stop(deadline)
+})
+.await?;
+for (key, reason) in &report.not_saved {
+    eprintln!("not saved: {key}: {reason}");
+}
+```
+
+`Pool::stop` blocks on the store, so it runs on a thread of its own (here tokio's blocking pool), not on a runtime's
+worker. A process killed before it ends, or a session the report names as not saved, restores as section 4 says.
 
 ## 5. Authentication and TLS on the server
 
@@ -412,15 +500,15 @@ inspecting proxy is a machine that does not trust the proxy's authority, and `Pr
 
 | What | Why | How |
 |---|---|---|
-| The session store: `<file>`, with its `-wal` and `-shm` | every session, its replies and its timers | a consistent copy while the server runs, by SQLite's own backup (the `sqlite3` shell's `.backup`, or `VACUUM INTO` on SQLite 3.27 or later); a plain file copy only while no process has the store open. The store has no backup command of its own. |
+| The session store: `<file>`, with its `-wal` and `-shm` | every session, its replies and its timers, and every durable client's outbox | a consistent copy while the server runs, by SQLite's own backup (the `sqlite3` shell's `.backup`, or `VACUUM INTO` on SQLite 3.27 or later); a plain file copy only while no process has the store open. The store has no backup command of its own. |
 | The server's TLS key and certificate chain | the clients' trust in the server | as the program keeps them |
 | The client authorities of `mtls`, and the material a `BearerCheck` of the program's own verifies with | who may claim a name | as the program keeps them; the pins and tokens of the credential store are in the session store's file, backed up with it |
 | The key-encryption key of the key ring | the sealing keys and the index key of a sealed store (section 3), the issuing key of tokens, and the keys a host generated and derived: without it a copy of the store opens nothing, and with it beside the copy the copy is in the clear | apart from the store and from its backups, which hold every key it protects wrapped and none of them in the clear: in the program's secret store or a key management service, with a copy kept where a loss of the server's machine does not reach it |
 | The COSE keys the host is configured with: signing seeds, sealing keys, trust sets (`docs/SCE_HOST_FEATURES.md` section 10) | what the machine signs and opens | as the program keeps them; never in the store, since a checkpoint holds no key (SCE_MESH.md section 10.11) |
 | deploy.yaml, the documents, and the build of the program | what the store's checkpoints are a state of | with the release |
 
-Nothing else of a server outlives its process: its mailboxes, `MemoryCredentials`, and the keys a host keeps in a key
-ring in memory are in memory (section 4).
+Nothing else of a server outlives its process: its mailboxes under `receipt: transport`, `MemoryCredentials`, and the
+keys a host keeps in a key ring in memory are in memory (section 4).
 
 A store sealed at rest (section 3) keeps its sealing keys and its index key in its own `keys` table, so a backup of
 the file carries the keys its rows were sealed under, wrapped, whatever was rotated since: what restores it is that
@@ -467,4 +555,4 @@ A session is **stuck** in these shapes, each with what shows it:
 | Leased by a process that is gone | a lease row whose `owner` runs nowhere; `PoolError::LeaseHeld` on the live process | it is served again once `expires_ms` passes; a process that started again under that owner takes it at once (section 4) |
 | Never saved | the session stays in memory past `idle_ms`; `PoolError::NotSaved` or `PoolError::Store` for it, again and again | its checkpoint cannot be written, so it is not dropped; the store's medium, or a machine that cannot be saved now |
 | Not restorable | `PoolError::NotBuilt` for the key at each request, each answered `RpcStatus::InternalError` | its checkpoint is one this build does not read (`checkpoint` format other than 1, or a saved state the machine refuses), or the program could not build the machine |
-| A client not reached | `transportUnavailable` (row 1) for the client, then `backpressureDrop` (row 9) on its sends | the client has made no exchange for `absence_ms`, and its mailbox filled; the session itself is well |
+| A client not reached | `transportUnavailable` (row 1) for the client, then `backpressureDrop` (row 9) on its sends | the client has made no exchange for `absence_ms`, and its mailbox filled; the session itself is well. Under `receipt: durable` the sends are refused at admit and nothing accepted is lost; once the client has been gone longer than `retain_ms`, `PoolError::OutboxExpired` and `outboundStaleDrop` (row 15) in the session that sent each, and `SELECT client, count(*) FROM outbox_entries GROUP BY client` shows who is owed what |
