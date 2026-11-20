@@ -25,6 +25,15 @@
 //!   log has no such key, no retention and no access rule of its own, and an
 //!   unkeyed digest of an identifier is reversed by trying the identifiers, so
 //!   a log line keeps no trace of the person: the marker alone.
+//! - **Under `datamodel="ecmascript"` no value has a type**, so the build cannot
+//!   tell a marked value from any other once it is read: it is assigned to a
+//!   variable, handed to a `<script>`, or logged in a `<finalize>`, and which
+//!   event a `<log>` of an `<onentry>` sees is not known before it runs. A
+//!   statechart under any data model but `sce-static` that imports a schema
+//!   marking a field, at any depth, is refused at the import
+//!   ([`refuse_untyped`]) rather than run with a log that may write the value
+//!   in the clear, as a schema that grew is refused there under the same data
+//!   models: only the typed lift reads it as its schema says.
 //!
 //! A value carried out of a marked field into a place of no mark (a variable,
 //! an unmarked field, a parameter of a child) is no longer marked, as an
@@ -33,7 +42,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::forge::model::{EventSchemaModel, Sensitivity};
+use crate::forge::error::{ForgeError, Located, ValidationError};
+use crate::forge::model::{EventSchemaModel, ForgeKind, Sensitivity};
 use crate::forge::types::TypeCtx;
 use crate::forge::value_path::{Place, Step};
 use crate::forge::value_type::{TypeScope, ValueType};
@@ -297,6 +307,66 @@ fn marked_fields(
         }
     }
     walk(base, ty, chain, marks, prefix, &mut Vec::new(), out);
+}
+
+/// Refuse a statechart under any data model but `sce-static` that imports an
+/// event schema, or a union, whose records mark a field at any depth: no value
+/// of such a data model has a type a mark can follow (see the module's
+/// documentation). Refused at the first such `<sce:import>`, naming the field it
+/// marks and the mark, as `validation/attribute-rule-violated` on its `src`,
+/// the code a schema that grew is refused by under the same data models
+/// (`crate::parser`'s reading of the imported siblings). Run where the imports
+/// are resolved, so a document is judged by every route that parses it.
+pub fn refuse_untyped(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<ForgeError>> {
+    if model.datamodel == crate::model::Datamodel::SceStatic {
+        return Ok(());
+    }
+    let marks = Marks::of_statechart(model);
+    if marks.is_empty() {
+        return Ok(());
+    }
+    let scope = crate::forge::value_path::statechart_scope(model);
+    for import in &model.forge_imports {
+        let ty = match import.kind {
+            ForgeKind::EventSchema => ValueType::Record {
+                alias: import.alias.clone(),
+            },
+            ForgeKind::Union => ValueType::Union {
+                alias: import.alias.clone(),
+            },
+            _ => continue,
+        };
+        let mut found = Vec::new();
+        marked_fields(Some(&scope), &ty, &[], &marks, "", &mut found);
+        if let Some((field, mark)) = found.first() {
+            return Err(Located::new(
+                ValidationError::AttributeRuleViolated {
+                    element: format!("<sce:import kind=\"{}\">", import.kind),
+                    attr: "src".into(),
+                    value: import.src.clone(),
+                    rule: untyped_rule(model.datamodel.as_str(), field, *mark),
+                }
+                .into(),
+                diag_label,
+                import.line,
+                None,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The rule [`refuse_untyped`] holds a statechart under `datamodel` to, for a
+/// schema whose field at the pointer `field` carries `mark`.
+fn untyped_rule(datamodel: &str, field: &str, mark: Sensitivity) -> String {
+    format!(
+        "a schema that marks no field under datamodel=\"{datamodel}\" — this one marks \
+         `{field}` {} (sce:sensitivity), and only a datamodel=\"sce-static\" machine follows \
+         a mark, writing its marker where a <log> reads a marked value; under any other data \
+         model no value has a type, and a marked value could reach a log line in the clear \
+         through a <log>, a <script> or a <finalize>",
+        mark.name()
+    )
 }
 
 #[cfg(test)]
@@ -652,6 +722,40 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Pinned by [`refuse_untyped`], run where the parser resolves the imports.
+    #[test]
+    fn an_ecmascript_machine_that_imports_a_marked_schema_is_refused_at_the_import() {
+        let refusal = parsed("ecmascript", SIGN_IN_SCHEMA)
+            .expect_err("a marked schema is not imported untyped")
+            .to_string();
+        assert!(
+            refusal.contains("<sce:import kind=\"event-schema\">")
+                && refusal.contains("'schema_sign_in.scxml'")
+                && refusal.contains("`/account` personal"),
+            "{refusal}"
+        );
+    }
+
+    #[test]
+    fn an_ecmascript_machine_that_imports_an_unmarked_schema_is_accepted() {
+        let unmarked = SIGN_IN_SCHEMA
+            .replace(r#" sce:sensitivity="personal""#, "")
+            .replace(r#" sce:sensitivity="secret""#, "");
+        let model = parsed("ecmascript", &unmarked).expect("an unmarked schema is imported");
+        assert!(model.imported_marks.is_empty());
+    }
+
+    #[test]
+    fn the_untyped_rule_names_the_data_model_the_field_and_the_mark() {
+        let rule = untyped_rule("ecmascript", "/password", Sensitivity::Secret);
+        assert!(
+            rule.contains("datamodel=\"ecmascript\"")
+                && rule.contains("`/password` secret")
+                && rule.contains("datamodel=\"sce-static\""),
+            "{rule}"
+        );
     }
 
     #[test]

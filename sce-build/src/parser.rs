@@ -3671,6 +3671,11 @@ impl SCXMLParser {
             // imported schema too, judged against the same map before the
             // request it writes a field of is judged.
             crate::forge::audit_entry::resolve(&model, diag_label)?;
+            // A mark of a schema is followed where a value's type is known, and
+            // a statechart of any data model but `sce-static` has none: one that
+            // imports a schema marking a field is refused here, by every route
+            // that parses it (docs/adr/0109, Open question 9).
+            crate::forge::sensitivity::refuse_untyped(&model, diag_label)?;
             // A host-run `<invoke>`'s typed interface names imported
             // schemas by alias, so it is judged against the alias map just
             // resolved — and its completion is bound to its result schema
