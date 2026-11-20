@@ -56,3 +56,18 @@ fn a_response_lost_after_the_server_acted_is_carried_again() {
 fn a_held_exchange_past_its_bound_is_a_timeout() {
     conformance::a_held_exchange_past_its_bound_is_a_timeout(&Hyper);
 }
+
+#[test]
+fn an_altered_first_number_is_refused() {
+    conformance::an_altered_first_number_is_refused(&Hyper);
+}
+
+#[test]
+fn an_altered_body_is_refused() {
+    conformance::an_altered_body_is_refused(&Hyper);
+}
+
+#[test]
+fn a_replayed_response_is_refused() {
+    conformance::a_replayed_response_is_refused(&Hyper);
+}

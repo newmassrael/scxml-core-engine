@@ -47,9 +47,15 @@
 //! * [`a_held_exchange_past_its_bound_is_a_timeout`]: a server that holds an exchange longer than
 //!   the request's bound is answered by the adapter as [`HttpsFailure::Timeout`], in about the
 //!   bound.
+//! * [`an_altered_first_number_is_refused`], [`an_altered_body_is_refused`] and
+//!   [`a_replayed_response_is_refused`] (SCE_MESH.md section 22.9): a client under `verify:`
+//!   reaches a server under `sign:` through a proxy that inspects TLS and alters the server's
+//!   `Sce-Mesh-First`, alters its body, or replays an earlier response; the client takes nothing of
+//!   each, acknowledges nothing, and is told once, and takes the next response that verifies.
 //!
-//! The test authority ([`TestAuthority`]) and the two proxies ([`tunnelling_proxy`],
-//! [`inspecting_proxy`], with what each saw in a [`ProxyLog`]) are public as well, so that a suite
+//! The test authority ([`TestAuthority`]) and the proxies ([`tunnelling_proxy`],
+//! [`inspecting_proxy`], [`tampering_proxy`], with what each saw in a [`ProxyLog`]) are public as
+//! well, so that a suite
 //! that puts a whole server behind the binding (`tests/server`, docs/adr/0107 decision D10) puts
 //! its client behind the same proxies the kit holds every adapter to.
 //!
@@ -70,7 +76,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
 
 use super::client::{ClientSettings, HttpsClient, HttpsClientTransport};
-use super::server::{server_tls, Authenticator, HttpsServer, MailboxTransport, ServerSettings};
+use super::server::{
+    server_tls, Authenticator, HttpsServer, MailboxTransport, ResponseSigner, ServerSettings,
+};
 use super::{
     deliver, Credential, HttpsFailure, HttpsRequest, HttpsTransport, LinkEvent, ACK_HEADER,
     CONTENT_TYPE, HOLD_HEADER,
@@ -80,6 +88,8 @@ use crate::inbound::Delivery;
 use crate::outbound::RetryPolicy;
 use crate::reconnect::Backoff;
 use crate::router::{PeerConfig, Router};
+use sce_rust_crypto::cose::TrustedKey;
+use sce_rust_crypto::ed25519::KeyPair;
 use sce_rust_crypto::equal::same_secret;
 use sce_rust_runtime::HostSendRequest;
 
@@ -205,10 +215,18 @@ fn mesh_send(event: &str, target: &str) -> HostSendRequest {
 
 /// The names of the events `calls` raise.
 fn raised_names(calls: Vec<EngineCall>) -> Vec<String> {
+    raised_events(calls)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+/// The events `calls` raise: each one's name and its `_event.data`.
+fn raised_events(calls: Vec<EngineCall>) -> Vec<(String, String)> {
     calls
         .into_iter()
         .filter_map(|call| match call {
-            EngineCall::Raise(event) => Some(event.name),
+            EngineCall::Raise(event) => Some((event.name, event.metadata.data)),
             EngineCall::EndInvoke { .. } => None,
         })
         .collect()
@@ -235,18 +253,50 @@ struct Bench {
     authority: TestAuthority,
 }
 
+/// Serve `server` on `listener` under `tls`, on `runtime`.
+fn serve_tls(
+    runtime: &Runtime,
+    listener: TcpListener,
+    tls: Arc<rustls::ServerConfig>,
+    server: HttpsServer,
+) {
+    runtime.spawn(async move {
+        let _ = server.serve(listener, Some(tls)).await;
+    });
+}
+
+/// The key the kit's signing server signs every `200` with (SCE_MESH.md section 22.9), and the
+/// trust set a client verifies it under.
+fn kit_signer() -> (ResponseSigner, Vec<TrustedKey>) {
+    let key = KeyPair::from_seed(&[0x4b; 32]);
+    let trusted = alloc::vec![TrustedKey {
+        id: "kit-server".to_string(),
+        public_key: key.public_key(),
+    }];
+    (ResponseSigner::new("kit-server", key), trusted)
+}
+
 impl Bench {
     fn new() -> Bench {
-        Bench::with_server(|runtime, listener, tls, server| {
-            runtime.spawn(async move {
-                let _ = server.serve(listener, Some(tls)).await;
-            });
-        })
+        Bench::with_server(serve_tls)
+    }
+
+    /// A bench whose server signs every `200` with [`kit_signer`]'s key.
+    fn signing() -> Bench {
+        Bench::build(serve_tls, Some(kit_signer().0))
     }
 
     /// A bench whose server is run by `run` on the listener, with the TLS and the server made.
     fn with_server(
         run: impl FnOnce(&Runtime, TcpListener, Arc<rustls::ServerConfig>, HttpsServer),
+    ) -> Bench {
+        Bench::build(run, None)
+    }
+
+    /// A bench whose server signs with `signer`, run by `run`.
+    fn build(
+        run: impl FnOnce(&Runtime, TcpListener, Arc<rustls::ServerConfig>, HttpsServer),
+        signer: Option<ResponseSigner>,
     ) -> Bench {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -288,6 +338,7 @@ impl Bench {
                 // The kit judges an adapter, which may retry as fast as its proxy lets it; the
                 // edge's rates are the server's own tests' to judge (docs/adr/0109, D2).
                 rates: crate::peers::EdgeRates::NONE,
+                signer,
                 ..ServerSettings::default()
             },
             Authenticator::Bearer(Arc::new(|name: &str, token: &str| {
@@ -336,6 +387,8 @@ struct ClientSide {
     client: HttpsClient,
     events: mpsc::Receiver<LinkEvent>,
     raised: Vec<String>,
+    /// The `_event.data` of every `error.communication` raised in the machine.
+    errors: Vec<String>,
     ready: bool,
 }
 
@@ -344,6 +397,17 @@ impl ClientSide {
         base: String,
         port: impl HttpsTransport + 'static,
         retry: Option<RetryPolicy>,
+    ) -> Self {
+        ClientSide::start_verifying(base, port, retry, None)
+    }
+
+    /// A client that verifies every `200` under `verify` when it is given (SCE_MESH.md section
+    /// 22.9).
+    fn start_verifying(
+        base: String,
+        port: impl HttpsTransport + 'static,
+        retry: Option<RetryPolicy>,
+        verify: Option<Vec<TrustedKey>>,
     ) -> Self {
         let (tx, events) = mpsc::channel();
         let settings = ClientSettings {
@@ -355,6 +419,7 @@ impl ClientSide {
                 factor: 2,
                 jitter: false,
             },
+            verify,
             ..ClientSettings::new(
                 base,
                 "phone",
@@ -380,6 +445,7 @@ impl ClientSide {
             client,
             events,
             raised: Vec::new(),
+            errors: Vec::new(),
             ready: false,
         }
     }
@@ -402,9 +468,22 @@ impl ClientSide {
                 deliver(&mut self.endpoint, event);
             }
             self.endpoint.tick();
-            let names = raised_names(self.endpoint.take_calls());
-            self.raised.extend(names);
+            for (name, data) in raised_events(self.endpoint.take_calls()) {
+                if name == "error.communication" {
+                    self.errors.push(data);
+                }
+                self.raised.push(name);
+            }
         }
+    }
+
+    /// How many `error.communication` events of `reason` the machine raised.
+    fn errors_of(&self, reason: &str) -> usize {
+        let wanted = alloc::format!("\"reason\":\"{reason}\"");
+        self.errors
+            .iter()
+            .filter(|data| data.contains(&wanted))
+            .count()
     }
 
     /// Drive the client machine for `period`: long enough for a second copy of what arrived to
@@ -575,19 +654,163 @@ pub fn inspecting_proxy(
     drop_one: bool,
     log: Arc<Mutex<ProxyLog>>,
 ) -> SocketAddr {
+    intercepting_proxy(
+        runtime,
+        authority,
+        upstream,
+        Relay::Copy {
+            drop_one,
+            dropped: Arc::new(AtomicBool::new(false)),
+        },
+        log,
+    )
+}
+
+/// How an alteration of a tampering proxy rewrites a `200` that carries envelopes, as an
+/// intermediary that reads the exchange in the clear can (SCE_MESH.md section 22.9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Alteration {
+    /// `Sce-Mesh-First` numbered one higher, which would make the client acknowledge an envelope
+    /// it never took in.
+    First,
+    /// A byte of the body changed.
+    Body,
+    /// The first `200` the proxy passed on, answering an earlier request, sent in its place.
+    Replay,
+}
+
+/// A tampering proxy's switch, and what it did.
+pub struct Tampering {
+    alteration: Alteration,
+    active: AtomicBool,
+    altered: AtomicU64,
+    /// The first `200` passed on, which [`Alteration::Replay`] sends again.
+    first: Mutex<Option<Vec<u8>>>,
+}
+
+impl Tampering {
+    /// A switch, on, for `alteration`.
+    pub fn new(alteration: Alteration) -> Arc<Tampering> {
+        Arc::new(Tampering {
+            alteration,
+            active: AtomicBool::new(true),
+            altered: AtomicU64::new(0),
+            first: Mutex::new(None),
+        })
+    }
+
+    /// Pass every response on as it is from now on.
+    pub fn stop(&self) {
+        self.active.store(false, Ordering::Release);
+    }
+
+    /// How many responses it altered.
+    pub fn altered(&self) -> u64 {
+        self.altered.load(Ordering::Acquire)
+    }
+
+    /// `response`, one whole HTTP/1.1 response read in the clear, as the proxy passes it on: a
+    /// `200` that carries a body altered while the switch is on, anything else as it is.
+    fn alter(&self, response: Vec<u8>) -> Vec<u8> {
+        let head_end = find(&response, b"\r\n\r\n").map_or(response.len(), |at| at + 4);
+        let head = String::from_utf8_lossy(&response[..head_end]).into_owned();
+        let ok = head.starts_with("HTTP/1.1 200");
+        let mut first = self.first.lock().expect("the first response");
+        if ok && first.is_none() {
+            *first = Some(response.clone());
+        }
+        if !ok || response.len() == head_end || !self.active.load(Ordering::Acquire) {
+            return response;
+        }
+        self.altered.fetch_add(1, Ordering::AcqRel);
+        match self.alteration {
+            Alteration::First => {
+                let rewritten: Vec<String> = head
+                    .split("\r\n")
+                    .map(|line| {
+                        let lowered = line.to_ascii_lowercase();
+                        match lowered.strip_prefix("sce-mesh-first:") {
+                            Some(number) => {
+                                let number: u64 = number.trim().parse().unwrap_or(0);
+                                alloc::format!("sce-mesh-first: {}", number + 1)
+                            }
+                            None => line.to_string(),
+                        }
+                    })
+                    .collect();
+                let mut out = rewritten.join("\r\n").into_bytes();
+                out.extend_from_slice(&response[head_end..]);
+                out
+            }
+            Alteration::Body => {
+                let mut out = response;
+                if let Some(last) = out.last_mut() {
+                    *last ^= 0x01;
+                }
+                out
+            }
+            Alteration::Replay => first.clone().unwrap_or(response),
+        }
+    }
+}
+
+/// Where `needle` first begins in `haystack`.
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// A proxy that inspects TLS as [`inspecting_proxy`] does, and alters what the server answers as
+/// `tampering` says: a `200` that carries envelopes has its `Sce-Mesh-First` or its body changed,
+/// or is replaced by the first `200` it passed on, while the switch is on. Responses are read one
+/// whole HTTP/1.1 message at a time, by their `Content-Length`. It listens on a loopback port of
+/// its own, which it answers, and runs on `runtime` until the runtime ends.
+pub fn tampering_proxy(
+    runtime: &Runtime,
+    authority: Arc<TestAuthority>,
+    upstream: Vec<u8>,
+    tampering: Arc<Tampering>,
+    log: Arc<Mutex<ProxyLog>>,
+) -> SocketAddr {
+    intercepting_proxy(runtime, authority, upstream, Relay::Tamper(tampering), log)
+}
+
+/// What a proxy that inspects TLS does with what it reads.
+#[derive(Clone)]
+enum Relay {
+    /// Copy it both ways, dropping the first response to a request that carried a body when
+    /// `drop_one` asks, which `dropped` says some connection did already.
+    Copy {
+        drop_one: bool,
+        dropped: Arc<AtomicBool>,
+    },
+    /// Copy what the client writes, and pass each response on as [`Tampering`] says.
+    Tamper(Arc<Tampering>),
+}
+
+/// A proxy that answers `CONNECT`, answers the client's TLS itself under `authority`, opens its own
+/// TLS to the server believing `upstream`, and relays what it reads in the clear as `relay` says,
+/// keeping what the client wrote.
+fn intercepting_proxy(
+    runtime: &Runtime,
+    authority: Arc<TestAuthority>,
+    upstream: Vec<u8>,
+    relay: Relay,
+    log: Arc<Mutex<ProxyLog>>,
+) -> SocketAddr {
     let listener = runtime
         .block_on(TcpListener::bind("127.0.0.1:0"))
         .expect("a loopback port");
     let address = listener.local_addr().expect("its address");
     let upstream_tls = crate::tls::client_config(&crate::tls::Roots::Only(alloc::vec![upstream]))
         .expect("the proxy's TLS to the server");
-    let dropped = Arc::new(AtomicBool::new(false));
     runtime.spawn(async move {
         while let Ok((mut client, _)) = listener.accept().await {
             let log = Arc::clone(&log);
             let authority = Arc::clone(&authority);
             let upstream_tls = Arc::clone(&upstream_tls);
-            let dropped = Arc::clone(&dropped);
+            let relay = relay.clone();
             tokio::spawn(async move {
                 let Some(target) = read_connect(&mut client).await else {
                     return;
@@ -632,17 +855,106 @@ pub fn inspecting_proxy(
                 else {
                     return;
                 };
-                relay(client, server, drop_one, dropped, log).await;
+                match relay {
+                    Relay::Copy { drop_one, dropped } => {
+                        copy_relay(client, server, drop_one, dropped, log).await
+                    }
+                    Relay::Tamper(tampering) => tamper_relay(client, server, tampering, log).await,
+                }
             });
         }
     });
     address
 }
 
+/// Read one whole HTTP/1.1 response from `read`: its head, then as many bytes of body as its
+/// `Content-Length` names. `pending` holds what was read past the last response. `None` once the
+/// connection ends.
+async fn read_response<R: AsyncRead + Unpin>(
+    stream: &mut R,
+    pending: &mut Vec<u8>,
+) -> Option<Vec<u8>> {
+    let mut buffer = [0u8; 8192];
+    loop {
+        if let Some(end) = find(pending, b"\r\n\r\n") {
+            let head_end = end + 4;
+            let head = String::from_utf8_lossy(&pending[..head_end]).to_ascii_lowercase();
+            let length = head
+                .split("\r\n")
+                .find_map(|line| line.strip_prefix("content-length:"))
+                .and_then(|length| length.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            while pending.len() < head_end + length {
+                let got = stream.read(&mut buffer).await.ok()?;
+                if got == 0 {
+                    return None;
+                }
+                pending.extend_from_slice(&buffer[..got]);
+            }
+            let rest = pending.split_off(head_end + length);
+            return Some(core::mem::replace(pending, rest));
+        }
+        let got = stream.read(&mut buffer).await.ok()?;
+        if got == 0 {
+            return None;
+        }
+        pending.extend_from_slice(&buffer[..got]);
+    }
+}
+
+/// Copy what `client` writes to `server`, keeping it, and pass each response `server` answers on
+/// to `client` as `tampering` says, until either ends.
+async fn tamper_relay<C, S>(
+    client: C,
+    server: S,
+    tampering: Arc<Tampering>,
+    log: Arc<Mutex<ProxyLog>>,
+) where
+    C: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let (mut client_read, mut client_write) = tokio::io::split(client);
+    let (mut server_read, mut server_write) = tokio::io::split(server);
+    let up = async {
+        let mut buffer = [0u8; 8192];
+        loop {
+            let Ok(read) = client_read.read(&mut buffer).await else {
+                return;
+            };
+            if read == 0 {
+                return;
+            }
+            let chunk = &buffer[..read];
+            {
+                let mut log = log.lock().expect("the proxy log");
+                if log.plaintext.len() < 1 << 20 {
+                    log.plaintext.extend_from_slice(chunk);
+                }
+            }
+            if server_write.write_all(chunk).await.is_err() {
+                return;
+            }
+        }
+    };
+    let down = async {
+        let mut pending = Vec::new();
+        while let Some(response) = read_response(&mut server_read, &mut pending).await {
+            let response = tampering.alter(response);
+            if client_write.write_all(&response).await.is_err() {
+                return;
+            }
+        }
+    };
+    tokio::select! {
+        _ = up => {}
+        _ = down => {}
+    }
+}
+
 /// Copy what `client` and `server` write to each other until either ends, keeping what the client
 /// wrote, and with `drop_one` closing both instead of passing on the first response to a request
 /// that carried a body (`dropped` says whether some connection did already).
-async fn relay<C, S>(
+async fn copy_relay<C, S>(
     client: C,
     server: S,
     drop_one: bool,
@@ -808,6 +1120,97 @@ pub fn a_response_lost_after_the_server_acted_is_carried_again<H: Harness>(harne
         "the server's machine saw {server_raised:?} from {received} envelopes"
     );
     assert_eq!(pongs, 1, "the client's machine saw {client_raised:?}");
+}
+
+/// SCE_MESH.md section 22.9: a client under `verify:` reaches a server under `sign:` through a
+/// proxy that inspects TLS and alters what the server answers as `alteration` says. While it
+/// alters, the client takes nothing of a response that carries the `pong`: the client's machine
+/// sees no `pong`, every request acknowledges nothing (`Sce-Mesh-Ack: 0`), so the server keeps the
+/// `pong` in its mailbox, and the machine is told once (section 16.7 row 19). Once the proxy passes
+/// responses on as they are, the `pong` reaches the client's machine once, and the server's
+/// machine saw `ping` once.
+fn an_altered_response_is_taken_nothing_of<H: Harness>(harness: &H, alteration: Alteration) {
+    let bench = Bench::signing();
+    let inspector = Arc::new(TestAuthority::new("SCE kit tampering authority"));
+    let log = Arc::new(Mutex::new(ProxyLog::default()));
+    let tampering = Tampering::new(alteration);
+    let proxy = tampering_proxy(
+        &bench.runtime,
+        Arc::clone(&inspector),
+        bench.authority.der(),
+        Arc::clone(&tampering),
+        Arc::clone(&log),
+    );
+    let port = harness.transport(&[inspector.der()], Some(&alloc::format!("http://{proxy}")));
+    // What a refused exchange carried is carried again, as after a lost response.
+    let retry = RetryPolicy {
+        max_retries: 20,
+        initial_backoff_ms: 50,
+        backoff_multiplier: 2.0,
+        max_backoff_ms: 1000,
+        jitter_pct: 0,
+    };
+    let mut client =
+        ClientSide::start_verifying(bench.base(), port, Some(retry), Some(kit_signer().1));
+    client.until("the server to be ready", |client| client.ready);
+    client.endpoint.send(&mesh_send("ping", "cloud"));
+    client.until("two responses altered", |_| tampering.altered() >= 2);
+    client.settle(Duration::from_millis(200));
+    assert_eq!(
+        client.count("pong"),
+        0,
+        "{alteration:?}: an altered response reached the machine: {:?}",
+        client.raised
+    );
+    assert_eq!(
+        client.errors_of("responseUnauthenticated"),
+        1,
+        "{alteration:?}: told once per run of them: {:?}",
+        client.errors
+    );
+    let acknowledged = String::from_utf8_lossy(&log.lock().expect("the proxy log").plaintext)
+        .to_ascii_lowercase()
+        .split("\r\n")
+        .filter(|line| line.starts_with("sce-mesh-ack:"))
+        .any(|line| line.trim_start_matches("sce-mesh-ack:").trim() != "0");
+    assert!(
+        !acknowledged,
+        "{alteration:?}: a request acknowledged an envelope no verified response carried"
+    );
+
+    tampering.stop();
+    client.until("the pong, once the responses verify", |client| {
+        client.count("pong") >= 1
+    });
+    client.settle(Duration::from_millis(500));
+    let pongs = client.count("pong");
+    let told = client.errors_of("responseUnauthenticated");
+    client.stop();
+    assert_eq!(pongs, 1, "{alteration:?}: the pong arrives once");
+    assert_eq!(told, 1, "{alteration:?}");
+    let (server_raised, _) = bench.server_log();
+    assert_eq!(
+        server_raised.iter().filter(|name| *name == "ping").count(),
+        1,
+        "{alteration:?}: the server's machine saw {server_raised:?}"
+    );
+}
+
+/// [`an_altered_response_is_taken_nothing_of`] with `Sce-Mesh-First` numbered one higher, which
+/// would have the client acknowledge an envelope it never took in.
+pub fn an_altered_first_number_is_refused<H: Harness>(harness: &H) {
+    an_altered_response_is_taken_nothing_of(harness, Alteration::First);
+}
+
+/// [`an_altered_response_is_taken_nothing_of`] with a byte of the body changed.
+pub fn an_altered_body_is_refused<H: Harness>(harness: &H) {
+    an_altered_response_is_taken_nothing_of(harness, Alteration::Body);
+}
+
+/// [`an_altered_response_is_taken_nothing_of`] with an earlier response, which answered another
+/// request, replayed in place of the server's.
+pub fn a_replayed_response_is_refused<H: Harness>(harness: &H) {
+    an_altered_response_is_taken_nothing_of(harness, Alteration::Replay);
 }
 
 /// A server that holds an exchange longer than the request's bound is answered by the adapter as
