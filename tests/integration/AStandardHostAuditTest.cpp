@@ -270,4 +270,38 @@ TEST(AStandardHostAudit, AStreamTheHostKeepsNoPolicyForAndARefusedRequestAppendN
     EXPECT_TRUE(rig.audit.rows("sign-ins").empty());
 }
 
+// docs/adr/0109, D16: each entry the feature appends is reported and a repeat under one identity, which
+// appends nothing, is not; through the host, an append to a stream it keeps no policy for is a failure of its
+// own code, and a refused request one of invalid_argument. Red if AuditFeature::run reports the repeat's
+// answer as an append, or the host reads a feature's failure code from anywhere but its answer.
+TEST(AStandardHostAudit, EachEntryAppendedIsReportedAndARepeatIsNot) {
+    AuditRig rig;
+    SCE::Metrics::Recording recording;
+    rig.audit.setMetrics(recording);
+    rig.reference.setMetrics(recording);
+    const std::string entry = R"({"account":"a","password":"p"})";
+    rig.append(entry, 1, 1000);
+    rig.append(entry, 1, 2000);
+    EXPECT_EQ(recording.counted(SCE::Metrics::Counter::auditAppends()), 1u);
+    rig.append(entry, 2, 3000);
+    EXPECT_EQ(recording.counted(SCE::Metrics::Counter::auditAppends()), 2u);
+
+    rig.reference.start(host::AUDIT_APPEND, host::Invocation{"s", "audit", 3},
+                        {{"stream", "other"}, {"entry", "{}"}, {"sensitivity", ""}});
+    rig.reference.start(host::AUDIT_APPEND, host::Invocation{"s", "audit", 4},
+                        {{"stream", ""}, {"entry", "{}"}, {"sensitivity", ""}});
+    EXPECT_EQ(recording.counted(SCE::Metrics::Counter::auditAppends()), 2u);
+    EXPECT_EQ(recording.counted(SCE::Metrics::Counter::hostOperationFailures(SCE::Metrics::HostOperation::AuditAppend,
+                                                                             SCE::Metrics::HostFailure::UnknownStream)),
+              1u);
+    EXPECT_EQ(recording.counted(SCE::Metrics::Counter::hostOperationFailures(
+                  SCE::Metrics::HostOperation::AuditAppend, SCE::Metrics::HostFailure::InvalidArgument)),
+              1u);
+    EXPECT_EQ(
+        recording.observed(SCE::Metrics::Histogram::hostOperationDuration(SCE::Metrics::HostOperation::AuditAppend))
+            .size(),
+        5u)
+        << "each start the host answered is measured once";
+}
+
 }  // namespace SCE::Tests

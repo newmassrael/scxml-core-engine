@@ -916,4 +916,48 @@ TEST(HttpsClient, NoAdapterIsNoStart) {
     EXPECT_FALSE(client.send(envelope("a", 1)));
 }
 
+// docs/adr/0109, D16: every exchange the client makes is reported to its
+// host's metrics by the status its server answered, and one that got no
+// response as none (host/Metrics.h). Red if Client::judge reports a failure at
+// the transport under a status, or a 502 of an intermediary as anything but
+// other.
+TEST(HttpsClient, EveryExchangeIsReportedByTheStatusItsServerAnswered) {
+    using SCE::Metrics::Counter;
+    using SCE::Metrics::ExchangeStatus;
+    Scripted transport;
+    std::atomic<int> polls{0};
+    transport.onPoll = [&polls](const HttpsRequest &request) {
+        const int n = polls.fetch_add(1);
+        if (n == 0) {
+            return HttpsExchange::response(200, {}, {});
+        }
+        if (n == 1) {
+            return HttpsExchange::failed(HttpsExchange::Failure::Connect, "refused");
+        }
+        if (n == 2) {
+            return HttpsExchange::response(401, {}, {});
+        }
+        if (n == 3) {
+            return HttpsExchange::response(502, {}, {});
+        }
+        return anEmptyHold(request);
+    };
+    MemoryCredentials credentials("token");
+    Observed seen;
+    auto c = config();
+    c.retry = Https::RetryPolicy{1, 10ms, 2.0, 40ms, 0};
+    SCE::Metrics::Recording recording;
+    Https::ClientHost host{&transport, &credentials};
+    host.metrics = &recording;
+    Https::Client client(c, host, seen.events());
+    ASSERT_TRUE(client.start());
+    ASSERT_TRUE(seen.waitFor([&polls] { return polls.load() >= 5; }));
+    client.stop();
+    EXPECT_GE(recording.counted(Counter::clientExchanges(ExchangeStatus::Ok)), 1u);
+    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeStatus::NoResponse)), 1u);
+    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeStatus::Unauthorized)), 1u);
+    EXPECT_EQ(recording.counted(Counter::clientExchanges(ExchangeStatus::Other)), 1u);
+    EXPECT_EQ(recording.countedIn("sce_host_operation_failures"), 0u);
+}
+
 }  // namespace
