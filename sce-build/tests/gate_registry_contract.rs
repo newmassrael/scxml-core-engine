@@ -188,22 +188,28 @@ fn every_workflow_the_registry_maps_exists() {
     // set tree-wide, and it is not incidental: the registry derives every
     // trigger from these files, so a `paths:` edit anywhere here changes
     // what a push verifies.
+    //
+    // The table is read as the registry hands it out (`--mapping`), not from
+    // the module's source: the source also holds the self-test's fixture
+    // tables, whose workflows name no file of this tree.
     let root = repo_root();
-    let registry = std::fs::read_to_string(root.join("tools/git-hooks/gate_registry.py"))
-        .expect("read tools/git-hooks/gate_registry.py");
+    let mapping: serde_json::Value = serde_json::from_str(&registry_stdout(&root, &["--mapping"]))
+        .expect("gate_registry.py --mapping prints JSON");
+    let gates = mapping
+        .as_object()
+        .expect("gate_registry.py --mapping prints one object, slug to gate");
 
     let mut named: Vec<String> = Vec::new();
-    for line in registry.lines() {
-        let trimmed = line.trim();
-        let Some(rest) = trimmed.strip_prefix("\"workflows\":") else {
+    for gate in gates.values() {
+        let Some(workflows) = gate.get("workflows").and_then(|w| w.as_array()) else {
             continue;
         };
-        for token in rest.split(['[', ']', ',']) {
-            let name = token.trim().trim_matches('"');
-            if name.ends_with(".yml") || name.ends_with(".yaml") {
-                named.push(name.to_string());
-            }
-        }
+        named.extend(
+            workflows
+                .iter()
+                .filter_map(|name| name.as_str())
+                .map(str::to_string),
+        );
     }
     assert!(
         named.len() > 5,
