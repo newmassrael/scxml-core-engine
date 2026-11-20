@@ -124,9 +124,9 @@ pub const EVERY_REFERENCE_HOST: &[HostLane] = &[
 ];
 
 /// The lanes whose reference host serves signing and sealing, random bytes,
-/// keyed digests, keys and credentials (docs/SCE_HOST_FEATURES.md, sections 10
-/// to 14; docs/adr/0107, D7; docs/adr/0109, D0, D3 and D5 to D7): Rust on the
-/// RustCrypto crates and C++ on libsodium. Every other lane is a later step,
+/// keyed digests, keys, credentials and the audit log (docs/SCE_HOST_FEATURES.md,
+/// sections 10 to 15; docs/adr/0107, D7; docs/adr/0109, D0, D3, D5 to D7 and
+/// D14): Rust on the RustCrypto crates and C++ on libsodium. Every other lane is a later step,
 /// which adds the lane here in the change that lands its host and its driver's
 /// replay of the scenario.
 pub const COSE_REFERENCE_HOSTS: &[HostLane] = &[
@@ -142,7 +142,8 @@ const LIBRARY_DIRECTORY: &str = "sce:std/host/";
 /// test holds this table to the library and the specification. Each names
 /// the lanes that serve it: those of sections 2 to 6 every lane
 /// ([`EVERY_REFERENCE_HOST`]), signing and sealing, random bytes, keyed
-/// digests, keys and credentials Rust and C++ ([`COSE_REFERENCE_HOSTS`]).
+/// digests, keys, credentials and the audit log Rust and C++
+/// ([`COSE_REFERENCE_HOSTS`]).
 pub const TYPES: &[StandardHostType] = &[
     StandardHostType {
         invoke_type: "sce-host-clock-now",
@@ -300,6 +301,12 @@ pub const TYPES: &[StandardHostType] = &[
         result: "credential_revoke_result",
         served_by: COSE_REFERENCE_HOSTS,
     },
+    StandardHostType {
+        invoke_type: crate::forge::audit_entry::AUDIT_APPEND,
+        request: Some("audit_append_request"),
+        result: "audit_append_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
 ];
 
 /// The standard operation `invoke_type` names, if it names one.
@@ -309,11 +316,14 @@ pub fn lookup(invoke_type: &str) -> Option<&'static StandardHostType> {
 
 /// The fields of `invoke_type`'s request that the build writes and a document
 /// does not: the answer schema of a model's generation, written from
-/// `sce:answer` (docs/adr/0087, section 4.1, item 2). Empty for every other
-/// type, standard or not.
+/// `sce:answer` (docs/adr/0087, section 4.1, item 2), and the marks of an
+/// audit entry's schema, written from `sce:entry` (docs/adr/0109, D14). Empty
+/// for every other type, standard or not.
 pub fn written_by_build(invoke_type: &str) -> &'static [&'static str] {
     if invoke_type == crate::forge::model_answer::MODEL_GENERATE {
         &[crate::forge::model_answer::ANSWER_SCHEMA_FIELD]
+    } else if invoke_type == crate::forge::audit_entry::AUDIT_APPEND {
+        &[crate::forge::audit_entry::SENSITIVITY_FIELD]
     } else {
         &[]
     }

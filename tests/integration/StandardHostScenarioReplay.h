@@ -26,6 +26,7 @@
 #include "host/StandardHost.h"
 
 #if defined(SCE_HOST_COSE)
+#include "host/AuditHost.h"
 #include "host/CoseHost.h"
 #include "host/CredentialHost.h"
 #include "host/SodiumCoseCrypto.h"
@@ -227,6 +228,7 @@ struct Rig {
     ScriptedRandomCrypto crypto;
     host::CoseFeature cose{crypto};
     host::CredentialFeature credentials{cose, crypto, clock};
+    host::AuditFeature audit{crypto, clock};
 #endif
     host::ReferenceHost host{clock, transport};
     host::ScriptedProvider model;
@@ -236,7 +238,56 @@ struct Rig {
 #if defined(SCE_HOST_COSE)
         EXPECT_TRUE(host.addFeature(cose)) << "the COSE operations are served by the host already";
         EXPECT_TRUE(host.addFeature(credentials)) << "the credential operations are served by the host already";
+        EXPECT_TRUE(host.addFeature(audit)) << "the audit log is served by the host already";
 #endif
+    }
+
+    /// Apply an `audit` directive: the streams the host keeps, each a name to its `checkpoint_every`, its
+    /// `retain_days` and, optionally, `personal` (`pseudonymised` or `clear`), replacing those kept before.
+    void auditStreams(const json &d) {
+#if defined(SCE_HOST_COSE)
+        std::map<std::string, host::AuditStreamPolicy> streams;
+        for (const auto &[name, policy] : d.at("streams").items()) {
+            host::AuditStreamPolicy kept;
+            kept.checkpointEvery = policy.at("checkpoint_every").get<uint64_t>();
+            kept.retainDays = policy.at("retain_days").get<uint32_t>();
+            const std::string personal = policy.value("personal", std::string("pseudonymised"));
+            EXPECT_TRUE(personal == "pseudonymised" || personal == "clear")
+                << "`" << personal << "` is no way a stream writes a personal value";
+            kept.personal = personal == "clear" ? host::AuditPersonal::Clear : host::AuditPersonal::Pseudonymised;
+            streams[name] = kept;
+        }
+        audit.setStreams(std::move(streams));
+#else
+        ADD_FAILURE() << "`audit` sets the streams of the audit log, which this build does not serve: it found no "
+                      << "libsodium (cmake/SCEHostCose.cmake); " << d.dump();
+#endif
+    }
+
+    /// The `audit` member of `host_state`, for each stream `wanted` names: its rows as `{sequence, at_ms, entry}`,
+    /// the sequences of its checkpoints, and whether a reader verifies it under the host's audit key. A stream
+    /// with no checkpoint verifies under any key.
+    json auditState(const json &wanted) {
+        json state = json::object();
+#if defined(SCE_HOST_COSE)
+        const host::Cose::Bytes publicKey = audit.publicKey().value_or(host::Cose::Bytes(32, 0));
+        for (const auto &[stream, ignored] : wanted.items()) {
+            json rows = json::array();
+            for (const auto &row : audit.rows(stream)) {
+                rows.push_back({{"sequence", row.sequence}, {"at_ms", row.atMs}, {"entry", row.entry}});
+            }
+            json checkpoints = json::array();
+            for (const auto &checkpoint : audit.checkpoints(stream)) {
+                checkpoints.push_back(checkpoint.sequence);
+            }
+            const bool verified = audit.verify(stream, publicKey).kind == host::AuditVerdict::Kind::Verified;
+            state[stream] = {{"rows", rows}, {"checkpoints", checkpoints}, {"verified", verified}};
+        }
+#else
+        ADD_FAILURE() << "`audit` is the state of the audit log, which this build does not serve: it found no "
+                      << "libsodium (cmake/SCEHostCose.cmake); " << wanted.dump();
+#endif
+        return state;
     }
 
     /// The `credentials` member of `host_state`: each name the host issued a token for, to its tokens as
@@ -355,6 +406,8 @@ struct Rig {
                 coseKeys(value);
             } else if (name == "random") {
                 randomBytes(value);
+            } else if (name == "audit") {
+                auditStreams(value);
             } else {
                 ADD_FAILURE() << "`" << name << "` is not a host directive";
             }
@@ -404,6 +457,8 @@ struct Rig {
                 state[name] = log;
             } else if (name == "credentials") {
                 state[name] = credentialState();
+            } else if (name == "audit") {
+                state[name] = auditState(wanted.at("audit"));
             } else {
                 ADD_FAILURE() << "`" << name << "` is not host state";
             }

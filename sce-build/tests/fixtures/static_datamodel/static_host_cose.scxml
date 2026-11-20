@@ -4,12 +4,15 @@
 <!--
   datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15; the
   standard host features, docs/SCE_HOST_FEATURES.md, "Signing and sealing",
-  "Random bytes", "Keyed digests", "Keys" and "Credentials"): one machine that
-  asks its host to sign, verify, seal and open COSE objects, to derive,
-  generate, export and retire keys, to draw random bytes, to tag and verify
-  messages, and to issue and revoke credentials, one operation at a time, and
-  publishes each answer. No key enters the machine: it names each by the id
-  its host gave it.
+  "Random bytes", "Keyed digests", "Keys", "Credentials" and "Audit log"): one
+  machine that asks its host to sign, verify, seal and open COSE objects, to
+  derive, generate, export and retire keys, to draw random bytes, to tag and
+  verify messages, to issue and revoke credentials, and to append a sign-in
+  attempt to its audit log, one operation at a time, and publishes each
+  answer. No key enters the machine: it names each by the id its host gave it.
+  `audit.sign_in` carries the attempt (schema_audit_sign_in.scxml), whose
+  account the log keeps as its keyed digest and whose password it never
+  writes.
 
   Each request record of the library is also the event that asks for it
   (`host.cose.sign1.request`, ...). `cose.held.open` opens the object the
@@ -35,6 +38,7 @@
     retired    the last retirement's answer
     issued_token   the bearer token the last issue gave
     revoked    how many tokens and pins the last revocation took away
+    audit_sequence   the sequence the last append was written at
 
   Only `outcome` is written by a failure or a refusal; what an earlier
   operation published stays.
@@ -72,7 +76,10 @@
   <sce:import kind="event-schema" src="sce:std/host/credential_issue_result.scxml" as="CredentialIssueResult"/>
   <sce:import kind="event-schema" src="sce:std/host/credential_revoke_request.scxml" as="CredentialRevokeRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/credential_revoke_result.scxml" as="CredentialRevokeResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/audit_append_request.scxml" as="AuditAppendRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/audit_append_result.scxml" as="AuditAppendResult"/>
   <sce:import kind="event-schema" src="schema_cose_held.scxml" as="HeldOpen"/>
+  <sce:import kind="event-schema" src="schema_audit_sign_in.scxml" as="SignIn"/>
   <datamodel>
     <!-- The arguments of the operation the machine is asking for. -->
     <data id="sign_key" sce:type="string[64]" expr="''"/>
@@ -101,6 +108,12 @@
     <data id="retire_key" sce:type="string[64]" expr="''"/>
     <data id="credential_name" sce:type="string[256]" expr="''"/>
     <data id="credential_ttl" sce:type="uint32" expr="0"/>
+    <data id="sign_in" sce:type="record:SignIn">
+      <sce:set name="account" expr="''"/>
+      <sce:set name="password" expr="''"/>
+      <sce:set name="result" expr="''"/>
+      <sce:set name="attempt" expr="0"/>
+    </data>
     <!-- What the machine publishes. -->
     <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
     <data id="signed_object" sce:type="bytes[4352]" expr="''" sce:direction="out"/>
@@ -119,6 +132,7 @@
     <data id="retired" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="issued_token" sce:type="string[64]" expr="''" sce:direction="out"/>
     <data id="revoked" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="audit_sequence" sce:type="string[20]" expr="''" sce:direction="out"/>
   </datamodel>
 
   <state id="idle">
@@ -181,6 +195,9 @@
     </transition>
     <transition event="host.credential.revoke.request" target="revoking">
       <assign location="credential_name" expr="_event.data.name"/>
+    </transition>
+    <transition event="audit.sign_in" target="auditing">
+      <assign location="sign_in" expr="_event.data"/>
     </transition>
   </state>
 
@@ -404,6 +421,23 @@
       <assign location="outcome" expr="'done'"/>
     </transition>
     <transition event="done.invoke.credential_revoke" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="auditing">
+    <invoke type="sce-host-audit-append" id="audit" sce:request="AuditAppendRequest" sce:result="AuditAppendResult" sce:entry="SignIn">
+      <param name="stream" expr="'sign-ins'"/>
+      <param name="entry" expr="sign_in"/>
+    </invoke>
+    <transition event="done.invoke.audit" cond="_event.data.error === ''" target="idle">
+      <assign location="audit_sequence" expr="_event.data.sequence"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.audit" target="idle">
       <assign location="outcome" expr="_event.data.error"/>
     </transition>
     <transition event="error.execution" target="idle">

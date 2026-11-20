@@ -17,10 +17,11 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use sce_rust_host_features::{
-    cose, serve, AnswerSchema, ClockSource, CoseKeys, ExhaustiveProvider, HttpRequest,
-    HttpResponse, Invocation, KvStore, MemoryCredentials, MemoryStore, OutcomeClass, Params,
-    Reading, ReferenceHost, ScriptedAnswer, ScriptedClock, ScriptedProvider, ScriptedRandom,
-    Shared, TokenStore, Transport, TransportFailure, TrustedKey, Zone,
+    cose, serve, AnswerSchema, AuditStreams, AuditVerdict, ClockSource, CoseKeys,
+    ExhaustiveProvider, HttpRequest, HttpResponse, Invocation, KvStore, MemoryCredentials,
+    MemoryStore, OutcomeClass, Params, Personal, Reading, ReferenceHost, ScriptedAnswer,
+    ScriptedClock, ScriptedProvider, ScriptedRandom, Shared, StreamPolicy, TokenStore, Transport,
+    TransportFailure, TrustedKey, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, HostInvokeEvent, SceClock, StatePolicy, TransitionTaken};
@@ -297,6 +298,75 @@ fn credential_state(store: &MemoryCredentials) -> Value {
     )
 }
 
+/// The streams an `audit` directive keeps: `streams`, each a name to its
+/// `checkpoint_every`, its `retain_days` and, optionally, `personal`
+/// (`pseudonymised`, or `clear`), replacing those kept before.
+fn audit_streams(directive: &Value) -> AuditStreams {
+    directive["streams"]
+        .as_object()
+        .expect("an audit directive names its streams")
+        .iter()
+        .map(|(name, policy)| {
+            let personal = match policy.get("personal").and_then(Value::as_str) {
+                None | Some("pseudonymised") => Personal::Pseudonymised,
+                Some("clear") => Personal::Clear,
+                Some(other) => panic!("`{other}` is no way a stream writes a personal value"),
+            };
+            (
+                name.clone(),
+                StreamPolicy {
+                    checkpoint_every: policy["checkpoint_every"].as_u64().expect("a count"),
+                    retain_days: policy["retain_days"].as_u64().expect("a count") as u32,
+                    personal,
+                },
+            )
+        })
+        .collect()
+}
+
+/// The `audit` member of `host_state`, for each stream `wanted` names: its rows
+/// as `{sequence, at_ms, entry}`, the sequences of its checkpoints, and whether
+/// a reader verifies it under the host's audit key (docs/SCE_HOST_FEATURES.md
+/// section 15). A stream with no checkpoint verifies under any key.
+fn audit_state(host: &ReferenceHost<Scripted>, wanted: &Value) -> Value {
+    let store = host.audit_store();
+    Value::Object(
+        wanted
+            .as_object()
+            .expect("the audit state names its streams")
+            .keys()
+            .map(|stream| {
+                let rows: Vec<Value> = store
+                    .audit_rows(stream, 0, usize::MAX)
+                    .expect("the rows of the log")
+                    .into_iter()
+                    .map(|row| {
+                        json!({
+                            "sequence": row.sequence,
+                            "at_ms": row.at_ms,
+                            "entry": String::from_utf8(row.entry).expect("an entry is text"),
+                        })
+                    })
+                    .collect();
+                let checkpoints: Vec<u64> = store
+                    .audit_checkpoints(stream)
+                    .expect("the checkpoints of the log")
+                    .iter()
+                    .map(|checkpoint| checkpoint.sequence)
+                    .collect();
+                let verified = matches!(
+                    host.audit_verify(stream).expect("a reading"),
+                    AuditVerdict::Verified { .. }
+                );
+                (
+                    stream.clone(),
+                    json!({ "rows": rows, "checkpoints": checkpoints, "verified": verified }),
+                )
+            })
+            .collect(),
+    )
+}
+
 impl Rig {
     fn directives(&self, directives: &Value) {
         let mut host = self.host.lock().expect("the host is not left mid-update");
@@ -356,6 +426,7 @@ impl Rig {
                     .lock()
                     .expect("the random source")
                     .set(&bytes_of_hex(value)),
+                "audit" => host.set_audit_streams(audit_streams(value)),
                 other => panic!("`{other}` is not a host directive"),
             }
         }
@@ -418,6 +489,7 @@ impl Rig {
                         .collect(),
                 ),
                 "credentials" => credential_state(&self.credentials),
+                "audit" => audit_state(&host, &wanted["audit"]),
                 other => panic!("`{other}` is not host state"),
             };
             state.insert(name.clone(), value);
