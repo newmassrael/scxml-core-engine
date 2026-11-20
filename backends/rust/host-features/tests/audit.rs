@@ -265,6 +265,45 @@ fn an_append_repeated_under_its_identity_appends_nothing() {
     assert_eq!(next["sequence"], "2", "another start is another entry");
 }
 
+/// docs/adr/0109, D16: each entry the host appends is reported, and a repeat
+/// under one identity, which appends nothing, is not; an append to a stream
+/// the host keeps no policy for is a failure of its own code. Red if the host
+/// reports the repeat's answer as an append, or reports none.
+#[test]
+fn each_entry_appended_is_reported_and_a_repeat_is_not() {
+    use sce_rust_metrics::recording::Recording;
+    use sce_rust_metrics::{Counter, HostFailure, HostOperation, Metrics};
+
+    let (mut host, clock) = host(Personal::Pseudonymised);
+    let recording = Arc::new(Recording::new());
+    host.set_metrics(Arc::clone(&recording) as Arc<dyn Metrics>);
+    set_clock(&clock, 1_000);
+    let start = Invocation::new("session-1", "audit", 1);
+    let entry = r#"{"account":"a","password":"p","result":"r","attempt":1}"#;
+    done(host.start(APPEND, &start, &append("sign-ins", entry)));
+    done(host.start(APPEND, &start, &append("sign-ins", entry)));
+    assert_eq!(recording.counted(Counter::AuditAppends), 1);
+    done(host.start(
+        APPEND,
+        &Invocation::new("session-1", "audit", 2),
+        &append("sign-ins", entry),
+    ));
+    assert_eq!(recording.counted(Counter::AuditAppends), 2);
+    done(host.start(
+        APPEND,
+        &Invocation::new("session-1", "audit", 3),
+        &append("elsewhere", entry),
+    ));
+    assert_eq!(recording.counted(Counter::AuditAppends), 2);
+    assert_eq!(
+        recording.counted(Counter::HostOperationFailures {
+            operation: HostOperation::AuditAppend,
+            code: HostFailure::UnknownStream,
+        }),
+        1
+    );
+}
+
 #[test]
 fn a_stream_the_host_keeps_no_policy_for_and_a_request_it_refuses_append_nothing() {
     let (mut host, clock) = host(Personal::Pseudonymised);

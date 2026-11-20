@@ -35,6 +35,10 @@ sce-rust-session-store = { path = "../session-store", default-features = false }
 # The keys the embedding configures are held in memory that is wiped when they
 # are replaced or dropped.
 zeroize = "1"
+# The port the host reports how long its operations take, their failure codes
+# and its audit appends through (docs/adr/0109, D16): a crate of no dependency,
+# so the host links no metrics library.
+sce-rust-metrics = { path = "../metrics" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
