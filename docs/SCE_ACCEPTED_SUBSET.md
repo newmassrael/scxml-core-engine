@@ -1518,7 +1518,10 @@ by ADR 0109, decisions D1 and D2): a machine's `sessions:` takes
 `client`, `failed_auth` and `new_names`, each `{ interval_ms, burst }`
 or `none`, and `max_tracked`) and `trusted_proxies` (CIDR blocks), each
 checked by value and by side (`mesh/topology-invalid-binding-field`).
-SCE_MESH.md sections 14.4 and 22 give their meaning and defaults.
+SCE_MESH.md sections 14.4 and 22 give their meaning and defaults. A
+machine's `sessions:` also takes `commit_delay_us` (amended by ADR 0109,
+decision D15): how long the pool's committer waits before it takes a
+batch, default 0, at most 100000 (`mesh/deploy-invalid-sessions`).
 
 What proves an `https` exchange end to end is declared by keys of the
 binding too (amended by ADR 0109, decision D9): the accepting side takes
