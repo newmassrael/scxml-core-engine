@@ -33,6 +33,10 @@
 //! as [`generated`] is: the HTTPS server's edge judges every limit with it
 //! (docs/adr/0109, D2), so a document's rate limit and the edge's are one
 //! algorithm.
+//!
+//! The server, the pool and the committer report what they do through the
+//! metrics port of `sce-rust-metrics` (docs/adr/0109, D16), and say whether
+//! they take work in and reach their store through [`health`].
 
 #![forbid(unsafe_code)]
 
@@ -52,6 +56,7 @@ pub mod conformance;
 pub mod endpoint;
 pub mod generated;
 pub mod generated_rate;
+pub mod health;
 #[cfg(feature = "https")]
 pub mod https;
 pub mod inbound;
