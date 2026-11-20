@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
 };
@@ -15,7 +16,8 @@ use crate::{
     moment, AcquireError, Due, Failure, Lease, LeaseError, SessionStore, Stored, WriteError,
 };
 
-/// A session store in memory, for the tests of a crate that is given a store.
+/// A session store in memory, for the tests of a crate that is given a store, and the store of the
+/// key-value feature a host keeps when it is given no durable one ([`KvStore`]).
 ///
 /// It keeps the contract as the reference store does, and is held to the same conformance kit: a
 /// test that passes over it passes over a durable store for the same reasons. A clone is another
@@ -54,6 +56,13 @@ struct Records {
     notes: BTreeMap<u64, NoteRow>,
     /// The last number the store handed out, a version, a fence or a note's.
     last: u64,
+    /// The values of the key-value feature, by key (module [`crate::kv`]). A `BTreeMap` of
+    /// `String` orders keys by their UTF-8 bytes.
+    values: BTreeMap<String, KvEntry>,
+    /// The last number a write or a removal of a value took: the feature's own counter.
+    values_last: u64,
+    /// The first result of each put-if, by its identity: session, invoke, start.
+    first_results: BTreeMap<(String, String, u64), PutIf>,
 }
 
 impl Records {
@@ -126,6 +135,38 @@ impl Records {
         self.notes
             .retain(|id, row| row.session != key || through.is_some_and(|through| *id > through));
     }
+
+    /// Keep `value` under `key` at the value counter's next number; that number.
+    fn write_value(&mut self, key: &str, value: &[u8]) -> u64 {
+        self.values_last += 1;
+        let version = self.values_last;
+        self.values.insert(
+            key.to_string(),
+            KvEntry {
+                value: value.to_vec(),
+                version,
+            },
+        );
+        version
+    }
+
+    /// Whether writing `key` would hold more values than `quota` allows.
+    fn values_over_quota(&self, key: &str, quota: Option<u64>) -> bool {
+        kv_rules::over_quota(
+            !self.values.contains_key(key),
+            self.values.len() as u64,
+            quota,
+        )
+    }
+}
+
+/// The key a first result is kept under.
+fn identity_key(identity: &Identity<'_>) -> (String, String, u64) {
+    (
+        identity.session.to_string(),
+        identity.invoke.to_string(),
+        identity.start,
+    )
 }
 
 impl MemoryStore {
@@ -173,6 +214,9 @@ impl SessionStore for MemoryStore {
             Change::Remove => {
                 records.sessions.remove(key);
                 records.take_notes(key, None);
+                records
+                    .first_results
+                    .retain(|(session, _, _), _| !write.sessions.contains(&session.as_str()));
                 0
             }
         };
@@ -365,5 +409,125 @@ impl SessionStore for MemoryStore {
             .filter(|row| row.session == key)
             .map(|row| row.note.clone())
             .collect())
+    }
+}
+
+/// The values of the key-value feature, kept beside the sessions so that a removal of a session
+/// deletes its identities' first results under the one lock that is its transaction.
+impl KvStore for MemoryStore {
+    fn get(&self, key: &str) -> Result<Option<KvEntry>, Failure> {
+        Ok(self.records().values.get(key).cloned())
+    }
+
+    fn put(&self, key: &str, value: &[u8], quota: Option<u64>) -> Result<Put, Failure> {
+        let mut records = self.records();
+        if records.values_over_quota(key, quota) {
+            return Ok(Put::OverQuota);
+        }
+        let replaced = records.values.contains_key(key);
+        let version = records.write_value(key, value);
+        Ok(Put::Written { replaced, version })
+    }
+
+    fn put_if(
+        &self,
+        key: &str,
+        value: &[u8],
+        expected: Option<u64>,
+        quota: Option<u64>,
+        identity: Option<&Identity<'_>>,
+    ) -> Result<PutIf, Failure> {
+        let mut records = self.records();
+        if let Some(identity) = identity {
+            if let Some(first) = records.first_results.get(&identity_key(identity)) {
+                return Ok(first.clone());
+            }
+        }
+        let current = records.values.get(key).map_or(0, |entry| entry.version);
+        let result = if !kv_rules::matches(expected, current) {
+            PutIf::Unwritten { version: current }
+        } else if records.values_over_quota(key, quota) {
+            PutIf::OverQuota
+        } else {
+            PutIf::Written {
+                version: records.write_value(key, value),
+            }
+        };
+        if let Some(identity) = identity {
+            records
+                .first_results
+                .insert(identity_key(identity), result.clone());
+        }
+        Ok(result)
+    }
+
+    fn delete(&self, key: &str) -> Result<bool, Failure> {
+        let mut records = self.records();
+        let existed = records.values.remove(key).is_some();
+        if existed {
+            records.values_last += 1;
+        }
+        Ok(existed)
+    }
+
+    fn next_key(&self, after: &str, prefix: &str) -> Result<Option<String>, Failure> {
+        // Keys with the prefix are contiguous in this order, so the walk starts at the later of
+        // the prefix and `after`, and the first key it meets answers or ends it.
+        let from = if after.is_empty() || after < prefix {
+            Bound::Included(prefix)
+        } else {
+            Bound::Excluded(after)
+        };
+        Ok(self
+            .records()
+            .values
+            .range::<str, _>((from, Bound::Unbounded))
+            .map(|(key, _)| key)
+            .next()
+            .filter(|key| kv_rules::walks_to(key, after, prefix))
+            .cloned())
+    }
+
+    fn entries_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<(String, KvEntry)>, Failure> {
+        let from = after.map_or(Bound::Unbounded, Bound::Excluded);
+        Ok(self
+            .records()
+            .values
+            .range::<str, _>((from, Bound::Unbounded))
+            .take(limit)
+            .map(|(key, entry)| (key.clone(), entry.clone()))
+            .collect())
+    }
+
+    fn first_result(&self, identity: &Identity<'_>) -> Result<Option<PutIf>, Failure> {
+        Ok(self
+            .records()
+            .first_results
+            .get(&identity_key(identity))
+            .cloned())
+    }
+
+    fn keep_first(&self, identity: &Identity<'_>, result: &PutIf) -> Result<PutIf, Failure> {
+        Ok(self
+            .records()
+            .first_results
+            .entry(identity_key(identity))
+            .or_insert_with(|| result.clone())
+            .clone())
+    }
+
+    fn reseal(&self, key: &str, held: &[u8], value: &[u8]) -> Result<bool, Failure> {
+        let mut records = self.records();
+        Ok(match records.values.get_mut(key) {
+            Some(entry) if entry.value == held => {
+                entry.value = value.to_vec();
+                true
+            }
+            _ => false,
+        })
     }
 }

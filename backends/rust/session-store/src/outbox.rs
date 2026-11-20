@@ -134,6 +134,11 @@ pub struct Write<'a> {
     pub notes_through: u64,
     /// The moment the appends are kept at, in milliseconds since the Unix epoch.
     pub now_ms: u64,
+    /// The ids of the sessions (`_sessionid`) a removal ends: the root and every child its last
+    /// state held. A store that keeps the first results of the key-value feature too (module
+    /// [`crate::kv`]) deletes every one kept under their identities in the removal's transaction.
+    /// A keep takes none.
+    pub sessions: &'a [&'a str],
 }
 
 impl<'a> Write<'a> {
@@ -154,6 +159,7 @@ impl<'a> Write<'a> {
             outbox: &[],
             notes_through: 0,
             now_ms: 0,
+            sessions: &[],
         }
     }
 
@@ -166,6 +172,7 @@ impl<'a> Write<'a> {
             outbox: &[],
             notes_through: 0,
             now_ms: 0,
+            sessions: &[],
         }
     }
 }

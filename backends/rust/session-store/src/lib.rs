@@ -52,6 +52,12 @@
 //! than the binding keeps. Both stores keep it (`SqliteStore` from layout 5), held to
 //! [`outbox_conformance`].
 //!
+//! The values of the key-value feature a host serves its machines are kept behind [`KvStore`]
+//! (ADR 0109, D13; module [`kv`]), with the first result of each put-if by the identity of its
+//! invocation in the transaction that judged it: [`MemoryStore`] in memory, beside its sessions,
+//! and `SqliteStore` in the same file (layout 6), held to [`kv_conformance`]. A removal of a
+//! session deletes the first results of the sessions it ends ([`Write::sessions`]).
+//!
 //! # Building the SQLite store
 //!
 //! The reference store links the system's SQLite (3.14 or later), found through `pkg-config`, or
@@ -81,6 +87,8 @@ pub mod credential_conformance;
 pub mod credentials;
 pub mod key_conformance;
 pub mod keys;
+pub mod kv;
+pub mod kv_conformance;
 mod memory;
 pub mod outbox;
 pub mod outbox_conformance;
@@ -92,6 +100,7 @@ pub use credentials::{
     CredentialStore, Digest, MemoryCredentials, PinRow, PinStore, Revoked, TokenRow, TokenStore,
 };
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
+pub use kv::{Identity, KvEntry, KvStore, Put, PutIf};
 pub use memory::MemoryStore;
 pub use outbox::{
     Append, Appended, Change, Expired, Expiry, NoOutbox, Note, Outbox, OutboxEntry, Write, Written,

@@ -42,10 +42,20 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
     PRAGMA user_version = 1;
 ";
 
-/// The tables layout 5 added (ADR 0109, D10), dropped from a file this build made so that it is
-/// left as an earlier build left it.
-const WITHOUT_LAYOUT_5: &str = "DROP INDEX outbox_notes_by_session; DROP TABLE outbox_notes; \
+/// The layout this build writes, which a file of an earlier one is brought to when it is opened.
+const LAYOUT: i64 = 6;
+
+/// The tables layouts 5 (ADR 0109, D10) and 6 (D13) added, dropped from a file this build made so
+/// that it is left as a build of layout 4 or earlier left it: the later layout's first.
+const WITHOUT_LAYOUT_5: &str = "DROP TABLE kv_first_results; DROP TABLE kv_numbers; \
+     DROP TABLE kv_values; \
+     DROP INDEX outbox_notes_by_session; DROP TABLE outbox_notes; \
      DROP TABLE outbox_entries; DROP TABLE outbox_heads;";
+
+/// The tables layout 6 added (ADR 0109, D13), dropped from a file this build made so that it is
+/// left as a build of layout 5 left it.
+const WITHOUT_LAYOUT_6: &str =
+    "DROP TABLE kv_first_results; DROP TABLE kv_numbers; DROP TABLE kv_values;";
 
 /// ADR 0109, Open question 1: a file of layout 1 is brought to this build's layout when it is
 /// opened, its sessions and its counter kept, and the keys of layout 2, the credentials of
@@ -70,7 +80,10 @@ fn a_file_of_layout_1_is_brought_to_layout_5_with_its_sessions() {
         .expect("a second connection")
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("its layout");
-    assert_eq!(layout, 5, "the file was brought to layout 5");
+    assert_eq!(
+        layout, LAYOUT,
+        "the file was brought to this build's layout"
+    );
     let lease = store.acquire("k", "a", 1_000, 0).expect("a lease");
     assert!(
         lease.fence > 1,
@@ -129,7 +142,10 @@ fn a_file_of_layout_2_is_brought_to_layout_5_with_its_keys() {
         .expect("a second connection")
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("its layout");
-    assert_eq!(layout, 5, "the file was brought to layout 5");
+    assert_eq!(
+        layout, LAYOUT,
+        "the file was brought to this build's layout"
+    );
     assert_eq!(store.key("generated:02").expect("its key"), Some(kept));
     assert_eq!(
         store
@@ -174,7 +190,10 @@ fn a_file_of_layout_3_is_brought_to_layout_5_with_its_tokens() {
         .expect("a second connection")
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("its layout");
-    assert_eq!(layout, 5, "the file was brought to layout 5");
+    assert_eq!(
+        layout, LAYOUT,
+        "the file was brought to this build's layout"
+    );
     let kept = TokenRow {
         digest: [0; 32],
         name: "phone".to_string(),
@@ -228,7 +247,10 @@ fn a_file_of_layout_4_is_brought_to_layout_5_and_keeps_an_outbox() {
         .expect("a second connection")
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("its layout");
-    assert_eq!(layout, 5, "the file was brought to layout 5");
+    assert_eq!(
+        layout, LAYOUT,
+        "the file was brought to this build's layout"
+    );
     assert_eq!(
         store.get("k").expect("its session").map(|held| held.state),
         Some(b"of layout 4".to_vec())
@@ -594,7 +616,7 @@ fn a_file_that_is_not_a_session_store_is_not_taken_for_one() {
     drop(SqliteStore::open(later.database()).expect("making the store"));
     Connection::open(later.database())
         .expect("a connection of a later build")
-        .pragma_update(None, "user_version", 6)
+        .pragma_update(None, "user_version", LAYOUT + 1)
         .expect("a layout of a later build");
     assert!(
         SqliteStore::open(later.database()).is_err(),
@@ -605,4 +627,177 @@ fn a_file_that_is_not_a_session_store_is_not_taken_for_one() {
         SqliteStore::open(":memory:").is_err(),
         "a database with no file, which cannot be in WAL mode, was taken for a durable store"
     );
+}
+
+/// The values of the key-value feature (ADR 0109, D13). The store keeps the session contract too,
+/// whose `get`, `put` and `delete` share their names with this one's, so each call here names its
+/// contract where both are in reach.
+mod kv {
+    use rusqlite::Connection;
+    use sce_rust_session_store::{
+        Identity, KvEntry, KvStore, Put, PutIf, SessionStore, SqliteStore,
+    };
+
+    use super::{LAYOUT, WITHOUT_LAYOUT_6};
+    use crate::common::Scratch;
+
+    /// The identity of the first start of the put-if `putif` in the session `s-1`.
+    const FIRST: Identity<'static> = Identity {
+        session: "s-1",
+        invoke: "putif",
+        start: 1,
+    };
+
+    /// ADR 0109, D13: a file of layout 5 is brought to layout 6 when it is opened, in place, its
+    /// sessions kept, and the values of the key-value feature are then kept in it, numbered from
+    /// their own counter.
+    #[test]
+    fn a_file_of_layout_5_is_brought_to_layout_6_and_keeps_values() {
+        let scratch = Scratch::new("layout-5");
+        {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            let lease = store.acquire("k", "a", 1_000, 0).expect("a lease");
+            SessionStore::put(&store, "k", b"of layout 5", None, 0, lease.fence)
+                .expect("a session");
+        }
+        {
+            let connection =
+                Connection::open(scratch.database()).expect("a connection of a build of layout 5");
+            connection
+                .execute_batch(WITHOUT_LAYOUT_6)
+                .expect("the file without layout 6's tables");
+            connection
+                .pragma_update(None, "user_version", 5)
+                .expect("the file as layout 5 left it");
+        }
+        let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 5");
+        let layout: i64 = Connection::open(scratch.database())
+            .expect("a second connection")
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("its layout");
+        assert_eq!(
+            layout, LAYOUT,
+            "the file was brought to this build's layout"
+        );
+        assert_eq!(
+            SessionStore::get(&store, "k")
+                .expect("its session")
+                .map(|held| held.state),
+            Some(b"of layout 5".to_vec())
+        );
+        assert_eq!(
+            KvStore::put(&store, "key", b"value", None).expect("a value in the upgraded file"),
+            Put::Written {
+                replaced: false,
+                version: 1
+            },
+            "the feature's counter is its own, and starts at 0"
+        );
+    }
+
+    /// ADR 0109, D13: what the store kept of the feature is there when its file is opened again,
+    /// and its counter goes on from where it stopped.
+    #[test]
+    fn the_values_and_first_results_are_there_when_the_file_is_opened_again() {
+        let scratch = Scratch::new("kv-reopen");
+        {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            KvStore::put(&store, "a", b"1", None).expect("a value");
+            store
+                .put_if("b", b"2", Some(0), None, Some(&FIRST))
+                .expect("a put-if under an identity");
+            KvStore::delete(&store, "a").expect("a removal");
+        }
+        let store = SqliteStore::open(scratch.database()).expect("opening the store again");
+        assert_eq!(KvStore::get(&store, "a").expect("a removed key"), None);
+        assert_eq!(
+            KvStore::get(&store, "b").expect("the put-if's value"),
+            Some(KvEntry {
+                value: b"2".to_vec(),
+                version: 2
+            })
+        );
+        assert_eq!(
+            store.first_result(&FIRST).expect("its first result"),
+            Some(PutIf::Written { version: 2 })
+        );
+        assert_eq!(
+            KvStore::put(&store, "a", b"3", None).expect("written again"),
+            Put::Written {
+                replaced: false,
+                version: 4
+            },
+            "the counter goes on past the removal the closed file took"
+        );
+    }
+
+    /// ADR 0109, D13: a put-if whose process stopped after its write and before its completion
+    /// reached the machine is answered, after the restart, with the result the write made, and
+    /// writes nothing more; and the write and its result are one transaction, so a process that
+    /// stopped inside it left neither.
+    #[test]
+    fn a_put_if_stopped_between_its_write_and_its_completion_is_answered_with_its_first_result() {
+        let scratch = Scratch::new("kv-killed");
+        // The first process: the write is made, and the process goes before its answer leaves.
+        {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            assert_eq!(
+                store
+                    .put_if("k", b"first", Some(0), None, Some(&FIRST))
+                    .expect("the write"),
+                PutIf::Written { version: 1 }
+            );
+        }
+        // The second process: the restore starts the invocation again under its identity.
+        let store = SqliteStore::open(scratch.database()).expect("the store after the restart");
+        assert_eq!(
+            store
+                .put_if("k", b"first", Some(0), None, Some(&FIRST))
+                .expect("the start repeated"),
+            PutIf::Written { version: 1 },
+            "its first result, where the store alone would answer a lost race at version 1"
+        );
+        assert_eq!(
+            KvStore::get(&store, "k").expect("the value"),
+            Some(KvEntry {
+                value: b"first".to_vec(),
+                version: 1
+            }),
+            "written once"
+        );
+
+        // A put-if that fails between its write and the keeping of its result leaves neither:
+        // another program makes the result's row fail after the value was written.
+        let raw = Connection::open(scratch.database()).expect("a connection of another program");
+        raw.execute_batch(
+            "CREATE TRIGGER refuse_results AFTER INSERT ON kv_first_results \
+             BEGIN SELECT RAISE(ABORT, 'refused by the test'); END;",
+        )
+        .expect("the trigger");
+        let second = Identity { start: 2, ..FIRST };
+        assert!(
+            store
+                .put_if("k", b"second", Some(1), None, Some(&second))
+                .is_err(),
+            "the put-if failed with its result"
+        );
+        assert_eq!(
+            KvStore::get(&store, "k").expect("the value"),
+            Some(KvEntry {
+                value: b"first".to_vec(),
+                version: 1
+            }),
+            "the write went with its result"
+        );
+        raw.execute_batch("DROP TRIGGER refuse_results")
+            .expect("dropping the trigger");
+        assert_eq!(
+            store
+                .put_if("k", b"second", Some(1), None, Some(&second))
+                .expect("the start judged again"),
+            PutIf::Written { version: 2 },
+            "a start that kept no result is judged again, and the number the failed one took \
+             was given back with the rest of it"
+        );
+    }
 }
