@@ -41,13 +41,13 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Incoming;
 use hyper::header::{
-    HeaderValue, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE as CONTENT_TYPE_NAME,
+    HeaderName, HeaderValue, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE as CONTENT_TYPE_NAME, HOST,
 };
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
@@ -55,7 +55,15 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
 
+use sce_rust_crypto::cose::{cose_key_ed25519_required, ed25519_of_cose_key};
+use sce_rust_crypto::ed25519::PUBLIC_KEY_BYTES;
+
 use super::rate::{client_address, is_trusted, retry_seconds, Cidr, Edge, Verdict};
+pub use super::signature::ResponseSigner;
+use super::signature::{
+    content_digest, digest_matches, key_of_offer, target_uri, Answered, RequestSignature,
+    CONTENT_DIGEST_HEADER, DEFAULT_MAX_SKEW_MS, KEY_HEADER, KEY_SCHEME, NONCE_HEADER,
+};
 use super::{
     decode_install_secret, draw_epoch, install_digest, is_epoch, is_path_segment, split_sequence,
     LinkEvent, ACK_HEADER, BEARER_SCHEME, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER, HOLD_HEADER,
@@ -116,6 +124,14 @@ pub struct ServerSettings {
     /// deploy.yaml's `trusted_proxies`: a connection from an address in one of these blocks has
     /// its client's address read from `Forwarded` (RFC 7239) (docs/adr/0109, D2).
     pub trusted_proxies: Vec<Cidr>,
+    /// deploy.yaml's `sign:`, the key it names resolved by the host: every `200` answering a
+    /// request that carries a nonce is signed by it (SCE_MESH.md section 22.9, docs/adr/0109 D9),
+    /// so that a client under `verify:` tells it from what an intermediary wrote. `None` signs
+    /// nothing.
+    pub signer: Option<ResponseSigner>,
+    /// deploy.yaml's `max_skew_ms`: how far a request's `created` may lie from the server's clock
+    /// under the `key` authenticator (SCE_MESH.md section 22.9).
+    pub max_skew: Duration,
 }
 
 /// deploy.yaml's `max_clients` when the binding sets none (docs/adr/0109, D1).
@@ -143,6 +159,8 @@ impl Default for ServerSettings {
             max_connections_per_address: 64,
             rates: EdgeRates::DEFAULT,
             trusted_proxies: Vec::new(),
+            signer: None,
+            max_skew: Duration::from_millis(u64::from(DEFAULT_MAX_SKEW_MS)),
         }
     }
 }
@@ -272,6 +290,10 @@ pub enum Authenticator {
     /// A TLS client certificate, required by the TLS configuration ([`server_tls`] with client
     /// authorities) and checked against the name by the host.
     Mtls(CertificateCheck),
+    /// A request signed by the client's Ed25519 key (SCE_MESH.md sections 22.5 and 22.9): the
+    /// name is proved by a signature its pinned key verifies, made within `max_skew` of the
+    /// server's clock.
+    Key(KeyPins),
 }
 
 impl Authenticator {
@@ -281,6 +303,43 @@ impl Authenticator {
         Self::Bearer(Arc::new(move |name: &str, token: &str| {
             tokens.check(name, token)
         }))
+    }
+}
+
+/// Where the `key` authenticator keeps the key each name is proved by (ADR 0109, D3 and D9): the
+/// credential store's pins, a name to the `COSE_Key` of its public key as RFC 9679 takes its
+/// thumbprint ([`KeyPins::pin_of`]), which names the algorithm with the key and so is never read
+/// as an installation digest.
+#[derive(Clone)]
+pub struct KeyPins {
+    pins: Arc<dyn PinStore>,
+    first_use: bool,
+}
+
+impl KeyPins {
+    /// Pin a name to the key that signed its first exchange answered `200` and take no other for
+    /// it after (trust on first use, as `install` pins a secret). The key comes offered in
+    /// `Sce-Mesh-Key`, and is taken only when it made the request's signature.
+    pub fn first_use(pins: Arc<dyn PinStore>) -> Self {
+        KeyPins {
+            pins,
+            first_use: true,
+        }
+    }
+
+    /// Take only a key the host registered for the name in `pins` ([`KeyPins::pin_of`]); a name
+    /// pinned to none is refused.
+    pub fn registered(pins: Arc<dyn PinStore>) -> Self {
+        KeyPins {
+            pins,
+            first_use: false,
+        }
+    }
+
+    /// The pin of `public_key`, which a host that registers a client's key writes for its name
+    /// (`PinStore::pin`).
+    pub fn pin_of(public_key: &[u8; PUBLIC_KEY_BYTES]) -> Vec<u8> {
+        cose_key_ed25519_required(public_key)
     }
 }
 
@@ -694,6 +753,9 @@ impl HttpsServer {
             async move { server.watch_absence().await }
         }));
         let acceptor = tls.map(tokio_rustls::TlsAcceptor::from);
+        // The scheme a request's target URI is read in (`@target-uri`, SCE_MESH.md section
+        // 22.9): `http` only for the loopback test that serves without TLS.
+        let scheme = if acceptor.is_some() { "https" } else { "http" };
         let handshake_timeout = self.shared.settings.handshake_timeout;
         let error = loop {
             let (stream, remote) = match listener.accept().await {
@@ -723,10 +785,14 @@ impl HttpsServer {
                             .and_then(|chain| chain.first())
                             .map(|certificate| certificate.as_ref().to_vec());
                         server
-                            .serve_accepted(stream, certificate, remote.ip())
+                            .serve_from(stream, certificate, Some(remote.ip()), scheme)
                             .await;
                     }
-                    None => server.serve_accepted(stream, None, remote.ip()).await,
+                    None => {
+                        server
+                            .serve_from(stream, None, Some(remote.ip()), scheme)
+                            .await
+                    }
                 }
             });
         };
@@ -743,11 +809,15 @@ impl HttpsServer {
     /// The connection's remote address is not known here, so its exchanges are held to no
     /// limiter of the address (docs/adr/0109, D2); a host that accepts itself and knows it calls
     /// [`serve_accepted`](Self::serve_accepted).
+    ///
+    /// The connection is one the client reached under `https://` (the host's TLS, or a proxy's in
+    /// front of it), which is the scheme a request's target URI is read in (SCE_MESH.md section
+    /// 22.9).
     pub async fn serve_connection<S>(&self, stream: S, certificate: Option<Vec<u8>>)
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        self.serve_from(stream, certificate, None).await;
+        self.serve_from(stream, certificate, None, "https").await;
     }
 
     /// [`serve_connection`](Self::serve_connection) for a connection from `remote`: its
@@ -757,11 +827,17 @@ impl HttpsServer {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        self.serve_from(stream, certificate, Some(remote)).await;
+        self.serve_from(stream, certificate, Some(remote), "https")
+            .await;
     }
 
-    async fn serve_from<S>(&self, stream: S, certificate: Option<Vec<u8>>, remote: Option<IpAddr>)
-    where
+    async fn serve_from<S>(
+        &self,
+        stream: S,
+        certificate: Option<Vec<u8>>,
+        remote: Option<IpAddr>,
+        scheme: &'static str,
+    ) where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         let shared = Arc::clone(&self.shared);
@@ -769,7 +845,9 @@ impl HttpsServer {
         let service = hyper::service::service_fn(move |request| {
             let shared = Arc::clone(&shared);
             let certificate = certificate.clone();
-            async move { Ok::<_, Infallible>(exchange(shared, request, certificate, remote).await) }
+            async move {
+                Ok::<_, Infallible>(exchange(shared, request, certificate, remote, scheme).await)
+            }
         });
         let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
         builder
@@ -917,6 +995,7 @@ fn unauthorized(authenticator: &Authenticator) -> Response<Full<Bytes>> {
         Authenticator::Bearer(_) => BEARER_SCHEME,
         Authenticator::Install(_) => INSTALL_SCHEME,
         Authenticator::Mtls(_) => "SCE-Certificate",
+        Authenticator::Key(_) => KEY_SCHEME,
     };
     response
         .headers_mut()
@@ -961,28 +1040,87 @@ fn credential<'a>(request: &'a Request<Incoming>, scheme: &str) -> Option<&'a st
     given.eq_ignore_ascii_case(scheme).then(|| text.trim())
 }
 
+/// The value of the request's field `name` as a signature covers it (RFC 9421 section 2.1):
+/// every line of it, each trimmed, joined by `", "`. `None` when there is none, or a line is not
+/// text.
+fn header_field(request: &Request<Incoming>, name: &str) -> Option<String> {
+    let lines: Option<Vec<&str>> = request
+        .headers()
+        .get_all(name)
+        .iter()
+        .map(|value| value.to_str().ok().map(str::trim))
+        .collect();
+    lines
+        .filter(|lines| !lines.is_empty())
+        .map(|lines| lines.join(", "))
+}
+
+/// The request's target URI as both ends of the binding read it (`@target-uri`, SCE_MESH.md
+/// section 22.9): its own scheme and authority when it names them (HTTP/2, or the absolute form),
+/// else `scheme` and `Host`, with its path and query.
+fn request_target(request: &Request<Incoming>, scheme: &str) -> Option<String> {
+    let uri = request.uri();
+    let authority = match uri.authority() {
+        Some(authority) => authority.as_str().to_string(),
+        None => request
+            .headers()
+            .get(HOST)?
+            .to_str()
+            .ok()?
+            .trim()
+            .to_string(),
+    };
+    let path_and_query = uri.path_and_query().map_or("/", |path| path.as_str());
+    target_uri(
+        uri.scheme_str().unwrap_or(scheme),
+        &authority,
+        path_and_query,
+    )
+}
+
+/// The seconds since the Unix epoch on the server's clock, which a request's `created` is held
+/// to.
+fn unix_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|since| i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
+        .unwrap_or(0)
+}
+
 /// What the authenticator makes of a request, before its body is read: refused, admitted with
-/// the installation digest still to pin, or not judged because the pin store could not be read.
+/// the pin still to write, or not judged because the pin store could not be read.
 enum Admission {
     Refused,
-    /// Admitted; `pin` is the installation digest still to pin, and `new` says the name is
-    /// pinned to none yet.
+    /// Admitted; `pin` is what the name is still to be pinned to (an installation digest, or a
+    /// key), and `new` says the name is pinned to none yet.
     Admitted {
-        pin: Option<[u8; 32]>,
+        pin: Option<Vec<u8>>,
         new: bool,
     },
     /// The pin store failed: the client is not at fault, and is answered as load shed is.
     Unavailable,
 }
 
+/// Where a request is judged: what the server reads of it beyond its headers.
+struct Judged<'a> {
+    /// The client's certificate, DER, under `mtls`.
+    certificate: Option<&'a [u8]>,
+    /// The request's target URI, which a request signature covers.
+    target: Option<&'a str>,
+    /// How far a request signature's `created` may lie from the server's clock.
+    max_skew: Duration,
+}
+
 fn admit(
     authenticator: &Authenticator,
     name: &str,
     request: &Request<Incoming>,
-    certificate: Option<&[u8]>,
+    judged: &Judged<'_>,
 ) -> Admission {
     // §mesh-22.5: the name the path claims is proved by the deployment's one authenticator, a
-    // bearer token, an installation secret checked against its pin, or a client certificate.
+    // bearer token, an installation secret checked against its pin, a client certificate, or a
+    // signature of the key the name is pinned to.
+    let certificate = judged.certificate;
     match authenticator {
         Authenticator::Bearer(check) => match credential(request, BEARER_SCHEME) {
             Some(token) if check(name, token) => Admission::Admitted {
@@ -1000,7 +1138,7 @@ fn admit(
             match pins.pinned(name) {
                 Ok(Some(held)) if !same_secret(&held, &digest) => Admission::Refused,
                 Ok(held) => Admission::Admitted {
-                    pin: Some(digest),
+                    pin: Some(digest.to_vec()),
                     new: held.is_none(),
                 },
                 Err(_) => Admission::Unavailable,
@@ -1013,6 +1151,47 @@ fn admit(
             },
             _ => Admission::Refused,
         },
+        Authenticator::Key(keys) => admit_key(keys, name, request, judged),
+    }
+}
+
+/// The `key` authenticator's judgment of a request (SCE_MESH.md section 22.9): a signature of the
+/// profile, by the key the name is pinned to, or, for a name pinned to none under trust on first
+/// use, by the key the request offers, made within `max_skew` of the server's clock. The body is
+/// held to its signed `Content-Digest` once it has arrived.
+fn admit_key(
+    keys: &KeyPins,
+    name: &str,
+    request: &Request<Incoming>,
+    judged: &Judged<'_>,
+) -> Admission {
+    let field = |header: &str| header_field(request, header);
+    let (Ok(signature), Some(target)) = (RequestSignature::read(&field), judged.target) else {
+        return Admission::Refused;
+    };
+    let pinned = match keys.pins.pinned(name) {
+        Ok(pinned) => pinned,
+        Err(_) => return Admission::Unavailable,
+    };
+    let (public_key, new) = match pinned {
+        // A pin this authenticator did not write (an installation digest) names no key.
+        Some(pin) => match ed25519_of_cose_key(&pin) {
+            Some(public_key) => (public_key, false),
+            None => return Admission::Refused,
+        },
+        None if keys.first_use => match field(KEY_HEADER).and_then(|offer| key_of_offer(&offer)) {
+            Some(public_key) => (public_key, true),
+            None => return Admission::Refused,
+        },
+        None => return Admission::Refused,
+    };
+    let max_skew_s = judged.max_skew.as_secs();
+    match signature.verify(&public_key, target, &field, unix_seconds(), max_skew_s) {
+        Ok(()) => Admission::Admitted {
+            pin: new.then(|| KeyPins::pin_of(&public_key)),
+            new,
+        },
+        Err(_) => Admission::Refused,
     }
 }
 
@@ -1024,6 +1203,7 @@ async fn exchange(
     request: Request<Incoming>,
     certificate: Option<Arc<Vec<u8>>>,
     remote: Option<IpAddr>,
+    scheme: &'static str,
 ) -> Response<Full<Bytes>> {
     // §mesh-22.4: the refusals below (`429`, `405`, `404`, `503`, `401`, `400`, `413`, `415`)
     // are each answered before the request's envelopes reach the core.
@@ -1073,12 +1253,28 @@ async fn exchange(
     {
         return shed(StatusCode::TOO_MANY_REQUESTS, wait);
     }
-    let (pin, new) = match admit(
-        &shared.authenticator,
-        &name,
-        &request,
-        certificate.as_deref().map(Vec::as_slice),
+    // SCE_MESH.md section 22.9: what a signature covers of the request, read before its body
+    // takes it: the target URI, and the acknowledgement and nonce a response's signature answers.
+    let target = request_target(&request, scheme);
+    let answered = match (
+        &target,
+        header_field(&request, ACK_HEADER),
+        header_field(&request, NONCE_HEADER),
     ) {
+        (Some(target), Some(ack), Some(nonce)) => Some(Answered {
+            target_uri: target.clone(),
+            ack,
+            nonce,
+        }),
+        _ => None,
+    };
+    let signed_digest = header_field(&request, CONTENT_DIGEST_HEADER);
+    let judged = Judged {
+        certificate: certificate.as_deref().map(Vec::as_slice),
+        target: target.as_deref(),
+        max_skew: settings.max_skew,
+    };
+    let (pin, new) = match admit(&shared.authenticator, &name, &request, &judged) {
         Admission::Refused => {
             shared.edge(|edge, now| edge.failed(&name, address, now));
             return unauthorized(&shared.authenticator);
@@ -1164,12 +1360,26 @@ async fn exchange(
     if !body.is_empty() && typed.as_deref() != Some(CONTENT_TYPE) {
         return answer(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
-    // §mesh-22.5: the name is pinned to the installation secret's SHA-256 in one step with the
-    // check, so of two first exchanges that bring different secrets one is refused `401`.
-    if let Some(digest) = pin {
-        if let Authenticator::Install(pins) = &shared.authenticator {
-            match pins.pin(&name, &digest) {
-                Ok(held) if same_secret(&held, &digest) => {}
+    // SCE_MESH.md section 22.9: a signed request proves its body by the `Content-Digest` its
+    // signature covers, so a body that is not the one signed is no request of the client's.
+    if matches!(shared.authenticator, Authenticator::Key(_))
+        && !signed_digest.is_some_and(|digest| digest_matches(&digest, &body))
+    {
+        shared.edge(|edge, now| edge.failed(&name, address, now));
+        return unauthorized(&shared.authenticator);
+    }
+    // §mesh-22.5: the name is pinned to the installation secret's SHA-256, or to the key whose
+    // signature proved it, in one step with the check, so of two first exchanges that bring
+    // different secrets or keys one is refused `401`.
+    if let Some(wanted) = pin {
+        let pins = match &shared.authenticator {
+            Authenticator::Install(pins) => Some(pins),
+            Authenticator::Key(keys) => Some(&keys.pins),
+            Authenticator::Bearer(_) | Authenticator::Mtls(_) => None,
+        };
+        if let Some(pins) = pins {
+            match pins.pin(&name, &wanted) {
+                Ok(held) if same_secret(&held, &wanted) => {}
                 Ok(_) => {
                     shared.edge(|edge, now| edge.failed(&name, address, now));
                     return unauthorized(&shared.authenticator);
@@ -1273,6 +1483,18 @@ async fn exchange(
     // §mesh-22.2: the body is the unacknowledged envelopes it carries as a CBOR sequence,
     // `Sce-Mesh-First` numbers its first (absent when it is empty), and every `200` names its
     // incarnation.
+    // SCE_MESH.md section 22.9: under `sign:`, a `200` answering a request that carries a nonce is
+    // signed over its status, its body's digest and its numbering, and over the request's method,
+    // target, acknowledgement and nonce, so that it answers that request alone.
+    let first = first.map(|first| first.to_string());
+    let signed = match (&settings.signer, &answered) {
+        (Some(signer), Some(answered)) => {
+            let digest = content_digest(&body);
+            let fields = signer.sign(&digest, &epoch, first.as_deref(), answered);
+            Some((digest, fields))
+        }
+        _ => None,
+    };
     let mut response = Response::new(Full::new(Bytes::from(body)));
     response
         .headers_mut()
@@ -1280,9 +1502,20 @@ async fn exchange(
     if let Ok(value) = HeaderValue::from_str(&epoch) {
         response.headers_mut().insert(EPOCH_HEADER, value);
     }
-    if let Some(first) = first {
-        if let Ok(value) = HeaderValue::from_str(&first.to_string()) {
+    if let Some(first) = &first {
+        if let Ok(value) = HeaderValue::from_str(first) {
             response.headers_mut().insert(FIRST_HEADER, value);
+        }
+    }
+    if let Some((digest, fields)) = signed {
+        let digest = core::iter::once((CONTENT_DIGEST_HEADER.to_string(), digest));
+        for (name, value) in digest.chain(fields) {
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(name.as_bytes()),
+                HeaderValue::from_str(&value),
+            ) {
+                response.headers_mut().insert(name, value);
+            }
         }
     }
     response
@@ -2386,5 +2619,235 @@ mod tests {
         assert_eq!(stricter(on, None), on);
         assert_eq!(stricter(None, on), on);
         assert_eq!(stricter(None, None), None);
+    }
+
+    use super::super::signature::{
+        field_value, normalize_target_uri, verify_response, RequestSigner, SIGNATURE_HEADER,
+    };
+    use sce_rust_crypto::cose::TrustedKey;
+    use sce_rust_crypto::ed25519::KeyPair;
+
+    /// The nonce the signing tests send.
+    const NONCE: &str = "AAECAwQFBgcICQoLDA0ODw";
+
+    /// What a response to `request` answers, as the client that sent it reads it.
+    fn answered_by(request: &super::super::HttpsRequest) -> Answered {
+        let field = |name: &str| field_value(&request.headers, name).expect("a field it carried");
+        Answered {
+            target_uri: normalize_target_uri(&request.url).expect("a URL"),
+            ack: field(ACK_HEADER),
+            nonce: field(NONCE_HEADER),
+        }
+    }
+
+    /// SCE_MESH.md section 22.9: under `sign:`, every `200` answering a request with a nonce is
+    /// signed for that request, a poll's and one that carries the mailbox's envelope alike, and
+    /// verifies under the trust set that holds the key by its id; it does not verify as the
+    /// answer to another nonce. A request without a nonce, from a client that does not verify, is
+    /// answered unsigned. Red if the server signs over another target or acknowledgement than the
+    /// request's, or leaves a `200` unsigned.
+    #[test]
+    fn a_signing_server_signs_each_200_for_the_request_it_answers() {
+        use super::super::HttpsTransport;
+
+        let key = KeyPair::from_seed(&[3u8; 32]);
+        let trusted = alloc::vec![TrustedKey {
+            id: "server-2026".to_string(),
+            public_key: key.public_key(),
+        }];
+        let Serving {
+            _runtime,
+            server,
+            address,
+            port,
+        } = serving_with(
+            ServerSettings {
+                max_hold: Duration::from_secs(5),
+                signer: Some(ResponseSigner::new("server-2026", key)),
+                ..ServerSettings::default()
+            },
+            |name: &str| name == "phone",
+            |_: Vec<LinkEvent>| {},
+        );
+        let mut request = request_to(address, Vec::new());
+        request
+            .headers
+            .push((NONCE_HEADER.to_string(), NONCE.to_string()));
+        let poll = port.exchange(request.clone()).expect("a response");
+        assert_eq!(poll.status, 200);
+        let field = |name: &str| field_value(&poll.headers, name);
+        assert_eq!(
+            verify_response(
+                &trusted,
+                poll.status,
+                &field,
+                &poll.body,
+                &answered_by(&request)
+            ),
+            Ok(())
+        );
+        let other = Answered {
+            nonce: "BBECAwQFBgcICQoLDA0ODw".to_string(),
+            ..answered_by(&request)
+        };
+        assert!(
+            verify_response(&trusted, poll.status, &field, &poll.body, &other).is_err(),
+            "a response answers its own request's nonce alone"
+        );
+
+        server
+            .transport()
+            .transmit("phone", &[0x05])
+            .expect("room in the mailbox");
+        let carrying = port.exchange(request.clone()).expect("a response");
+        assert_eq!(carrying.body, [0x05]);
+        assert_eq!(carrying.header(FIRST_HEADER), Some("1"));
+        let field = |name: &str| field_value(&carrying.headers, name);
+        assert_eq!(
+            verify_response(
+                &trusted,
+                carrying.status,
+                &field,
+                &carrying.body,
+                &answered_by(&request)
+            ),
+            Ok(())
+        );
+
+        let unsigned = port
+            .exchange(request_to(address, Vec::new()))
+            .expect("a response");
+        assert_eq!(unsigned.status, 200);
+        assert_eq!(unsigned.header(SIGNATURE_HEADER), None);
+    }
+
+    /// A request of `name` to the server at `address`, carrying `body`, signed by `key` as made at
+    /// `created`.
+    fn signed_request(
+        name: &str,
+        address: std::net::SocketAddr,
+        body: Vec<u8>,
+        key: &KeyPair,
+        created: i64,
+    ) -> super::super::HttpsRequest {
+        let url = alloc::format!("http://{address}/sce-mesh/1/{name}");
+        let mut headers = alloc::vec![
+            ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
+            (ACK_HEADER.to_string(), "0".to_string()),
+            (HOLD_HEADER.to_string(), "0".to_string()),
+            (NONCE_HEADER.to_string(), NONCE.to_string()),
+            (CONTENT_DIGEST_HEADER.to_string(), content_digest(&body)),
+        ];
+        let signed = RequestSigner::new(key.clone())
+            .sign(
+                &normalize_target_uri(&url).expect("a URL"),
+                &headers,
+                created,
+            )
+            .expect("every covered field");
+        headers.extend(signed);
+        super::super::HttpsRequest {
+            url,
+            headers,
+            body,
+            timeout: Duration::from_secs(10),
+        }
+    }
+
+    /// SCE_MESH.md sections 22.5 and 22.9: the `key` authenticator pins a name to the key that
+    /// signed its first exchange answered `200`, in the store given and as that key's `COSE_Key`;
+    /// a request signed by a second key is refused `401` and replaces nothing; and a request whose
+    /// body is not the one its signature's digest covers is refused. Red if the server pins the
+    /// offered key of a name already pinned, or does not hold the body to its digest.
+    #[test]
+    fn a_name_is_pinned_to_the_key_of_its_first_200_and_refuses_a_second() {
+        use super::super::HttpsTransport;
+
+        let pins = MemoryCredentials::new();
+        let Serving {
+            _runtime,
+            server: _,
+            address,
+            port,
+        } = serving_authenticated(
+            Authenticator::Key(KeyPins::first_use(Arc::new(pins.clone()))),
+            |_events: Vec<LinkEvent>| {},
+            Duration::from_secs(5),
+        );
+        let first = KeyPair::from_seed(&[1u8; 32]);
+        let second = KeyPair::from_seed(&[2u8; 32]);
+        let send = |key: &KeyPair| {
+            port.exchange(signed_request(
+                "phone",
+                address,
+                Vec::new(),
+                key,
+                unix_seconds(),
+            ))
+            .expect("a response")
+        };
+        assert_eq!(send(&first).status, 200, "the first key");
+        assert_eq!(
+            pins.pinned("phone").expect("the pin"),
+            Some(KeyPins::pin_of(&first.public_key())),
+            "the name is pinned to the key in the store given"
+        );
+        assert_eq!(send(&first).status, 200, "the same key again");
+        let refused = send(&second);
+        assert_eq!(refused.status, 401, "a second key");
+        assert_eq!(refused.header("WWW-Authenticate"), Some(KEY_SCHEME));
+        assert_eq!(
+            pins.pinned("phone").expect("the pin"),
+            Some(KeyPins::pin_of(&first.public_key())),
+            "a second key replaced nothing"
+        );
+
+        let mut altered =
+            signed_request("phone", address, alloc::vec![0x05], &first, unix_seconds());
+        altered.body = alloc::vec![0x06];
+        assert_eq!(
+            port.exchange(altered).expect("a response").status,
+            401,
+            "a body that is not the one signed"
+        );
+    }
+
+    /// SCE_MESH.md section 22.9: under the `key` authenticator a request whose `created` lies
+    /// further from the server's clock than `max_skew` is refused, whichever way; and a server
+    /// that takes only registered keys refuses a name the host pinned to none and takes one it
+    /// registered. Red if `created` is not held to the server's clock.
+    #[test]
+    fn a_request_created_too_far_from_the_clock_is_refused() {
+        use super::super::HttpsTransport;
+
+        let pins = MemoryCredentials::new();
+        let server = HttpsServer::new(
+            ServerSettings {
+                max_skew: Duration::from_secs(300),
+                ..ServerSettings::default()
+            },
+            Authenticator::Key(KeyPins::registered(Arc::new(pins.clone()))),
+            |name| name == "phone",
+            |_: Vec<LinkEvent>| {},
+        )
+        .expect("a server");
+        let Serving {
+            _runtime,
+            server: _,
+            address,
+            port,
+        } = listening(server);
+        let key = KeyPair::from_seed(&[1u8; 32]);
+        let at = |created: i64| {
+            port.exchange(signed_request("phone", address, Vec::new(), &key, created))
+                .expect("a response")
+                .status
+        };
+        assert_eq!(at(unix_seconds()), 401, "a key the host never registered");
+        pins.pin("phone", &KeyPins::pin_of(&key.public_key()))
+            .expect("the host registers the key");
+        assert_eq!(at(unix_seconds()), 200, "the registered key");
+        assert_eq!(at(unix_seconds() - 1_000), 401, "created too long ago");
+        assert_eq!(at(unix_seconds() + 1_000), 401, "created too far ahead");
     }
 }
