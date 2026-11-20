@@ -588,7 +588,12 @@ NOTHING_TO_VERIFY = "no-gate-applies"
 # bx.toml: when the fleet gains that platform, the gate joins the judgment
 # without an edit here. A toolchain the fleet merely lacks is not a platform:
 # it is a tool of bx.toml's platform, with an install, so bx provisions it and
-# places the unit where it is (Swift, GenMC, the Python environment, emsdk).
+# places the unit where it is (Swift, GenMC, the Python environment, emsdk, the
+# mesh SDKs, Chrome for Testing, wasm-bindgen), and a compiler a gate's verdict
+# belongs to is an image the gate runs in (`container`). One gate names a
+# platform the fleet lacks: `windows-msvc`, whose verdict is MSVC's on a hosted
+# Windows runner, and which every build machine, being the Linux platform
+# bx.toml declares, cannot give.
 # `a-gate-off-the-fleet-is-ci-only-and-says-why` in the self-test holds that
 # such a gate is `ci_only` (no push of another ref could run it either), names
 # a workflow, and gives its reason.
