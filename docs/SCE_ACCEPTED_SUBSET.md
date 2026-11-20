@@ -1531,6 +1531,24 @@ fits 32 bits, each checked by value and by side
 (`mesh/topology-invalid-binding-field`). SCE_MESH.md section 22.9 gives
 their meaning.
 
+What a deployment keeps across a crash is declared by the keys of
+SCE_MESH.md section 10.11 (amended by ADR 0109, decision D10): a
+machine takes `persistence: checkpoint` and a `receipt: { window,
+retry_ms }` block, and a binding takes `receipt: transport` (the
+default) or `receipt: durable`; the accepting side of an `https`
+binding takes `retain_ms` (default 2592000000, thirty days), read only
+under `receipt: durable` and at least the binding's `absence_ms`
+(`mesh/topology-invalid-binding-field`). A block with a field below 1,
+or on a machine with no durable binding, is refused
+(`mesh/deploy-invalid-receipt`); a durable binding one of whose
+machines is not checkpointed (by `persistence: checkpoint`, by being a
+keyed pool, or by the tree of a machine that is) is refused naming that
+machine (`mesh/deploy-receipt-without-persistence`); a machine that
+asks for either generated for a backend other than Rust is refused by
+name (`mesh/codegen-durable-receipt-unsupported`); and
+`persistence: checkpoint` on a document that saves nothing is refused
+(`mesh/codegen-persistence-without-saved-state`).
+
 #### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
 
 Optional top-level map carrying per-codec default-arm overrides for
@@ -11005,6 +11023,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-config-missing` | Mesh Deploy |
 | `mesh/deploy-config-unknown` | Mesh Deploy |
 | `mesh/deploy-config-invalid` | Mesh Deploy |
+| `mesh/deploy-invalid-receipt` | Mesh Deploy |
+| `mesh/deploy-receipt-without-persistence` | Mesh Deploy |
 | `mesh/deploy-invalid-retry-policy` | Mesh Deploy |
 | `mesh/deploy-invalid-auth-policy` | Mesh Deploy |
 | `mesh/deploy-discovery-not-supported` | Mesh Deploy |
@@ -11116,6 +11136,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-host-core-unsupported` | Mesh Codegen |
 | `mesh/codegen-cpp-router-unsupported` | Mesh Codegen |
 | `mesh/codegen-keyed-pool-unsupported` | Mesh Codegen |
+| `mesh/codegen-durable-receipt-unsupported` | Mesh Codegen |
+| `mesh/codegen-persistence-without-saved-state` | Mesh Codegen |
 
 ### Diagnostic-only
 

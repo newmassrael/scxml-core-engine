@@ -1437,9 +1437,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // what a client may cost the server (docs/adr/0109, D1 and D2):
         // `max_clients`, `max_response_bytes`, `rate`, `trusted_proxies`, and
         // the key a response is signed with and the skew a signed request is
-        // held to (`sign`, `max_skew_ms`, D9). Both: `authenticator`.
-        // `topology::validate_https_extras_partial` refuses a key of one side
-        // on the other.
+        // held to (`sign`, `max_skew_ms`, D9), and how long a durable
+        // binding's outbox keeps an entry (`retain_ms`, D10). Both:
+        // `authenticator`. `topology::validate_https_extras_partial` refuses a
+        // key of one side on the other.
         optional_binding_fields: &[
             "url",
             "listen",
@@ -1456,6 +1457,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
             "sign",
             "verify",
             "max_skew_ms",
+            "retain_ms",
         ],
         // What a lost response carried is carried again, and a request whose
         // exchange failed is sent again under a retry policy: the core's
@@ -1738,7 +1740,8 @@ mod tests {
                 "trusted_proxies",
                 "sign",
                 "verify",
-                "max_skew_ms"
+                "max_skew_ms",
+                "retain_ms"
             ]
         );
         // The first answered exchange is the ready edge.
@@ -1953,7 +1956,8 @@ mod tests {
                         "trusted_proxies",
                         "sign",
                         "verify",
-                        "max_skew_ms"
+                        "max_skew_ms",
+                        "retain_ms"
                     ]
                 ),
             ]

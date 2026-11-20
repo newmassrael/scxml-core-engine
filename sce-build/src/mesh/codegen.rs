@@ -1240,6 +1240,30 @@ pub struct MeshCodegenInputs<'a> {
     /// its document by [`super::topology::resolve_keyed_pool`]; `None` for a
     /// machine that is one session.
     pub sessions: Option<&'a super::topology::KeyedPool>,
+    /// The machine keeps what SCE_MESH.md section 10.11 makes durable: it
+    /// declares `persistence: checkpoint`, or a binding of it declares
+    /// `receipt: durable` (docs/adr/0109, D10). Only the Rust host core keeps
+    /// either ([`CodegenError::DurableReceiptUnsupported`]).
+    pub durable: bool,
+    /// The machine's `receipt: { window, retry_ms }` block, or its defaults:
+    /// how its durable dialing bindings send.
+    pub machine_receipt: super::deploy::ReceiptConfig,
+}
+
+/// The backends whose Mesh core keeps a checkpoint and a durable receipt
+/// (SCE_MESH.md section 10.11; docs/adr/0109, D10 and D0): the Rust host core.
+/// Every other backend refuses a machine that asks for either
+/// ([`CodegenError::DurableReceiptUnsupported`]).
+fn keeps_durable_receipt(language: Language) -> bool {
+    match language {
+        Language::Rust => true,
+        Language::Cpp
+        | Language::Kotlin
+        | Language::Swift
+        | Language::Go
+        | Language::Python
+        | Language::C11 => false,
+    }
 }
 
 /// The backends whose Mesh core serves a keyed pool of sessions
@@ -1265,6 +1289,15 @@ pub fn generate_mesh(
 ) -> Result<GeneratedOutput, CodegenError> {
     if inputs.sessions.is_some() && !serves_keyed_pool(language) {
         return Err(CodegenError::KeyedPoolUnsupported {
+            machine: inputs.deploy_machine_name.to_string(),
+            backend: language.canonical_name().to_string(),
+        });
+    }
+    // docs/adr/0109, D0 and D10: refused by name, before anything else of the
+    // machine, rather than emitted as one that loses what the deployment
+    // promised to keep.
+    if inputs.durable && !keeps_durable_receipt(language) {
+        return Err(CodegenError::DurableReceiptUnsupported {
             machine: inputs.deploy_machine_name.to_string(),
             backend: language.canonical_name().to_string(),
         });
@@ -2443,6 +2476,9 @@ enum HostLinkContext {
         /// The trust set a response is verified under (docs/adr/0109, D9); `None` verifies
         /// nothing.
         verify: Option<String>,
+        /// Under `receipt: durable` (docs/adr/0109, D10), how the machine's durable bindings
+        /// send; `None` for `receipt: transport`.
+        receipt: Option<super::deploy::ReceiptConfig>,
     },
     /// The HTTPS binding on the side that keeps the mailbox: the address it listens on, the
     /// `authenticator` word and the bounds of the accepting binding.
@@ -2462,6 +2498,11 @@ enum HostLinkContext {
         /// (docs/adr/0109, D9); `None` signs nothing.
         sign: Option<String>,
         max_skew_ms: u32,
+        /// Under `receipt: durable` (docs/adr/0109, D10) the server keeps each client's outbox
+        /// in its store, `mailbox` its durable window, each entry kept `retain_ms`; `None` for
+        /// `receipt: transport`.
+        receipt: Option<super::deploy::ReceiptConfig>,
+        retain_ms: u64,
     },
 }
 
@@ -2550,6 +2591,7 @@ fn generate_host_mesh(
         source_location,
         template_base,
         sessions,
+        machine_receipt,
         ..
     } = inputs;
     use super::error::HostCoreGap;
@@ -2626,12 +2668,15 @@ fn generate_host_mesh(
                     authenticator,
                     hold_ms,
                     verify,
+                    receipt,
                     ..
                 } => HostLinkContext::HttpsDial {
                     url: url.clone(),
                     authenticator: https_authenticator_word(authenticator),
                     hold_ms: *hold_ms,
                     verify: verify.clone(),
+                    receipt: (*receipt == super::deploy::ReceiptMode::Durable)
+                        .then_some(machine_receipt),
                 },
                 TransportState::Https {
                     listen: Some(listen),
@@ -2646,6 +2691,8 @@ fn generate_host_mesh(
                     trusted_proxies,
                     sign,
                     max_skew_ms,
+                    receipt,
+                    retain_ms,
                     ..
                 } => HostLinkContext::HttpsAccept {
                     listen: listen.clone(),
@@ -2660,6 +2707,9 @@ fn generate_host_mesh(
                     trusted_proxies: trusted_proxies.clone(),
                     sign: sign.clone(),
                     max_skew_ms: *max_skew_ms,
+                    receipt: (*receipt == super::deploy::ReceiptMode::Durable)
+                        .then_some(machine_receipt),
+                    retain_ms: *retain_ms,
                 },
                 TransportState::Https { .. } => unreachable!(
                     "generate_host_mesh: an https binding with neither `url` nor `listen` passed \

@@ -3115,6 +3115,14 @@ pub enum DiagnosticCode {
     /// serve, or sits beside what a keyed pool cannot keep.
     #[serde(rename = "mesh/deploy-invalid-sessions")]
     MeshDeployInvalidSessions,
+    /// A machine's `receipt:` block cannot be kept: a field below 1, or no
+    /// durable binding on the machine to read it.
+    #[serde(rename = "mesh/deploy-invalid-receipt")]
+    MeshDeployInvalidReceipt,
+    /// A binding under `receipt: durable` joins a machine that is not
+    /// checkpointed.
+    #[serde(rename = "mesh/deploy-receipt-without-persistence")]
+    MeshDeployReceiptWithoutPersistence,
     /// A keyed pool's key field is not carried, as a key, by a request the
     /// machine serves.
     #[serde(rename = "mesh/deploy-sessions-key-not-in-request")]
@@ -3688,6 +3696,14 @@ pub enum DiagnosticCode {
     /// backend whose Mesh core does not serve one.
     #[serde(rename = "mesh/codegen-keyed-pool-unsupported")]
     MeshCodegenKeyedPoolUnsupported,
+    /// A machine the deployment checkpoints, or one with a durable binding,
+    /// is generated for a backend whose Mesh core keeps neither.
+    #[serde(rename = "mesh/codegen-durable-receipt-unsupported")]
+    MeshCodegenDurableReceiptUnsupported,
+    /// A machine the deployment checkpoints has a document with no saved
+    /// state for a checkpoint to hold.
+    #[serde(rename = "mesh/codegen-persistence-without-saved-state")]
+    MeshCodegenPersistenceWithoutSavedState,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4477,6 +4493,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployConfigMissing,
         MeshDeployConfigUnknown,
         MeshDeployConfigInvalid,
+        MeshDeployInvalidReceipt,
+        MeshDeployReceiptWithoutPersistence,
         MeshDeployInvalidRetryPolicy,
         MeshDeployInvalidAuthPolicy,
         MeshDeployDiscoveryNotSupported,
@@ -4607,6 +4625,10 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenCppRouterUnsupported,
         // ADR 0107, D3: a keyed pool on a core that does not serve one
         MeshCodegenKeyedPoolUnsupported,
+        // ADR 0109, D10: a checkpoint or a durable receipt on a core that keeps neither, and a
+        // checkpoint of a document that saves nothing
+        MeshCodegenDurableReceiptUnsupported,
+        MeshCodegenPersistenceWithoutSavedState,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -5303,6 +5325,12 @@ impl DiagnosticCode {
             MeshDeployConfigMissing | MeshDeployConfigUnknown | MeshDeployConfigInvalid => {
                 Some("ADR 0109 D12")
             }
+
+            // ── Checkpoint and durable receipt (SCE_MESH.md §10.11) ──
+            MeshDeployInvalidReceipt
+            | MeshDeployReceiptWithoutPersistence
+            | MeshCodegenDurableReceiptUnsupported
+            | MeshCodegenPersistenceWithoutSavedState => Some("SCE Mesh §10.11"),
 
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
@@ -6184,6 +6212,8 @@ impl DiagnosticCode {
             | MeshDeployConfigMissing
             | MeshDeployConfigUnknown
             | MeshDeployConfigInvalid
+            | MeshDeployInvalidReceipt
+            | MeshDeployReceiptWithoutPersistence
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
@@ -6300,6 +6330,8 @@ impl DiagnosticCode {
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCppRouterUnsupported
             | MeshCodegenKeyedPoolUnsupported
+            | MeshCodegenDurableReceiptUnsupported
+            | MeshCodegenPersistenceWithoutSavedState
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -6794,6 +6826,8 @@ impl DiagnosticCode {
             }
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
             MeshDeployInvalidSessions => "mesh/deploy-invalid-sessions",
+            MeshDeployInvalidReceipt => "mesh/deploy-invalid-receipt",
+            MeshDeployReceiptWithoutPersistence => "mesh/deploy-receipt-without-persistence",
             MeshDeploySessionsKeyNotInRequest => "mesh/deploy-sessions-key-not-in-request",
             MeshDeployConfigMissing => "mesh/deploy-config-missing",
             MeshDeployConfigUnknown => "mesh/deploy-config-unknown",
@@ -6988,6 +7022,10 @@ impl DiagnosticCode {
             MeshCodegenHostCoreUnsupported => "mesh/codegen-host-core-unsupported",
             MeshCodegenCppRouterUnsupported => "mesh/codegen-cpp-router-unsupported",
             MeshCodegenKeyedPoolUnsupported => "mesh/codegen-keyed-pool-unsupported",
+            MeshCodegenDurableReceiptUnsupported => "mesh/codegen-durable-receipt-unsupported",
+            MeshCodegenPersistenceWithoutSavedState => {
+                "mesh/codegen-persistence-without-saved-state"
+            }
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -18881,6 +18919,25 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:6da513c942580141","code":"mesh/deploy-invalid-sessions","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'rooms': invalid `sessions:` section in deploy.yaml — `key_from` is 'room', which is neither `client` nor `data.<field>` naming one top-level field of a request's data (a letter or `_`, then letters, digits or `_`).","actual":"rooms"}"#,
             ),
             (
+                "mesh/deploy-invalid-receipt",
+                DeployError::InvalidReceipt {
+                    machine: "calendar".into(),
+                    reason: "`window` is 0, and a durable binding holds at least one envelope unacknowledged".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a063b8d08036464f","code":"mesh/deploy-invalid-receipt","stage":"mesh-deploy","spec":"SCE Mesh §10.11","message":"machine 'calendar': invalid `receipt:` section in deploy.yaml — `window` is 0, and a durable binding holds at least one envelope unacknowledged.","actual":"calendar"}"#,
+            ),
+            (
+                "mesh/deploy-receipt-without-persistence",
+                DeployError::ReceiptWithoutPersistence {
+                    machine: "calendar".into(),
+                    target: "#phone".into(),
+                    missing: "phone".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c696c565962a15c1","code":"mesh/deploy-receipt-without-persistence","stage":"mesh-deploy","spec":"SCE Mesh §10.11","message":"machine 'calendar': binding '#phone' declares `receipt: durable`, which needs both machines it joins checkpointed, and machine 'phone' is not: it declares no `persistence: checkpoint`, is no keyed pool, and is held in the tree of no machine that is. Declare `persistence: checkpoint` on 'phone', or remove `receipt: durable`.","actual":"phone"}"#,
+            ),
+            (
                 "mesh/deploy-sessions-key-not-in-request",
                 DeployError::SessionKeyNotInRequest {
                     machine: "rooms".into(),
@@ -20256,6 +20313,23 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f158097a4217dc2e","code":"mesh/codegen-keyed-pool-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §14.4","message":"machine 'rooms' declares `sessions:`, a keyed pool of sessions, which the cpp Mesh core does not serve (SCE_MESH.md §mesh-14.4). Generate this machine with `--lang rust`, whose host core serves it, or remove `sessions:` from deploy.yaml.","actual":"rooms"}"#,
+            ),
+            (
+                "mesh/codegen-durable-receipt-unsupported",
+                CodegenError::DurableReceiptUnsupported {
+                    machine: "calendar".into(),
+                    backend: "cpp".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5ce07e1021118305","code":"mesh/codegen-durable-receipt-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.11","message":"machine 'calendar' declares `persistence: checkpoint` or a binding with `receipt: durable`, which the cpp Mesh core does not keep (SCE_MESH.md section 10.11). Generate this machine with `--lang rust`, whose host core keeps them, or remove them from deploy.yaml.","actual":"calendar"}"#,
+            ),
+            (
+                "mesh/codegen-persistence-without-saved-state",
+                CodegenError::PersistenceWithoutSavedState {
+                    machine: "calendar".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d22e4e08a43f9043","code":"mesh/codegen-persistence-without-saved-state","stage":"mesh-codegen","spec":"SCE Mesh §10.11","message":"machine 'calendar' declares `persistence: checkpoint`, and its document has no saved state for a checkpoint to hold (SCE_MESH.md section 10.11): a document saves under `datamodel=\"sce-static\"` when every child it can start saves too. Make the document one that saves, or remove `persistence:` from deploy.yaml.","actual":"calendar"}"#,
             ),
             (
                 "mesh/io",
@@ -21785,6 +21859,8 @@ mod tests {
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigInvalid
+            | MeshDeployInvalidReceipt
+            | MeshDeployReceiptWithoutPersistence
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
@@ -21915,6 +21991,8 @@ mod tests {
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCppRouterUnsupported
             | MeshCodegenKeyedPoolUnsupported
+            | MeshCodegenDurableReceiptUnsupported
+            | MeshCodegenPersistenceWithoutSavedState
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -22677,6 +22755,8 @@ mod tests {
                 | MeshDeployConfigMissing
                 | MeshDeployConfigUnknown
                 | MeshDeployConfigInvalid
+                | MeshDeployInvalidReceipt
+                | MeshDeployReceiptWithoutPersistence
                 | MeshDeployInvalidRetryPolicy
                 | MeshDeployInvalidAuthPolicy
                 | MeshDeployDiscoveryNotSupported
@@ -22783,6 +22863,8 @@ mod tests {
                 | MeshCodegenHostCoreUnsupported
                 | MeshCodegenCppRouterUnsupported
                 | MeshCodegenKeyedPoolUnsupported
+                | MeshCodegenDurableReceiptUnsupported
+                | MeshCodegenPersistenceWithoutSavedState
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -23788,6 +23870,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeployConfigMissing
             | MeshDeployConfigUnknown
             | MeshDeployConfigInvalid
+            | MeshDeployInvalidReceipt
+            | MeshDeployReceiptWithoutPersistence
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
@@ -23904,6 +23988,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCppRouterUnsupported
             | MeshCodegenKeyedPoolUnsupported
+            | MeshCodegenDurableReceiptUnsupported
+            | MeshCodegenPersistenceWithoutSavedState
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered

@@ -11747,6 +11747,31 @@ pub fn compile_mesh_transport(
         .into_iter()
         .collect();
 
+    // SCE_MESH.md section 10.11 (docs/adr/0109, D10): a checkpoint holds the
+    // machine's saved state, so `persistence: checkpoint` on a document that
+    // saves nothing is refused before anything is emitted.
+    let machine_entry = device.and_then(|d| d.machines.get(&effective_machine_name));
+    if machine_entry.is_some_and(|m| m.persistence.is_some())
+        && forge::static_lowering::saved_shape_text(model).is_none()
+    {
+        return Err(mesh::error::CodegenError::PersistenceWithoutSavedState {
+            machine: effective_machine_name.clone(),
+        }
+        .into());
+    }
+    // What the machine keeps durable, which only the Rust host core keeps
+    // (`CodegenError::DurableReceiptUnsupported`), and how its durable
+    // dialing bindings send.
+    let durable = machine_entry.is_some_and(|m| {
+        m.persistence.is_some()
+            || m.bindings
+                .values()
+                .any(|binding| binding.receipt == mesh::deploy::ReceiptMode::Durable)
+    });
+    let machine_receipt = machine_entry
+        .and_then(|m| m.receipt)
+        .unwrap_or(mesh::deploy::ReceiptConfig::DEFAULT);
+
     // SCE_MESH.md §16.5 wire-21: a partition may produce no
     // conventional `<send target="#X">` traffic and still need a
     // transport.h that opens inter-partition shm channels for
@@ -11973,6 +11998,8 @@ pub fn compile_mesh_transport(
             source_location: model.source_location.as_ref(),
             template_base: &template_base,
             sessions: keyed_pool.as_ref(),
+            durable,
+            machine_receipt,
         },
         language,
     )?;

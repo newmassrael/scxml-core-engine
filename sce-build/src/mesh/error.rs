@@ -1130,6 +1130,28 @@ pub enum DeployError {
     #[error("machine '{machine}': invalid `sessions:` section in deploy.yaml — {reason}.")]
     InvalidSessions { machine: String, reason: String },
 
+    /// A machine's `receipt: { window, retry_ms }` block cannot be kept (SCE_MESH.md section
+    /// 10.11; docs/adr/0109, D10): a field below 1, or a machine none of whose bindings is
+    /// durable, which leaves the block reading nothing. Read off the deployment alone.
+    #[error("machine '{machine}': invalid `receipt:` section in deploy.yaml — {reason}.")]
+    InvalidReceipt { machine: String, reason: String },
+
+    /// A binding declares `receipt: durable` and a machine it joins is not checkpointed
+    /// (SCE_MESH.md section 10.11; docs/adr/0109, D10): the receiver acknowledges only what a
+    /// durable checkpoint holds and the sender keeps what it sent in its own, so both ends must
+    /// checkpoint. `missing` is the end that does not.
+    #[error(
+        "machine '{machine}': binding '{target}' declares `receipt: durable`, which needs both \
+         machines it joins checkpointed, and machine '{missing}' is not: it declares no \
+         `persistence: checkpoint`, is no keyed pool, and is held in the tree of no machine that \
+         is. Declare `persistence: checkpoint` on '{missing}', or remove `receipt: durable`."
+    )]
+    ReceiptWithoutPersistence {
+        machine: String,
+        target: String,
+        missing: String,
+    },
+
     /// A keyed pool reads its key from a field of the requests' data, and a
     /// request the machine serves does not carry that field as a key
     /// (SCE_MESH.md §mesh-14.4). Judged against the machine's document, when
@@ -3033,6 +3055,10 @@ impl DeployError {
                 P::machine(machine).key("outbound_buffer")
             }
             Self::InvalidSessions { machine, .. } => P::machine(machine).key("sessions"),
+            Self::InvalidReceipt { machine, .. } => P::machine(machine).key("receipt"),
+            Self::ReceiptWithoutPersistence {
+                machine, target, ..
+            } => binding(machine, target).key("receipt"),
             Self::SessionKeyNotInRequest { machine, .. } => {
                 P::machine(machine).key("sessions").key("key_from")
             }
@@ -3885,6 +3911,31 @@ pub enum CodegenError {
          with `--lang rust`, whose host core serves it, or remove `sessions:` from deploy.yaml."
     )]
     KeyedPoolUnsupported { machine: String, backend: String },
+
+    /// A machine the deployment checkpoints, or one with a binding under `receipt: durable`
+    /// (SCE_MESH.md section 10.11; docs/adr/0109, D10), generated for a backend whose Mesh core
+    /// keeps neither: every backend but Rust's host core, which carries the checkpoint, the
+    /// outbox and the durable receipt. Refused by name (docs/adr/0109, D0) rather than emitted
+    /// as a machine that loses what the deployment promised to keep.
+    #[error(
+        "machine '{machine}' declares `persistence: checkpoint` or a binding with `receipt: \
+         durable`, which the {backend} Mesh core does not keep (SCE_MESH.md section 10.11). \
+         Generate this machine with `--lang rust`, whose host core keeps them, or remove them \
+         from deploy.yaml."
+    )]
+    DurableReceiptUnsupported { machine: String, backend: String },
+
+    /// A machine the deployment checkpoints (`persistence: checkpoint`, SCE_MESH.md section
+    /// 10.11) whose document has no saved state for a checkpoint to hold: one not under the
+    /// statically typed data model, or one that starts a child whose state a saved tree cannot
+    /// hold (docs/adr/0045, "Which documents save").
+    #[error(
+        "machine '{machine}' declares `persistence: checkpoint`, and its document has no saved \
+         state for a checkpoint to hold (SCE_MESH.md section 10.11): a document saves under \
+         `datamodel=\"sce-static\"` when every child it can start saves too. Make the document \
+         one that saves, or remove `persistence:` from deploy.yaml."
+    )]
+    PersistenceWithoutSavedState { machine: String },
 }
 
 /// What a [`CodegenError::CppRouterUnsupported`] refused: a deployment feature
@@ -4326,6 +4377,30 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::InvalidReceipt { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidReceipt,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // A value of the block, or the block removed, or a binding made durable: which
+            // depends on what the machine is for, so nothing is offered.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::ReceiptWithoutPersistence {
+            machine,
+            target,
+            missing,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployReceiptWithoutPersistence,
+            stage: Stage::MeshDeploy,
+            actual: Some(missing.clone()),
+            // `persistence: checkpoint` on the end that lacks it, or the binding made
+            // `transport` again: two repairs, neither offered as the fix.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), target.clone(), missing.clone()],
         },
         DeployError::SessionKeyNotInRequest {
             machine,
@@ -6346,6 +6421,25 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), backend.clone()],
+        },
+        CodegenError::DurableReceiptUnsupported { machine, backend } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenDurableReceiptUnsupported,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // Another backend, or a deployment that keeps nothing durable: neither is
+            // offered as the fix.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), backend.clone()],
+        },
+        CodegenError::PersistenceWithoutSavedState { machine } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenPersistenceWithoutSavedState,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // A document that saves, or no `persistence:`: which depends on the document.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone()],
         },
     }
 }

@@ -320,6 +320,8 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             sign,
             verify,
             max_skew_ms,
+            receipt,
+            retain_ms,
         } => {
             // Which side this is: exactly one of `url` and `listen` is set
             // (ADR 0107, D2), and an absent one is not a default.
@@ -377,6 +379,16 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
                 verify.as_deref().unwrap_or("(none)"),
             ));
             out.push(Fact::new(at("max-skew-ms"), max_skew_ms.to_string()));
+            // docs/adr/0109, D10: the receipt in force, and how long a durable
+            // binding's outbox keeps an entry.
+            out.push(Fact::new(
+                at("receipt"),
+                match receipt {
+                    crate::mesh::deploy::ReceiptMode::Transport => "transport",
+                    crate::mesh::deploy::ReceiptMode::Durable => "durable",
+                },
+            ));
+            out.push(Fact::new(at("retain-ms"), retain_ms.to_string()));
         }
         // Nothing to settle: the binding names the peer and no more (the key
         // is derived from the two machine names, and the router endpoints

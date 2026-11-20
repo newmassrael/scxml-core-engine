@@ -496,6 +496,141 @@ fn an_https_accepting_binding_reaches_the_rust_peer_table_with_its_bounds() {
     }
 }
 
+/// [`ANSWERED_CLIENT_SCXML`] under the statically typed data model, whose state a checkpoint holds.
+const SAVING_CLIENT_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="client" initial="idle" datamodel="sce-static">
+  <state id="idle">
+    <onentry><send target="#server" event="ping"/></onentry>
+    <transition event="pong" target="idle"/>
+  </state>
+</scxml>
+"##;
+
+/// [`REPLYING_SERVER_SCXML`] under the statically typed data model.
+const SAVING_SERVER_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="server" initial="idle" datamodel="sce-static">
+  <state id="idle">
+    <transition event="ping" target="idle">
+      <send target="#client" event="pong"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+
+/// The HTTPS binding of [`HTTPS_DEPLOY`] under `receipt: durable` (docs/adr/0109, D10), both
+/// machines checkpointed, the client sending under a `receipt:` block of its own and the server
+/// keeping each outbox entry a day.
+const HTTPS_DURABLE_DEPLOY: &str = r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        persistence: checkpoint
+        receipt: { window: 4, retry_ms: 250 }
+        bindings:
+          "#server": { transport: https, url: "https://cal.example/api", authenticator: install, receipt: durable }
+  cloud:
+    machines:
+      server:
+        source: server.scxml
+        persistence: checkpoint
+        bindings:
+          "#client": { transport: https, listen: "0.0.0.0:9443", authenticator: install, receipt: durable, retain_ms: 86400000 }
+"##;
+
+/// docs/adr/0109, D10: each side of a durable `https` binding reaches the Rust peer table with
+/// its receipt, the client's with the window and retry of its machine's `receipt:` block and the
+/// server's with its outbox's retain. Red if the template drops `receipt` or `retain_ms`.
+#[test]
+fn a_durable_https_binding_reaches_the_rust_peer_table_with_its_receipt() {
+    for (label, own, own_scxml, other, other_scxml, lines) in [
+        (
+            "mesh-https-durable-client",
+            "client.scxml",
+            SAVING_CLIENT_SCXML,
+            "server.scxml",
+            SAVING_SERVER_SCXML,
+            [
+                "link: PeerLink::HttpsDial {",
+                "receipt: sce_rust_mesh::peers::Receipt::Durable { window: 4, retry_ms: 250 },",
+            ],
+        ),
+        (
+            "mesh-https-durable-server",
+            "server.scxml",
+            SAVING_SERVER_SCXML,
+            "client.scxml",
+            SAVING_CLIENT_SCXML,
+            [
+                "receipt: sce_rust_mesh::peers::Receipt::Durable { window: 256, retry_ms: 1000 },",
+                "retain_ms: 86400000,",
+            ],
+        ),
+    ] {
+        let dir = ScratchDir::new(label);
+        let scxml = dir.write(own, own_scxml);
+        dir.write(other, other_scxml);
+        let deploy = dir.write("deploy.yaml", HTTPS_DURABLE_DEPLOY);
+        let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+        assert!(
+            out.status.success(),
+            "{label}: the Rust host core keeps a durable receipt; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let table = generated_file_under(dir.path(), "_mesh_peers.rs");
+        for line in lines {
+            assert!(table.contains(line), "{label}: missing `{line}`:\n{table}");
+        }
+    }
+}
+
+/// docs/adr/0109, D0 and D10: a machine with a durable binding is refused by name by every core
+/// but Rust's, the C++ router's dialing arm of `https` included
+/// (`mesh/codegen-durable-receipt-unsupported`); and `persistence: checkpoint` on a document
+/// that saves nothing is refused before anything is emitted
+/// (`mesh/codegen-persistence-without-saved-state`).
+#[test]
+fn what_only_the_rust_core_keeps_durable_is_refused_elsewhere_by_its_codes() {
+    let dir = ScratchDir::new("mesh-https-durable-cpp");
+    let scxml = dir.write("client.scxml", SAVING_CLIENT_SCXML);
+    dir.write("server.scxml", SAVING_SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", HTTPS_DURABLE_DEPLOY);
+    let out = run_with_deploy_for("cpp", &scxml, &deploy, dir.path());
+    assert!(
+        !out.status.success(),
+        "the C++ router keeps no durable receipt"
+    );
+    assert_eq!(out.status.code(), Some(12), "a CodegenError");
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-durable-receipt-unsupported",
+        "record: {rec}"
+    );
+    assert_eq!(rec["spec"], "SCE Mesh §10.11", "record: {rec}");
+    assert_eq!(rec["actual"], "client", "record: {rec}");
+
+    let dir = ScratchDir::new("mesh-persistence-without-saved-state");
+    let scxml = dir.write("server.scxml", REPLYING_SERVER_SCXML);
+    dir.write("client.scxml", SAVING_CLIENT_SCXML);
+    let deploy = dir.write("deploy.yaml", HTTPS_DURABLE_DEPLOY);
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(!out.status.success(), "a document that saves nothing");
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-persistence-without-saved-state",
+        "record: {rec}"
+    );
+    assert_eq!(rec["actual"], "server", "record: {rec}");
+}
+
 /// The HTTPS binding of [`HTTPS_DEPLOY`] with message signatures (docs/adr/0109, D9): the client
 /// signs its requests with its key and verifies what the server sends under a trust set, and the
 /// server signs with a key of its host and holds signed requests to a skew of its own.

@@ -10,6 +10,11 @@ sce_rust_mesh::peers::HttpsAuthenticator::{% if word == "bearer" %}Bearer{% elif
 {%- macro optional_name(name) -%}
 {%- if name %}Some("{{ name | escape_rust }}"){% else %}None{% endif %}
 {%- endmacro %}
+{#- A binding's receipt (docs/adr/0109, D10): durable, with how the machine's durable bindings
+    send, or the transport's. -#}
+{%- macro receipt(durable) -%}
+{%- if durable %}sce_rust_mesh::peers::Receipt::Durable { window: {{ durable.window }}, retry_ms: {{ durable.retry_ms }} }{% else %}sce_rust_mesh::peers::Receipt::Transport{% endif %}
+{%- endmacro %}
 {#- One limiter of an HTTPS server's edge (docs/adr/0109, D2), or none. -#}
 {%- macro edge_rate(rate) -%}
 {%- if rate %}Some(sce_rust_mesh::peers::EdgeRate { interval_ms: {{ rate.interval_ms }}, burst: {{ rate.burst }} }){% else %}None{% endif %}
@@ -96,6 +101,7 @@ pub const MACHINE: Machine = Machine {
                 authenticator: {{ https_authenticator(peer.link.authenticator) }},
                 hold_ms: {{ peer.link.hold_ms }},
                 verify: {{ optional_name(peer.link.verify) }},
+                receipt: {{ receipt(peer.link.receipt) }},
             },
 {%- elif peer.link.kind == "https_accept" %}
             link: PeerLink::HttpsAccept {
@@ -117,6 +123,8 @@ pub const MACHINE: Machine = Machine {
                 trusted_proxies: &[{% for p in peer.link.trusted_proxies %}"{{ p | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
                 sign: {{ optional_name(peer.link.sign) }},
                 max_skew_ms: {{ peer.link.max_skew_ms }},
+                receipt: {{ receipt(peer.link.receipt) }},
+                retain_ms: {{ peer.link.retain_ms }},
             },
 {%- else %}
             link: PeerLink::WssAccept {

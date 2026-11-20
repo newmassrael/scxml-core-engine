@@ -1213,9 +1213,11 @@ references against a real document and drift silently.
 | `link/concurrent-count-exceeds-scheduler-slots` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.N |
 | `link/per-link-budget-exceeds-tick-period` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.N |
 | `mesh/codegen-cpp-router-unsupported` | `mesh-codegen` | no | SCE Mesh §10.4 |
+| `mesh/codegen-durable-receipt-unsupported` | `mesh-codegen` | no | SCE Mesh §10.11 |
 | `mesh/codegen-event-name-collision` | `mesh-codegen` | no |  |
 | `mesh/codegen-host-core-unsupported` | `mesh-codegen` | no | SCE Mesh §19 |
 | `mesh/codegen-keyed-pool-unsupported` | `mesh-codegen` | no | SCE Mesh §14.4 |
+| `mesh/codegen-persistence-without-saved-state` | `mesh-codegen` | no | SCE Mesh §10.11 |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | `mesh-codegen` | no |  |
 | `mesh/codegen-template-read` | `mesh-codegen` | no |  |
 | `mesh/codegen-template-render` | `mesh-codegen` | no |  |
@@ -1243,6 +1245,7 @@ references against a real document and drift silently.
 | `mesh/deploy-invalid-liveliness` | `mesh-deploy` | no | SCE Mesh §16.7 |
 | `mesh/deploy-invalid-ordering-timings` | `mesh-deploy` | no | SCE Mesh §10.6 |
 | `mesh/deploy-invalid-outbound-buffer` | `mesh-deploy` | no | SCE Mesh §10.10 |
+| `mesh/deploy-invalid-receipt` | `mesh-deploy` | no | SCE Mesh §10.11 |
 | `mesh/deploy-invalid-reply-from` | `mesh-deploy` | no | SCE Mesh §14.6 |
 | `mesh/deploy-invalid-retry-policy` | `mesh-deploy` | no | SCE Mesh §16.7 |
 | `mesh/deploy-invalid-server-response-deadline` | `mesh-deploy` | no | SCE Mesh §9.5 |
@@ -1268,6 +1271,7 @@ references against a real document and drift silently.
 | `mesh/deploy-pool-missing-member-list` | `mesh-deploy` | no | SCE Mesh §14.4 |
 | `mesh/deploy-pool-not-supported-by-transport` | `mesh-deploy` | no | SCE Mesh §14.4 |
 | `mesh/deploy-read` | `mesh-deploy` | no |  |
+| `mesh/deploy-receipt-without-persistence` | `mesh-deploy` | no | SCE Mesh §10.11 |
 | `mesh/deploy-scxml-invoke-cross-device-transport` | `mesh-deploy` | no | SCE Mesh §9.6 L1393 |
 | `mesh/deploy-scxml-invoke-target-conflict` | `mesh-deploy` | no | SCE Mesh §9.6 |
 | `mesh/deploy-server-pool-not-supported` | `mesh-deploy` | `remove_fields` | SCE Mesh §14.4 |

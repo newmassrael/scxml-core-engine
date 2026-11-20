@@ -389,6 +389,15 @@ pub enum TransportState {
         /// How far a signed request's `created` may lie from the server's
         /// clock under the `key` authenticator (docs/adr/0109, D9).
         max_skew_ms: u32,
+        /// The binding's `receipt:` (SCE_MESH.md section 10.11; docs/adr/0109,
+        /// D10): under `durable` the accepting side keeps each client's outbox
+        /// in its store, and the dialing side acknowledges only what a durable
+        /// checkpoint of its own holds.
+        receipt: crate::mesh::deploy::ReceiptMode,
+        /// How long an outbox entry is kept unless the client acknowledges it
+        /// (docs/adr/0109, D10, Open question 6). Read by the accepting side
+        /// under `receipt: durable`.
+        retain_ms: u64,
     },
     /// Zenoh binding of the host Mesh cores (§mesh-20). The
     /// binding carries no field: the peer is the `#peer` it is keyed by, the
@@ -493,6 +502,11 @@ pub const HTTPS_DEFAULT_RATE_MAX_TRACKED: u32 = 100_000;
 /// How far a signed request's `created` may lie from the server's clock when
 /// the binding sets no `max_skew_ms` (docs/adr/0109, D9): five minutes.
 pub const HTTPS_DEFAULT_MAX_SKEW_MS: u32 = 300_000;
+/// How long an outbox entry is kept unless its client acknowledges it, when
+/// the binding sets no `retain_ms` (docs/adr/0109, D10, Open question 6):
+/// thirty days. No default is unbounded, since a server that runs for years
+/// would keep every vanished client's outbox.
+pub const HTTPS_DEFAULT_RETAIN_MS: u64 = 2_592_000_000;
 /// The longest id of a `sign` key or name of a trust set a binding may name:
 /// the bound of a key id in the host's records (docs/SCE_HOST_FEATURES.md
 /// section 10).
@@ -2076,6 +2090,10 @@ pub(crate) struct PartialTarget {
     /// per-binding `needs_ordering` decision without revisiting
     /// deploy.yaml.
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// The binding's `receipt:` (SCE_MESH.md section 10.11; docs/adr/0109,
+    /// D10), copied from the `BindingConfig`; the `https` binding carries it
+    /// into its [`TransportState::Https`].
+    pub receipt: crate::mesh::deploy::ReceiptMode,
     /// See [`ResolvedTarget::causal`]. Derived from the `BindingConfig` by
     /// [`causal_group`].
     pub causal: Option<crate::mesh::deploy::CausalGroupConfig>,
@@ -2203,6 +2221,7 @@ pub(crate) fn contribute_send_partials(
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
                     invoke_sites: merged_sites,
                     ordering: binding.ordering,
+                    receipt: binding.receipt,
                     causal: causal_group(binding),
                     responders: responder_set(target, binding),
                     deadline_ms: binding.deadline_ms,
@@ -2608,6 +2627,7 @@ pub(crate) fn contribute_subscription_partials(
                 event_patterns: Vec::new(),
                 invoke_sites: Vec::new(),
                 ordering: binding.ordering,
+                receipt: binding.receipt,
                 causal: causal_group(binding),
                 responders: responder_set(&source_target, binding),
                 deadline_ms: binding.deadline_ms,
@@ -2688,6 +2708,7 @@ pub(crate) fn contribute_srcexpr_partials(
                 event_patterns,
                 invoke_sites,
                 ordering: binding.ordering,
+                receipt: binding.receipt,
                 causal: causal_group(binding),
                 responders: responder_set(&target, binding),
                 deadline_ms: binding.deadline_ms,
@@ -2747,6 +2768,7 @@ pub(crate) fn contribute_targetexpr_partials(
                 event_patterns,
                 invoke_sites: Vec::new(),
                 ordering: binding.ordering,
+                receipt: binding.receipt,
                 causal: causal_group(binding),
                 responders: responder_set(&target, binding),
                 deadline_ms: binding.deadline_ms,
@@ -2971,7 +2993,7 @@ fn check_positive_u32(value: &serde_yaml_ng::Value) -> Result<(), String> {
 /// The keys only the dialing side of an `https` binding reads.
 const HTTPS_DIAL_KEYS: [&str; 3] = ["url", "hold_ms", "verify"];
 /// The keys only the accepting side of an `https` binding reads.
-const HTTPS_ACCEPT_KEYS: [&str; 11] = [
+const HTTPS_ACCEPT_KEYS: [&str; 12] = [
     "listen",
     "max_hold_ms",
     "max_body_bytes",
@@ -2983,6 +3005,7 @@ const HTTPS_ACCEPT_KEYS: [&str; 11] = [
     "trusted_proxies",
     "sign",
     "max_skew_ms",
+    "retain_ms",
 ];
 
 /// Validate an `https` binding's fields (ADR 0107, D2).
@@ -3160,6 +3183,39 @@ fn validate_https_extras_partial(
                 "is read only by the `key` authenticator, which signs requests; \
                  this binding names another"
                     .to_string(),
+            ));
+        }
+    }
+    // docs/adr/0109, D10 and Open question 6: an outbox entry is kept at
+    // least as long as its client may be absent and still ready, and the key
+    // is read only by a durable binding, which keeps an outbox.
+    if let Some(v) = pt.extra.get("retain_ms") {
+        let retain = v.as_u64().filter(|n| *n > 0).ok_or_else(|| {
+            invalid(
+                "retain_ms",
+                format!("must be a positive integer (got {})", render_yaml_value(v)),
+            )
+        })?;
+        if pt.receipt != crate::mesh::deploy::ReceiptMode::Durable {
+            return Err(invalid(
+                "retain_ms",
+                "is read only under `receipt: durable`, which keeps the client's outbox; \
+                 this binding's receipt is the transport's"
+                    .to_string(),
+            ));
+        }
+        let absence = pt
+            .extra
+            .get("absence_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(u64::from(HTTPS_DEFAULT_ABSENCE_MS));
+        if retain < absence {
+            return Err(invalid(
+                "retain_ms",
+                format!(
+                    "is {retain}, shorter than the {absence} ms `absence_ms` a client may be \
+                     away and still be ready; an outbox entry is kept at least that long"
+                ),
             ));
         }
     }
@@ -3350,7 +3406,8 @@ fn check_listen_endpoint(value: &serde_yaml_ng::Value) -> Result<(), String> {
 
 /// The resolved state of an `https` binding whose fields
 /// [`validate_https_extras_partial`] proved, each default applied here.
-fn https_state(extra: &std::collections::HashMap<String, serde_yaml_ng::Value>) -> TransportState {
+fn https_state(pt: &PartialTarget) -> TransportState {
+    let extra = &pt.extra;
     let text = |key: &str| extra.get(key).and_then(|v| v.as_str()).map(str::to_string);
     let number = |key: &str, default: u32| {
         extra
@@ -3394,6 +3451,13 @@ fn https_state(extra: &std::collections::HashMap<String, serde_yaml_ng::Value>) 
         sign: text("sign"),
         verify: text("verify"),
         max_skew_ms: number("max_skew_ms", HTTPS_DEFAULT_MAX_SKEW_MS),
+        // docs/adr/0109, D10: the binding's receipt, and how long an outbox
+        // entry is kept, its default applied once here.
+        receipt: pt.receipt,
+        retain_ms: extra
+            .get("retain_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(HTTPS_DEFAULT_RETAIN_MS),
     }
 }
 
@@ -3815,7 +3879,7 @@ fn build_transport_state(
                 .and_then(|n| u32::try_from(n).ok()),
         },
         // Every field was proven by `validate_https_extras_partial`.
-        "https" => https_state(&pt.extra),
+        "https" => https_state(pt),
         // The registry lists no binding key for it, so `pt.extra` is empty
         // here: an unknown key was rejected at parse time.
         "zenoh_inbox" => TransportState::ZenohInbox,
@@ -6146,8 +6210,14 @@ topology:
                 sign,
                 verify,
                 max_skew_ms,
+                receipt,
+                retain_ms,
             } => {
                 assert_eq!(url.as_deref(), Some("https://cal.example:8443/api"));
+                // docs/adr/0109, D10: the transport's receipt unless the binding says
+                // `durable`, and the outbox's retain at its default.
+                assert_eq!(*receipt, crate::mesh::deploy::ReceiptMode::Transport);
+                assert_eq!(*retain_ms, HTTPS_DEFAULT_RETAIN_MS);
                 // docs/adr/0109, D1 and D2: the edge's bounds at their defaults.
                 assert_eq!(*max_clients, HTTPS_DEFAULT_MAX_CLIENTS);
                 assert_eq!(*max_response_bytes, HTTPS_DEFAULT_MAX_BODY_BYTES);
@@ -6454,6 +6524,61 @@ topology:
                     ..
                 }) => {
                     assert_eq!(refused, field, "{fields}");
+                    assert!(reason.contains(why), "{fields}: {reason}");
+                }
+                other => panic!("{fields}: expected InvalidBindingField, got {other:?}"),
+            }
+        }
+    }
+
+    /// docs/adr/0109, D10 and Open question 6: an accepting `https` binding
+    /// under `receipt: durable` carries its receipt and reads `retain_ms`,
+    /// thirty days when it names none; a `retain_ms` below the binding's
+    /// `absence_ms`, one on a binding whose receipt is the transport's, and one
+    /// that is no positive integer are refused naming the key. Red if
+    /// `retain_ms` is taken below `absence_ms`.
+    #[test]
+    fn a_durable_https_binding_keeps_its_outbox_at_least_as_long_as_its_absence() {
+        let resolve = |fields: &str| {
+            resolve_for_shm(&format!(
+                "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      sender:\n        \
+                 source: s.scxml\n        persistence: checkpoint\n        bindings:\n          \
+                 \"#receiver\": {{ transport: https, listen: \"0.0.0.0:9443\", \
+                 authenticator: install{fields} }}\n      receiver: {{ source: r.scxml, \
+                 persistence: checkpoint }}\n"
+            ))
+        };
+        for (fields, retain) in [
+            (", receipt: durable", HTTPS_DEFAULT_RETAIN_MS),
+            (", receipt: durable, retain_ms: 3600000", 3_600_000),
+            (
+                ", receipt: durable, absence_ms: 500, retain_ms: 1000",
+                1_000,
+            ),
+        ] {
+            let resolved = resolve(fields).unwrap_or_else(|error| panic!("{fields}: {error:?}"));
+            match &resolved[0].state {
+                TransportState::Https {
+                    receipt, retain_ms, ..
+                } => {
+                    assert_eq!(
+                        *receipt,
+                        crate::mesh::deploy::ReceiptMode::Durable,
+                        "{fields}"
+                    );
+                    assert_eq!(*retain_ms, retain, "{fields}");
+                }
+                other => panic!("{fields}: expected TransportState::Https, got {other:?}"),
+            }
+        }
+        for (fields, why) in [
+            (", receipt: durable, retain_ms: 1000", "shorter than"),
+            (", retain_ms: 3600000", "read only under `receipt: durable`"),
+            (", receipt: durable, retain_ms: 0", "positive integer"),
+        ] {
+            match resolve(fields) {
+                Err(TopologyError::InvalidBindingField { field, reason, .. }) => {
+                    assert_eq!(field, "retain_ms", "{fields}");
                     assert!(reason.contains(why), "{fields}: {reason}");
                 }
                 other => panic!("{fields}: expected InvalidBindingField, got {other:?}"),

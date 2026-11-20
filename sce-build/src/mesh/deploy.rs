@@ -3117,6 +3117,15 @@ pub struct MachineConfig {
     /// value for it to supply, and cannot see the file's content.
     #[serde(default)]
     pub config_file: Option<String>,
+    /// The machine is checkpointed by its host core (SCE_MESH.md section 10.11; docs/adr/0109,
+    /// D10). Checked against the other end of every durable binding by [`validate_receipt`], and
+    /// against the machine's document, which must have a saved state, where it is generated.
+    #[serde(default)]
+    pub persistence: Option<Persistence>,
+    /// How the machine's durable bindings send (SCE_MESH.md section 10.11): `None` for the
+    /// defaults ([`ReceiptConfig::DEFAULT`]). Checked by [`validate_receipt`].
+    #[serde(default)]
+    pub receipt: Option<ReceiptConfig>,
     /// Author-pinned §mesh-9.6 SOMEIP scxml-invoke service ID (RFC F.X-1
     /// hybrid allocator). Optional — when present, the hybrid allocator
     /// reserves this ID for the machine and skips it during counter
@@ -3341,6 +3350,52 @@ pub struct InvokedBy {
     pub machine: String,
     /// The literal `id` of the parent's `<invoke>`.
     pub invoke: String,
+}
+
+/// A machine's `persistence:` (SCE_MESH.md section 10.11, amended by docs/adr/0109 D10): the
+/// host core checkpoints it, its `invoked_by` children with it. Absent, the machine is not
+/// checkpointed, unless it is a keyed pool (`sessions:`), whose sessions are kept as their
+/// checkpoints by construction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Persistence {
+    /// `persistence: checkpoint`.
+    Checkpoint,
+}
+
+/// A binding's `receipt:` (SCE_MESH.md section 10.11): which of the two receipt guarantees it
+/// gets. Read beside `ordering:` and `delivery:`, the keys the Mesh core realises itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReceiptMode {
+    /// The transport's receipt, up to the receiving process: the default.
+    #[default]
+    Transport,
+    /// Nothing the receiver was sent is lost across a crash and a restore of either side: the
+    /// receiver acknowledges only what a durable checkpoint holds, and the sender keeps what it
+    /// sent until then. On the `https` binding the acknowledgement is the binding's own, and the
+    /// server keeps each client's outbox in its store (docs/adr/0109, D10).
+    Durable,
+}
+
+/// A machine's `receipt: { window, retry_ms }` block (SCE_MESH.md section 10.11): how its
+/// durable bindings send. Both fields are required when the block is present, and each is at
+/// least 1; the block needs a durable binding on the machine to read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReceiptConfig {
+    /// The envelopes a durable binding holds unacknowledged per target.
+    pub window: u32,
+    /// How long a held envelope waits for its acknowledgement before it is sent again.
+    pub retry_ms: u32,
+}
+
+impl ReceiptConfig {
+    /// The block's values when a machine declares none: 256 and 1000.
+    pub const DEFAULT: ReceiptConfig = ReceiptConfig {
+        window: 256,
+        retry_ms: 1_000,
+    };
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].
@@ -3860,6 +3915,11 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthPolicyConfig>,
 
+    /// The binding's receipt guarantee (SCE_MESH.md section 10.11; docs/adr/0109, D10):
+    /// `transport`, the default, or `durable`. Checked by [`validate_receipt`].
+    #[serde(default)]
+    pub receipt: ReceiptMode,
+
     /// Per-target transport-native settings passed through to templates
     /// (zenoh_keyexpr `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
     /// Reserved SOME/IP ID key names are collected here at parse time but
@@ -3897,6 +3957,7 @@ const BINDING_TYPED_FIELDS: &[&str] = &[
     "stage_pool",
     "retry",
     "auth",
+    "receipt",
 ];
 
 /// [`BINDING_TYPED_FIELDS`]'s counterpart for [`ServerConfig`].
@@ -4010,6 +4071,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_outbound_buffer(&cfg)?;
     validate_sessions(&cfg)?;
     validate_machine_config_sources(&cfg)?;
+    validate_receipt(&cfg)?;
     validate_retry_policy(&cfg)?;
     validate_auth_policy(&cfg)?;
     validate_discovery_not_supported(&cfg)?;
@@ -7382,6 +7444,112 @@ fn validate_sessions(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
+/// Refuse what SCE_MESH.md section 10.11 refuses of `persistence:` and
+/// `receipt:` when the deployment is read (docs/adr/0109, D10), each by a code
+/// of its own:
+///
+/// * a machine's `receipt: { window, retry_ms }` block with a field below 1,
+///   or on a machine none of whose bindings is durable, which leaves the block
+///   reading nothing ([`DeployError::InvalidReceipt`]);
+/// * a binding with `receipt: durable` one of whose machines is not
+///   checkpointed ([`DeployError::ReceiptWithoutPersistence`]): the receiver
+///   acknowledges only what a durable checkpoint holds and the sender keeps
+///   what it sent in its own, so both ends checkpoint. A machine is
+///   checkpointed when it declares `persistence: checkpoint` or is a keyed
+///   pool, whose sessions are kept as their checkpoints, and an `invoked_by`
+///   child when the top-level machine whose tree holds it is. An end this
+///   deployment does not declare is the links' validation's to judge.
+///
+/// What needs the backend or the document is refused where the machine is
+/// generated: a core that keeps no checkpoint or durable receipt
+/// ([`crate::mesh::error::CodegenError::DurableReceiptUnsupported`]), which
+/// leaves a durable binding only to the Rust host core and so only to the
+/// transports it serves, each of which carries the acknowledgement back; and
+/// a document with no saved state
+/// ([`crate::mesh::error::CodegenError::PersistenceWithoutSavedState`]).
+/// Walks machines in name order, and a machine's bindings in target order.
+fn validate_receipt(cfg: &DeployConfig) -> Result<(), DeployError> {
+    let machines: BTreeMap<&str, &MachineConfig> = cfg
+        .topology
+        .values()
+        .flat_map(|device| {
+            device
+                .machines
+                .iter()
+                .map(|(name, machine)| (name.as_str(), machine))
+        })
+        .collect();
+    for (&name, machine) in &machines {
+        let mut targets: Vec<(&TargetId, &BindingConfig)> = machine.bindings.iter().collect();
+        targets.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+        let durable: Vec<&TargetId> = targets
+            .iter()
+            .filter(|(_, binding)| binding.receipt == ReceiptMode::Durable)
+            .map(|(target, _)| *target)
+            .collect();
+        if let Some(block) = &machine.receipt {
+            let refuse = |reason: &str| {
+                Err(DeployError::InvalidReceipt {
+                    machine: name.to_string(),
+                    reason: reason.to_string(),
+                })
+            };
+            if block.window == 0 {
+                return refuse(
+                    "`window` is 0, and a durable binding holds at least one envelope \
+                     unacknowledged",
+                );
+            }
+            if block.retry_ms == 0 {
+                return refuse(
+                    "`retry_ms` is 0, and a held envelope waits at least 1 ms for its \
+                     acknowledgement before it is sent again",
+                );
+            }
+            if durable.is_empty() {
+                return refuse(
+                    "no binding of the machine declares `receipt: durable`, so the block sets \
+                     nothing; make a binding durable or remove the block",
+                );
+            }
+        }
+        for target in durable {
+            for end in [name, target.name()] {
+                if machines.contains_key(end) && !checkpointed(&machines, end) {
+                    return Err(DeployError::ReceiptWithoutPersistence {
+                        machine: name.to_string(),
+                        target: target.as_str().to_string(),
+                        missing: end.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether the machine `name` of `machines` is checkpointed (SCE_MESH.md
+/// section 10.11): it declares `persistence: checkpoint`, or is a keyed pool,
+/// or is an `invoked_by` child of a machine that is. The walk up the
+/// `invoked_by` chain is bounded by the machines there are, so a chain that
+/// loops, which [`validate_child_entries`] refuses, ends.
+fn checkpointed(machines: &BTreeMap<&str, &MachineConfig>, name: &str) -> bool {
+    let mut at = name;
+    for _ in 0..=machines.len() {
+        let Some(machine) = machines.get(at) else {
+            return false;
+        };
+        if machine.persistence.is_some() || machine.sessions.is_some() {
+            return true;
+        }
+        match &machine.invoked_by {
+            Some(parent) => at = parent.machine.as_str(),
+            None => return false,
+        }
+    }
+    false
+}
+
 /// Walk every machine that declared an explicit
 /// `server.response_deadline_ms` and reject values below
 /// [`MIN_SERVER_RESPONSE_DEADLINE_MS`], or declared on a transport
@@ -9090,6 +9258,169 @@ topology:
             )),
             Err(DeployError::Yaml { .. })
         ));
+    }
+
+    /// A server `rooms` and its client `phone` joined over `https`, each with
+    /// `extra` lines in its machine entry (indented as its keys are) and
+    /// `binding` after its binding's keys.
+    fn joined(
+        rooms_extra: &str,
+        rooms_binding: &str,
+        phone_extra: &str,
+        phone_binding: &str,
+    ) -> String {
+        format!(
+            r##"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+{rooms_extra}        bindings:
+          "#phone": {{ transport: https, listen: "127.0.0.1:9443", authenticator: install{rooms_binding} }}
+  handset:
+    machines:
+      phone:
+        source: phone.scxml
+{phone_extra}        bindings:
+          "#rooms": {{ transport: https, url: "https://rooms.example", authenticator: install{phone_binding} }}
+"##
+        )
+    }
+
+    /// docs/adr/0109, D10 (SCE_MESH.md section 10.11): `persistence:` and
+    /// `receipt:` are read, on the machine and on the binding, with their
+    /// defaults: a binding is `transport` unless it says `durable`, and a
+    /// machine's `receipt:` block is read when it is given.
+    #[test]
+    fn persistence_and_receipt_are_read_with_their_defaults() {
+        let cfg = parse_deploy_str(&joined(
+            "        persistence: checkpoint\n        receipt: { window: 8, retry_ms: 500 }\n",
+            ", receipt: durable",
+            "        persistence: checkpoint\n",
+            ", receipt: durable",
+        ))
+        .expect("a durable pair of checkpointed machines");
+        let rooms = &cfg.topology["cloud"].machines["rooms"];
+        assert_eq!(rooms.persistence, Some(Persistence::Checkpoint));
+        assert_eq!(
+            rooms.receipt,
+            Some(ReceiptConfig {
+                window: 8,
+                retry_ms: 500
+            })
+        );
+        let durable = rooms.bindings.values().next().expect("the binding");
+        assert_eq!(durable.receipt, ReceiptMode::Durable);
+
+        let plain = parse_deploy_str(&joined("", "", "", "")).expect("a pair with no receipt");
+        let phone = &plain.topology["handset"].machines["phone"];
+        assert_eq!(phone.persistence, None);
+        assert_eq!(phone.receipt, None);
+        assert_eq!(
+            phone.bindings.values().next().expect("the binding").receipt,
+            ReceiptMode::Transport
+        );
+        assert!(
+            matches!(
+                parse_deploy_str(&joined("", ", receipt: maybe", "", "")),
+                Err(DeployError::Yaml { .. })
+            ),
+            "a receipt that is neither `transport` nor `durable`"
+        );
+    }
+
+    /// docs/adr/0109, D10: a durable binding needs both machines it joins
+    /// checkpointed, a keyed pool counting as checkpointed; the end that is
+    /// not is named (`mesh/deploy-receipt-without-persistence`).
+    #[test]
+    fn a_durable_binding_between_machines_not_both_checkpointed_is_refused() {
+        let pool = "        sessions: { key_from: client, idle_ms: 1000 }\n";
+        let checkpoint = "        persistence: checkpoint\n";
+        assert!(
+            parse_deploy_str(&joined(pool, ", receipt: durable", checkpoint, "")).is_ok(),
+            "a keyed pool is checkpointed"
+        );
+        for (rooms_extra, rooms_binding, phone_extra, phone_binding, machine, missing) in [
+            ("", ", receipt: durable", checkpoint, "", "rooms", "rooms"),
+            (pool, ", receipt: durable", "", "", "rooms", "phone"),
+            (checkpoint, "", "", ", receipt: durable", "phone", "phone"),
+        ] {
+            match parse_deploy_str(&joined(
+                rooms_extra,
+                rooms_binding,
+                phone_extra,
+                phone_binding,
+            )) {
+                Err(DeployError::ReceiptWithoutPersistence {
+                    machine: refused,
+                    target,
+                    missing: lacking,
+                }) => {
+                    assert_eq!(refused, machine);
+                    assert_eq!(
+                        target,
+                        if machine == "rooms" {
+                            "#phone"
+                        } else {
+                            "#rooms"
+                        }
+                    );
+                    assert_eq!(lacking, missing);
+                }
+                other => panic!(
+                    "{rooms_extra}{rooms_binding}{phone_extra}{phone_binding}: expected \
+                     ReceiptWithoutPersistence, got {other:?}"
+                ),
+            }
+        }
+    }
+
+    /// docs/adr/0109, D10: a machine's `receipt:` block with a field of 0, or
+    /// on a machine with no durable binding, is refused
+    /// (`mesh/deploy-invalid-receipt`).
+    #[test]
+    fn a_receipt_block_that_cannot_be_kept_is_refused() {
+        let checkpoint = "        persistence: checkpoint\n";
+        for (block, durable, said) in [
+            (
+                "{ window: 0, retry_ms: 1000 }",
+                ", receipt: durable",
+                "`window` is 0",
+            ),
+            (
+                "{ window: 4, retry_ms: 0 }",
+                ", receipt: durable",
+                "`retry_ms` is 0",
+            ),
+            (
+                "{ window: 4, retry_ms: 1000 }",
+                "",
+                "no binding of the machine",
+            ),
+        ] {
+            let rooms = format!("{checkpoint}        receipt: {block}\n");
+            match parse_deploy_str(&joined(&rooms, durable, checkpoint, "")) {
+                Err(DeployError::InvalidReceipt { machine, reason }) => {
+                    assert_eq!(machine, "rooms");
+                    assert!(reason.contains(said), "{block}: {reason}");
+                }
+                other => panic!("{block}: expected InvalidReceipt, got {other:?}"),
+            }
+        }
+        assert!(
+            matches!(
+                parse_deploy_str(&joined(
+                    "        receipt: { window: 4 }\n",
+                    ", receipt: durable",
+                    checkpoint,
+                    ""
+                )),
+                Err(DeployError::Yaml { .. })
+            ),
+            "both fields are required"
+        );
     }
 
     #[test]
