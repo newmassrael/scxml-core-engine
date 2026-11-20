@@ -280,9 +280,13 @@ fn a_lift_reason_is_measured_at_its_text_plus_the_published_refusal_bound() {
 "#;
     let (header, source) = generated(doc, &schemas, &[]);
     let text = "`a.sent` payload: 'n' ";
+    // The row's text, then the reader's sentence whole, written by the
+    // runtime's text writer (docs/adr/0110, D1) into the lift's message.
     assert!(
         source.contains(&format!(
-            "snprintf(_message, _message_cap, \"{text}%s\", _refusal);"
+            "{{ sce_text_writer_t sce_reason_ = sce_text_writer(_message, _message_cap); \
+             sce_text_put_text(&sce_reason_, \"{text}\"); \
+             sce_text_put_text(&sce_reason_, _refusal); }}"
         )),
         "the lift writes the field's refusal through the table, quoting the sentence:\n{source}"
     );
