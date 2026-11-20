@@ -503,11 +503,22 @@ PACE_NORMALISED: dict[str, str] = {
 # `commits` is what a verdict reads of git beyond the tree: the commits whose
 # ids, ancestry or objects it asks about. The key holds the tree's content and
 # no commit, so a verdict that reads one is a function of the key only when the
-# commit's id is in the unit's argv. `"HEAD"` is the one name the plan carries:
-# it resolves HEAD once and puts `--at <id>` in the argv of every unit that runs
+# commit's id is in the unit's argv. The plan carries two names. `"HEAD"`: it
+# resolves HEAD once and puts `--at <id>` in the argv of every unit that runs
 # such a gate, and the runner refuses (exit 3, "could not run") a checkout that
 # is at any other commit. HEAD's id fixes its ancestry and the submodule commits
-# its tree records, so one id covers what these gates read. A gate that reads a
+# its tree records, so one id covers what these gates read. `"CHANGES"`: the
+# commits the push publishes, for a gate that does its work per changed path
+# (it reads `SCE_GATE_CHANGED_FILE`). The plan puts each `--changed-in
+# <base>..<tip>` it was handed in the argv of every unit that runs such a gate,
+# and the runner hands the gate the set those ids name: two ids mean the same on
+# every machine the history reached, where the hook's path list is a file on
+# this one. A unit cannot find the set itself, since the checkout it runs in is
+# a build machine's and its refs say nothing about the push. Measured
+# 2026-11-20: the first landing whose plan held `mutation-rounds` ran it as a
+# bare unit, the gate took its base from that checkout's upstream (a51553493c)
+# and selected 578 of 579 casefiles where the push's own range selects 14; it
+# ran 2.4 hours on one core and held the queue behind it. A gate that reads a
 # ref the plan cannot carry (an upstream branch, which moves) is `cache: False`
 # and says so. `[]` is a verdict that reads no commit: `git ls-files` and
 # `git grep` read the tracked tree, which is the key. The generator stamps the
@@ -515,7 +526,9 @@ PACE_NORMALISED: dict[str, str] = {
 # no gate compares that stamp with anything, since every commit would then
 # fail it, so building the generator is not reading a commit.
 # `a-verdict-that-reads-head-carries-it` derives the HEAD readers a script
-# shows and refuses one that does not declare it.
+# shows and refuses one that does not declare it, and
+# `a-verdict-that-reads-the-change-set-carries-it` does the same for a script
+# that reads `SCE_GATE_CHANGED_FILE`.
 #
 # `peak_gb` is the memory one run of the gate's OWN script takes at its peak,
 # in GiB; a unit asks bx for the largest figure among the gates it runs
@@ -559,7 +572,7 @@ UNIT_REQUIRES_KEYS = ("needs", "packages")
 COMMIT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 # The commit names a gate's `commits` may hold: the ones the plan carries.
-CARRIED_COMMITS = ("HEAD",)
+CARRIED_COMMITS = ("HEAD", "CHANGES")
 
 # The name of the one unit a plan carries when the change selects no gate: bx
 # refuses a plan that lists nothing ("a plan that lists nothing has measured
@@ -931,9 +944,10 @@ GATES: dict[str, dict] = {
                            "duration against the cost model (`date +%s`), and with "
                            "no change set it takes its base from the upstream ref",
         "inputs": None,
-        # The upstream ref it reads moves, and the gate resolves it itself, so
-        # there is no commit the plan could carry for it.
-        "commits": [],
+        # It picks casefiles by the change set, so a unit is handed the push's
+        # range: the checkout a unit runs in is a build machine's, and its
+        # upstream says nothing about the push (see `commits` above).
+        "commits": ["CHANGES"],
         "peak_gb": 5,
     },
     "clippy": {
@@ -4092,7 +4106,7 @@ def head_commit(repo_root: Path):
 
 
 def plan_units(selected, rust=None, tree_is_head=True, table=None,
-               head=None, landing=False) -> list[dict]:
+               head=None, landing=False, changes=()) -> list[dict]:
     """The bx check units (bx RFC 0004, section 6) that verify `selected`.
 
     `selected` is a set the registry already chose: `select` for a change,
@@ -4101,14 +4115,25 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     carries them or the runner runs them in place.
 
     ONE UNIT PER GATE THAT NO OTHER SELECTED GATE RUNS. A unit is
-    `bash scripts/gate [--rust R] <slug>`, and the runner gives a named gate
-    its dependency closure and stops at the first failure, so a dependency's
-    verdict is part of every dependent's unit. A unit of its own would be
-    the same build again on another machine, measuring nothing new.
+    `bash scripts/gate [--rust R] [--landing] [--at <id>]
+    [--change-set <base>..<tip>...] <slug>`, and the runner gives a named
+    gate its dependency closure and stops at the first failure, so a
+    dependency's verdict is part of every dependent's unit. A unit of its
+    own would be the same build again on another machine, measuring nothing
+    new.
 
     A UNIT THAT READS HEAD CARRIES ITS ID. When a gate the unit runs
     declares `commits: ["HEAD"]`, the argv gets `--at <head>`, so the commit
     is in the key, and the runner refuses a checkout at any other commit.
+
+    A UNIT THAT READS THE CHANGE SET CARRIES ITS RANGES. When a gate the unit
+    runs declares `commits: ["CHANGES"]`, the argv gets `--change-set R` for
+    each `<base>..<tip>` in `changes`, the ranges the push publishes, and the
+    runner hands the gate the paths they change. It is not `--changed-in`,
+    which selects gates: the plan has already selected, and the ranges are
+    only what the gate reads. Without ranges (a plan of
+    `--all`, of named gates, or of a path list) the argv carries none, and
+    the gate answers for an unknown set as its script says.
 
     A UNIT'S VERDICT IS KEPT (`cache`) only when all of these hold:
       * the plan names the Rust release (`rust`), because every unit's argv
@@ -4119,6 +4144,7 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
         `tracked_tree_is_head`);
       * every gate the unit runs declares `cache: True`;
       * a unit that reads HEAD has its id (`head`) to carry;
+      * a unit that reads the change set has its ranges (`changes`) to carry;
       * a unit that runs a gate whose verdict outside a landing can rest on
         the machine (`kept_only_from_a_landing`) is a landing's, where a skip
         or a missing pinned tool ends 3 instead of passing.
@@ -4144,10 +4170,13 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     for slug in run_order(chosen - run_by_another, table):
         closure = {slug} | transitive_deps(slug, table)
         reads_head = any("HEAD" in table[s].get("commits", []) for s in closure)
+        reads_changes = any("CHANGES" in table[s].get("commits", [])
+                            for s in closure)
         can_skip = any(table[s].get("kept_only_from_a_landing") for s in closure)
         kept = (rust is not None and tree_is_head
                 and all(table[s]["cache"] is True for s in closure)
                 and (head is not None or not reads_head)
+                and (bool(changes) or not reads_changes)
                 and (landing or not can_skip))
         argv = ["bash", "scripts/gate"]
         if rust is not None:
@@ -4156,6 +4185,9 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
             argv.append("--landing")
         if reads_head and head is not None:
             argv += ["--at", head]
+        if reads_changes:
+            for change in changes:
+                argv += ["--change-set", change]
         argv.append(slug)
         unit = {
             "name": slug,
@@ -6856,6 +6888,37 @@ def self_test(repo_root: Path) -> int:
             "commits: no gate script hands git HEAD, so the scan above read "
             "nothing; `embed-manifest-stamp` and `regen-reproduces` do")
 
+    # a-verdict-that-reads-the-change-set-carries-it. A gate script that
+    # reads `SCE_GATE_CHANGED_FILE` does its work per changed path, and a
+    # unit is a build machine's checkout whose refs say nothing about the
+    # push, so the plan has to carry the push's ranges to it. Unlike HEAD this
+    # holds whether or not the pass is kept: without the ranges the gate
+    # answers for an unknown set. Derived from the code lines of each script,
+    # in both directions, so a declaration cannot outlive its reader either.
+    cases += 1
+    change_reader = re.compile(r"\bSCE_GATE_CHANGED_FILE\b")
+    readers_seen = 0
+    for slug, spec in sorted(GATES.items()):
+        script = gate_script(repo_root, slug)
+        reads = script.is_file() and any(
+            change_reader.search(line)
+            for line in script_code(script).splitlines())
+        declared = "CHANGES" in spec.get("commits", [])
+        readers_seen += reads
+        if reads and not declared:
+            failures.append(
+                f"commits: scripts/gates/{slug}.sh reads SCE_GATE_CHANGED_FILE "
+                f"and the gate does not declare commits=['CHANGES']; a "
+                f"landing's unit of it would be handed no change set")
+        if declared and not reads:
+            failures.append(
+                f"commits: {slug} declares commits=['CHANGES'] and "
+                f"scripts/gates/{slug}.sh never reads SCE_GATE_CHANGED_FILE")
+    if readers_seen == 0:
+        failures.append(
+            "commits: no gate script reads SCE_GATE_CHANGED_FILE, so the scan "
+            "above read nothing; `mutation-rounds` does")
+
     # narrowed-units-need-a-git-free-root. bx runs a unit with input patterns
     # in a copy of those files alone, with no `.git` (bx RFC 0020, section
     # 5.2). A unit is the runner, and every gate sources its library; both
@@ -7067,6 +7130,11 @@ def self_test(repo_root: Path) -> int:
                   "commits": [], "peak_gb": 1},
         "at-head": {"cost_s": 1, "cache": True, "inputs": None,
                     "commits": ["HEAD"], "peak_gb": 1},
+        "on-changes": {"cost_s": 1, "cache": True, "inputs": None,
+                       "commits": ["CHANGES"], "peak_gb": 1},
+        "after-changes": {"cost_s": 1, "deps": ["on-changes"],
+                          "cache": True, "inputs": None, "commits": [],
+                          "peak_gb": 1},
     }
     by_name = {u["name"]: u for u in plan_units(
         {"parent", "child", "alone"}, rust="1.0.0", table=fixture)}
@@ -7112,6 +7180,34 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             "plan-fixture: a gate that reads no commit carried HEAD's id, "
             "which would make its key a commit's for nothing")
+    # A unit that reads the change set carries every range the push handed
+    # the plan, through a gate it depends on as well, and keeps its pass only
+    # then; a gate that reads none carries none. Measured 2026-11-20: the
+    # landing unit of `mutation-rounds` carried no range and its gate chose
+    # 578 casefiles from a build machine's upstream where the push chose 14.
+    cases += 1
+    ranges = ("b" * 40 + ".." + "c" * 40, "d" * 40 + ".." + "e" * 40)
+    carried = ["--change-set", ranges[0], "--change-set", ranges[1]]
+    for slug in ("on-changes", "after-changes"):
+        planned = plan_units({slug}, rust="1.0.0", table=fixture,
+                             landing=True, changes=ranges)[0]
+        if planned["argv"] != ["bash", "scripts/gate", "--rust", "1.0.0",
+                               "--landing", *carried, slug] \
+                or planned["cache"] is not True:
+            failures.append(
+                f"plan-fixture: `{slug}` runs a gate that reads the change set "
+                f"and was planned as {planned}, not with both ranges and its "
+                f"pass kept")
+        bare = plan_units({slug}, rust="1.0.0", table=fixture)[0]
+        if "--change-set" in bare["argv"] or bare["cache"] is not False:
+            failures.append(
+                f"plan-fixture: with no range to carry, `{slug}` was planned "
+                f"as {bare}; it keeps nothing and names no range")
+    if "--change-set" in plan_units({"alone"}, rust="1.0.0", table=fixture,
+                                    changes=ranges)[0]["argv"]:
+        failures.append(
+            "plan-fixture: a gate that reads no change set carried the push's "
+            "ranges, which would make its key a push's for nothing")
     for rust, clean, why in ((None, True, "no Rust release was named"),
                              ("1.0.0", False, "the tree differs from HEAD")):
         cases += 1
@@ -7427,7 +7523,8 @@ def print_plan(args, repo_root: Path) -> int:
     tree_is_head = tracked_tree_is_head(repo_root)
     head = head_commit(repo_root)
     units = plan_units(selected, rust=args.rust, tree_is_head=tree_is_head,
-                       head=head, landing=bool(args.landing))
+                       head=head, landing=bool(args.landing),
+                       changes=tuple(args.changed_in or ()))
     print(f"  selection: {reason}", file=sys.stderr)
     for slug in off_fleet:
         print(f"  NOT JUDGED HERE, hosted CI audits it after landing: {slug} "
@@ -7456,6 +7553,10 @@ def main() -> int:
     ap.add_argument("--changed-from", type=Path,
                     help="file with one changed path per line ('-' for stdin)")
     ap.add_argument("--changed", nargs="*", default=None)
+    ap.add_argument("--changed-in", action="append", metavar="BASE..TIP",
+                    help="with --plan: a range the change set was read from, "
+                         "carried in the argv of every unit whose gate reads "
+                         "the change set (`commits: [\"CHANGES\"]`)")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--list", action="store_true",
                     help="print every gate in run order")
@@ -7566,8 +7667,8 @@ def main() -> int:
 
     if args.plan:
         return print_plan(args, repo_root)
-    if args.all or args.named or args.rust is not None:
-        ap.error("--all, --named and --rust belong to --plan")
+    if args.all or args.named or args.rust is not None or args.changed_in:
+        ap.error("--all, --named, --rust and --changed-in belong to --plan")
         return 2
 
     if args.changed is not None:
