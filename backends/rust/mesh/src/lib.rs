@@ -25,7 +25,9 @@
 //! it is kept as: its saved tree and its endpoints in one durable write, and
 //! the session store a server keeps them in. [`pool`] serves a machine the
 //! deployment declares a keyed pool as one session per key, each kept in a
-//! session store as its checkpoint while it is out of memory.
+//! session store as its checkpoint while it is out of memory, its checkpoints
+//! committed together with other sessions' by the store's committer
+//! ([`commit`]).
 //!
 //! [`generated_rate`] is the standard rate limiter (`sce:std/rate`), generated
 //! as [`generated`] is: the HTTPS server's edge judges every limit with it
@@ -44,6 +46,7 @@ extern crate alloc;
 
 pub mod causal;
 pub mod checkpoint;
+pub mod commit;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 pub mod endpoint;

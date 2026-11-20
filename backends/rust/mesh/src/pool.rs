@@ -33,9 +33,15 @@
 //! this one, and
 //! the endpoint told the checkpoint is durable ([`Endpoint::durable`]), which
 //! releases what the input made: nothing a session sends leaves before the
-//! checkpoint that holds it is durable. A session that had no event for
-//! `idle_ms` and holds nothing pending is saved as a clean checkpoint,
-//! dropped from memory, and its lease released ([`Pool::evict_idle`]), so its
+//! checkpoint that holds it is durable. The write is handed to the pool's
+//! committer ([`Committer`], docs/adr/0109, D15), which commits the writes of
+//! every session handed to it since its last commit in one transaction of the
+//! store and answers each once that transaction is durable: the sessions of
+//! different keys, run on different threads, share the cost of a commit, and
+//! each still releases nothing before the commit that holds it. A session
+//! that had no event for `idle_ms` and holds nothing pending is saved as a
+//! clean checkpoint, dropped from memory, and its lease released
+//! ([`Pool::evict_idle`]), so its
 //! restore tells no peer it may have lost an envelope. One whose earliest wait
 //! comes due while it is out of memory is loaded again ([`Pool::due`]), and its
 //! restore arms what came due.
@@ -110,6 +116,7 @@ use sce_rust_session_store::{
 };
 
 use crate::checkpoint::{self, Checkpoint, EndpointSection, LoadError, Unreleased};
+use crate::commit::Committer;
 use crate::endpoint::{
     Endpoint, EngineCall, Environment, SharedEndpoint, Transport, TransportFailure,
 };
@@ -558,6 +565,9 @@ where
     config: PoolConfig,
     factory: F,
     store: Arc<dyn SessionStore>,
+    /// The committer every write of a session goes through (docs/adr/0109,
+    /// D15), and every acknowledgement of a durable client's outbox.
+    committer: Arc<Committer>,
     transport: Arc<Mutex<T>>,
     environment: Mutex<E>,
     table: Mutex<Table<F::Machine, T, E>>,
@@ -585,7 +595,10 @@ where
     /// A pool of the sessions of `machine`, whose deployment declares
     /// `sessions:`, built by `factory`, kept in `store`, sending through
     /// `transport` and reading the clock and drawing ids from `environment`.
-    /// Each session's checkpoint is written to `store` under the key's lease.
+    /// Each session's checkpoint is written to `store` under the key's lease,
+    /// through a committer of the pool's own over `store` (docs/adr/0109,
+    /// D15), whose leader waits `sessions.commit_delay_us` before it takes a
+    /// batch.
     pub fn new(
         machine: Machine,
         config: PoolConfig,
@@ -606,13 +619,18 @@ where
             });
         }
         machine.router().map_err(PoolConfigError::Router)?;
-        let outboxes = Outboxes::of_machine(&machine, Arc::clone(&store));
+        let committer = Arc::new(Committer::new(
+            Arc::clone(&store),
+            Duration::from_micros(sessions.commit_delay_us),
+        ));
+        let outboxes = Outboxes::of_machine(&machine, Arc::clone(&committer));
         Ok(Self {
             machine,
             sessions,
             config,
             factory,
             store,
+            committer,
             transport: Arc::new(Mutex::new(transport)),
             environment: Mutex::new(environment),
             table: Mutex::new(BTreeMap::new()),
@@ -636,6 +654,13 @@ where
     /// (`HttpsServer::keep_outboxes`).
     pub fn outboxes(&self) -> Option<&Arc<Outboxes>> {
         self.outboxes.as_ref()
+    }
+
+    /// The committer the pool writes its sessions and its clients'
+    /// acknowledgements through (docs/adr/0109, D15): what a host reads the
+    /// writes waiting for the next commit from ([`Committer::waiting`]).
+    pub fn committer(&self) -> &Arc<Committer> {
+        &self.committer
     }
 
     /// Whether the session `key` is in memory. Waits for a run of it that is
@@ -1788,9 +1813,11 @@ where
     /// Take the checkpoint of `session` that `take` asks for, in the three
     /// steps of SCE_MESH.md section 10.11: the machine's saved state and the
     /// endpoint sealed with the next number ([`Endpoint::checkpoint`]), the
-    /// write ([`SessionStore::write`]) over the version the session was read
-    /// at and under the key's lease, appending what the checkpoint holds for a
-    /// durable client to its outbox, and, once the write answered, the endpoint
+    /// write ([`SessionStore::write`], through the pool's [`Committer`], with
+    /// what other sessions handed it meanwhile) over the version the session
+    /// was read at and under the key's lease, appending what the checkpoint
+    /// holds for a durable client to its outbox, and, once the write answered,
+    /// the endpoint
     /// told the checkpoint is durable ([`Endpoint::durable`]), which releases
     /// what it holds. Answers whether a durable checkpoint holds the session
     /// as `take` asked. An error is the reason this process no longer holds
@@ -1851,7 +1878,10 @@ where
                 })
                 .collect();
             let document = taken.to_json();
-            self.store.write(
+            // docs/adr/0109, D15: handed to the committer, which writes it with
+            // what other sessions handed meanwhile and answers once the
+            // transaction that holds it is durable (step 2); step 3 follows.
+            self.committer.write(
                 key,
                 &Write {
                     change: Change::Keep {
@@ -1965,7 +1995,7 @@ where
                             envelope: &unreleased.envelope,
                         })
                         .collect();
-                    self.store
+                    self.committer
                         .write(
                             key,
                             &Write {
@@ -2824,7 +2854,18 @@ mod tests {
         clock: &Clock,
         probe: &Arc<Probe>,
     ) -> (Pool<Rooms, Wire, Clock>, Wire) {
-        let wire = Wire::default();
+        pool_with(machine, owner, store, clock, probe, Wire::default())
+    }
+
+    /// A pool of `machine` as [`pool_of`] makes one, sending through `wire`.
+    fn pool_with(
+        machine: Machine,
+        owner: &str,
+        store: Arc<dyn SessionStore>,
+        clock: &Clock,
+        probe: &Arc<Probe>,
+        wire: Wire,
+    ) -> (Pool<Rooms, Wire, Clock>, Wire) {
         let pool = Pool::new(
             machine,
             PoolConfig {
@@ -2957,6 +2998,226 @@ mod tests {
         }
         assert_eq!(*lock(&probe.meetings), vec![2, 2], "both runs met");
         assert_eq!(wire.take().len(), 2);
+    }
+
+    /// A store in memory that counts its transactions (docs/adr/0109, D15):
+    /// it holds its first commit until the test lets it end, as a slow medium
+    /// would, notes the keys each commit kept, and notes for each key how many
+    /// envelopes the wire had been handed when the commit that kept its write
+    /// ended.
+    struct Committing {
+        inner: MemoryStore,
+        handed: Handed,
+        open: Mutex<bool>,
+        opened: Condvar,
+        /// How many items the commits that began hold.
+        entered: AtomicU64,
+        /// The keys each commit kept, in the order the commits ended.
+        commits: Mutex<Vec<Vec<String>>>,
+        /// For each key, the envelopes the wire held when its write was durable.
+        durable_at: Mutex<BTreeMap<String, usize>>,
+    }
+
+    impl Committing {
+        fn over(inner: MemoryStore, wire: &Wire) -> Self {
+            Committing {
+                inner,
+                handed: Arc::clone(&wire.0),
+                open: Mutex::new(false),
+                opened: Condvar::new(),
+                entered: AtomicU64::new(0),
+                commits: Mutex::new(Vec::new()),
+                durable_at: Mutex::new(BTreeMap::new()),
+            }
+        }
+
+        fn open(&self) {
+            *lock(&self.open) = true;
+            self.opened.notify_all();
+        }
+
+        fn entered(&self) -> usize {
+            usize::try_from(self.entered.load(Ordering::SeqCst)).unwrap_or(usize::MAX)
+        }
+
+        /// A commit that kept `keys` ended.
+        fn ended(&self, keys: Vec<String>) {
+            let handed = lock(&self.handed).len();
+            let mut durable_at = lock(&self.durable_at);
+            for key in &keys {
+                durable_at.insert(key.clone(), handed);
+            }
+            lock(&self.commits).push(keys);
+        }
+    }
+
+    impl SessionStore for Committing {
+        fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+            self.inner.get(key)
+        }
+
+        /// A transaction of one write.
+        fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+            self.entered.fetch_add(1, Ordering::SeqCst);
+            let written = self.inner.write(key, write)?;
+            self.ended(vec![key.to_string()]);
+            Ok(written)
+        }
+
+        fn write_many(
+            &self,
+            batch: &[sce_rust_session_store::Batched<'_>],
+        ) -> Result<Vec<sce_rust_session_store::Decided>, Failure> {
+            let before = self.entered.fetch_add(batch.len() as u64, Ordering::SeqCst);
+            if before == 0 {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut open = lock(&self.open);
+                while !*open {
+                    let left = deadline.saturating_duration_since(Instant::now());
+                    if left.is_zero() {
+                        break;
+                    }
+                    open = self
+                        .opened
+                        .wait_timeout(open, left)
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .0;
+                }
+            }
+            let decided = self.inner.write_many(batch)?;
+            let kept = batch
+                .iter()
+                .zip(&decided)
+                .filter_map(|(item, decided)| match (item, decided) {
+                    (sce_rust_session_store::Batched::Write { key, .. }, Ok(_)) => {
+                        Some(key.to_string())
+                    }
+                    _ => None,
+                })
+                .collect();
+            self.ended(kept);
+            Ok(decided)
+        }
+
+        fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
+            self.inner.due_before(ms, limit)
+        }
+
+        fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+            self.inner.indexed_after(after, limit)
+        }
+
+        fn acquire(
+            &self,
+            key: &str,
+            owner: &str,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, AcquireError> {
+            self.inner.acquire(key, owner, ttl_ms, now_ms)
+        }
+
+        fn renew(
+            &self,
+            key: &str,
+            fence: u64,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, LeaseError> {
+            self.inner.renew(key, fence, ttl_ms, now_ms)
+        }
+
+        fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+            self.inner.release(key, fence)
+        }
+    }
+
+    /// docs/adr/0109, D15: the checkpoints of sessions of many keys, run on
+    /// threads of their own as a server runs its clients' exchanges, are
+    /// committed in fewer transactions than inputs: while the first commit is
+    /// written, every other session's write waits, and the next commit, which
+    /// starts as soon as the first ended, takes them all. No reply leaves
+    /// before the commit that holds its session's checkpoint ended. Red if the
+    /// pool writes each checkpoint in a transaction of its own (eight commits,
+    /// and no write waits for the held one), or tells the endpoint its
+    /// checkpoint is durable before the commit answered (a reply handed before
+    /// the commit that holds it).
+    #[test]
+    fn many_sessions_share_a_commit_and_each_reply_waits_for_its_own() {
+        const KEYS: u32 = 8;
+        let (clock, probe) = (Clock::new(), Arc::new(Probe::default()));
+        let wire = Wire::default();
+        let store = Arc::new(Committing::over(MemoryStore::new(), &wire));
+        let (pool, wire) = pool_with(
+            ROOMS,
+            "p1",
+            Arc::clone(&store) as Arc<dyn SessionStore>,
+            &clock,
+            &probe,
+            wire,
+        );
+        let pool = Arc::new(pool);
+        let runs: Vec<_> = (0..KEYS)
+            .map(|n| {
+                let pool = Arc::clone(&pool);
+                std::thread::spawn(move || {
+                    deliver(&pool, join(&alloc::format!("r{n}"), n));
+                })
+            })
+            .collect();
+        // Every session's write handed: one in the commit the store holds, the
+        // rest waiting for the next.
+        let until = Instant::now() + Duration::from_secs(5);
+        while store.entered() + pool.committer().waiting() < KEYS as usize && Instant::now() < until
+        {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            store.entered() + pool.committer().waiting(),
+            KEYS as usize,
+            "every session handed its checkpoint while the first commit was held"
+        );
+        assert!(
+            lock(&wire.0).is_empty(),
+            "a reply left before the commit that holds its session's checkpoint ended"
+        );
+        store.open();
+        for run in runs {
+            run.join().expect("no run panicked");
+        }
+
+        let commits = lock(&store.commits).clone();
+        let kept: usize = commits.iter().map(Vec::len).sum();
+        assert_eq!(kept, KEYS as usize, "one checkpoint a session: {commits:?}");
+        assert!(
+            commits.len() < KEYS as usize,
+            "{} transactions for {KEYS} inputs: {commits:?}",
+            commits.len()
+        );
+        assert_eq!(
+            commits.len(),
+            2,
+            "the held commit, and one of everything handed while it was written: {commits:?}"
+        );
+        let durable_at = lock(&store.durable_at).clone();
+        let replies = wire.take();
+        assert_eq!(replies.len(), KEYS as usize, "{replies:?}");
+        for (at, reply) in replies.iter().enumerate() {
+            let n = (0..KEYS)
+                .find(|&n| reply.wire_id == Some(id(0x22, n)))
+                .unwrap_or_else(|| panic!("a reply to no join: {reply:?}"));
+            let key = alloc::format!("r{n}");
+            let committed = durable_at
+                .get(&key)
+                .copied()
+                .unwrap_or_else(|| panic!("no commit kept {key}'s checkpoint"));
+            assert!(
+                at >= committed,
+                "the reply to {key} was handed as envelope {at}, before the commit holding its \
+                 checkpoint ended with {committed} handed"
+            );
+        }
+        assert!(pool.take_errors().is_empty());
     }
 
     /// While one process holds a key's lease, another does not serve it: its

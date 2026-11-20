@@ -37,6 +37,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use sce_rust_session_store::{Appended, Expiry, Failure, Outbox, SessionStore};
 
+use crate::commit::Committer;
 use crate::peers::{Machine, PeerLink, Receipt};
 use crate::router::Window;
 
@@ -55,7 +56,10 @@ pub type Wake = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// The outboxes of a server's durable clients. See the module documentation.
 pub struct Outboxes {
-    store: Arc<dyn SessionStore>,
+    /// The committer of the store the outboxes are kept in: an acknowledgement is committed
+    /// through it, with the checkpoints of the pool's sessions (docs/adr/0109, D15); a read goes
+    /// to its store directly.
+    committer: Arc<Committer>,
     bindings: BTreeMap<String, OutboxBinding>,
     clients: Mutex<BTreeMap<String, Client>>,
     wake: Mutex<Option<Wake>>,
@@ -119,19 +123,24 @@ pub struct HeldOutbox {
 }
 
 impl Outboxes {
-    /// The outboxes of the clients `bindings` names, kept in `store`.
-    pub fn new(store: Arc<dyn SessionStore>, bindings: BTreeMap<String, OutboxBinding>) -> Self {
+    /// The outboxes of the clients `bindings` names, kept in the store `committer` commits to.
+    pub fn new(committer: Arc<Committer>, bindings: BTreeMap<String, OutboxBinding>) -> Self {
         Outboxes {
-            store,
+            committer,
             bindings,
             clients: Mutex::new(BTreeMap::new()),
             wake: Mutex::new(None),
         }
     }
 
+    /// The store the outboxes are kept in.
+    fn store(&self) -> &dyn SessionStore {
+        self.committer.store().as_ref()
+    }
+
     /// The outboxes of `machine`'s clients whose `https` accepting binding declares `receipt:
-    /// durable`, kept in `store`; `None` when it has none.
-    pub fn of_machine(machine: &Machine, store: Arc<dyn SessionStore>) -> Option<Arc<Self>> {
+    /// durable`, kept in the store `committer` commits to; `None` when it has none.
+    pub fn of_machine(machine: &Machine, committer: Arc<Committer>) -> Option<Arc<Self>> {
         let bindings: BTreeMap<String, OutboxBinding> = machine
             .peers
             .iter()
@@ -151,7 +160,7 @@ impl Outboxes {
                 _ => None,
             })
             .collect();
-        (!bindings.is_empty()).then(|| Arc::new(Self::new(store, bindings)))
+        (!bindings.is_empty()).then(|| Arc::new(Self::new(committer, bindings)))
     }
 
     /// Whether `client`'s binding keeps a durable outbox.
@@ -199,7 +208,7 @@ impl Outboxes {
         if slot.held.is_none() {
             // One the store holds none of is empty until the first append opens it, and is read
             // again then.
-            match self.store.outbox(client) {
+            match self.store().outbox(client) {
                 Ok(outbox) => slot.held = outbox.map(Held::of),
                 Err(_) => return Err(full(binding.window)),
             }
@@ -284,7 +293,7 @@ impl Outboxes {
         if let Some(held) = clients.get(client).and_then(|held| held.held.as_ref()) {
             return Ok(held.incarnation.clone());
         }
-        let outbox = self.store.open_outbox(client, incarnation, now_ms)?;
+        let outbox = self.store().open_outbox(client, incarnation, now_ms)?;
         let held = Held::of(outbox);
         let opened = held.incarnation.clone();
         clients.entry(client.to_string()).or_default().held = Some(held);
@@ -294,6 +303,8 @@ impl Outboxes {
     /// Delete from `client`'s outbox, in the store and then here, every entry numbered at most
     /// `through`, when `incarnation` is the one it numbers in (SCE_MESH.md section 22.3): the
     /// acknowledgement of the binding. The places the entries held in the window are free again.
+    /// The deletion is committed through the pool's committer, so it waits for the commit that
+    /// holds it: a caller on an asynchronous runtime calls this from a thread that may block.
     pub fn acknowledge(
         &self,
         client: &str,
@@ -301,8 +312,10 @@ impl Outboxes {
         through: u64,
         now_ms: u64,
     ) -> Result<u64, Failure> {
+        // docs/adr/0109, D15: committed with the checkpoints the pool's sessions hand the
+        // committer meanwhile, and answered once that commit is durable.
         let deleted = self
-            .store
+            .committer
             .acknowledge(client, incarnation, through, now_ms)?;
         if let Some(held) = lock(&self.clients)
             .get_mut(client)
@@ -373,7 +386,7 @@ impl Outboxes {
             return Ok(Expiry::default());
         };
         let before = now_ms.saturating_sub(binding.retain_ms);
-        let expiry = self.store.expire(client, before, limit)?;
+        let expiry = self.store().expire(client, before, limit)?;
         let mut clients = lock(&self.clients);
         if let Some(held) = clients.get_mut(client) {
             if expiry.closed {
