@@ -33,3 +33,12 @@ pub struct EnvelopeIdPayload {
     pub hi: u64,
     pub lo: u64,
 }
+
+/// docs/adr/0108, D1: a payload is a key of a map by its fields, in the order
+/// its schema declares them.
+impl ::sce_portable_bytes::MapKey for EnvelopeIdPayload {
+    fn feed_key(&self, into: &mut dyn ::sce_portable_bytes::KeyFeed) {
+        ::sce_portable_bytes::MapKey::feed_key(&self.hi, into);
+        ::sce_portable_bytes::MapKey::feed_key(&self.lo, into);
+    }
+}
