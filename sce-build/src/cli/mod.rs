@@ -3477,11 +3477,13 @@ enum Commands {
     ///
     /// The scenario is first held to the vocabulary and to the machine, as
     /// `scenarios --machine` holds it, and a scenario with a problem is
-    /// refused. A step the target cannot make (a restore, an event for a
-    /// child) is refused too. An expectation the target does not compare (a
-    /// map, a union, an enum, a text, a real, what the machine asked of its
-    /// host or sent its peers) is named in the table and left to the host
-    /// C11 lane, which replays the same scenario.
+    /// refused. A step the target cannot make (a restore, since saved state
+    /// is a hosted unit; an event for a child) is refused too. Every value
+    /// a published variable holds is compared, maps and sets walked entry by
+    /// entry and reals by their bits; what the target does not judge (a
+    /// variable the machine does not publish, what it asked of its host or
+    /// sent its peers) is named in the table and left to the host C11 lane,
+    /// which replays the same scenario.
     ScenarioTable {
         /// Replay scenario (JSON, `machine` and `steps`)
         scenario: String,
