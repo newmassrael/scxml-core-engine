@@ -1630,6 +1630,12 @@ pub enum DiagnosticCode {
     /// [`GenerateError::CodegenStandardHostTypeNotServed`].
     #[serde(rename = "codegen/standard-host-type-not-served")]
     CodegenStandardHostTypeNotServed,
+    /// A machine runs a standard signing or sealing operation built with
+    /// bounds that break a relation of the table of standard types
+    /// (docs/adr/0109, D17) — see
+    /// [`GenerateError::CodegenStandardHostBoundRelation`].
+    #[serde(rename = "codegen/standard-host-bound-relation")]
+    CodegenStandardHostBoundRelation,
 
     // ── §synth-5-P Queue (the `queue` kind). Four document-level codes the
     //    selection table decides, and one codegen refusal for a storage mode a
@@ -4288,6 +4294,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenFeatureLiftingMismatch,
         // ADR 0107, D8: a standard host type the target lane does not serve
         CodegenStandardHostTypeNotServed,
+        // ADR 0109, D17: a build whose record bounds break a relation
+        CodegenStandardHostBoundRelation,
         // Queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
         QueueStorageNotExactlyOne,
         QueueAllocatorProgressMissing,
@@ -4928,6 +4936,9 @@ impl DiagnosticCode {
 
             // ── An audit entry's schema (docs/adr/0109, D14) ──
             ValidationAuditEntrySchema => Some("ADR 0109 D14"),
+
+            // ── The relations of the records' named bounds (docs/adr/0109, D17) ──
+            CodegenStandardHostBoundRelation => Some("ADR 0109 D17"),
 
             // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
             ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
@@ -6060,6 +6071,7 @@ impl DiagnosticCode {
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | CodegenStandardHostTypeNotServed
+            | CodegenStandardHostBoundRelation
             | QueueStorageNotExactlyOne
             | QueueAllocatorProgressMissing
             | QueueProgressUnreachable
@@ -6638,6 +6650,7 @@ impl DiagnosticCode {
             CodegenFeatureSelectionRequired => "codegen/feature-selection-required",
             CodegenFeatureLiftingMismatch => "codegen/feature-lifting-mismatch",
             CodegenStandardHostTypeNotServed => "codegen/standard-host-type-not-served",
+            CodegenStandardHostBoundRelation => "codegen/standard-host-bound-relation",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
@@ -12611,6 +12624,29 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 lane.wire_name().to_string(),
             ],
         },
+        // docs/adr/0109, D17: the repair is a number the build is given
+        // (`--limit`), which no `Fix` of the document spells, so neither a fix
+        // nor an `expected`. The object's bound names the refusal and its
+        // numbers do not: a build that moves them both keeps the record's id.
+        GenerateError::CodegenStandardHostBoundRelation {
+            invoke_id,
+            invoke_type,
+            relation,
+            content: _,
+            object: _,
+            at: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenStandardHostBoundRelation,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![
+                invoke_id.clone(),
+                invoke_type.to_string(),
+                relation.object.to_string(),
+            ],
+        },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
             storage,
@@ -17264,6 +17300,23 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e4cf0e49db723672","code":"codegen/standard-host-type-not-served","stage":"generate","message":"<invoke id=\"op\"> runs the standard host type 'x-probe-op', which the go lane does not serve: it is served on rust, cpp"}"#,
             ),
+            (
+                // A payload's bound moved to 8192 and the signed object's
+                // left at 4352 (docs/adr/0109, D17).
+                "codegen/standard-host-bound-relation",
+                GenerateError::CodegenStandardHostBoundRelation {
+                    invoke_id: "sign".into(),
+                    invoke_type: "sce-host-cose-sign1",
+                    relation: crate::forge::standard_host::BOUND_RELATIONS
+                        .first()
+                        .expect("the relation of a signature"),
+                    content: 8192,
+                    object: 4352,
+                    at: None,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bfc046de4f21dc35","code":"codegen/standard-host-bound-relation","stage":"generate","spec":"ADR 0109 D17","message":"<invoke id=\"sign\"> runs the standard host type 'sce-host-cose-sign1', whose records hold 8192 bytes under `cose_payload` and 4352 under `cose_signed`: an object takes up to 256 bytes more than what it holds, so `cose_signed` is at least 8448; build with --limit cose_signed=8448 or more"}"#,
+            ),
             // ── §synth-5-P Queue kind ──
             (
                 "forge/queue-storage-not-exactly-one",
@@ -21816,6 +21869,9 @@ mod tests {
             // ADR 0107, D8: the repair is the build's choice of lane or the
             // document's choice of operation, not a closed candidate set.
             | CodegenStandardHostTypeNotServed
+            // ADR 0109, D17: the repair is a number the build is given, which
+            // the message states; no candidate set and no fix.
+            | CodegenStandardHostBoundRelation
             // Queue (RFC §synth-5-P) document-level checks: the repair is
             // the author's choice among documents the selection table
             // allows (a storage element, an allocator's progress, a
@@ -22694,6 +22750,7 @@ mod tests {
                 | CodegenFeatureSelectionRequired
                 | CodegenFeatureLiftingMismatch
                 | CodegenStandardHostTypeNotServed
+                | CodegenStandardHostBoundRelation
                 | CodegenNoStdScriptNotSupported
                 | CodegenNoStdHttpNotSupported
                 | CodegenNoStdFsLoadNotSupported
@@ -23026,9 +23083,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            560,
+            561,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 560 distinct variants to match the DiagnosticCode \
+             expected 561 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23817,6 +23874,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // `locate_codegen_error`, but no lane is refused a standard type
             // yet, so no scenario has raised it.
             | CodegenStandardHostTypeNotServed
+            // Located on the `<invoke>` the same way; no scenario builds a
+            // machine with moved bounds.
+            | CodegenStandardHostBoundRelation
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch

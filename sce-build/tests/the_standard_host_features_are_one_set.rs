@@ -17,7 +17,7 @@ use std::process::Command;
 
 use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::model::ForgeKind;
-use sce_build::forge::standard_host::{document, lookup, TYPES};
+use sce_build::forge::standard_host::{document, lookup, BOUND_RELATIONS, TYPES};
 use sce_build::generator::Language;
 use tempfile::tempdir;
 
@@ -1152,5 +1152,283 @@ fn a_mark_is_secret_or_personal_and_personal_marks_a_text() {
         let (ok, text) = run(&["check"], &doc, &[("sign_in.scxml", schema.as_str())]);
         assert!(!ok, "a mark the build cannot carry was accepted: {text}");
         assert!(text.contains(code) && text.contains("sce:sensitivity"), "{text}");
+    }
+}
+
+// ── The named bounds of signing and sealing (docs/adr/0109, D17) ──
+
+/// The number each named bound of signing and sealing is written at in the
+/// library: the bound every record of the operations held before the bounds
+/// were named, which a build given no limit keeps.
+const TODAYS_BOUNDS: [(&str, u32); 4] = [
+    ("cose_payload", 4096),
+    ("cose_signed", 4352),
+    ("cose_plaintext", 4352),
+    ("cose_sealed", 4480),
+];
+
+/// The number [`TODAYS_BOUNDS`] gives `name`.
+fn todays_bound(name: &str) -> u32 {
+    TODAYS_BOUNDS
+        .iter()
+        .find(|(bound, _)| *bound == name)
+        .map(|(_, number)| *number)
+        .unwrap_or_else(|| panic!("`{name}` is no named bound of signing or sealing"))
+}
+
+/// The text of the library's record `record`.
+fn library_record(record: &str) -> String {
+    std::fs::read_to_string(repo_root().join(format!("stdlib/host/{record}.scxml")))
+        .unwrap_or_else(|_| panic!("{record} is no record of the library"))
+}
+
+/// A probe of the signing or sealing operation `invoke_type` (one of
+/// [`host_operation`]'s), whose variable of the value it hands the host names
+/// its record's bound, so a build that moves the bound moves the variable too.
+fn cose_operation(invoke_type: &str) -> String {
+    let standard = lookup(invoke_type).expect("an operation of the table");
+    let (named, value, bound) = match invoke_type {
+        "sce-host-cose-sign1" => ("key_id", "payload", "cose_payload"),
+        "sce-host-cose-verify1" => ("trust_set", "cose", "cose_signed"),
+        "sce-host-cose-encrypt0" => ("key_id", "plaintext", "cose_plaintext"),
+        "sce-host-cose-decrypt0" => ("key_id", "cose", "cose_sealed"),
+        other => panic!("{other} neither signs nor seals"),
+    };
+    let ty = format!("bytes[{bound}={}]", todays_bound(bound));
+    host_operation(
+        invoke_type,
+        standard
+            .request
+            .expect("signing and sealing take a request"),
+        standard.result,
+        &[],
+        &[
+            (named, "string[64]", "'k'"),
+            (value, ty.as_str(), "''"),
+            ("external_aad", "bytes[256]", "''"),
+        ],
+    )
+}
+
+/// docs/adr/0109, D17: a build that moves the bound of what is signed or
+/// sealed and not the bound of the object made of it is refused on the
+/// `<invoke>`, by name, with the `--limit` that repairs it; the same build
+/// with the object's bound moved too is taken, and so is one that moves the
+/// content's bound down alone. Each operation that reads both bounds is held,
+/// on the two lanes that serve it.
+#[test]
+fn a_build_that_breaks_a_relation_of_the_bounds_is_refused_by_name() {
+    let cases = [
+        (
+            "sce-host-cose-sign1",
+            "cose_payload",
+            "cose_signed",
+            8192,
+            8448,
+        ),
+        (
+            "sce-host-cose-verify1",
+            "cose_payload",
+            "cose_signed",
+            8192,
+            8448,
+        ),
+        (
+            "sce-host-cose-encrypt0",
+            "cose_plaintext",
+            "cose_sealed",
+            8448,
+            8576,
+        ),
+        (
+            "sce-host-cose-decrypt0",
+            "cose_plaintext",
+            "cose_sealed",
+            8448,
+            8576,
+        ),
+    ];
+    for (operation, content, object, moved, least) in cases {
+        let doc = cose_operation(operation);
+        let (content_moved, object_moved, content_down) = (
+            format!("{content}={moved}"),
+            format!("{object}={least}"),
+            format!("{content}=1024"),
+        );
+        let (content_moved, object_moved, content_down) = (
+            content_moved.as_str(),
+            object_moved.as_str(),
+            content_down.as_str(),
+        );
+        for language in ["rust", "cpp"] {
+            let (ok, text) = run(&["check", "-l", language], &doc, &[]);
+            assert!(ok, "{language} {operation} built as written: {text}");
+
+            let (ok, text) = run(
+                &["--limit", content_moved, "check", "-l", language],
+                &doc,
+                &[],
+            );
+            assert!(
+                !ok,
+                "{language} {operation} took {content_moved} alone: {text}"
+            );
+            assert!(
+                text.contains("codegen/standard-host-bound-relation")
+                    && text.contains(operation)
+                    && text.contains(&format!("--limit {object_moved} or more")),
+                "{language} {operation}: {text}"
+            );
+
+            let (ok, text) = run(
+                &[
+                    "--limit",
+                    content_moved,
+                    "--limit",
+                    object_moved,
+                    "check",
+                    "-l",
+                    language,
+                ],
+                &doc,
+                &[],
+            );
+            assert!(ok, "{language} {operation} refused both moved: {text}");
+
+            let (ok, text) = run(
+                &["--limit", content_down, "check", "-l", language],
+                &doc,
+                &[],
+            );
+            assert!(ok, "{language} {operation} refused {content_down}: {text}");
+        }
+    }
+}
+
+/// docs/adr/0109, D17: each relation's two bounds are written by the records
+/// of each operation it names, one in the request and one in the result, at
+/// the numbers those records wrote before the bounds were named, and the
+/// relation holds at those numbers, so a build given no limit is refused
+/// nothing it was given before.
+#[test]
+fn each_relation_is_written_by_the_records_of_its_operations_at_todays_numbers() {
+    let mut read = 0;
+    for relation in BOUND_RELATIONS {
+        assert!(
+            relation.holds(
+                todays_bound(relation.content),
+                todays_bound(relation.object)
+            ),
+            "{relation:?} does not hold at the library's numbers"
+        );
+        for &operation in relation.operations {
+            let standard = lookup(operation).expect("an operation of the table");
+            let request = library_record(standard.request.expect("a request"));
+            let result = library_record(standard.result);
+            for name in [relation.content, relation.object] {
+                let spelled = format!("bytes[{name}={}]", todays_bound(name));
+                assert_eq!(
+                    usize::from(request.contains(&spelled))
+                        + usize::from(result.contains(&spelled)),
+                    1,
+                    "{operation}: one of its records writes {spelled}"
+                );
+                read += 1;
+            }
+        }
+    }
+    assert_eq!(read, 8, "two bounds of four operations");
+}
+
+/// `sce-codegen [--limit L]... generate -l rust <document>`, `document` a path
+/// or a library name: the lines of every file written that declare a field's
+/// bound or the longest payload of the event, sorted.
+fn bound_constants(document: &str, limits: &[&str]) -> Vec<String> {
+    let out_dir = tempdir().expect("tempdir");
+    let mut command = Command::new(sce_codegen_bin());
+    command
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json");
+    for limit in limits {
+        command.args(["--limit", limit]);
+    }
+    let out = command
+        .args(["generate", "-l", "rust", document, "-o"])
+        .arg(out_dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    assert!(
+        out.status.success(),
+        "{document}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut lines: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {
+        let text = std::fs::read_to_string(entry.expect("an entry").path()).unwrap_or_default();
+        lines.extend(
+            text.lines()
+                .filter(|line| {
+                    line.starts_with("pub const")
+                        && (line.contains("_MAX_SIZE") || line.contains("DATA_MAX_LEN"))
+                })
+                .map(str::to_string),
+        );
+    }
+    lines.sort();
+    assert!(
+        lines.iter().any(|line| line.contains("DATA_MAX_LEN")),
+        "{document} declared no longest payload: a test that read none would pass"
+    );
+    lines
+}
+
+/// docs/adr/0109, D17: naming the bounds moves no byte of a build given no
+/// limit. Each record of signing and sealing, generated as the library writes
+/// it, declares every field's bound and its longest payload as the same record
+/// with its bounds written as bare numbers does; a build that moves a bound
+/// moves the constant of the field that names it, and only that one.
+#[test]
+fn a_record_built_with_no_limit_declares_what_its_bare_numbers_declared() {
+    let mut records: Vec<&str> = BOUND_RELATIONS
+        .iter()
+        .flat_map(|relation| relation.operations.iter())
+        .filter_map(|&operation| lookup(operation))
+        .flat_map(|standard| standard.request.into_iter().chain(Some(standard.result)))
+        .collect();
+    records.sort_unstable();
+    records.dedup();
+    assert_eq!(
+        records.len(),
+        8,
+        "the request and result of four operations"
+    );
+    let dir = tempdir().expect("tempdir");
+    for record in records {
+        let mut bare = library_record(record);
+        for (name, _) in TODAYS_BOUNDS {
+            bare = bare.replace(&format!("[{name}="), "[");
+        }
+        assert_ne!(bare, library_record(record), "{record} names no bound");
+        let path = dir.path().join(format!("{record}.scxml"));
+        std::fs::write(&path, &bare).expect("write the bare record");
+        let named = bound_constants(&document(record), &[]);
+        assert_eq!(
+            named,
+            bound_constants(path.to_str().expect("a path of text"), &[]),
+            "{record}: the named bounds declare what the bare numbers did"
+        );
+        let moved = bound_constants(&document(record), &["cose_payload=8192"]);
+        let payload_moved = record.ends_with("sign1_request") || record.ends_with("verify1_result");
+        assert_eq!(
+            moved
+                .iter()
+                .any(|line| line.contains("PAYLOAD_MAX_SIZE: u32 = 8192;")),
+            payload_moved,
+            "{record}: --limit cose_payload=8192 moves the payload's bound: {moved:?}"
+        );
+        if !payload_moved {
+            assert_eq!(moved, named, "{record}: a bound it does not name moved it");
+        }
     }
 }
