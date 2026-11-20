@@ -4093,7 +4093,7 @@
         },
         {
           "file": "tests/mesh/HttpsSignatureTest.cpp",
-          "kind": "references"
+          "kind": "verifies"
         },
         {
           "file": "sce-build/tests/mesh_https_cpp_codegen.rs",
@@ -5778,6 +5778,12 @@
       "target_kind": "section",
       "target_id": "mesh-22.5",
       "reason": "The authenticator refusal is verified by mesh_https_cpp_codegen.rs; this test's catalog names sections 18 to 20"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-22.9",
+      "reason": "The test declares SCE-VERIFIES: mesh-22.9 and the catalog lists it"
     }
   ],
   "frames": {},

@@ -301,7 +301,7 @@ fn the_retry_policy_is_the_clients_and_wraps_no_dispatcher() {
     );
 }
 
-/// docs/adr/0109, D9: a binding that names `verify` hands its client the
+/// §mesh-22.9 (docs/adr/0109, D9): a binding that names `verify` hands its client the
 /// trust set's name, and the `key` authenticator is the client's own
 /// enumerator; one that names no `verify` sets none, so its client takes a
 /// `200` as it comes. Red if the template drops `verify` or maps `key` to

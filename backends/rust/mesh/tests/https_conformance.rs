@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// SCE-VERIFIES: mesh-22 mesh-22.1 mesh-22.2 mesh-22.3 mesh-22.4 mesh-22.6 mesh-22.7 mesh-22.9
 
 //! This crate's adapter of the HTTPS port, `HyperTransport`, run through the conformance kit every
 //! adapter is held to (SCE_MESH.md section 22.7).

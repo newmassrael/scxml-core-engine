@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// SCE-VERIFIES: mesh-22.9
 
 //! A request signed by the C++ client, verified by the Rust server (SCE_MESH.md section 22.9;
 //! docs/adr/0109, D9): `tests/mesh/https_signature_cross_language.json`, whose signed fields the C++

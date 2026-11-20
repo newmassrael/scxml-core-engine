@@ -445,7 +445,7 @@ pub enum HttpsAuthenticator {
     /// A TLS client certificate the host configures on its HTTP stack.
     Mtls,
     /// Every request signed by an Ed25519 key the client's host generated
-    /// once (docs/adr/0109, D9; SCE_MESH.md section 22.9); the server pins
+    /// once (docs/adr/0109, D9; §mesh-22.5, §mesh-22.9); the server pins
     /// the name to the key at the first exchange, or takes a key its host
     /// registered. No `Authorization` is sent.
     Key,
@@ -3142,8 +3142,9 @@ fn validate_https_extras_partial(
     if let Some(v) = pt.extra.get("trusted_proxies") {
         trusted_proxies(v).map_err(|reason| invalid("trusted_proxies", reason))?;
     }
-    // docs/adr/0109, D9: `sign` names a key of the server's host and `verify`
-    // a trust set of the client's, each by the id the host holds it under.
+    // §mesh-22.9: `sign` names a key of the server's host and `verify` a
+    // trust set of the client's, each by the id the host holds it under
+    // (docs/adr/0109, D9).
     for key in ["sign", "verify"] {
         if let Some(v) = pt.extra.get(key) {
             check_key_name(v).map_err(|reason| invalid(key, reason))?;
@@ -3151,8 +3152,8 @@ fn validate_https_extras_partial(
     }
     if let Some(v) = pt.extra.get("max_skew_ms") {
         check_positive_u32(v).map_err(|reason| invalid("max_skew_ms", reason))?;
-        // A bound that nothing reads is a setting that silently does
-        // nothing: only the `key` authenticator signs requests.
+        // §mesh-22.9: a bound that nothing reads is a setting that silently
+        // does nothing, and only the `key` authenticator signs requests.
         if pt.extra.get("authenticator").and_then(|a| a.as_str()) != Some("key") {
             return Err(invalid(
                 "max_skew_ms",
@@ -3388,6 +3389,8 @@ fn https_state(extra: &std::collections::HashMap<String, serde_yaml_ng::Value>) 
             .get("trusted_proxies")
             .map(|v| trusted_proxies(v).expect("validate_https_extras_partial proved the proxies"))
             .unwrap_or_default(),
+        // §mesh-22.9: what signs a response and what verifies it, and the
+        // skew a signed request is held to, its default applied once here.
         sign: text("sign"),
         verify: text("verify"),
         max_skew_ms: number("max_skew_ms", HTTPS_DEFAULT_MAX_SKEW_MS),
