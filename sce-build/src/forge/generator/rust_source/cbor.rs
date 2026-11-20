@@ -264,6 +264,12 @@ fn continued(text: &str, columns: usize) -> String {
     out
 }
 
+/// `bytes` as a Rust array expression, each byte in hexadecimal.
+fn rust_byte_array(bytes: &[u8]) -> String {
+    let each: Vec<String> = bytes.iter().map(|b| format!("0x{b:02x}")).collect();
+    format!("[{}]", each.join(", "))
+}
+
 /// The Rust type a value of `shape` an entry holds is held in: the type a
 /// schema unit holds it in (docs/adr/0086, section 7.1; docs/adr/0101, section
 /// 5.3), the payload type of a record's event schema, the type of a union's
@@ -687,6 +693,11 @@ fn record_fns(record: &CborRecord) -> String {
     // The read: each field held until the map has been read to its end, so a
     // key given twice and a field that is not optional missing are told apart
     // from the value.
+    let lacked = if record.fields.iter().any(|f| f.default.is_some()) {
+        "/// A field a later revision of the schema added, missing, reads its default.\n"
+    } else {
+        ""
+    };
     let mut read = format!(
         "/// Read one record of the event schema `{schema}` from `c`, into the payload\n\
          /// type the schema's own unit declares: one CBOR map of its present fields,\n\
@@ -694,6 +705,7 @@ fn record_fns(record: &CborRecord) -> String {
          /// order, a key the schema does not declare skipped whole, a key given twice\n\
          /// and a field that is not optional missing refused, and a value of no field's\n\
          /// type refused.\n\
+         {lacked}\
          fn {decode}(c: &mut SceCursor<'_>) -> Result<{payload}, CodecError> {{\n    \
          let count = cbor::read_map_len(c)?;\n"
     );
@@ -726,6 +738,22 @@ fn record_fns(record: &CborRecord) -> String {
         let member = field_names(field).member;
         if field.optional {
             read.push_str(&format!("        {member}: held_{member},\n"));
+        } else if let Some(default) = &field.default {
+            // A field a later revision of the schema added: a map a writer of an
+            // earlier revision wrote lacks its key, and it reads the value the
+            // plan holds for it, by the reader of the field's own value.
+            let value = decode_expr(&field.shape, "&mut lacked", Held::Field, 0);
+            read.push_str(&format!(
+                "        {member}: match held_{member} {{\n            \
+                 Some(value) => value,\n            \
+                 // A map of a revision before the field was added lacks its key, and\n            \
+                 // reads its default (docs/adr/0044).\n            \
+                 None => {{\n                \
+                 let mut lacked = SceCursor::new(&{bytes});\n                \
+                 {value}\n            }}\n        }},\n",
+                bytes = rust_byte_array(default),
+                value = continued(&value, 16),
+            ));
         } else {
             read.push_str(&format!(
                 "        {member}: held_{member}.ok_or(CodecError::CborRequiredKeyMissing)?,\n"
@@ -1147,6 +1175,7 @@ mod tests {
             optional: ty.optional_elem().is_some(),
             ty,
             shape,
+            default: None,
         }
     }
 
@@ -1375,6 +1404,47 @@ mod tests {
         assert!(at("sku") < at("note") && at("note") < at("color") && at("color") < at("quantity"));
         // Nothing of it is refused, so it has no check.
         assert!(!code.contains("fn check_record_order_line"), "{code}");
+        // No field was added by a later revision, so none reads a default.
+        assert!(!code.contains("lacked"), "{code}");
+    }
+
+    /// A field a later revision added reads, where the map lacks its key, the
+    /// value of the bytes the plan holds for it, by the reader of its own
+    /// value; a field of the first revision missing is still refused, and an
+    /// optional field missing still reads absent (docs/adr/0044).
+    #[test]
+    fn a_field_a_later_revision_added_reads_its_default_where_its_key_is_missing() {
+        let mut gain = field("gain", "int16", int(16, true));
+        gain.default = Some(vec![0x22]);
+        let mut tags = field("tags", "list<uint8>[2]", list(int(8, false), 2, 0));
+        tags.default = Some(vec![0x80]);
+        let revised = record(
+            "revised_entry",
+            vec![
+                field("id", "uint8", int(8, false)),
+                gain,
+                tags,
+                field("memo", "optional<string[4]>", CborShape::Text { max: 4 }),
+            ],
+        );
+        let code = record_fns(&revised);
+        for expected in [
+            "/// A field a later revision of the schema added, missing, reads its default.\n",
+            "        id: held_id.ok_or(CodecError::CborRequiredKeyMissing)?,\n",
+            "        gain: match held_gain {\n            Some(value) => value,\n",
+            "            None => {\n                let mut lacked = SceCursor::new(&[0x22]);\n                \
+             cbor::read_int_within(&mut lacked, i64::from(i16::MIN), i64::from(i16::MAX))? as i16\n            \
+             }\n        },\n",
+            "                let mut lacked = SceCursor::new(&[0x80]);\n",
+            "let len = cbor::read_array_len(&mut lacked)?;",
+            "        memo: held_memo,\n",
+        ] {
+            assert!(code.contains(expected), "missing `{expected}`:\n{code}");
+        }
+        assert!(
+            !code.contains("gain: held_gain.ok_or"),
+            "a defaulted field is not refused where its key is missing:\n{code}"
+        );
     }
 
     #[test]

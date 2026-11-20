@@ -555,6 +555,7 @@ mod tests {
                     ("note".into(), ty("optional<string[8]>")),
                 ],
                 scope: TypeScope::default(),
+                added: Default::default(),
             },
         );
         scope.enums.insert(

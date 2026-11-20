@@ -2055,6 +2055,7 @@ mod tests {
                 .map(|(id, written)| (id.to_string(), ty(written)))
                 .collect(),
             scope,
+            added: Default::default(),
         };
         let mut within_plan = TypeScope::default();
         within_plan.records.insert(
@@ -2108,6 +2109,7 @@ mod tests {
                 .map(|(id, written)| (id.to_string(), ty(written)))
                 .collect(),
             scope: TypeScope::default(),
+            added: Default::default(),
         };
         let case = |variant: &str, value: i128, held: Option<&str>| ScopedCase {
             variant: ScopedVariant {

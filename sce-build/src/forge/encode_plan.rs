@@ -1743,6 +1743,14 @@ pub struct CborField {
     pub optional: bool,
     /// What a present value of it is.
     pub shape: CborShape,
+    /// The deterministic CBOR of the value a map that lacks the field's key
+    /// reads in its place, read by the reader of the field's own value
+    /// ([`lacked_value`]): the field's `sce:default`, or the empty list, for a
+    /// field a revision of its schema after the first added
+    /// (docs/adr/0044). `None` where a map that lacks the key is refused, a
+    /// field of the first revision that is not optional, and for an optional
+    /// field, which a missing key leaves absent.
+    pub default: Option<Vec<u8>>,
 }
 
 /// A union a CBOR value holds: a map of one entry, keyed by its case's variant
@@ -1886,14 +1894,19 @@ fn record_shape(
 ) -> Result<CborRecord, String> {
     let (fields, inner) = crate::forge::value_type::enter_record(alias, env, records)
         .map_err(|_| alias.to_string())?;
+    let added = env.record_added(alias);
     let fields: Vec<CborField> = fields
         .into_iter()
         .map(|(id, ty)| {
             let present = ty.optional_elem().unwrap_or(&ty);
             let shape = shape_of(present, inner, records);
+            // The default is a value of the field's type, read in the record's
+            // own document, which names the field's enum.
+            let default = lacked_value(&ty, added.and_then(|a| a.get(&id)), inner);
             CborField {
                 optional: ty.optional_elem().is_some(),
                 shape,
+                default,
                 id,
                 ty,
             }
@@ -1906,6 +1919,136 @@ fn record_shape(
         by_key: text_key_order(fields.iter().map(|f| f.id.as_str())),
         fields,
     })
+}
+
+/// What a record whose map lacks the key of a field of type `ty` reads in its
+/// place, as the deterministic CBOR of it (RFC 8949 section 4.2.1), the
+/// field's revision facts `added` given and its enums read in `env`, the
+/// record's own document (docs/adr/0044; SCE_FORGE.md section 4.6.1, "A record
+/// whose schema grew"). A writer built before the field existed leaves
+/// its key out, so a field a later revision added reads its `sce:default`, and
+/// a list, which declares none, the empty list, as the lift reads a delivery
+/// that lacks it. `None` where the key is not left out by such a writer:
+/// - a field of the first revision (`added` is `None`), which every writer
+///   writes, so a map that lacks it is refused;
+/// - an optional field of any revision, whose missing key is how every writer
+///   spells absence (docs/adr/0101, sections 2.1 and 2.5), so it reads absent
+///   and a default it declares is not read here.
+///
+/// The bytes are read by the reader of the field's own value, so a default
+/// is held to every rule a written value is held to and no second reader of
+/// it exists, as the lift reads its defaults with the reader of a delivery.
+/// The parser holds each default to its field's type (`read_field_revision`),
+/// and refuses a field a later revision added that is neither optional nor a
+/// list and declares none, so `None` stands for no default it keeps.
+pub fn lacked_value(
+    ty: &ValueType,
+    added: Option<&crate::forge::value_type::AddedField>,
+    env: &dyn TypeEnv,
+) -> Option<Vec<u8>> {
+    let added = added?;
+    match ty {
+        ValueType::Optional { .. } => None,
+        ValueType::List { .. } => Some(vec![CBOR_EMPTY_ARRAY]),
+        _ => default_cbor(ty, added.default.as_deref()?, env),
+    }
+}
+
+/// The head of an empty definite-length array: major type 4, count 0.
+const CBOR_EMPTY_ARRAY: u8 = 0x80;
+
+/// The deterministic CBOR of the default `text` of a field of the leaf type
+/// `ty`, as the schema spells it ([`crate::forge::schema_revision::wire_of`]):
+/// a number in its shortest head, major type 1 below zero; a float as a
+/// single for a `float32` and a double for a `float64`, the width each reads
+/// exactly; `true` or `false`; a text or a byte string of the default's own
+/// bytes; an enum as the number its named variant declares. `None` for a
+/// default that is no value of `ty`, which the parser refuses before a plan is
+/// made.
+fn default_cbor(ty: &ValueType, text: &str, env: &dyn TypeEnv) -> Option<Vec<u8>> {
+    use crate::forge::model::NumericLiteral;
+    match ty {
+        ValueType::Text { .. } => Some(cbor_head_then(3, text.as_bytes())),
+        ValueType::Bytes { .. } => Some(cbor_head_then(2, text.as_bytes())),
+        ValueType::Scalar(SceType::Bool) => match text {
+            "true" => Some(vec![0xf5]),
+            "false" => Some(vec![0xf4]),
+            _ => None,
+        },
+        ValueType::Scalar(SceType::Enum(reference)) => {
+            let enumeration = env.enum_type(&reference.alias)?;
+            let variant = enumeration.variants.iter().find(|v| v.name == text)?;
+            cbor_integer(variant.value)
+        }
+        ValueType::Scalar(SceType::Float32) => match SceType::Float32.numeric_literal(text).ok()? {
+            NumericLiteral::Float(v) => {
+                let mut out = vec![0xfa];
+                out.extend_from_slice(&(v as f32).to_bits().to_be_bytes());
+                Some(out)
+            }
+            NumericLiteral::Int(_) => None,
+        },
+        ValueType::Scalar(SceType::Float64) => match SceType::Float64.numeric_literal(text).ok()? {
+            NumericLiteral::Float(v) => {
+                let mut out = vec![0xfb];
+                out.extend_from_slice(&v.to_bits().to_be_bytes());
+                Some(out)
+            }
+            NumericLiteral::Int(_) => None,
+        },
+        ValueType::Scalar(t) => match t.numeric_literal(text).ok()? {
+            NumericLiteral::Int(n) => cbor_integer(n),
+            NumericLiteral::Float(_) => None,
+        },
+        ValueType::Optional { .. }
+        | ValueType::Record { .. }
+        | ValueType::Union { .. }
+        | ValueType::List { .. }
+        | ValueType::Map { .. }
+        | ValueType::Set { .. } => None,
+    }
+}
+
+/// The head of major type `major` whose argument is `n`, in its shortest form
+/// (RFC 8949 sections 3 and 4.2.1).
+fn cbor_head(major: u8, n: u64) -> Vec<u8> {
+    let kind = major << 5;
+    match n {
+        0..=23 => vec![kind | n as u8],
+        24..=0xff => vec![kind | 24, n as u8],
+        0x100..=0xffff => {
+            let mut out = vec![kind | 25];
+            out.extend_from_slice(&(n as u16).to_be_bytes());
+            out
+        }
+        0x1_0000..=0xffff_ffff => {
+            let mut out = vec![kind | 26];
+            out.extend_from_slice(&(n as u32).to_be_bytes());
+            out
+        }
+        _ => {
+            let mut out = vec![kind | 27];
+            out.extend_from_slice(&n.to_be_bytes());
+            out
+        }
+    }
+}
+
+/// A text (major type 3) or a byte string (major type 2) of `bytes`.
+fn cbor_head_then(major: u8, bytes: &[u8]) -> Vec<u8> {
+    let mut out = cbor_head(major, bytes.len() as u64);
+    out.extend_from_slice(bytes);
+    out
+}
+
+/// The integer `n`: major type 0, or major type 1 with the argument `-1 - n`
+/// below zero; `None` past what a 64-bit argument holds.
+fn cbor_integer(n: i128) -> Option<Vec<u8>> {
+    if n >= 0 {
+        u64::try_from(n).ok().map(|n| cbor_head(0, n))
+    } else {
+        u64::try_from(-1 - n).ok().map(|n| cbor_head(1, n))
+    }
 }
 
 /// The union `alias` names in `env`, each case's record read in the union's
@@ -2217,6 +2360,7 @@ mod tests {
                 .map(|(id, text)| (id.to_string(), ty(text)))
                 .collect(),
             scope,
+            added: Default::default(),
         }
     }
 
@@ -2381,12 +2525,14 @@ mod tests {
                         ty: ty("string[24]"),
                         optional: false,
                         shape: CborShape::Text { max: 24 },
+                        default: None,
                     },
                     CborField {
                         id: "vip".to_string(),
                         ty: ty("bool"),
                         optional: false,
                         shape: CborShape::Bool,
+                        default: None,
                     },
                 ],
                 // `vip` first: its encoding is shorter (docs/adr/0101, section
@@ -2406,6 +2552,109 @@ mod tests {
         assert!(note.optional);
         assert_eq!(note.ty, ty("optional<string[8]>"));
         assert_eq!(note.shape, CborShape::Text { max: 8 });
+    }
+
+    /// A field a later revision of the record's schema added is planned with
+    /// the deterministic CBOR of what a map that lacks its key reads: its
+    /// default, the empty list for a list; a field of the first revision, and
+    /// an optional field of any revision, with none (docs/adr/0044).
+    #[test]
+    fn a_field_a_later_revision_added_is_planned_with_what_its_missing_key_reads() {
+        // The record names its enum in its own document.
+        let mut own = TypeScope::default();
+        own.enums.insert(
+            "Level".to_string(),
+            ScopedEnum {
+                name: "level".to_string(),
+                variants: vec![
+                    variant("nominal", 0),
+                    variant("high", 5),
+                    variant("fault", -1),
+                ],
+                underlying: SceType::Int8,
+                strict: true,
+            },
+        );
+        let mut revised = record(
+            "revised",
+            &[
+                ("id", "uint8"),
+                ("gain", "int16"),
+                ("mode", "enum:Level"),
+                ("label", "string[4]"),
+                ("blob", "bytes[4]"),
+                ("on", "bool"),
+                ("wide", "uint64"),
+                ("ratio", "float32"),
+                ("precise", "float64"),
+                ("tags", "list<uint8>[2]"),
+                ("memo", "optional<string[4]>"),
+                ("extra", "optional<uint8>"),
+            ],
+            own,
+        );
+        let added = |since: u32, default: Option<&str>| crate::forge::value_type::AddedField {
+            since,
+            default: default.map(str::to_string),
+        };
+        revised.added = [
+            ("gain", added(2, Some("-3"))),
+            ("mode", added(2, Some("fault"))),
+            ("label", added(2, Some("none"))),
+            ("blob", added(3, Some("ab"))),
+            ("on", added(2, Some("true"))),
+            ("wide", added(2, Some("300"))),
+            ("ratio", added(2, Some("0.5"))),
+            ("precise", added(2, Some("1.5"))),
+            ("tags", added(2, None)),
+            ("memo", added(2, None)),
+            ("extra", added(2, Some("7"))),
+        ]
+        .into_iter()
+        .map(|(id, field)| (id.to_string(), field))
+        .collect();
+        let mut scope = TypeScope::default();
+        scope.records.insert("Revised".to_string(), revised);
+        let CborShape::Record(plan) = CborShape::of(&ty("record:Revised"), &scope) else {
+            panic!("a record")
+        };
+        let default_of = |id: &str| {
+            plan.fields
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("the record holds `{id}`"))
+                .default
+                .clone()
+        };
+        // A field of the first revision: a map that lacks it is refused.
+        assert_eq!(default_of("id"), None);
+        // -3, major type 1 of argument 2; `fault`, the number -1 its variant
+        // declares in the record's own enum.
+        assert_eq!(default_of("gain"), Some(vec![0x22]));
+        assert_eq!(default_of("mode"), Some(vec![0x20]));
+        assert_eq!(
+            default_of("label"),
+            Some(vec![0x64, b'n', b'o', b'n', b'e'])
+        );
+        assert_eq!(default_of("blob"), Some(vec![0x42, b'a', b'b']));
+        assert_eq!(default_of("on"), Some(vec![0xf5]));
+        assert_eq!(default_of("wide"), Some(vec![0x19, 0x01, 0x2c]));
+        // A float32 as the single, a float64 as the double, each its reader's
+        // exact width.
+        assert_eq!(
+            default_of("ratio"),
+            Some(vec![0xfa, 0x3f, 0x00, 0x00, 0x00])
+        );
+        assert_eq!(
+            default_of("precise"),
+            Some(vec![0xfb, 0x3f, 0xf8, 0, 0, 0, 0, 0, 0])
+        );
+        // A list a later revision added reads empty.
+        assert_eq!(default_of("tags"), Some(vec![0x80]));
+        // An optional field's missing key is how a writer of any revision
+        // spells absence: it reads absent, a default it declares unread.
+        assert_eq!(default_of("memo"), None);
+        assert_eq!(default_of("extra"), None);
     }
 
     #[test]

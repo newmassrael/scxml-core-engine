@@ -951,6 +951,7 @@ mod tests {
                     ("seq".to_string(), ValueType::Scalar(SceType::Uint64)),
                 ],
                 scope: TypeScope::default(),
+                added: Default::default(),
             },
         );
         scope

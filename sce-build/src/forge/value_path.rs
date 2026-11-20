@@ -589,6 +589,7 @@ pub fn statechart_scope(model: &crate::model::SCXMLModel) -> TypeScope {
                     .map(|field| (field.id.clone(), field.sce_type.clone()))
                     .collect(),
                 scope: TypeScope::default(),
+                added: crate::forge::import_source::added_fields(&schema.fields),
             });
     }
     scope
@@ -644,6 +645,7 @@ mod tests {
                 ("tags".into(), ty("list<string[8]>[4]")),
             ],
             scope: TypeScope::default(),
+            added: Default::default(),
         };
         let mut batch_scope = TypeScope::default();
         batch_scope.records.insert("Item".into(), item);
@@ -657,6 +659,7 @@ mod tests {
                 ("note".into(), ty("string[4]")),
             ],
             scope: batch_scope,
+            added: Default::default(),
         };
         let mut scope = TypeScope::default();
         scope.records.insert("Batch".into(), batch);
@@ -861,6 +864,7 @@ mod tests {
                 ("quantity".into(), ty("uint16")),
             ],
             scope: line_scope,
+            added: Default::default(),
         };
         let mut parts_scope = TypeScope::default();
         parts_scope.records.insert("Line".into(), line);
@@ -869,6 +873,7 @@ mod tests {
             name: "received_parts".into(),
             fields: vec![("lines".into(), ty("list<record:Line>[2]"))],
             scope: parts_scope,
+            added: Default::default(),
         };
         let mut base = TypeScope::default();
         base.records.insert("Parts".into(), parts);

@@ -496,6 +496,7 @@ mod tests {
                     ("day".into(), ty("uint8")),
                 ],
                 scope: TypeScope::default(),
+                added: Default::default(),
             },
         );
         let fields = [

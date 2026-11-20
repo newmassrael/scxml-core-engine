@@ -150,6 +150,7 @@ pub(super) fn shapes() -> Shapes {
             name: "shape_radius".to_string(),
             fields: vec![("radius".to_string(), ty("uint16"))],
             scope: TypeScope::default(),
+            added: Default::default(),
         },
     );
     let cases = variants

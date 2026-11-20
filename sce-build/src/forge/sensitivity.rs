@@ -401,6 +401,7 @@ mod tests {
                 ("result".into(), text(16)),
             ],
             scope: TypeScope::default(),
+            added: Default::default(),
         };
         let mut batch_scope = TypeScope::default();
         batch_scope
@@ -425,6 +426,7 @@ mod tests {
                 ),
             ],
             scope: batch_scope,
+            added: Default::default(),
         };
         let mut scope = TypeScope::default();
         scope.records.insert("SignIn".into(), sign_in);
