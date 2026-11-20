@@ -5932,9 +5932,27 @@ pub fn build_rust_event_payload(
                 ),
                 None => "decode(data)".to_string(),
             };
+            // docs/adr/0109, D9: the completion of a verification or an
+            // opening that names a record carries the bytes the host verified
+            // or opened, and the record codec reads them as the record before
+            // the completion is lifted; bytes that are no value of it make the
+            // completion the operation's failure `not_a_record`.
+            let opened = crate::forge::payload_record::completion_reading(model, event)
+                .map(|reading| {
+                    format!(
+                        "let data: &str = &::sce_rust_runtime::record_cbor::open_completion(\n                    \
+data,\n                    \"{}\",\n                    \"{}\",\n                    \"{}\",\n                    \
+\"{}\",\n                );\n                ",
+                        filters::escape_rust(reading.field.to_string()),
+                        filters::escape_rust(reading.answered.to_string()),
+                        filters::escape_rust(reading.descriptor),
+                        filters::escape_rust(reading.failure),
+                    )
+                })
+                .unwrap_or_default();
             lift_arms.push_str(&format!(
                 "            {machine_name}Event::{variant} => {{\n                \
-let fields = ::sce_rust_runtime::event_payload::PayloadFields::{decode}?;\n                \
+{opened}let fields = ::sce_rust_runtime::event_payload::PayloadFields::{decode}?;\n                \
 self.pending_payload = {enum_name}::{variant}({struct_name} {{\n{lift_fields}                \
 }});\n            }}\n"
             ));
@@ -9637,13 +9655,38 @@ pendingPayloadTag_ = {TAG}::None;\n",
         // schema's defaults where the delivery lacks it
         // (`crate::forge::schema_revision`); a schema with none reads the
         // delivery alone, as it always has.
+        // docs/adr/0109, D9: the completion of a verification or an opening
+        // that names a record carries the bytes the host verified or opened,
+        // and the record codec reads them as the record before the completion
+        // is lifted; bytes that are no value of it make the completion the
+        // operation's failure `not_a_record`.
+        let reading = crate::forge::payload_record::completion_reading(model, event);
+        // The JSON the lift reads: the completion as the record codec rewrote
+        // it, or the delivery itself.
+        let lifted = if reading.is_some() {
+            "sceOpened"
+        } else {
+            "meta.data"
+        };
+        let opened = reading
+            .map(|reading| {
+                format!(
+                    "const ::std::string sceOpened = ::SCE::Common::RecordCbor::openCompletion(\n                \
+meta.data, {}, {}, {},\n                {});\n            ",
+                    filters::cpp_text_expression(reading.field),
+                    filters::cpp_text_expression(reading.answered),
+                    filters::cpp_text_expression(&reading.descriptor),
+                    filters::cpp_text_expression(&reading.failure),
+                )
+            })
+            .unwrap_or_default();
         let decode_args = match defaults {
-            Some(defaults) => format!("meta.data, \"{}\", fields", filters::escape_cpp(defaults)),
-            None => "meta.data, fields".to_string(),
+            Some(defaults) => format!("{lifted}, \"{}\", fields", filters::escape_cpp(defaults)),
+            None => format!("{lifted}, fields"),
         };
         lift_cases.push_str(&format!(
             "        case Event::{event_enum}: {{\n            \
-::SCE::Common::EventPayloadFields fields;\n            \
+{opened}::SCE::Common::EventPayloadFields fields;\n            \
 ::std::string refusal = ::SCE::Common::EventPayloadFields::decode({decode_args});\n            \
 if (!refusal.empty()) {{\n                return refusal;\n            }}\n            \
 {struct_name} payload{{}};\n{field_reads}            \

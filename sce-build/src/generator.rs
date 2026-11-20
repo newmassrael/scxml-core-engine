@@ -4021,6 +4021,10 @@ fn render_cpp(
         event_payload_inject_methods => &payload.inject_methods,
         host_invoker_defs => &host_invoker.defs,
         host_invoker_members => &host_invoker.members,
+        // docs/adr/0109, D9: a record a signing or a seal carries by name is
+        // written, and one a verification or an opening reads back is read, by
+        // the runtime's record codec.
+        reads_payload_records => crate::forge::payload_record::machine_reads_records(model),
         answer_schemas => answer_schemas_context(model, Language::Cpp),
         has_native_actions => native.any,
         has_native_duties => native.has_duty,

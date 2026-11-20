@@ -792,6 +792,31 @@
                                 {% endif %}
                             } else
                             {% endif %}
+                            {% if invoke_info.payload_param and param.name == invoke_info.payload_param %}
+                            {
+                                // docs/adr/0109, D9: `sce:payload` makes this value
+                                // the record it names, which crosses as its
+                                // deterministic CBOR, the byte string's Latin-1
+                                // text. A record the codec cannot write (a list
+                                // below its lower count) is a value its field
+                                // cannot hold, so the invocation starts nothing.
+                                std::string cborRefusal;
+                                const std::optional<std::string> cborText =
+                                    ::SCE::Common::RecordCbor::encodeValue(
+                                        paramValue, {{ invoke_info.payload_cbor | cpp_text_expr }}, cborRefusal);
+                                if (!cborText) {
+                                    engine.raise(Engine::EventWithMetadata::platformError(
+                                        Event::Error_execution, ::SCE::Common::ErrorReason::ParamUnfit,
+                                        "<invoke> <param name='{{ param.name | escape_cpp }}'> cannot be its request field: " + cborRefusal));
+                                    return;
+                                }
+                                hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(*cborText);
+                                {% if not param.envelope_metadata %}
+                                payloadText["{{ param.name | escape_cpp }}"].push_back(*cborText);
+                                payloadTyped["{{ param.name | escape_cpp }}"].push_back(ScriptValue(*cborText));
+                                {% endif %}
+                            }
+                            {% else %}
                             {
                                 const std::string paramText =
                                     ::SCE::ScriptResultUtils::valueText(paramValue);
@@ -801,6 +826,7 @@
                                 payloadTyped["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
                                 {% endif %}
                             }
+                            {% endif %}
                         }
                         {% elif request_checks and param.name in request_checks %}
                         {

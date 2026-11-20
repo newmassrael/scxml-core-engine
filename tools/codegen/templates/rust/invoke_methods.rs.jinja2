@@ -845,7 +845,7 @@
                 let mut request_refused = false;
 {% for param in invoke_info.params %}
 {% if param.name in request_checks %}
-{{ collect_typed_param_into(param, request_checks[param.name], model, 'host_invoke_params', machine_name, 'host_invoke_payload') }}
+{{ collect_typed_param_into(param, request_checks[param.name], model, 'host_invoke_params', machine_name, 'host_invoke_payload', invoke_info.payload_cbor if (invoke_info.payload_param and param.name == invoke_info.payload_param) else none) }}
 {% else %}
 {{ collect_params_into([param], model, 'host_invoke_params', machine_name, '<invoke>', 'invoke', 'host_invoke_payload') }}
 {% endif %}

@@ -136,6 +136,12 @@
 #include "common/EventPayloadLift.h"
 #include "core/TypedHostInvokeRequest.h"
 {% endif %}
+{% if reads_payload_records %}
+{# docs/adr/0109, D9: a record a signing or a seal names by `sce:payload`
+   crosses as its deterministic CBOR, and a verification or an opening reads
+   one back, through the runtime's record codec, header-only. #}
+#include "common/RecordCbor.h"
+{% endif %}
 {% if deployment %}
 {# docs/adr/0109, D12: the values the deployment supplies are read out of the
    configuration's JSON by the lift's reader. #}
