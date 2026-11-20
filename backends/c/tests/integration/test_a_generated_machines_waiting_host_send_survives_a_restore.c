@@ -29,6 +29,7 @@
 // `snprintf` is C99; the build asks for strict C11.
 #define _POSIX_C_SOURCE 200809L
 
+#include "statechart_static_delayed_host_send_saved.h"
 #include "statechart_static_delayed_host_send_sm.h"
 
 #include <stdint.h>

@@ -23,6 +23,7 @@
 // `snprintf` is C99; the build asks for strict C11.
 #define _POSIX_C_SOURCE 200809L
 
+#include "statechart_static_mesh_request_saved.h"
 #include "statechart_static_mesh_request_sm.h"
 
 #include <stdint.h>

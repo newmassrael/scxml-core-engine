@@ -22,15 +22,25 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "../require_started.h"
+#include "static_enum_saved.h"
 #include "static_enum_sm.h"
+#include "static_history_saved.h"
 #include "static_history_sm.h"
+#include "static_list_saved.h"
 #include "static_list_sm.h"
+#include "static_optional_record_saved.h"
 #include "static_optional_record_sm.h"
+#include "static_optional_saved.h"
 #include "static_optional_sm.h"
+#include "static_record_saved.h"
 #include "static_record_sm.h"
+#include "static_schema_pending_saved.h"
 #include "static_schema_pending_sm.h"
+#include "static_schema_revision_saved.h"
 #include "static_schema_revision_sm.h"
+#include "static_send_idlocation_saved.h"
 #include "static_send_idlocation_sm.h"
+#include "static_timers_saved.h"
 #include "static_timers_sm.h"
 
 #include <dirent.h>

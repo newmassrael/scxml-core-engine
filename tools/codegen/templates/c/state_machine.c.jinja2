@@ -16,6 +16,7 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 {%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
+{%- import '_macros/c_section_attribute.jinja2' as section_attribute %}
 {%- from '_macros/c_saved_value.jinja2' import get_scalar %}
 
 {# §scxml-4.7: the label a `<log>` hands the log seam (`_sce_log_write`,
@@ -509,46 +510,7 @@
 {% endfor %}
 {% endif %}
 
-/* SCE Protocol-Synthesis RFC §5.2 — C11 section attribute prefix
-   for every statechart function definition emitted below. When
-   `deploy.yaml`'s `platform.c11_section_attribute.class` is set, the
-   macro places every emitted statechart function in the named section
-   (C11-side wiring; non-C11 backends are rejected at the orchestrator
-   pass). When unset, the macro expands to nothing — author-side
-   override remains possible via a pre-include `#define SCE_SM_FN ...`
-   or compiler `-DSCE_SM_FN=...`. The `#ifndef` guard makes the
-   override stable across includes / unity builds.
-
-   Two toolchain families spell function placement differently and
-   neither accepts the other's syntax, so the choice is made by the
-   compiler that is actually running rather than by a deploy.yaml knob:
-   the section NAME is a property of the deployment, but the SYNTAX is a
-   property of the compiler, and asking a deployer to state their
-   toolchain twice — once to the build system, once here — is a pair
-   that can disagree.
-
-     * IAR (`__IAR_SYSTEMS_ICC__`, defined by every IAR C/C++ compiler):
-       `#pragma location="<name>"`, reached through `_Pragma` so it can
-       live in a macro. The pragma applies to the NEXT declaration,
-       which is why every use site below places the macro at the very
-       start of the declaration rather than between the storage class
-       and the return type.
-     * GCC / Clang / Keil: `__attribute__((section("<name>")))`, which
-       is valid in that same leading position.
-
-   One generated file therefore builds under either family with no
-   regeneration and no configuration change. */
-#ifndef SCE_SM_FN
-{% if model.c11_section_attribute_class %}
-#if defined(__IAR_SYSTEMS_ICC__)
-#define SCE_SM_FN _Pragma("location=\"{{ model.c11_section_attribute_class }}\"")
-#else
-#define SCE_SM_FN __attribute__((section("{{ model.c11_section_attribute_class }}")))
-#endif
-{% else %}
-#define SCE_SM_FN
-{% endif %}
-#endif
+{{ section_attribute.define(model) }}
 
 {# §scxml-4.7: `<log>` and the runtime's diagnostics go through the log
    seams (`sce/log.h`, included above when the machine logs), and the text
@@ -616,8 +578,11 @@ SCE_SM_FN static SCE_C_UNUSED bool scratch_reserve({{ csym_prefix }}{{ model.nam
 {% if model.test_component and model.test_component.module_parameters %}
 /* docs/SCE_TEST_PROFILE.md §11.5, §11.8: a test component reads each of its
    module parameters as a saved value of its type is read back, whether or not
-   a saved state can hold the machine. */
-#include <sce/saved_values.h>
+   a saved state can hold the machine, by the readers its saved header declares
+   (docs/adr/0110, D2). A test component is a hosted unit by design: the
+   profile's runtime it is driven by reads and writes text with the hosted C
+   library. */
+#include "{{ model.name }}_saved.h"
 {% endif %}
 {% for line in static_imports %}
 {# An algorithm the document calls: its generated header, which `sce-codegen
@@ -6718,7 +6683,107 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
 }
 
 {% if static_saved_shape %}
-{% include 'c/saved.c.jinja2' %}
+{% set _t = csym_prefix ~ model.name %}
+{% set saved_restore_args = model.needs_event_scheduler or model.host_processor_types or model.host_invoker_types or has_native_actions %}
+/* docs/adr/0045: name a child session by its parent's id and the id of its start. The text is
+   built whole or not at all, so an id past the room a session id has is refused, never cut. */
+SCE_SM_FN bool {{ _t }}_bind_session_id({{ _t }}_t *sm, const char *parent_id, const char *invoke_id) {
+    char bound[SCE_MAX_SESSION_ID_LEN];
+    if (sm == NULL) {
+        return false;
+    }
+    sce_text_writer_t w = sce_text_writer(bound, sizeof(bound));
+    sce_text_put_text(&w, parent_id);
+    sce_text_put_char(&w, '.');
+    sce_text_put_text(&w, invoke_id);
+    /* The location the id is published at is held in `SCE_MAX_URI_LEN` bytes, so an id whose
+       location does not fit is refused as one that does not fit itself, and the session keeps
+       the id and the location it had. */
+    if (w.cut || sce_scxml_location_len(bound) >= sizeof(sm->scxml_location)) {
+        return false;
+    }
+    memcpy(sm->session_id, bound, sizeof(sm->session_id));
+    (void)sce_scxml_location(sm->scxml_location, sizeof(sm->scxml_location), sm->session_id);
+    return true;
+}
+
+/* ── docs/adr/0110, D2: the machine's doors for its saved unit ──────────
+   Saving and restoring is `{{ model.name }}_saved.c`, a unit a deployment that does not persist
+   leaves out; these hand it the routines above, so a restored machine is built, queued and
+   stood in its configuration by the code a started one is (the header says what each does). */
+SCE_SM_FN uint32_t {{ _t }}_core_state_children({{ _t }}_state_t s) {
+    return k_child_states[s];
+}
+
+SCE_SM_FN uint32_t {{ _t }}_core_state_bit({{ _t }}_state_t s) {
+    return state_bit(s);
+}
+
+SCE_SM_FN bool {{ _t }}_core_state_is_parallel({{ _t }}_state_t s) {
+    return state_is_parallel(s);
+}
+
+SCE_SM_FN bool {{ _t }}_core_state_is_compound({{ _t }}_state_t s) {
+    return state_is_compound(s);
+}
+
+SCE_SM_FN {{ _t }}_state_t {{ _t }}_core_state_parent({{ _t }}_state_t s, bool *has_parent) {
+    return state_get_parent(s, has_parent);
+}
+
+SCE_SM_FN {{ _t }}_state_t {{ _t }}_core_state_in_document_order(uint32_t k) {
+    return k_document_order[k];
+}
+
+SCE_SM_FN bool {{ _t }}_core_arrive(const char *name, size_t len, {{ _t }}_event_t *out, char *arrival) {
+    return {{ _t }}_arrive(name, len, out, arrival);
+}
+
+SCE_SM_FN void {{ _t }}_core_queue_external({{ _t }}_t *sm, const {{ _t }}_event_with_meta_t *evt) {
+    event_queue_push(sm, &sm->external_queue, evt);
+}
+{% if model.needs_event_scheduler %}
+
+SCE_SM_FN uint64_t {{ _t }}_core_now_ms(const {{ _t }}_t *sm) {
+    return sched_now_ms(sm);
+}
+
+SCE_SM_FN {{ _t }}_scheduled_entry_t *{{ _t }}_core_arm_send({{ _t }}_t *sm, uint64_t ready_at_ms, const char *full) {
+    return scheduled_reserve(sm, ready_at_ms, full);
+}
+{% endif %}
+
+SCE_SM_FN sce_start_refusal_t {{ _t }}_core_construct({{ _t }}_t *sm{% if saved_restore_args %},
+                                                      const {{ _t }}_restore_args_t *args{% endif %}{{ map_seed_param }}) {
+{% if saved_restore_args %}
+    {{ _t }}_restore_args_t defaults;
+    if (args == NULL) {
+        memset(&defaults, 0, sizeof(defaults));
+        args = &defaults;
+    }
+{% endif %}
+    /* Constructed with no id given: a tree's saved state then binds the id it was saved with,
+       and a format-1 state, which holds none, keeps the one drawn here. */
+    return {{ _t }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %}{{ map_seed_arg }});
+}
+
+SCE_SM_FN void {{ _t }}_core_stand_in({{ _t }}_t *sm, const {{ _t }}_state_t *configuration, size_t count) {
+    {{ _t }}_stand_in(sm, configuration, count);
+}
+{# Whether a child this machine starts sends to its parent, which `saved.c.jinja2` begins
+   with this door for such a child alone: kept in step with the same `set` in
+   `state_machine.h.jinja2`. The parent's own door is defined for every such child
+   (`c/invoke_methods.jinja2`). #}
+{% set saved_dispatch = namespace(any=false) %}
+{% for inv in model.invokes | scxml %}{% if inv.child_has_send_to_parent %}{% set saved_dispatch.any = true %}{% endif %}{% endfor %}
+{% for inv in model.invokes | hybrid %}{% for candidate in inv.candidates %}{% if candidate.child_has_send_to_parent %}{% set saved_dispatch.any = true %}{% endif %}{% endfor %}{% endfor %}
+{% if saved_dispatch.any %}
+
+SCE_SM_FN void {{ _t }}_core_dispatch_from_child(void *opaque, const char *name, const char *invoke_id, const char *sender,
+                                                const char *event_data) {
+    {{ _t }}_dispatch_external_by_name(opaque, name, invoke_id, sender, event_data);
+}
+{% endif %}
 
 {% endif %}
 

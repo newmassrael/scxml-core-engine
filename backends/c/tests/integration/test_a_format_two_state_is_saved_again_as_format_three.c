@@ -20,7 +20,9 @@
 // `opendir` is POSIX, and the build asks for strict C11.
 #define _POSIX_C_SOURCE 200809L
 
+#include "static_invoke_tree_saved.h"
 #include "static_invoke_tree_sm.h"
+#include "static_timers_saved.h"
 #include "static_timers_sm.h"
 
 #include <dirent.h>

@@ -23,6 +23,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "../require_started.h"
+#include "statechart_static_host_invoke_saved.h"
 #include "statechart_static_host_invoke_sm.h"
 
 #include <stdint.h>

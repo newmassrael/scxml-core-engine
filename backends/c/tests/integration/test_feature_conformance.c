@@ -25,7 +25,9 @@
 #include <string.h>
 
 #include "../require_started.h"
+#include "alone/session_saved.h"
 #include "alone/session_sm.h"
+#include "lifted/session_saved.h"
 #include "lifted/session_sm.h"
 
 /* Every event name either machine knows, and one neither does. */
