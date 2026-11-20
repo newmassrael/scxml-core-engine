@@ -299,9 +299,9 @@ impl<T: Transport> ReferenceHost<T> {
     /// Answers each stream it signed, with the sequence.
     pub fn audit_stop(&mut self, now_ms: u64) -> Result<Vec<(String, u64)>, AuditError> {
         let mut writer = sce_rust_crypto::audit::Writer {
-            store: self.audit.as_ref(),
+            store: &*self.audit,
             keyring: &self.keyring,
-            random: self.random.as_mut(),
+            random: &mut *self.random,
             now_ms,
         };
         let mut signed = Vec::new();
