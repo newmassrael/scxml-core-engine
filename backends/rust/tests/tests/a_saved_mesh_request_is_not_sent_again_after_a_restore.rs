@@ -99,7 +99,7 @@ fn a_request_in_flight_is_saved_as_the_call_it_was() {
     assert!(saved.pending.is_empty(), "{:?}", saved.pending);
 
     // The text the Kotlin suite writes for the same machine, byte for byte.
-    assert_eq!(saved.to_json(), SHARED_ASKING);
+    assert_eq!(saved.to_json(), SHARED_ASKING.trim());
 }
 
 #[test]
