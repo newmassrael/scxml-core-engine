@@ -257,8 +257,13 @@ fn a_machine_with_no_data_model_states_nothing() {
     assert!(!rest.is_empty(), "the plan names no file");
 }
 
+/// A machine that schedules reads the link-time clock, and says through the
+/// log seams when a host advances a clock it does not own (docs/adr/0110, D2:
+/// the runtime's diagnostics go through the seams), so it states `clock` and
+/// `log`. It has no data model, so it writes no real as text and states no
+/// `real` (D1), and nothing else.
 #[test]
-fn a_machine_that_schedules_states_the_clock_and_nothing_else() {
+fn a_machine_that_schedules_states_the_clock_and_the_log_and_nothing_else() {
     let (dir, root) = authored();
     let out = dir.path().join("out");
     let lines = succeeded(
@@ -274,7 +279,7 @@ fn a_machine_that_schedules_states_the_clock_and_nothing_else() {
     let (stated, _) = split(&lines);
     assert_eq!(
         stated_for(&stated, ""),
-        vec!["clock"],
+        vec!["clock", "log"],
         "a machine with no data model that schedules an event states {stated:?}"
     );
 }
@@ -424,7 +429,12 @@ fn generate_manifest(document: &str, language: &str) -> serde_json::Value {
 /// backend that states nothing publishes no field.
 #[test]
 fn the_manifest_publishes_what_the_plan_states() {
-    for (document, expected) in [("timed.scxml", vec!["clock"]), ("plain.scxml", Vec::new())] {
+    // The timed machine states the clock and the log its clock diagnostic is
+    // written through (docs/adr/0110, D2), the plain one nothing.
+    for (document, expected) in [
+        ("timed.scxml", vec!["clock", "log"]),
+        ("plain.scxml", Vec::new()),
+    ] {
         let manifest = generate_manifest(document, "c11");
         assert_eq!(
             manifest["runtime_requires"],
