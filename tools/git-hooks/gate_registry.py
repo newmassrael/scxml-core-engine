@@ -1451,11 +1451,13 @@ GATES: dict[str, dict] = {
         "cost_s": 146,
         "summary": "committed-tree drift + sourcemap, serial",
         "cache": True,
-        # Isolated: two cargo test targets into the linked `target/`, which
-        # regenerate into temporary directories and compare with the committed
-        # trees; the trees they list are whole directories of the trigger. No
-        # git beyond the root.
-        "isolated": True,
+        "isolated": False,
+        "not_isolated_reason": "cargo loads the whole workspace to build its "
+                               "two test targets, every member's Cargo.toml "
+                               "among it, and its trigger names the root "
+                               "manifest and Cargo.lock but not the members', "
+                               "so a copy of it would lack what cargo reads "
+                               "before it compiles anything",
         "commits": [],
         "peak_gb": 5,
     },
@@ -1900,10 +1902,14 @@ GATES: dict[str, dict] = {
         "cost_s": 60,
         "summary": "sce-build lib suite, compiled-in inputs",
         "cache": True,
-        # Isolated: one cargo test of the library into the linked `target/`. Its
-        # trigger is the filter that reaches every compiled-in input, which is
-        # the set the suite reads. No git beyond the root.
-        "isolated": True,
+        "isolated": False,
+        "not_isolated_reason": "cargo loads the whole workspace to build the "
+                               "library's tests, every member's Cargo.toml "
+                               "among it, and its trigger misses the members "
+                               "outside `backends/` and `sce-build/` "
+                               "(sce-build-wasm, sce-revision, sce-specs, "
+                               "tests/server), so a copy of it would lack what "
+                               "cargo reads before it compiles anything",
         "commits": [],
         "peak_gb": 5,
     },
@@ -2332,11 +2338,12 @@ GATES: dict[str, dict] = {
         "kept_only_from_a_landing": "outside a landing it replays in whatever "
                                     "Chrome is on PATH where the pinned Chrome "
                                     "for Testing is absent",
-        # Isolated: cargo builds for the target into the linked `target/`,
-        # wasm-bindgen writes the glue into temporary directories, and the
-        # scenarios it replays are in its trigger; the tools it reads are bx's
-        # under the home. No git beyond the root.
-        "isolated": True,
+        "isolated": False,
+        "not_isolated_reason": "cargo loads the whole workspace to build the "
+                               "module, every member's Cargo.toml among it, and "
+                               "its trigger names the root manifest but not the "
+                               "members', so a copy of it would lack what cargo "
+                               "reads before it compiles anything",
         "commits": [],
         "peak_gb": 5,
     },
