@@ -21400,6 +21400,8 @@ fn c_log_seam(label: &str, value: &str, ty: InferredType) -> String {
         );
     }
     match ty {
+        // A quantity is logged as its raw number, by the type of its base.
+        InferredType::Quantity { .. } => c_log_seam(label, value, ty.strip_quantity()),
         InferredType::Float { .. } | InferredType::UntypedFloat => {
             format!("_sce_log_real(SCE_LOG_INFO, {label_args}, (double)({value}));")
         }
