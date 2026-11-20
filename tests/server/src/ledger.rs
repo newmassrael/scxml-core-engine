@@ -204,6 +204,7 @@ pub fn machine(binding: Binding, idle_ms: u64) -> Machine {
             idle_ms,
             max_live: 100_000,
             max_inbox: 64,
+            commit_delay_us: 0,
         }),
     }
 }

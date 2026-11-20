@@ -2507,6 +2507,7 @@ pub const MAX_SESSION_KEY_BYTES: u32 = 256;
 ///   idle_ms: 60000
 ///   max_live: 100000         # optional: sessions held in memory at most
 ///   max_inbox: 64            # optional: inputs waiting in one session's inbox
+///   commit_delay_us: 0       # optional: how long a commit waits for more writes
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2528,7 +2529,18 @@ pub struct SessionsConfig {
     /// an envelope past it is shed. At least 1.
     #[serde(default = "default_sessions_max_inbox")]
     pub max_inbox: u32,
+    /// How long, in microseconds, the pool's committer waits before it takes what was handed to
+    /// it into one commit, so that writes arriving meanwhile join it (docs/adr/0109, D15;
+    /// PostgreSQL's `commit_delay`). `0`, the default, waits for nothing: a commit takes what
+    /// arrived while the one before it was written. At most [`MAX_COMMIT_DELAY_US`].
+    #[serde(default)]
+    pub commit_delay_us: u64,
 }
+
+/// The longest `sessions.commit_delay_us` may be (docs/adr/0109, D15): a tenth of a second,
+/// PostgreSQL's own bound on `commit_delay`. A wait longer than that holds every reply of the
+/// pool for longer than a commit takes on any medium the store runs on.
+pub const MAX_COMMIT_DELAY_US: u64 = 100_000;
 
 /// `sessions.max_live` when the section sets none (docs/adr/0109, D1).
 pub const DEFAULT_SESSIONS_MAX_LIVE: u32 = 100_000;
@@ -2599,6 +2611,13 @@ impl SessionsConfig {
             return Some(
                 "`max_inbox` is 0: a session whose inbox holds nothing takes no input".to_string(),
             );
+        }
+        if self.commit_delay_us > MAX_COMMIT_DELAY_US {
+            return Some(format!(
+                "`commit_delay_us` ({}) exceeds {MAX_COMMIT_DELAY_US}: a commit that waits longer \
+                 holds every reply of the pool past any medium's own commit",
+                self.commit_delay_us
+            ));
         }
         None
     }
@@ -9155,8 +9174,10 @@ topology:
             (DEFAULT_SESSIONS_MAX_LIVE, DEFAULT_SESSIONS_MAX_INBOX),
             (100_000, 64)
         );
+        // docs/adr/0109, D15: a commit waits for nothing unless the section says so.
+        assert_eq!(sessions.commit_delay_us, 0);
         let cfg = parse_deploy_str(&keyed(
-            "{ key_from: client, idle_ms: 1, max_live: 3, max_inbox: 2 }",
+            "{ key_from: client, idle_ms: 1, max_live: 3, max_inbox: 2, commit_delay_us: 100000 }",
             "",
             "",
         ))
@@ -9166,6 +9187,7 @@ topology:
             .clone()
             .expect("declared");
         assert_eq!((sessions.max_live, sessions.max_inbox), (3, 2));
+        assert_eq!(sessions.commit_delay_us, MAX_COMMIT_DELAY_US);
 
         let cfg =
             parse_deploy_str(&keyed("{ key_from: client, idle_ms: 0 }", "", "")).expect("parse");
@@ -9225,6 +9247,12 @@ topology:
                 "",
                 "",
                 "`max_inbox` is 0",
+            ),
+            (
+                "{ key_from: client, idle_ms: 1, commit_delay_us: 100001 }",
+                "",
+                "",
+                "`commit_delay_us` (100001) exceeds 100000",
             ),
             (
                 client,

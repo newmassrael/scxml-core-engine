@@ -1207,6 +1207,8 @@ fn a_keyed_pool_reaches_the_rust_peer_table_and_no_other_core() {
         // docs/adr/0109, D1: the bounds the section leaves out, at their defaults.
         "max_live: 100000,",
         "max_inbox: 64,",
+        // docs/adr/0109, D15: a commit waits for nothing unless the section says so.
+        "commit_delay_us: 0,",
     ] {
         assert!(peers.contains(expected), "missing `{expected}`:\n{peers}");
     }
