@@ -355,12 +355,16 @@ It prints, for each count of clients, the inputs, the transactions they cost, th
 inputs taken in a second. Its scratch store is under the system's temporary directory; point `TMPDIR` at the disk the
 store will live on. Record the result here, with the machine, the file system and the date:
 
+Measured 2026-11-20 on a build machine, not a server's: 32 cores (Intel Core i9-14900KF), the store on btrfs over a
+SATA SSD (Samsung 870 EVO), with other builds running on the machine. The shape is what carries over: the commits
+stay near what the disk syncs in the run's time while each commit holds more inputs as clients are added.
+
 | Clients | Inputs | Transactions | Inputs per transaction | Inputs per second |
 |---|---|---|---|---|
-| 1 | not yet measured | | | |
-| 4 | not yet measured | | | |
-| 16 | not yet measured | | | |
-| 64 | not yet measured | | | |
+| 1 | 200 | 200 | 1.00 | 130 |
+| 4 | 800 | 402 | 1.99 | 335 |
+| 16 | 3200 | 411 | 7.79 | 992 |
+| 64 | 12800 | 401 | 31.92 | 2539 |
 
 ## 4. What a restart does
 
