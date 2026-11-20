@@ -50,15 +50,16 @@ fn value_of(plaintext: &[u8]) -> Result<(String, Vec<u8>), SealError> {
     })
 }
 
-/// An identity as the wrapped store keeps it: its session and its invoke each as its entry.
-struct Indexed {
+/// An identity as the wrapped store keeps it: its session and its invoke each as its entry. The
+/// audit log keeps the identities of its appends the same way (module `audit`).
+pub(super) struct Indexed {
     session: String,
     invoke: String,
     start: u64,
 }
 
 impl Indexed {
-    fn identity(&self) -> Identity<'_> {
+    pub(super) fn identity(&self) -> Identity<'_> {
         Identity {
             session: &self.session,
             invoke: &self.invoke,
@@ -69,7 +70,7 @@ impl Indexed {
 
 impl<S> Sealed<S> {
     /// The identity the wrapped store keeps `identity`'s first result under.
-    fn indexed_identity(&self, identity: &Identity<'_>) -> Indexed {
+    pub(super) fn indexed_identity(&self, identity: &Identity<'_>) -> Indexed {
         Indexed {
             session: self.digest_of(identity.session),
             invoke: self.digest_of(identity.invoke),

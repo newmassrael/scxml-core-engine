@@ -1,0 +1,39 @@
+{
+  "note": "The audit log's bytes (docs/SCE_AUDIT_LOG.md; docs/adr/0109, D14), computed with Python's hashlib and hmac and the cryptography package's Ed25519 apart from both hosts. Each row is an entry as the host received it, its redaction under the marks with the pseudonymisation key, the CBOR item it is chained by and the chain; the checkpoint signs the third row's chain with the audit key of the seed. The Rust host (backends/rust/crypto/tests/audit.rs) and the C++ host (tests/integration/AStandardHostAuditTest.cpp) are held to every byte.",
+  "seed": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+  "public_key": "2543b92ff1095511476adc8369db6ddc933665a11978dda1404ee1066ca9559d",
+  "pseudonym_key": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+  "stream": "sign-ins",
+  "marks": "/account=personal;/password=secret",
+  "rows": [
+    {
+      "sequence": 1,
+      "at_ms": 1767225600000,
+      "received": "{\"result\":\"accepted\",\"password\":\"hunter2\",\"account\":\"alice@example.org\",\"attempt\":1}",
+      "entry": "{\"account\":\"sce-personal:4da32f6e1bdd3ce977a6d49f84aab95d799270b8233a873ae65b13c112571684\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"accepted\"}",
+      "item_hex": "84687369676e2d696e73011b0000019b76daa80058937b226163636f756e74223a227363652d706572736f6e616c3a34646133326636653162646433636539373761366434396638346161623935643739393237306238323333613837336165363562313363313132353731363834222c22617474656d7074223a312c2270617373776f7264223a227363652d736563726574222c22726573756c74223a226163636570746564227d",
+      "chain_hex": "168db837c871b01c0f8dff3bb057e2fb794332a585b41ac7412a31d019b6496d"
+    },
+    {
+      "sequence": 2,
+      "at_ms": 1767225601000,
+      "received": "{\"result\":\"refused\",\"password\":\"letmein\",\"account\":\"bob@example.org\",\"attempt\":1}",
+      "entry": "{\"account\":\"sce-personal:7c6bfba3407b0b9e957a5f868583418981d34d78f453d01d6e928edc50fb0935\",\"attempt\":1,\"password\":\"sce-secret\",\"result\":\"refused\"}",
+      "item_hex": "84687369676e2d696e73021b0000019b76daabe858927b226163636f756e74223a227363652d706572736f6e616c3a37633662666261333430376230623965393537613566383638353833343138393831643334643738663435336430316436653932386564633530666230393335222c22617474656d7074223a312c2270617373776f7264223a227363652d736563726574222c22726573756c74223a2272656675736564227d",
+      "chain_hex": "f6e0bbab5d1d9411ed2796253b44b1e312c25982c385626850a91234368f4bbb"
+    },
+    {
+      "sequence": 3,
+      "at_ms": 1767225602000,
+      "received": "{\"result\":\"accepted\",\"password\":\"hunter2\",\"account\":\"alice@example.org\",\"attempt\":2}",
+      "entry": "{\"account\":\"sce-personal:4da32f6e1bdd3ce977a6d49f84aab95d799270b8233a873ae65b13c112571684\",\"attempt\":2,\"password\":\"sce-secret\",\"result\":\"accepted\"}",
+      "item_hex": "84687369676e2d696e73031b0000019b76daafd058937b226163636f756e74223a227363652d706572736f6e616c3a34646133326636653162646433636539373761366434396638346161623935643739393237306238323333613837336165363562313363313132353731363834222c22617474656d7074223a322c2270617373776f7264223a227363652d736563726574222c22726573756c74223a226163636570746564227d",
+      "chain_hex": "5999b43a9b15330e59ddb4fbdc2f828b40718018edb4f526b3f12806c453c781"
+    }
+  ],
+  "checkpoint": {
+    "sequence": 3,
+    "payload_hex": "846b7363652d61756469742d31687369676e2d696e730358205999b43a9b15330e59ddb4fbdc2f828b40718018edb4f526b3f12806c453c781",
+    "cose_sign1_hex": "d2844fa20127044a61756469743a7369676ea05839846b7363652d61756469742d31687369676e2d696e730358205999b43a9b15330e59ddb4fbdc2f828b40718018edb4f526b3f12806c453c7815840b395dad489f0cebacc7801e5757e113623f71296ce0da7e55c476cf96183836866dce854a137fc91e7e77f1942a162816434b03ca427700923cdb268d1e66404"
+  }
+}

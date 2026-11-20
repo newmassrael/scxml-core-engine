@@ -8,8 +8,10 @@
 //! since a saved state holds a document's values in the clear. [`Sealed`] does that for each store
 //! contract a server keeps, over any implementation of it: the sessions of ADR 0107
 //! (`SessionStore`) with the outboxes of D10 their writes append to, the credentials of D3
-//! (`PinStore`, `TokenStore`, `CredentialStore`), the keys of D7 (`KeyStore`) and the values of
-//! the key-value feature of D13 (`KvStore`), with the first results of its put-ifs.
+//! (`PinStore`, `TokenStore`, `CredentialStore`), the keys of D7 (`KeyStore`), the values of the
+//! key-value feature of D13 (`KvStore`), with the first results of its put-ifs, and the audit log
+//! of D14 (`AuditStore`), whose entries and checkpoint signatures are sealed and whose chain a
+//! reader verifies without the sealing keys.
 //!
 //! An outbox's envelopes are not re-sealed by a pass: each lives until its client acknowledges
 //! it or the binding's `retain_ms` expires it, so once that long has passed after a rotation, a
@@ -62,12 +64,14 @@ use crate::keyring::{algorithm_of, KeyError, KeyState, KeyUse, Keyring, Purpose,
 use crate::mac::{hmac_sha256, TAG_BYTES as DIGEST_BYTES};
 use crate::random::{RandomSource, SystemRandom};
 
+mod audit;
 mod credentials;
 mod keys;
 mod kv;
 mod outbox;
 mod sessions;
 
+pub use audit::{STORE_AUDIT_CHECKPOINTS, STORE_AUDIT_ROWS};
 pub use kv::STORE_KV_VALUES;
 pub use outbox::STORE_OUTBOX;
 

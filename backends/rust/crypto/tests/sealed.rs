@@ -19,6 +19,7 @@ use sce_rust_crypto::sealed::{
     SealingKeys, INDEX_KEY_ID, RECORD_MAGIC, SEALING_PREFIX,
 };
 use sce_rust_crypto::wrap::KeyEncryptionKey;
+use sce_rust_session_store::audit_conformance::{self, AuditHarness};
 use sce_rust_session_store::conformance::{self, Harness};
 use sce_rust_session_store::credential_conformance::{self, CredentialHarness};
 use sce_rust_session_store::key_conformance::{self, KeyHarness};
@@ -335,6 +336,24 @@ impl KvHarness for SealedOnSqlite {
     }
 }
 
+/// The audit log is kept beside the sessions, so that a removal of a session deletes its
+/// identities: one store serves both kits.
+impl AuditHarness for SealedInMemory {
+    type Store = Sealed<MemoryStore>;
+
+    fn handle(&self) -> Sealed<MemoryStore> {
+        Sealed::new(self.sessions.clone(), first_keys())
+    }
+}
+
+impl AuditHarness for SealedOnSqlite {
+    type Store = Sealed<SqliteStore>;
+
+    fn handle(&self) -> Sealed<SqliteStore> {
+        self.sealed()
+    }
+}
+
 /// A test per function of a kit, each on a store of its own the harness `$made` makes.
 macro_rules! kit {
     ($kit:ident, $made:ident, [$($case:ident),* $(,)?]) => {
@@ -517,6 +536,101 @@ mod values_on_sqlite {
             a_removal_of_a_session_deletes_its_identities_first_results,
         ]
     );
+}
+
+mod audit_in_memory {
+    use super::audit_conformance;
+    kit!(
+        audit_conformance,
+        in_memory,
+        [
+            rows_are_appended_one_past_the_head,
+            a_checkpoint_is_kept_with_its_row_or_on_its_own,
+            an_append_repeated_under_its_identity_answers_its_first_sequence,
+            a_segment_is_deleted_whole_up_to_a_checkpoint,
+            streams_are_kept_apart,
+            handles_share_the_log,
+            a_removal_of_a_session_deletes_its_identities_and_no_row,
+        ]
+    );
+}
+
+mod audit_on_sqlite {
+    use super::audit_conformance;
+    kit!(
+        audit_conformance,
+        on_sqlite,
+        [
+            rows_are_appended_one_past_the_head,
+            a_checkpoint_is_kept_with_its_row_or_on_its_own,
+            an_append_repeated_under_its_identity_answers_its_first_sequence,
+            a_segment_is_deleted_whole_up_to_a_checkpoint,
+            streams_are_kept_apart,
+            handles_share_the_log,
+            a_removal_of_a_session_deletes_its_identities_and_no_row,
+        ]
+    );
+}
+
+/// ADR 0109, D14 under D8: a sealed audit log is verified through the sealing store as it is
+/// without one, and its file holds neither an entry nor a stream's name in the clear.
+mod audit_sealed {
+    use sce_rust_crypto::audit::{verify, Verdict, Writer};
+    use sce_rust_crypto::keyring::{Keyring, AUDIT_SIGNING_KEY_ID};
+    use sce_rust_crypto::random::ScriptedRandom;
+    use sce_rust_session_store::AuditStore;
+
+    use super::on_sqlite;
+
+    #[test]
+    fn a_sealed_stream_is_verified_and_holds_nothing_in_the_clear() {
+        let harness = on_sqlite("audit-medium");
+        let store = harness.sealed();
+        let keyring = Keyring::in_memory();
+        let mut random = ScriptedRandom::new();
+        for (n, entry) in ["{\"who\":\"alice\"}", "{\"who\":\"bob\"}"]
+            .iter()
+            .enumerate()
+        {
+            let mut writer = Writer {
+                store: &store,
+                keyring: &keyring,
+                random: &mut random,
+                now_ms: 1_000 + n as u64,
+            };
+            writer
+                .append("sign-ins-of-a-tenant", entry.as_bytes(), 2, None)
+                .expect("an append");
+        }
+        let public_key = keyring
+            .public_key(AUDIT_SIGNING_KEY_ID)
+            .expect("the audit key");
+        assert_eq!(
+            verify(&store, "sign-ins-of-a-tenant", &public_key).expect("a reading"),
+            Verdict::Verified {
+                from: 1,
+                through: 2,
+                checkpoints: 1
+            }
+        );
+        assert_eq!(
+            store
+                .audit_rows("sign-ins-of-a-tenant", 0, 10)
+                .expect("the rows")[1]
+                .entry,
+            b"{\"who\":\"bob\"}".to_vec(),
+            "an entry opens to what was appended"
+        );
+        drop(store);
+        let medium = harness.0.every_byte();
+        for clear in [&b"alice"[..], b"bob", b"sign-ins-of-a-tenant"] {
+            assert!(
+                !medium.windows(clear.len()).any(|window| window == clear),
+                "{} is in the clear on the medium",
+                String::from_utf8_lossy(clear)
+            );
+        }
+    }
 }
 
 /// ADR 0109, D13 under D8: the file of a sealed store holds none of the keys and values a host

@@ -56,6 +56,12 @@ const NAMING_CONTEXT: &[u8] = b"sce-key-naming";
 pub const ISSUING_KEY_ID: &str = "issuing:credentials";
 /// What the issuing key is labelled, for the operator who lists the store's keys.
 const ISSUING_LABEL: &str = "the key bearer tokens are issued under";
+/// The id of the key a host signs its audit log's checkpoints under (ADR 0109, D7 and D14): a
+/// signing key of the ring no statechart names.
+pub const AUDIT_SIGNING_KEY_ID: &str = "audit:sign";
+/// The id of the key a host writes a personal value of an audit entry as the keyed digest of
+/// (ADR 0109, D14): a MAC key of the ring no statechart names.
+pub const AUDIT_PSEUDONYM_KEY_ID: &str = "audit:pseudonym";
 
 /// Whether `id` names a key of a key ring rather than one an embedding configured: a configured
 /// key never has such an id.
@@ -370,6 +376,54 @@ impl Keyring {
         )?;
         let key = self.material(ISSUING_KEY_ID, Purpose::Tag)?;
         Ok(hmac_sha256(&key[..], message))
+    }
+
+    /// The Ed25519 seed of the audit key ([`AUDIT_SIGNING_KEY_ID`]), which a host signs its audit
+    /// log's checkpoints under (`crate::audit`). It is drawn from `random` at the store's first
+    /// checkpoint, made at `now_ms`, and kept as a signing key of the ring: the same in every
+    /// process that shares the store, its public key exported as any signing key's is (a reader
+    /// of the log verifies under it). Retired by the operator, it signs nothing more
+    /// ([`KeyError::Retired`]), and still verifies.
+    pub fn audit_seed(
+        &self,
+        now_ms: u64,
+        random: &mut dyn RandomSource,
+    ) -> Result<Zeroizing<[u8; KEY_BYTES]>, KeyError> {
+        self.keep_drawn(
+            &Reserved {
+                id: AUDIT_SIGNING_KEY_ID,
+                key_use: KeyUse::Sign,
+                algorithm: algorithm_of(KeyUse::Sign),
+                label: "the key an audit log's checkpoints are signed under",
+            },
+            now_ms,
+            random,
+        )?;
+        self.key(AUDIT_SIGNING_KEY_ID, Purpose::Sign)
+    }
+
+    /// The HMAC-SHA-256 of `value` under the audit log's pseudonymisation key
+    /// ([`AUDIT_PSEUDONYM_KEY_ID`]): what a personal value of an audit entry is written as, so
+    /// that equal values correlate and none is in the clear. The key is drawn as the issuing key
+    /// is, at the store's first pseudonym, and is the same in every process that shares the store.
+    pub fn audit_pseudonym(
+        &self,
+        value: &[u8],
+        now_ms: u64,
+        random: &mut dyn RandomSource,
+    ) -> Result<[u8; TAG_BYTES], KeyError> {
+        self.keep_drawn(
+            &Reserved {
+                id: AUDIT_PSEUDONYM_KEY_ID,
+                key_use: KeyUse::Mac,
+                algorithm: algorithm_of(KeyUse::Mac),
+                label: "the key an audit log's personal values are digested under",
+            },
+            now_ms,
+            random,
+        )?;
+        let key = self.material(AUDIT_PSEUDONYM_KEY_ID, Purpose::Tag)?;
+        Ok(hmac_sha256(&key[..], value))
     }
 
     /// Keep the key `reserved` names, 32 bytes drawn from `random`, made at `now_ms` and wrapped
