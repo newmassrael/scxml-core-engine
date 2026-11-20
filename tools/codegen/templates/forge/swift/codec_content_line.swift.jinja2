@@ -276,11 +276,13 @@ public struct {{ struct_name }}: Equatable, Sendable {
                     }
                 }
 {% endif %}
-                {{ read_value("v", e, "                ") }}
 {% if e.is_records %}
 {% for p in e.params if p.required %}
                 guard let {{ p.name }}Final = {{ p.name }}Line else { throw CodecError.lineRequiredMissing }
 {% endfor %}
+{% endif %}
+                {{ read_value("v", e, "                ") }}
+{% if e.is_records %}
                 {{ e.name }}Values.append({{ e.record_type }}({% for p in e.params %}{{ p.name }}: {{ p.name ~ "Final" if p.required else p.name ~ "Line" }}, {% endfor %}{{ e.value_member }}: v))
 {% elif e.is_list %}
                 {{ e.name }}Values.append(v)
