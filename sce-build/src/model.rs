@@ -4497,6 +4497,14 @@ pub struct SCXMLModel {
     /// without sibling files and not serialized.
     #[serde(skip)]
     pub imported_type_scope: crate::forge::value_type::TypeScope,
+    /// The marks (`sce:sensitivity`, docs/adr/0109, D14) of every record
+    /// [`Self::imported_type_scope`] reaches, by the record's identity: what a
+    /// `<log>` of a value read from a marked field writes the marker of, and
+    /// what refuses a statechart that cannot follow a mark
+    /// ([`crate::forge::sensitivity`]). Read with the scope, in the same walk;
+    /// empty without sibling files and not serialized.
+    #[serde(skip)]
+    pub imported_marks: crate::forge::sensitivity::Marks,
     /// The table of the answer schemas this machine's invokes of
     /// `sce-host-model-generate` name with `sce:answer` (docs/adr/0087, section
     /// 4.1, item 2): each schema's id, its JSON Schema and its GBNF grammar,

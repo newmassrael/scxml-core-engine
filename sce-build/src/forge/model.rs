@@ -1300,7 +1300,9 @@ pub struct ForgeField<T = SceType> {
     /// (docs/adr/0109, D14): never written, or written as its keyed digest.
     /// `None` for a field written as it is, and for a field of any other kind.
     /// The build writes a schema's marks into the request of an audit append
-    /// (`crate::forge::audit_entry`); not part of the IR this export writes.
+    /// (`crate::forge::audit_entry`), and a `<log>` of a value read from a
+    /// marked field writes the mark's marker (`crate::forge::sensitivity`);
+    /// not part of the IR this export writes.
     #[serde(skip)]
     pub sensitivity: Option<Sensitivity>,
 }
@@ -1331,6 +1333,27 @@ impl Sensitivity {
     /// The mark `name` names, if it names one.
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|mark| mark.name() == name)
+    }
+
+    /// The stronger of two marks: `secret` over `personal`, since a value
+    /// computed from both is held to the rule that writes less of it.
+    pub const fn stronger(self, other: Sensitivity) -> Sensitivity {
+        match (self, other) {
+            (Sensitivity::Personal, Sensitivity::Personal) => Sensitivity::Personal,
+            _ => Sensitivity::Secret,
+        }
+    }
+
+    /// The text a `<log>` writes in place of a value of a field of this mark,
+    /// or of a value computed from one (docs/adr/0109, Open question 9):
+    /// `sce-secret`, the marker an audit entry holds in place of a secret, and
+    /// `sce-personal`, the prefix of a personal value's keyed digest without
+    /// the digest, since a diagnostic log holds no pseudonymisation key.
+    pub const fn log_marker(self) -> &'static str {
+        match self {
+            Sensitivity::Secret => "sce-secret",
+            Sensitivity::Personal => "sce-personal",
+        }
     }
 }
 

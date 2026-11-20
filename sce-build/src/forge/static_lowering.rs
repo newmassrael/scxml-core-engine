@@ -8822,6 +8822,7 @@ pub fn lower(
         composed_defs: Default::default(),
         received_imports: Default::default(),
         logs_a_value: std::cell::Cell::new(false),
+        marks: crate::forge::sensitivity::Marks::of_statechart(model),
         text_templates,
         document: model.name.clone(),
         test_component: model.test_component.is_some(),
@@ -12015,6 +12016,11 @@ struct Rewrites<'m> {
     /// ([`StaticLowering::logs_a_value`]). Set by the walk where it meets
     /// one, read once it is done.
     logs_a_value: std::cell::Cell<bool>,
+    /// The marks (`sce:sensitivity`) of every record the document's types
+    /// reach: a `<log>` of a value read from a marked field writes the mark's
+    /// marker in its place (docs/adr/0109, Open question 9;
+    /// [`crate::forge::sensitivity`]).
+    marks: crate::forge::sensitivity::Marks,
     /// The text templates the machine renders, by the alias it imports each
     /// under, each with its unit's `render` (docs/adr/0087, section 3.1).
     text_templates: BTreeMap<String, RenderUnit>,
@@ -24397,13 +24403,18 @@ fn lower_action(
                     .ok_or_else(unspelled)?;
                 action.native_fails = false;
             } else {
-                reads_payload = reads(&action.expr);
-                let value = lower(&action.expr, InferredType::Unknown)?;
+                // A value read from a marked field is written as the mark's
+                // marker, as the engine's `<log>` writes it (below).
+                let marker =
+                    crate::forge::sensitivity::logged_marker(&action.expr, ctx, &rewrites.marks);
+                let logged = marker.as_deref().unwrap_or(action.expr.as_str());
+                reads_payload = reads(logged);
+                let value = lower(logged, InferredType::Unknown)?;
                 rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
                 // The value's own type, which a target that formats by it
                 // reads, as the engine's `<log>` reads it (below).
                 let ty = crate::forge::expr::judge_into(
-                    &rewrites.as_lowered(&action.expr),
+                    &rewrites.as_lowered(logged),
                     ctx,
                     crate::forge::expr::Expected::Hint(InferredType::Unknown),
                 )
@@ -24429,16 +24440,24 @@ fn lower_action(
             }
         }
         "log" if !action.expr.trim().is_empty() => {
-            reads_payload = reads(&action.expr);
+            // A value read from a field its schema marks (`sce:sensitivity`),
+            // or computed from one, is written as the mark's marker: the
+            // expression the walk lowers is the marker's literal, so every lane
+            // and the Interpreter's lowering write the same text and no runtime
+            // differs (docs/adr/0109, Open question 9).
+            let marker =
+                crate::forge::sensitivity::logged_marker(&action.expr, ctx, &rewrites.marks);
+            let logged = marker.as_deref().unwrap_or(action.expr.as_str());
+            reads_payload = reads(logged);
             // Nothing is declared where a logged value lands, so any value
             // stands there.
-            let value = lower(&action.expr, InferredType::Unknown)?;
+            let value = lower(logged, InferredType::Unknown)?;
             rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let label = action.label.clone();
             // The value's own type, which a target that formats by it reads, as
             // the value is lowered.
             let ty = crate::forge::expr::judge_into(
-                &rewrites.as_lowered(&action.expr),
+                &rewrites.as_lowered(logged),
                 ctx,
                 crate::forge::expr::Expected::Hint(InferredType::Unknown),
             )

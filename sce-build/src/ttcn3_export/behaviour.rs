@@ -833,6 +833,25 @@ impl<'r> Writer<'r> {
         Ok((typed, printed.text))
     }
 
+    /// `text` as a `<log>` writes it: the marker of the strongest mark it reads
+    /// in its place where it reads a field a schema marks (`sce:sensitivity`),
+    /// as every lane of the machine writes it (docs/adr/0109, Open question 9;
+    /// [`crate::forge::sensitivity`]), and the expression itself otherwise.
+    fn logged(
+        &self,
+        text: &str,
+        message: Option<&Message>,
+        site: &Site,
+    ) -> Result<String, Located<ForgeError>> {
+        let paths = self.scope.paths(message.and_then(|m| m.schema.as_deref()));
+        let ctx = self.scope.ctx(&paths, &self.enums);
+        let marks = crate::forge::sensitivity::Marks::of_statechart(&self.component.model);
+        let marker = crate::forge::sensitivity::logged_marker(text, &ctx, &marks);
+        Ok(self
+            .expression(marker.as_deref().unwrap_or(text), message, site)?
+            .1)
+    }
+
     /// `text` as the value a place of type `place` takes. A text or a byte
     /// string is taken from a literal alone, whose bound the data model has
     /// held already: from anything else, `sce-static` fails an assignment
@@ -920,7 +939,7 @@ impl<'r> Writer<'r> {
                     let value = if action.expr.trim().is_empty() {
                         None
                     } else {
-                        Some(self.expression(&action.expr, message, &site)?.1)
+                        Some(self.logged(&action.expr, message, &site)?)
                     };
                     match (&value, action.label.is_empty()) {
                         (Some(_), false) => items.push(crate::filters::ttcn3_charstring(format!(

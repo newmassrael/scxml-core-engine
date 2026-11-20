@@ -3641,9 +3641,12 @@ impl SCXMLParser {
             );
             // Each record with the scope its own document names types in, so a
             // place inside a record a field holds is typed at any depth
-            // (docs/adr/0086, section 6.2).
-            model.imported_type_scope =
-                crate::forge::import_source::type_scope(&model.forge_imports, dir);
+            // (docs/adr/0086, section 6.2). The marks of every record it reaches
+            // are read in the same walk (docs/adr/0109, D14 and Open question 9).
+            let (type_scope, marks) =
+                crate::forge::import_source::type_scope_and_marks(&model.forge_imports, dir);
+            model.imported_type_scope = type_scope;
+            model.imported_marks = marks;
             // A schema whose field is a list, a record or an optional over
             // either is held whole: the statechart's expressions are typed over
             // it at any depth (docs/adr/0086, section 6), the readers of the

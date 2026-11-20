@@ -206,8 +206,27 @@ pub fn scoped_record(
     imports: &[ForgeImport],
     base_dir: &Path,
 ) -> ScopedRecord {
-    let mut on_path = vec![path.to_path_buf()];
-    scoped_record_at(path, schema, imports, base_dir, &mut on_path)
+    let mut walk = ScopeWalk::starting_at(path);
+    scoped_record_at(path, schema, imports, base_dir, &mut walk)
+}
+
+/// What a walk of a document's imports carries down: the schemas on the way,
+/// which are not read again, and the marks (`sce:sensitivity`) of every record
+/// it read, by the record's identity.
+#[derive(Default)]
+struct ScopeWalk {
+    on_path: Vec<PathBuf>,
+    marks: crate::forge::sensitivity::Marks,
+}
+
+impl ScopeWalk {
+    /// A walk that starts in the document at `path`.
+    fn starting_at(path: &Path) -> Self {
+        Self {
+            on_path: vec![path.to_path_buf()],
+            marks: crate::forge::sensitivity::Marks::default(),
+        }
+    }
 }
 
 fn scoped_record_at(
@@ -215,17 +234,19 @@ fn scoped_record_at(
     schema: &crate::forge::model::EventSchemaModel,
     imports: &[ForgeImport],
     base_dir: &Path,
-    on_path: &mut Vec<PathBuf>,
+    walk: &mut ScopeWalk,
 ) -> ScopedRecord {
+    let identity = crate::forge::stdlib::identity(path);
+    walk.marks.note(identity.clone(), schema);
     ScopedRecord {
-        identity: crate::forge::stdlib::identity(path),
+        identity,
         name: schema.name.clone(),
         fields: schema
             .fields
             .iter()
             .map(|f| (f.id.clone(), f.sce_type.clone()))
             .collect(),
-        scope: type_scope_at(imports, base_dir, on_path),
+        scope: type_scope_at(imports, base_dir, walk),
     }
 }
 
@@ -235,7 +256,20 @@ fn scoped_record_at(
 /// (docs/adr/0086, sections 2 and 6.2; docs/adr/0092, section 1.1). Silent as
 /// [`parse_quietly`] is, for the same reason.
 pub fn type_scope(imports: &[ForgeImport], base_dir: &Path) -> TypeScope {
-    type_scope_at(imports, base_dir, &mut Vec::new())
+    type_scope_and_marks(imports, base_dir).0
+}
+
+/// [`type_scope`], and the marks (`sce:sensitivity`, docs/adr/0109, D14) of
+/// every record it reaches, by the record's identity, read in the same walk:
+/// what a statechart's `<log>` of a marked value is judged by
+/// ([`crate::forge::sensitivity`]).
+pub fn type_scope_and_marks(
+    imports: &[ForgeImport],
+    base_dir: &Path,
+) -> (TypeScope, crate::forge::sensitivity::Marks) {
+    let mut walk = ScopeWalk::default();
+    let scope = type_scope_at(imports, base_dir, &mut walk);
+    (scope, walk.marks)
 }
 
 /// Each enum and event schema `imports` names (written relative to
@@ -245,11 +279,7 @@ pub fn type_scope(imports: &[ForgeImport], base_dir: &Path) -> TypeScope {
 /// not read again: a record that holds itself through its documents is an
 /// import cycle, refused where the imports are walked
 /// (`crate::forge::cross_kind_check`).
-fn type_scope_at(
-    imports: &[ForgeImport],
-    base_dir: &Path,
-    on_path: &mut Vec<PathBuf>,
-) -> TypeScope {
+fn type_scope_at(imports: &[ForgeImport], base_dir: &Path, walk: &mut ScopeWalk) -> TypeScope {
     let mut scope = TypeScope::default();
     for import in imports {
         match import.kind {
@@ -266,7 +296,7 @@ fn type_scope_at(
                 let Ok(source) = ImportSource::read(base_dir, import) else {
                     continue;
                 };
-                if on_path.contains(&source.path) {
+                if walk.on_path.contains(&source.path) {
                     continue;
                 }
                 let Ok(Some(parsed)) = source.parse() else {
@@ -276,9 +306,9 @@ fn type_scope_at(
                     continue;
                 };
                 let dir = source.path.parent().unwrap_or(base_dir);
-                on_path.push(source.path.clone());
-                let record = scoped_record_at(&source.path, schema, &parsed.imports, dir, on_path);
-                on_path.pop();
+                walk.on_path.push(source.path.clone());
+                let record = scoped_record_at(&source.path, schema, &parsed.imports, dir, walk);
+                walk.on_path.pop();
                 scope.records.insert(import.alias.clone(), record);
             }
             // docs/adr/0092, section 1.1: a union, with its own document's
@@ -287,7 +317,7 @@ fn type_scope_at(
                 let Ok(source) = ImportSource::read(base_dir, import) else {
                     continue;
                 };
-                if on_path.contains(&source.path) {
+                if walk.on_path.contains(&source.path) {
                     continue;
                 }
                 let Ok(Some(parsed)) = source.parse() else {
@@ -297,9 +327,9 @@ fn type_scope_at(
                     continue;
                 };
                 let dir = source.path.parent().unwrap_or(base_dir);
-                on_path.push(source.path.clone());
-                let union = scoped_union_at(&source.path, model, &parsed.imports, dir, on_path);
-                on_path.pop();
+                walk.on_path.push(source.path.clone());
+                let union = scoped_union_at(&source.path, model, &parsed.imports, dir, walk);
+                walk.on_path.pop();
                 if let Some(union) = union {
                     scope.unions.insert(import.alias.clone(), union);
                 }
@@ -322,8 +352,8 @@ pub fn scoped_union(
     imports: &[ForgeImport],
     base_dir: &Path,
 ) -> Option<ScopedUnion> {
-    let mut on_path = vec![path.to_path_buf()];
-    scoped_union_at(path, model, imports, base_dir, &mut on_path)
+    let mut walk = ScopeWalk::starting_at(path);
+    scoped_union_at(path, model, imports, base_dir, &mut walk)
 }
 
 fn scoped_union_at(
@@ -331,9 +361,9 @@ fn scoped_union_at(
     model: &crate::forge::model::UnionModel,
     imports: &[ForgeImport],
     base_dir: &Path,
-    on_path: &mut Vec<PathBuf>,
+    walk: &mut ScopeWalk,
 ) -> Option<ScopedUnion> {
-    let scope = type_scope_at(imports, base_dir, on_path);
+    let scope = type_scope_at(imports, base_dir, walk);
     union_in_scope(crate::forge::stdlib::identity(path), model, scope)
 }
 
