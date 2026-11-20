@@ -118,6 +118,12 @@ static void a_writer_keeps_what_fits_as_snprintf_does(void) {
     w = sce_text_writer(NULL, 0u);
     sce_text_put_text(&w, "x");
     expect(w.cut && w.len == 0u, "a writer over no buffer keeps nothing and says it cut");
+
+    // A literal is put at its own length, as its text would be measured.
+    char literal[16];
+    w = sce_text_writer(literal, sizeof(literal));
+    SCE_TEXT_PUT_LITERAL(&w, "a\"b\\c");
+    expect(!w.cut && strcmp(literal, "a\"b\\c") == 0 && w.len == 5u, "a literal is put whole, escapes as bytes");
 }
 
 // A text written within a bound is what `%.<n>s` writes of it: at most the

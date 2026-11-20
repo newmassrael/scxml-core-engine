@@ -229,7 +229,7 @@ fn a_text_is_lifted_into_the_union_by_its_reader() {
              sce_path, sce_path_cap, sce_bound);",
             "(void)sce_payload_pointer_of_path(sce_pointer, sizeof(sce_pointer), sce_path);",
             // docs/adr/0110, D2: the lift says why not through the log seam.
-            "sce_text_put_text(&sce_said, \"the text is no value of ",
+            "SCE_TEXT_PUT_LITERAL(&sce_said, \"the text is no value of ",
             "_sce_log_write(SCE_LOG_WARNING, \"<sce:lift>\", 10u, sce_line, sce_said.len);",
             "sce_optional_record_static_union_union_union_shape_some(sce_lifted)",
         ],

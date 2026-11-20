@@ -230,7 +230,7 @@ static inline void sce_forge_wire_put_char(sce_forge_wire_t *w, unsigned char c)
     default:
         if (c < 0x20u) {
             text = sce_text_writer(escaped, sizeof(escaped));
-            sce_text_put_text(&text, "\\u");
+            SCE_TEXT_PUT_LITERAL(&text, "\\u");
             sce_text_put_hex(&text, (uint64_t)c, 4u);
             sce_forge_wire_put(w, escaped, 6u);
         } else {
