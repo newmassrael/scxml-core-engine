@@ -1,0 +1,115 @@
+name: C11 MCU
+
+# A C11 machine's core links with no C library, is weighed against a budget and
+# runs its replay scenario on a Cortex-M4 under QEMU (docs/adr/0110, D3).
+# `scripts/gates/c11-mcu.sh` says what each step proves; this lane installs the
+# ARM cross compiler and QEMU the gate needs and runs it.
+#
+# ## Why a lane of its own
+#
+# The gate needs an ARM cross compiler (the distribution's gcc-arm-none-eabi,
+# with its newlib headers and libgcc) and QEMU's Arm system emulator, which no
+# other lane installs, and its verdict is about the C11 generator, the C11
+# runtime and the fixtures it weighs, which the paths below name.
+#
+# ## Why `ci_only` in the registry
+#
+# bx.toml declares both tools, needed by this gate alone, and not every build
+# machine is verified to carry them; the gate ends "could not run" without them,
+# so it is not in the push set, and this job is where it runs on every change
+# that can move what it judges.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backends/c/mcu/**'
+      - 'backends/c/runtime/include/**'
+      - 'backends/c/forge-runtime/include/**'
+      - 'tools/codegen/templates/c/**'
+      - 'tools/codegen/templates/forge/c/**'
+      - 'tools/codegen/templates/_macros/**'
+      - 'sce-build/**'
+      - 'tests/forge/resources/codec_cbor_map.scxml'
+      - 'stdlib/**'
+      - 'docs/adr/0110-a-c11-machine-core-is-freestanding-and-a-gate-weighs-and-runs-it-on-an-mcu.md'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/c11-mcu.sh'
+      - 'scripts/lib/sce_codegen.sh'
+      - '.github/workflows/c11-mcu.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backends/c/mcu/**'
+      - 'backends/c/runtime/include/**'
+      - 'backends/c/forge-runtime/include/**'
+      - 'tools/codegen/templates/c/**'
+      - 'tools/codegen/templates/forge/c/**'
+      - 'tools/codegen/templates/_macros/**'
+      - 'sce-build/**'
+      - 'tests/forge/resources/codec_cbor_map.scxml'
+      - 'stdlib/**'
+      - 'docs/adr/0110-a-c11-machine-core-is-freestanding-and-a-gate-weighs-and-runs-it-on-an-mcu.md'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/c11-mcu.sh'
+      - 'scripts/lib/sce_codegen.sh'
+      - '.github/workflows/c11-mcu.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  c11-mcu:
+    name: C11 machines on a Cortex-M4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      # The ARM cross compiler with its newlib headers and libgcc, QEMU's Arm
+      # system emulator, and what the generator's build links (libxml2 backs
+      # sce-build's XSD validator).
+      - name: Install the ARM toolchain and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi qemu-system-arm libxml2-dev pkg-config
+
+      - uses: ./.github/actions/install-rust
+
+      - name: Cache Cargo
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sce-build/**/*.rs', 'sce-build/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+
+      - name: C11 MCU gate
+        run: scripts/gate c11-mcu
+
+      # What the gate measured, for the budget's first pin and for a consumer
+      # that cites it.
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: c11-mcu-report
+          path: target/c11-mcu/report.md
+          if-no-files-found: ignore
