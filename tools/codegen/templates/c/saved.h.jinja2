@@ -17,6 +17,7 @@
     nor the unit.
 #}
 {% include 'license_header.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {# Kept in step with the same `set`s in `state_machine.h.jinja2`: what `_judge`
    and `_restore` take besides the text. #}
 {% set ns_maps = namespace(any=false, holds=false, judges=false) %}
@@ -27,6 +28,10 @@
 {% if ns_maps.judges or static_seeds_algorithms %}{% set ns_maps.any = true %}{% endif %}
 {% set map_seed_param = ', sce_map_seed_t map_seed' if ns_maps.any else '' %}
 {% set _t = csym_prefix ~ model.name %}
+
+{# The SCE-MAP marker every emitted file carries (`_macros/sce_map_marker.jinja2`),
+   at module level as the machine's own header has it. #}
+{{ sce_map.source_marker(model.source_location, "c", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 #ifndef SCE_GENERATED_{{ csym_prefix | upper }}{{ model.name | upper }}_SAVED_H
 #define SCE_GENERATED_{{ csym_prefix | upper }}{{ model.name | upper }}_SAVED_H
