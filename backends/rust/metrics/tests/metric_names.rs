@@ -11,8 +11,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use sce_rust_metrics::{
-    AuthenticatorKind, Counter, Eviction, ExchangeStatus, Family, Gauge, Histogram, HostFailure,
-    HostOperation, PoolShed, RestoredFrom, ServerShed, FAMILIES, METRICS_INFO, REGISTRY,
+    AuthenticatorKind, Counter, Eviction, ExchangeOutcome, Family, Gauge, Histogram, HostFailure,
+    HostOperation, PoolShed, ResponseStatus, RestoredFrom, ServerShed, FAMILIES, METRICS_INFO,
+    REGISTRY,
 };
 use serde_json::Value;
 
@@ -26,8 +27,10 @@ fn vector() -> Value {
 /// Every counter series of the registry, each label set taken whole.
 fn every_counter() -> Vec<Counter> {
     let mut all = Vec::new();
-    for status in ExchangeStatus::ALL {
+    for status in ResponseStatus::ALL {
         all.push(Counter::ServerExchanges { status: *status });
+    }
+    for status in ExchangeOutcome::ALL {
         all.push(Counter::ClientExchanges { status: *status });
     }
     for reason in ServerShed::ALL {

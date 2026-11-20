@@ -91,12 +91,12 @@ TEST(AStandardHostReportsToItsMetrics, ASeriesCarriesTheLabelsItsFamilyFixes) {
     EXPECT_STREQ(labels.pairs[1].name, "code");
     EXPECT_STREQ(labels.pairs[1].value, "unavailable");
 
-    const auto exchanges = Counter::clientExchanges(SCE::Metrics::ExchangeStatus::NoResponse);
+    const auto exchanges = Counter::clientExchanges(SCE::Metrics::ExchangeOutcome::NoResponse);
     EXPECT_STREQ(exchanges.family(), "sce_client_exchanges");
     ASSERT_EQ(exchanges.labels().size, 1u);
     EXPECT_STREQ(exchanges.labels().pairs[0].value, "none");
-    EXPECT_STREQ(Counter::clientExchanges(SCE::Metrics::exchangeStatusOf(502)).labels().pairs[0].value, "other");
-    EXPECT_STREQ(Counter::clientExchanges(SCE::Metrics::exchangeStatusOf(429)).labels().pairs[0].value, "429");
+    EXPECT_STREQ(Counter::clientExchanges(SCE::Metrics::exchangeOutcomeOf(502)).labels().pairs[0].value, "other");
+    EXPECT_STREQ(Counter::clientExchanges(SCE::Metrics::exchangeOutcomeOf(429)).labels().pairs[0].value, "429");
 
     EXPECT_STREQ(Counter::auditAppends().family(), "sce_host_audit_appends");
     EXPECT_EQ(Counter::auditAppends().labels().size, 0u);
@@ -197,8 +197,8 @@ std::map<std::string, Reported> reportedByTheHeader() {
             found->second.values[i].insert(labels.pairs[i].value);
         }
     };
-    for (const auto status : SCE::Metrics::kExchangeStatuses) {
-        const auto series = Counter::clientExchanges(status);
+    for (const auto outcome : SCE::Metrics::kExchangeOutcomes) {
+        const auto series = Counter::clientExchanges(outcome);
         note(series.family(), "counter", series.labels());
     }
     for (std::size_t i = 0; i < SCE::Metrics::kHostOperationTypes.size(); ++i) {

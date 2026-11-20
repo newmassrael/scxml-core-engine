@@ -37,7 +37,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sce_rust_crypto::cose::TrustedKey;
 use sce_rust_crypto::random::SystemRandom;
-use sce_rust_metrics::{Counter, ExchangeStatus, Metrics};
+use sce_rust_metrics::{Counter, ExchangeOutcome, Metrics};
 
 use super::signature::{
     content_digest, draw_nonce, field_value, normalize_target_uri, verify_response, Answered,
@@ -353,8 +353,8 @@ fn take_outcome(
 ) -> Then {
     // docs/adr/0109, D16: every exchange, by the status its server answered, or none.
     let status = match &outcome {
-        Ok(response) => ExchangeStatus::of(response.status),
-        Err(_) => ExchangeStatus::NoResponse,
+        Ok(response) => ExchangeOutcome::of_status(response.status),
+        Err(_) => ExchangeOutcome::NoResponse,
     };
     shared.metrics.count(Counter::ClientExchanges { status }, 1);
     let server = shared.settings.server.clone();
@@ -1723,15 +1723,15 @@ mod tests {
         assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
         let counted = |status| recording.counted(Counter::ClientExchanges { status });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while counted(ExchangeStatus::Other) == 0 && std::time::Instant::now() < deadline {
+        while counted(ExchangeOutcome::Other) == 0 && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(5));
         }
         client.stop();
-        assert!(counted(ExchangeStatus::Ok) >= 1);
-        assert_eq!(counted(ExchangeStatus::NoResponse), 1);
-        assert_eq!(counted(ExchangeStatus::Unauthorized), 1);
+        assert!(counted(ExchangeOutcome::Ok) >= 1);
+        assert_eq!(counted(ExchangeOutcome::NoResponse), 1);
+        assert_eq!(counted(ExchangeOutcome::Unauthorized), 1);
         assert_eq!(
-            counted(ExchangeStatus::Other),
+            counted(ExchangeOutcome::Other),
             1,
             "a 502 of an intermediary"
         );
