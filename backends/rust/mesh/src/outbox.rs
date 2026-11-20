@@ -39,7 +39,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use sce_rust_metrics::{Counter, Gauge};
+use sce_rust_metrics::{Counter, Gauge, Metrics};
 use sce_rust_session_store::{Appended, Expiry, Failure, Outbox, SessionStore};
 
 use crate::commit::Committer;
@@ -151,13 +151,18 @@ impl Outboxes {
         self.committer.store().as_ref()
     }
 
+    /// What the outboxes report to: their committer's metrics (docs/adr/0109, D16).
+    fn metrics(&self) -> &dyn Metrics {
+        self.committer.metrics().as_ref()
+    }
+
     /// A client's outbox went from `before` envelopes held in the process to `after`
     /// (docs/adr/0109, D16).
     fn moved(&self, before: usize, after: usize) {
         if before != after {
             let delta = i64::try_from(after).unwrap_or(i64::MAX)
                 - i64::try_from(before).unwrap_or(i64::MAX);
-            self.committer.metrics().adjust(Gauge::OutboxDepth, delta);
+            self.metrics().adjust(Gauge::OutboxDepth, delta);
         }
     }
 
@@ -429,9 +434,7 @@ impl Outboxes {
         let expiry = self.store().expire(client, before, limit)?;
         if !expiry.expired.is_empty() {
             let expired = u64::try_from(expiry.expired.len()).unwrap_or(u64::MAX);
-            self.committer
-                .metrics()
-                .count(Counter::OutboxExpiries, expired);
+            self.metrics().count(Counter::OutboxExpiries, expired);
         }
         let mut clients = lock(&self.clients);
         if let Some(held) = clients.get_mut(client) {
