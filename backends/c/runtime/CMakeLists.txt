@@ -49,6 +49,9 @@
 #   http  the BasicHTTP client (`sce/http_client.h`)
 #   clock the link-time clock a scheduling machine reads by default
 #         (`sce/clock.h`'s `_sce_clock_now_ms`)
+#   log   where a machine's `<log>` and the runtime's diagnostics go
+#         (`sce/log.h`'s `_sce_log_write` and `_sce_log_real`,
+#         docs/adr/0110 D2)
 #
 # SCE_C_RUNTIME_REQUIREMENTS is every requirement the generator can state
 # (`RuntimeRequirement` in sce-build/src/generator.rs;
@@ -60,7 +63,7 @@
 # machines it cannot link here from the machines rather than from a list of
 # them. `sce_c_runtime_libraries` reads the two, and `sce_c_link_runtime`
 # links a target with what the generated machines it compiles require.
-set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS lua dom http clock)
+set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS lua dom http clock log)
 
 # ── What a program's own code requires, which no machine states ──
 #
@@ -270,7 +273,8 @@ endif()
 # ── Tier 4: sce_c_runtime_posix (STATIC, optional — platform impl) ──
 # Default ON: the SCE-shipped POSIX reference implementation of
 # `clock.h` (§scxml-6.2 delayed-send clock), `http_client.h`
-# (§scxml-C-2 BasicHTTP fixtures) and `directory.h` (the log directory the
+# (§scxml-C-2 BasicHTTP fixtures), `log.h` (the log seams, each line to
+# `stderr`, docs/adr/0110 D2) and `directory.h` (the log directory the
 # runner program of a generated test suite makes, docs/SCE_TTCN3_LANE.md §4).
 # Bare-metal consumers opt out and supply their own `sce_c_runtime_<target>`
 # providing the same symbols. No generated machine states `directory.h`: the
@@ -281,6 +285,7 @@ if(SCE_C_RUNTIME_POSIX)
         posix/clock.c
         posix/directory.c
         posix/http_client.c
+        posix/log.c
     )
     target_link_libraries(sce_c_runtime_posix PUBLIC sce_c_runtime)
     set_target_properties(sce_c_runtime_posix PROPERTIES
@@ -289,10 +294,11 @@ if(SCE_C_RUNTIME_POSIX)
         C_EXTENSIONS OFF
     )
     # The POSIX implementations of the BasicHTTP client a machine that sends
-    # over BasicHTTP links, of the clock a scheduling machine reads, and of the
-    # directory a suite's runner program makes. A bare-metal consumer's
-    # platform tier registers its own.
+    # over BasicHTTP links, of the clock a scheduling machine reads, of the log
+    # a machine that logs writes, and of the directory a suite's runner program
+    # makes. A bare-metal consumer's platform tier registers its own.
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_http sce_c_runtime_posix)
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_clock sce_c_runtime_posix)
+    set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_log sce_c_runtime_posix)
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_directory sce_c_runtime_posix)
 endif()

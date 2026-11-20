@@ -187,6 +187,9 @@ on:
       # The C11 runtime's build, whose vocabulary of what a machine requires
       # the suite compiles in and holds to what the generator can state.
       - 'backends/c/runtime/CMakeLists.txt'
+      # The host's log seams, which a suite links a machine with and reads the
+      # lines of.
+      - 'backends/c/runtime/posix/log.c'
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'
@@ -357,6 +360,9 @@ on:
       # The C11 runtime's build, whose vocabulary of what a machine requires
       # the suite compiles in and holds to what the generator can state.
       - 'backends/c/runtime/CMakeLists.txt'
+      # The host's log seams, which a suite links a machine with and reads the
+      # lines of.
+      - 'backends/c/runtime/posix/log.c'
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'

@@ -18,6 +18,13 @@
 {%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
 {%- from '_macros/c_saved_value.jinja2' import get_scalar %}
 
+{# §scxml-4.7: the label a `<log>` hands the log seam (`_sce_log_write`,
+   sce/log.h), as its two arguments: the text and its length, or `NULL, 0u`
+   for a `<log>` that names none. #}
+{% macro log_label(action) -%}
+{% if action.label %}{{ action.label | c_text_expr }}, sce_text_length({{ action.label | c_text_expr }}){% else %}NULL, 0u{% endif %}
+{%- endmacro %}
+
 {# W3C SCXML 5.10 + 6.2 — build a `<send>`'s payload as JSON in `_ed`, the
    text the event's `data[]` carries to `set_current_event`.
 
@@ -543,13 +550,15 @@
 {% endif %}
 #endif
 
-{# W3C SCXML 4.9: `<log>` lowers to `fprintf(stderr, …)` on this
-   backend, which needs `<stdio.h>` whether or not the document also
-   needs a script engine. Gating the include on `needs_script_engine`
-   alone left every script-free document carrying a `<log>` calling
-   `fprintf` with no declaration in scope — an implicit declaration,
-   which is an error under the `-Werror` the repo builds C11 with. #}
-#include <stdio.h>  /* fprintf for <log>; snprintf for body-bearing <foreach> */
+{# §scxml-4.7: `<log>` and the runtime's diagnostics go through the log
+   seams (`sce/log.h`, included above when the machine logs), and the text
+   routines are the runtime's own (`sce/text.h`, through `sce/types.h`); see
+   docs/adr/0110. What still formats with the hosted library is a reason
+   text built from `reason_format` (an `error.*` event's sentence), a typed
+   record's JSON written by `c11_record_wire`, a `<sce:lift>`'s report and a
+   test component's log, each of which is to leave this unit (docs/adr/0110,
+   D2), and this include goes with the last of them. #}
+#include <stdio.h>  /* snprintf for reason texts and record JSON; fprintf for <sce:lift> */
 
 /* ── docs/adr/0086, sections 8.5 (d) and 8.6 (d): the scratch's accessors ── */
 /* Each role of the scratch that a machine with a script engine grows in its
@@ -669,6 +678,17 @@ SCE_SM_FN static SCE_C_UNUSED bool scratch_reserve({{ csym_prefix }}{{ model.nam
    no weak-symbol fallback (silent zero clock would freeze the schedule
    and silently mis-fire timeouts). */
 #include <sce/clock.h>
+{% endif %}
+{# Included because the set of what this machine requires names `log`: the
+   machine writes a line through the log seams exactly when it logs
+   (`RuntimeRequirement::Log`, `c11_logs` in sce-build/src/generator.rs). #}
+{% if "log" in runtime_requires %}
+
+/* §scxml-4.7: where this machine's `<log>` and the runtime's diagnostics go
+   (backends/c/runtime/include/sce/log.h, docs/adr/0110 D2). The seams are
+   defined by the deployment: `sce_c_runtime_posix` writes each line to
+   stderr, and a bare-metal consumer supplies its own. */
+#include <sce/log.h>
 {% endif %}
 {% if model.needs_script_engine %}
 
@@ -876,7 +896,7 @@ SCE_SM_FN static SCE_C_UNUSED bool deliver_to_invocation({{ csym_prefix }}{{ mod
                                   const sce_forwarded_event_t *fwd) {
 {% for invoke_info in model.invokes | scxml_family %}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
-    if (strcmp(invoke_id, "{{ invoke_info.invoke_id | escape_c }}") == 0) {
+    if (sce_text_compare(invoke_id, "{{ invoke_info.invoke_id | escape_c }}") == 0) {
 {% for target in child_targets %}
 {% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
         if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
@@ -897,7 +917,7 @@ SCE_SM_FN static SCE_C_UNUSED bool invocation_is_running(const {{ csym_prefix }}
                                                           const char *invoke_id) {
 {% for invoke_info in model.invokes | scxml_family %}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
-    if (strcmp(invoke_id, "{{ invoke_info.invoke_id | escape_c }}") == 0) {
+    if (sce_text_compare(invoke_id, "{{ invoke_info.invoke_id | escape_c }}") == 0) {
 {% for target in child_targets %}
 {% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
         if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
@@ -919,7 +939,7 @@ SCE_SM_FN static SCE_C_UNUSED const char *invocation_of_session(const {{ csym_pr
 {% for target in child_targets %}
 {% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
     if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }}) &&
-        strcmp(sm->{{ slot }}.session_id, session_id) == 0) {
+        sce_text_compare(sm->{{ slot }}.session_id, session_id) == 0) {
         return "{{ invoke_info.invoke_id | escape_c }}";
     }
 {% endfor %}
@@ -954,7 +974,7 @@ SCE_SM_FN static SCE_C_UNUSED const char *invocation_of_session(const {{ csym_pr
    into another name. */
 SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_exact(const char *candidate) {
     {% for event_name in model.events | sort %}
-    if (strcmp(candidate, "{{ event_name | event_wire_name }}") == 0) {
+    if (sce_text_compare(candidate, "{{ event_name | event_wire_name }}") == 0) {
         return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }};
     }
     {% endfor %}
@@ -974,17 +994,17 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_arrive(const char *name,
         const {{ csym_prefix }}{{ model.name }}_event_t found = {{ csym_prefix }}{{ model.name }}_event_exact(candidate);
         if (found != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
             *out = found;
-            if (strlen(candidate) != len) {
+            if (sce_text_length(candidate) != len) {
                 memcpy(arrival, name, len);
                 arrival[len] = '\0';
             }
             return true;
         }
-        char *cut = strrchr(candidate, '.');
+        const char *cut = sce_text_find_last(candidate, '.');
         if (cut == NULL) {
             break;
         }
-        *cut = '\0';
+        candidate[cut - candidate] = '\0';
     }
     const {{ csym_prefix }}{{ model.name }}_event_t any = {{ csym_prefix }}{{ model.name }}_event_exact("*");
     if (any == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
@@ -1000,7 +1020,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_arrive(const char *name,
    one. */
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_resolve_event_by_name(const char *name, {{ csym_prefix }}{{ model.name }}_event_t *out) {
     char arrival[SCE_MAX_ID_LEN];
-    return name != NULL && {{ csym_prefix }}{{ model.name }}_arrive(name, strlen(name), out, arrival);
+    return name != NULL && {{ csym_prefix }}{{ model.name }}_arrive(name, sce_text_length(name), out, arrival);
 }
 {% if model.host_invoker_types %}
 /* W3C SCXML 6.4.1: the one place a host-run invocation starts. Forward-declared
@@ -1086,7 +1106,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
         /* W3C SCXML C.2 (test520): a content-only send — the body is the
            `<content>` text, the type text/plain. The standalone server
            replies with event="HTTP.POST" (the method name) for it. */
-        const size_t _content_len = strlen(request->content);
+        const size_t _content_len = sce_text_length(request->content);
         if (_content_len < sizeof(_http_body)) {
             memcpy(_http_body, request->content, _content_len);
             _http_body[_content_len] = '\0';
@@ -1241,7 +1261,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
         memset(&_reply_evt, 0, sizeof(_reply_evt));
         /* §scxml-5.10: `_event.name` is the name the host gave, not the member a
            prefix of it was matched to. */
-        if (!{{ csym_prefix }}{{ model.name }}_arrive(_name, strlen(_name), &_reply_evt.event, _reply_evt.name)) {
+        if (!{{ csym_prefix }}{{ model.name }}_arrive(_name, sce_text_length(_name), &_reply_evt.event, _reply_evt.name)) {
             continue;
         }
         {
@@ -1691,10 +1711,10 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    the event's origintype is the URI either way. */
                 const char *_send_type = sce_canonical_processor_type(_send_type_buf);
 {% if is_http %}
-                if (strcmp(_send_type, SCE_BASIC_HTTP_EVENT_PROCESSOR_TYPE) != 0) {
+                if (sce_text_compare(_send_type, SCE_BASIC_HTTP_EVENT_PROCESSOR_TYPE) != 0) {
 {% else %}
                 if (_send_type[0] != '\0'
-                    && strcmp(_send_type, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0) {
+                    && sce_text_compare(_send_type, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0) {
 {% endif %}
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION, ERROR_REASON_SEND_TYPE_UNSUPPORTED,
@@ -1760,8 +1780,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                         {{ send_id_c }});
                     return;
                 }
-                if ({% for entry in action.targets %}strcmp(_send_route, "{{ entry | escape_c }}") == 0{% if not loop.last %} || {% endif %}{% endfor %}) {
-                    (void)snprintf(_send_target_buf, sizeof(_send_target_buf), "%s", _send_route);
+                if ({% for entry in action.targets %}sce_text_compare(_send_route, "{{ entry | escape_c }}") == 0{% if not loop.last %} || {% endif %}{% endfor %}) {
+                    sce_copy_bounded_n(_send_target_buf, _send_route, sizeof(_send_target_buf));
                 }
             }
 {% elif action.targetexpr %}
@@ -1804,8 +1824,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                     {{ send_id_c }});
                 return;
             }
-            if (strncmp(_send_target_buf, "http://", 7) != 0 &&
-                strncmp(_send_target_buf, "https://", 8) != 0) {
+            if (sce_text_compare_n(_send_target_buf, "http://", 7) != 0 &&
+                sce_text_compare_n(_send_target_buf, "https://", 8) != 0) {
                 /* W3C SCXML C.2: BasicHTTP resolved a target that is not an
                    http(s) URL (`SendHelper::isHttpTarget`). */
                 {{ P }}_raise_platform_error_with_send_id(
@@ -1976,7 +1996,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    own — the bare prefix names it too (test 190). Any other
                    is not reachable: error.communication, nothing delivered,
                    the block ended (W3C SCXML 4.9). */
-                if (strcmp(sm->session_id, "{{ static_target[8:] | escape_c }}") != 0) {
+                if (sce_text_compare(sm->session_id, "{{ static_target[8:] | escape_c }}") != 0) {
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_COMMUNICATION, ERROR_REASON_TARGET_UNREACHABLE,
                         {{ reason("send_target_unreachable", static_target) }},
@@ -2051,7 +2071,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                        one publishes is a target, as `#_parent` is: the address a
                        reply to an event the parent sent goes to (docs/adr/0090). */
                     if (_send_target_kind == SCE_SEND_TARGET_SESSION && sm->parent_session_id != NULL &&
-                        strcmp(_send_target_id, sm->parent_session_id) == 0) {
+                        sce_text_compare(_send_target_id, sm->parent_session_id) == 0) {
                         _send_target_kind = SCE_SEND_TARGET_PARENT;
                     }
 {% endif %}
@@ -2202,7 +2222,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                        arrived under when its member is not called that. */
                     {{ P }}_event_t _send_delayed = {{ PU }}_EVENT_NONE;
                     char _send_arrival[SCE_MAX_ID_LEN];
-                    if ({{ P }}_arrive(_send_evt_name, strlen(_send_evt_name), &_send_delayed, _send_arrival)) {
+                    if ({{ P }}_arrive(_send_evt_name, sce_text_length(_send_evt_name), &_send_delayed, _send_arrival)) {
                         scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }}, {{ route_c }},
                                               _send_delayed, _send_arrival[0] != '\0' ? _send_evt_name : NULL, NULL,
                                               {{ send_id_c }}{{ scheduled_payload_arg(has_payload) }});
@@ -2227,7 +2247,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                        resolve the computed name to; `_send_evt.name` is left
                        holding the whole name when its member is not called that. */
                     const bool _send_evt_matched = {{ csym_prefix }}{{ model.name }}_arrive(
-                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name);
+                        _send_evt_name, sce_text_length(_send_evt_name), &_send_evt.event, _send_evt.name);
 {% else %}
                     _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | to_c11_upper_ident }};
 {% endif %}
@@ -2653,9 +2673,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
         /* W3C SCXML 4.7: <log{% if action.label %} label="{{ action.label }}"{% endif %}{% if action.expr %} expr="{{ action.expr }}"{% endif %}>
            Logging is observable side-effect only — the W3C spec mandates no
            statechart effect, just developer-facing output. Mirrors cpp
-           `actions/log.jinja2`: success path emits the evaluated expression
-           via the host log sink (fprintf to stderr, the C11 equivalent of
-           cpp's `SCE_LOG_INFO`); evaluation failure emits an error line so
+           `actions/log.jinja2`: success path hands the evaluated expression
+           to the log seam (`_sce_log_write`, sce/log.h, the C11 equivalent of
+           cpp's `SCE_LOG_INFO`); evaluation failure writes an error line so
            a fixture's log output remains diagnosable. `_event.raw` and
            `_event.invokeid` route through the same Lua eval path — the
            `set_current_event` helper binds both fields onto `_event` from
@@ -2668,15 +2688,14 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             bool _log_ok;
 {{ se.lua_eval_to_string(action.expr, '_log_buf', '256', '_log_ok') }}
             if (_log_ok) {
-                (void)fprintf(stderr,
-                    {% if action.label %}"%s: %s\n", {{ action.label | c_text_expr }}{% else %}"%s\n"{% endif %},
-                    _log_buf);
+                _sce_log_write(SCE_LOG_INFO, {{ log_label(action) }}, _log_buf, sce_text_length(_log_buf));
             } else {
                 /* W3C SCXML 5.9: an expression that fails raises
                    error.execution, and (W3C SCXML 4.9) the error ends the
                    block — every block is its own C function. */
-                (void)fprintf(stderr,
-                    "Failed to evaluate log expression: %s\n", {{ action.expr | c_text_expr }});
+                _sce_log_write(SCE_LOG_ERROR, "Failed to evaluate log expression",
+                               sizeof("Failed to evaluate log expression") - 1u, {{ action.expr | c_text_expr }},
+                               sce_text_length({{ action.expr | c_text_expr }}));
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                     {{ reason("log_expr_failed") }});
@@ -2688,17 +2707,16 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
            necessarily a literal (string / numeric / constant arithmetic).
            Mirrors cpp `actions/log.jinja2:19-21`'s no-script-engine path —
            single-quote → double-quote substitution turns SCXML's JS-style
-           `'hello'` into a valid C string literal, then fprintf to stderr.
-           Spec-mirror parity per `feedback_spec_mirror_parity.md`: emit
+           `'hello'` into a valid C string literal, then hands it to the log
+           seam. Spec-mirror parity per `feedback_spec_mirror_parity.md`: emit
            the cpp shape 1:1 even without a current corpus fixture forcing
            the path, so the first MCU/null-datamodel consumer sees aligned
            behaviour with cpp. */
-        (void)fprintf(stderr,
-            {% if action.label %}"%s: %s\n", {{ action.label | c_text_expr }}{% else %}"%s\n"{% endif %},
-            {{ action.expr | replace("'", '"') }});
+        _sce_log_write(SCE_LOG_INFO, {{ log_label(action) }}, {{ action.expr | replace("'", '"') }},
+                       sce_text_length({{ action.expr | replace("'", '"') }}));
 {% endif %}
 {% elif action.label %}
-        (void)fprintf(stderr, "%s\n", {{ action.label | c_text_expr }});
+        _sce_log_write(SCE_LOG_INFO, {{ log_label(action) }}, NULL, 0u);
 {% endif %}
 {% elif action.type == 'cancel' %}
         /* W3C SCXML 6.3: <cancel{% if action.sendid %} sendid="{{ action.sendid }}"{% endif %}{% if action.sendidexpr %} sendidexpr="{{ action.sendidexpr }}"{% endif %}>
@@ -2860,7 +2878,7 @@ SCE_SM_FN static bool event_text_take({{ csym_prefix }}{{ model.name }}_t *sm, c
     }
     void *alloc_context = NULL;
     const lua_Alloc alloc = lua_getallocf(sm->L, &alloc_context);
-    const size_t size = strlen(text) + 1u;
+    const size_t size = sce_text_length(text) + 1u;
     char *copy = (char *)alloc(alloc_context, NULL, 0u, size);
     if (copy == NULL) {
         return false;
@@ -3112,7 +3130,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_state_from_name(const char *nam
         return false;
     }
     {% for state_id in model.states | sort %}
-    if (strcmp(name, "{{ state_id }}") == 0) {
+    if (sce_text_compare(name, "{{ state_id }}") == 0) {
         *out = {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }};
         return true;
     }
@@ -4462,7 +4480,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_
     }
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
-    if ({{ csym_prefix }}{{ model.name }}_arrive(event_name, strlen(event_name), &evt.event, evt.name)) {
+    if ({{ csym_prefix }}{{ model.name }}_arrive(event_name, sce_text_length(event_name), &evt.event, evt.name)) {
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
     }
 }
@@ -4491,7 +4509,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     /* §scxml-5.10: the copy is exact, but what this machine is told the event is
        called is a fact about THIS machine's names — `evt.name` is the name the
        sender gave it, or empty when the document writes it itself. */
-    if ({{ csym_prefix }}{{ model.name }}_arrive(fwd->name, strlen(fwd->name), &evt.event, evt.name)) {
+    if ({{ csym_prefix }}{{ model.name }}_arrive(fwd->name, sce_text_length(fwd->name), &evt.event, evt.name)) {
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
     }
 }
@@ -4790,7 +4808,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
     }
     uint8_t pos = 0u;
     for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
-        if (strcmp(sm->scheduled_queue.buf[i].send_id, send_id) != 0
+        if (sce_text_compare(sm->scheduled_queue.buf[i].send_id, send_id) != 0
 {%- if model.has_host_invoke_deadline %}
             /* A host-run invocation's deadline is the machine's, not the
                document's: no `<cancel>` reaches it. */
@@ -5052,8 +5070,9 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
                 _rc = lua_pcall(L, 1, 2, 0);
             }
             if (_rc != LUA_OK) {
-                (void)fprintf(stderr, "SCE: event payload decode failed: %s\n",
-                              lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error");
+                const char *_why = lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error";
+                _sce_log_write(SCE_LOG_ERROR, "SCE: event payload decode failed",
+                               sizeof("SCE: event payload decode failed") - 1u, _why, sce_text_length(_why));
                 lua_pop(L, 1);
                 /* The chunk itself broke, so `_event.data` is left nil. That is
                    this engine's invariant failing rather than the payload's
@@ -5076,8 +5095,9 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
        breaking, said out loud here, not a reading of the payload, so no rung
        is claimed for it. */
     if (!bind_system_variable(L, "_event")) {
-        (void)fprintf(stderr, "SCE: binding the system variable _event failed: %s\n",
-                      lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error");
+        const char *_why = lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error";
+        _sce_log_write(SCE_LOG_ERROR, "SCE: binding the system variable _event failed",
+                       sizeof("SCE: binding the system variable _event failed") - 1u, _why, sce_text_length(_why));
         /* The failure's message, and the record below it when one was pushed. */
         lua_pop(L, record != NULL ? 2 : 1);
         return SCE_PAYLOAD_ABSENT;
@@ -5393,7 +5413,7 @@ SCE_SM_FN static bool is_refused_host_invoke_completion(const {{ csym_prefix }}{
         /* The generic `done.invoke` a document that names no specific
            completion receives: its invokeid says whose completion it is. */
 {% for inv in model.invokes | host_invoker %}
-        if (strcmp(evt->invoke_id, "{{ inv.invoke_id | escape_c }}") == 0) {
+        if (sce_text_compare(evt->invoke_id, "{{ inv.invoke_id | escape_c }}") == 0) {
             return true;
         }
 {% endfor %}
@@ -5543,7 +5563,7 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         {% for invoke_info in state.invokes | scxml %}
         {% if invoke_info.finalize_content %}
                 if (sm->child_{{ invoke_info.field_suffix }}_active
-                    && strcmp(_evt_sender, sm->child_{{ invoke_info.field_suffix }}.session_id) == 0) {
+                    && sce_text_compare(_evt_sender, sm->child_{{ invoke_info.field_suffix }}.session_id) == 0) {
                     (void)luaL_dostring(sm->L,
                         {{ invoke_info.finalize_content | to_lua_script | c_text_expr }});
                 }
@@ -5984,7 +6004,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             /* W3C SCXML C.2: a delayed BasicHTTP send waits here as a
                host-served one does, but its act is the machine's own HTTP
                client's, not a registered handler's. */
-            if (strcmp(_ready_req.processor_type, "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") == 0) {
+            if (sce_text_compare(_ready_req.processor_type, "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") == 0) {
                 {{ csym_prefix }}{{ model.name }}_perform_basic_http(sm, &_ready_req);
             } else {
                 {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_ready_req);
@@ -6183,11 +6203,12 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_advance_time_ms({{ csym_prefix 
         static bool _said = false;
         if (!_said) {
             _said = true;
-            (void)fprintf(stderr,
-                          "[sce] {{ model.name }}_advance_time_ms: this machine's clock is not "
-                          "sce_clock_manual, so the host does not own its time. Start it with "
-                          "_init_with_clock(sm, sce_clock_manual(0)), or drive it with _tick and "
-                          "_time_until_next_scheduled_ms\n");
+            /* A warning of the runtime's, through the log seam (sce/log.h). */
+            static const char _why[] = "[sce] {{ model.name }}_advance_time_ms: this machine's clock is not "
+                                       "sce_clock_manual, so the host does not own its time. Start it with "
+                                       "_init_with_clock(sm, sce_clock_manual(0)), or drive it with _tick and "
+                                       "_time_until_next_scheduled_ms";
+            _sce_log_write(SCE_LOG_WARNING, NULL, 0u, _why, sizeof(_why) - 1u);
         }
         return;
     }
@@ -6260,8 +6281,9 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
     } else {
         static unsigned long _sce_session_seq;
         ++_sce_session_seq;
-        (void)snprintf(sm->session_id, sizeof(sm->session_id),
-                       "{{ model.name | escape_c }}_session_%lu", _sce_session_seq);
+        sce_text_writer_t _id = sce_text_writer(sm->session_id, sizeof(sm->session_id));
+        sce_text_put_text(&_id, "{{ model.name | escape_c }}_session_");
+        sce_text_put_u64(&_id, (uint64_t)_sce_session_seq);
     }
     /* W3C SCXML C.1.1: the published address is the id, spelled as the
        SCXML event processor's URI by the one encoder every origin a session's
@@ -6483,7 +6505,7 @@ SCE_SM_FN static sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_cons
        no later moment the address could still reach the table. NULL or ""
        means no endpoint is deployed and no BasicHTTP entry is published. */
     if (basic_http_access_uri != NULL) {
-        size_t _uri_len = strlen(basic_http_access_uri);
+        size_t _uri_len = sce_text_length(basic_http_access_uri);
         if (_uri_len >= sizeof(sm->basic_http_access_uri)) {
             _uri_len = sizeof(sm->basic_http_access_uri) - 1u;
         }
@@ -6995,7 +7017,7 @@ SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm
                                          const {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *deadline) {
     char name[SCE_MAX_ID_LEN];
     const size_t prefix_len = sizeof(SCE_ERROR_INVOKE_PREFIX) - 1u;
-    const size_t id_len = strlen(deadline->deadline_invoke_id);
+    const size_t id_len = sce_text_length(deadline->deadline_invoke_id);
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t raised;
     memset(&raised, 0, sizeof(raised));
     if (!sce_host_invocation_take_token(&sm->started_host_invokes, deadline->deadline_processor_type,
@@ -7036,7 +7058,7 @@ SCE_SM_FN static void note_host_request({{ csym_prefix }}{{ model.name }}_t *sm,
         for (int j = 0; j < sm->started_host_invokes.count; ++j) {
             if (sm->started_host_invokes.tokens[j] == sm->started_host_requests[i].token &&
                 sm->started_host_requests[i].invoke_id[0] != '\0' &&
-                strcmp(sm->started_host_invokes.ids[j], sm->started_host_requests[i].invoke_id) == 0) {
+                sce_text_compare(sm->started_host_invokes.ids[j], sm->started_host_requests[i].invoke_id) == 0) {
                 live = true;
             }
         }
@@ -7069,7 +7091,7 @@ SCE_SM_FN static void note_host_request({{ csym_prefix }}{{ model.name }}_t *sm,
    not hand a host. */
 SCE_SM_FN static int host_invoke_start_slot(const char *invoke_id) {
 {% for inv in model.invokes | host_invoker %}
-    if (strcmp(invoke_id, "{{ inv.invoke_id | escape_c }}") == 0) {
+    if (sce_text_compare(invoke_id, "{{ inv.invoke_id | escape_c }}") == 0) {
         return {{ loop.index0 }};
     }
 {% endfor %}
@@ -7112,7 +7134,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     }
 {% if model.has_host_invoke_deadline %}
     for (int i = 0; i < param_count; ++i) {
-        if (strcmp(params[i].name, SCE_HOST_INVOKE_DEADLINE_PARAM) == 0) {
+        if (sce_text_compare(params[i].name, SCE_HOST_INVOKE_DEADLINE_PARAM) == 0) {
             /* Given twice is two answers to one question, so unreadable too. */
             if ((has_deadline || !sce_parse_host_invoke_deadline_ms(params[i].value, &deadline_ms))
                 && unreadable == NULL) {
@@ -7227,7 +7249,7 @@ SCE_SM_FN static void raise_host_invoke_failure({{ csym_prefix }}{{ model.name }
                                                 const char *reason) {
     char name[SCE_MAX_ID_LEN];
     const size_t prefix_len = sizeof(SCE_ERROR_INVOKE_PREFIX) - 1u;
-    const size_t id_len = strlen(invoke_id);
+    const size_t id_len = sce_text_length(invoke_id);
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t raised;
     /* sce-scratch-activity: failure */
     memset(&raised, 0, sizeof(raised));
@@ -7240,7 +7262,10 @@ SCE_SM_FN static void raise_host_invoke_failure({{ csym_prefix }}{{ model.name }
     if ({{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &raised.event, raised.name)) {
         /* docs/adr/0086, section 8.5 (d): written into the machine's scratch,
            a role of its own, since the raise below drains the inbox first. */
-        (void)snprintf(sm->scratch.failure, sizeof(sm->scratch.failure), "\"%s\"", reason);
+        sce_text_writer_t _quoted = sce_text_writer(sm->scratch.failure, sizeof(sm->scratch.failure));
+        sce_text_put_char(&_quoted, '"');
+        sce_text_put_text(&_quoted, reason);
+        sce_text_put_char(&_quoted, '"');
         raised.data = sm->scratch.failure;
         sce_copy_bounded_id(raised.invoke_id, invoke_id);
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &raised);
@@ -7300,7 +7325,7 @@ SCE_SM_FN static void start_restored_host_invokes({{ csym_prefix }}{{ model.name
             if (restored->deadline == 1u) {
                 /* The machine's own parameter, which the start takes out of what the host is
                    handed and arms: the time left. */
-                (void)snprintf(deadline_text, sizeof(deadline_text), "%llu", (unsigned long long)restored->remaining_ms);
+                (void)sce_text_of_u64((uint64_t)restored->remaining_ms, deadline_text, sizeof(deadline_text));
                 params[count].name = SCE_HOST_INVOKE_DEADLINE_PARAM;
                 params[count].value = deadline_text;
                 ++count;
@@ -7361,7 +7386,7 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
                                       const sce_event_origin_t *origin) {
     char name[SCE_MAX_ID_LEN];
     const char *prefix = failed ? SCE_ERROR_INVOKE_PREFIX : SCE_DONE_INVOKE_PREFIX;
-    const size_t prefix_len = strlen(prefix);
+    const size_t prefix_len = sce_text_length(prefix);
     size_t id_len;
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t completion;
     memset(&completion, 0, sizeof(completion));
@@ -7376,7 +7401,7 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
        copies the data into a text the engine allocates, and refuses the event
        there when the allocator gives nothing (section 8.5 (a)).{% endif %} */
 {% if not model.needs_script_engine %}
-    if (data != NULL && strlen(data) >= sizeof(sm->current_external.data)) {
+    if (data != NULL && sce_text_length(data) >= sizeof(sm->current_external.data)) {
         refuse_event_data(sm, NULL);
         return false;
     }
@@ -7387,7 +7412,7 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
 {% if model.has_host_invoke_deadline %}
     drop_host_invoke_deadline(sm, token);
 {% endif %}
-    id_len = strlen(invoke_id);
+    id_len = sce_text_length(invoke_id);
     if (prefix_len + id_len >= sizeof(name)) {
         /* A name longer than any event this machine declares cannot name one
            of them; the invocation is over either way. */
@@ -8001,7 +8026,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_end_host_invoke_in({{ cs
         return false;
     }
 {% if model.host_invoker_types %}
-    if (strcmp(session_id, sm->session_id) == 0) {
+    if (sce_text_compare(session_id, sm->session_id) == 0) {
         return failed ? {{ csym_prefix }}{{ model.name }}_fail_host_invoke(sm, processor_type, invoke_id, token, data, origin)
                       : {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from(sm, processor_type, invoke_id, token, data, origin);
     }
@@ -8114,7 +8139,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_detach_mesh({{ csym_prefix }}{{
    naming a session the tree does not hold reaches none. */
 SCE_SM_FN static void apply_host_invoke_ending({{ csym_prefix }}{{ model.name }}_t *sm,
                                                const sce_host_invoke_ending_t *ending) {
-    if (ending->session_id[0] != '\0' && strcmp(ending->session_id, sm->session_id) != 0) {
+    if (ending->session_id[0] != '\0' && sce_text_compare(ending->session_id, sm->session_id) != 0) {
         return;
     }
 {% if model.host_invoker_types %}
@@ -8318,7 +8343,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_post_ending({{ csym_prefi
        refused before it is posted, and counted as every refused post is; the
        poster is told by the false it is answered. */
     if (ending->data != NULL &&
-        strlen(ending->data) >= sizeof(((const {{ csym_prefix }}{{ model.name }}_inbox_input_t *)0)->as.ending.data)) {
+        sce_text_length(ending->data) >= sizeof(((const {{ csym_prefix }}{{ model.name }}_inbox_input_t *)0)->as.ending.data)) {
         sce_inbox_count_refusal(&sm->inbox);
         return false;
     }
@@ -8365,7 +8390,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_post({{ csym_prefix }}{{ 
        session the tree does not hold is refused. */
     if (input->kind == {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING &&
         input->as.ending.record.session_id[0] != '\0' &&
-        strcmp(input->as.ending.record.session_id, sm->session_id) != 0) {
+        sce_text_compare(input->as.ending.record.session_id, sm->session_id) != 0) {
         bool taken = false;
 {% if model.needs_script_engine %}
         /* The record with its data a view of the poster's storage, which the
@@ -8606,7 +8631,7 @@ SCE_SM_FN size_t {{ csym_prefix }}{{ model.name }}_done_data_wire(const {{ csym_
     }
 {% if static_done_data %}
     /* No script engine holds it: the buffer the final's entry wrote. */
-    whole = strlen(sm->done_data);
+    whole = sce_text_length(sm->done_data);
     if (cap > 0u) {
         size_t _done_n = whole;
         if (_done_n >= cap) {

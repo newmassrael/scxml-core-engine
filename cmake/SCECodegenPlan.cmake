@@ -966,8 +966,8 @@ endfunction()
 #     <PREFIX>_SOURCES        the paths of every C translation unit it writes
 #     <PREFIX>_REQUIRES       what the machines the run writes need linked
 #                             beside them, as the generator states it
-#                             (`--plan-requires`): each of `lua`, `dom`, `http`
-#                             and `clock` the backend decided while rendering
+#                             (`--plan-requires`): each of `lua`, `dom`, `http`,
+#                             `clock` and `log` the backend decided while rendering
 #                             them, or for a plan FROM another, what that plan
 #                             states for the child's generation. Empty for a
 #                             backend that states none. The plan also records
