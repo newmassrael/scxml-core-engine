@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A statechart that imports the two records of `codec_cbor_payload_record`
+  (tests/forge/conformance/numerical_reference.json): the note
+  static_host_cose.scxml signs by name and cbor_payload_leaves.scxml. It runs
+  nothing; it is read so that the build describes each record as a machine that
+  imports it would (sce-build/tests/the_standard_host_features_are_one_set.rs,
+  `the_build_describes_the_corpus_records_as_the_corpus_does`), and the corpus's
+  descriptions, which the runtimes' record codecs are held to, are the build's.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="cbor_payload_holder">
+  <sce:import kind="event-schema" src="../../../../sce-build/tests/fixtures/static_datamodel/schema_cose_note.scxml" as="Note"/>
+  <sce:import kind="event-schema" src="cbor_payload_leaves.scxml" as="Leaves"/>
+  <state id="idle"/>
+</scxml>

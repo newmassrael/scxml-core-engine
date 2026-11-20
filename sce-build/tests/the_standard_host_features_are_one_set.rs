@@ -1703,3 +1703,41 @@ fn the_build_describes_the_fixtures_note_as_the_cross_language_vector_does() {
         "the machine receives the note, or none"
     );
 }
+
+/// The corpus that holds the runtimes' record codecs and the codecs ADR 0101
+/// prints to one set of bytes (`codec_cbor_payload_record`) describes each of
+/// its records as the build does, so the descriptions the runtimes are held
+/// with are the ones a machine is generated with.
+#[test]
+fn the_build_describes_the_corpus_records_as_the_corpus_does() {
+    use sce_build::forge::value_type::ValueType;
+    let holder =
+        repo_root().join("tests/forge/conformance/codec_cbor_composed/cbor_payload_holder.scxml");
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_file(holder.to_str().expect("a utf-8 path"))
+        .expect("the holder parses");
+    let reference: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            repo_root().join("tests/forge/conformance/numerical_reference.json"),
+        )
+        .expect("the corpus is readable"),
+    )
+    .expect("the corpus is JSON");
+    let records = &reference["codecs"]["codec_cbor_payload_record"]["records"];
+    for (alias, record) in [("Note", "note"), ("Leaves", "leaves")] {
+        let described = sce_build::forge::payload_record::describe(
+            &ValueType::Record {
+                alias: alias.to_string(),
+            },
+            &model.imported_type_scope,
+        )
+        .unwrap_or_else(|why| panic!("{alias} is no record signed by name: {why}"));
+        assert_eq!(
+            described,
+            records[record]["description"]
+                .as_str()
+                .expect("a description"),
+            "{alias}"
+        );
+    }
+}

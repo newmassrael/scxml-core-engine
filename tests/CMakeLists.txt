@@ -1282,6 +1282,65 @@ if(TARGET sce_host_cose)
     add_test(NAME standard_host_named_bounds COMMAND standard_host_named_bounds_test)
 endif()
 
+# A record signed by name (docs/adr/0109, D9) has two writers: the record codec
+# (common/RecordCbor.h), which a machine writes it with from its payload JSON,
+# and the codec ADR 0101 prints for the same schema, which a peer that reads it
+# is built from. Each is held to the corpus's bytes for the records of
+# `codec_cbor_payload_record` (tests/forge/conformance/numerical_reference.json),
+# and each reads what the other writes. The printed codecs are maps of one
+# record (tests/forge/conformance/codec_cbor_composed/codec_cbor_payload_*.scxml),
+# generated with every document they reach into a directory of their own; the
+# note is the static datamodel fixtures' own schema. The Rust twin is
+# backends/rust/forge-conformance/tests/forge_cbor_payload_record.rs.
+set(_PAYLOAD_RECORD_DIR "${CMAKE_SOURCE_DIR}/tests/forge/conformance/codec_cbor_composed")
+set(_PAYLOAD_RECORD_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/payload_record_codec_generated")
+file(MAKE_DIRECTORY "${_PAYLOAD_RECORD_GENERATED_DIR}")
+set(_PAYLOAD_RECORD_DOCUMENTS
+    "${_PAYLOAD_RECORD_DIR}/cbor_composed_level.scxml"
+    "${_PAYLOAD_RECORD_DIR}/cbor_composed_point.scxml"
+    "${_PAYLOAD_RECORD_DIR}/cbor_composed_kind.scxml"
+    "${_PAYLOAD_RECORD_DIR}/cbor_composed_card.scxml"
+    "${_PAYLOAD_RECORD_DIR}/cbor_composed_batch.scxml"
+    "${_PAYLOAD_RECORD_DIR}/cbor_composed_choice.scxml"
+    "${_PAYLOAD_RECORD_DIR}/cbor_payload_leaves.scxml"
+    "${_PAYLOAD_RECORD_DIR}/codec_cbor_payload_leaves.scxml"
+    "${_PAYLOAD_RECORD_DIR}/codec_cbor_payload_note.scxml"
+    "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/schema_cose_note.scxml"
+)
+set(_PAYLOAD_RECORD_ALL_HEADERS "")
+foreach(_payload_record_document IN LISTS _PAYLOAD_RECORD_DOCUMENTS)
+    get_filename_component(_payload_record_stem "${_payload_record_document}" NAME_WE)
+    sce_codegen_generation(_PAYLOAD_RECORD_DOC
+        DOCUMENT "${_payload_record_document}"
+        OUTPUT_DIR "${_PAYLOAD_RECORD_GENERATED_DIR}"
+        LANGUAGE cpp
+        COMMENT "Generating the payload record fixture ${_payload_record_stem} (cpp)")
+    list(APPEND _PAYLOAD_RECORD_ALL_HEADERS ${_PAYLOAD_RECORD_DOC_HEADERS})
+endforeach()
+add_executable(payload_record_codec_test
+    integration/APayloadRecordCodecTest.cpp
+    ${_PAYLOAD_RECORD_ALL_HEADERS}
+)
+target_include_directories(payload_record_codec_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+        "${_PAYLOAD_RECORD_GENERATED_DIR}"
+)
+target_link_libraries(payload_record_codec_test
+    PRIVATE
+        sce_base
+        GTest::gtest_main
+        Threads::Threads
+)
+target_compile_definitions(payload_record_codec_test
+    PRIVATE
+        SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+)
+apply_sce_test_policies(payload_record_codec_test)
+add_test(NAME payload_record_codec COMMAND payload_record_codec_test)
+
 # ============================================================================
 # How a string is written into JSON text (ARCHITECTURE.md, "JSON Text (Single
 # Source of Truth)"): SCE::JsonText, nlohmann and the script engines'

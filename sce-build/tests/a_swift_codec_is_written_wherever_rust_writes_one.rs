@@ -34,13 +34,24 @@ const CODEC_ROOTS: &[&str] = &[
 /// The codecs of the repository Rust writes and Swift does not, by path from `sce-build`, each
 /// with what its refusal names, in order: the CBOR map of every constructor of the language, which
 /// Rust, the reference, prints and Swift does not yet (docs/adr/0101, Landing order steps 4a and
-/// 4g), and a field aligned to a DMA burst, which only an MCU-class backend writes
+/// 4g), the maps of one record a record signed by name is held to (docs/adr/0109, D9), whose
+/// record entry Swift does not print yet either, and a field aligned to a DMA burst, which only an MCU-class backend writes
 /// (`codegen/mcu-class-kind-on-non-mcu-language`).
 const REFUSED: &[(&str, &str)] = &[
     (
         "../tests/forge/conformance/codec_cbor_composed/codec_cbor_composed.scxml",
         "CBOR entry 'small' holds `int8`, a type of the language whose int8 the printer does not \
          lower in a CBOR codec yet",
+    ),
+    (
+        "../tests/forge/conformance/codec_cbor_composed/codec_cbor_payload_leaves.scxml",
+        "CBOR entry 'leaves' holds `record:Leaves`, a type of the language whose record the \
+         printer does not lower in a CBOR codec yet",
+    ),
+    (
+        "../tests/forge/conformance/codec_cbor_composed/codec_cbor_payload_note.scxml",
+        "CBOR entry 'note' holds `record:Note`, a type of the language whose record the printer \
+         does not lower in a CBOR codec yet",
     ),
     (
         "../tests/forge/resources/codec_dma_aligned_basic.scxml",
