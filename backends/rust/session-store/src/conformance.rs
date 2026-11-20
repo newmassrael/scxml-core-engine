@@ -45,6 +45,12 @@
 //! * [`every_session_is_listed_by_its_entry_and_named_by_its_key`]: each key is indexed under
 //!   an entry of its own, every session held is listed by its entry a page at a time in their
 //!   order, and the entry of a held session names its key.
+//! * [`a_batch_is_decided_item_by_item`] (ADR 0109, D15): a batch of writes keeps each one the
+//!   rules admit and refuses each other for its version or its fence alone, and what it kept,
+//!   its versions and its dues are as the same writes made one by one would leave them.
+//! * [`a_batch_sees_its_earlier_items_and_is_seen_whole_on_return`] (ADR 0109, D15): each item
+//!   is judged against what the items before it left, and once the batch answered every handle
+//!   sees all it kept.
 //!
 //! Each function needs a harness whose store holds nothing when it starts, since it reads the whole
 //! index of dues. The clock is the one the functions give; nothing here waits on time. A failed
@@ -55,6 +61,8 @@ use std::fmt::Debug;
 use std::sync::Barrier;
 use std::thread;
 
+use crate::batch::{Batched, Committed, Decided};
+use crate::outbox::{Write, Written};
 use crate::{
     AcquireError, Conflict, Due, Held, Lease, LeaseError, Lost, SessionStore, Stored, WriteError,
     LATEST_MOMENT,
@@ -673,6 +681,198 @@ pub fn every_session_is_listed_by_its_entry_and_named_by_its_key(harness: &impl 
         !page(None, 10).contains(&store.indexed("c")),
         "a deleted session is not listed"
     );
+}
+
+/// ADR 0109, D15: a batch of writes is one transaction decided item by item. Of five writes, the
+/// one made from a version that is no longer the session's and the one under a fence another
+/// grant replaced are each refused as alone, and change nothing; the other three (a write over a
+/// held session, a removal, a first write of a new one) are kept, each with a version of its own
+/// above every one given before, and the index of dues follows exactly what was kept.
+pub fn a_batch_is_decided_item_by_item(harness: &impl Harness) {
+    let store = harness.handle();
+    let kept = create(&store, "kept", Some(30));
+    let stale = create(&store, "stale", Some(10));
+    let fenced = create(&store, "fenced", Some(20));
+    let removed = create(&store, "removed", Some(5));
+    // The holder asks again, as a process that started again does: the first grant's writes are
+    // fenced out.
+    let taken = granted(store.acquire("fenced", "a", LATEST_MOMENT, 0));
+    let new = granted(store.acquire("new", "a", LATEST_MOMENT, 0));
+    let before_stale = read(&store, "stale");
+    let before_fenced = read(&store, "fenced");
+    let highest = new.fence;
+
+    let decided = store
+        .write_many(&[
+            Batched::Write {
+                key: "kept",
+                write: Write::put(b"kept again", Some(40), kept.version, kept.lease.fence),
+            },
+            Batched::Write {
+                key: "stale",
+                write: Write::put(b"stale again", Some(1), 0, stale.lease.fence),
+            },
+            Batched::Write {
+                key: "fenced",
+                write: Write::put(b"fenced again", Some(2), fenced.version, fenced.lease.fence),
+            },
+            Batched::Write {
+                key: "removed",
+                write: Write::delete(removed.version, removed.lease.fence),
+            },
+            Batched::Write {
+                key: "new",
+                write: Write::put(b"new", Some(50), 0, new.fence),
+            },
+        ])
+        .expect("a batch the store could make");
+    assert_eq!(decided.len(), 5, "an answer for each item: {decided:?}");
+
+    let kept_version = written(&decided[0]).version;
+    assert_eq!(
+        refused(&decided[1]),
+        Conflict::Version {
+            expected: 0,
+            current: stale.version
+        },
+        "an item made from a version that is not the session's"
+    );
+    assert_eq!(
+        refused(&decided[2]),
+        Conflict::Fence {
+            presented: fenced.lease.fence,
+            current: Some(taken.fence)
+        },
+        "an item under a fence another grant replaced"
+    );
+    assert_eq!(
+        written(&decided[3]),
+        &Written {
+            version: 0,
+            appended: Vec::new()
+        },
+        "a removal"
+    );
+    let new_version = written(&decided[4]).version;
+    assert!(
+        kept_version > highest && new_version > highest && kept_version != new_version,
+        "the versions of a batch, {kept_version} and {new_version}, are not each new above {highest}"
+    );
+
+    assert_eq!(
+        read(&store, "kept"),
+        Some(Stored {
+            state: b"kept again".to_vec(),
+            version: kept_version,
+            earliest_due: Some(40),
+        })
+    );
+    assert_eq!(
+        read(&store, "stale"),
+        before_stale,
+        "a refused item changed its session"
+    );
+    assert_eq!(
+        read(&store, "fenced"),
+        before_fenced,
+        "a fenced-out item changed its session"
+    );
+    assert_eq!(read(&store, "removed"), None);
+    assert_eq!(
+        read(&store, "new").map(|stored| stored.version),
+        Some(new_version)
+    );
+    assert_eq!(
+        listed(&store, LATEST_MOMENT, 10),
+        dues(
+            &store,
+            &[("stale", 10), ("fenced", 20), ("kept", 40), ("new", 50)]
+        ),
+        "the index of dues is not what the batch kept"
+    );
+}
+
+/// ADR 0109, D15: the items of a batch are judged in order, each against what the ones before it
+/// left: a second first write of one key, after a first in the same batch, is refused as made
+/// from a version that is no longer the session's. Once the batch answered, a handle opened after
+/// it sees everything it kept, the store's numbers go on above it, and a batch of nothing is
+/// answered with nothing.
+pub fn a_batch_sees_its_earlier_items_and_is_seen_whole_on_return(harness: &impl Harness) {
+    let store = harness.handle();
+    let lease = granted(store.acquire("k", "a", LATEST_MOMENT, 0));
+    let other = granted(store.acquire("other", "a", LATEST_MOMENT, 0));
+    let decided = store
+        .write_many(&[
+            Batched::Write {
+                key: "k",
+                write: Write::put(b"first", Some(7), 0, lease.fence),
+            },
+            Batched::Write {
+                key: "k",
+                write: Write::put(b"second", None, 0, lease.fence),
+            },
+            Batched::Write {
+                key: "other",
+                write: Write::put(b"other", None, 0, other.fence),
+            },
+        ])
+        .expect("a batch the store could make");
+    assert_eq!(decided.len(), 3, "{decided:?}");
+    let first = written(&decided[0]).version;
+    assert_eq!(
+        refused(&decided[1]),
+        Conflict::Version {
+            expected: 0,
+            current: first
+        },
+        "an item judged without the item before it"
+    );
+    let other_version = written(&decided[2]).version;
+
+    let again = harness.handle();
+    assert_eq!(
+        read(&again, "k"),
+        Some(Stored {
+            state: b"first".to_vec(),
+            version: first,
+            earliest_due: Some(7),
+        }),
+        "a handle opened after the batch does not see what it kept"
+    );
+    assert_eq!(
+        read(&again, "other").map(|stored| stored.version),
+        Some(other_version)
+    );
+    let next = again
+        .put("k", b"third", None, first, lease.fence)
+        .expect("a write after the batch, from the version it kept");
+    assert!(
+        next > first && next > other_version,
+        "the store's numbers started again after a batch: {next}"
+    );
+    assert!(
+        store
+            .write_many(&[])
+            .expect("a batch of nothing")
+            .is_empty(),
+        "a batch of nothing is answered with nothing"
+    );
+}
+
+/// What a kept write of a batch answered.
+fn written(decided: &Decided) -> &Written {
+    match decided {
+        Ok(Committed::Written(written)) => written,
+        other => panic!("an item that should have been written gave {other:?}"),
+    }
+}
+
+/// Why the store refused an item of a batch.
+fn refused(decided: &Decided) -> Conflict {
+    match decided {
+        Err(WriteError::Conflict(conflict)) => *conflict,
+        other => panic!("an item that should have been refused gave {other:?}"),
+    }
 }
 
 /// A session [`create`] made: the lease it was written under and its version.
