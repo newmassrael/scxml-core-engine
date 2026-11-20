@@ -7172,7 +7172,7 @@ fn deployment_value(
         |why: String| GenerateError::unsupported(format!("{what}: {why} (docs/adr/0109, D12)"));
     if !target.reads_deployment_values() {
         return Err(refused(format!(
-            "{} reads no value a deployment supplies yet; Rust and C++ do",
+            "a value a deployment supplies has no {} lowering yet; Rust and C++ read one",
             target.name()
         )));
     }

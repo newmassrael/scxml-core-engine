@@ -311,7 +311,7 @@ fn every_other_backend_refuses_a_deployment_value_by_name() {
                     "{name} refuses it by name:\n{out}"
                 );
                 assert!(
-                    out.contains("reads no value a deployment supplies"),
+                    out.contains("a value a deployment supplies has no"),
                     "the refusal says what {name} does not read:\n{out}"
                 );
             }
@@ -321,7 +321,7 @@ fn every_other_backend_refuses_a_deployment_value_by_name() {
     assert!(!ok, "the Interpreter reads no deployment value:\n{out}");
     assert!(
         out.contains("generate/unsupported-feature")
-            && out.contains("reads no value a deployment supplies"),
+            && out.contains("a value a deployment supplies has no ecmascript lowering"),
         "the Interpreter refuses it by name:\n{out}"
     );
 }
