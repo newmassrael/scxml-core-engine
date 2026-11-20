@@ -48,6 +48,13 @@
   Rust and C++ reference hosts; section 8, the scenario's `audit` directive and
   host state; sections 7 and 9 name it where they list the lanes and what is
   not provided.
+- Amended by: ADR 0109 (D17): section 10, the bounds of the signing and
+  sealing records are named (`cose_payload`, `cose_signed`, `cose_plaintext`,
+  `cose_sealed`), `--limit` moves them, a build that breaks their relations is
+  refused (`codegen/standard-host-bound-relation`), and the Rust and C++
+  reference hosts judge by the numbers the build gave them, as for
+  `mac_message` and `random_bytes` of sections 11 and 12; section 8, how a
+  reference host is given them.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -631,6 +638,36 @@ put-if whose process stopped before its answer reached the machine to its first
 result, answered by a host of the next process on the same file
 (`backends/rust/scenarios/tests/host_features.rs`).
 
+**The named bounds a host judges by** (docs/adr/0109, D17). The Rust and C++
+reference hosts hold the records of sections 10 to 12 to the numbers of their
+named bounds (`cose_payload`, `cose_signed`, `cose_plaintext`, `cose_sealed`,
+`mac_message`, `random_bytes`) the build of the machine they serve gave them,
+which the machine declares as `<Machine>Limits`: Rust's
+`ReferenceHost::set_named_bounds` takes a `NamedBounds`, and C++'s
+`CoseFeature(crypto, bounds)` a `NamedBounds` of `host/CoseHost.h`, each the
+library's numbers (`NamedBounds::LIBRARY`, a `NamedBounds{}`) when given none,
+which are those of a build given no limit. An embedding fills one from its
+machine's constants:
+
+```rust
+host.set_named_bounds(NamedBounds {
+    cose_payload: StaticHostCoseLimits::COSE_PAYLOAD as usize,
+    cose_signed: StaticHostCoseLimits::COSE_SIGNED as usize,
+    ..NamedBounds::LIBRARY
+});
+```
+
+A host given numbers below its machine's refuses a request the machine may
+make; one given numbers above them may answer with an object the machine's
+record cannot hold; so the two are given one build's numbers. Each lane drives the fixture `static_host_cose` built a second
+time with `--limit cose_payload=8192 --limit cose_signed=8448 --limit
+cose_plaintext=8448 --limit cose_sealed=8576` through a host given its
+constants, signing, verifying, sealing and opening at those bounds: Rust's
+module `static_datamodel_large` of the tree `rust-static-datamodel`
+(`a_build_with_larger_bounds_signs_and_seals_at_them_through_its_host`), C++'s
+executable `standard_host_named_bounds_test`
+(`tests/integration/AStandardHostNamedBoundsTest.cpp`).
+
 Three things differ by lane and are not hidden:
 
 - **The order of a response's fields.** The Python transport and the C++ libcurl
@@ -769,10 +806,10 @@ docs/adr/0107, D7).
 
 | Operation | `type` | Request | Result |
 |---|---|---|---|
-| Sign | `sce-host-cose-sign1` | `cose_sign1_request`: `key_id` (64), `payload` bytes (4096), `external_aad` bytes (256) | `cose_sign1_result`: `cose` bytes (4352) |
-| Verify | `sce-host-cose-verify1` | `cose_verify1_request`: `trust_set` (64), `cose` bytes (4352), `external_aad` bytes (256) | `cose_verify1_result`: `valid` bool, `key_id` string (64), `payload` bytes (4096) |
-| Seal | `sce-host-cose-encrypt0` | `cose_encrypt0_request`: `key_id` (64), `plaintext` bytes (4352), `external_aad` bytes (256) | `cose_encrypt0_result`: `cose` bytes (4480) |
-| Open | `sce-host-cose-decrypt0` | `cose_decrypt0_request`: `key_id` (64), `cose` bytes (4480), `external_aad` bytes (256) | `cose_decrypt0_result`: `opened` bool, `plaintext` bytes (4352) |
+| Sign | `sce-host-cose-sign1` | `cose_sign1_request`: `key_id` (64), `payload` bytes (`cose_payload`=4096), `external_aad` bytes (256) | `cose_sign1_result`: `cose` bytes (`cose_signed`=4352) |
+| Verify | `sce-host-cose-verify1` | `cose_verify1_request`: `trust_set` (64), `cose` bytes (`cose_signed`=4352), `external_aad` bytes (256) | `cose_verify1_result`: `valid` bool, `key_id` string (64), `payload` bytes (`cose_payload`=4096) |
+| Seal | `sce-host-cose-encrypt0` | `cose_encrypt0_request`: `key_id` (64), `plaintext` bytes (`cose_plaintext`=4352), `external_aad` bytes (256) | `cose_encrypt0_result`: `cose` bytes (`cose_sealed`=4480) |
+| Open | `sce-host-cose-decrypt0` | `cose_decrypt0_request`: `key_id` (64), `cose` bytes (`cose_sealed`=4480), `external_aad` bytes (256) | `cose_decrypt0_result`: `opened` bool, `plaintext` bytes (`cose_plaintext`=4352) |
 | Derive a key | `sce-host-key-derive` | `key_derive_request`: `secret` bytes (256), `input_key_id` (64), `salt` bytes (64), `info` bytes (256) | `key_derive_result`: `key_id` string (64) |
 
 A byte string travels, in a request and in a result, as its byte-exact Latin-1
@@ -818,7 +855,7 @@ Anything else is an answer, `valid` false with `key_id` and `payload` empty: a
 signature that does not verify, an object that is not a tagged `COSE_Sign1` of
 definite lengths with nothing after it, a protected header whose algorithm is not
 -8, a header label given twice or in both headers, a `crit` header (label 2), a
-detached payload, and a payload past 4096 bytes.
+detached payload, and a payload past the bound of `payload` (`cose_payload`).
 
 **Open.** `opened` is true when `key_id` opens the object over `external_aad`, and
 `plaintext` is then what was sealed. The key id the object carries is not read:
@@ -827,7 +864,40 @@ the request names the key. Anything else is an answer, `opened` false with
 `COSE_Encrypt0` of definite lengths with nothing after it, a protected algorithm
 that is not 24, a nonce that is not 12 bytes, a partial nonce (label 6), a header
 label given twice or in both headers, a `crit` header, a detached ciphertext, and
-a plaintext past 4352 bytes.
+a plaintext past the bound of `plaintext` (`cose_plaintext`).
+
+**The bounds are named, and a build moves them** (docs/adr/0109, D17). What is
+signed and the object signed, what is sealed and the object sealed, are bounded
+by the named bounds `cose_payload`, `cose_signed`, `cose_plaintext` and
+`cose_sealed`, at the numbers the table gives; `sce-codegen --limit name=N`
+moves each, as it moves every named bound (SCE Accepted Subset, "A bound a
+deployment chooses"), in the records and in every variable of a machine that
+names it. Two relations hold between them, which the table of standard types
+checks: an object takes up to 256 bytes more than the payload it signs (a
+`COSE_Sign1` adds at most 146: its tag and heads, a protected header of the
+algorithm and a key id at its bound of 64, an empty unprotected one, the
+signature of 64), and up to 128 more than the plaintext it seals (a
+`COSE_Encrypt0` adds at most 110: its tag and heads, the algorithm, a key id of
+64 and a nonce of 12 unprotected, the tag of 16). A build whose records hold a
+`cose_signed` below `cose_payload` and 256, or a `cose_sealed` below
+`cose_plaintext` and 128, is refused on each `<invoke>` of an operation that
+reads both, as `codegen/standard-host-bound-relation`, naming the two bounds,
+their numbers and the `--limit` that repairs it. A build that signs payloads of
+8192 bytes is therefore built with
+
+```
+sce-codegen --limit cose_payload=8192 --limit cose_signed=8448 generate ...
+```
+
+and a build given no limit holds every record, and every object signed or
+sealed, to the numbers it held before the bounds were named. The generated
+machine declares each bound it names as a constant of the number its build
+resolved (`<Machine>Limits::COSE_PAYLOAD` and its neighbours, on Rust and
+C++), and a reference host is given those
+numbers (section 8): a request past one is refused, and a verification or an
+opening whose payload or plaintext is past one is answered as one that does not
+verify or open. A payload of megabytes, a detached payload over a stored blob,
+is not this mechanism (docs/adr/0109, Open question 7).
 
 **Derive.** The input keying material is `secret` or the key `input_key_id`
 names: a configured symmetric key, a derived key, or a generated key of use
@@ -903,7 +973,8 @@ Refusal (`invalid_argument`): a `length` of 0, or past the bound of `bytes`.
 - Not idempotent: a draw repeated draws again. An invocation a restore starts
   again draws again, which no one can tell, since a completion the machine took
   is in its saved state and one it did not take was seen by nothing.
-- The bound of `bytes` is the named bound `random_bytes`, which `--limit` moves.
+- The bound of `bytes` is the named bound `random_bytes`, which `--limit` moves;
+  a reference host judges `length` by the number its build gave it (section 8).
 
 The same source gives the host's other draws: the id and the material of a
 generated key, the naming key of the key ring, and, unless the embedding gives a
