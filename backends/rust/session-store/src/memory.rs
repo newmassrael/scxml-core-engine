@@ -452,6 +452,57 @@ impl SessionStore for MemoryStore {
             .map(|row| row.note.clone())
             .collect())
     }
+
+    fn outbox_clients_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure> {
+        let from = after.map_or(Bound::Unbounded, Bound::Excluded);
+        Ok(self
+            .records()
+            .heads
+            .range::<str, _>((from, Bound::Unbounded))
+            .take(limit)
+            .map(|(client, _)| client.clone())
+            .collect())
+    }
+
+    fn reseal_entry(
+        &self,
+        client: &str,
+        number: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut records = self.records();
+        Ok(
+            match records.entries.get_mut(&(client.to_string(), number)) {
+                Some(entry) if entry.envelope == held => {
+                    entry.envelope = envelope.to_vec();
+                    true
+                }
+                _ => false,
+            },
+        )
+    }
+
+    fn reseal_note(
+        &self,
+        key: &str,
+        id: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut records = self.records();
+        Ok(match records.notes.get_mut(&id) {
+            Some(row) if row.session == key && row.note.envelope == held => {
+                row.note.envelope = envelope.to_vec();
+                true
+            }
+            _ => false,
+        })
+    }
 }
 
 /// The values of the key-value feature, kept beside the sessions so that a removal of a session
@@ -696,5 +747,61 @@ impl AuditStore for MemoryStore {
             .audit_identities
             .get(&identity_key(identity))
             .copied())
+    }
+
+    fn audit_streams_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure> {
+        let from = after.map_or(Bound::Unbounded, Bound::Excluded);
+        Ok(self
+            .records()
+            .audit_heads
+            .range::<str, _>((from, Bound::Unbounded))
+            .take(limit)
+            .map(|(stream, _)| stream.clone())
+            .collect())
+    }
+
+    fn audit_reseal_row(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        entry: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut records = self.records();
+        Ok(
+            match records.audit_rows.get_mut(&(stream.to_string(), sequence)) {
+                Some(row) if row.entry == held => {
+                    row.entry = entry.to_vec();
+                    true
+                }
+                _ => false,
+            },
+        )
+    }
+
+    fn audit_reseal_checkpoint(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        signature: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut records = self.records();
+        Ok(
+            match records
+                .audit_checkpoints
+                .get_mut(&(stream.to_string(), sequence))
+            {
+                Some(checkpoint) if checkpoint.signature == held => {
+                    checkpoint.signature = signature.to_vec();
+                    true
+                }
+                _ => false,
+            },
+        )
     }
 }

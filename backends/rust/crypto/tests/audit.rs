@@ -275,6 +275,35 @@ impl AuditStore for Tampered {
     fn audit_first(&self, identity: &Identity<'_>) -> Result<Option<u64>, Failure> {
         self.inner.audit_first(identity)
     }
+
+    fn audit_streams_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure> {
+        self.inner.audit_streams_after(after, limit)
+    }
+
+    fn audit_reseal_row(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        entry: &[u8],
+    ) -> Result<bool, Failure> {
+        self.inner.audit_reseal_row(stream, sequence, held, entry)
+    }
+
+    fn audit_reseal_checkpoint(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        signature: &[u8],
+    ) -> Result<bool, Failure> {
+        self.inner
+            .audit_reseal_checkpoint(stream, sequence, held, signature)
+    }
 }
 
 /// A stream of six rows, checkpointed every three, signed at its stop.

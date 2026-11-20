@@ -414,4 +414,34 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
             .map(|note| self.opened_note(note))
             .collect()
     }
+
+    /// The outboxes as the wrapped store keeps them: the entries of their clients' names, which
+    /// `SessionStore::indexed` answers for a name.
+    fn outbox_clients_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure> {
+        self.inner.outbox_clients_after(after, limit)
+    }
+
+    fn reseal_entry(
+        &self,
+        client: &str,
+        number: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        self.reseal_entry_sealed(client, number, held, envelope)
+    }
+
+    fn reseal_note(
+        &self,
+        key: &str,
+        id: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        self.reseal_note_sealed(key, id, held, envelope)
+    }
 }

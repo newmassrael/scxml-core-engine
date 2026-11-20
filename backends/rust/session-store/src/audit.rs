@@ -17,7 +17,12 @@
 //!   cannot both append one number ([`AuditAppend::Moved`]);
 //! * a row is never changed, and is deleted only by retention, a whole **segment** at a time: every
 //!   row up to a sequence a checkpoint is kept at, with the checkpoints before it, so the
-//!   checkpoint at the cut anchors what remains ([`AuditStore::audit_drop_through`]);
+//!   checkpoint at the cut anchors what remains ([`AuditStore::audit_drop_through`]). The one
+//!   replacement is of the bytes that hold an entry or a signature, made only from the bytes held,
+//!   every other column kept ([`AuditStore::audit_reseal_row`],
+//!   [`AuditStore::audit_reseal_checkpoint`]): how a store that seals what it keeps seals them again
+//!   under its active key (ADR 0109, D8), whose rows then hold the same entries and chain as
+//!   before;
 //! * the head outlives retention, so the next row is numbered on and chained on;
 //! * an append under the identity of an invocation (docs/SCE_HOST_FEATURES.md section 1) keeps
 //!   the identity in the append's transaction, and an append of an identity kept answers the
@@ -159,6 +164,50 @@ pub trait AuditStore: Send + Sync {
 
     /// The sequence the identity `identity` was appended at, if it was.
     fn audit_first(&self, identity: &Identity<'_>) -> Result<Option<u64>, Failure>;
+
+    /// The name the store keeps `stream` under: what [`AuditStore::audit_streams_after`] lists it
+    /// as. A store that keeps its names as they are answers `stream`; one that keeps each name as
+    /// a keyed digest of it, so that no name is in the clear on its medium (ADR 0109, D8), answers
+    /// that digest. It is computed, not read: the same for a stream the store holds nothing of.
+    fn audit_indexed(&self, stream: &str) -> String {
+        stream.to_string()
+    }
+
+    /// At most `limit` of the streams the store holds a head of, as the names it keeps them under
+    /// ([`AuditStore::audit_indexed`]), in the order of their UTF-8 bytes, each after `after` when
+    /// it is given. A pass over every stream (the re-seal of ADR 0109, D8) reads them a page at a
+    /// time, each page after the last name of the one before.
+    fn audit_streams_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure>;
+
+    /// Replace the entry of row `sequence` of `stream` with `entry` when it is `held`, every other
+    /// column kept, its chain included, and answer whether it did: `false`, writing nothing, when
+    /// the store holds no such row or its entry is another. The store checks no digest, so a caller
+    /// gives bytes that hold the same entry, as a store that seals what it keeps does when it seals
+    /// a row again under its active key (ADR 0109, D8); other bytes break the chain, which a
+    /// reader then finds.
+    fn audit_reseal_row(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        entry: &[u8],
+    ) -> Result<bool, Failure>;
+
+    /// Replace the signature of the checkpoint of `stream` at `sequence` with `signature` when it
+    /// is `held`, its chain kept, and answer whether it did: `false`, writing nothing, when the
+    /// store holds no such checkpoint or its signature is another. As with
+    /// [`AuditStore::audit_reseal_row`], the caller gives bytes that hold the same signature.
+    fn audit_reseal_checkpoint(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        signature: &[u8],
+    ) -> Result<bool, Failure>;
 }
 
 /// The decisions every audit store makes, written once.

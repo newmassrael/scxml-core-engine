@@ -20,11 +20,14 @@ use sce_rust_session_store::{
 };
 use zeroize::Zeroizing;
 
-use super::{decoded, encoded, SealError, Sealed};
+use super::{decoded, encoded, Reseal, Resealed, SealError, Sealed};
 use crate::cose::put;
 
 /// The name the outboxes of a `SessionStore` are sealed for.
 pub const STORE_OUTBOX: &str = "outbox";
+
+/// How many outboxes, or sessions, a re-seal pass reads at a time.
+const PAGE: usize = 256;
 
 /// An append as the wrapped store keeps it: the entries of its client and sender, and its record.
 pub(super) struct SealedAppend {
@@ -228,5 +231,139 @@ impl<S: SessionStore> Sealed<S> {
             .inner
             .open_outbox(&self.digest_of(client), incarnation, now_ms)?;
         self.opened_outbox(client, outbox)
+    }
+
+    /// The entry `number` of `client`'s outbox, opened and held to `held`, sealed again with
+    /// `envelope`, its sender kept.
+    pub(super) fn reseal_entry_sealed(
+        &self,
+        client: &str,
+        number: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        let entry = self.digest_of(client);
+        let Some(outbox) = self.inner.outbox(&entry)? else {
+            return Ok(false);
+        };
+        let Some(stored) = outbox
+            .entries
+            .into_iter()
+            .find(|stored| stored.number == number)
+        else {
+            return Ok(false);
+        };
+        let opened = self.open_entry(client, &entry, &stored.envelope)?;
+        if opened.envelope != held {
+            return Ok(false);
+        }
+        let record = self.seal(
+            STORE_OUTBOX,
+            entry.as_bytes(),
+            &payload(client, envelope, opened.sender.as_deref()),
+        )?;
+        self.inner
+            .reseal_entry(&entry, number, &stored.envelope, &record)
+    }
+
+    /// The note `id` of the session `key`, opened and held to `held`, sealed again with
+    /// `envelope`, its client and its sender kept.
+    pub(super) fn reseal_note_sealed(
+        &self,
+        key: &str,
+        id: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        let session = self.digest_of(key);
+        let Some(note) = self
+            .inner
+            .notes(&session)?
+            .into_iter()
+            .find(|note| note.id == id)
+        else {
+            return Ok(false);
+        };
+        let plaintext = self.open(STORE_OUTBOX, note.client.as_bytes(), &note.envelope)?;
+        let opened = opened(&plaintext)?;
+        if self.digest_of(&opened.client) != note.client {
+            return Err(SealError::Refused.into());
+        }
+        if opened.envelope != held {
+            return Ok(false);
+        }
+        let record = self.seal(
+            STORE_OUTBOX,
+            note.client.as_bytes(),
+            &payload(&opened.client, envelope, opened.sender.as_deref()),
+        )?;
+        self.inner
+            .reseal_note(&session, id, &note.envelope, &record)
+    }
+
+    /// Write every envelope of every outbox, and of every note an expiry wrote, sealed under a key
+    /// other than the active one again under the active one, each by the wrapped store's
+    /// replacement from the bytes the pass read: one another process changed or deleted in
+    /// between (an acknowledgement, an expiry, a write that took the note) is left, and needs no
+    /// later pass if it went. One that does not open is counted and left. An entry keeps its
+    /// number, its moment and its sender.
+    pub fn reseal_outboxes(&self) -> Result<Resealed, Failure> {
+        let mut resealed = Resealed::default();
+        let mut after: Option<String> = None;
+        loop {
+            let page = self.inner.outbox_clients_after(after.as_deref(), PAGE)?;
+            let Some(last) = page.last().cloned() else {
+                break;
+            };
+            for client in &page {
+                let Some(outbox) = self.inner.outbox(client)? else {
+                    continue;
+                };
+                for stored in outbox.entries {
+                    match self.reseal_record(STORE_OUTBOX, client.as_bytes(), &stored.envelope)? {
+                        Reseal::Current => {}
+                        Reseal::Refused => resealed.refused += 1,
+                        Reseal::Record(record) => resealed.count(self.inner.reseal_entry(
+                            client,
+                            stored.number,
+                            &stored.envelope,
+                            &record,
+                        )?),
+                    }
+                }
+            }
+            after = Some(last);
+        }
+        // A note is kept only for a session the store holds, so the sessions list every note.
+        let mut after: Option<String> = None;
+        loop {
+            let page = self.inner.indexed_after(after.as_deref(), PAGE)?;
+            let Some(last) = page.last().cloned() else {
+                break;
+            };
+            for listed in &page {
+                let Some(session) = self.inner.key_of(listed)? else {
+                    continue;
+                };
+                for note in self.inner.notes(&session)? {
+                    match self.reseal_record(
+                        STORE_OUTBOX,
+                        note.client.as_bytes(),
+                        &note.envelope,
+                    )? {
+                        Reseal::Current => {}
+                        Reseal::Refused => resealed.refused += 1,
+                        Reseal::Record(record) => resealed.count(self.inner.reseal_note(
+                            &session,
+                            note.id,
+                            &note.envelope,
+                            &record,
+                        )?),
+                    }
+                }
+            }
+            after = Some(last);
+        }
+        Ok(resealed)
     }
 }

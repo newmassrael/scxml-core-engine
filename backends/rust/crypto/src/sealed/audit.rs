@@ -24,8 +24,11 @@ use sce_rust_session_store::{
 };
 use zeroize::Zeroizing;
 
-use super::{decoded, encoded, expect_items, SealError, Sealed};
+use super::{decoded, encoded, expect_items, Reseal, Resealed, SealError, Sealed};
 use crate::cose::put;
+
+/// How many streams, and how many rows of one, a re-seal pass reads at a time.
+const PAGE: usize = 256;
 
 /// The name the entries of an `AuditStore`'s rows are sealed for.
 pub const STORE_AUDIT_ROWS: &str = "audit_rows";
@@ -73,6 +76,70 @@ impl<S> Sealed<S> {
             return Err(SealError::Refused.into());
         }
         Ok(bytes)
+    }
+}
+
+impl<S: AuditStore> Sealed<S> {
+    /// Write every row's entry and every checkpoint's signature sealed under a key other than the
+    /// active one again under the active one, each by the wrapped store's replacement from the
+    /// bytes the pass read: one another process changed in between is left for a later pass. One
+    /// that does not open is counted and left. The rows keep their sequences, their moments and
+    /// their chains, which are over the entries the records hold, so a reader verifies the stream
+    /// as before.
+    pub fn reseal_audit(&self) -> Result<Resealed, Failure> {
+        let mut resealed = Resealed::default();
+        let mut after: Option<String> = None;
+        loop {
+            let page = self.inner.audit_streams_after(after.as_deref(), PAGE)?;
+            let Some(last) = page.last().cloned() else {
+                break;
+            };
+            for stream in &page {
+                self.reseal_stream(stream, &mut resealed)?;
+            }
+            after = Some(last);
+        }
+        Ok(resealed)
+    }
+
+    /// The re-seal of the rows and the checkpoints of the stream the wrapped store keeps under
+    /// `entry`, counted in `resealed`.
+    fn reseal_stream(&self, entry: &str, resealed: &mut Resealed) -> Result<(), Failure> {
+        let mut from = 0;
+        loop {
+            let rows = self.inner.audit_rows(entry, from, PAGE)?;
+            let Some(end) = rows.last().map(|row| row.sequence) else {
+                break;
+            };
+            for row in rows {
+                let at = indexed(entry, row.sequence);
+                match self.reseal_record(STORE_AUDIT_ROWS, &at, &row.entry)? {
+                    Reseal::Current => {}
+                    Reseal::Refused => resealed.refused += 1,
+                    Reseal::Record(record) => resealed.count(self.inner.audit_reseal_row(
+                        entry,
+                        row.sequence,
+                        &row.entry,
+                        &record,
+                    )?),
+                }
+            }
+            from = end;
+        }
+        for checkpoint in self.inner.audit_checkpoints(entry)? {
+            let at = indexed(entry, checkpoint.sequence);
+            match self.reseal_record(STORE_AUDIT_CHECKPOINTS, &at, &checkpoint.signature)? {
+                Reseal::Current => {}
+                Reseal::Refused => resealed.refused += 1,
+                Reseal::Record(record) => resealed.count(self.inner.audit_reseal_checkpoint(
+                    entry,
+                    checkpoint.sequence,
+                    &checkpoint.signature,
+                    &record,
+                )?),
+            }
+        }
+        Ok(())
     }
 }
 
@@ -173,5 +240,88 @@ impl<S: AuditStore> AuditStore for Sealed<S> {
     fn audit_first(&self, identity: &Identity<'_>) -> Result<Option<u64>, Failure> {
         self.inner
             .audit_first(&self.indexed_identity(identity).identity())
+    }
+
+    fn audit_indexed(&self, stream: &str) -> String {
+        self.inner.audit_indexed(&self.digest_of(stream))
+    }
+
+    /// The streams as the wrapped store keeps them: the entries of their names.
+    fn audit_streams_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure> {
+        self.inner.audit_streams_after(after, limit)
+    }
+
+    /// The row of `stream` at `sequence`, opened and held to `held`, sealed again with `entry`.
+    fn audit_reseal_row(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        entry: &[u8],
+    ) -> Result<bool, Failure> {
+        let kept = self.digest_of(stream);
+        let Some(before) = sequence.checked_sub(1) else {
+            return Ok(false);
+        };
+        let Some(row) = self
+            .inner
+            .audit_rows(&kept, before, 1)?
+            .into_iter()
+            .find(|row| row.sequence == sequence)
+        else {
+            return Ok(false);
+        };
+        let opened = self.open_audit(STORE_AUDIT_ROWS, stream, &kept, sequence, &row.entry)?;
+        if opened != held {
+            return Ok(false);
+        }
+        let record = self.seal(
+            STORE_AUDIT_ROWS,
+            &indexed(&kept, sequence),
+            &payload(stream, entry),
+        )?;
+        self.inner
+            .audit_reseal_row(&kept, sequence, &row.entry, &record)
+    }
+
+    /// The checkpoint of `stream` at `sequence`, opened and held to `held`, sealed again with
+    /// `signature`.
+    fn audit_reseal_checkpoint(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        signature: &[u8],
+    ) -> Result<bool, Failure> {
+        let kept = self.digest_of(stream);
+        let Some(checkpoint) = self
+            .inner
+            .audit_checkpoints(&kept)?
+            .into_iter()
+            .find(|checkpoint| checkpoint.sequence == sequence)
+        else {
+            return Ok(false);
+        };
+        let opened = self.open_audit(
+            STORE_AUDIT_CHECKPOINTS,
+            stream,
+            &kept,
+            sequence,
+            &checkpoint.signature,
+        )?;
+        if opened != held {
+            return Ok(false);
+        }
+        let record = self.seal(
+            STORE_AUDIT_CHECKPOINTS,
+            &indexed(&kept, sequence),
+            &payload(stream, signature),
+        )?;
+        self.inner
+            .audit_reseal_checkpoint(&kept, sequence, &checkpoint.signature, &record)
     }
 }
