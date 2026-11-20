@@ -146,6 +146,10 @@ if(SCE_ENABLE_MESH)
         # network library: the adapters are targets of their own
         # (cmake/SCEMeshHttps.cmake).
         src/mesh/HttpsClient.cpp
+        # Its message signatures (docs/adr/0109, D9). It links no
+        # cryptographic library: the primitives are the host's
+        # (host/CoseCrypto.h), handed to the client at construction.
+        src/mesh/HttpsSignature.cpp
     )
 
     target_include_directories(sce_mesh_common

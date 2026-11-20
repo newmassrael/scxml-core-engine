@@ -6,6 +6,10 @@
 #   mesh_https_client_verification
 #       The client (mesh/transports/HttpsClient.h) against a mailbox in this
 #       process and against scripted answers: no network, every platform.
+#   mesh_https_signature_verification
+#       The client's message signatures (mesh/transports/HttpsSignature.h,
+#       docs/adr/0109 D9) against a signing server in this process, on
+#       libsodium: where the build found it.
 #   mesh_https_curl_adapter_conformance
 #       The libcurl adapter held to the conformance kit, when the adapter is
 #       built (cmake/SCEMeshHttps.cmake) and OpenSSL, the kit's TLS, is found.
@@ -45,6 +49,31 @@ target_link_libraries(mesh_https_client_test
 )
 apply_sce_test_policies(mesh_https_client_test)
 add_test(NAME mesh_https_client_verification COMMAND mesh_https_client_test)
+
+# The client's message signatures (docs/adr/0109, D9): RFC 9421's Ed25519
+# example, the request vector the Rust server verifies, and a client under
+# `verify:` that takes nothing of an altered or replayed response. On
+# libsodium through the host's crypto, so built only where the build found it
+# (cmake/SCEHostCose.cmake).
+if(TARGET sce_host_cose)
+    add_executable(mesh_https_signature_test
+        ${MESH_TEST_DIR}/HttpsSignatureTest.cpp
+    )
+    target_link_libraries(mesh_https_signature_test
+        PRIVATE
+            sce_mesh_common
+            sce_host_cose
+            GTest::gtest_main
+    )
+    target_compile_definitions(mesh_https_signature_test
+        PRIVATE
+            SCE_HTTPS_SIGNATURE_VECTOR_PATH="${CMAKE_SOURCE_DIR}/tests/mesh/https_signature_cross_language.json"
+    )
+    apply_sce_test_policies(mesh_https_signature_test)
+    add_test(NAME mesh_https_signature_verification COMMAND mesh_https_signature_test)
+else()
+    message(STATUS "SCE: libsodium was not found; mesh_https_signature_verification is not registered")
+endif()
 
 # The conformance kit: a TLS server of the wire, an explicit CONNECT proxy and
 # a TLS-inspecting proxy, on OpenSSL. Built only where an adapter is there to

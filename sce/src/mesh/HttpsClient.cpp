@@ -493,7 +493,40 @@ bool Client::start() {
         if (running_ || stopping_ || host_.transport == nullptr) {
             return false;
         }
+        // SCE_MESH.md section 22.9: what a signature covers of the exchange
+        // URL, and, for a binding that verifies, the trust set it verifies
+        // under. A binding that asks for verification is never run without
+        // it, so a host that gave no crypto or holds no such set is refused.
+        target_uri_ = Signatures::normalizeTargetUri(exchangeUrl(config_.base_url, config_.client)).value_or("");
+        if (config_.verify) {
+            if (host_.crypto == nullptr || host_.credentials == nullptr || target_uri_.empty()) {
+                return false;
+            }
+            trusted_ = host_.credentials->trustSet(*config_.verify);
+            if (!trusted_) {
+                return false;
+            }
+        }
         running_ = true;
+    }
+    if (config_.authenticator == Authenticator::Key) {
+        // SCE_MESH.md sections 22.5 and 22.9: every request is signed by the
+        // key the host generated once and keeps; a client whose host keeps
+        // none sends unsigned requests, which the server refuses, and says so.
+        std::optional<Signatures::Bytes> seed;
+        if (host_.credentials != nullptr) {
+            seed = host_.credentials->requestKeySeed(config_.peer);
+        }
+        if (seed && host_.crypto != nullptr && !target_uri_.empty()) {
+            signer_ = Signatures::RequestSigner::make(*host_.crypto, std::move(*seed));
+        } else if (seed && host_.crypto != nullptr) {
+            host_.crypto->wipe(*seed);
+        }
+        if (!signer_) {
+            auto err = communicationError(ReasonCode::Unauthorized, config_);
+            err.detail = "no request key: the host keeps none, or gave no crypto to sign with";
+            raise(std::move(err));
+        }
     }
     if (config_.authenticator == Authenticator::Install) {
         // SCE_MESH.md §mesh-22.5: drawn once and kept where the host says; a
@@ -590,17 +623,20 @@ std::optional<std::string> Client::authorization() {
         }
         return std::nullopt;
     case Authenticator::Mtls:
+    case Authenticator::Key:
         return std::nullopt;
     }
     return std::nullopt;
 }
 
-HttpsRequest Client::buildRequest(std::vector<std::uint8_t> body, std::chrono::milliseconds hold, Mark &sent) {
+std::optional<HttpsRequest> Client::buildRequest(std::vector<std::uint8_t> body, std::chrono::milliseconds hold,
+                                                 Mark &sent) {
     {
         std::lock_guard<std::mutex> deliver(deliver_mutex_);
         sent.ack = acknowledged_.load(std::memory_order_acquire);
         sent.epoch = epoch_;
     }
+    sent.nonce.clear();
     // SCE_MESH.md §mesh-22.1: the headers every request carries, the
     // acknowledgement and the incarnation it counts in (§mesh-22.3; none
     // before the first `200`), the hold and the credential.
@@ -616,13 +652,51 @@ HttpsRequest Client::buildRequest(std::vector<std::uint8_t> body, std::chrono::m
     if (auto value = authorization()) {
         request.headers.emplace_back("Authorization", std::move(*value));
     }
+    // SCE_MESH.md section 22.9: a client that verifies or signs draws a nonce
+    // for each exchange, which a response's signature covers so that it
+    // answers this request alone; under the `key` authenticator the request
+    // is signed over its body's digest.
+    if ((trusted_ || signer_) && host_.crypto != nullptr) {
+        auto drawn = host_.crypto->random(Signatures::kNonceBytes);
+        auto nonce = drawn ? host_.crypto->base64Url(*drawn) : std::nullopt;
+        if (!nonce) {
+            return std::nullopt;
+        }
+        sent.nonce = std::move(*nonce);
+        request.headers.emplace_back(Signatures::kNonceHeader, sent.nonce);
+    }
+    if (signer_) {
+        auto digest = Signatures::contentDigest(*host_.crypto, body);
+        if (!digest) {
+            return std::nullopt;
+        }
+        request.headers.emplace_back(Signatures::kContentDigestHeader, std::move(*digest));
+        const auto created =
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
+        auto signature = signer_->sign(target_uri_, request.headers, static_cast<std::int64_t>(created));
+        if (!signature) {
+            return std::nullopt;
+        }
+        request.headers.insert(request.headers.end(), std::make_move_iterator(signature->begin()),
+                               std::make_move_iterator(signature->end()));
+    }
     request.body = std::move(body);
     request.timeout = hold + kExchangeGrace;
     request.cancellation = &cancellation_;
     return request;
 }
 
-Client::Verdict Client::judge(const HttpsExchange &answer) {
+void Client::unauthenticated(const std::string &why) {
+    if (unauthenticated_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+    auto err = communicationError(ReasonCode::ResponseUnauthenticated, config_);
+    err.detail = why;
+    raise(std::move(err));
+}
+
+Client::Verdict Client::judge(const HttpsExchange &answer, const Mark &sent) {
     // SCE_MESH.md §mesh-22.4: what an answer is, by the section's status
     // table: no response is a failure at the transport, `200` is taken in,
     // `429` and `503` are load shed with the `Retry-After` they ask for, and
@@ -640,6 +714,17 @@ Client::Verdict Client::judge(const HttpsExchange &answer) {
     const std::uint16_t status = answer.status;
     if (status == 200) {
         verdict.kind = Verdict::Kind::Taken;
+        // SCE_MESH.md section 22.9: under `verify:` a `200` is the server's
+        // only when a key of the trust set signed it for this request.
+        if (trusted_ && host_.crypto != nullptr) {
+            const Signatures::Answered answered{target_uri_, std::to_string(sent.ack), sent.nonce};
+            const auto refusal = Signatures::verifyResponse(*host_.crypto, *trusted_, answer.status, answer.headers,
+                                                            answer.body, answered);
+            if (refusal != Signatures::Refusal::None) {
+                verdict.kind = Verdict::Kind::Unverified;
+                verdict.error = Signatures::refusalText(refusal);
+            }
+        }
     } else if (status == 429 || status == 503) {
         verdict.kind = Verdict::Kind::Shed;
         if (const auto value = headerValue(answer.headers, "Retry-After")) {
@@ -755,6 +840,7 @@ void Client::takeIn(const HttpsExchange &answer, const Mark &sent) {
 
 void Client::becomeReady() {
     refused_.store(false, std::memory_order_release);
+    unauthenticated_.store(false, std::memory_order_release);
     if (readiness_.exchange(Readiness::Ready, std::memory_order_acq_rel) != Readiness::Ready && events_.ready) {
         events_.ready();
     }
@@ -853,16 +939,37 @@ void Client::pollLoop() {
             }
         }
         Mark sent;
-        const HttpsExchange answer = host_.transport->exchange(buildRequest({}, config_.hold, sent));
+        const auto request = buildRequest({}, config_.hold, sent);
+        if (!request) {
+            // No nonce or signature could be made: nothing left, so nothing
+            // is lost, and the poll is made again on the backoff.
+            ++failures;
+            if (waitStopping(reconnectBackoff(failures))) {
+                return;
+            }
+            continue;
+        }
+        const HttpsExchange answer = host_.transport->exchange(*request);
         if (cancellation_.requested()) {
             return;
         }
-        const Verdict verdict = judge(answer);
+        const Verdict verdict = judge(answer, sent);
         switch (verdict.kind) {
         case Verdict::Kind::Taken:
             failures = 0;
             becomeReady();
             takeIn(answer, sent);
+            break;
+        case Verdict::Kind::Unverified:
+            // SCE_MESH.md section 22.9: nothing of it is taken, so nothing is
+            // acknowledged and readiness stands as it was; the router is
+            // told once per run of them, and the poll is made again on the
+            // backoff.
+            ++failures;
+            unauthenticated(verdict.error);
+            if (waitStopping(reconnectBackoff(failures))) {
+                return;
+            }
             break;
         case Verdict::Kind::Shed:
             // A server shedding load is alive: readiness stands, and the
@@ -923,12 +1030,18 @@ void Client::sendLoop() {
             envelopes.push_back(pending.env);
         }
         Mark sent;
-        const HttpsExchange answer =
-            host_.transport->exchange(buildRequest(encodeBody(envelopes), std::chrono::milliseconds(0), sent));
+        const auto request = buildRequest(encodeBody(envelopes), std::chrono::milliseconds(0), sent);
+        if (!request) {
+            // Nothing left: the envelopes go again under the binding's retry
+            // policy, or are told not sent.
+            failEnvelopes(std::move(batch), "no nonce or signature could be made for the exchange", true);
+            continue;
+        }
+        const HttpsExchange answer = host_.transport->exchange(*request);
         if (cancellation_.requested()) {
             return;
         }
-        const Verdict verdict = judge(answer);
+        const Verdict verdict = judge(answer, sent);
         failures = verdict.kind == Verdict::Kind::Taken ? 0u : failures + 1u;
         switch (verdict.kind) {
         case Verdict::Kind::Taken: {
@@ -940,6 +1053,15 @@ void Client::sendLoop() {
             takeIn(answer, sent);
             break;
         }
+        case Verdict::Kind::Unverified:
+            // SCE_MESH.md section 22.9: nothing says the server took what the
+            // request carried, so it is handed back as not sent, which a copy
+            // sent again under the retry policy makes good (the server's
+            // duplicate window drops one it took); nothing of the response is
+            // taken, and the router is told once per run of them.
+            unauthenticated(verdict.error);
+            failEnvelopes(std::move(batch), verdict.error, true);
+            break;
         case Verdict::Kind::Shed: {
             {
                 std::lock_guard<std::mutex> lock(mutex_);

@@ -387,6 +387,19 @@ inline Bytes coseKeyEd25519(const Bytes &kid, const Bytes &publicKey) {
     return Cbor::integerMap({{KEY_KTY, kty}, {KEY_KID, kidValue}, {KEY_CRV, crv}, {KEY_X, x}});
 }
 
+/// The COSE_Key RFC 9679 takes the thumbprint of for an Ed25519 public key: the members its key type
+/// requires and nothing else, `{1: 1, -1: 6, -2: x}`, in deterministic order. It names the algorithm and the
+/// curve with the key, so it is also how a key is offered where only its bytes would be ambiguous.
+inline Bytes coseKeyEd25519Required(const Bytes &publicKey) {
+    Bytes kty;
+    Cbor::integer(kty, KTY_OKP);
+    Bytes crv;
+    Cbor::integer(crv, CRV_ED25519);
+    Bytes x;
+    Cbor::byteString(x, publicKey);
+    return Cbor::integerMap({{KEY_KTY, kty}, {KEY_CRV, crv}, {KEY_X, x}});
+}
+
 // COSE_Sign1 (RFC 9052, section 4.2).
 
 /// The protected header of a COSE_Sign1 this host makes, as the bytes it carries: `alg` EdDSA and `kid`.

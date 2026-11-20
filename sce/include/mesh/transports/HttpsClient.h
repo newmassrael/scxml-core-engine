@@ -57,14 +57,27 @@
 //     in the incarnation its own request was sent in;
 //   * `fault`: section 16.7 row 2 for an envelope a send could not carry, row
 //     3 for one its retry policy gave up on, row 4 for a mailbox envelope that
-//     does not decode, row 9 for an envelope the outbox has no room for, and
-//     row 10 for a name the server's authenticator refused (once per run of
-//     refusals).
+//     does not decode, row 9 for an envelope the outbox has no room for, row
+//     10 for a name the server's authenticator refused (once per run of
+//     refusals), and row 19 for a response that did not verify under
+//     `verify:` (once per run of them).
+//
+// Message signatures (SCE_MESH.md section 22.9, docs/adr/0109 D9;
+// mesh/transports/HttpsSignature.h): under `verify:` a `200` is taken only
+// when a key of the host's trust set signed it for the request it answers;
+// one that does not verify is taken nothing of, acknowledges nothing, hands
+// what its request carried back as not sent, and leaves readiness as it was.
+// Under the `key` authenticator every request is signed by the key the host
+// generated once, and no Authorization is sent. Both draw a nonce for each
+// exchange, and both take their primitives from the host's crypto
+// (ClientHost::crypto).
 
 #pragma once
 
+#include "host/CoseCrypto.h"
 #include "mesh/CommunicationError.h"
 #include "mesh/MeshEnvelope.h"
+#include "mesh/transports/HttpsSignature.h"
 #include "mesh/transports/HttpsTransport.h"
 
 #include <algorithm>
@@ -133,6 +146,9 @@ enum class Authenticator {
     Install,
     /// A TLS client certificate the host configured on its adapter.
     Mtls,
+    /// Every request signed by an Ed25519 key the host generated once
+    /// (Credentials::requestKeySeed); no Authorization is sent.
+    Key,
 };
 
 /// An installation secret: 256 bits from the operating system's random
@@ -155,6 +171,24 @@ public:
     /// it was kept, since a secret lost at a restart would lock the name out
     /// of the server that pinned it.
     virtual bool storeInstallSecret(const std::string &peer, const InstallSecret &secret) = 0;
+
+    /// The 32-byte seed of the Ed25519 key the host generated once, and keeps,
+    /// for reaching `peer` under the `key` authenticator (docs/adr/0109, D7
+    /// and D9). The server pins the name to its public key at the first
+    /// exchange it answers, so a key the host loses locks the name out as a
+    /// lost installation secret does. None when the host keeps no key.
+    virtual std::optional<Signatures::Bytes> requestKeySeed(const std::string &peer) {
+        (void)peer;
+        return std::nullopt;
+    }
+
+    /// The keys of the trust set named `name` (deploy.yaml `verify:`), each
+    /// by its id, that a response from the server is verified under (docs/adr/0109,
+    /// D9). None when the host holds no such set.
+    virtual std::optional<std::vector<Signatures::TrustedKey>> trustSet(const std::string &name) {
+        (void)name;
+        return std::nullopt;
+    }
 };
 
 /// The binding's retry policy (deploy.yaml `retry:`, section 16.7 row 3), in
@@ -183,6 +217,10 @@ struct ClientConfig {
     std::chrono::milliseconds hold{25000};
     /// The binding's `retry:`, if it declared one.
     std::optional<RetryPolicy> retry;
+    /// The binding's `verify:`: the name of the trust set of the host's that
+    /// every `200` is verified under (docs/adr/0109, D9). None takes a `200`
+    /// as it comes.
+    std::optional<std::string> verify;
 };
 
 /// What the client tells the router. Each runs on a client thread; none of
@@ -264,10 +302,22 @@ private:
 };
 
 /// The host's part of a router with `https` bindings: the adapter it chose
-/// and, for `bearer` and `install`, its credentials.
+/// and, for `bearer`, `install`, `key` and a binding that verifies, its
+/// credentials; for `key` and a binding that verifies, the cryptography it
+/// links (host/SodiumCoseCrypto.h, on libsodium).
 struct ClientHost {
+    ClientHost() = default;
+
+    /// A host of `transport`, `credentials` and `crypto`, the ones left out
+    /// none: a host whose bindings need no credentials or signatures names its
+    /// transport alone.
+    explicit ClientHost(HttpsTransport *transport_, Credentials *credentials_ = nullptr,
+                        StandardHost::CoseCrypto *crypto_ = nullptr)
+        : transport(transport_), credentials(credentials_), crypto(crypto_) {}
+
     HttpsTransport *transport = nullptr;
     Credentials *credentials = nullptr;
+    StandardHost::CoseCrypto *crypto = nullptr;
 };
 
 // ── The wire, as functions the client and the conformance kit share ──
@@ -323,7 +373,9 @@ public:
     ~Client();
 
     /// Start polling and sending. False when the host gave no adapter, or the
-    /// client was started before.
+    /// client was started before, or the binding verifies (`verify:`) and the
+    /// host gave no crypto or holds no trust set of that name: a deployment
+    /// that asks for verification is never run without it.
     bool start();
 
     /// End every exchange and join the client's threads. What the outbox
@@ -370,10 +422,13 @@ public:
 private:
     enum class Readiness { Unknown, Ready, NotReady };
 
-    /// Where a request's acknowledgement stood when it was made.
+    /// Where a request's acknowledgement stood when it was made, and the nonce
+    /// it carried (empty when it carried none), which a response's signature
+    /// answers.
     struct Mark {
         std::uint64_t ack = 0;
         std::string epoch;
+        std::string nonce;
     };
 
     /// One envelope waiting for a send, with the attempts made for it.
@@ -387,6 +442,9 @@ private:
         enum class Kind {
             /// `200`: the body was taken in.
             Taken,
+            /// `200` that did not verify under `verify:`: nothing of it is
+            /// taken (SCE_MESH.md section 22.9).
+            Unverified,
             /// `429` or `503`: wait, then make the same exchange again.
             Shed,
             /// `413`: the body was too big.
@@ -405,12 +463,20 @@ private:
 
     void pollLoop();
     void sendLoop();
-    HttpsRequest buildRequest(std::vector<std::uint8_t> body, std::chrono::milliseconds hold, Mark &sent);
-    Verdict judge(const HttpsExchange &answer);
+    /// The request that carries `body` and asks for `hold`, and in `sent` what
+    /// it was made with; empty when a nonce or a signature it needs could not
+    /// be made.
+    std::optional<HttpsRequest> buildRequest(std::vector<std::uint8_t> body, std::chrono::milliseconds hold,
+                                             Mark &sent);
+    /// What `answer` to the request made with `sent` is.
+    Verdict judge(const HttpsExchange &answer, const Mark &sent);
     void takeIn(const HttpsExchange &answer, const Mark &sent);
     void becomeReady();
     void becomeNotReady(const std::string &why);
     void refusedName(const HttpsExchange &answer);
+    /// Tell the router, once per run of them, that a `200` did not verify
+    /// (SCE_MESH.md section 16.7 row 19).
+    void unauthenticated(const std::string &why);
     void failEnvelopes(std::vector<Pending> batch, const std::string &error, bool retryable);
     std::chrono::milliseconds backoffFor(std::uint32_t attempts);
     std::chrono::milliseconds reconnectBackoff(std::uint32_t failures);
@@ -438,7 +504,15 @@ private:
     std::string epoch_;
     std::atomic<Readiness> readiness_{Readiness::Unknown};
     std::atomic<bool> refused_{false};
+    /// Whether the last `200` did not verify, so a run of them is told once.
+    std::atomic<bool> unauthenticated_{false};
     std::optional<InstallSecret> install_secret_;
+    /// The key every request is signed with under the `key` authenticator.
+    std::optional<Signatures::RequestSigner> signer_;
+    /// The trust set every `200` is verified under, when the binding verifies.
+    std::optional<std::vector<Signatures::TrustedKey>> trusted_;
+    /// The exchange URL as a signature covers it (`@target-uri`).
+    std::string target_uri_;
 
     std::thread poller_;
     std::thread sender_;

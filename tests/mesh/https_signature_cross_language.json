@@ -1,0 +1,39 @@
+{
+  "about": [
+    "A request of the Mesh https binding signed under the `key` authenticator (SCE_MESH.md section",
+    "22.9; docs/adr/0109, D9), which the C++ client and the Rust host core agree on byte for byte.",
+    "The values were computed apart from both, with libsodium's Ed25519 through PyNaCl.",
+    "",
+    "`seed` is the Ed25519 seed the client's host generated, `public_key` its public key; every",
+    "hexadecimal value is the bytes it spells. The client posts `body` to `url`, whose target URI as a",
+    "signature covers it is `target_uri`, with the fields `headers`, at `created` (seconds since the",
+    "Unix epoch). Signing it must add exactly the fields `signed`, in that order: the key it offers",
+    "(the COSE_Key of RFC 9679's thumbprint input, base64url), the Signature-Input whose keyid is that",
+    "key's thumbprint (base64url), and the Signature.",
+    "",
+    "The C++ client's RequestSigner signs these inputs into `signed`; the Rust server's verification",
+    "takes the request whole (`headers` and `signed`) under the offered key at `created`, and refuses",
+    "it with a covered field changed."
+  ],
+  "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+  "url": "https://Cal.Example:9443/api/sce-mesh/1/phone",
+  "target_uri": "https://cal.example:9443/api/sce-mesh/1/phone",
+  "body": "a10102",
+  "created": 1763600000,
+  "headers": [
+    ["Content-Digest", "sha-256=:6LEarzy5abiYf8sQ/bRzpvCWnHsLK/FmtHmI8TXNK04=:"],
+    ["Sce-Mesh-Ack", "3"],
+    ["Sce-Mesh-Epoch", "0123456789abcdef0123456789abcdef"],
+    ["Sce-Mesh-Hold-Ms", "0"],
+    ["Sce-Mesh-Nonce", "AAECAwQFBgcICQoLDA0ODw"]
+  ],
+  "signed": [
+    ["Sce-Mesh-Key", "owEBIAYhWCADoQe_884Qvh1w3RjnS8CZZ-TWMJulDV8d3IZkElUxuA"],
+    [
+      "Signature-Input",
+      "sce=(\"@method\" \"@target-uri\" \"content-digest\" \"sce-mesh-ack\" \"sce-mesh-epoch\" \"sce-mesh-hold-ms\" \"sce-mesh-nonce\");created=1763600000;keyid=\"vl3i9LzcODrdP8mCfTRfGjfGoGAms4aW-zIpwAOzX0k\";alg=\"ed25519\";tag=\"sce-mesh-1\""
+    ],
+    ["Signature", "sce=:H1Oytph6aijXqYYbHk2Ryll762XEe2FbXsPx6YoFy7Vmj8xLk14KNxtXGDM7E3Kq+CxfRnWbn2VAMkf0P97aBQ==:"]
+  ]
+}
