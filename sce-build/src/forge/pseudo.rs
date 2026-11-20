@@ -2952,6 +2952,9 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                 if !i.entry_schema.is_empty() {
                     out.line(&format!("entry {}", text(&i.entry_schema)));
                 }
+                if !i.payload_schema.is_empty() {
+                    out.line(&format!("payload-record {}", text(&i.payload_schema)));
+                }
             }
         }
     });

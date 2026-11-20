@@ -2148,6 +2148,14 @@ pub fn emit_model_artifacts(
         forge::standard_host::HostLane::Generated(language),
     )
     .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
+    // docs/adr/0109, D0 and D9: a record a COSE operation signs, seals,
+    // verifies or opens by name is encoded and decoded on the lanes whose
+    // runtime holds the record codec, and refused by name on every other.
+    forge::payload_record::refuse_unread(
+        model,
+        forge::standard_host::HostLane::Generated(language),
+    )
+    .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
     // docs/SCE_TEST_PROFILE.md §11.9: a `test-component` is read and checked
     // on every backend, and a backend generates one only once the profile's
     // runtime lands there (`codegen_matrix::TEST_COMPONENT_BACKENDS`); every

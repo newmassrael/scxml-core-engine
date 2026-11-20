@@ -769,13 +769,21 @@
   <xs:attribute name="service" type="xs:string"/>
   <xs:attribute name="subfunc" type="xs:string"/>
   <xs:attribute name="addr" type="xs:string"/>
-  <!-- `sce:payload` has two readings, told apart by the element that carries
-       it. On a procedure `<send sce:service>` it names the operand that is
-       the request's payload (above). On the `<datamodel>` of a
+  <!-- `sce:payload` has three readings, told apart by the element that
+       carries it. On a procedure `<send sce:service>` it names the operand
+       that is the request's payload (above). On the `<datamodel>` of a
        `sce:kind="event-schema"` document it is `none` — the specification
        says the event carries no data — and stands in for the field a schema
-       otherwise has to declare (SCE Accepted Subset, "Fieldless schema").
-       `xs:string` for both: the parser refuses any other value on a
+       otherwise has to declare (SCE Accepted Subset, "Fieldless schema"). On
+       an `<invoke>` of a COSE operation of the standard host
+       (docs/adr/0107, Open question 1; docs/adr/0109, D9) it names the
+       imported event schema whose record the operation signs or seals, as
+       its deterministic CBOR, or reads back from what it verified or opened;
+       the parser and the build own its refusals (on an invoke of another
+       type, empty, naming no imported schema, a record with no CBOR form, one
+       whose largest encoding is past the bound of the byte string it crosses
+       in), each `validation/payload-record-schema`.
+       `xs:string` for all three: the parser refuses any other value on a
        `<datamodel>` with its own diagnostic, which a schema type would
        pre-empt. -->
   <xs:attribute name="payload" type="xs:string"/>

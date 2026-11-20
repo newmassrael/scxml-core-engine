@@ -1491,6 +1491,10 @@ struct TypedInvokeAttrs {
     /// (`crate::forge::audit_entry::resolve`).
     entry: String,
     entry_at: Option<crate::forge::error::SourceLocation>,
+    /// `sce:payload` (docs/adr/0109, D9), judged where the imports resolve
+    /// (`crate::forge::payload_record::resolve`).
+    payload: String,
+    payload_at: Option<crate::forge::error::SourceLocation>,
 }
 
 /// Read `sce:request` / `sce:result` from `node`, refusing them where they
@@ -1576,6 +1580,38 @@ fn collect_typed_invoke_attrs(
             }
             attrs.entry = attribute.value().to_string();
             attrs.entry_at = Some(crate::forge::error::SourceLocation {
+                file: artifact_label(source_name),
+                line: Some(pos.row),
+                col: Some(pos.col),
+            });
+            continue;
+        }
+        if attribute.name() == "payload" {
+            // A record signed, sealed, verified or opened by name, and only an
+            // invoke the host runs signs one. Whether its type is a COSE
+            // operation and its alias an import is judged where the imports
+            // resolve, under its own code.
+            crate::sce_attr::note(node, &attribute);
+            let pos = node.document().text_pos_at(attribute.range_value().start);
+            if !host_runnable {
+                return Err(Located::new(
+                    ValidationError::PayloadRecordSchema {
+                        invoke_id: node.attribute("id").unwrap_or("").to_string(),
+                        alias: attribute.value().to_string(),
+                        detail: format!(
+                            "is written on an <invoke> of type \"{invoke_type}\", which SCE runs \
+                             itself or resolves at run time, and only a COSE operation of the \
+                             standard host signs, verifies, seals or opens a record by name"
+                        ),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                ));
+            }
+            attrs.payload = attribute.value().to_string();
+            attrs.payload_at = Some(crate::forge::error::SourceLocation {
                 file: artifact_label(source_name),
                 line: Some(pos.row),
                 col: Some(pos.col),
@@ -3671,6 +3707,11 @@ impl SCXMLParser {
             // imported schema too, judged against the same map before the
             // request it writes a field of is judged.
             crate::forge::audit_entry::resolve(&model, diag_label)?;
+            // The record a COSE operation signs, seals, verifies or opens by
+            // name (docs/adr/0109, D9) is an imported schema too, judged
+            // against the same map before the request it fills a field of is
+            // judged.
+            crate::forge::payload_record::resolve(&model, diag_label)?;
             // A mark of a schema is followed where a value's type is known, and
             // a statechart of any data model but `sce-static` has none: one that
             // imports a schema marking a field is refused here, by every route
@@ -3684,6 +3725,10 @@ impl SCXMLParser {
             // An invoke of a standard host type (docs/SCE_HOST_FEATURES.md) is
             // held to the records the standard library gives that type.
             crate::forge::standard_host::validate(&model, diag_label)?;
+            // A verification or an opening that names a record completes with
+            // the record the build derives of the library's result, so that is
+            // what its completion is bound to below (docs/adr/0109, D9).
+            crate::forge::payload_record::derive_completions(&mut model, diag_label)?;
             crate::forge::typed_invoke::bind_results(&mut model);
             // A closed interface is judged against the schemas just
             // resolved, here where they are read and for the same reason
@@ -6215,6 +6260,8 @@ impl SCXMLParser {
                 answer_schema_at: typed.answer_at,
                 entry_schema: typed.entry,
                 entry_schema_at: typed.entry_at,
+                payload_schema: typed.payload,
+                payload_schema_at: typed.payload_at,
                 // What lowering fills in, for a document that has it lowered.
                 ..UnsupportedInvokeInfo::default()
             })));

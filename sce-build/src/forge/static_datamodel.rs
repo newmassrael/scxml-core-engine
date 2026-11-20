@@ -630,13 +630,53 @@ fn logged_alike(ty: InferredType, enum_value: bool) -> bool {
     }
 }
 
-/// Whether `param` is the `entry` of an audit append that names its entry's
-/// schema (docs/adr/0109, D14): a record, held to that schema and crossing as
-/// its JSON payload, rather than a text the request's field types.
-fn is_audit_entry(info: &crate::model::UnsupportedInvokeInfo, param: &Param) -> bool {
-    info.invoke_type == crate::forge::audit_entry::AUDIT_APPEND
+/// A `<param>` of a host-run invoke that is a record the invoke names the
+/// schema of, rather than a text the request's field types.
+struct RecordParam<'a> {
+    /// The alias of the record's schema.
+    alias: &'a str,
+    /// The attribute that names it.
+    attribute: &'static str,
+    /// What the param is, as a refusal opens.
+    what: &'static str,
+    /// The form the record crosses to the host in.
+    form: &'static str,
+}
+
+/// The record `param` is, if it is one: the `entry` of an audit append that
+/// names its entry's schema (docs/adr/0109, D14), which crosses as its JSON
+/// payload, or the `payload` of a signing or the `plaintext` of a seal that
+/// names its record (docs/adr/0109, D9), which crosses as its deterministic
+/// CBOR.
+fn record_param_of<'a>(
+    info: &'a crate::model::UnsupportedInvokeInfo,
+    param: &Param,
+) -> Option<RecordParam<'a>> {
+    if info.invoke_type == crate::forge::audit_entry::AUDIT_APPEND
         && !info.entry_schema.is_empty()
         && param.name == crate::forge::audit_entry::ENTRY_FIELD
+    {
+        return Some(RecordParam {
+            alias: &info.entry_schema,
+            attribute: "sce:entry",
+            what: "the entry of an audit append",
+            form: "JSON payload",
+        });
+    }
+    let op = crate::forge::payload_record::operation(&info.invoke_type)?;
+    (op.side == crate::forge::payload_record::Side::Request
+        && !info.payload_schema.is_empty()
+        && param.name == op.field)
+        .then_some(RecordParam {
+            alias: &info.payload_schema,
+            attribute: "sce:payload",
+            what: if op.field == "plaintext" {
+                "the plaintext of a seal"
+            } else {
+                "the payload of a signing"
+            },
+            form: "deterministic CBOR (docs/adr/0101, section 2)",
+        })
 }
 
 /// Whether a value of `ty` is a whole union, present or optional
@@ -5377,20 +5417,21 @@ impl<'a> Judge<'a> {
         }
     }
 
-    /// The `entry` of an audit append (docs/adr/0109, D14): a variable, or a
-    /// field of a record variable, of the very record `alias`, the schema its
-    /// `sce:entry` names, which crosses to the host as the record's JSON
-    /// payload. Anything else (a literal, a text, a record of another schema)
-    /// is refused where it is written.
-    fn audit_entry_value(
+    /// A `<param>` that is a record the invoke names its schema of
+    /// ([`RecordParam`]): a variable, or a field of a record variable, of the
+    /// very record `alias`, which crosses to the host in the form the
+    /// attribute that names it gives. Anything else (a literal, a text, a
+    /// record of another schema) is refused where it is written.
+    fn record_param_value(
         &self,
         ctx: &TypeCtx<'_>,
         param: &Param,
-        alias: &str,
+        named: &RecordParam<'_>,
         element: &str,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
         use crate::forge::value_type::ValueType;
+        let alias = named.alias;
         let wire = WireParam::of_param(param);
         let written = wire.written;
         let held = crate::forge::expr::written_place(written)
@@ -5407,9 +5448,11 @@ impl<'a> Judge<'a> {
         Err(self.rule_at(
             format!("<param name=\"{}\"> of {element}", param.name),
             &format!(
-                "the entry of an audit append is a variable, or a field of a record variable, \
-                 of the record sce:entry names (`record:{alias}`), which crosses as its JSON \
-                 payload, and `{}` is no such place",
+                "{} is a variable, or a field of a record variable, of the record {} names \
+                 (`record:{alias}`), which crosses as its {}, and `{}` is no such place",
+                named.what,
+                named.attribute,
+                named.form,
                 written.trim()
             ),
             at.and_then(|l| l.line),
@@ -6821,10 +6864,13 @@ impl<'a> Judge<'a> {
             }
             // The host is handed the pairs as text, with no spelling for an
             // absent value (docs/adr/0055). The entry of an audit append is a
-            // record, which crosses as its JSON payload (docs/adr/0109, D14).
+            // record, which crosses as its JSON payload (docs/adr/0109, D14),
+            // and the payload of a signing and the plaintext of a seal that
+            // name their record are one, which crosses as its deterministic
+            // CBOR (docs/adr/0109, D9).
             for param in &base.params {
-                if is_audit_entry(info, param) {
-                    self.audit_entry_value(ctx, param, &info.entry_schema, &element, state)?;
+                if let Some(named) = record_param_of(info, param) {
+                    self.record_param_value(ctx, param, &named, &element, state)?;
                     continue;
                 }
                 self.wire_param(
@@ -6840,7 +6886,11 @@ impl<'a> Judge<'a> {
                 self.wire_param(ctx, &pair, &element, Carrier::Text, state)?;
             }
             if let Some(request) = self.schemas.get(&info.request_schema) {
-                for param in base.params.iter().filter(|p| !is_audit_entry(info, p)) {
+                for param in base
+                    .params
+                    .iter()
+                    .filter(|p| record_param_of(info, p).is_none())
+                {
                     self.request_field_value(ctx, param, request, &element, state)?;
                 }
             }

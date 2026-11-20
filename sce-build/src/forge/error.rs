@@ -1672,6 +1672,21 @@ pub enum ValidationError {
         detail: String,
     },
 
+    /// docs/adr/0107, Open question 1, and docs/adr/0109, D9: an `sce:payload`
+    /// that names no record the build can sign, seal, verify or open by name:
+    /// on an `<invoke>` of a type other than the four COSE operations, empty,
+    /// naming no event schema the document imports, naming one whose type has
+    /// no CBOR form, or one whose largest deterministic CBOR is past the bound
+    /// of the byte string it crosses in; or a completion's derived record whose
+    /// alias the document imports another record under. `alias` is the
+    /// attribute as written, the record's `actual` when it is not empty.
+    #[error("<invoke id=\"{invoke_id}\" sce:payload=\"{alias}\">: {detail}")]
+    PayloadRecordSchema {
+        invoke_id: String,
+        alias: String,
+        detail: String,
+    },
+
     /// §scxml-G-7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the

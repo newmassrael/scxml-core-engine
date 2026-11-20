@@ -105,6 +105,7 @@
         "validation/map-in-wire-position",
         "validation/deployment-value-assigned",
         "validation/audit-entry-schema",
+        "validation/payload-record-schema",
         "validation/encoded-size-overflow",
         "test-profile/datamodel",
         "test-profile/matcher-type",

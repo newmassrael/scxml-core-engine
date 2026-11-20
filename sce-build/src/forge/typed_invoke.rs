@@ -181,7 +181,14 @@ pub fn bind_results(model: &mut SCXMLModel) {
             let Invoke::Unsupported(info) = invoke else {
                 continue;
             };
-            if let Some(schema) = model.imported_records.get(&info.result_schema) {
+            // A verification or an opening that names a record completes with
+            // the record the build derived for it (docs/adr/0109, D9).
+            let bound_to = if info.payload_result.is_empty() {
+                &info.result_schema
+            } else {
+                &info.payload_result
+            };
+            if let Some(schema) = model.imported_records.get(bound_to) {
                 let event = format!("{DONE_INVOKE_PREFIX}{}", info.base.invoke_id);
                 let mut bound = schema.clone();
                 bound.event_name = event.clone();

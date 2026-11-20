@@ -2112,6 +2112,41 @@ pub struct UnsupportedInvokeInfo {
     /// [`Self::request_schema_at`] gives.
     #[serde(skip)]
     pub entry_schema_at: Option<SourceLocation>,
+    /// `sce:payload` — the alias of the imported event schema whose record a
+    /// COSE operation of the standard host signs or seals, or reads back from
+    /// what it verified or opened (docs/adr/0107, Open question 1; docs/adr/0109,
+    /// D9; [`crate::forge::payload_record`]). Empty when the invoke names none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub payload_schema: String,
+    /// Where `sce:payload`'s value is spelled, for the reason
+    /// [`Self::request_schema_at`] gives.
+    #[serde(skip)]
+    pub payload_schema_at: Option<SourceLocation>,
+    /// The alias of the record the build derives for the completion of a
+    /// verification or an opening that names [`Self::payload_schema`]: the
+    /// library's result with the bytes it verified or opened read as an
+    /// `optional<record:...>` of that schema, which `done.invoke.<id>` is bound
+    /// to ([`crate::forge::payload_record::derive_completions`]). Empty for
+    /// every other invoke.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub payload_result: String,
+    /// Codegen-internal: the field of the request whose bytes are the record
+    /// [`Self::payload_schema`] names, in its deterministic CBOR (`payload` of
+    /// a signing, `plaintext` of a seal); empty for every other invoke. Set
+    /// with [`Self::payload_cbor`] where the build decides which invokes a host
+    /// serves ([`crate::forge::payload_record::write_descriptors`]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub payload_param: String,
+    /// Codegen-internal: the description of the type of the record
+    /// [`Self::payload_schema`] names that the runtime's record codec reads
+    /// (`sce_rust_runtime::record_cbor`, `common/RecordCbor.h`), as JSON text
+    /// ([`crate::forge::payload_record::describe`]); empty for an invoke that
+    /// names no record.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub payload_cbor: String,
 }
 
 /// What an escaped [`invoke_identifier`] begins with: a digit, which no

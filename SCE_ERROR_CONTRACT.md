@@ -1087,6 +1087,7 @@ references against a real document and drift silently.
 | `validation/native-action-release` | `validation` | no |  |
 | `validation/native-action-signature-conflict` | `validation` | no |  |
 | `validation/numeric-parse` | `validation` | no |  |
+| `validation/payload-record-schema` | `validation` | no | ADR 0109 D9 |
 | `validation/provenance-duplicate` | `validation` | no |  |
 | `validation/provenance-malformed` | `validation` | no |  |
 | `validation/removed-attribute` | `validation` | `remove_fields` | SCE Mesh §13 |

@@ -3197,6 +3197,11 @@ driven on the six AOT channels.
 - Amended by: ADR 0109 (Open question 9): a mark of `sce:sensitivity` holds in
   a `<log>` too, which writes `sce-secret` or `sce-personal` in place of a
   value read from a marked field (§2.15, "What a `<log>` shows").
+- Amended by: ADR 0109 (D9, its record-level half; ADR 0107, Open question 1):
+  `sce:payload` on the four COSE operations, whose request's byte string is the
+  record it names as its deterministic CBOR, and whose completion's byte string
+  is that record, the result's record derived by the build; Rust and C++ only;
+  `validation/payload-record-schema` and the failure `not_a_record`.
 - Amended by: ADR 0109 (D17): the signing and sealing records name their
   bounds (`cose_payload`, `cose_signed`, `cose_plaintext`, `cose_sealed`),
   which `--limit` moves, and a build whose bounds break a relation of the
@@ -5323,6 +5328,32 @@ serve the operation (docs/adr/0109, D0); every other lane refuses it as
 every lane: a `<log>` of a marked value writes `sce-secret` or `sce-personal` in its
 place, and a statechart of another data model that imports a marked schema is
 refused (docs/adr/0109, Open question 9; "What a `<log>` shows" above).
+
+**A record signed and sealed by name: `sce:payload`** (docs/adr/0109, D9;
+docs/adr/0107, Open question 1; docs/SCE_HOST_FEATURES.md, "Signing and sealing").
+`<invoke type="sce-host-cose-sign1" sce:payload="Note">` names the imported event
+schema whose record the operation carries, on `sce-host-cose-sign1`,
+`sce-host-cose-verify1`, `sce-host-cose-encrypt0` and `sce-host-cose-decrypt0`. On a
+signing and a seal the `<param name="payload">` (`plaintext`) is a variable or a field
+of that very record type, as an audit entry is, and nothing else is admitted there; the
+machine writes it where the invocation starts as its deterministic CBOR (docs/adr/0101,
+section 2), whose bytes are the request's byte string, and a record that has no
+encoding (a list below its lower count) is `error.execution` with nothing started. On
+a verification and an opening the build derives the completion's record from the
+library's result, its byte string replaced by an `optional<record:...>` of the named
+schema, and binds `done.invoke.<id>` to it: the machine reads `_event.data.payload`
+(`plaintext`) as the record, present when the object verified (opened), and never its
+bytes; bytes that are no value of the record make the completion the failure
+`not_a_record`, every other field at its zero. `validation/payload-record-schema`
+refuses the attribute on an invoke of another type, an empty one, one naming no event
+schema the document imports (an enum or a union among them), a record whose type has no
+CBOR form, one whose largest CBOR is past the bound of the byte string it crosses in
+(`cose_payload`, `cose_plaintext`, which `--limit` moves), and a completion record whose
+derived alias (`<result alias>Of<invoke>`) the document imports another record under.
+Rust and C++ read the record (docs/adr/0109, D0); every other lane, the Interpreter
+included, refuses the machine by name, as `codegen/standard-host-type-not-served` while
+it serves no COSE operation and as `generate/unsupported-feature` naming `sce:payload`
+once it serves them without the record codec.
 
 **The bounds of the signing and sealing records** (docs/adr/0109, D17;
 docs/SCE_HOST_FEATURES.md, "Signing and sealing"). The library's records name the bound
@@ -10896,7 +10927,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (562 codes)
+## Appendix — `DiagnosticCode` index (563 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10996,6 +11027,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/map-in-wire-position` | Validation |
 | `validation/deployment-value-assigned` | Validation |
 | `validation/audit-entry-schema` | Validation |
+| `validation/payload-record-schema` | Validation |
 | `validation/encoded-size-overflow` | Validation |
 | `test-profile/datamodel` | Validation |
 | `test-profile/matcher-type` | Validation |
