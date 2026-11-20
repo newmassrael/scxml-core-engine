@@ -348,7 +348,7 @@ pub(crate) fn perform<T: Transport>(
     }
     let mut pseudonym = |text: &str| -> Result<String, KeyError> {
         keyring
-            .audit_pseudonym(text.as_bytes(), now_ms, random.as_mut())
+            .audit_pseudonym(text.as_bytes(), now_ms, &mut **random)
             .map(|digest| hex(&digest))
     };
     let written = match redact(entry, marks_text, policy.personal, &mut pseudonym) {
@@ -363,9 +363,9 @@ pub(crate) fn perform<T: Transport>(
         }
     };
     let mut writer = Writer {
-        store: audit.as_ref(),
+        store: &**audit,
         keyring,
-        random: random.as_mut(),
+        random: &mut **random,
         now_ms,
     };
     match writer.append(
