@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The event `static_host_cose.scxml` is told to open a sealed note with: the key
+  to open it with and the object, whose plaintext it reads back as the record
+  of schema_cose_note.scxml (sce:payload, docs/adr/0109, D9).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_cose_note_open"
+       sce:event-name="cose.note.open">
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="cose" sce:type="bytes[cose_sealed=4480]" sce:direction="in"/>
+  </datamodel>
+</scxml>

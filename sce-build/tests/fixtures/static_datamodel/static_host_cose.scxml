@@ -14,6 +14,17 @@
   account the log keeps as its keyed digest and whose password it never
   writes.
 
+  It also signs, verifies, seals and opens a record by name (sce:payload,
+  docs/adr/0109, D9): `cose.note.sign` hands it a note
+  (schema_cose_note.scxml), which it signs as its deterministic CBOR under the
+  key `device-a`; `cose.note.verify` (schema_cose_note_check.scxml) verifies an
+  object and reads its payload back as a note; `cose.note.seal` seals the note
+  it holds under the key `vault`; `cose.note.open`
+  (schema_cose_note_open.scxml) opens an object and reads its plaintext back as
+  a note. The machine never holds the note's bytes: what it receives is the
+  record, or nothing, and bytes that are no note are the operation's failure
+  `not_a_record`.
+
   Each request record of the library is also the event that asks for it
   (`host.cose.sign1.request`, ...). `cose.held.open` opens the object the
   machine sealed last, which it keeps in `sealed_object`, for a seal whose
@@ -39,6 +50,11 @@
     issued_token   the bearer token the last issue gave
     revoked    how many tokens and pins the last revocation took away
     audit_sequence   the sequence the last append was written at
+    note_signed      the object the last signing of a note gave
+    note_valid, note_signer, verified_note   the last verification of a
+                     note's answer, the note absent where none came back
+    note_sealed      the object the last seal of a note gave
+    note_opened, opened_note     the last opening of a note's answer
 
   Only `outcome` is written by a failure or a refusal; what an earlier
   operation published stays.
@@ -85,6 +101,9 @@
   <sce:import kind="event-schema" src="sce:std/host/audit_append_result.scxml" as="AuditAppendResult"/>
   <sce:import kind="event-schema" src="schema_cose_held.scxml" as="HeldOpen"/>
   <sce:import kind="event-schema" src="schema_audit_sign_in.scxml" as="SignIn"/>
+  <sce:import kind="event-schema" src="schema_cose_note.scxml" as="Note"/>
+  <sce:import kind="event-schema" src="schema_cose_note_check.scxml" as="NoteCheck"/>
+  <sce:import kind="event-schema" src="schema_cose_note_open.scxml" as="NoteOpen"/>
   <datamodel>
     <!-- The arguments of the operation the machine is asking for. -->
     <data id="sign_key" sce:type="string[64]" expr="''"/>
@@ -119,6 +138,17 @@
       <sce:set name="result" expr="''"/>
       <sce:set name="attempt" expr="0"/>
     </data>
+    <data id="note" sce:type="record:Note">
+      <sce:set name="serial" expr="0"/>
+      <sce:set name="owner" expr="''"/>
+      <sce:set name="blob" expr="''"/>
+      <sce:set name="active" expr="false"/>
+      <sce:set name="offset" expr="0"/>
+    </data>
+    <data id="note_trust" sce:type="string[64]" expr="''"/>
+    <data id="note_check" sce:type="bytes[cose_signed=4352]" expr="''"/>
+    <data id="note_open_key" sce:type="string[64]" expr="''"/>
+    <data id="note_open_cose" sce:type="bytes[cose_sealed=4480]" expr="''"/>
     <!-- What the machine publishes. -->
     <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
     <data id="signed_object" sce:type="bytes[cose_signed=4352]" expr="''" sce:direction="out"/>
@@ -138,6 +168,13 @@
     <data id="issued_token" sce:type="string[64]" expr="''" sce:direction="out"/>
     <data id="revoked" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="audit_sequence" sce:type="string[20]" expr="''" sce:direction="out"/>
+    <data id="note_signed" sce:type="bytes[cose_signed=4352]" expr="''" sce:direction="out"/>
+    <data id="note_valid" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="note_signer" sce:type="string[64]" expr="''" sce:direction="out"/>
+    <data id="verified_note" sce:type="optional&lt;record:Note&gt;" expr="null" sce:direction="out"/>
+    <data id="note_sealed" sce:type="bytes[cose_sealed=4480]" expr="''" sce:direction="out"/>
+    <data id="note_opened" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="opened_note" sce:type="optional&lt;record:Note&gt;" expr="null" sce:direction="out"/>
   </datamodel>
 
   <state id="idle">
@@ -203,6 +240,18 @@
     </transition>
     <transition event="audit.sign_in" target="auditing">
       <assign location="sign_in" expr="_event.data"/>
+    </transition>
+    <transition event="cose.note.sign" target="signing_note">
+      <assign location="note" expr="_event.data"/>
+    </transition>
+    <transition event="cose.note.verify" target="verifying_note">
+      <assign location="note_trust" expr="_event.data.trust_set"/>
+      <assign location="note_check" expr="_event.data.cose"/>
+    </transition>
+    <transition event="cose.note.seal" target="sealing_note"/>
+    <transition event="cose.note.open" target="opening_note">
+      <assign location="note_open_key" expr="_event.data.key_id"/>
+      <assign location="note_open_cose" expr="_event.data.cose"/>
     </transition>
   </state>
 
@@ -443,6 +492,93 @@
       <assign location="outcome" expr="'done'"/>
     </transition>
     <transition event="done.invoke.audit" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <!-- A note signed by name: the request's payload is the note, which crosses
+       as its deterministic CBOR. -->
+  <state id="signing_note">
+    <invoke type="sce-host-cose-sign1" id="sign_note" sce:request="Sign1Request" sce:result="Sign1Result" sce:payload="Note">
+      <param name="key_id" expr="'device-a'"/>
+      <param name="payload" expr="note"/>
+      <param name="external_aad" expr="''"/>
+    </invoke>
+    <transition event="done.invoke.sign_note" cond="_event.data.error === ''" target="idle">
+      <assign location="note_signed" expr="_event.data.cose"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.sign_note" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <!-- A note verified by name: the completion's payload is the note, present
+       when the object verified; a failure leaves every field at its zero. -->
+  <state id="verifying_note">
+    <invoke type="sce-host-cose-verify1" id="verify_note" sce:request="Verify1Request" sce:result="Verify1Result" sce:payload="Note">
+      <param name="trust_set" expr="note_trust"/>
+      <param name="cose" expr="note_check"/>
+      <param name="external_aad" expr="''"/>
+    </invoke>
+    <transition event="done.invoke.verify_note" cond="_event.data.error === ''" target="idle">
+      <assign location="note_valid" expr="_event.data.valid"/>
+      <assign location="note_signer" expr="_event.data.key_id"/>
+      <assign location="verified_note" expr="_event.data.payload"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.verify_note" target="idle">
+      <assign location="note_valid" expr="_event.data.valid"/>
+      <assign location="note_signer" expr="_event.data.key_id"/>
+      <assign location="verified_note" expr="_event.data.payload"/>
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <!-- The note the machine holds, sealed by name. -->
+  <state id="sealing_note">
+    <invoke type="sce-host-cose-encrypt0" id="seal_note" sce:request="Encrypt0Request" sce:result="Encrypt0Result" sce:payload="Note">
+      <param name="key_id" expr="'vault'"/>
+      <param name="plaintext" expr="note"/>
+      <param name="external_aad" expr="''"/>
+    </invoke>
+    <transition event="done.invoke.seal_note" cond="_event.data.error === ''" target="idle">
+      <assign location="note_sealed" expr="_event.data.cose"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.seal_note" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <!-- A note opened by name: the completion's plaintext is the note, present
+       when the object opened. -->
+  <state id="opening_note">
+    <invoke type="sce-host-cose-decrypt0" id="open_note" sce:request="Decrypt0Request" sce:result="Decrypt0Result" sce:payload="Note">
+      <param name="key_id" expr="note_open_key"/>
+      <param name="cose" expr="note_open_cose"/>
+      <param name="external_aad" expr="''"/>
+    </invoke>
+    <transition event="done.invoke.open_note" cond="_event.data.error === ''" target="idle">
+      <assign location="note_opened" expr="_event.data.opened"/>
+      <assign location="opened_note" expr="_event.data.plaintext"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.open_note" target="idle">
+      <assign location="note_opened" expr="_event.data.opened"/>
+      <assign location="opened_note" expr="_event.data.plaintext"/>
       <assign location="outcome" expr="_event.data.error"/>
     </transition>
     <transition event="error.execution" target="idle">

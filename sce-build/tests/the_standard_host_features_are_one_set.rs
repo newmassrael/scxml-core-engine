@@ -723,8 +723,13 @@ const ANSWER_ID: &str = "urn:sce:schema:answer:1";
 /// written beside it, which declares its own id and JSON Schema, is not read as
 /// the machine's.
 fn generate(language: &str, doc: &str) -> (bool, String, String) {
+    generate_beside(language, doc, &MODEL_SIBLINGS)
+}
+
+/// [`generate`] of `doc` beside `siblings`.
+fn generate_beside(language: &str, doc: &str, siblings: &[(&str, &str)]) -> (bool, String, String) {
     let dir = tempdir().expect("tempdir");
-    for (name, text) in MODEL_SIBLINGS {
+    for (name, text) in siblings {
         std::fs::write(dir.path().join(name), text).expect("write sibling");
     }
     let path = dir.path().join("probe.scxml");
@@ -1431,4 +1436,270 @@ fn a_record_built_with_no_limit_declares_what_its_bare_numbers_declared() {
             assert_eq!(moved, named, "{record}: a bound it does not name moved it");
         }
     }
+}
+
+// ── A record signed by name (docs/SCE_HOST_FEATURES.md, section 10; docs/adr/0109, D9) ──
+
+/// The record a payload probe signs and verifies by name.
+const NOTE: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="note" sce:event-name="note.made">
+  <datamodel>
+    <data id="serial" sce:type="uint32" sce:direction="in"/>
+    <data id="owner" sce:type="string[24]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// An enum a probe imports, which is no record.
+const LEVEL: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="level" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="0"/>
+      <sce:variant name="high" value="1"/>
+    </data>
+  </datamodel>
+</scxml>
+"#;
+
+/// The description the build writes of [`NOTE`]'s type, as the runtimes'
+/// record codecs read it, the fields in the order their keys encode, escaped
+/// as a Rust and a C++ text literal both spell it.
+const NOTE_DESCRIPTION_ESCAPED: &str =
+    r#"{\"record\":[[\"owner\",false,{\"text\":24}],[\"serial\",false,{\"uint\":32}]]}"#;
+
+const PAYLOAD_SIBLINGS: [(&str, &str); 2] = [("note.scxml", NOTE), ("level.scxml", LEVEL)];
+
+/// A `sce-static` statechart that signs `payload` with a signing that carries
+/// `sign_attrs`, and verifies the object with a verification that carries
+/// `verify_attrs`, keeping what the verification read in `got`.
+fn payload_probe(sign_attrs: &str, payload: &str, verify_attrs: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="probe">
+  <sce:import kind="event-schema" src="sce:std/host/cose_sign1_request.scxml" as="Sign1Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_sign1_result.scxml" as="Sign1Result"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_verify1_request.scxml" as="Verify1Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_verify1_result.scxml" as="Verify1Result"/>
+  <sce:import kind="event-schema" src="note.scxml" as="Note"/>
+  <datamodel>
+    <data id="note" sce:type="record:Note">
+      <sce:set name="serial" expr="7"/>
+      <sce:set name="owner" expr="'alice'"/>
+    </data>
+    <data id="label" sce:type="string[24]" expr="''"/>
+    <data id="object" sce:type="bytes[cose_signed=4352]" expr="''"/>
+    <data id="got" sce:type="optional&lt;record:Note&gt;" expr="null" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="signing"/>
+  </state>
+  <state id="signing">
+    <invoke type="sce-host-cose-sign1" id="sign"{sign_attrs} sce:request="Sign1Request" sce:result="Sign1Result">
+      <param name="key_id" expr="'k'"/>
+      <param name="payload" expr="{payload}"/>
+      <param name="external_aad" expr="''"/>
+    </invoke>
+    <transition event="done.invoke.sign" target="verifying">
+      <assign location="object" expr="_event.data.cose"/>
+    </transition>
+  </state>
+  <state id="verifying">
+    <invoke type="sce-host-cose-verify1" id="verify"{verify_attrs} sce:request="Verify1Request" sce:result="Verify1Result">
+      <param name="trust_set" expr="'t'"/>
+      <param name="cose" expr="object"/>
+      <param name="external_aad" expr="''"/>
+    </invoke>
+    <transition event="done.invoke.verify" target="idle">
+      <assign location="got" expr="_event.data.payload"/>
+    </transition>
+  </state>
+</scxml>
+"#
+    )
+}
+
+/// The probe that signs and verifies the note by name.
+fn note_probe() -> String {
+    payload_probe(r#" sce:payload="Note""#, "note", r#" sce:payload="Note""#)
+}
+
+/// docs/adr/0109, D0 and D9: a record is signed and verified by name on Rust and
+/// C++, and a build for every other lane refuses the machine by name.
+#[test]
+fn a_record_signed_by_name_is_served_on_rust_and_cpp_and_refused_elsewhere() {
+    let doc = note_probe();
+    for language in languages() {
+        let (ok, text) = run(&["check", "-l", language], &doc, &PAYLOAD_SIBLINGS);
+        if matches!(language, "rust" | "cpp") {
+            assert!(ok, "{language} refused a record signed by name: {text}");
+        } else {
+            assert!(!ok, "{language} took a record signed by name: {text}");
+            assert!(
+                text.contains("codegen/standard-host-type-not-served")
+                    && text.contains("sce-host-cose-sign1")
+                    && text.contains("rust, cpp"),
+                "{language}: {text}"
+            );
+        }
+    }
+}
+
+/// The machine encodes the record where the signing starts and reads the record
+/// back where the verification completes, by the description the build writes
+/// of its type, and the failure of bytes that are no note is the build's own.
+#[test]
+fn the_build_encodes_the_record_where_a_signing_starts_and_reads_it_where_a_verification_ends() {
+    let doc = note_probe();
+    for (language, encode, open) in [
+        (
+            "rust",
+            "::sce_rust_runtime::record_cbor::encode_text(",
+            "::sce_rust_runtime::record_cbor::open_completion(",
+        ),
+        (
+            "cpp",
+            "::SCE::Common::RecordCbor::encodeValue(",
+            "::SCE::Common::RecordCbor::openCompletion(",
+        ),
+    ] {
+        let (ok, text, written) = generate_beside(language, &doc, &PAYLOAD_SIBLINGS);
+        assert!(ok, "{language} did not generate: {text}");
+        assert!(
+            written.contains(encode),
+            "{language}: the signing does not encode its record"
+        );
+        assert!(
+            written.contains(open),
+            "{language}: the verification does not read its record"
+        );
+        assert!(
+            written.contains(NOTE_DESCRIPTION_ESCAPED),
+            "{language}: the record's description is not the one its codec reads"
+        );
+        assert!(
+            written.contains("not_a_record"),
+            "{language}: the failure of bytes that are no note is not written"
+        );
+    }
+}
+
+/// `sce:payload` names an imported record, on a COSE operation that carries one;
+/// a name of no import, an enum (which no record codec writes) and another
+/// operation are each `validation/payload-record-schema`.
+#[test]
+fn a_record_named_by_sce_payload_is_imported_and_named_on_a_cose_operation() {
+    for (doc, why) in [
+        (
+            payload_probe(r#" sce:payload="Memo""#, "note", r#" sce:payload="Note""#),
+            "names no event schema this document imports",
+        ),
+        (
+            payload_probe(r#" sce:payload="Level""#, "note", r#" sce:payload="Note""#).replace(
+                r#"<sce:import kind="event-schema" src="note.scxml" as="Note"/>"#,
+                r#"<sce:import kind="event-schema" src="note.scxml" as="Note"/>
+  <sce:import kind="enum" src="level.scxml" as="Level"/>"#,
+            ),
+            "names no event schema this document imports",
+        ),
+        (
+            kv_get("256", REQUEST, RESULT, "key").replace(
+                r#"<invoke type="sce-host-kv-get" id="get""#,
+                r#"<invoke type="sce-host-kv-get" id="get" sce:payload="KvGetResult""#,
+            ),
+            "sce-host-cose-sign1",
+        ),
+    ] {
+        let (ok, text) = run(&["check"], &doc, &PAYLOAD_SIBLINGS);
+        assert!(
+            !ok,
+            "a record the build cannot sign by name was accepted: {text}"
+        );
+        assert!(
+            text.contains("validation/payload-record-schema") && text.contains(why),
+            "{text}"
+        );
+    }
+}
+
+/// A record whose deterministic CBOR may be longer than the byte string it
+/// crosses in holds is refused where it is named, naming the bound `--limit`
+/// raises.
+#[test]
+fn a_record_whose_cbor_may_pass_its_bound_is_refused() {
+    let (ok, text) = run(
+        &["--limit", "cose_payload=16", "check"],
+        &note_probe(),
+        &PAYLOAD_SIBLINGS,
+    );
+    assert!(!ok, "a record past its bound was accepted: {text}");
+    assert!(
+        text.contains("validation/payload-record-schema")
+            && text.contains("past the 16")
+            && text.contains("cose_payload"),
+        "{text}"
+    );
+    let (ok, text) = run(&["check"], &note_probe(), &PAYLOAD_SIBLINGS);
+    assert!(ok, "the record fits the library's bound: {text}");
+}
+
+/// The payload of a signing that names its record is a value of that record,
+/// and a text is refused where it is written.
+#[test]
+fn the_payload_of_a_signing_by_name_is_a_record_of_its_schema() {
+    let doc = payload_probe(r#" sce:payload="Note""#, "label", r#" sce:payload="Note""#);
+    let (ok, text) = run(&["check", "-l", "rust"], &doc, &PAYLOAD_SIBLINGS);
+    assert!(!ok, "a text was taken for a record: {text}");
+    assert!(
+        text.contains("scxml/static-datamodel-rule") && text.contains("record:Note"),
+        "{text}"
+    );
+}
+
+/// The build describes the note of the fixture as the cross-language vector
+/// does, so the two lanes' codecs, held to the vector, read what the build
+/// writes; and a verification that names the note completes with the record
+/// the build derives of the library's result.
+#[test]
+fn the_build_describes_the_fixtures_note_as_the_cross_language_vector_does() {
+    use sce_build::forge::value_type::{TypeOf, ValueType};
+    let fixture =
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/static_host_cose.scxml");
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_file(fixture.to_str().expect("a utf-8 path"))
+        .expect("the fixture parses");
+    let described = sce_build::forge::payload_record::describe(
+        &ValueType::Record {
+            alias: "Note".to_string(),
+        },
+        &model.imported_type_scope,
+    )
+    .expect("the note has a CBOR form");
+    let vectors: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            repo_root().join("tests/host_features/payload_record_cross_language.json"),
+        )
+        .expect("the vector file is readable"),
+    )
+    .expect("the vector file is JSON");
+    assert_eq!(described, vectors["description"].as_str().expect("a text"));
+    let bound = model
+        .imported_event_schemas
+        .get("done.invoke.verify_note")
+        .expect("the verification's completion is bound");
+    let payload = bound
+        .fields
+        .iter()
+        .find(|field| field.id == "payload")
+        .expect("the result's payload");
+    assert_eq!(
+        payload.sce_type,
+        TypeOf::Optional {
+            elem: Box::new(TypeOf::Record {
+                alias: "Note".to_string()
+            })
+        },
+        "the machine receives the note, or none"
+    );
 }

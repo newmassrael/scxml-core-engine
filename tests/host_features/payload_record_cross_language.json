@@ -1,0 +1,43 @@
+{
+  "about": [
+    "A record signed and sealed by name (sce:payload, docs/adr/0109, D9; docs/SCE_HOST_FEATURES.md, section 10), which",
+    "the Rust and the C++ lanes agree on byte for byte. `description` is the description of the record's type the",
+    "build writes for the note of sce-build/tests/fixtures/static_datamodel/schema_cose_note.scxml, its fields in",
+    "the order their keys encode; `record` is a note as a machine writes it, a byte string as its Latin-1 text; and",
+    "`record_cbor` is its deterministic CBOR (docs/adr/0101, section 2), which each lane's record codec writes from",
+    "`record` and reads back to it (Rust: sce_rust_runtime::record_cbor; C++: common/RecordCbor.h).",
+    "",
+    "`signed` is the tagged COSE_Sign1 of `record_cbor` under the Ed25519 key whose 32-byte seed is `seed` and whose",
+    "id is the key id, with no external data; Ed25519 is deterministic, so each host's signing of the record's bytes",
+    "is this object, and each host verifies it under a trust set that holds `public_key` alone. `tampered` is",
+    "`signed` with the last byte of its signature changed, which verifies under no key. `sealed` is the tagged",
+    "COSE_Encrypt0 of `record_cbor` under the ChaCha20/Poly1305 key `key` with the nonce `nonce`, which a test",
+    "fixes. `not_a_record` holds bytes that are no value of the note, and their signed and sealed objects: an",
+    "object that verifies or opens to them is the operation's failure `not_a_record`.",
+    "",
+    "Every hexadecimal value is the bytes it spells. The objects were computed by an implementation that shares",
+    "nothing with either lane (the Python `cryptography` package over OpenSSL, with a CBOR writer of its own),",
+    "which first reproduced every object of tests/host_features/cose_cross_language.json."
+  ],
+  "description": "{\"record\":[[\"blob\",false,{\"bytes\":8}],[\"owner\",false,{\"text\":24}],[\"active\",false,{\"bool\":{}}],[\"offset\",false,{\"int\":16}],[\"serial\",false,{\"uint\":32}]]}",
+  "record": {"serial": 4242, "owner": "alice", "blob": "\u0000ÿ\u0010", "active": true, "offset": -300},
+  "record_cbor": "a564626c6f624300ff10656f776e657265616c69636566616374697665f5666f666673657439012b6673657269616c191092",
+  "signing_key": {
+    "id": "device-a",
+    "seed": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    "public_key": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664"
+  },
+  "sealing_key": {
+    "id": "vault",
+    "key": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+  },
+  "nonce": "202122232425262728292a2b",
+  "signed": "d2844da2012704486465766963652d61a05832a564626c6f624300ff10656f776e657265616c69636566616374697665f5666f666673657439012b6673657269616c19109258404797c58699eda5f705fea4d3857516f7a9f573953be6cfff4ed489d156404c80db14eeb31622332155a01e3245cf11cb87a16f31ac4242ea8732a9dd559d660e",
+  "tampered": "d2844da2012704486465766963652d61a05832a564626c6f624300ff10656f776e657265616c69636566616374697665f5666f666673657439012b6673657269616c19109258404797c58699eda5f705fea4d3857516f7a9f573953be6cfff4ed489d156404c80db14eeb31622332155a01e3245cf11cb87a16f31ac4242ea8732a9dd559d660f",
+  "sealed": "d08344a1011818a204457661756c74054c202122232425262728292a2b5842b69a9cfa61802bbe7648e236cfd7133720d1f71e88e83807d77a1216a609f349c0348bbe0c7573b26589dbf8f2e5d1ec492182b5ed59a0e5b36b2d8e3398d62972b6",
+  "not_a_record": {
+    "bytes": "68656c6c6f",
+    "signed": "d2844da2012704486465766963652d61a04568656c6c6f58403c7580c3c0f236344cbad1d9d1d50544dffd5a488d675fe23e96c6d13acc3174c9dbb6f53b28d6b5164f5bb9167beae5d80734889aeca460ef34f904268db80d",
+    "sealed": "d08344a1011818a204457661756c74054c202122232425262728292a2b557b9b92fa61d4308bcc8c6e0283b283ab800d06ea31"
+  }
+}

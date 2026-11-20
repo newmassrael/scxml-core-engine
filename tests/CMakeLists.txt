@@ -1167,6 +1167,7 @@ if(TARGET sce_host_cose)
         integration/AStandardHostCredentialsTest.cpp
         integration/AStandardHostKeysTest.cpp
         integration/ASealedRecordTest.cpp
+        integration/APayloadRecordTest.cpp
     )
 endif()
 
