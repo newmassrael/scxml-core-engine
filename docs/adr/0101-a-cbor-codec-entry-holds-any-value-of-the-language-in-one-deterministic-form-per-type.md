@@ -417,7 +417,7 @@ message types of the TTCN-3 corpus get their codec documents.**
    | an item of a major type, a simple value or a tag the type at that place does not take: a text where a number stands, a negative integer where an unsigned type stands, `null` where the place is not a list's optional element, a tagged item (a bignum among them: the types are defined over the basic generic data model), a top-level key that is not an unsigned integer, a record's or a union's key that is not a text string | expected | `CborWrongType` (`cbor-wrong-type`), new |
    | a map that holds one of its declared keys twice, at any depth | invalid (RFC 8949 section 5.6) | `CborDuplicateKey` (`cbor-duplicate-key`), new |
    | a text that is not UTF-8 | invalid (section 5.3.1) | `InvalidUtf8`, as today |
-   | a required entry or a record's field that is not optional, absent | expected | `CborRequiredKeyMissing` (`cbor-required-key-missing`), as today |
+   | a required entry or a record's field that is not optional, absent, but a field a later revision of its schema added (item 6) | expected | `CborRequiredKeyMissing` (`cbor-required-key-missing`), as today |
    | a union's map whose one key names no case | expected | `CborUnknownVariant` (`cbor-unknown-variant`), new |
    | a union's map of no entry or of more than one | expected | `CborUnionEntries` (`cbor-union-entries`), new |
    | an integer outside its type's width, a float that is not a value of `float32`, a text or byte string past its bound, a list past its bound or below its lower count | expected | `CborOutOfRange` (`cbor-out-of-range`), as today |
@@ -460,6 +460,25 @@ message types of the TTCN-3 corpus get their codec documents.**
    backend; a list, text or byte string past its bound where the language's types carry no bound (Kotlin, Go,
    Python, Swift, C11's `len`); an integer past its width on Python. `codec_totality` decides which, from the plan
    (section 5.2), and a codec whose encode can refuse declares `sce:encode-may-fail="true"`, as today.
+6. **A record whose schema grew** (amendment of 2026-11-21). Item 3 refused every record's field that is not
+   optional and absent, which also refused the map of a record a build of an earlier revision of its schema
+   wrote: that map lacks the keys of the fields a later revision added, and every other reader of such a record
+   reads it (ADR 0044; docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows"). No rule here stated the
+   case, and the rule ADR 0044 states for every reader is the one a decode follows. Where a record's map lacks a
+   field's key, a field a later revision added that declares `sce:default` reads its default and a list a later
+   revision added reads the empty list, as the lift reads a delivery that lacks the field; an optional field
+   reads absent at every revision, a default it declares not read, because the key left out is the one spelling
+   of absence of section 2.1 and a writer of the later revision whose field is absent writes the same map as a
+   writer of an earlier revision (the lift, whose wire spells absence `null`, reads that default; section 2.5
+   already parts the codec's form from the signed one in this place); a field of the first revision that is not
+   optional stays refused. The plan carries each default as its deterministic CBOR, which every backend's
+   decode reads with the reader of the field's own value (section 5.1, `CborField::default`), on every backend
+   that lowers the record (Rust and C++ at any depth, the others for a record a list holds). This is no tension
+   with the one deterministic form: that form is what an encode writes, and a decode is variation-tolerant within
+   the profile (items 1 and 2); the map of an earlier revision is that revision's deterministic encoding, and the
+   decode reads it to a value of its own revision, which its encode writes with every default under its key.
+   Section 8's claim holds: only a map that was refused is read now. SCE_FORGE.md section 4.6.1 ("A record
+   whose schema grew") states the rule, and the corpus's `codec_cbor_composed` holds Rust and C++ to it.
 
 ### 4. The size calculus
 
