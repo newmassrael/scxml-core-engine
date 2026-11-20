@@ -28,7 +28,9 @@ description = "Replays the engine-neutral scenarios of a datamodel=\"sce-static\
 # `test-component`: the tree the build script writes holds the test profile's
 # test components, whose policies implement the take step
 # (docs/SCE_TEST_PROFILE.md §4.4), which only that feature declares.
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "test-component"] }
+# `record-cbor`: a machine that signs or seals a record by name writes it, and
+# reads one back, with the runtime's record codec (docs/adr/0109, D9).
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "test-component", "record-cbor"] }
 # A `datamodel="sce-static"` machine checks its integer operations with the forge
 # runtime's helpers (SCE_FORGE.md §3.4.1); the crate is `#![no_std]`, so it needs
 # nothing of the operating system.

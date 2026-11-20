@@ -131,6 +131,16 @@ transition-observer = []
 # the component is driven by the `test` module, which needs `std`.
 test-component = ["std"]
 
+# The record codec (`record_cbor`): a record a COSE operation signs or seals by
+# name crosses as its deterministic CBOR, and one it verified or opened is read
+# back from it, both under the description of the record's type the build
+# writes (docs/adr/0109, D9; docs/adr/0101, section 2). It writes and reads
+# CBOR with the forge runtime's items (`sce_forge_runtime::cbor`), the one
+# writer and reader of each item, so asking for it asks for that crate, which
+# declares a newer Rust than this one: the feature is not a default, and a
+# crate that generates a machine whose invoke names `sce:payload` names it.
+record-cbor = ["std", "dep:sce-forge-runtime"]
+
 [dependencies]
 log = { workspace = true }
 # `thiserror` is consumed only inside `pub mod scripting` (gated to
@@ -163,6 +173,9 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 # on MCU targets it falls back to lock-based emulation. Standard
 # embedded-Rust pattern — used by `embassy`, `defmt`, etc.
 portable-atomic = { version = "1", default-features = false, features = ["fallback"] }
+# The CBOR items the record codec writes and reads (`record-cbor` above);
+# optional, so a build that does not ask for the codec does not compile it.
+sce-forge-runtime = { path = "../forge-runtime", default-features = false, features = ["alloc"], optional = true }
 
 # The id of a root session its host gives none for is drawn from the operating
 # system's randomness, a UUID version 4 (`helpers::session_id`; docs/adr/0045,
