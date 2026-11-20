@@ -112,6 +112,10 @@ sce-rust-runtime = { path = "../runtime", default-features = false, features = [
 # and a keyed pool its sessions behind (docs/adr/0107, D3, D5 and D6), without the SQLite store,
 # which the program that hosts the core chooses and links.
 sce-rust-session-store = { path = "../session-store", default-features = false }
+# The port the server, the pool and the store's committer report what they do through
+# (docs/adr/0109, D16): a crate of no dependency, so the core links no metrics library and the
+# program chooses the adapter.
+sce-rust-metrics = { path = "../metrics" }
 # The `wss` feature's socket plumbing (SCE_MESH.md §mesh-18.4): the client
 # and server the owner chose for this binding on 2026-09-25. rustls with
 # webpki roots, so a `wss://` client needs no system TLS library.

@@ -99,6 +99,13 @@
 //! of its [`Environment`], and the host calls [`Pool::due`],
 //! [`Pool::renew_leases`], [`Pool::evict_idle`] and [`Pool::tick`] on its own
 //! schedule, sleeping until [`Pool::next_wake_ms`] in between.
+//!
+//! The pool reports what it does through the metrics port its committer
+//! reports to (docs/adr/0109, D16; [`Pool::observed`]): the sessions it holds
+//! in memory, each one it loads, restores and evicts, each envelope it sheds
+//! and why, and each lease renewal the store refused. [`Pool::health`] says
+//! whether it takes work in, whether a stop is going on, and whether its store
+//! answers, for the program's readiness and liveness checks.
 
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
@@ -108,6 +115,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
 use sce_forge_runtime::codec::SceCursor;
+use sce_rust_metrics::{Counter, Eviction, Gauge, Metrics, PoolShed, RestoredFrom};
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_session_store::{
@@ -124,6 +132,7 @@ use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
 use crate::generated::rpc_status::RpcStatus;
+use crate::health::Health;
 use crate::inbound::ConfigError;
 use crate::outbox::Outboxes;
 use crate::peers::{KeyFrom, Machine, Sessions};
@@ -525,6 +534,15 @@ enum Full {
 }
 
 impl Full {
+    /// Why the envelope was shed, as the pool reports it (docs/adr/0109, D16).
+    fn shed(self) -> PoolShed {
+        match self {
+            Full::Inbox => PoolShed::MaxInbox,
+            Full::Live => PoolShed::MaxLive,
+            Full::Stopping => PoolShed::Stopping,
+        }
+    }
+
     /// The reason a shed envelope is told or answered with.
     fn reason(self, sessions: &Sessions) -> String {
         match self {
@@ -584,6 +602,8 @@ where
     outboxes: Option<Arc<Outboxes>>,
     /// Set by [`Pool::stop`]: nothing is admitted from then on.
     stopping: AtomicBool,
+    /// Set once [`Pool::stop`] ended.
+    stopped: AtomicBool,
 }
 
 impl<F, T, E> Pool<F, T, E>
@@ -607,6 +627,28 @@ where
         transport: T,
         environment: E,
     ) -> Result<Self, PoolConfigError> {
+        Self::observed(
+            machine,
+            config,
+            factory,
+            store,
+            transport,
+            environment,
+            sce_rust_metrics::none(),
+        )
+    }
+
+    /// [`Self::new`], reporting what the pool, its committer and its
+    /// durable clients' outboxes do to `metrics` (docs/adr/0109, D16).
+    pub fn observed(
+        machine: Machine,
+        config: PoolConfig,
+        factory: F,
+        store: Arc<dyn SessionStore>,
+        transport: T,
+        environment: E,
+        metrics: Arc<dyn Metrics>,
+    ) -> Result<Self, PoolConfigError> {
         let Some(sessions) = machine.sessions else {
             return Err(PoolConfigError::NotPooled {
                 machine: machine.name.to_string(),
@@ -619,9 +661,10 @@ where
             });
         }
         machine.router().map_err(PoolConfigError::Router)?;
-        let committer = Arc::new(Committer::new(
+        let committer = Arc::new(Committer::observed(
             Arc::clone(&store),
             Duration::from_micros(sessions.commit_delay_us),
+            metrics,
         ));
         let outboxes = Outboxes::of_machine(&machine, Arc::clone(&committer));
         Ok(Self {
@@ -640,7 +683,28 @@ where
             errors: Mutex::new(Vec::new()),
             outboxes,
             stopping: AtomicBool::new(false),
+            stopped: AtomicBool::new(false),
         })
+    }
+
+    /// What the pool says of itself to the program's readiness and liveness
+    /// checks (docs/adr/0109, D16): it accepts until [`Self::stop`] begins, is
+    /// stopping until that call ends, and its store is reachable when it
+    /// answers a read now ([`Committer::store_answers`]). The read blocks for
+    /// as long as the store does, so a program on an asynchronous runtime
+    /// calls this from a thread that may block.
+    pub fn health(&self) -> Health {
+        let stopping = self.stopping.load(Ordering::SeqCst);
+        Health {
+            accepting: !stopping,
+            stopping: stopping && !self.stopped.load(Ordering::SeqCst),
+            store_reachable: self.committer.store_answers(),
+        }
+    }
+
+    /// What the pool reports to.
+    fn metrics(&self) -> &dyn Metrics {
+        self.committer.metrics().as_ref()
     }
 
     /// The machine the pool serves.
@@ -736,8 +800,8 @@ where
                 };
                 match self.post_bounded(&key, input) {
                     Ok(()) => (Some(key), receipt),
-                    Err((input, reason)) => {
-                        self.shed(&key, input, &reason, acknowledged);
+                    Err((input, full)) => {
+                        self.shed(&key, input, full, acknowledged);
                         (None, receipt)
                     }
                 }
@@ -811,7 +875,10 @@ where
                     return;
                 }
                 match self.load(&slot) {
-                    Ok(loaded) => *live = Some(loaded),
+                    Ok(loaded) => {
+                        *live = Some(loaded);
+                        self.metrics().adjust(Gauge::LiveSessions, 1);
+                    }
                     Err(refusal) => {
                         self.abandon(&slot, &refusal);
                         return;
@@ -825,6 +892,7 @@ where
                 Served::Waiting => return,
                 Served::Finished => {
                     if let Some(mut finished) = live.take() {
+                        self.metrics().adjust(Gauge::LiveSessions, -1);
                         self.finish(&slot, &mut finished);
                     }
                 }
@@ -940,6 +1008,7 @@ where
                 }
                 Err(LeaseError::Lost(why)) => {
                     *lease = LeaseState::Lost;
+                    self.metrics().count(Counter::LeaseRenewalsRefused, 1);
                     self.error(PoolError::LeaseLost {
                         key: slot.key.clone(),
                         reason: why.to_string(),
@@ -974,7 +1043,7 @@ where
                 now >= session.last_active_ms.saturating_add(self.sessions.idle_ms)
                     && self.is_quiet(&slot, session)
             });
-            if idle && self.evict(&slot, &mut live, now) {
+            if idle && self.evict(&slot, &mut live, now, Eviction::Idle) {
                 evicted.push(slot.key.clone());
             }
         }
@@ -982,14 +1051,16 @@ where
     }
 
     /// Save `slot`'s session, which holds nothing pending, as a clean
-    /// checkpoint, drop it from memory and release its lease. Whether it was
-    /// dropped: one whose save failed stays, and so does one an input reached
-    /// while it was saved.
+    /// checkpoint, drop it from memory and release its lease, reporting it
+    /// evicted for `why` (docs/adr/0109, D16). Whether it was dropped: one
+    /// whose save failed stays, and so does one an input reached while it was
+    /// saved.
     fn evict(
         &self,
         slot: &SharedSlot<F::Machine, T, E>,
         live: &mut MutexGuard<'_, Option<Live<F::Machine, T, E>>>,
         now: u64,
+        why: Eviction,
     ) -> bool {
         let Some(session) = live.as_mut() else {
             return false;
@@ -1026,6 +1097,8 @@ where
             return false;
         }
         **live = None;
+        self.metrics().adjust(Gauge::LiveSessions, -1);
+        self.metrics().count(Counter::Evictions { reason: why }, 1);
         self.forget_replies(&slot.key);
         self.release(slot);
         true
@@ -1137,13 +1210,12 @@ where
     /// (docs/adr/0109, D1): past `max_inbox` envelopes in its inbox it is
     /// refused, and a key the table does not hold while it holds `max_live`
     /// is refused unless a session can be saved and dropped to make room. A
-    /// refused input comes back with the reason.
-    fn post_bounded(&self, key: &str, input: Input) -> Result<(), (Input, String)> {
+    /// refused input comes back with the bound it met.
+    fn post_bounded(&self, key: &str, input: Input) -> Result<(), (Input, Full)> {
         match self.try_post(key, input) {
             Err((input, Full::Live)) if self.make_room() => self.try_post(key, input),
             other => other,
         }
-        .map_err(|(input, full)| (input, full.reason(&self.sessions)))
     }
 
     /// [`Self::post_bounded`] without making room.
@@ -1200,7 +1272,7 @@ where
             let still_quiet = live
                 .as_ref()
                 .is_some_and(|session| self.is_quiet(&slot, session));
-            if still_quiet && self.evict(&slot, &mut live, now) {
+            if still_quiet && self.evict(&slot, &mut live, now, Eviction::MaxLive) {
                 return true;
             }
         }
@@ -1214,11 +1286,12 @@ where
     }
 
     /// Tell what became of `input`, an envelope for `key` that no session
-    /// took in for `reason` (docs/adr/0109, D1). For a host that reads the
-    /// receipt (`acknowledged`) it is lost, and its binding refuses it to its
-    /// sender, who carries it again; otherwise a request is answered
-    /// `Unavailable`, and anything else is dropped and told to the host.
-    fn shed(&self, key: &str, input: Input, reason: &str, acknowledged: bool) {
+    /// took in at the bound `full` (docs/adr/0109, D1). For a host that reads
+    /// the receipt (`acknowledged`) it is lost, and its binding refuses it to
+    /// its sender, who carries it again; otherwise a request is answered
+    /// `Unavailable`, and anything else is dropped and told to the host. Either
+    /// way it is reported as shed at its bound (docs/adr/0109, D16).
+    fn shed(&self, key: &str, input: Input, full: Full, acknowledged: bool) {
         let Input::Envelope {
             peer,
             bytes,
@@ -1227,6 +1300,14 @@ where
         else {
             return;
         };
+        self.metrics().count(
+            Counter::PoolSheds {
+                reason: full.shed(),
+            },
+            1,
+        );
+        let reason = full.reason(&self.sessions);
+        let reason = reason.as_str();
         let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) else {
             receipt.settle(Fate::Lost);
             return;
@@ -1366,6 +1447,7 @@ where
             match saved {
                 Ok(true) => {
                     **live = None;
+                    self.metrics().adjust(Gauge::LiveSessions, -1);
                     self.forget_replies(&slot.key);
                     self.release(&slot);
                     // Out of the table; what its inbox still holds, when the deadline came
@@ -1386,6 +1468,8 @@ where
                 }
             }
         }
+        // docs/adr/0109, D16: the stop has ended, which `health` reports as stopped.
+        self.stopped.store(true, Ordering::SeqCst);
         report
     }
 
@@ -1445,8 +1529,9 @@ where
             renewed_ms: now,
         };
         let built = self.build(key, now);
-        if built.is_err() {
-            self.release(slot);
+        match built {
+            Ok(_) => self.metrics().count(Counter::Loads, 1),
+            Err(_) => self.release(slot),
         }
         built
     }
@@ -1484,6 +1569,16 @@ where
             None => self.factory.start(key, &endpoint, now),
         }
         .map_err(not_built)?;
+        // docs/adr/0109, D16: a restore from a checkpoint that is not clean is the one that
+        // raises `restored` (SCE_MESH.md section 16.7 row 17).
+        if let Some(loaded) = &loaded {
+            let checkpoint = if loaded.checkpoint.clean {
+                RestoredFrom::Clean
+            } else {
+                RestoredFrom::NotClean
+            };
+            self.metrics().count(Counter::Restores { checkpoint }, 1);
+        }
         let (version, sequence, earliest_due) = loaded.as_ref().map_or((0, 0, None), |loaded| {
             (
                 loaded.version,
@@ -2061,6 +2156,7 @@ where
         reason: String,
     ) {
         if let Some(mut dropped) = live.take() {
+            self.metrics().adjust(Gauge::LiveSessions, -1);
             settle_all(&mut dropped.unsaved, Fate::Lost);
             // docs/adr/0109, D10: what it produced for a durable client and no
             // write appended is lost with it, and gives its window places back.
@@ -2355,6 +2451,7 @@ mod tests {
     use crate::router::PeerConfig;
     use crate::rpc::MESH_EVENT_PARAM;
     use alloc::vec;
+    use sce_rust_metrics::recording::Recording;
     use sce_rust_runtime::saved_state::{SavedAct, SavedHostSend, SavedInvokes, SavedSend};
     use sce_rust_runtime::{HostInvokeRequest, HostSendRequest};
     use sce_rust_session_store::{Change, Due, Lease, MemoryStore, Stored, Write, Written};
@@ -4644,5 +4741,336 @@ mod tests {
             );
         }
         assert!(build(ROOMS, config).is_none());
+    }
+
+    /// A pool of `machine` as [`pool_of`] makes one, reporting to a recording adapter it answers
+    /// with (docs/adr/0109, D16).
+    fn pool_recorded(
+        machine: Machine,
+        owner: &str,
+        store: Arc<dyn SessionStore>,
+        clock: &Clock,
+        probe: &Arc<Probe>,
+    ) -> (Pool<Rooms, Wire, Clock>, Wire, Arc<Recording>) {
+        let recording = Arc::new(Recording::new());
+        let wire = Wire::default();
+        let pool = Pool::observed(
+            machine,
+            PoolConfig {
+                owner: owner.to_string(),
+                lease_ttl_ms: LEASE_TTL_MS,
+                renew_every_ms: 3_000,
+            },
+            Rooms {
+                probe: Arc::clone(probe),
+            },
+            store,
+            wire.clone(),
+            clock.clone(),
+            Arc::clone(&recording) as Arc<dyn Metrics>,
+        )
+        .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
+        pool.peer_ready("client");
+        pool.peer_ready("other");
+        (pool, wire, recording)
+    }
+
+    /// docs/adr/0109, D16: each session the pool brings into memory is a load, one restored from
+    /// a clean checkpoint is a clean restore, one saved and dropped as idle is an idle eviction,
+    /// and the live sessions rise and fall with them. Red if `Pool::run`, `Pool::load`,
+    /// `Pool::build` or `Pool::evict` stops reporting what it did.
+    #[test]
+    fn a_pool_reports_each_session_it_loads_restores_and_evicts() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire, recording) =
+            pool_recorded(ROOMS, "p1", Arc::new(store.clone()), &clock, &probe);
+        deliver(&pool, join("r1", 1));
+        deliver(&pool, join("r2", 2));
+        wire.take();
+        assert_eq!(recording.counted(Counter::Loads), 2);
+        assert_eq!(recording.level(Gauge::LiveSessions), 2);
+        assert_eq!(
+            recording.counted_in(&sce_rust_metrics::POOL_RESTORES),
+            0,
+            "both were started"
+        );
+
+        clock.advance(1_000);
+        let mut evicted = pool.evict_idle();
+        evicted.sort();
+        assert_eq!(evicted, vec!["r1".to_string(), "r2".to_string()]);
+        assert_eq!(
+            recording.counted(Counter::Evictions {
+                reason: Eviction::Idle
+            }),
+            2
+        );
+        assert_eq!(recording.level(Gauge::LiveSessions), 0);
+
+        deliver(&pool, join("r1", 3));
+        assert_eq!(recording.counted(Counter::Loads), 3);
+        assert_eq!(
+            recording.counted(Counter::Restores {
+                checkpoint: RestoredFrom::Clean
+            }),
+            1
+        );
+        assert_eq!(
+            recording.counted(Counter::Restores {
+                checkpoint: RestoredFrom::NotClean
+            }),
+            0
+        );
+        assert_eq!(recording.level(Gauge::LiveSessions), 1);
+        assert_eq!(recording.peak(Gauge::LiveSessions), 2);
+    }
+
+    /// docs/adr/0109, D16: a session restored from a checkpoint written while it ran (another
+    /// process took its key over) is a restore that is not clean, the one that raises `restored`;
+    /// the process that lost the key reports the renewal the store refused, and the session it
+    /// dropped leaves its live sessions. Red if `Pool::build` reports every restore as clean, or
+    /// `Pool::renew_leases` reports no refusal.
+    #[test]
+    fn a_pool_reports_a_restore_that_raises_restored_and_a_renewal_refused() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (first, first_wire, first_recording) =
+            pool_recorded(ROOMS, "p1", Arc::new(store.clone()), &clock, &probe);
+        let (second, second_wire, second_recording) =
+            pool_recorded(ROOMS, "p2", Arc::new(store.clone()), &clock, &probe);
+        deliver(&first, join("r1", 1));
+        first_wire.take();
+        clock.advance(LEASE_TTL_MS + 1);
+        deliver(&second, join("r1", 2));
+        second_wire.take();
+        assert_eq!(
+            second_recording.counted(Counter::Restores {
+                checkpoint: RestoredFrom::NotClean
+            }),
+            1
+        );
+
+        assert_eq!(first.renew_leases(), vec!["r1".to_string()]);
+        assert_eq!(first_recording.counted(Counter::LeaseRenewalsRefused), 1);
+        first.run("r1");
+        assert_eq!(
+            first_recording.level(Gauge::LiveSessions),
+            0,
+            "the session whose key it lost left memory"
+        );
+        assert_eq!(second_recording.counted(Counter::LeaseRenewalsRefused), 0);
+        assert_eq!(second_recording.level(Gauge::LiveSessions), 1);
+    }
+
+    /// docs/adr/0109, D16: an envelope shed at `max_live` and one shed at `max_inbox` are each
+    /// reported under their own bound, and nothing else is reported shed. Red if `Pool::shed`
+    /// reports another bound than the one `Pool::try_post` met.
+    #[test]
+    fn a_pool_reports_each_envelope_it_sheds_by_the_bound_it_met() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire, recording) =
+            pool_recorded(rooms_bounded(1, 1), "p1", Arc::new(store), &clock, &probe);
+        // r1 waits for an answer from another machine: it is not quiet, so no room is made.
+        deliver(&pool, from_client("ask", r#"{"room":"r1"}"#, 1, false));
+        assert_eq!(pool.receive("client", join("r2", 2)), None);
+        assert_eq!(
+            recording.counted(Counter::PoolSheds {
+                reason: PoolShed::MaxLive
+            }),
+            1
+        );
+        assert_eq!(
+            pool.receive("client", join("r1", 3)),
+            Some("r1".to_string())
+        );
+        assert_eq!(pool.receive("client", join("r1", 4)), None);
+        assert_eq!(
+            recording.counted(Counter::PoolSheds {
+                reason: PoolShed::MaxInbox
+            }),
+            1
+        );
+        assert_eq!(recording.counted_in(&sce_rust_metrics::POOL_SHEDS), 2);
+        pool.run("r1");
+        wire.take();
+        assert_eq!(recording.counted_in(&sce_rust_metrics::POOL_SHEDS), 2);
+    }
+
+    /// docs/adr/0109, D16: the process holds its durable client's outbox and reports its depth
+    /// as the envelopes it holds, through reads, appends, an acknowledgement and an expiry, and
+    /// each entry the expiry deleted. Red if `Outboxes` moves the depth in one of those paths and
+    /// not in its reverse, or `Outboxes::expire` reports no expiry.
+    #[test]
+    fn a_pool_reports_its_durable_clients_outbox_depth_and_expiries() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, _wire, recording) = pool_recorded(
+            rooms_durable(8, 1_500),
+            "p1",
+            Arc::new(store.clone()),
+            &clock,
+            &probe,
+        );
+        let outboxes = Arc::clone(pool.outboxes().expect("the client's outbox"));
+        let held = || {
+            outboxes
+                .entries("client")
+                .map_or(0, |kept| kept.envelopes.len() as i64)
+        };
+        deliver(&pool, join("r1", 1));
+        deliver(&pool, join("r2", 2));
+        let incarnation = outboxes
+            .open("client", "ffffffffffffffffffffffffffffffff", T0)
+            .expect("the outbox opened");
+        assert_eq!(held(), 2);
+        assert_eq!(recording.level(Gauge::OutboxDepth), held());
+
+        clock.advance(1_001);
+        deliver(&pool, join("r1", 3));
+        assert_eq!(held(), 3);
+        assert_eq!(recording.level(Gauge::OutboxDepth), held());
+
+        outboxes
+            .acknowledge("client", &incarnation, 1, clock.at())
+            .expect("an acknowledgement");
+        assert_eq!(held(), 2);
+        assert_eq!(recording.level(Gauge::OutboxDepth), held());
+
+        clock.advance(600);
+        assert_eq!(
+            pool.expire(),
+            vec!["r2".to_string()],
+            "only r2's entry is past retain_ms; r1's first was acknowledged"
+        );
+        assert_eq!(recording.counted(Counter::OutboxExpiries), 1);
+        assert_eq!(held(), 1);
+        assert_eq!(recording.level(Gauge::OutboxDepth), held());
+    }
+
+    /// A store whose listing of dues fails while `failing` is set, as a medium that cannot be
+    /// read: what a readiness check reads.
+    struct Unlisted {
+        inner: MemoryStore,
+        failing: AtomicBool,
+    }
+
+    impl SessionStore for Unlisted {
+        fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+            self.inner.get(key)
+        }
+
+        fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+            self.inner.write(key, write)
+        }
+
+        fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
+            if self.failing.load(Ordering::SeqCst) {
+                return Err(Failure::new("the medium cannot be read"));
+            }
+            self.inner.due_before(ms, limit)
+        }
+
+        fn indexed(&self, key: &str) -> String {
+            self.inner.indexed(key)
+        }
+
+        fn key_of(&self, indexed: &str) -> Result<Option<String>, Failure> {
+            self.inner.key_of(indexed)
+        }
+
+        fn indexed_after(&self, after: Option<&str>, limit: usize) -> Result<Vec<String>, Failure> {
+            self.inner.indexed_after(after, limit)
+        }
+
+        fn acquire(
+            &self,
+            key: &str,
+            owner: &str,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, AcquireError> {
+            self.inner.acquire(key, owner, ttl_ms, now_ms)
+        }
+
+        fn renew(
+            &self,
+            key: &str,
+            fence: u64,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, LeaseError> {
+            self.inner.renew(key, fence, ttl_ms, now_ms)
+        }
+
+        fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+            self.inner.release(key, fence)
+        }
+    }
+
+    /// docs/adr/0109, D16: a pool accepts and reaches its store while it serves, is unready while
+    /// its store cannot be read, says it is stopping while a stop waits for a run, and stopped
+    /// once the stop ended, after which an envelope is shed as the pool stopping. Red if
+    /// `Pool::health` reads its state from another flag than the stop sets, or does not ask the
+    /// store.
+    #[test]
+    fn a_pool_says_whether_it_accepts_stops_and_reaches_its_store() {
+        let (clock, probe) = (Clock::new(), Arc::new(Probe::default()));
+        let store = Arc::new(Unlisted {
+            inner: MemoryStore::new(),
+            failing: AtomicBool::new(false),
+        });
+        let (pool, wire, recording) = pool_recorded(
+            ROOMS,
+            "p1",
+            Arc::clone(&store) as Arc<dyn SessionStore>,
+            &clock,
+            &probe,
+        );
+        assert_eq!(
+            pool.health(),
+            Health {
+                accepting: true,
+                stopping: false,
+                store_reachable: true,
+            }
+        );
+        assert!(pool.health().ready());
+        store.failing.store(true, Ordering::SeqCst);
+        assert!(!pool.health().store_reachable);
+        assert!(
+            !pool.health().ready(),
+            "a pool whose store fails is unready"
+        );
+        store.failing.store(false, Ordering::SeqCst);
+
+        deliver(&pool, join("r1", 1));
+        wire.take();
+        let pool = Arc::new(pool);
+        let slot = lock(&pool.table).get("r1").cloned().expect("r1's slot");
+        // A run of r1 is going on: the stop waits for it until its deadline.
+        let running = lock(&slot.live);
+        let stopper = {
+            let pool = Arc::clone(&pool);
+            std::thread::spawn(move || pool.stop(Instant::now() + Duration::from_millis(300)))
+        };
+        let until = Instant::now() + Duration::from_secs(5);
+        let mut seen = pool.health();
+        while !seen.stopping && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(1));
+            seen = pool.health();
+        }
+        assert!(seen.stopping && !seen.accepting, "{seen:?}");
+        let report = stopper.join().expect("the stop did not panic");
+        drop(running);
+        assert_eq!(report.not_saved.len(), 1, "{:?}", report.not_saved);
+        let stopped = pool.health();
+        assert!(stopped.stopped(), "{stopped:?}");
+        assert!(!stopped.ready());
+
+        assert_eq!(pool.receive("client", join("r2", 2)), None);
+        assert_eq!(
+            recording.counted(Counter::PoolSheds {
+                reason: PoolShed::Stopping
+            }),
+            1
+        );
     }
 }

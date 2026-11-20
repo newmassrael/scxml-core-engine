@@ -28,6 +28,10 @@
 //!
 //! The numbering is the store's: an outbox numbers in the incarnation it was opened in, and a
 //! restart keeps both, so a client acknowledges across a restart of its server.
+//!
+//! What the process holds of the outboxes is reported to the committer's metrics
+//! (docs/adr/0109, D16): every envelope the cache takes or lets go moves
+//! `sce_pool_outbox_depth`, and every entry an expiry deleted moves `sce_pool_outbox_expiries`.
 
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::string::{String, ToString};
@@ -35,6 +39,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use sce_rust_metrics::{Counter, Gauge};
 use sce_rust_session_store::{Appended, Expiry, Failure, Outbox, SessionStore};
 
 use crate::commit::Committer;
@@ -72,6 +77,14 @@ struct Client {
     held: Option<Held>,
     /// The places taken by what the sessions produced for the client that no write appended yet.
     reserved: usize,
+}
+
+impl Client {
+    /// How many envelopes the process holds of the outbox: what it adds to
+    /// `sce_pool_outbox_depth`.
+    fn depth(&self) -> usize {
+        self.held.as_ref().map_or(0, |held| held.entries.len())
+    }
 }
 
 /// What the store holds of one client's outbox.
@@ -138,6 +151,16 @@ impl Outboxes {
         self.committer.store().as_ref()
     }
 
+    /// A client's outbox went from `before` envelopes held in the process to `after`
+    /// (docs/adr/0109, D16).
+    fn moved(&self, before: usize, after: usize) {
+        if before != after {
+            let delta = i64::try_from(after).unwrap_or(i64::MAX)
+                - i64::try_from(before).unwrap_or(i64::MAX);
+            self.committer.metrics().adjust(Gauge::OutboxDepth, delta);
+        }
+    }
+
     /// The outboxes of `machine`'s clients whose `https` accepting binding declares `receipt:
     /// durable`, kept in the store `committer` commits to; `None` when it has none.
     pub fn of_machine(machine: &Machine, committer: Arc<Committer>) -> Option<Arc<Self>> {
@@ -161,6 +184,12 @@ impl Outboxes {
             })
             .collect();
         (!bindings.is_empty()).then(|| Arc::new(Self::new(committer, bindings)))
+    }
+
+    /// Whether the store the outboxes are kept in answers a read now ([`Committer::store_answers`]):
+    /// what the server's readiness asks of a durable binding (docs/adr/0109, D16).
+    pub fn store_answers(&self) -> bool {
+        self.committer.store_answers()
     }
 
     /// Whether `client`'s binding keeps a durable outbox.
@@ -209,11 +238,14 @@ impl Outboxes {
             // One the store holds none of is empty until the first append opens it, and is read
             // again then.
             match self.store().outbox(client) {
-                Ok(outbox) => slot.held = outbox.map(Held::of),
+                Ok(outbox) => {
+                    slot.held = outbox.map(Held::of);
+                    self.moved(0, slot.depth());
+                }
                 Err(_) => return Err(full(binding.window)),
             }
         }
-        let depth = slot.held.as_ref().map_or(0, |held| held.entries.len()) + slot.reserved;
+        let depth = slot.depth() + slot.reserved;
         if depth >= binding.window {
             return Err(full(depth));
         }
@@ -245,6 +277,7 @@ impl Outboxes {
             let mut clients = lock(&self.clients);
             for (kept, envelope) in appended.iter().zip(envelopes) {
                 let client = clients.entry(kept.client.clone()).or_default();
+                let before = client.depth();
                 if reserved {
                     client.reserved = client.reserved.saturating_sub(1);
                 }
@@ -272,6 +305,7 @@ impl Outboxes {
                     Some(false) => client.held = None,
                     None => {}
                 }
+                self.moved(before, client.depth());
                 if !woken.contains(&kept.client) {
                     woken.push(kept.client.clone());
                 }
@@ -296,7 +330,10 @@ impl Outboxes {
         let outbox = self.store().open_outbox(client, incarnation, now_ms)?;
         let held = Held::of(outbox);
         let opened = held.incarnation.clone();
-        clients.entry(client.to_string()).or_default().held = Some(held);
+        let slot = clients.entry(client.to_string()).or_default();
+        let before = slot.depth();
+        slot.held = Some(held);
+        self.moved(before, slot.depth());
         Ok(opened)
     }
 
@@ -317,11 +354,13 @@ impl Outboxes {
         let deleted = self
             .committer
             .acknowledge(client, incarnation, through, now_ms)?;
-        if let Some(held) = lock(&self.clients)
+        let mut clients = lock(&self.clients);
+        if let Some(held) = clients
             .get_mut(client)
             .and_then(|held| held.held.as_mut())
             .filter(|held| held.incarnation == incarnation)
         {
+            let before = held.entries.len();
             while held
                 .entries
                 .front()
@@ -329,6 +368,7 @@ impl Outboxes {
             {
                 held.entries.pop_front();
             }
+            self.moved(before, held.entries.len());
         }
         Ok(deleted)
     }
@@ -387,8 +427,15 @@ impl Outboxes {
         };
         let before = now_ms.saturating_sub(binding.retain_ms);
         let expiry = self.store().expire(client, before, limit)?;
+        if !expiry.expired.is_empty() {
+            let expired = u64::try_from(expiry.expired.len()).unwrap_or(u64::MAX);
+            self.committer
+                .metrics()
+                .count(Counter::OutboxExpiries, expired);
+        }
         let mut clients = lock(&self.clients);
         if let Some(held) = clients.get_mut(client) {
+            let depth = held.depth();
             if expiry.closed {
                 held.held = None;
             } else if let Some(cached) = held.held.as_mut() {
@@ -399,6 +446,7 @@ impl Outboxes {
                         .any(|expired| expired.entry.number == entry.number)
                 });
             }
+            self.moved(depth, held.depth());
         }
         Ok(expiry)
     }
