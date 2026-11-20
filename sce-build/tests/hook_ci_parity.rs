@@ -524,37 +524,40 @@ const CI_ONLY: &[(&str, &str)] = &[
     ),
 ];
 
-/// Workflows the hook declares it mirrors, read from the stage table so
-/// this cannot drift from the selector's own mapping.
-fn mirrored_workflows(selector: &str) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    for line in selector.lines() {
-        if line.trim_start().starts_with('#') {
-            continue;
-        }
-        let Some((_, rest)) = line.split_once("\"workflows\":") else {
-            continue;
-        };
-        let Some((inside, _)) = rest
-            .split_once('[')
-            .and_then(|(_, tail)| tail.split_once(']'))
-        else {
-            continue;
-        };
-        for token in inside.split(',') {
-            let name = token.trim().trim_matches('"');
-            if name.ends_with(".yml") {
-                out.insert(name.to_string());
-            }
-        }
-    }
-    out
+/// Workflows the hook declares it mirrors, read from the stage table as the
+/// selector hands it out (`--mapping`) so this cannot drift from the
+/// selector's own mapping. The module's source is not parsed: it also holds
+/// the self-test's fixture tables, whose workflows name no file of this tree.
+fn mirrored_workflows() -> BTreeSet<String> {
+    let registry = repo_root().join("tools/git-hooks/gate_registry.py");
+    let out = std::process::Command::new("python3")
+        .arg(&registry)
+        .arg("--mapping")
+        .arg("--repo-root")
+        .arg(repo_root())
+        .output()
+        .unwrap_or_else(|e| panic!("spawn {}: {e}", registry.display()));
+    assert!(
+        out.status.success(),
+        "gate_registry.py --mapping failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mapping: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("gate_registry.py --mapping prints JSON");
+    mapping
+        .as_object()
+        .expect("gate_registry.py --mapping prints one object, slug to gate")
+        .values()
+        .filter_map(|gate| gate.get("workflows").and_then(|w| w.as_array()))
+        .flatten()
+        .filter_map(|name| name.as_str())
+        .map(str::to_string)
+        .collect()
 }
 
 #[test]
 fn the_hook_runs_every_verification_the_workflows_it_mirrors_run() {
-    let selector = read("tools/git-hooks/gate_registry.py");
-    let mirrored = mirrored_workflows(&selector);
+    let mirrored = mirrored_workflows();
     assert!(
         mirrored.len() > 3,
         "read only {} mirrored workflow(s) from the stage table — the \
