@@ -53,12 +53,16 @@ fn repo_root() -> PathBuf {
 }
 
 /// What the gate reads, and so what every copy of the tree it runs in carries:
-/// the harness and the gate, the corpus, and the workflow whose ceiling the
-/// gate sizes each job against (`scripts/lib/mutation_rounds_cost.sh`).
-const GATE_TREE: [&str; 3] = [
+/// the harness and the gate, the corpus, the workflow whose ceiling the
+/// gate sizes each job against (`scripts/lib/mutation_rounds_cost.sh`), and the
+/// toolchain pin the harness reads while declaring a casefile that names a
+/// toolchain of its own (`scripts/lib/rust_toolchains.sh`): without it the
+/// declaration of every Miri casefile fails and the gate stops the corpus.
+const GATE_TREE: [&str; 4] = [
     "scripts",
     "sce-build/tests/mutations",
     ".github/workflows/mutation-rounds.yml",
+    "rust-toolchain.toml",
 ];
 
 /// A copy of the harness, the gate and the corpus under a fresh git index.
@@ -2143,19 +2147,23 @@ fn the_lane_prepares_the_tree_the_rounds_judge() {
 /// change-scoped gate quietly becomes an unconditional one.
 #[test]
 fn a_path_that_only_resembles_a_declared_target_selects_nothing() {
+    // A path a tree is made of rightly selects every round that mutates a
+    // tree's output (`a_tree_is_made_of`), so the target whose neighbours are
+    // asked about is one whose directory and `.orig` sibling are of no tree:
+    // what they reach can then only be a path matched by resemblance.
     let corpus = casefiles();
-    let target = corpus
+    let (target, parent, neighbour) = corpus
         .iter()
         .flat_map(|casefile| declared_targets(casefile))
+        .filter(|target| tree_of_target(target).is_none())
+        .filter_map(|target| {
+            let parent = Path::new(&target).parent()?.to_string_lossy().to_string();
+            let neighbour = format!("{target}.orig");
+            (!parent.is_empty() && !a_tree_is_made_of(&parent) && !a_tree_is_made_of(&neighbour))
+                .then_some((target, parent, neighbour))
+        })
         .next()
-        .expect("the corpus declares at least one target");
-
-    let parent = Path::new(&target)
-        .parent()
-        .expect("a declared target has a parent directory")
-        .to_string_lossy()
-        .to_string();
-    let neighbour = format!("{target}.orig");
+        .expect("the corpus declares a target outside what a tree is made of");
 
     let (ok, chosen, log) = selection_for(&[&parent, &neighbour]);
 
