@@ -15401,6 +15401,80 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     #expect(RpcStatus.unavailable.declaredName == "unavailable", "rpc_status.unavailable declared name")
 }
 
+// MARK: - enum: enum_take_kind
+
+@Test func enumTakeKindMatchesReference() throws {
+
+    let spec = try oracleSpec("enums", "enum_take_kind")
+    let variants = try oracleArray(spec.member("variants"))
+
+    // Count first: a vocabulary that gained or lost a variant without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(variants.count == 3, "enum_take_kind: oracle variant count")
+    guard variants.count == 3 else {
+        return
+    }
+
+    #expect(try oracleText(variants[0].member("name")) == "taken", "enum_take_kind variant 0 name")
+    #expect(
+        try oracleNumberText(variants[0].member("value")) == String(EnumTakeKind.taken.rawValue),
+        "enum_take_kind.taken"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumTakeKind.taken.declaredName == "taken", "enum_take_kind.taken declared name")
+    #expect(try oracleText(variants[1].member("name")) == "duplicate", "enum_take_kind variant 1 name")
+    #expect(
+        try oracleNumberText(variants[1].member("value")) == String(EnumTakeKind.duplicate.rawValue),
+        "enum_take_kind.duplicate"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumTakeKind.duplicate.declaredName == "duplicate", "enum_take_kind.duplicate declared name")
+    #expect(try oracleText(variants[2].member("name")) == "no_room", "enum_take_kind variant 2 name")
+    #expect(
+        try oracleNumberText(variants[2].member("value")) == String(EnumTakeKind.noRoom.rawValue),
+        "enum_take_kind.no_room"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumTakeKind.noRoom.declaredName == "no_room", "enum_take_kind.no_room declared name")
+}
+
+// MARK: - enum: put_outcome
+
+@Test func putOutcomeMatchesReference() throws {
+
+    let spec = try oracleSpec("enums", "put_outcome")
+    let variants = try oracleArray(spec.member("variants"))
+
+    // Count first: a vocabulary that gained or lost a variant without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(variants.count == 3, "put_outcome: oracle variant count")
+    guard variants.count == 3 else {
+        return
+    }
+
+    #expect(try oracleText(variants[0].member("name")) == "inserted", "put_outcome variant 0 name")
+    #expect(
+        try oracleNumberText(variants[0].member("value")) == String(PutOutcome.inserted.rawValue),
+        "put_outcome.inserted"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(PutOutcome.inserted.declaredName == "inserted", "put_outcome.inserted declared name")
+    #expect(try oracleText(variants[1].member("name")) == "replaced", "put_outcome variant 1 name")
+    #expect(
+        try oracleNumberText(variants[1].member("value")) == String(PutOutcome.replaced.rawValue),
+        "put_outcome.replaced"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(PutOutcome.replaced.declaredName == "replaced", "put_outcome.replaced declared name")
+    #expect(try oracleText(variants[2].member("name")) == "full", "put_outcome variant 2 name")
+    #expect(
+        try oracleNumberText(variants[2].member("value")) == String(PutOutcome.full.rawValue),
+        "put_outcome.full"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(PutOutcome.full.declaredName == "full", "put_outcome.full declared name")
+}
+
 // MARK: - codec: envelope
 
 @Test func envelopeMatchesReference() throws {
@@ -16041,6 +16115,72 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     #expect(try oracleText(cases[10].member("kind")) == "dayOfMonthOffset", "date_expression: oracle value 10 is of the case dayOfMonthOffset")
     let value10 = try { () throws -> DateExpression in switch try oracleText(cases[10].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[10].member("year"), as: Int32.self), month: try oracleInteger(cases[10].member("month"), as: UInt8.self), day: try oracleInteger(cases[10].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[10].member("month"), as: UInt8.self), day: try oracleInteger(cases[10].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[10].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[10].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[10].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[10].member("day"), as: UInt8.self), count: try oracleInteger(cases[10].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
     #expect(value10.kind == DateKind.dayOfMonthOffset, "date_expression: the case dayOfMonthOffset answers its tag")
+}
+
+// MARK: - event-schema: schema_map_peer
+
+@Test func schemaMapPeerMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "schema_map_peer")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "schema_map_peer: oracle field count")
+    #expect(SchemaMapPeer.eventName == "peer.seen", "schema_map_peer: event name")
+
+    let payload = SchemaMapPeerPayload(
+        low: 3,
+        high: 7
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "low", "schema_map_peer field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.low) == expected0, "schema_map_peer.low")
+    #expect(try oracleText(fields[1].member("name")) == "high", "schema_map_peer field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.high) == expected1, "schema_map_peer.high")
+}
+
+// MARK: - event-schema: schema_take_duplicate
+
+@Test func schemaTakeDuplicateMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "schema_take_duplicate")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 1, "schema_take_duplicate: oracle field count")
+    #expect(SchemaTakeDuplicate.eventName == "take.duplicate", "schema_take_duplicate: event name")
+
+    let payload = SchemaTakeDuplicatePayload(
+        last: 7
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "last", "schema_take_duplicate field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.last) == expected0, "schema_take_duplicate.last")
+}
+
+// MARK: - union: union_take_result
+
+@Test func unionTakeResultMatchesReference() throws {
+
+    let cases = try oracleCases("unions", "union_take_result")
+    #expect(cases.count == 3, "union_take_result: one oracle value per case")
+    guard cases.count == 3 else {
+        return
+    }
+    #expect(try oracleText(cases[0].member("kind")) == "taken", "union_take_result: oracle value 0 is of the case taken")
+    let value0 = try { () throws -> UnionTakeResult in switch try oracleText(cases[0].member("kind")) { case "taken": return UnionTakeResult.taken; case "duplicate": return UnionTakeResult.duplicate(SchemaTakeDuplicatePayload(last: try oracleInteger(cases[0].member("last"), as: UInt64.self))); case "no_room": return UnionTakeResult.noRoom; default: throw OracleError(description: "union_take_result: no case is the variant the value's tag names") } }()
+    #expect(value0.kind == EnumTakeKind.taken, "union_take_result: the case taken answers its tag")
+    #expect(try oracleText(cases[1].member("kind")) == "duplicate", "union_take_result: oracle value 1 is of the case duplicate")
+    let value1 = try { () throws -> UnionTakeResult in switch try oracleText(cases[1].member("kind")) { case "taken": return UnionTakeResult.taken; case "duplicate": return UnionTakeResult.duplicate(SchemaTakeDuplicatePayload(last: try oracleInteger(cases[1].member("last"), as: UInt64.self))); case "no_room": return UnionTakeResult.noRoom; default: throw OracleError(description: "union_take_result: no case is the variant the value's tag names") } }()
+    #expect(value1.kind == EnumTakeKind.duplicate, "union_take_result: the case duplicate answers its tag")
+    #expect(try oracleText(cases[2].member("kind")) == "no_room", "union_take_result: oracle value 2 is of the case no_room")
+    let value2 = try { () throws -> UnionTakeResult in switch try oracleText(cases[2].member("kind")) { case "taken": return UnionTakeResult.taken; case "duplicate": return UnionTakeResult.duplicate(SchemaTakeDuplicatePayload(last: try oracleInteger(cases[2].member("last"), as: UInt64.self))); case "no_room": return UnionTakeResult.noRoom; default: throw OracleError(description: "union_take_result: no case is the variant the value's tag names") } }()
+    #expect(value2.kind == EnumTakeKind.noRoom, "union_take_result: the case no_room answers its tag")
 }
 
 // MARK: - event-schema: merkle_node
