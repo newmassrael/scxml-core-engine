@@ -349,6 +349,50 @@ pub trait SessionStore: Send + Sync {
         let _ = key;
         Err(Failure::new(NoOutbox))
     }
+
+    /// At most `limit` of the clients the store holds an outbox for, as the entries
+    /// [`SessionStore::indexed`] answers for their names, in the order of their UTF-8 bytes, each
+    /// after `after` when it is given. A pass over every outbox (the re-seal of ADR 0109, D8) reads
+    /// them a page at a time, each page after the last entry of the one before.
+    fn outbox_clients_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure> {
+        let _ = (after, limit);
+        Err(Failure::new(NoOutbox))
+    }
+
+    /// Replace the envelope of the entry numbered `number` in the outbox of `client` with
+    /// `envelope` when it is `held`, its number, its moment and its sender kept, and answer whether
+    /// it did: `false`, writing nothing, when the outbox holds no such entry or its envelope is
+    /// another. This is how a store that seals what it keeps seals an envelope again under its
+    /// active key (ADR 0109, D8).
+    fn reseal_entry(
+        &self,
+        client: &str,
+        number: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        let _ = (client, number, held, envelope);
+        Err(Failure::new(NoOutbox))
+    }
+
+    /// Replace the envelope of the note `id` of the session `key` with `envelope` when it is
+    /// `held`, every other field kept, and answer whether it did: `false`, writing nothing, when
+    /// the session holds no such note or its envelope is another. As [`SessionStore::reseal_entry`]
+    /// is for an entry.
+    fn reseal_note(
+        &self,
+        key: &str,
+        id: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        let _ = (key, id, held, envelope);
+        Err(Failure::new(NoOutbox))
+    }
 }
 
 /// A saved session as a store holds it.

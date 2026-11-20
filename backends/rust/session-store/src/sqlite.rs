@@ -621,6 +621,70 @@ impl SessionStore for SqliteStore {
             .collect::<rusqlite::Result<Vec<Note>>>()?;
         Ok(notes)
     }
+
+    fn outbox_clients_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure> {
+        let connection = self.connection();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        // A client is TEXT compared by the BINARY collation, which is the order of its UTF-8 bytes.
+        let listed = match after {
+            Some(after) => {
+                let mut statement = connection.prepare_cached(
+                    "SELECT client FROM outbox_heads WHERE client > ?1 ORDER BY client LIMIT ?2",
+                )?;
+                let rows = statement.query_map((after, limit), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+            None => {
+                let mut statement = connection
+                    .prepare_cached("SELECT client FROM outbox_heads ORDER BY client LIMIT ?1")?;
+                let rows = statement.query_map((limit,), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+        };
+        Ok(listed)
+    }
+
+    fn reseal_entry(
+        &self,
+        client: &str,
+        number: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let changed = transaction
+            .prepare_cached(
+                "UPDATE outbox_entries SET envelope = ?4 \
+                 WHERE client = ?1 AND number = ?2 AND envelope = ?3",
+            )?
+            .execute((client, number, held, envelope))?;
+        transaction.commit()?;
+        Ok(changed == 1)
+    }
+
+    fn reseal_note(
+        &self,
+        key: &str,
+        id: u64,
+        held: &[u8],
+        envelope: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let changed = transaction
+            .prepare_cached(
+                "UPDATE outbox_notes SET envelope = ?4 \
+                 WHERE id = ?1 AND session = ?2 AND envelope = ?3",
+            )?
+            .execute((id, key, held, envelope))?;
+        transaction.commit()?;
+        Ok(changed == 1)
+    }
 }
 
 /// What [`SessionStore::write`] does with `write` to the session `key` names, in the transaction
@@ -1592,6 +1656,70 @@ impl AuditStore for SqliteStore {
 
     fn audit_first(&self, identity: &Identity<'_>) -> Result<Option<u64>, Failure> {
         Ok(audit_first_of(&self.connection(), identity)?)
+    }
+
+    fn audit_streams_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, Failure> {
+        let connection = self.connection();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        // A stream is TEXT compared by the BINARY collation, which is the order of its UTF-8 bytes.
+        let listed = match after {
+            Some(after) => {
+                let mut statement = connection.prepare_cached(
+                    "SELECT stream FROM audit_heads WHERE stream > ?1 ORDER BY stream LIMIT ?2",
+                )?;
+                let rows = statement.query_map((after, limit), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+            None => {
+                let mut statement = connection
+                    .prepare_cached("SELECT stream FROM audit_heads ORDER BY stream LIMIT ?1")?;
+                let rows = statement.query_map((limit,), |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            }
+        };
+        Ok(listed)
+    }
+
+    fn audit_reseal_row(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        entry: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let changed = transaction
+            .prepare_cached(
+                "UPDATE audit_rows SET entry = ?4 \
+                 WHERE stream = ?1 AND sequence = ?2 AND entry = ?3",
+            )?
+            .execute((stream, sequence, held, entry))?;
+        transaction.commit()?;
+        Ok(changed == 1)
+    }
+
+    fn audit_reseal_checkpoint(
+        &self,
+        stream: &str,
+        sequence: u64,
+        held: &[u8],
+        signature: &[u8],
+    ) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let changed = transaction
+            .prepare_cached(
+                "UPDATE audit_checkpoints SET signature = ?4 \
+                 WHERE stream = ?1 AND sequence = ?2 AND signature = ?3",
+            )?
+            .execute((stream, sequence, held, signature))?;
+        transaction.commit()?;
+        Ok(changed == 1)
     }
 }
 
