@@ -68,9 +68,11 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # the peer table the build generates from tests/mesh/wss_loopback/deploy.yaml
 # (`com/sce/generated/`), which is output rather than a test, and a recursive
 # glob would let a generated file declare itself a witness. The Rust host
-# core's tests sit inside the production files they test (`mod tests`), so
-# there is no test-only file to enrol; its server side is witnessed from here
-# by the Kotlin loopback test, which dials the Rust peer.
+# core's unit tests sit inside the production files they test (`mod tests`),
+# which are not enrolled; its integration tests (`backends/rust/mesh/tests`,
+# the HTTPS conformance kit and the Zenoh router run among them) are test-only
+# files and are enrolled. Its server side is also witnessed from here by the
+# Kotlin loopback test, which dials the Rust peer.
 #
 # The child-session tests (SCE_MESH.md §21) are one file per engine, named
 # here and not by their directories: each sits among tests of the engine that
@@ -84,6 +86,8 @@ TEST_TREES = (
     "tests/mesh/*.cpp",
     "tests/mesh/*.h",
     "sce-build/tests/mesh_*.rs",
+    # The Rust host core's own tests, by their directory and no deeper.
+    "backends/rust/mesh/tests/*.rs",
     "tests/w3c/dist/*.cpp",
     "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/*.kt",
     "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/*.kt",

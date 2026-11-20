@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// SCE-VERIFIES: mesh-20 mesh-20.1 mesh-20.2 mesh-20.3 mesh-20.4
 
 //! The Zenoh binding across a real Zenoh router, with upstream's `zenoh` crate as the client of
 //! both machines.

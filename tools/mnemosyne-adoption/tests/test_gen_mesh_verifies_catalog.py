@@ -129,6 +129,26 @@ class GenMeshVerifiesCatalogTest(unittest.TestCase):
              "section_ids": ["mesh-18", "mesh-18.1"]},
         ])
 
+    def test_the_rust_host_core_tests_are_enrolled(self):
+        # The HTTPS conformance kit and the Zenoh router run are the Rust host
+        # core's integration tests, which the ledger binds as witnesses: a
+        # marker there must reach the catalog. The core's production sources,
+        # whose unit tests sit in `mod tests`, are no witness of their own.
+        repo = FakeRepo(["mesh-20", "mesh-22.9"])
+        repo.write_at("backends/rust/mesh/tests/https_conformance.rs",
+                      "// SCE-VERIFIES: mesh-22.9\nfn main() {}\n")
+        repo.write_at("backends/rust/mesh/tests/zenoh_through_a_router.rs",
+                      "// SCE-VERIFIES: mesh-20\nfn main() {}\n")
+        repo.write_at("backends/rust/mesh/src/https/signature.rs",
+                      "// SCE-VERIFIES: mesh-22.9\n")
+        self.assertEqual(repo.run().returncode, 0)
+        self.assertEqual(repo.catalog()["entries"], [
+            {"file": "backends/rust/mesh/tests/https_conformance.rs",
+             "section_ids": ["mesh-22.9"]},
+            {"file": "backends/rust/mesh/tests/zenoh_through_a_router.rs",
+             "section_ids": ["mesh-20"]},
+        ])
+
     def test_a_generated_kotlin_file_cannot_declare_itself_a_witness(self):
         # `jvmTest/.../generated/` holds the peer table the build writes from
         # deploy.yaml. It is output, not a test, so a marker copied into it by
