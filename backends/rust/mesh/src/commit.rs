@@ -27,14 +27,18 @@
 //! The durability of each write is the one it would have had alone: a write is answered only
 //! once the transaction that holds it is durable, and a caller blocks until then, as it would on
 //! the store. What a batch shares is the cost of making it durable.
+//!
+//! Each commit reports how long the store took to make it durable and how many items it held
+//! (docs/adr/0109, D16): `sce_store_commit_duration_seconds` and `sce_store_commit_batch_size`.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use sce_rust_metrics::{Histogram, Metrics};
 use sce_rust_session_store::{
     Append, Batched, Change, Committed, Decided, Failure, SessionStore, Write, WriteError, Written,
 };
@@ -48,6 +52,9 @@ pub struct Committer {
     queue: Mutex<Queue>,
     /// Signalled whenever a commit ended: its answers are in the queue, and no commit is going on.
     ended: Condvar,
+    /// What each commit is reported to (docs/adr/0109, D16), and what the pool and the outboxes
+    /// that commit through it report to.
+    metrics: Arc<dyn Metrics>,
 }
 
 /// What the committer holds between its callers.
@@ -203,17 +210,41 @@ impl Committer {
     /// The committer of `store`, whose leader waits `delay` before it takes a batch: deploy.yaml's
     /// `sessions.commit_delay_us`, `Duration::ZERO` for none.
     pub fn new(store: Arc<dyn SessionStore>, delay: Duration) -> Self {
+        Self::observed(store, delay, sce_rust_metrics::none())
+    }
+
+    /// [`Self::new`], reporting each commit's duration and size to `metrics` (docs/adr/0109,
+    /// D16).
+    pub fn observed(
+        store: Arc<dyn SessionStore>,
+        delay: Duration,
+        metrics: Arc<dyn Metrics>,
+    ) -> Self {
         Committer {
             store,
             delay,
             queue: Mutex::new(Queue::default()),
             ended: Condvar::new(),
+            metrics,
         }
     }
 
     /// The store it commits to, which its callers read directly: a read waits for no commit.
     pub fn store(&self) -> &Arc<dyn SessionStore> {
         &self.store
+    }
+
+    /// What it reports to, which the pool and the outboxes that commit through it report to too.
+    pub fn metrics(&self) -> &Arc<dyn Metrics> {
+        &self.metrics
+    }
+
+    /// Whether the store answers a read now: the readiness of what keeps its state in it
+    /// (docs/adr/0109, D16). The read is a listing of the sessions due at the first moment of the
+    /// epoch, one row at most, which every store serves from its index of dues and whose answer
+    /// is not looked at; it waits for no commit, and blocks for as long as the store does.
+    pub fn store_answers(&self) -> bool {
+        self.store.due_before(0, 1).is_ok()
     }
 
     /// Commit `write` to the session `key` names, with whatever else is handed meanwhile, and
@@ -344,7 +375,15 @@ impl Committer {
                 },
             })
             .collect();
-        let reason = match self.store.write_many(&given) {
+        // docs/adr/0109, D16: how long the store took to make the batch durable, and how many
+        // items it held, whatever it answered.
+        let began = Instant::now();
+        let written = self.store.write_many(&given);
+        self.metrics
+            .observe(Histogram::CommitDuration, began.elapsed().as_secs_f64());
+        self.metrics
+            .observe(Histogram::CommitBatchSize, given.len() as f64);
+        let reason = match written {
             Ok(decided) if decided.len() == given.len() => return decided,
             Ok(decided) => alloc::format!(
                 "the store answered {} items of a batch of {}",
@@ -375,7 +414,6 @@ mod tests {
     };
     use std::sync::mpsc;
     use std::thread::JoinHandle;
-    use std::time::Instant;
 
     /// A store in memory that notes the size of every commit, and, until the test opens it, holds
     /// its first commit, as a slow medium would; or, when `unwinds`, whose first commit panics.
@@ -600,6 +638,45 @@ mod tests {
         first.join().expect("no writer panicked").expect("a");
         second.join().expect("no writer panicked").expect("b");
         assert_eq!(gated.batches(), vec![2]);
+    }
+
+    /// docs/adr/0109, D16: each commit reports how long the store took to make it durable and how
+    /// many items it held, once per commit and not per item. Red if the committer reports nothing,
+    /// or reports each item as a batch of its own (`[1, 1, 1]`).
+    #[test]
+    fn each_commit_reports_its_duration_and_its_size() {
+        use sce_rust_metrics::recording::Recording;
+
+        let store = MemoryStore::new();
+        let gated = Arc::new(Gated::over(store.clone()));
+        let recording = Arc::new(Recording::new());
+        let committer = Arc::new(Committer::observed(
+            Arc::clone(&gated) as Arc<dyn SessionStore>,
+            Duration::ZERO,
+            Arc::clone(&recording) as Arc<dyn Metrics>,
+        ));
+        let first = lease(&store, "first");
+        let a = lease(&store, "a");
+        let b = lease(&store, "b");
+        let holding = write_on_a_thread(&committer, "first", first.fence);
+        assert!(eventually(|| gated.batches().len() == 1));
+        let a_write = write_on_a_thread(&committer, "a", a.fence);
+        let b_write = write_on_a_thread(&committer, "b", b.fence);
+        assert!(eventually(|| committer.waiting() == 2));
+        gated.open();
+        for writer in [holding, a_write, b_write] {
+            writer
+                .join()
+                .expect("no writer panicked")
+                .expect("each write is kept");
+        }
+        assert_eq!(
+            recording.observed(Histogram::CommitBatchSize),
+            vec![1.0, 2.0]
+        );
+        let durations = recording.observed(Histogram::CommitDuration);
+        assert_eq!(durations.len(), 2, "{durations:?}");
+        assert!(durations.iter().all(|seconds| *seconds >= 0.0));
     }
 
     /// A commit whose writer unwound (a store that panicked) leaves no commit going on: the
