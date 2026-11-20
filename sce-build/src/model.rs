@@ -2101,6 +2101,17 @@ pub struct UnsupportedInvokeInfo {
     /// [`Self::request_schema_at`] gives.
     #[serde(skip)]
     pub answer_schema_at: Option<SourceLocation>,
+    /// `sce:entry` — the alias of the imported event schema an invoke of
+    /// `sce-host-audit-append` appends a record of (docs/adr/0109, D14): the
+    /// request's `entry` is a value of that record, and the build writes its
+    /// `sensitivity` from the marks the schema declares. Empty when the invoke
+    /// names none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub entry_schema: String,
+    /// Where `sce:entry`'s value is spelled, for the reason
+    /// [`Self::request_schema_at`] gives.
+    #[serde(skip)]
+    pub entry_schema_at: Option<SourceLocation>,
 }
 
 /// What an escaped [`invoke_identifier`] begins with: a digit, which no

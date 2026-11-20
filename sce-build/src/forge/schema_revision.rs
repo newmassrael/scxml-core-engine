@@ -1030,6 +1030,7 @@ mod tests {
             optional_since: None,
             default: default.map(str::to_string),
             default_spelling: None,
+            sensitivity: None,
         }
     }
 

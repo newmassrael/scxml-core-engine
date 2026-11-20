@@ -14066,6 +14066,7 @@ fn parse_event_schema(
             ));
         }
         read_field_revision(&data, &mut field, revision, label.diagnostic_label)?;
+        read_sensitivity(&data, &mut field, label.diagnostic_label)?;
         fields.push(field);
     }
 
@@ -14161,6 +14162,65 @@ fn parse_event_schema(
         revision,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
+}
+
+/// `sce:sensitivity` on one field of an event schema (docs/adr/0109, D14):
+/// `secret`, on a field of any type, never written to a durable log, or
+/// `personal`, on a text or an optional text, written there as its keyed
+/// digest. Any other value is refused, and so is `personal` on a field whose
+/// value is no text, since a keyed digest of a number or a record would say
+/// nothing a reader could correlate.
+fn read_sensitivity(
+    data: &roxmltree::Node,
+    field: &mut SchemaField,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    use crate::forge::model::Sensitivity;
+    use crate::forge::value_type::ValueType;
+
+    let Some(text) = sce_attr(data, "sensitivity") else {
+        return Ok(());
+    };
+    let element = format!("EventSchema field '{}'", field.id);
+    let Some(mark) = Sensitivity::from_name(text.trim()) else {
+        return Err(located(
+            data,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element,
+                attr: "sce:sensitivity".into(),
+                value: text.clone(),
+                allowed: Sensitivity::ALL
+                    .iter()
+                    .map(|mark| mark.name().to_string())
+                    .collect(),
+            },
+        ));
+    };
+    let holds_text = match &field.sce_type {
+        ValueType::Text { .. } => true,
+        ValueType::Optional { elem } => matches!(**elem, ValueType::Text { .. }),
+        _ => false,
+    };
+    if mark == Sensitivity::Personal && !holds_text {
+        return Err(located(
+            data,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:sensitivity".into(),
+                value: text.clone(),
+                rule: format!(
+                    "`personal` marks a text or an optional text, written to a log as its keyed \
+                     digest so that equal values still correlate, and this field is `{}`: mark \
+                     it `secret`, which writes no value of it at all",
+                    field.sce_type
+                ),
+            },
+        ));
+    }
+    field.sensitivity = Some(mark);
+    Ok(())
 }
 
 /// `sce:revision` on the root of a kind that grows by revisions — an event
@@ -15659,6 +15719,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "revision",
     "sample-interval",
     "scale",
+    // How a field of an event schema is redacted where a record of it is written
+    // to a durable log (docs/adr/0109, D14; `read_sensitivity`).
+    "sensitivity",
     // The character that cuts the value of one line of a content-line codec entry
     // into a list (docs/adr/0014).
     "separator",
@@ -16108,6 +16171,9 @@ fn parse_field_body<T>(
         optional_since: None,
         default: None,
         default_spelling: None,
+        // A mark is an event schema's field's alone: `parse_event_schema` reads
+        // `sce:sensitivity` for its own fields (docs/adr/0109, D14).
+        sensitivity: None,
     })
 }
 

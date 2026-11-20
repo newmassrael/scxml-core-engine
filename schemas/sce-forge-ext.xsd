@@ -577,6 +577,23 @@
        grammar, two schemas of one id), each `validation/model-answer-schema`. -->
   <xs:attribute name="answer" type="xs:string"/>
 
+  <!-- docs/adr/0109, D14: the event schema whose record an `<invoke>` of
+       `sce-host-audit-append` appends, an imported schema's alias. Global
+       for the reason `request` is. `xs:string` and not `use`-constrained:
+       the parser and the build own the refusals (on an invoke of another
+       type, empty, naming no imported schema, a schema with a nested record,
+       one whose entry or marks pass their bounds, an append that names
+       none), each `validation/audit-entry-schema`. -->
+  <xs:attribute name="entry" type="xs:string"/>
+
+  <!-- docs/adr/0109, D14: how a field of an event schema is redacted where a
+       record of the schema is written to a durable log: `secret`, never
+       written, or `personal`, written as its keyed digest. `xs:string` and
+       not an enumeration: the parser owns the refusals (another value,
+       `validation/invalid-attribute`; `personal` on a field that holds no
+       text, `validation/attribute-rule-violated`). -->
+  <xs:attribute name="sensitivity" type="xs:string"/>
+
   <!-- Section 4.6: Codec — document-level default endianness -->
   <xs:attribute name="default-endian" type="sce:endianType"/>
 

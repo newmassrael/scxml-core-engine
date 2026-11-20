@@ -51287,6 +51287,7 @@ mod tests {
             optional_since: None,
             default: None,
             default_spelling: None,
+            sensitivity: None,
         };
         let optional = |elem: ValueType| ValueType::Optional {
             elem: Box::new(elem),
@@ -51401,6 +51402,7 @@ mod tests {
             optional_since: None,
             default: None,
             default_spelling: None,
+            sensitivity: None,
         };
         let mut model = crate::model::SCXMLModel {
             name: "labelled".to_string(),
@@ -51626,6 +51628,7 @@ mod tests {
             optional_since: None,
             default: None,
             default_spelling: None,
+            sensitivity: None,
         };
         // Bytes with no annotation → default-capacity buffer + length sibling.
         assert_eq!(

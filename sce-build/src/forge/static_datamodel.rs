@@ -630,6 +630,15 @@ fn logged_alike(ty: InferredType, enum_value: bool) -> bool {
     }
 }
 
+/// Whether `param` is the `entry` of an audit append that names its entry's
+/// schema (docs/adr/0109, D14): a record, held to that schema and crossing as
+/// its JSON payload, rather than a text the request's field types.
+fn is_audit_entry(info: &crate::model::UnsupportedInvokeInfo, param: &Param) -> bool {
+    info.invoke_type == crate::forge::audit_entry::AUDIT_APPEND
+        && !info.entry_schema.is_empty()
+        && param.name == crate::forge::audit_entry::ENTRY_FIELD
+}
+
 /// Whether a value of `ty` is a whole union, present or optional
 /// (docs/adr/0092): what no carrier of a statechart's values takes yet.
 pub(crate) fn holds_whole_union(ty: &crate::forge::value_type::ValueType) -> bool {
@@ -5343,6 +5352,48 @@ impl<'a> Judge<'a> {
         }
     }
 
+    /// The `entry` of an audit append (docs/adr/0109, D14): a variable, or a
+    /// field of a record variable, of the very record `alias`, the schema its
+    /// `sce:entry` names, which crosses to the host as the record's JSON
+    /// payload. Anything else (a literal, a text, a record of another schema)
+    /// is refused where it is written.
+    fn audit_entry_value(
+        &self,
+        ctx: &TypeCtx<'_>,
+        param: &Param,
+        alias: &str,
+        element: &str,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::value_type::ValueType;
+        let wire = WireParam::of_param(param);
+        let written = wire.written;
+        let held = crate::forge::expr::written_place(written)
+            .filter(|_| !wire.is_static_literal)
+            .and_then(|path| ctx.value_of(&path));
+        let holds_the_record = held.is_some_and(|place| {
+            place.scope.is_empty()
+                && matches!(&place.ty, ValueType::Record { alias: of } if of == alias)
+        });
+        if holds_the_record {
+            return Ok(());
+        }
+        let at = wire.source_location;
+        Err(self.rule_at(
+            format!("<param name=\"{}\"> of {element}", param.name),
+            &format!(
+                "the entry of an audit append is a variable, or a field of a record variable, \
+                 of the record sce:entry names (`record:{alias}`), which crosses as its JSON \
+                 payload, and `{}` is no such place",
+                written.trim()
+            ),
+            at.and_then(|l| l.line),
+            at.and_then(|l| l.col),
+            state,
+            written,
+        ))
+    }
+
     /// [`Self::request_field_value`]'s judgement of a value `given` for a field
     /// whose type is the scalar `want` and whose bound is `max_size`: why the
     /// field cannot hold it, if it cannot.
@@ -6742,8 +6793,13 @@ impl<'a> Judge<'a> {
                 )?;
             }
             // The host is handed the pairs as text, with no spelling for an
-            // absent value (docs/adr/0055).
+            // absent value (docs/adr/0055). The entry of an audit append is a
+            // record, which crosses as its JSON payload (docs/adr/0109, D14).
             for param in &base.params {
+                if is_audit_entry(info, param) {
+                    self.audit_entry_value(ctx, param, &info.entry_schema, &element, state)?;
+                    continue;
+                }
                 self.wire_param(
                     ctx,
                     &WireParam::of_param(param),
@@ -6757,7 +6813,7 @@ impl<'a> Judge<'a> {
                 self.wire_param(ctx, &pair, &element, Carrier::Text, state)?;
             }
             if let Some(request) = self.schemas.get(&info.request_schema) {
-                for param in &base.params {
+                for param in base.params.iter().filter(|p| !is_audit_entry(info, p)) {
                     self.request_field_value(ctx, param, request, &element, state)?;
                 }
             }

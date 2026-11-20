@@ -1657,6 +1657,21 @@ pub enum ValidationError {
         detail: String,
     },
 
+    /// docs/adr/0109, D14: an `sce:entry` that names no schema the build can
+    /// write an audit entry of: on an `<invoke>` of a type other than
+    /// `sce-host-audit-append`, empty, naming no event schema the document
+    /// imports, naming one that holds a record or a union in a field, whose
+    /// entry may be longer than the request's `entry` holds or whose marks are
+    /// longer than its `sensitivity` holds; or an `sce-host-audit-append` that
+    /// names none. `alias` is the attribute as written, the record's `actual`
+    /// when it is not empty.
+    #[error("<invoke id=\"{invoke_id}\" sce:entry=\"{alias}\">: {detail}")]
+    AuditEntrySchema {
+        invoke_id: String,
+        alias: String,
+        detail: String,
+    },
+
     /// §scxml-G-7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the

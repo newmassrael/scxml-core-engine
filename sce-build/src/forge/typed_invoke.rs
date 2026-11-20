@@ -253,10 +253,15 @@ fn check_request(
             continue;
         }
         if by_build.contains(&param.name.as_str()) {
+            let from = if info.invoke_type == crate::forge::audit_entry::AUDIT_APPEND {
+                "sce:entry"
+            } else {
+                "sce:answer"
+            };
             return Err(refuse(
                 &param.source_location,
                 format!(
-                    "<param name=\"{}\"> is written by the build from sce:answer, so the \
+                    "<param name=\"{}\"> is written by the build from {from}, so the \
                      document does not give it",
                     param.name
                 ),

@@ -7677,6 +7677,7 @@ topology:
             optional_since: None,
             default: None,
             default_spelling: None,
+            sensitivity: None,
         }
     }
 
