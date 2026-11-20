@@ -28296,10 +28296,14 @@ mod tests {
             },
         );
         let logged = c.log("due", "due", InferredType::Optional(int64));
+        // docs/adr/0110, D2: a present value is written through the log seam as
+        // the decimal text of its number, an absent one as `null`.
         assert!(
             logged.starts_with("if ((due).present) {")
-                && logged.contains("(long long)((due).value)")
-                && logged.contains("\"%s: null\\n\", \"due\""),
+                && logged.contains("sce_text_of_i64((int64_t)((due).value)")
+                && logged.contains(
+                    "_sce_log_write(SCE_LOG_INFO, \"due\", sizeof(\"due\") - 1u, \"null\", 4u)"
+                ),
             "{logged}"
         );
     }
