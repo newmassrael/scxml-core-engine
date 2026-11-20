@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-22.9
+//
 // The message signatures of the https binding on the C++ client (docs/adr/0109,
 // D9; sce/include/mesh/transports/HttpsSignature.h), on libsodium through the
 // host's crypto (host/SodiumCoseCrypto.h):
