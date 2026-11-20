@@ -14,7 +14,8 @@
 
 #![forbid(unsafe_code)]
 
-use std::io::{BufRead, Write};
+// The standard output's `Write` is needed only for its methods; the name is the store's write.
+use std::io::{BufRead, Write as _};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -207,9 +208,10 @@ fn poll(pool: &Served, epoch: Option<String>, ack: u64) {
             return;
         }
     }
-    let (epoch, envelopes) = outboxes
-        .entries(CLIENT)
-        .unwrap_or((incarnation, Vec::new()));
+    let (epoch, envelopes) = match outboxes.entries(CLIENT) {
+        Some(held) => (held.incarnation, held.envelopes),
+        None => (incarnation, Vec::new()),
+    };
     report(&Report::Mailbox { epoch, envelopes });
 }
 

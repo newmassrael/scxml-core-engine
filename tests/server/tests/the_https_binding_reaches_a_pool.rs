@@ -505,10 +505,12 @@ impl Client {
                 match &event {
                     LinkEvent::Ready(_) => self.ready = true,
                     LinkEvent::Lost(..) | LinkEvent::Interrupted(..) => self.ready = false,
+                    // An answer that carried envelopes leaves the link as ready as it was.
                     LinkEvent::Received(..)
                     | LinkEvent::Unsent(..)
                     | LinkEvent::Restarted(_)
-                    | LinkEvent::Unauthenticated(..) => {}
+                    | LinkEvent::Unauthenticated(..)
+                    | LinkEvent::Carried(..) => {}
                 }
                 self.hand_on(event);
             }
