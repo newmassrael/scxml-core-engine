@@ -31,7 +31,9 @@ pub use sce_rust_crypto::cose::{
 };
 pub use sce_rust_crypto::keyring::{DERIVED_PREFIX, GENERATED_PREFIX};
 
-use crate::{failure, record, Outcome, Params, ReferenceHost, Transport, INVALID_ARGUMENT};
+use crate::{
+    failure, record, NamedBounds, Outcome, Params, ReferenceHost, Transport, INVALID_ARGUMENT,
+};
 
 /// The operation that signs a payload.
 pub const SIGN1: &str = "sce-host-cose-sign1";
@@ -55,12 +57,10 @@ pub(crate) const UNKNOWN_KEY: &str = "unknown_key";
 pub(crate) const UNAVAILABLE: &str = "unavailable";
 
 // The bounds of the records' fields (`sce:std/host/cose_*.scxml`,
-// `key_derive_*.scxml`), in bytes.
+// `key_derive_*.scxml`) that no build moves, in bytes. The payload, the
+// plaintext and the objects made of them are named bounds, which the host
+// holds as its build gave them (`NamedBounds`; docs/adr/0109, D17).
 pub(crate) const KEY_ID_MAX: usize = 64;
-const PAYLOAD_MAX: usize = 4096;
-const PLAINTEXT_MAX: usize = 4352;
-const SIGNED_MAX: usize = 4352;
-const SEALED_MAX: usize = 4480;
 const AAD_MAX: usize = 256;
 const SECRET_MAX: usize = 256;
 const SALT_MAX: usize = 64;
@@ -293,28 +293,29 @@ impl<'p> Arguments<'p> {
 
 /// The request `params` makes of `operation`, or `None` when the host refuses
 /// it: an empty key id or trust set, a derivation given both or neither of a
-/// secret and an input key, or a value its record's field does not hold.
-fn request<'p>(operation: &str, params: &'p Params) -> Option<Request<'p>> {
+/// secret and an input key, or a value its record's field does not hold at
+/// the bounds `bounds` gives the named ones.
+fn request<'p>(operation: &str, params: &'p Params, bounds: &NamedBounds) -> Option<Request<'p>> {
     let arguments = Arguments(params);
     Some(match operation {
         SIGN1 => Request::Sign1 {
             key_id: arguments.id("key_id")?,
-            payload: arguments.bytes("payload", PAYLOAD_MAX)?,
+            payload: arguments.bytes("payload", bounds.cose_payload)?,
             aad: arguments.bytes("external_aad", AAD_MAX)?,
         },
         VERIFY1 => Request::Verify1 {
             trust_set: arguments.id("trust_set")?,
-            cose: arguments.bytes("cose", SIGNED_MAX)?,
+            cose: arguments.bytes("cose", bounds.cose_signed)?,
             aad: arguments.bytes("external_aad", AAD_MAX)?,
         },
         ENCRYPT0 => Request::Encrypt0 {
             key_id: arguments.id("key_id")?,
-            plaintext: arguments.bytes("plaintext", PLAINTEXT_MAX)?,
+            plaintext: arguments.bytes("plaintext", bounds.cose_plaintext)?,
             aad: arguments.bytes("external_aad", AAD_MAX)?,
         },
         DECRYPT0 => Request::Decrypt0 {
             key_id: arguments.id("key_id")?,
-            cose: arguments.bytes("cose", SEALED_MAX)?,
+            cose: arguments.bytes("cose", bounds.cose_sealed)?,
             aad: arguments.bytes("external_aad", AAD_MAX)?,
         },
         KEY_DERIVE => {
@@ -335,9 +336,9 @@ fn request<'p>(operation: &str, params: &'p Params) -> Option<Request<'p>> {
     })
 }
 
-/// Whether the host refuses `operation` with `params`.
-pub(crate) fn refuses(operation: &str, params: &Params) -> bool {
-    request(operation, params).is_none()
+/// Whether the host refuses `operation` with `params` at `bounds`.
+pub(crate) fn refuses(operation: &str, params: &Params, bounds: &NamedBounds) -> bool {
+    request(operation, params, bounds).is_none()
 }
 
 /// The nonce of the next seal: from the source the embedding gave, or else from
@@ -356,7 +357,8 @@ pub(crate) fn perform<T: Transport>(
     operation: &str,
     params: &Params,
 ) -> Outcome {
-    let Some(request) = request(operation, params) else {
+    let bounds = host.bounds;
+    let Some(request) = request(operation, params, &bounds) else {
         return Outcome::Refuse(INVALID_ARGUMENT);
     };
     match request {
@@ -380,7 +382,8 @@ pub(crate) fn perform<T: Transport>(
             };
             // A payload the result cannot hold is no payload this operation
             // gives, so such an object is answered as one that does not verify.
-            match verify1(trusted, &cose, &aad).filter(|(_, payload)| payload.len() <= PAYLOAD_MAX)
+            match verify1(trusted, &cose, &aad)
+                .filter(|(_, payload)| payload.len() <= bounds.cose_payload)
             {
                 Some((key_id, payload)) => record(json!({
                     "valid": true,
@@ -413,7 +416,9 @@ pub(crate) fn perform<T: Transport>(
             };
             // As for a verification: a plaintext past the record's bound does
             // not open here.
-            match decrypt0(&key, &cose, &aad).filter(|plaintext| plaintext.len() <= PLAINTEXT_MAX) {
+            match decrypt0(&key, &cose, &aad)
+                .filter(|plaintext| plaintext.len() <= bounds.cose_plaintext)
+            {
                 Some(plaintext) => record(json!({
                     "opened": true,
                     "plaintext": text_of(&plaintext),

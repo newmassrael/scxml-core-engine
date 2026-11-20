@@ -25,6 +25,7 @@
 //! network transport of the `sce-rust-host-http` crate is built with one.
 
 pub mod audit;
+mod bounds;
 mod clock;
 pub mod cose;
 pub mod credentials;
@@ -40,6 +41,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub use audit::{AuditStreams, Personal, StreamPolicy};
+pub use bounds::NamedBounds;
 pub use clock::{ClockSource, Reading, ScriptedClock, SystemClock, Zone};
 pub use cose::{CoseKeys, NonceSource, ReservedKeyId, SystemNonces, TrustedKey};
 pub use http::{HttpRequest, HttpResponse, Transport, TransportFailure, HTTP_BODY_MAX_BYTES};
@@ -60,14 +62,6 @@ pub use serve::{serve, Shared};
 
 /// The operation that generates a text (docs/SCE_HOST_FEATURES.md, section 6).
 pub const MODEL_GENERATE: &str = "sce-host-model-generate";
-
-/// The most bytes `sce-host-random-bytes` draws, the bound of its result's
-/// `bytes` (`random_bytes` of the result record).
-pub const RANDOM_BYTES_MAX: usize = 256;
-
-/// The bound of a keyed digest's `message`, in bytes (`mac_message` of the
-/// request records).
-pub const MAC_MESSAGE_MAX: usize = 4096;
 
 /// The request of an operation as the engine hands it to a host: each
 /// `<param>` by name, as text. A 64-bit integer is its decimal digits.
@@ -200,6 +194,10 @@ pub struct ReferenceHost<T: Transport> {
     /// The streams the host keeps, each with its policy; an append to another
     /// fails `unknown_stream`.
     pub(crate) audit_streams: audit::AuditStreams,
+    /// The numbers of the named bounds of the records the host judges a
+    /// request and its answer by: the library's until the embedding gives
+    /// its build's (docs/adr/0109, D17).
+    pub(crate) bounds: NamedBounds,
 }
 
 /// A start the host was given: the operation, the invocation's id, the
@@ -252,6 +250,7 @@ impl<T: Transport> ReferenceHost<T> {
             credentials: Arc::new(MemoryCredentials::new()),
             audit: Arc::new(MemoryStore::new()),
             audit_streams: audit::AuditStreams::new(),
+            bounds: NamedBounds::LIBRARY,
         }
     }
 
@@ -382,6 +381,16 @@ impl<T: Transport> ReferenceHost<T> {
     /// that names an id the table does not hold is refused.
     pub fn set_answer_schemas(&mut self, schemas: &[AnswerSchema]) {
         self.answer_schemas = schemas.to_vec();
+    }
+
+    /// Judge requests and answers by `bounds` from here on: the numbers the
+    /// build of the machine this host serves gave the records' named bounds,
+    /// which the machine declares as `<Machine>Limits` (docs/adr/0109, D17).
+    /// A request past one is refused, and a verification or an opening whose
+    /// payload or plaintext is past one answers as one that does not verify
+    /// or open. A host given none holds [`NamedBounds::LIBRARY`].
+    pub fn set_named_bounds(&mut self, bounds: NamedBounds) {
+        self.bounds = bounds;
     }
 
     /// The starts the host was given since this was last called, oldest first.
@@ -515,9 +524,11 @@ impl<T: Transport> ReferenceHost<T> {
             }
             MODEL_GENERATE => model::refuses(&self.answer_schemas, id, params),
             signing_or_sealing if cose::OPERATIONS.contains(&signing_or_sealing) => {
-                cose::refuses(signing_or_sealing, params)
+                cose::refuses(signing_or_sealing, params, &self.bounds)
             }
-            of_keys if keys::OPERATIONS.contains(&of_keys) => keys::refuses(of_keys, params),
+            of_keys if keys::OPERATIONS.contains(&of_keys) => {
+                keys::refuses(of_keys, params, &self.bounds)
+            }
             of_credentials if credentials::OPERATIONS.contains(&of_credentials) => {
                 credentials::refuses(of_credentials, params)
             }
