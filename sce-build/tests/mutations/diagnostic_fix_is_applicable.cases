@@ -29,10 +29,12 @@ mutation_runtime_targets sce-build/src/forge/event_schema_check.rs \
 # Re-aimed 2026-09-22: `located_on_param` took the literal the document
 # wrote as a second argument, so the anchor that quoted the old argument
 # list matched nothing and would have read as SURVIVED. The unknown-field
-# site passes `None` there — it names a field, not a literal.
+# site now passes the spelling of the `<param>`'s name there, so the record
+# stands where the name is written; the mutant still moves it to the
+# enclosing element, whose line the name is not on.
 mutation_case "a param rejection anchors on the element that encloses it" <<'PY'
 edit("sce-build/src/forge/event_schema_check.rs",
-     "        return Err(located_on_param(\n            param,\n            None,\n            action,\n            diag_label,\n            ValidationError::EventPayloadFieldUnknown {",
+     "        return Err(located_on_param(\n            param,\n            param\n                .name_spelling\n                .as_ref()\n                .and_then(crate::attribute_spelling::AttributeSpelling::value),\n            action,\n            diag_label,\n            ValidationError::EventPayloadFieldUnknown {",
      "        return Err(located_at(\n            action.source_location.as_ref(),\n            diag_label,\n            ValidationError::EventPayloadFieldUnknown {")
 PY
 

@@ -47,8 +47,8 @@ mutation_regen scripts/materialize.sh kotlin-integration
 
 mutation_case "a handed value is followed by the data's own" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return true\n",
-     "            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return false\n")
+     "            raisePlatformError(failed, ErrorReason.DATA_INIT_FAILED, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return true\n",
+     "            raisePlatformError(failed, ErrorReason.DATA_INIT_FAILED, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return false\n")
 PY
 
 # ── The generated start never asks for a handed value ───────────────
@@ -125,7 +125,7 @@ PY
 
 mutation_case "a refused handed value raises nothing" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "        } catch (_: Exception) {\n            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n",
+     "        } catch (_: Exception) {\n            raisePlatformError(failed, ErrorReason.DATA_INIT_FAILED, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n",
      "        } catch (_: Exception) {\n        }\n")
 PY
 
@@ -137,8 +137,8 @@ PY
 
 mutation_case "a refused handed value falls back to the data's own" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "        } catch (_: Exception) {\n            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return true\n",
-     "        } catch (_: Exception) {\n            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n            return false\n        }\n        return true\n")
+     "        } catch (_: Exception) {\n            raisePlatformError(failed, ErrorReason.DATA_INIT_FAILED, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return true\n",
+     "        } catch (_: Exception) {\n            raisePlatformError(failed, ErrorReason.DATA_INIT_FAILED, \"<data id='$id'> could not take the value its invoke handed it\")\n            return false\n        }\n        return true\n")
 PY
 
 # ── A value is handed as the parent's engine gave it back ───────────

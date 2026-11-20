@@ -136,7 +136,7 @@ mutation_case "a value the child cannot hold raises nothing" <<'PY'
 edit("tools/codegen/templates/c/scriptengine.jinja2",
      """               error. It is left without a value, and its own is not tried. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_DATA_INIT_FAILED,
                 {{ reason("data_unstored", var.id) }});
             break;""",
      """               error. It is left without a value, and its own is not tried. */

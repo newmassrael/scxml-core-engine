@@ -119,6 +119,6 @@ PY
 
 mutation_case "a handed value the session cannot hold raises nothing" <<'PY'
 edit("tools/codegen/templates/go/scriptengine_helpers.go.jinja2",
-     "\t\teng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, \"<data id='\"+name+\"'> could not hold the value its invoking session handed it\"))\n",
+     "\t\teng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonDataInitFailed, \"<data id='\"+name+\"'> could not hold the value its invoking session handed it\"))\n",
      "")
 PY
