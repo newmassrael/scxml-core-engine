@@ -722,6 +722,9 @@ const char *refusalText(Refusal refusal) {
 
 Refusal verifyResponse(StandardHost::CoseCrypto &crypto, const std::vector<TrustedKey> &trusted, std::uint16_t status,
                        const std::vector<HttpsHeader> &headers, const Bytes &body, const Answered &answered) {
+    // SCE_MESH.md §mesh-22.9: the list a response's signature covers is the
+    // profile's, built here from what the response carries and never read
+    // from it; a signature of any other list is refused.
     if (status != 200) {
         return Refusal::Profile;
     }
@@ -847,6 +850,9 @@ RequestSigner::~RequestSigner() {
 
 std::optional<std::vector<HttpsHeader>>
 RequestSigner::sign(const std::string &targetUri, const std::vector<HttpsHeader> &headers, std::int64_t created) const {
+    // SCE_MESH.md §mesh-22.9: the `key` authenticator's request signature,
+    // over the request's method, target, body digest, numbering, hold and
+    // nonce, made at `created`.
     const std::vector<Component> expected = requestComponents(fieldValue(headers, kEpochHeader).has_value());
     std::vector<std::pair<Component, std::string>> covered;
     std::vector<Item> items;

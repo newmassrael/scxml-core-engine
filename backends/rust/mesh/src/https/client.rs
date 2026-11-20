@@ -228,7 +228,7 @@ impl Shared {
         if let Some(authorization) = &self.authorization {
             headers.push(("Authorization".to_string(), authorization.clone()));
         }
-        // SCE_MESH.md section 22.9: a client that verifies or signs draws a nonce for each
+        // §mesh-22.9: a client that verifies or signs draws a nonce for each
         // exchange, which a response's signature covers so that it answers this request and no
         // other; a client of the `key` authenticator signs the request over its body's digest.
         let signer = self.settings.credential.request_signer();
@@ -325,7 +325,7 @@ fn take_outcome(
         return Then::Continue;
     }
     match outcome {
-        // SCE_MESH.md section 22.9: a `200` that did not verify proves nothing of the server. The
+        // §mesh-22.9: a `200` that did not verify proves nothing of the server. The
         // client takes nothing of it and acknowledges nothing, so what the mailbox holds stays
         // there for a response that verifies; what the request carried is handed back as not
         // sent, since nothing says the server took it; readiness stands as it was; and the host

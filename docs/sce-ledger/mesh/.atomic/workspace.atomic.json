@@ -4053,6 +4053,54 @@
         }
       ]
     },
+    "mesh-22.9": {
+      "title": "Message Signatures",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/https/signature.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/server.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/mesh/HttpsSignature.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_conformance.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/tests/https_signature_cross_language.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tests/mesh/HttpsSignatureTest.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mesh_https_cpp_codegen.rs",
+          "kind": "references"
+        }
+      ]
+    },
     "mesh-3": {
       "title": "Three Abstraction Axes",
       "parent_doc": "mesh",

@@ -804,6 +804,8 @@ impl ResponseSigner {
         first: Option<&str>,
         answered: &Answered,
     ) -> [(String, String); 2] {
+        // §mesh-22.9: a `200` is signed over its status, its body's digest and its numbering, and
+        // over the request it answers, so that it answers that request alone.
         let mut covered = alloc::vec![
             (Component::of("@status"), "200".to_string()),
             (
@@ -851,6 +853,8 @@ pub fn verify_response(
     body: &[u8],
     answered: &Answered,
 ) -> Result<(), Refusal> {
+    // §mesh-22.9: the list a response's signature covers is the profile's, built here from what
+    // the response carries and never read from it; a signature of any other list is refused.
     if status != 200 {
         return Err(Refusal::Profile);
     }
@@ -951,6 +955,8 @@ impl RequestSigner {
         headers: &[(String, String)],
         created: i64,
     ) -> Option<[(String, String); 3]> {
+        // §mesh-22.9: the `key` authenticator's request signature, over the request's method,
+        // target, body digest, numbering, hold and nonce, made at `created`.
         let field = |name: &str| field_value(headers, name);
         let expected = request_components(field(EPOCH_HEADER).is_some());
         let derived = |component: &Component| -> Option<String> {
@@ -1030,6 +1036,7 @@ impl RequestSignature {
         now_s: i64,
         max_skew_s: u64,
     ) -> Result<(), Refusal> {
+        // §mesh-22.9: the key the name is held to, and a `created` within the server's skew.
         if self.key_id != key_id_of(public_key) {
             return Err(Refusal::UnknownKey);
         }

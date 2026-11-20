@@ -652,7 +652,7 @@ std::optional<HttpsRequest> Client::buildRequest(std::vector<std::uint8_t> body,
     if (auto value = authorization()) {
         request.headers.emplace_back("Authorization", std::move(*value));
     }
-    // SCE_MESH.md section 22.9: a client that verifies or signs draws a nonce
+    // SCE_MESH.md §mesh-22.9: a client that verifies or signs draws a nonce
     // for each exchange, which a response's signature covers so that it
     // answers this request alone; under the `key` authenticator the request
     // is signed over its body's digest.
@@ -714,7 +714,7 @@ Client::Verdict Client::judge(const HttpsExchange &answer, const Mark &sent) {
     const std::uint16_t status = answer.status;
     if (status == 200) {
         verdict.kind = Verdict::Kind::Taken;
-        // SCE_MESH.md section 22.9: under `verify:` a `200` is the server's
+        // SCE_MESH.md §mesh-22.9: under `verify:` a `200` is the server's
         // only when a key of the trust set signed it for this request.
         if (trusted_ && host_.crypto != nullptr) {
             const Signatures::Answered answered{target_uri_, std::to_string(sent.ack), sent.nonce};

@@ -1174,6 +1174,8 @@ fn admit_key(
     request: &Request<Incoming>,
     judged: &Judged<'_>,
 ) -> Admission {
+    // §mesh-22.9: a signature of the profile by the key the name is pinned to, or under trust on
+    // first use by the key the request offers, made within `max_skew` of the server's clock.
     let field = |header: &str| header_field(request, header);
     let (Ok(signature), Some(target)) = (RequestSignature::read(&field), judged.target) else {
         return Admission::Refused;
@@ -1262,7 +1264,7 @@ async fn exchange(
     {
         return shed(StatusCode::TOO_MANY_REQUESTS, wait);
     }
-    // SCE_MESH.md section 22.9: what a signature covers of the request, read before its body
+    // §mesh-22.9: what a signature covers of the request, read before its body
     // takes it: the target URI, and the acknowledgement and nonce a response's signature answers.
     let target = request_target(&request, scheme);
     let answered = match (
@@ -1369,7 +1371,7 @@ async fn exchange(
     if !body.is_empty() && typed.as_deref() != Some(CONTENT_TYPE) {
         return answer(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
-    // SCE_MESH.md section 22.9: a signed request proves its body by the `Content-Digest` its
+    // §mesh-22.9: a signed request proves its body by the `Content-Digest` its
     // signature covers, so a body that is not the one signed is no request of the client's.
     if matches!(shared.authenticator, Authenticator::Key(_))
         && !signed_digest.is_some_and(|digest| digest_matches(&digest, &body))
@@ -1492,7 +1494,7 @@ async fn exchange(
     // §mesh-22.2: the body is the unacknowledged envelopes it carries as a CBOR sequence,
     // `Sce-Mesh-First` numbers its first (absent when it is empty), and every `200` names its
     // incarnation.
-    // SCE_MESH.md section 22.9: under `sign:`, a `200` answering a request that carries a nonce is
+    // §mesh-22.9: under `sign:`, a `200` answering a request that carries a nonce is
     // signed over its status, its body's digest and its numbering, and over the request's method,
     // target, acknowledgement and nonce, so that it answers that request alone.
     let first = first.map(|first| first.to_string());
