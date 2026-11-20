@@ -4123,10 +4123,10 @@ mod tests {
         assert_eq!(carried.body, outbox.entries[0].envelope);
         assert_eq!(
             outboxes.entries("client"),
-            Some((
-                outbox.incarnation.clone(),
-                vec![(1, outbox.entries[0].envelope.clone())]
-            ))
+            Some(crate::outbox::HeldOutbox {
+                incarnation: outbox.incarnation.clone(),
+                envelopes: vec![(1, outbox.entries[0].envelope.clone())],
+            })
         );
     }
 

@@ -110,6 +110,14 @@ pub struct Carried {
     pub body: Vec<u8>,
 }
 
+/// What the process holds of one client's outbox ([`Outboxes::entries`]): the incarnation it
+/// numbers in, and its envelopes with their numbers, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeldOutbox {
+    pub incarnation: String,
+    pub envelopes: Vec<(u64, Vec<u8>)>,
+}
+
 impl Outboxes {
     /// The outboxes of the clients `bindings` names, kept in `store`.
     pub fn new(store: Arc<dyn SessionStore>, bindings: BTreeMap<String, OutboxBinding>) -> Self {
@@ -343,16 +351,17 @@ impl Outboxes {
     /// What the process holds of `client`'s outbox, its incarnation and its envelopes by number,
     /// oldest first: for a host that carries the binding's exchanges itself and frames them as
     /// it frames them. `None` when the process holds no outbox of the client: one not opened.
-    pub fn entries(&self, client: &str) -> Option<(String, Vec<(u64, Vec<u8>)>)> {
+    pub fn entries(&self, client: &str) -> Option<HeldOutbox> {
         let clients = lock(&self.clients);
         let held = clients.get(client)?.held.as_ref()?;
-        Some((
-            held.incarnation.clone(),
-            held.entries
+        Some(HeldOutbox {
+            incarnation: held.incarnation.clone(),
+            envelopes: held
+                .entries
                 .iter()
                 .map(|entry| (entry.number, entry.envelope.clone()))
                 .collect(),
-        ))
+        })
     }
 
     /// Expire `client`'s outbox at `now_ms`: the store deletes at most `limit` of its entries
