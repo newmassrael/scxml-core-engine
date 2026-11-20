@@ -9,6 +9,10 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
+use crate::audit::{
+    rules as audit_rules, AuditAppend, AuditCheckpoint, AuditHead, AuditRow, AuditStore, Chain,
+    NoCheckpointAt, CHAIN_BYTES,
+};
 use crate::credentials::{
     CredentialStore, Digest, PinRow, PinStore, Revoked, TokenRow, TokenStore, DIGEST_BYTES,
 };
@@ -25,7 +29,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 6;
+const LAYOUT_VERSION: i64 = 7;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -159,6 +163,40 @@ const LAYOUT_6: &str = "
     );
 ";
 
+/// What layout 7 adds to layout 6: the audit log (ADR 0109, D14). A stream's head outlives the
+/// rows retention deletes, so the next row is numbered and chained on; a row and a checkpoint are
+/// found by their stream and sequence; and the identity an append was made under names the
+/// sequence it was appended at, which a removal of its session deletes.
+const LAYOUT_7: &str = "
+    CREATE TABLE audit_heads (
+        stream TEXT PRIMARY KEY NOT NULL,
+        sequence INTEGER NOT NULL,
+        chain BLOB NOT NULL
+    );
+    CREATE TABLE audit_rows (
+        stream TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        at_ms INTEGER NOT NULL,
+        entry BLOB NOT NULL,
+        chain BLOB NOT NULL,
+        PRIMARY KEY (stream, sequence)
+    );
+    CREATE TABLE audit_checkpoints (
+        stream TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        chain BLOB NOT NULL,
+        signature BLOB NOT NULL,
+        PRIMARY KEY (stream, sequence)
+    );
+    CREATE TABLE audit_identities (
+        session TEXT NOT NULL,
+        invoke TEXT NOT NULL,
+        start INTEGER NOT NULL,
+        sequence INTEGER NOT NULL,
+        PRIMARY KEY (session, invoke, start)
+    );
+";
+
 /// A session store in one SQLite database file.
 ///
 /// The database is in WAL mode, so that reads go on while a write is made, with
@@ -242,7 +280,9 @@ impl SqliteStore {
 /// transaction, so a failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     // Each layout's additions, in order: layout `n` is the first `n` of them.
-    const ADDITIONS: [&str; 6] = [LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6];
+    const ADDITIONS: [&str; 7] = [
+        LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7,
+    ];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
     match layout {
@@ -367,6 +407,9 @@ impl SessionStore for SqliteStore {
                 for &session in write.sessions {
                     transaction
                         .prepare_cached("DELETE FROM kv_first_results WHERE session = ?1")?
+                        .execute((session,))?;
+                    transaction
+                        .prepare_cached("DELETE FROM audit_identities WHERE session = ?1")?
                         .execute((session,))?;
                 }
                 0
@@ -1272,6 +1315,225 @@ impl KvStore for SqliteStore {
             .execute((key, held, value))?;
         transaction.commit()?;
         Ok(changed == 1)
+    }
+}
+
+/// A chain as a column holds it, refused when it is not [`CHAIN_BYTES`] long: a row this build did
+/// not write.
+fn chain_of(column: Vec<u8>) -> Result<Chain, Failure> {
+    Chain::try_from(column.as_slice()).map_err(|_| {
+        Failure::new(format!(
+            "an audit chain is {} bytes, not {CHAIN_BYTES}",
+            column.len()
+        ))
+    })
+}
+
+/// The head of `stream` in `connection`.
+fn audit_head_of(connection: &Connection, stream: &str) -> Result<AuditHead, Failure> {
+    let held: Option<(u64, Vec<u8>)> = connection
+        .prepare_cached("SELECT sequence, chain FROM audit_heads WHERE stream = ?1")?
+        .query_row((stream,), |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()?;
+    match held {
+        None => Ok(AuditHead::EMPTY),
+        Some((sequence, chain)) => Ok(AuditHead {
+            sequence,
+            chain: chain_of(chain)?,
+        }),
+    }
+}
+
+/// The sequence `connection` keeps for `identity`, if it keeps one.
+fn audit_first_of(
+    connection: &Connection,
+    identity: &Identity<'_>,
+) -> rusqlite::Result<Option<u64>> {
+    connection
+        .prepare_cached(
+            "SELECT sequence FROM audit_identities \
+             WHERE session = ?1 AND invoke = ?2 AND start = ?3",
+        )?
+        .query_row((identity.session, identity.invoke, identity.start), |row| {
+            row.get(0)
+        })
+        .optional()
+}
+
+/// The columns of an audit row as SQLite gives them, before its chain is read.
+type AuditColumns = (String, u64, u64, Vec<u8>, Vec<u8>);
+
+/// The columns of a checkpoint as SQLite gives them, before its chain is read.
+type CheckpointColumns = (String, u64, Vec<u8>, Vec<u8>);
+
+impl AuditStore for SqliteStore {
+    fn audit_head(&self, stream: &str) -> Result<AuditHead, Failure> {
+        audit_head_of(&self.connection(), stream)
+    }
+
+    fn audit_append(
+        &self,
+        row: &AuditRow,
+        checkpoint: Option<&[u8]>,
+        identity: Option<&Identity<'_>>,
+    ) -> Result<AuditAppend, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        if let Some(identity) = identity {
+            if let Some(sequence) = audit_first_of(&transaction, identity)? {
+                return Ok(AuditAppend::Repeated { sequence });
+            }
+        }
+        let head = audit_head_of(&transaction, &row.stream)?;
+        if let Err(moved) = audit_rules::follows(&head, row) {
+            return Ok(moved);
+        }
+        transaction
+            .prepare_cached(
+                "INSERT OR REPLACE INTO audit_heads (stream, sequence, chain) VALUES (?1, ?2, ?3)",
+            )?
+            .execute((&row.stream, row.sequence, &row.chain[..]))?;
+        transaction
+            .prepare_cached(
+                "INSERT INTO audit_rows (stream, sequence, at_ms, entry, chain) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?
+            .execute((
+                &row.stream,
+                row.sequence,
+                moment(row.at_ms),
+                &row.entry,
+                &row.chain[..],
+            ))?;
+        if let Some(signature) = checkpoint {
+            transaction
+                .prepare_cached(
+                    "INSERT INTO audit_checkpoints (stream, sequence, chain, signature) \
+                     VALUES (?1, ?2, ?3, ?4)",
+                )?
+                .execute((&row.stream, row.sequence, &row.chain[..], signature))?;
+        }
+        if let Some(identity) = identity {
+            transaction
+                .prepare_cached(
+                    "INSERT INTO audit_identities (session, invoke, start, sequence) \
+                     VALUES (?1, ?2, ?3, ?4)",
+                )?
+                .execute((
+                    identity.session,
+                    identity.invoke,
+                    identity.start,
+                    row.sequence,
+                ))?;
+        }
+        transaction.commit()?;
+        Ok(AuditAppend::Appended)
+    }
+
+    fn audit_checkpoint(&self, checkpoint: &AuditCheckpoint) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let kept = transaction
+            .prepare_cached(
+                "INSERT OR IGNORE INTO audit_checkpoints (stream, sequence, chain, signature) \
+                 VALUES (?1, ?2, ?3, ?4)",
+            )?
+            .execute((
+                &checkpoint.stream,
+                checkpoint.sequence,
+                &checkpoint.chain[..],
+                &checkpoint.signature,
+            ))?;
+        transaction.commit()?;
+        Ok(kept == 1)
+    }
+
+    fn audit_rows(&self, stream: &str, after: u64, limit: usize) -> Result<Vec<AuditRow>, Failure> {
+        let connection = self.connection();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        // A sequence past the largest signed 64-bit number is none SQLite holds.
+        let Ok(after) = i64::try_from(after) else {
+            return Ok(Vec::new());
+        };
+        let mut statement = connection.prepare_cached(
+            "SELECT stream, sequence, at_ms, entry, chain FROM audit_rows \
+             WHERE stream = ?1 AND sequence > ?2 ORDER BY sequence LIMIT ?3",
+        )?;
+        let columns = statement
+            .query_map((stream, after, limit), |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<AuditColumns>>>()?;
+        columns
+            .into_iter()
+            .map(|(stream, sequence, at_ms, entry, chain)| {
+                Ok(AuditRow {
+                    stream,
+                    sequence,
+                    at_ms,
+                    entry,
+                    chain: chain_of(chain)?,
+                })
+            })
+            .collect()
+    }
+
+    fn audit_checkpoints(&self, stream: &str) -> Result<Vec<AuditCheckpoint>, Failure> {
+        let connection = self.connection();
+        let mut statement = connection.prepare_cached(
+            "SELECT stream, sequence, chain, signature FROM audit_checkpoints \
+             WHERE stream = ?1 ORDER BY sequence",
+        )?;
+        let columns = statement
+            .query_map((stream,), |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .collect::<rusqlite::Result<Vec<CheckpointColumns>>>()?;
+        columns
+            .into_iter()
+            .map(|(stream, sequence, chain, signature)| {
+                Ok(AuditCheckpoint {
+                    stream,
+                    sequence,
+                    chain: chain_of(chain)?,
+                    signature,
+                })
+            })
+            .collect()
+    }
+
+    fn audit_drop_through(&self, stream: &str, through: u64) -> Result<u64, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let anchored: i64 = transaction
+            .prepare_cached(
+                "SELECT count(*) FROM audit_checkpoints WHERE stream = ?1 AND sequence = ?2",
+            )?
+            .query_row((stream, through), |row| row.get(0))?;
+        if anchored == 0 {
+            return Err(Failure::new(NoCheckpointAt {
+                stream: stream.to_string(),
+                sequence: through,
+            }));
+        }
+        let removed = transaction
+            .prepare_cached("DELETE FROM audit_rows WHERE stream = ?1 AND sequence <= ?2")?
+            .execute((stream, through))?;
+        transaction
+            .prepare_cached("DELETE FROM audit_checkpoints WHERE stream = ?1 AND sequence < ?2")?
+            .execute((stream, through))?;
+        transaction.commit()?;
+        Ok(u64::try_from(removed).unwrap_or(u64::MAX))
+    }
+
+    fn audit_first(&self, identity: &Identity<'_>) -> Result<Option<u64>, Failure> {
+        Ok(audit_first_of(&self.connection(), identity)?)
     }
 }
 
