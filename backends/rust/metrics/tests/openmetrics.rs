@@ -13,8 +13,9 @@ use std::collections::BTreeMap;
 
 use sce_rust_metrics::openmetrics::OpenMetrics;
 use sce_rust_metrics::{
-    AuthenticatorKind, Counter, Eviction, ExchangeStatus, Gauge, Histogram, HostFailure,
-    HostOperation, Kind, Metrics, PoolShed, RestoredFrom, ServerShed, FAMILIES, REGISTRY,
+    AuthenticatorKind, Counter, Eviction, ExchangeOutcome, Gauge, Histogram, HostFailure,
+    HostOperation, Kind, Metrics, PoolShed, ResponseStatus, RestoredFrom, ServerShed, FAMILIES,
+    REGISTRY,
 };
 
 /// One sample line: its name, its labels in order, and its value.
@@ -441,8 +442,10 @@ fn value_of(families: &[Parsed], name: &str, labels: &[(&str, &str)]) -> Option<
 /// Every counter series of the registry, each label set taken whole.
 fn every_counter() -> Vec<Counter> {
     let mut all = Vec::new();
-    for status in ExchangeStatus::ALL {
+    for status in ResponseStatus::ALL {
         all.push(Counter::ServerExchanges { status: *status });
+    }
+    for status in ExchangeOutcome::ALL {
         all.push(Counter::ClientExchanges { status: *status });
     }
     for reason in ServerShed::ALL {

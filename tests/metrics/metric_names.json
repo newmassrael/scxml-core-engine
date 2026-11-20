@@ -1,5 +1,5 @@
 {
-  "note": "The registry of the names an SCE server's parts report through the metrics port (docs/adr/0109, D16; docs/SCE_SERVER_DEPLOY.md section 10; SCE_WIRE_CONTRACTS.md, Server metrics): every family's name as the exposition names it before its suffix, its type, its unit, its labels in order and each label's closed set of values, and the lanes that report it. The Rust crate sce-rust-metrics (backends/rust/metrics/tests/metric_names.rs) and the C++ header host/Metrics.h (tests/integration/AStandardHostMetricsTest.cpp) are each held to every family listed for their lane, and to no family more. A status of `none` is one a client reports for an exchange that got no response; the label's type is one closed set for the server and the client.",
+  "note": "The registry of the names an SCE server's parts report through the metrics port (docs/adr/0109, D16; docs/SCE_SERVER_DEPLOY.md section 10; SCE_WIRE_CONTRACTS.md, Server metrics): every family's name as the exposition names it before its suffix, its type, its unit, its labels in order and each label's closed set of values, and the lanes that report it. The Rust crate sce-rust-metrics (backends/rust/metrics/tests/metric_names.rs) and the C++ header host/Metrics.h (tests/integration/AStandardHostMetricsTest.cpp) are each held to every family listed for their lane, and to no family more. Each label's set holds only the values its family's events produce: the server's `status` is each status it answers, and a client's adds `other`, a status no SCE server answers, and `none`, an exchange that got no response.",
   "registry": "sce-metrics-1",
   "families": [
     {
@@ -13,7 +13,7 @@
       "name": "sce_server_exchanges",
       "type": "counter",
       "unit": "",
-      "labels": [{"name": "status", "values": ["200", "400", "401", "404", "405", "408", "413", "415", "429", "503", "other", "none"]}],
+      "labels": [{"name": "status", "values": ["200", "400", "401", "404", "405", "408", "413", "415", "429", "503"]}],
       "lanes": ["rust"]
     },
     {

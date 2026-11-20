@@ -652,10 +652,11 @@ adapter works as before.
 ### 10.1 The registry of names
 
 Every series is a family of the table below with a value for each of its labels. The names are fixed, and every
-label value is a variant of a closed enum of the port (`ExchangeStatus`, `ServerShed`, `PoolShed`,
+label value is a variant of a closed enum of the port (`ResponseStatus`, `ExchangeOutcome`, `ServerShed`, `PoolShed`,
 `AuthenticatorKind`, `RestoredFrom`, `Eviction`, `HostOperation`, `HostFailure` in Rust, and their counterparts in
 C++), so no series carries a client's name, a session's key or any other text a client chose: a caller has no way to
-hand a label a text of its own. The registry is a wire surface, `sce-metrics-1` (SCE_WIRE_CONTRACTS.md, "Server
+hand a label a text of its own. Each enum holds only the values its family's events produce: the server builds every
+response from a `ResponseStatus`, and a client's `ExchangeOutcome` adds the two outcomes only a client meets. The registry is a wire surface, `sce-metrics-1` (SCE_WIRE_CONTRACTS.md, "Server
 metrics"), `pre-release`: a dashboard or an alert written against it reads the registry's name from
 `sce_metrics_info`, and a change that renames or removes a family, a label or a value names a new registry. In Rust
 the registry is `sce_rust_metrics::FAMILIES`; `host/Metrics.h` holds the families the C++ side reports, value for
@@ -664,7 +665,7 @@ value.
 | Family (as exposed) | Type | Labels and their values | Moved by |
 |---|---|---|---|
 | `sce_metrics_info` | info | `registry`: `sce-metrics-1` | always 1, rendered by the reference adapter |
-| `sce_server_exchanges_total` | counter | `status`: `200`, `400`, `401`, `404`, `405`, `408`, `413`, `415`, `429`, `503`, `other` | each exchange the server answered, by the status of its answer |
+| `sce_server_exchanges_total` | counter | `status`: `200`, `400`, `401`, `404`, `405`, `408`, `413`, `415`, `429`, `503` | each exchange the server answered, by the status of its answer |
 | `sce_server_held_exchanges` | gauge | none | an exchange held open while its client's mailbox is empty, from its first wait until it is answered or its connection drops |
 | `sce_server_sheds_total` | counter | `reason`: `rate`, `concurrency`, `max_clients`, `max_connections`, `max_connections_per_address`, `durability`, `store`, `stopping`, `random_source` | each `429` and each `503` the server answered, and each connection it closed at accept, by why (below) |
 | `sce_server_authentication_failures_total` | counter | `authenticator`: `bearer`, `install`, `mtls`, `key` | each `401`, by the authenticator that refused it |
@@ -681,7 +682,7 @@ value.
 | `sce_host_operation_duration_seconds` | histogram, seconds | `type`: each standard host operation's type (`sce-host-kv-get`, ...) | each start of an operation the reference host answered at once; a start it holds is not observed |
 | `sce_host_operation_failures_total` | counter | `type` as above; `code`: `unavailable`, `quota_exceeded`, `network`, `response_too_large`, `invalid_body`, `destination_refused`, `busy`, `context_exceeded`, `answer_too_large`, `declined`, `unknown_key`, `key_retired`, `unknown_stream`, `invalid_argument`, `other` | each start answered with a failure code, or refused (`invalid_argument`); a code no operation names (one injected) is `other` |
 | `sce_host_audit_appends_total` | counter | none | each entry appended to the audit log; a repeat under one identity appends none |
-| `sce_client_exchanges_total` | counter | `status` as the server's, and `none` | each exchange an `https` client made, by the status its server answered; `none` when no response came |
+| `sce_client_exchanges_total` | counter | `status`: the server's ten, `other` and `none` | each exchange an `https` client made, by the status its server answered; `other` for a status no SCE server answers (an intermediary's), `none` when no response came |
 
 Why a server sheds, each a value of `reason`:
 
