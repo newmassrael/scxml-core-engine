@@ -1030,6 +1030,9 @@ GATES: dict[str, dict] = {
             # members their drivers read: an edit of one alone has to start
             # the suite.
             "tests/host_features/**",
+            # The registry of metric names both lanes are held to (docs/adr/0109,
+            # D16), which `sce-rust-metrics` reads at run time.
+            "tests/metrics/**",
             # The narrow row's runtime header, which the C11 broadcast-log
             # tests read to hold the stamp width the generator judges against
             # to the width the header keeps and each name the generated header
