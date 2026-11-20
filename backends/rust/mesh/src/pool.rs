@@ -1778,7 +1778,7 @@ mod tests {
     use alloc::vec;
     use sce_rust_runtime::saved_state::{SavedAct, SavedHostSend, SavedInvokes, SavedSend};
     use sce_rust_runtime::{HostInvokeRequest, HostSendRequest};
-    use sce_rust_session_store::{Due, Lease, MemoryStore, Stored};
+    use sce_rust_session_store::{Change, Due, Lease, MemoryStore, Stored, Write, Written};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Condvar;
     use std::time::{Duration, Instant};
@@ -2684,26 +2684,8 @@ mod tests {
             self.inner.get(&Self::entry(key))
         }
 
-        fn put(
-            &self,
-            key: &str,
-            state: &[u8],
-            earliest_due: Option<u64>,
-            expected_version: u64,
-            fence: u64,
-        ) -> Result<u64, WriteError> {
-            self.inner.put(
-                &Self::entry(key),
-                state,
-                earliest_due,
-                expected_version,
-                fence,
-            )
-        }
-
-        fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-            self.inner
-                .delete(&Self::entry(key), expected_version, fence)
+        fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+            self.inner.write(&Self::entry(key), write)
         }
 
         fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -2811,25 +2793,13 @@ mod tests {
             self.inner.get(key)
         }
 
-        fn put(
-            &self,
-            key: &str,
-            state: &[u8],
-            earliest_due: Option<u64>,
-            expected_version: u64,
-            fence: u64,
-        ) -> Result<u64, WriteError> {
-            let written = self
-                .inner
-                .put(key, state, earliest_due, expected_version, fence);
-            if written.is_ok() && self.armed.swap(false, Ordering::SeqCst) {
+        fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+            let written = self.inner.write(key, write);
+            let kept = matches!(write.change, Change::Keep { .. });
+            if kept && written.is_ok() && self.armed.swap(false, Ordering::SeqCst) {
                 panic!("the process fails after the write landed");
             }
             written
-        }
-
-        fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-            self.inner.delete(key, expected_version, fence)
         }
 
         fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -3054,21 +3024,11 @@ mod tests {
             self.inner.get(key)
         }
 
-        fn put(
-            &self,
-            key: &str,
-            state: &[u8],
-            earliest_due: Option<u64>,
-            expected_version: u64,
-            fence: u64,
-        ) -> Result<u64, WriteError> {
-            self.puts.fetch_add(1, Ordering::SeqCst);
-            self.inner
-                .put(key, state, earliest_due, expected_version, fence)
-        }
-
-        fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-            self.inner.delete(key, expected_version, fence)
+        fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+            if matches!(write.change, Change::Keep { .. }) {
+                self.puts.fetch_add(1, Ordering::SeqCst);
+            }
+            self.inner.write(key, write)
         }
 
         fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -3301,23 +3261,12 @@ mod tests {
             self.inner.get(key)
         }
 
-        fn put(
-            &self,
-            key: &str,
-            state: &[u8],
-            earliest_due: Option<u64>,
-            expected_version: u64,
-            fence: u64,
-        ) -> Result<u64, WriteError> {
-            if self.failing.load(Ordering::SeqCst) {
+        fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+            let kept = matches!(write.change, Change::Keep { .. });
+            if kept && self.failing.load(Ordering::SeqCst) {
                 return Err(WriteError::Failed(Failure::new("the medium is down")));
             }
-            self.inner
-                .put(key, state, earliest_due, expected_version, fence)
-        }
-
-        fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-            self.inner.delete(key, expected_version, fence)
+            self.inner.write(key, write)
         }
 
         fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {

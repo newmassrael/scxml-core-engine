@@ -7,8 +7,12 @@
 //! SCE_MESH.md §mesh-10.11 asks a host to store a checkpoint encrypted at rest under its own key,
 //! since a saved state holds a document's values in the clear. [`Sealed`] does that for each store
 //! contract a server keeps, over any implementation of it: the sessions of ADR 0107
-//! (`SessionStore`), the credentials of D3 (`PinStore`, `TokenStore`, `CredentialStore`) and the
-//! keys of D7 (`KeyStore`).
+//! (`SessionStore`) with the outboxes of D10 their writes append to, the credentials of D3
+//! (`PinStore`, `TokenStore`, `CredentialStore`) and the keys of D7 (`KeyStore`).
+//!
+//! An outbox's envelopes are not re-sealed by a pass: each lives until its client acknowledges
+//! it or the binding's `retain_ms` expires it, so once that long has passed after a rotation, a
+//! retired key opens no envelope a store still holds.
 //!
 //! - **Every value is a sealed record** ([`seal_record`]): `SCE-SEALED-1`, the id of the key that
 //!   sealed it, a 192-bit random nonce and the XChaCha20-Poly1305 ciphertext with its tag. The
@@ -59,7 +63,10 @@ use crate::random::{RandomSource, SystemRandom};
 
 mod credentials;
 mod keys;
+mod outbox;
 mod sessions;
+
+pub use outbox::STORE_OUTBOX;
 
 /// What every sealed record begins with: the version of its form.
 pub const RECORD_MAGIC: &[u8; 12] = b"SCE-SEALED-1";

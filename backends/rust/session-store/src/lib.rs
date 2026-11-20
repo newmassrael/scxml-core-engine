@@ -45,6 +45,13 @@
 //! 0109, D3; module [`credentials`]), each as the SHA-256 of its secret: [`MemoryCredentials`] in
 //! memory, and `SqliteStore` in the same file (layout 3), held to [`credential_conformance`].
 //!
+//! What a server sends a client of a durable `https` binding is kept in the client's **outbox**
+//! until the client acknowledges it (ADR 0109, D10; module [`outbox`]): appended by the write
+//! that keeps the checkpoint of the session that sent it ([`SessionStore::write`]), deleted by
+//! the acknowledgement that covers it, and expired, with a note for its sender, once it is older
+//! than the binding keeps. Both stores keep it (`SqliteStore` from layout 5), held to
+//! [`outbox_conformance`].
+//!
 //! # Building the SQLite store
 //!
 //! The reference store links the system's SQLite (3.14 or later), found through `pkg-config`, or
@@ -75,6 +82,8 @@ pub mod credentials;
 pub mod key_conformance;
 pub mod keys;
 mod memory;
+pub mod outbox;
+pub mod outbox_conformance;
 mod rules;
 #[cfg(feature = "sqlite")]
 mod sqlite;
@@ -84,6 +93,9 @@ pub use credentials::{
 };
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use memory::MemoryStore;
+pub use outbox::{
+    Append, Appended, Change, Expired, Expiry, NoOutbox, Note, Outbox, OutboxEntry, Write, Written,
+};
 #[cfg(feature = "sqlite")]
 pub use sqlite::SqliteStore;
 
@@ -109,15 +121,30 @@ pub trait SessionStore: Send + Sync {
     /// The session `key` names, or `None` if it holds none.
     fn get(&self, key: &str) -> Result<Option<Stored>, Failure>;
 
-    /// Keep `state` as the session `key` names, with `earliest_due` as the earliest moment one of
-    /// its waiting sends comes due (`None` when none waits), and answer its new version.
+    /// The contract's one write of a session, in one transaction: keep or remove the session
+    /// `key` names ([`Write::change`]), append each of [`Write::outbox`] to its client's outbox
+    /// (module [`outbox`]), and take the session's notes through [`Write::notes_through`]; answer
+    /// the session's new version (`0` once removed) and where each append was kept.
     ///
-    /// Refused, writing nothing, unless `fence` is the fence of the lease currently held on `key`
-    /// ([`Conflict::Fence`], checked first: a fenced-out writer's view of the version says nothing)
-    /// and the session's version is `expected_version`, `0` meaning it holds no session
-    /// ([`Conflict::Version`]). The lease's expiry is not checked: while a lease that ran out is not
-    /// taken over, no one else can write the key and its holder still may; the moment another
-    /// process takes it, the new fence refuses the old holder's writes.
+    /// Refused, writing nothing of any of it, unless [`Write::fence`] is the fence of the lease
+    /// currently held on `key` ([`Conflict::Fence`], checked first: a fenced-out writer's view of
+    /// the version says nothing) and the session's version is [`Write::expected_version`], `0`
+    /// meaning it holds no session ([`Conflict::Version`]). The lease's expiry is not checked:
+    /// while a lease that ran out is not taken over, no one else can write the key and its holder
+    /// still may; the moment another process takes it, the new fence refuses the old holder's
+    /// writes. Removing a session the store holds none of, from version `0`, removes nothing and
+    /// succeeds; a removal takes every note of the session. The lease is not touched: it is the
+    /// holder's to release.
+    ///
+    /// An append to a client whose outbox the store holds none of opens one in the append's
+    /// incarnation; an outbox it holds keeps its own. Each append takes the next number of its
+    /// outbox, in the order given, and is kept at [`Write::now_ms`].
+    fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError>;
+
+    /// Keep `state` as the session `key` names, with `earliest_due` as the earliest moment one of
+    /// its waiting sends comes due (`None` when none waits), and answer its new version: a
+    /// [`SessionStore::write`] that appends nothing and takes no note. A store implements
+    /// [`SessionStore::write`] and leaves this as it is.
     fn put(
         &self,
         key: &str,
@@ -125,12 +152,21 @@ pub trait SessionStore: Send + Sync {
         earliest_due: Option<u64>,
         expected_version: u64,
         fence: u64,
-    ) -> Result<u64, WriteError>;
+    ) -> Result<u64, WriteError> {
+        self.write(
+            key,
+            &Write::put(state, earliest_due, expected_version, fence),
+        )
+        .map(|written| written.version)
+    }
 
-    /// Remove the session `key` names, under the same two checks as [`SessionStore::put`]; with
-    /// `expected_version` `0` and no session held, there is nothing to remove and it succeeds. The
-    /// lease is not touched: it is the holder's to release.
-    fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError>;
+    /// Remove the session `key` names, under the same two checks as [`SessionStore::write`]; with
+    /// `expected_version` `0` and no session held, there is nothing to remove and it succeeds. A
+    /// [`SessionStore::write`] that appends nothing; a store leaves this as it is.
+    fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
+        self.write(key, &Write::delete(expected_version, fence))
+            .map(|_| ())
+    }
 
     /// At most `limit` sessions whose earliest due is at or before `ms`, earliest first, sessions
     /// due at the same moment in the order of the entries the store indexes them under
@@ -192,6 +228,64 @@ pub trait SessionStore: Send + Sync {
     /// Refused with [`Lost::Superseded`] when it is no longer the lease held on `key`. A released
     /// lease's fence writes nothing more.
     fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError>;
+
+    // The outbox (ADR 0109, D10; module [`outbox`]). A store that serves no binding with
+    // `receipt: durable` need not keep one: these answer [`NoOutbox`] unless it does, and every
+    // store of this crate does, held to [`outbox_conformance`].
+
+    /// Append `appends` to their clients' outboxes at `now_ms`, in one transaction and under no
+    /// session: an answer the host sends a client in a session's place. Answers where each was
+    /// kept, in their order.
+    fn append(&self, appends: &[Append<'_>], now_ms: u64) -> Result<Vec<Appended>, Failure> {
+        let _ = (appends, now_ms);
+        Err(Failure::new(NoOutbox))
+    }
+
+    /// The outbox of `client`, oldest entry first, or `None` when the store holds none for it.
+    fn outbox(&self, client: &str) -> Result<Option<Outbox>, Failure> {
+        let _ = client;
+        Err(Failure::new(NoOutbox))
+    }
+
+    /// The outbox of `client`, opened in `incarnation` at `now_ms` when the store holds none for
+    /// it: what a client's exchange numbers in from its first exchange on.
+    fn open_outbox(&self, client: &str, incarnation: &str, now_ms: u64) -> Result<Outbox, Failure> {
+        let _ = (client, incarnation, now_ms);
+        Err(Failure::new(NoOutbox))
+    }
+
+    /// Delete from the outbox of `client` every entry numbered at most `through`, when
+    /// `incarnation` is the one it numbers in, at `now_ms`; answer how many were deleted. An
+    /// acknowledgement of another incarnation counts in a numbering the outbox does not hold, and
+    /// deletes nothing.
+    fn acknowledge(
+        &self,
+        client: &str,
+        incarnation: &str,
+        through: u64,
+        now_ms: u64,
+    ) -> Result<u64, Failure> {
+        let _ = (client, incarnation, through, now_ms);
+        Err(Failure::new(NoOutbox))
+    }
+
+    /// Delete from the outbox of `client` at most `limit` entries appended before `before_ms`,
+    /// oldest first, and, in the same transaction, write a [`Note`] for the session each was sent
+    /// by, when the store still holds that session, and make it due at once (its earliest due the
+    /// Unix epoch), so it is told at its next run. An outbox left holding nothing, to which
+    /// nothing was appended or acknowledged since `before_ms`, is removed itself
+    /// ([`Expiry::closed`]).
+    fn expire(&self, client: &str, before_ms: u64, limit: usize) -> Result<Expiry, Failure> {
+        let _ = (client, before_ms, limit);
+        Err(Failure::new(NoOutbox))
+    }
+
+    /// The notes an expiry wrote for the session `key` that no write of it took yet, in the order
+    /// written.
+    fn notes(&self, key: &str) -> Result<Vec<Note>, Failure> {
+        let _ = key;
+        Err(Failure::new(NoOutbox))
+    }
 }
 
 /// A saved session as a store holds it.

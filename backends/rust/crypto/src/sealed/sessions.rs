@@ -4,11 +4,13 @@
 //! The sessions of ADR 0107 sealed (ADR 0109, D8): a session's row is kept under the entry of its
 //! key, and its value is the record of the payload `[key, state]`, a CBOR array of the key's text
 //! and the saved state's bytes. Its version, earliest due and lease are the wrapped store's, which
-//! compares and orders them.
+//! compares and orders them. What its write appends to an outbox is sealed as module `outbox`
+//! says, in the same write.
 
 use sce_forge_runtime::cbor::{read_bytes, read_text, write_array_head, write_bytes, write_text};
 use sce_rust_session_store::{
-    AcquireError, Due, Failure, Lease, LeaseError, SessionStore, Stored, WriteError,
+    AcquireError, Append, Appended, Change, Due, Expiry, Failure, Lease, LeaseError, Note, Outbox,
+    SessionStore, Stored, Write, WriteError, Written,
 };
 use zeroize::Zeroizing;
 
@@ -137,23 +139,41 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
         }))
     }
 
-    fn put(
-        &self,
-        key: &str,
-        state: &[u8],
-        earliest_due: Option<u64>,
-        expected_version: u64,
-        fence: u64,
-    ) -> Result<u64, WriteError> {
+    /// The session sealed under the entry of its key, and each append sealed for its client's
+    /// entry (module `outbox`), in one write of the wrapped store.
+    fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
         let entry = self.digest_of(key);
-        let record = self.seal(STORE_SESSIONS, entry.as_bytes(), &payload(key, state))?;
-        self.inner
-            .put(&entry, &record, earliest_due, expected_version, fence)
-    }
-
-    fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-        self.inner
-            .delete(&self.digest_of(key), expected_version, fence)
+        let record = match write.change {
+            Change::Keep { state, .. } => {
+                Some(self.seal(STORE_SESSIONS, entry.as_bytes(), &payload(key, state))?)
+            }
+            Change::Remove => None,
+        };
+        let change = match (write.change, &record) {
+            (Change::Keep { earliest_due, .. }, Some(record)) => Change::Keep {
+                state: record,
+                earliest_due,
+            },
+            _ => Change::Remove,
+        };
+        let sealed = self.seal_appends(write.outbox)?;
+        let appends: Vec<Append<'_>> = sealed
+            .iter()
+            .zip(write.outbox)
+            .map(|(held, append)| held.append(append.incarnation))
+            .collect();
+        let written = self.inner.write(
+            &entry,
+            &Write {
+                change,
+                outbox: &appends,
+                ..*write
+            },
+        )?;
+        Ok(Written {
+            version: written.version,
+            appended: Self::named(written.appended, write.outbox),
+        })
     }
 
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -197,5 +217,50 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
 
     fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
         self.inner.release(&self.digest_of(key), fence)
+    }
+
+    fn append(&self, appends: &[Append<'_>], now_ms: u64) -> Result<Vec<Appended>, Failure> {
+        self.append_sealed(appends, now_ms)
+    }
+
+    fn outbox(&self, client: &str) -> Result<Option<Outbox>, Failure> {
+        self.outbox_sealed(client)
+    }
+
+    fn open_outbox(&self, client: &str, incarnation: &str, now_ms: u64) -> Result<Outbox, Failure> {
+        self.open_outbox_sealed(client, incarnation, now_ms)
+    }
+
+    fn acknowledge(
+        &self,
+        client: &str,
+        incarnation: &str,
+        through: u64,
+        now_ms: u64,
+    ) -> Result<u64, Failure> {
+        self.inner
+            .acknowledge(&self.digest_of(client), incarnation, through, now_ms)
+    }
+
+    fn expire(&self, client: &str, before_ms: u64, limit: usize) -> Result<Expiry, Failure> {
+        let expiry = self
+            .inner
+            .expire(&self.digest_of(client), before_ms, limit)?;
+        Ok(Expiry {
+            expired: expiry
+                .expired
+                .into_iter()
+                .map(|expired| self.opened_expired(client, expired))
+                .collect(),
+            closed: expiry.closed,
+        })
+    }
+
+    fn notes(&self, key: &str) -> Result<Vec<Note>, Failure> {
+        self.inner
+            .notes(&self.digest_of(key))?
+            .into_iter()
+            .map(|note| self.opened_note(note))
+            .collect()
     }
 }

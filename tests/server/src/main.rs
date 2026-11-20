@@ -24,8 +24,8 @@ use std::time::Duration;
 use sce_rust_mesh::endpoint::{Transport, TransportFailure};
 use sce_rust_mesh::pool::{Pool, PoolConfig};
 use sce_rust_session_store::{
-    AcquireError, Conflict, Due, Failure, Lease, LeaseError, SessionStore, SqliteStore, Stored,
-    WriteError,
+    AcquireError, Change, Conflict, Due, Failure, Lease, LeaseError, SessionStore, SqliteStore,
+    Stored, Write, WriteError, Written,
 };
 use sce_server_suite::clock::{wall_ms, WallClock};
 use sce_server_suite::ledger::{self, Ledgers, CLIENT, PIPE};
@@ -189,24 +189,21 @@ impl SessionStore for Observed {
         self.inner.get(key)
     }
 
-    fn put(
-        &self,
-        key: &str,
-        state: &[u8],
-        earliest_due: Option<u64>,
-        expected_version: u64,
-        fence: u64,
-    ) -> Result<u64, WriteError> {
+    /// A checkpoint (a write that keeps the session) is reported and may halt; a removal is
+    /// passed on as it is.
+    fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+        if matches!(write.change, Change::Remove) {
+            return self.inner.write(key, write);
+        }
+        let fence = write.fence;
         let n = self.puts.fetch_add(1, Ordering::SeqCst) + 1;
         halt_at(self.halt, Stage::CheckpointBefore, n);
-        let written = self
-            .inner
-            .put(key, state, earliest_due, expected_version, fence);
+        let written = self.inner.write(key, write);
         match &written {
-            Ok(version) => {
+            Ok(done) => {
                 report(&Report::Wrote {
                     key: key.to_string(),
-                    version: *version,
+                    version: done.version,
                     fence,
                 });
                 halt_at(self.halt, Stage::CheckpointAfter, n);
@@ -222,10 +219,6 @@ impl SessionStore for Observed {
             Err(WriteError::Failed(_)) => {}
         }
         written
-    }
-
-    fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-        self.inner.delete(key, expected_version, fence)
     }
 
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {

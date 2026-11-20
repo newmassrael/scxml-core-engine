@@ -13,6 +13,9 @@ use crate::credentials::{
     CredentialStore, Digest, PinRow, PinStore, Revoked, TokenRow, TokenStore, DIGEST_BYTES,
 };
 use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
+use crate::outbox::{
+    Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
+};
 use crate::rules::{self, Holding};
 use crate::{
     moment, AcquireError, Due, Failure, Lease, LeaseError, SessionStore, Stored, WriteError,
@@ -21,7 +24,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 4;
+const LAYOUT_VERSION: i64 = 5;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -98,6 +101,36 @@ const LAYOUT_3: &str = "
 /// wrote. A pin's `digest` column already holds any bytes: the digest, or its sealing.
 const LAYOUT_4: &str = "
     ALTER TABLE credential_tokens ADD COLUMN sealed BLOB NOT NULL DEFAULT x'';
+";
+
+/// What layout 5 adds to layout 4: the outboxes of the clients of a durable `https` binding (ADR
+/// 0109, D10). A head per client keeps the incarnation its outbox numbers in and the number its
+/// next entry takes, so both outlive the process; an entry is found by its client and number,
+/// and an expiry's note by the session it is for. A note's id is a number of the store's counter.
+const LAYOUT_5: &str = "
+    CREATE TABLE outbox_heads (
+        client TEXT PRIMARY KEY NOT NULL,
+        incarnation TEXT NOT NULL,
+        next INTEGER NOT NULL,
+        touched_ms INTEGER NOT NULL
+    );
+    CREATE TABLE outbox_entries (
+        client TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        at_ms INTEGER NOT NULL,
+        sender TEXT,
+        envelope BLOB NOT NULL,
+        PRIMARY KEY (client, number)
+    );
+    CREATE TABLE outbox_notes (
+        id INTEGER PRIMARY KEY NOT NULL,
+        session TEXT NOT NULL,
+        client TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        at_ms INTEGER NOT NULL,
+        envelope BLOB NOT NULL
+    );
+    CREATE INDEX outbox_notes_by_session ON outbox_notes (session, id);
 ";
 
 /// A session store in one SQLite database file.
@@ -178,10 +211,12 @@ impl SqliteStore {
     }
 }
 
-/// Make the tables in a database that has none, bring one of layout 1 to 3 to [`LAYOUT_VERSION`],
+/// Make the tables in a database that has none, bring one of layout 1 to 4 to [`LAYOUT_VERSION`],
 /// or check that the ones there are this store's. A database is changed in one transaction, so a
 /// failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
+    // Each layout's additions, in order: layout `n` is the first `n` of them.
+    const ADDITIONS: [&str; 5] = [LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
     match layout {
@@ -195,21 +230,16 @@ fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
                     "the database holds tables a session store did not make",
                 ));
             }
-            transaction.execute_batch(LAYOUT_1)?;
-            transaction.execute_batch(LAYOUT_2)?;
-            transaction.execute_batch(LAYOUT_3)?;
-            transaction.execute_batch(LAYOUT_4)?;
+            for addition in ADDITIONS {
+                transaction.execute_batch(addition)?;
+            }
         }
-        1 => {
-            transaction.execute_batch(LAYOUT_2)?;
-            transaction.execute_batch(LAYOUT_3)?;
-            transaction.execute_batch(LAYOUT_4)?;
+        1..=4 => {
+            let held = usize::try_from(layout).unwrap_or(ADDITIONS.len());
+            for addition in &ADDITIONS[held..] {
+                transaction.execute_batch(addition)?;
+            }
         }
-        2 => {
-            transaction.execute_batch(LAYOUT_3)?;
-            transaction.execute_batch(LAYOUT_4)?;
-        }
-        3 => transaction.execute_batch(LAYOUT_4)?,
         _ => {
             return Err(Failure::new(format!(
                 "the database is laid out as session store {layout}, which this build does not know"
@@ -275,47 +305,45 @@ impl SessionStore for SqliteStore {
         Ok(stored)
     }
 
-    fn put(
-        &self,
-        key: &str,
-        state: &[u8],
-        earliest_due: Option<u64>,
-        expected_version: u64,
-        fence: u64,
-    ) -> Result<u64, WriteError> {
+    fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
         let mut connection = self.connection();
         let transaction = begin(&mut connection)?;
         rules::admit_write(
             holding(&transaction, key)?.as_ref(),
-            fence,
+            write.fence,
             version_of(&transaction, key)?,
-            expected_version,
+            write.expected_version,
         )?;
-        let version = next_number(&transaction)?;
-        transaction
-            .prepare_cached(
-                "INSERT OR REPLACE INTO sessions (session, state, version, earliest_due) \
-                 VALUES (?1, ?2, ?3, ?4)",
-            )?
-            .execute((key, state, version, earliest_due.map(moment)))?;
+        let version = match write.change {
+            Change::Keep {
+                state,
+                earliest_due,
+            } => {
+                let version = next_number(&transaction)?;
+                transaction
+                    .prepare_cached(
+                        "INSERT OR REPLACE INTO sessions (session, state, version, earliest_due) \
+                         VALUES (?1, ?2, ?3, ?4)",
+                    )?
+                    .execute((key, state, version, earliest_due.map(moment)))?;
+                transaction
+                    .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1 AND id <= ?2")?
+                    .execute((key, write.notes_through))?;
+                version
+            }
+            Change::Remove => {
+                transaction
+                    .prepare_cached("DELETE FROM sessions WHERE session = ?1")?
+                    .execute((key,))?;
+                transaction
+                    .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1")?
+                    .execute((key,))?;
+                0
+            }
+        };
+        let appended = append_in(&transaction, write.outbox, write.now_ms)?;
         transaction.commit()?;
-        Ok(version)
-    }
-
-    fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-        let mut connection = self.connection();
-        let transaction = begin(&mut connection)?;
-        rules::admit_write(
-            holding(&transaction, key)?.as_ref(),
-            fence,
-            version_of(&transaction, key)?,
-            expected_version,
-        )?;
-        transaction
-            .prepare_cached("DELETE FROM sessions WHERE session = ?1")?
-            .execute((key,))?;
-        transaction.commit()?;
-        Ok(())
+        Ok(Written { version, appended })
     }
 
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -405,6 +433,211 @@ impl SessionStore for SqliteStore {
         transaction.commit()?;
         Ok(())
     }
+
+    fn append(&self, appends: &[Append<'_>], now_ms: u64) -> Result<Vec<Appended>, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let appended = append_in(&transaction, appends, now_ms)?;
+        transaction.commit()?;
+        Ok(appended)
+    }
+
+    fn outbox(&self, client: &str) -> Result<Option<Outbox>, Failure> {
+        Ok(outbox_of(&self.connection(), client)?)
+    }
+
+    fn open_outbox(&self, client: &str, incarnation: &str, now_ms: u64) -> Result<Outbox, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        transaction
+            .prepare_cached(
+                "INSERT OR IGNORE INTO outbox_heads (client, incarnation, next, touched_ms) \
+                 VALUES (?1, ?2, 1, ?3)",
+            )?
+            .execute((client, incarnation, moment(now_ms)))?;
+        let opened = outbox_of(&transaction, client)?;
+        transaction.commit()?;
+        opened.ok_or_else(|| Failure::new("the outbox opened in this transaction is not held"))
+    }
+
+    fn acknowledge(
+        &self,
+        client: &str,
+        incarnation: &str,
+        through: u64,
+        now_ms: u64,
+    ) -> Result<u64, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let held: Option<String> = transaction
+            .prepare_cached("SELECT incarnation FROM outbox_heads WHERE client = ?1")?
+            .query_row((client,), |row| row.get(0))
+            .optional()?;
+        if !rules::acknowledges(held.as_deref(), incarnation) {
+            return Ok(0);
+        }
+        let removed = transaction
+            .prepare_cached("DELETE FROM outbox_entries WHERE client = ?1 AND number <= ?2")?
+            .execute((client, through))?;
+        if removed > 0 {
+            transaction
+                .prepare_cached("UPDATE outbox_heads SET touched_ms = ?2 WHERE client = ?1")?
+                .execute((client, moment(now_ms)))?;
+        }
+        transaction.commit()?;
+        Ok(u64::try_from(removed).unwrap_or(u64::MAX))
+    }
+
+    fn expire(&self, client: &str, before_ms: u64, limit: usize) -> Result<Expiry, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let old = {
+            let mut statement = transaction.prepare_cached(
+                "SELECT number, at_ms, sender, envelope FROM outbox_entries \
+                 WHERE client = ?1 AND at_ms < ?2 ORDER BY number LIMIT ?3",
+            )?;
+            let rows = statement.query_map((client, moment(before_ms), limit), entry_row)?;
+            rows.collect::<rusqlite::Result<Vec<OutboxEntry>>>()?
+        };
+        let mut expiry = Expiry::default();
+        for entry in old {
+            transaction
+                .prepare_cached("DELETE FROM outbox_entries WHERE client = ?1 AND number = ?2")?
+                .execute((client, entry.number))?;
+            // A note is written for a session the store holds: one that ended has no next run.
+            let noted = match &entry.sender {
+                Some(sender) if version_of(&transaction, sender)? != 0 => Some(sender),
+                _ => None,
+            };
+            if let Some(sender) = noted {
+                let id = next_number(&transaction)?;
+                transaction
+                    .prepare_cached(
+                        "INSERT INTO outbox_notes (id, session, client, number, at_ms, envelope) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    )?
+                    .execute((
+                        id,
+                        sender,
+                        client,
+                        entry.number,
+                        entry.at_ms,
+                        &entry.envelope,
+                    ))?;
+                transaction
+                    .prepare_cached("UPDATE sessions SET earliest_due = ?2 WHERE session = ?1")?
+                    .execute((sender, rules::DUE_AT_ONCE))?;
+            }
+            expiry.expired.push(Expired {
+                client: client.to_string(),
+                entry,
+            });
+        }
+        let left: i64 = transaction
+            .prepare_cached("SELECT count(*) FROM outbox_entries WHERE client = ?1")?
+            .query_row((client,), |row| row.get(0))?;
+        if left == 0 {
+            let closed = transaction
+                .prepare_cached("DELETE FROM outbox_heads WHERE client = ?1 AND touched_ms < ?2")?
+                .execute((client, moment(before_ms)))?;
+            expiry.closed = closed == 1;
+        }
+        transaction.commit()?;
+        Ok(expiry)
+    }
+
+    fn notes(&self, key: &str) -> Result<Vec<Note>, Failure> {
+        let connection = self.connection();
+        let mut statement = connection.prepare_cached(
+            "SELECT id, client, number, at_ms, envelope FROM outbox_notes \
+             WHERE session = ?1 ORDER BY id",
+        )?;
+        let notes = statement
+            .query_map((key,), |row| {
+                Ok(Note {
+                    id: row.get(0)?,
+                    client: row.get(1)?,
+                    number: row.get(2)?,
+                    at_ms: row.get(3)?,
+                    envelope: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<Note>>>()?;
+        Ok(notes)
+    }
+}
+
+/// Append `appends` at `now_ms` in the transaction `connection` holds, each to its client's
+/// outbox, opened in the append's incarnation when the store holds none for the client.
+fn append_in(
+    connection: &Connection,
+    appends: &[Append<'_>],
+    now_ms: u64,
+) -> rusqlite::Result<Vec<Appended>> {
+    let at_ms = moment(now_ms);
+    let mut appended = Vec::with_capacity(appends.len());
+    for append in appends {
+        connection
+            .prepare_cached(
+                "INSERT OR IGNORE INTO outbox_heads (client, incarnation, next, touched_ms) \
+                 VALUES (?1, ?2, 1, ?3)",
+            )?
+            .execute((append.client, append.incarnation, at_ms))?;
+        let (incarnation, number): (String, u64) = connection
+            .prepare_cached("SELECT incarnation, next FROM outbox_heads WHERE client = ?1")?
+            .query_row((append.client,), |row| Ok((row.get(0)?, row.get(1)?)))?;
+        connection
+            .prepare_cached(
+                "UPDATE outbox_heads SET next = next + 1, touched_ms = ?2 WHERE client = ?1",
+            )?
+            .execute((append.client, at_ms))?;
+        connection
+            .prepare_cached(
+                "INSERT INTO outbox_entries (client, number, at_ms, sender, envelope) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?
+            .execute((append.client, number, at_ms, append.sender, append.envelope))?;
+        appended.push(Appended {
+            client: append.client.to_string(),
+            incarnation,
+            number,
+        });
+    }
+    Ok(appended)
+}
+
+/// An outbox entry from its columns, read in the order `number, at_ms, sender, envelope`.
+fn entry_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OutboxEntry> {
+    Ok(OutboxEntry {
+        number: row.get(0)?,
+        at_ms: row.get(1)?,
+        sender: row.get(2)?,
+        envelope: row.get(3)?,
+    })
+}
+
+/// The outbox of `client` in `connection`, if it holds one.
+fn outbox_of(connection: &Connection, client: &str) -> rusqlite::Result<Option<Outbox>> {
+    let head: Option<(String, u64)> = connection
+        .prepare_cached("SELECT incarnation, next FROM outbox_heads WHERE client = ?1")?
+        .query_row((client,), |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()?;
+    let Some((incarnation, next)) = head else {
+        return Ok(None);
+    };
+    let mut statement = connection.prepare_cached(
+        "SELECT number, at_ms, sender, envelope FROM outbox_entries \
+         WHERE client = ?1 ORDER BY number",
+    )?;
+    let entries = statement
+        .query_map((client,), entry_row)?
+        .collect::<rusqlite::Result<Vec<OutboxEntry>>>()?;
+    Ok(Some(Outbox {
+        incarnation,
+        next,
+        entries,
+    }))
 }
 
 /// The columns of a key row as SQLite gives them, before their names are read.

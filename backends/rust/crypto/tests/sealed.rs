@@ -22,9 +22,10 @@ use sce_rust_crypto::wrap::KeyEncryptionKey;
 use sce_rust_session_store::conformance::{self, Harness};
 use sce_rust_session_store::credential_conformance::{self, CredentialHarness};
 use sce_rust_session_store::key_conformance::{self, KeyHarness};
+use sce_rust_session_store::outbox_conformance;
 use sce_rust_session_store::{
-    CredentialStore, KeyRow, KeyState, KeyStore, KeyUse, MemoryCredentials, MemoryKeys,
-    MemoryStore, PinStore, SessionStore, SqliteStore, TokenRow, TokenStore, LATEST_MOMENT,
+    Append, CredentialStore, KeyRow, KeyState, KeyStore, KeyUse, MemoryCredentials, MemoryKeys,
+    MemoryStore, PinStore, SessionStore, SqliteStore, TokenRow, TokenStore, Write, LATEST_MOMENT,
 };
 use serde_json::Value;
 
@@ -365,6 +366,34 @@ mod sessions_on_sqlite {
     );
 }
 
+mod outbox_in_memory {
+    use super::outbox_conformance;
+    kit!(
+        outbox_conformance,
+        in_memory,
+        [
+            an_outbox_is_appended_to_by_its_sessions_write_or_not_at_all,
+            an_outbox_is_opened_once_and_numbers_on,
+            an_acknowledgement_deletes_what_it_covers_in_its_incarnation,
+            an_old_entry_expires_and_its_sender_is_noted,
+        ]
+    );
+}
+
+mod outbox_on_sqlite {
+    use super::outbox_conformance;
+    kit!(
+        outbox_conformance,
+        on_sqlite,
+        [
+            an_outbox_is_appended_to_by_its_sessions_write_or_not_at_all,
+            an_outbox_is_opened_once_and_numbers_on,
+            an_acknowledgement_deletes_what_it_covers_in_its_incarnation,
+            an_old_entry_expires_and_its_sender_is_noted,
+        ]
+    );
+}
+
 mod credentials_in_memory {
     use super::credential_conformance;
     kit!(
@@ -651,6 +680,105 @@ fn a_file_read_without_the_key_holds_none_of_the_saved_values() {
     );
     assert!(holds(RECORD_MAGIC), "the file holds records");
     for secret in secrets {
+        assert!(
+            !holds(secret),
+            "the file holds {:?} in the clear",
+            String::from_utf8_lossy(secret)
+        );
+    }
+}
+
+/// ADR 0109, D10 under D8: an envelope a session's write appends to an outbox is a record sealed
+/// for its client's entry, with the client's name and the sending session's key inside it; moved
+/// to another client's outbox it does not open, and the file holds neither the envelope, nor the
+/// client's name, nor the session's key, in the clear. An expiry's note is opened back to the
+/// client's name and the envelope.
+#[test]
+fn an_outbox_envelope_is_sealed_for_its_client_and_nothing_of_it_is_in_the_clear() {
+    let scratch = Scratch::new("sealed-outbox");
+    let envelope: &[u8] = b"an envelope only bob's phone may read";
+    let incarnation = "00112233445566778899aabbccddeeff";
+    {
+        let store = Sealed::new(
+            SqliteStore::open(scratch.database()).expect("making the store"),
+            first_keys(),
+        );
+        let lease = store
+            .acquire("session-of-bob", "server", LATEST_MOMENT, 0)
+            .expect("a lease");
+        let written = store
+            .write(
+                "session-of-bob",
+                &Write {
+                    outbox: &[Append {
+                        client: "phone-of-bob",
+                        incarnation,
+                        sender: Some("session-of-bob"),
+                        envelope,
+                    }],
+                    now_ms: 1_000,
+                    ..Write::put(b"the state of bob's session", None, 0, lease.fence)
+                },
+            )
+            .expect("a write that appends");
+        assert_eq!(written.appended[0].client, "phone-of-bob");
+        let outbox = store
+            .outbox("phone-of-bob")
+            .expect("the outbox")
+            .expect("an outbox held");
+        assert_eq!(outbox.entries[0].envelope, envelope.to_vec());
+        assert_eq!(
+            outbox.entries[0].sender.as_deref(),
+            Some("session-of-bob"),
+            "the sender is read back by its key"
+        );
+
+        let held = store
+            .inner()
+            .outbox(&store.digest_of("phone-of-bob"))
+            .expect("the wrapped store's outbox")
+            .expect("held under the client's entry");
+        assert_ne!(held.entries[0].envelope, envelope.to_vec());
+        assert_eq!(
+            held.entries[0].sender,
+            Some(store.digest_of("session-of-bob")),
+            "the sender is kept as its entry"
+        );
+        store
+            .inner()
+            .append(
+                &[Append {
+                    client: &store.digest_of("tablet-of-eve"),
+                    incarnation,
+                    sender: None,
+                    envelope: &held.entries[0].envelope,
+                }],
+                2_000,
+            )
+            .expect("the record moved to another client's outbox");
+        assert!(
+            store.outbox("tablet-of-eve").is_err(),
+            "a record moved to another client's outbox does not open"
+        );
+
+        let expiry = store
+            .expire("phone-of-bob", 1_500, 10)
+            .expect("an expiry of bob's envelope");
+        assert_eq!(expiry.expired[0].client, "phone-of-bob");
+        assert_eq!(expiry.expired[0].entry.envelope, envelope.to_vec());
+        let notes = store.notes("session-of-bob").expect("the session's notes");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].client, "phone-of-bob");
+        assert_eq!(notes[0].envelope, envelope.to_vec());
+    }
+    let bytes = scratch.every_byte();
+    let holds = |needle: &[u8]| bytes.windows(needle.len()).any(|window| window == needle);
+    assert!(holds(RECORD_MAGIC), "the file holds records");
+    for secret in [
+        envelope,
+        b"phone-of-bob".as_slice(),
+        b"session-of-bob".as_slice(),
+    ] {
         assert!(
             !holds(secret),
             "the file holds {:?} in the clear",

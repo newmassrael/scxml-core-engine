@@ -44,7 +44,8 @@ use sce_rust_mesh::rpc::MESH_EVENT_PARAM;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::HostInvokeRequest;
 use sce_rust_session_store::{
-    AcquireError, Due, Failure, Lease, LeaseError, SessionStore, SqliteStore, Stored, WriteError,
+    AcquireError, Change, Due, Failure, Lease, LeaseError, SessionStore, SqliteStore, Stored,
+    Write, WriteError, Written,
 };
 use sce_server_suite::clock::WallClock;
 use sce_server_suite::ledger::{self, take_data, taken_by_key, Ledgers, CLIENT, HTTPS, TAKE};
@@ -75,24 +76,15 @@ impl SessionStore for Refusing {
         self.inner.get(key)
     }
 
-    fn put(
-        &self,
-        key: &str,
-        state: &[u8],
-        earliest_due: Option<u64>,
-        expected_version: u64,
-        fence: u64,
-    ) -> Result<u64, WriteError> {
-        if self.refusing.load(Ordering::SeqCst) {
+    /// A checkpoint (a write that keeps the session) is refused while the medium is down; a
+    /// removal is passed on as it is.
+    fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
+        let kept = matches!(write.change, Change::Keep { .. });
+        if kept && self.refusing.load(Ordering::SeqCst) {
             self.refused.fetch_add(1, Ordering::SeqCst);
             return Err(WriteError::Failed(Failure::new("the medium is down")));
         }
-        self.inner
-            .put(key, state, earliest_due, expected_version, fence)
-    }
-
-    fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-        self.inner.delete(key, expected_version, fence)
+        self.inner.write(key, write)
     }
 
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {

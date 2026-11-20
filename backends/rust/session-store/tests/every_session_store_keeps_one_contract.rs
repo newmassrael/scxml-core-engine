@@ -7,6 +7,7 @@
 //! a second server process's would be.
 
 use sce_rust_session_store::conformance::{self, Harness};
+use sce_rust_session_store::outbox_conformance;
 use sce_rust_session_store::MemoryStore;
 
 /// A store in memory; every handle is a clone of it.
@@ -69,12 +70,33 @@ fn in_memory_every_session_is_listed_by_its_entry_and_named_by_its_key() {
     conformance::every_session_is_listed_by_its_entry_and_named_by_its_key(&in_memory());
 }
 
+#[test]
+fn in_memory_an_outbox_is_appended_to_by_its_sessions_write_or_not_at_all() {
+    outbox_conformance::an_outbox_is_appended_to_by_its_sessions_write_or_not_at_all(&in_memory());
+}
+
+#[test]
+fn in_memory_an_outbox_is_opened_once_and_numbers_on() {
+    outbox_conformance::an_outbox_is_opened_once_and_numbers_on(&in_memory());
+}
+
+#[test]
+fn in_memory_an_acknowledgement_deletes_what_it_covers_in_its_incarnation() {
+    outbox_conformance::an_acknowledgement_deletes_what_it_covers_in_its_incarnation(&in_memory());
+}
+
+#[test]
+fn in_memory_an_old_entry_expires_and_its_sender_is_noted() {
+    outbox_conformance::an_old_entry_expires_and_its_sender_is_noted(&in_memory());
+}
+
 #[cfg(feature = "sqlite")]
 mod common;
 
 #[cfg(feature = "sqlite")]
 mod on_sqlite {
     use sce_rust_session_store::conformance::{self, Harness};
+    use sce_rust_session_store::outbox_conformance;
     use sce_rust_session_store::SqliteStore;
 
     use crate::common::Scratch;
@@ -138,6 +160,32 @@ mod on_sqlite {
     fn every_session_is_listed_by_its_entry_and_named_by_its_key() {
         conformance::every_session_is_listed_by_its_entry_and_named_by_its_key(&on_sqlite(
             "entries",
+        ));
+    }
+
+    #[test]
+    fn an_outbox_is_appended_to_by_its_sessions_write_or_not_at_all() {
+        outbox_conformance::an_outbox_is_appended_to_by_its_sessions_write_or_not_at_all(
+            &on_sqlite("outbox-write"),
+        );
+    }
+
+    #[test]
+    fn an_outbox_is_opened_once_and_numbers_on() {
+        outbox_conformance::an_outbox_is_opened_once_and_numbers_on(&on_sqlite("outbox-open"));
+    }
+
+    #[test]
+    fn an_acknowledgement_deletes_what_it_covers_in_its_incarnation() {
+        outbox_conformance::an_acknowledgement_deletes_what_it_covers_in_its_incarnation(
+            &on_sqlite("outbox-ack"),
+        );
+    }
+
+    #[test]
+    fn an_old_entry_expires_and_its_sender_is_noted() {
+        outbox_conformance::an_old_entry_expires_and_its_sender_is_noted(&on_sqlite(
+            "outbox-expiry",
         ));
     }
 }

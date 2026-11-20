@@ -87,6 +87,17 @@ pub(crate) fn expiry(now_ms: u64, ttl_ms: u64) -> u64 {
     moment(now_ms.saturating_add(ttl_ms))
 }
 
+/// The earliest due an expiry gives the session it wrote a note for: the Unix epoch, which every
+/// moment a host reads its clock at is past, so the session is loaded at the first look at what
+/// came due and told of the note.
+pub(crate) const DUE_AT_ONCE: u64 = 0;
+
+/// Whether an acknowledgement counted in `incarnation` deletes from an outbox that numbers in
+/// `held` (`None` when the store holds no outbox for the client): only in the outbox's own.
+pub(crate) fn acknowledges(held: Option<&str>, incarnation: &str) -> bool {
+    held == Some(incarnation)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +173,13 @@ mod tests {
             admit_release(Some(&lease), 8),
             Err(Lost::Superseded { current: Some(7) })
         );
+    }
+
+    #[test]
+    fn an_acknowledgement_deletes_only_in_the_outboxs_own_incarnation() {
+        assert!(acknowledges(Some("a1"), "a1"));
+        assert!(!acknowledges(Some("a1"), "b2"));
+        assert!(!acknowledges(None, "a1"));
     }
 
     #[test]

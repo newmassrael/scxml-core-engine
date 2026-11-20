@@ -7,6 +7,9 @@ use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use crate::outbox::{
+    Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
+};
 use crate::rules::{self, Holding};
 use crate::{
     moment, AcquireError, Due, Failure, Lease, LeaseError, SessionStore, Stored, WriteError,
@@ -24,11 +27,32 @@ pub struct MemoryStore {
     shared: Arc<Mutex<Records>>,
 }
 
+/// A client's outbox, without its entries: the incarnation it numbers in, its next number, and
+/// when an append or an acknowledgement last changed it.
+#[derive(Clone)]
+struct Head {
+    incarnation: String,
+    next: u64,
+    touched_ms: u64,
+}
+
+/// A note an expiry wrote, with the session it is for.
+#[derive(Clone)]
+struct NoteRow {
+    session: String,
+    note: Note,
+}
+
 #[derive(Default)]
 struct Records {
     sessions: BTreeMap<String, Stored>,
     leases: BTreeMap<String, Holding>,
-    /// The last number the store handed out, a version or a fence.
+    /// Every client's outbox head, and its entries by client and number.
+    heads: BTreeMap<String, Head>,
+    entries: BTreeMap<(String, u64), OutboxEntry>,
+    /// The notes of expiries, by their number.
+    notes: BTreeMap<u64, NoteRow>,
+    /// The last number the store handed out, a version, a fence or a note's.
     last: u64,
 }
 
@@ -40,6 +64,67 @@ impl Records {
 
     fn version_of(&self, key: &str) -> u64 {
         self.sessions.get(key).map_or(0, |stored| stored.version)
+    }
+
+    /// Append `appends` at `now_ms`, each to its client's outbox, opened in the append's
+    /// incarnation when it is not held.
+    fn append(&mut self, appends: &[Append<'_>], now_ms: u64) -> Vec<Appended> {
+        let at_ms = moment(now_ms);
+        appends
+            .iter()
+            .map(|append| {
+                let head = self
+                    .heads
+                    .entry(append.client.to_string())
+                    .or_insert_with(|| Head {
+                        incarnation: append.incarnation.to_string(),
+                        next: 1,
+                        touched_ms: at_ms,
+                    });
+                let number = head.next;
+                head.next += 1;
+                head.touched_ms = at_ms;
+                let incarnation = head.incarnation.clone();
+                self.entries.insert(
+                    (append.client.to_string(), number),
+                    OutboxEntry {
+                        number,
+                        at_ms,
+                        sender: append.sender.map(str::to_string),
+                        envelope: append.envelope.to_vec(),
+                    },
+                );
+                Appended {
+                    client: append.client.to_string(),
+                    incarnation,
+                    number,
+                }
+            })
+            .collect()
+    }
+
+    /// The outbox of `client`, if one is held.
+    fn outbox(&self, client: &str) -> Option<Outbox> {
+        let head = self.heads.get(client)?;
+        Some(Outbox {
+            incarnation: head.incarnation.clone(),
+            next: head.next,
+            entries: self.entries_of(client).cloned().collect(),
+        })
+    }
+
+    /// The entries of `client`'s outbox, oldest first.
+    fn entries_of<'a>(&'a self, client: &str) -> impl Iterator<Item = &'a OutboxEntry> + 'a {
+        let from = (client.to_string(), 0);
+        let to = (client.to_string(), u64::MAX);
+        self.entries.range(from..=to).map(|(_, entry)| entry)
+    }
+
+    /// Take the notes of `key`: those numbered at most `through`, or every one when `through` is
+    /// `None`.
+    fn take_notes(&mut self, key: &str, through: Option<u64>) {
+        self.notes
+            .retain(|id, row| row.session != key || through.is_some_and(|through| *id > through));
     }
 }
 
@@ -60,43 +145,39 @@ impl SessionStore for MemoryStore {
         Ok(self.records().sessions.get(key).cloned())
     }
 
-    fn put(
-        &self,
-        key: &str,
-        state: &[u8],
-        earliest_due: Option<u64>,
-        expected_version: u64,
-        fence: u64,
-    ) -> Result<u64, WriteError> {
+    fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
         let mut records = self.records();
         rules::admit_write(
             records.leases.get(key),
-            fence,
+            write.fence,
             records.version_of(key),
-            expected_version,
+            write.expected_version,
         )?;
-        let version = records.next_number();
-        records.sessions.insert(
-            key.to_string(),
-            Stored {
-                state: state.to_vec(),
-                version,
-                earliest_due: earliest_due.map(moment),
-            },
-        );
-        Ok(version)
-    }
-
-    fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
-        let mut records = self.records();
-        rules::admit_write(
-            records.leases.get(key),
-            fence,
-            records.version_of(key),
-            expected_version,
-        )?;
-        records.sessions.remove(key);
-        Ok(())
+        let version = match write.change {
+            Change::Keep {
+                state,
+                earliest_due,
+            } => {
+                let version = records.next_number();
+                records.sessions.insert(
+                    key.to_string(),
+                    Stored {
+                        state: state.to_vec(),
+                        version,
+                        earliest_due: earliest_due.map(moment),
+                    },
+                );
+                records.take_notes(key, Some(write.notes_through));
+                version
+            }
+            Change::Remove => {
+                records.sessions.remove(key);
+                records.take_notes(key, None);
+                0
+            }
+        };
+        let appended = records.append(write.outbox, write.now_ms);
+        Ok(Written { version, appended })
     }
 
     fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
@@ -167,5 +248,122 @@ impl SessionStore for MemoryStore {
         rules::admit_release(records.leases.get(key), fence)?;
         records.leases.remove(key);
         Ok(())
+    }
+
+    fn append(&self, appends: &[Append<'_>], now_ms: u64) -> Result<Vec<Appended>, Failure> {
+        Ok(self.records().append(appends, now_ms))
+    }
+
+    fn outbox(&self, client: &str) -> Result<Option<Outbox>, Failure> {
+        Ok(self.records().outbox(client))
+    }
+
+    fn open_outbox(&self, client: &str, incarnation: &str, now_ms: u64) -> Result<Outbox, Failure> {
+        let mut records = self.records();
+        records
+            .heads
+            .entry(client.to_string())
+            .or_insert_with(|| Head {
+                incarnation: incarnation.to_string(),
+                next: 1,
+                touched_ms: moment(now_ms),
+            });
+        Ok(records
+            .outbox(client)
+            .expect("the outbox was opened in this transaction"))
+    }
+
+    fn acknowledge(
+        &self,
+        client: &str,
+        incarnation: &str,
+        through: u64,
+        now_ms: u64,
+    ) -> Result<u64, Failure> {
+        let mut records = self.records();
+        if !rules::acknowledges(
+            records
+                .heads
+                .get(client)
+                .map(|head| head.incarnation.as_str()),
+            incarnation,
+        ) {
+            return Ok(0);
+        }
+        let covered: Vec<(String, u64)> = records
+            .entries_of(client)
+            .take_while(|entry| entry.number <= through)
+            .map(|entry| (client.to_string(), entry.number))
+            .collect();
+        for key in &covered {
+            records.entries.remove(key);
+        }
+        if !covered.is_empty() {
+            if let Some(head) = records.heads.get_mut(client) {
+                head.touched_ms = moment(now_ms);
+            }
+        }
+        Ok(covered.len() as u64)
+    }
+
+    fn expire(&self, client: &str, before_ms: u64, limit: usize) -> Result<Expiry, Failure> {
+        let mut records = self.records();
+        let old: Vec<OutboxEntry> = records
+            .entries_of(client)
+            .filter(|entry| entry.at_ms < before_ms)
+            .take(limit)
+            .cloned()
+            .collect();
+        let mut expiry = Expiry::default();
+        for entry in old {
+            records.entries.remove(&(client.to_string(), entry.number));
+            let noted = entry
+                .sender
+                .clone()
+                .filter(|sender| records.sessions.contains_key(sender));
+            if let Some(sender) = noted {
+                let id = records.next_number();
+                records.notes.insert(
+                    id,
+                    NoteRow {
+                        session: sender.clone(),
+                        note: Note {
+                            id,
+                            client: client.to_string(),
+                            number: entry.number,
+                            at_ms: entry.at_ms,
+                            envelope: entry.envelope.clone(),
+                        },
+                    },
+                );
+                if let Some(stored) = records.sessions.get_mut(&sender) {
+                    stored.earliest_due = Some(rules::DUE_AT_ONCE);
+                }
+            }
+            expiry.expired.push(Expired {
+                client: client.to_string(),
+                entry,
+            });
+        }
+        let empty = records.entries_of(client).next().is_none();
+        let untouched = records
+            .heads
+            .get(client)
+            .is_some_and(|head| head.touched_ms < before_ms);
+        if empty && untouched {
+            records.heads.remove(client);
+            expiry.closed = true;
+        }
+        Ok(expiry)
+    }
+
+    fn notes(&self, key: &str) -> Result<Vec<Note>, Failure> {
+        let records = self.records();
+        Ok(records
+            .notes
+            .values()
+            .filter(|row| row.session == key)
+            .map(|row| row.note.clone())
+            .collect())
     }
 }
