@@ -4075,7 +4075,10 @@ one, writes the mark's marker in place of the whole value: `sce-secret` for a
 a `personal` one, with no digest, since a log line has no pseudonymisation key.
 The whole value is replaced, not the read alone: a value computed from a marked
 field (`len(attempt.password)`, a text joined to it, a comparison with it) says
-something of it. Where it reads both marks, `sce-secret` is written. The build
+something of it. Where it reads both marks, `sce-secret` is written. The value is
+not computed for the log line, so an operation on it that would fail (an underflow,
+an overflow) does not raise `error.execution` there: whether it fails is a signal of
+the value too. The build
 lowers the marker's literal where the expression stood, so Rust, Go, Kotlin,
 Python, C++, Swift, C11, the Interpreter's lowering and a test component's log
 write the same text, and a `<log>` of an unmarked field is written as before. A

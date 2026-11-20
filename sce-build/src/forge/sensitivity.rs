@@ -19,6 +19,14 @@
 //!   comparison with it) says something of it. The replacement is made where
 //!   the expression is lowered ([`crate::forge::static_lowering`]), once for
 //!   every lane and the Interpreter's lowering, so no runtime differs.
+//! - **The marked value is not computed for the log line.** The SCXML
+//!   recommendation leaves the form of a logged value to the processor, which
+//!   may convert it before it writes it; the conversion here writes the marker
+//!   and computes nothing. Whether an operation on a marked value fails (a
+//!   length less one, an overflow) says something of the value too, and an
+//!   `error.execution` raised by it is an event the machine and its host see,
+//!   so a log of a marked value neither writes it nor fails on it, and a
+//!   `<log>` that reads only marked fields of the payload reads no payload.
 //! - **A personal value is not pseudonymised in a log line.** The audit log
 //!   writes it as its keyed digest so that equal values still correlate, under
 //!   the log's pseudonymisation key in the host's key store (D7). A diagnostic

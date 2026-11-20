@@ -779,6 +779,11 @@ Each has a recommendation; the owner's acceptance decides them as recommended un
      one walk every lane shares lowers it, so Rust, C++, Kotlin, Go, Python, Swift, C11, the Interpreter's lowering,
      a test component's log and the TTCN-3 export write the same text and no runtime differs. This is not a change
      to a surface the lanes share in D0's sense (exception 1): no runtime, port or wire format moves.
+   - **The marked value is not computed.** SCXML leaves the form of a logged value to the processor ("the SCXML
+     processor may convert this value to a convenient format before logging it", `<log>`'s attribute details), and
+     the conversion writes the marker without computing the value: whether an operation on a secret fails (a length
+     less one, an overflow) is itself a signal of the value, and the `error.execution` it would raise is an event the
+     machine and its host observe. A log of a marked value neither writes it nor fails on it.
    - **`secret`** is written `sce-secret`, the marker the audit entry holds.
    - **`personal`** is written `sce-personal`, without a digest. The audit log keys its digest so that equal values
      correlate under a key the host's key store holds (D7), with a retention and a reader of its own; a diagnostic
