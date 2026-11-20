@@ -5555,15 +5555,16 @@ def self_test(repo_root: Path) -> int:
     # a-landing-runs-the-ci-only-gates-it-reaches. The landing queue judges a
     # candidate by the hook's selection for `refs/heads/main`, and that
     # selection keeps every reached `ci_only` gate (see "What `ci_only`
-    # means"). A Rust source edit reaches `clippy` and `workspace-tests`, both
-    # `ci_only`: the landing must run them and a push of another ref must
-    # not. A selection that went on dropping `ci_only` for main is the state
-    # that let cdba8e0eb0 land on 7 gates while 34 it reached ran afterwards.
+    # means"). A Rust source edit reaches `workspace-tests`, which is
+    # `ci_only`: the landing must run it and a push of another ref must not.
+    # (`clippy` was the second witness until 848cafed39 took it out of
+    # `ci_only`.) A selection that went on dropping `ci_only` for main is the
+    # state that let cdba8e0eb0 land on 7 gates while 34 it reached ran after.
     cases += 1
     rust_path = ["sce-build/src/mesh/deploy.rs"]
     landing_keys, _ = select(repo_root, rust_path, landing=True)
     branch_keys, _ = select(repo_root, rust_path)
-    for slug in ("clippy", "workspace-tests"):
+    for slug in ("workspace-tests",):
         if not GATES[slug].get("ci_only"):
             failures.append(
                 f"landing: {slug} is no longer ci_only, so this case cannot "
@@ -5594,15 +5595,15 @@ def self_test(repo_root: Path) -> int:
     # The notice follows the selection: a gate the landing ran is not "handed
     # to CI", and on a push of another ref the same gate is.
     cases += 1
-    if "clippy" in ci_owed(repo_root, rust_path, landing=True):
+    if "workspace-tests" in ci_owed(repo_root, rust_path, landing=True):
         failures.append(
-            "landing: --ci-owed names clippy as handed to CI on an update to "
-            "main, which runs it")
-    if "clippy" not in ci_owed(repo_root, rust_path) \
-            and "clippy" not in ci_unowed(repo_root, rust_path):
+            "landing: --ci-owed names workspace-tests as handed to CI on an "
+            "update to main, which runs it")
+    if "workspace-tests" not in ci_owed(repo_root, rust_path) \
+            and "workspace-tests" not in ci_unowed(repo_root, rust_path):
         failures.append(
-            "landing: on a push of another ref, clippy is reached and left out, "
-            "and neither --ci-owed nor --ci-unowed names it")
+            "landing: on a push of another ref, workspace-tests is reached and "
+            "left out, and neither --ci-owed nor --ci-unowed names it")
 
     # a-landing-leaves-out-only-the-gates-off-the-fleet. An unclassified path
     # reaches every gate (rule 1), so the landing's answer there is exactly

@@ -1522,15 +1522,16 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
             .map(str::to_string)
             .collect();
 
-        // A Rust edit reaches `clippy`, which is `ci_only`: a push of another
-        // ref leaves it to CI, and the landing queue's judgment runs it. Item
-        // 290 landed two clippy errors on main while the landing left it out.
+        // A Rust edit reaches `workspace-tests`, which is `ci_only`: a push of
+        // another ref leaves it to CI, and the landing queue's judgment runs
+        // it. Item 290 landed two errors of a `ci_only` gate on main while the
+        // landing left that gate out.
         if changed == ["sce-build/src/lib.rs"] {
             assert_eq!(
-                selected.contains("clippy"),
+                selected.contains("workspace-tests"),
                 landing,
-                "{changed:?} (landing: {landing}): clippy is selected exactly \
-                 when the push updates main: {selected:?}"
+                "{changed:?} (landing: {landing}): workspace-tests is selected \
+                 exactly when the push updates main: {selected:?}"
             );
         }
 
