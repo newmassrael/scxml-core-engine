@@ -381,6 +381,8 @@ mod sessions_in_memory {
             no_update_is_lost,
             handles_share_one_store,
             every_session_is_listed_by_its_entry_and_named_by_its_key,
+            a_batch_is_decided_item_by_item,
+            a_batch_sees_its_earlier_items_and_is_seen_whole_on_return,
         ]
     );
 }
@@ -400,6 +402,8 @@ mod sessions_on_sqlite {
             no_update_is_lost,
             handles_share_one_store,
             every_session_is_listed_by_its_entry_and_named_by_its_key,
+            a_batch_is_decided_item_by_item,
+            a_batch_sees_its_earlier_items_and_is_seen_whole_on_return,
         ]
     );
 }
@@ -414,6 +418,7 @@ mod outbox_in_memory {
             an_outbox_is_opened_once_and_numbers_on,
             an_acknowledgement_deletes_what_it_covers_in_its_incarnation,
             an_old_entry_expires_and_its_sender_is_noted,
+            a_batch_appends_and_acknowledges_item_by_item,
         ]
     );
 }
@@ -428,6 +433,7 @@ mod outbox_on_sqlite {
             an_outbox_is_opened_once_and_numbers_on,
             an_acknowledgement_deletes_what_it_covers_in_its_incarnation,
             an_old_entry_expires_and_its_sender_is_noted,
+            a_batch_appends_and_acknowledges_item_by_item,
         ]
     );
 }
