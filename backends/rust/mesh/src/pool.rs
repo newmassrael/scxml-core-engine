@@ -103,7 +103,7 @@ use std::time::{Duration, Instant};
 
 use sce_forge_runtime::codec::SceCursor;
 use sce_rust_runtime::json::{self, Value};
-use sce_rust_runtime::saved_state::SavedState;
+use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_session_store::{
     AcquireError, Append, Change, Failure, Held, LeaseError, SessionStore, Write, WriteError,
     LATEST_MOMENT,
@@ -1863,6 +1863,7 @@ where
                     outbox: &appends,
                     notes_through: session.notes_through,
                     now_ms: now,
+                    sessions: &[],
                 },
             )
         };
@@ -1935,11 +1936,18 @@ where
                 None => Vec::new(),
             };
             let now = self.wall_now();
+            // docs/adr/0109, D13: the sessions of the machine's tree that
+            // started a host-run invoke, whose first results of the key-value
+            // feature a store keeps under their identities and deletes with
+            // the removal.
+            let ended = sessions_with_host_starts(&finished.machine, now);
+            let ended_ids: Vec<&str> = ended.iter().map(String::as_str).collect();
             // A session the store never held (a provisional one whose first
             // run finished, docs/adr/0109, D1) has nothing to remove, and what
             // it sent leaves at once: nothing durable changed, unless a
-            // durable client's outbox is appended to.
-            let removed = if finished.version == 0 && outbound.is_empty() {
+            // durable client's outbox is appended to or a host operation of it
+            // kept a first result.
+            let removed = if finished.version == 0 && outbound.is_empty() && ended.is_empty() {
                 Ok(None)
             } else {
                 let incarnation = if outbound.is_empty() {
@@ -1962,6 +1970,7 @@ where
                         &Write {
                             outbox: &appends,
                             now_ms: now,
+                            sessions: &ended_ids,
                             ..Write::delete(finished.version, fence)
                         },
                     )
@@ -2178,6 +2187,29 @@ fn settle_all(receipts: &mut Vec<Receipt>, fate: Fate) {
     for receipt in receipts.drain(..) {
         receipt.settle(fate);
     }
+}
+
+/// The ids of the sessions of `machine`'s tree, its root and every running
+/// child its state holds at `wall_now_ms`, that started a host-run `<invoke>`:
+/// the only ones a host keeps first results under (docs/adr/0109, D13), and
+/// which the write that removes the session deletes them for. Empty when the
+/// machine cannot be saved now.
+fn sessions_with_host_starts<M: SessionMachine>(machine: &M, wall_now_ms: u64) -> Vec<String> {
+    fn gather(state: &SavedState, into: &mut Vec<String>) {
+        if !state.host_invoke_starts.is_empty() && !state.session_id.is_empty() {
+            into.push(state.session_id.clone());
+        }
+        if let SavedInvokes::Resumed(children) = &state.invokes {
+            for child in children {
+                gather(&child.session, into);
+            }
+        }
+    }
+    let mut ids = Vec::new();
+    if let Ok(state) = machine.save(wall_now_ms) {
+        gather(&state, &mut ids);
+    }
+    ids
 }
 
 /// The fence of the lease `slot` holds, if it holds one.
