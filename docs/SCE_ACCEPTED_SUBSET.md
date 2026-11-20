@@ -1520,6 +1520,17 @@ or `none`, and `max_tracked`) and `trusted_proxies` (CIDR blocks), each
 checked by value and by side (`mesh/topology-invalid-binding-field`).
 SCE_MESH.md sections 14.4 and 22 give their meaning and defaults.
 
+What proves an `https` exchange end to end is declared by keys of the
+binding too (amended by ADR 0109, decision D9): the accepting side takes
+`sign` (the id of a `sign` key of the server's host, every `200` signed
+with it) and, beside `authenticator: key`, `max_skew_ms` (default
+300000); the dialing side takes `verify` (the name of a trust set of the
+client's host, every `200` verified under it); and `authenticator` takes
+`key`. Each name is 1 to 64 bytes and the skew a positive integer that
+fits 32 bits, each checked by value and by side
+(`mesh/topology-invalid-binding-field`). SCE_MESH.md section 22.9 gives
+their meaning.
+
 #### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
 
 Optional top-level map carrying per-codec default-arm overrides for

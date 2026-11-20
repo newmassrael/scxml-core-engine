@@ -3206,3 +3206,38 @@ wraps one, or reads the store's file changes that code.
   section 3). An SQL read of a sealed file shows entries in place of keys; `Sealed::digest_of(key)` names the entry of
   a key.
 
+## An https exchange is signed end to end, and a client verifies what its server sent (ADR 0109 D9)
+
+Landing: the commits that add this section. The engine vocabulary `stdlib/engine/error_reason.scxml` gains
+`responseUnauthenticated` (84), so every runtime tree generated from it is regenerated (`regen-runtime-rust`,
+`-cpp`, `-c`, `-go`, `-kotlin`, `-python`, `-swift`); a consumer regenerates its Mesh peer tables and its C++
+routers, which carry the new deploy keys.
+
+- The `ErrorReason` of every engine has a member more, `ResponseUnauthenticated` (`responseUnauthenticated`, a
+  communication code). A `match` or `switch` over it that must be exhaustive names it. SCE_MESH.md section 16.7 has a
+  row 19 of that reason, which the Rust host core's and the C++ client raise; the C++ `kReasonCodeTable` has 19 rows.
+- Rust `LinkEvent` has a variant more, `Unauthenticated(peer, words)`: an answer a link could not verify, which
+  `deliver` hands to `Endpoint::peer_unauthenticated` (row 19). A `match` over `LinkEvent` names it; a host that hands
+  every event to `deliver` changes nothing.
+- The peer table's `PeerLink::HttpsDial` carries `verify: Option<&str>` (a trust set's name) and
+  `PeerLink::HttpsAccept` carries `sign: Option<&str>` (a key's id) and `max_skew_ms`; `HttpsAuthenticator` has
+  `Key`. A generated table has them; one written by hand adds `verify: None`, `sign: None` and `max_skew_ms: 300_000`.
+- `ClientSettings::from_peer(own, peer, credential, trusted)` takes the keys of the trust set the link's `verify`
+  names, `None` for a link that names none, and answers `None` when the two disagree. `ClientSettings` has a field
+  `verify: Option<Vec<TrustedKey>>`, which `ClientSettings::new` leaves `None`. `Credential` has `Key(RequestSigner)`;
+  a `match` over it names it.
+- The Rust https server's `ServerSettings` has `signer: Option<ResponseSigner>` and `max_skew`; `Authenticator` has
+  `Key(KeyPins)`, and a `match` over it names it. `Listening` has `sign`, the key its bindings name, and
+  `Listening::on` refuses an address whose bindings name two. `HttpsServer::serve` reads a request's target in
+  `https` under TLS and `http` without it; `serve_connection` and `serve_accepted` read it in `https`.
+- The C++ client: `Authenticator` has `Key`; `ClientConfig` has `verify`; `ClientHost` has `crypto` (the host's
+  `SCE::StandardHost::CoseCrypto`, `host/CoseCrypto.h`) and a constructor `ClientHost(transport, credentials,
+  crypto)` whose last two default to none, so `ClientHost{&transport, &credentials}` reads as before;
+  `Credentials` has two virtual members with defaults, `requestKeySeed(peer)` and `trustSet(name)`, which a host
+  that signs or verifies overrides. `Client::start` answers false for a binding that names `verify` when the host
+  gave no crypto or holds no such trust set. `CoseCrypto` is declared in `host/CoseCrypto.h`, which `host/CoseHost.h`
+  includes, so a host that included `CoseHost.h` changes nothing.
+- The C++ client's message signatures are `SCE::Mesh::Https::Signatures` (`mesh/transports/HttpsSignature.h`,
+  compiled into `sce_mesh_common`): it links no cryptographic library, and a router whose bindings sign or verify is
+  handed `SodiumCoseCrypto` (`host/SodiumCoseCrypto.h`, the `sce_host_cose` target on libsodium).
+

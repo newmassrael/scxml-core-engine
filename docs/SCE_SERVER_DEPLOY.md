@@ -9,7 +9,8 @@ from SCE_MESH.md, and each says where.
 
 Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
 decisions D1 and D2: what a client may cost the server (section 2); D8: the store sealed at rest, its keys and what an
-SQL read of it shows (sections 3, 8 and 9).
+SQL read of it shows (sections 3, 8 and 9); D9: message signatures, the `key` authenticator and the deploy keys
+`sign`, `verify` and `max_skew_ms` (sections 0, 1, 2, 5 and 7).
 
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
@@ -28,6 +29,7 @@ says of "the program" is what such a program must do.
 | The `https` server | `sce_rust_mesh::https::server::HttpsServer`, feature `https` | SCE_MESH.md section 22 |
 | The `https` client, Rust | `sce_rust_mesh::https::client::HttpsClient` over `HyperTransport` | SCE_MESH.md sections 22.6 and 22.8 |
 | The `https` client, C++ | the generated `TransportRouter`'s `https` arm over `SCE::Mesh::HttpsTransport`, with `CurlHttpsTransport` or `WinHttpHttpsTransport` | SCE_MESH.md sections 22.6 and 22.8 |
+| Message signatures: a `200` signed by the server's `sign` key and verified by a client under `verify:`, a request signed under the `key` authenticator | `sce_rust_mesh::https::signature` (server and Rust client); `SCE::Mesh::Https::Signatures` (C++ client), on libsodium | ADR 0109, D9; SCE_MESH.md section 22.9 |
 
 Not built, and a server must not count on them:
 
@@ -42,6 +44,8 @@ Not built, and a server must not count on them:
 - A client of the `https` binding on the Kotlin and Swift host cores (SCE_MESH.md section 22.8).
 - An orderly stop of a pool that saves every session it holds as a clean checkpoint (section 4).
 - The removal of expired and revoked tokens from the credential store (section 5).
+- A record signed by name and kept beyond the exchange (`sce:payload`, ADR 0107 Open question 1): ADR 0109 D9's
+  record-level half, a later step after ADR 0101's steps 4a and 4b. Message signatures cover one exchange.
 
 ## 1. What the program supplies
 
@@ -52,7 +56,8 @@ Not built, and a server must not count on them:
 | Its name as the holder of leases, the lease's length and its renewal period (`PoolConfig`: `owner`, `lease_ttl_ms`, `renew_every_ms`) | `Pool::new` | section 4 |
 | The session store, opened on a file, sealed under the keys of its key ring | `Pool::new` | section 3 |
 | The key-encryption key (`KeyEncryptionKey::from_file` or `from_variable`), held apart from the store | the key ring the sealing keys are read from, and the host's | sections 3 and 8 |
-| The authenticator's check (`StoredTokens` or a `BearerCheck`, a `PinStore`, or `CertificateCheck`), and the credential store it and the machine's host share | `HttpsServer::new`, `ReferenceHost::set_credentials` | section 5 |
+| The authenticator's check (`StoredTokens` or a `BearerCheck`, a `PinStore`, `CertificateCheck`, or `KeyPins` over a `PinStore`), and the credential store it and the machine's host share | `HttpsServer::new`, `ReferenceHost::set_credentials` | section 5 |
+| The key that signs every `200` when the binding names `sign` (`ServerSettings::signer`, read from the key ring) | `HttpsServer::new` | section 5, "Message signatures" |
 | The server's certificate chain and key, and for `mtls` the client authorities | `server_tls` | section 5 |
 | The clock loop: `Pool::due`, `Pool::renew_leases`, `Pool::evict_idle` and `Pool::tick` on its own schedule, sleeping until `Pool::next_wake_ms` between them, and `Pool::run` for each key they answer | the pool | `pool.rs`, module documentation |
 | The checkpoint each exchange waits for: `ServerHost::deliver` answers the endpoint's `sealed_through()`, and `HttpsServer::durable` is told each checkpoint reported durable | the server | SCE_MESH.md section 22.8 |
@@ -75,7 +80,7 @@ The keys and their defaults are SCE_MESH.md section 22's table; the defaults are
 | Side | Key | Meaning | Default | Accepted values |
 |---|---|---|---|---|
 | server | `listen` | the `host:port` the server accepts on; an IPv6 host in brackets (`[::1]:8443`) | required | a host, and a port from 1 to 65535 |
-| server | `authenticator` | who may claim a name (section 5) | required | `bearer`, `install`, `mtls` |
+| server | `authenticator` | who may claim a name (section 5) | required | `bearer`, `install`, `mtls`, `key` |
 | server | `max_hold_ms` | the longest an exchange is held while the mailbox is empty | 30000 | a positive integer that fits 32 bits |
 | server | `max_body_bytes` | the largest request body taken in; a larger one is answered `413` | 1048576 | a positive integer |
 | server | `absence_ms` | how long a client may go without an exchange and stay ready | 120000 | a positive integer that fits 32 bits |
@@ -84,15 +89,18 @@ The keys and their defaults are SCE_MESH.md section 22's table; the defaults are
 | server | `max_response_bytes` | the most mailbox bytes one response carries; the rest go at the next exchange | `max_body_bytes` | a positive integer |
 | server | `rate` | the edge's limiters, below | on, at the defaults below | `none`, or a map of `address`, `client`, `failed_auth`, `new_names` (each `{ interval_ms, burst }` or `none`) and `max_tracked` |
 | server | `trusted_proxies` | the proxies whose `Forwarded` header names the client's address | none | a list of CIDR blocks (`10.0.0.0/8`, `2001:db8::/32`, or a bare address) |
+| server | `sign` | the `sign` key of the server's key ring every `200` is signed with (section 5, "Message signatures") | none: nothing is signed | a key's id, 1 to 64 bytes |
+| server | `max_skew_ms` | how far a signed request's `created` may lie from the server's clock | 300000 | a positive integer that fits 32 bits, beside `authenticator: key` only |
 | client | `url` | `https://<host>[:<port>][<base>]`, before the binding's path, with no query or fragment; `http://` only to a loopback host | required | as said |
 | client | `authenticator` | as on the server | required | as on the server |
 | client | `hold_ms` | how long a poll asks the server to hold it | 25000 | a positive integer that fits 32 bits |
+| client | `verify` | the trust set of the client's host every `200` is verified under (section 7) | none: a `200` is taken as it comes | a trust set's name, 1 to 64 bytes |
 | client | the retry keys every binding spells | SCE_MESH.md section 10.10; a request that failed at the transport is sent again under them | none | as section 10.10 says |
 
 What these mean for an operator:
 
-- **One address, one rule.** Several bindings may listen on one address only when they name one authenticator; a
-  server built for the address keeps, of each bound, the smallest any of them declares (`Listening::on` in
+- **One address, one rule.** Several bindings may listen on one address only when they name one authenticator and one
+  `sign` key (or none); a server built for the address keeps, of each bound, the smallest any of them declares (`Listening::on` in
   `backends/rust/mesh/src/https/server.rs`), so no binding is given more than it declared.
 - **The hold and the intermediaries.** A held exchange is an HTTP request that stays open for up to `max_hold_ms`
   with nothing on the wire. Every intermediary between client and server (a load balancer, a reverse proxy, a client's
@@ -277,13 +285,14 @@ leaves before the checkpoint that holds it is durable. So, when the process stop
 
 ## 5. Authentication and TLS on the server
 
-Every binding names one of three authenticators (SCE_MESH.md section 22.5; `Authenticator` in `server.rs`):
+Every binding names one of four authenticators (SCE_MESH.md section 22.5; `Authenticator` in `server.rs`):
 
 | `authenticator` | The client sends | The server's program gives | After a restart |
 |---|---|---|---|
 | `bearer` | `Authorization: Bearer <token>` | `Authenticator::stored_tokens(StoredTokens::new(store))` over the credential store its machine issues tokens into; or a `BearerCheck` of its own, `(client name, token)` to whether the token proves the name | with the store on the session store's file, every token as before |
 | `install` | `Authorization: SCE-Install <secret>`, a 256-bit secret the client drew at its first run and keeps, in base64url | a `PinStore`: the server pins a name to the SHA-256 of the first secret it answers `200` and refuses any other with `401` | with the store on the session store's file, every pin as before; with `MemoryCredentials`, every pin is forgotten and the next secret a name brings is pinned |
 | `mtls` | a TLS client certificate | client authorities to `server_tls`, and a `CertificateCheck`, `(client name, certificate DER)` to whether it names the client | as before |
+| `key` | no `Authorization`: every request signed by an Ed25519 key the client's host generated once, the key offered in `Sce-Mesh-Key` (SCE_MESH.md section 22.9) | `Authenticator::Key(KeyPins::first_use(store))`: the server pins a name to the key of its first exchange answered `200` and refuses another key with `401`; or `KeyPins::registered(store)`, which takes only a key the program pinned for the name (`PinStore::pin(name, &KeyPins::pin_of(&public_key))`) | with the store on the session store's file, every pinned key as before |
 
 - **The credential store** (ADR 0109, D3). `SqliteStore`, opened on the session store's file (section 3), is a
   `CredentialStore`: the pins of `install` and the tokens of `bearer`, each kept as the SHA-256 of its secret, never
@@ -308,6 +317,21 @@ Every binding names one of three authenticators (SCE_MESH.md section 22.5; `Auth
 - **One comparison.** Every comparison of a secret or a digest (a pin, a token's name, a relay token's tag) is
   `sce_rust_crypto::equal::same_secret`, in time that does not depend on where the two differ. A `BearerCheck` of
   the program's own compares its secret with it too.
+- **Message signatures** (ADR 0109, D9; SCE_MESH.md section 22.9). A binding that names `sign: <key_id>` has every
+  `200` signed, over its status, its body's digest, its numbering and the request it answers, so that a client under
+  `verify:` takes nothing an intermediary altered or replayed. The key is a `sign` key of the server's key ring
+  (docs/SCE_HOST_FEATURES.md section 13, `sce-host-key-generate`): the program reads it once
+  (`Keyring::key(id, Purpose::Sign)`), sets `ServerSettings::signer` to `ResponseSigner::new(id,
+  KeyPair::from_seed(&seed))`, and hands its clients the public key (`sce-host-key-public`, a COSE_Key) to put in the
+  trust set their `verify:` names, under the same id. `Listening::on` names the key the bindings on an address name
+  (`Listening::sign`) and refuses an address whose bindings name two. To rotate, generate a new key, add its public key
+  to the clients' trust set beside the old one, move `sign` to it, and retire the old key once every client holds the
+  new one: a client chooses the key by the signature's `keyid`. A request of the `key` authenticator is held to
+  `max_skew_ms` of the server's clock, so the server's clock is kept by NTP; a client whose clock is further off is
+  refused `401` until it is set.
+- **The pin of a key.** Under `key`, the pin is the key's COSE_Key, which names its algorithm, so the pins of
+  `install` and `key` cannot be read for each other. A client whose key is lost (reinstalled) is refused until the
+  operator removes its pin (`PinStore::unpin(name)`), as with `install`.
 - **TLS.** `server_tls(chain, key, client_authorities)` builds the server's TLS: `chain` each certificate in DER, the
   server's own first; `key` in DER as PKCS#8, PKCS#1 or SEC1; `client_authorities`, each DER, for `mtls` only. It
   offers HTTP/2 and HTTP/1.1 (ALPN) on rustls with `ring`. `HttpsServer::serve(listener, None)` serves without TLS,
@@ -368,6 +392,21 @@ inspecting proxy is a machine that does not trust the proxy's authority, and `Pr
   headers; a host on an installed SCE implements the port on its own HTTP stack.
 - **The installation secret.** A client of `install` draws its secret once (`draw_install_secret` in Rust) and keeps
   it where its host keeps secrets; a client that loses it cannot claim its name again (section 5).
+- **What a client verifies** (ADR 0109, D9). Behind a proxy that inspects TLS, TLS says nothing of who wrote a
+  response. A client binding that names `verify: <trust_set>` takes a `200` only when a key of that trust set of its
+  host signed it for the request it came back on (SCE_MESH.md section 22.9); one that does not verify is taken nothing
+  of, acknowledges nothing, and is raised once in the machine as `error.communication` with `reason`
+  `responseUnauthenticated` (section 16.7 row 19). The Rust client takes the set's keys in `ClientSettings::verify`
+  (`ClientSettings::from_peer` refuses a link that names `verify` without them); the C++ client asks its host's
+  `Credentials::trustSet(name)` and refuses to start when the host holds none, or gave the router no
+  `ClientHost::crypto` (libsodium's `SodiumCoseCrypto`). A run of `responseUnauthenticated` on a network with an
+  inspecting proxy is that proxy rewriting the exchange; a client whose trust set lacks the server's current key is
+  refused the same way, which a rotation in the wrong order causes.
+- **The key of a client** (`authenticator: key`). The client's host generates the key once and keeps it as it keeps
+  an installation secret: the Rust client takes it as `Credential::Key(RequestSigner::new(pair))`, the C++ client asks
+  `Credentials::requestKeySeed(peer)`. Every request then carries `Sce-Mesh-Nonce`, `Content-Digest`,
+  `Sce-Mesh-Key`, `Signature-Input` and `Signature`, and no `Authorization`; an intermediary must pass them on as they
+  are.
 
 ## 8. What to back up
 
