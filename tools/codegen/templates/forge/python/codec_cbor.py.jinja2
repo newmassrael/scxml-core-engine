@@ -37,16 +37,18 @@
                 v = cbor.read_uint_upto(c, {{ e.max }})
 {% endif %}
 {% endmacro %}
-{#- The read of one field of a record a list holds, bound to its `held_` local. #}
-{% macro decode_record_field(f) %}
+{#- The read of one field of a record a list holds from the cursor `c`, bound to
+    its `held_` local and indented by `pad`: the input's cursor in the loop over
+    the map, or a cursor over the bytes of the field's default. #}
+{% macro decode_record_field(f, c, pad) %}
 {% if f.kind == "bool" %}
-                held_{{ f.name }} = cbor.read_bool(c)
+{{ pad }}held_{{ f.name }} = cbor.read_bool({{ c }})
 {% elif f.kind == "text" %}
-                held_{{ f.name }} = cbor.read_text(c, {{ f.max }})
+{{ pad }}held_{{ f.name }} = cbor.read_text({{ c }}, {{ f.max }})
 {% elif f.kind == "bytes" %}
-                held_{{ f.name }} = cbor.read_bytes(c, {{ f.max }})
+{{ pad }}held_{{ f.name }} = cbor.read_bytes({{ c }}, {{ f.max }})
 {% else %}
-                held_{{ f.name }} = cbor.read_uint_upto(c, {{ f.int_max }})
+{{ pad }}held_{{ f.name }} = cbor.read_uint_upto({{ c }}, {{ f.int_max }})
 {% endif %}
 {% endmacro %}
 {{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
@@ -179,12 +181,17 @@ class {{ struct_name }}:
                 # A key given twice is not one map entry.
                 if held_{{ f.name }} is not None:
                     raise cbor.CborDuplicateKey()
-{{ decode_record_field(f) }}{% endfor %}
+{{ decode_record_field(f, "c", "                ") }}{% endfor %}
             else:
                 cbor.skip(c)
 {% for f in r.fields %}
         if held_{{ f.name }} is None:
+{% if f.default_cbor is not none %}
+            # A map of a revision before the field was added lacks its key,
+            # and reads its default (docs/adr/0044).
+{{ decode_record_field(f, "SceCursor(bytes([" ~ (f.default_cbor | join(", ")) ~ "]))", "            ") }}{% else %}
             raise cbor.CborRequiredKeyMissing()
+{% endif %}
 {% endfor %}
         return {{ r.type_name }}(
 {% for f in r.fields %}

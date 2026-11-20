@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A record whose schema grew, of the fields a list of records holds on every
+  backend (docs/adr/0085, Landing order step 3a): the first revision carried
+  `id` alone, the second added a number, a truth value, a text and a byte
+  string, each with the value a record written before it existed reads in its
+  place (docs/adr/0044). A CBOR map of a record of the first revision lacks the
+  four keys, and every backend's decode reads each from the bytes of its
+  default; one that lacks `id` is refused.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cbor_revised_entry"
+       sce:event-name="cbor.revised_entry"
+       sce:revision="2">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="hops" sce:type="uint8" sce:direction="in" sce:since="2" sce:default="7"/>
+    <data id="live" sce:type="bool" sce:direction="in" sce:since="2" sce:default="true"/>
+    <data id="tag" sce:type="string[4]" sce:direction="in" sce:since="2" sce:default="none"/>
+    <data id="salt" sce:type="bytes[4]" sce:direction="in" sce:since="2" sce:default="ab"/>
+  </datamodel>
+</scxml>

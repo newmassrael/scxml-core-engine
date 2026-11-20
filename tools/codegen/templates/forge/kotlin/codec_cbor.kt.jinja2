@@ -40,19 +40,20 @@ Cbor.readUint(c).valueOr { _refused -> return _refused }
 (Cbor.readUintUpto(c, {{ e.value_type }}.MAX_VALUE.toULong()).valueOr { _refused -> return _refused }).to{{ e.value_type }}()
 {%- endif -%}
 {%- endmacro %}
-{#- The read of one field of a record a list holds, as the expression bound to
-    its `held_` local. #}
-{% macro decode_record_field(f) -%}
+{#- The read of one field of a record a list holds from the cursor `c`, as the
+    expression bound to its `held_` local, or as the value a map that lacks its
+    key reads, from a cursor over the bytes of its default. #}
+{% macro decode_record_field(f, c) -%}
 {%- if f.kind == "bool" -%}
-Cbor.readBool(c).valueOr { _refused -> return _refused }
+Cbor.readBool({{ c }}).valueOr { _refused -> return _refused }
 {%- elif f.kind == "text" -%}
-Cbor.readText(c, {{ f.max }}).valueOr { _refused -> return _refused }
+Cbor.readText({{ c }}, {{ f.max }}).valueOr { _refused -> return _refused }
 {%- elif f.kind == "bytes" -%}
-Cbor.readBytes(c, {{ f.max }}).valueOr { _refused -> return _refused }
+Cbor.readBytes({{ c }}, {{ f.max }}).valueOr { _refused -> return _refused }
 {%- elif f.value_type == "ULong" -%}
-Cbor.readUint(c).valueOr { _refused -> return _refused }
+Cbor.readUint({{ c }}).valueOr { _refused -> return _refused }
 {%- else -%}
-(Cbor.readUintUpto(c, {{ f.int_max }}UL).valueOr { _refused -> return _refused }).to{{ f.value_type }}()
+(Cbor.readUintUpto({{ c }}, {{ f.int_max }}UL).valueOr { _refused -> return _refused }).to{{ f.value_type }}()
 {%- endif -%}
 {%- endmacro %}
 {{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
@@ -178,7 +179,7 @@ data class {{ struct_name }}(
                     {{ f.key_literal }} -> {
                         // A key given twice is not one map entry.
                         if (held_{{ f.name }} != null) return Decoded.Refused(CodecError.CborDuplicateKey)
-                        held_{{ f.name }} = {{ decode_record_field(f) }}
+                        held_{{ f.name }} = {{ decode_record_field(f, "c") }}
                     }
 {% endfor %}
                     else -> Cbor.skip(c).valueOr { _refused -> return _refused }
@@ -187,7 +188,13 @@ data class {{ struct_name }}(
             return Decoded.Ok(
                 {{ r.type_name }}(
 {% for f in r.fields %}
+{% if f.default_cbor is not none %}
+                    // A map of a revision before the field was added lacks its key,
+                    // and reads its default (docs/adr/0044).
+                    {{ f.name }} = held_{{ f.name }} ?: {{ decode_record_field(f, "SceCursor(byteArrayOf(" ~ (f.default_cbor | join(".toByte(), ")) ~ ".toByte()))") }},
+{% else %}
                     {{ f.name }} = held_{{ f.name }} ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+{% endif %}
 {% endfor %}
                 ),
             )

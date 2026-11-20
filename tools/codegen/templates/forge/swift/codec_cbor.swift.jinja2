@@ -49,18 +49,20 @@ if value.count > {{ e.list_max }}{% if e.list_min > 0 %} || value.count < {{ e.l
 {{ indent }}{% endif %}Cbor.writeUint(UInt64(value), to: &frame)
 {%- endif -%}
 {%- endmacro %}
-{#- The read of one field of a record a list holds, as the expression bound to its `_held` local. #}
-{% macro decode_record_field(f) -%}
+{#- The read of one field of a record a list holds from the cursor `reader`
+    names (`&reader`, or the cursor over the bytes of the field's default), as
+    the expression bound to its `_held` local or to its value. #}
+{% macro decode_record_field(f, reader) -%}
 {%- if f.kind == "bool" -%}
-try Cbor.readBool(&reader)
+try Cbor.readBool({{ reader }})
 {%- elif f.kind == "text" -%}
-try Cbor.readText(&reader, maxSize: {{ f.max }})
+try Cbor.readText({{ reader }}, maxSize: {{ f.max }})
 {%- elif f.kind == "bytes" -%}
-try Cbor.readBytes(&reader, maxSize: {{ f.max }})
+try Cbor.readBytes({{ reader }}, maxSize: {{ f.max }})
 {%- elif f.value_type == "UInt64" -%}
-try Cbor.readUint(&reader)
+try Cbor.readUint({{ reader }})
 {%- else -%}
-{{ f.value_type }}(truncatingIfNeeded: try Cbor.readUintUpto(&reader, {{ f.int_max }}))
+{{ f.value_type }}(truncatingIfNeeded: try Cbor.readUintUpto({{ reader }}, {{ f.int_max }}))
 {%- endif -%}
 {%- endmacro %}
 {#- The write of one field of `record`, its key already written. The language's string and array
@@ -218,14 +220,26 @@ public struct {{ struct_name }}: Equatable, Sendable {
             case {{ f.key_literal }}:
                 // A key given twice is not one map entry.
                 if {{ f.name }}_held != nil { throw CodecError.cborDuplicateKey }
-                {{ f.name }}_held = {{ decode_record_field(f) }}
+                {{ f.name }}_held = {{ decode_record_field(f, "&reader") }}
 {% endfor %}
             default:
                 try Cbor.skip(&reader)
             }
         }
 {% for f in r.fields %}
+{% if f.default_cbor is not none %}
+        let {{ f.name }}_value: {{ f.value_type }}
+        if let held = {{ f.name }}_held {
+            {{ f.name }}_value = held
+        } else {
+            // A map of a revision before the field was added lacks its key, and reads its default
+            // (docs/adr/0044).
+            var lacked = SceCursor([{{ f.default_cbor | join(", ") }}])
+            {{ f.name }}_value = {{ decode_record_field(f, "&lacked") }}
+        }
+{% else %}
         guard let {{ f.name }}_value = {{ f.name }}_held else { throw CodecError.cborRequiredKeyMissing }
+{% endif %}
 {% endfor %}
         return {{ r.type_name }}({% for f in r.fields %}{{ f.name }}: {{ f.name }}_value{% if not loop.last %}, {% endif %}{% endfor %})
     }

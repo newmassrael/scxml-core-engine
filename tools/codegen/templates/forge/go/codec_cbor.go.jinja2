@@ -71,26 +71,28 @@
 			v := {{ e.value_type }}(raw)
 {% endif %}
 {% endmacro %}
-{#- The read of one field of a record a list holds into `record`. #}
-{% macro decode_record_field(f) %}
+{#- The read of one field of a record a list holds into `record`, from the
+    cursor `c`, each line indented by `pad`: the input's cursor in the loop
+    over the map, or the cursor over the bytes of the field's default. #}
+{% macro decode_record_field(f, c, pad) %}
 {% if f.kind == "bool" %}
-			v, err := codec.CborReadBool(c)
-			if err != nil {
-				return record, err
-			}
-			record.{{ f.name }} = v
+{{ pad }}v, err := codec.CborReadBool({{ c }})
+{{ pad }}if err != nil {
+{{ pad }}	return record, err
+{{ pad }}}
+{{ pad }}record.{{ f.name }} = v
 {% elif f.kind == "text" or f.kind == "bytes" %}
-			v, err := codec.CborRead{% if f.kind == "text" %}Text{% else %}Bytes{% endif %}(c, {{ f.max }})
-			if err != nil {
-				return record, err
-			}
-			record.{{ f.name }} = v
+{{ pad }}v, err := codec.CborRead{% if f.kind == "text" %}Text{% else %}Bytes{% endif %}({{ c }}, {{ f.max }})
+{{ pad }}if err != nil {
+{{ pad }}	return record, err
+{{ pad }}}
+{{ pad }}record.{{ f.name }} = v
 {% else %}
-			raw, err := codec.CborReadUintUpto(c, {{ f.int_max }})
-			if err != nil {
-				return record, err
-			}
-			record.{{ f.name }} = {{ f.value_type }}(raw)
+{{ pad }}raw, err := codec.CborReadUintUpto({{ c }}, {{ f.int_max }})
+{{ pad }}if err != nil {
+{{ pad }}	return record, err
+{{ pad }}}
+{{ pad }}record.{{ f.name }} = {{ f.value_type }}(raw)
 {% endif %}
 {% endmacro %}
 {#- The write of one field of `record`, its key already written. The
@@ -336,7 +338,7 @@ func {{ r.decode_fn }}(c *codec.SceCursor) ({{ r.type_name }}, error) {
 				return record, codec.ErrCborDuplicateKey
 			}
 			seen{{ f.name }} = true
-{{ decode_record_field(f) }}{% endfor %}
+{{ decode_record_field(f, "c", "			") }}{% endfor %}
 		default:
 			if err := codec.CborSkip(c); err != nil {
 				return record, err
@@ -345,7 +347,13 @@ func {{ r.decode_fn }}(c *codec.SceCursor) ({{ r.type_name }}, error) {
 	}
 {% for f in r.fields %}
 	if !seen{{ f.name }} {
+{% if f.default_cbor is not none %}
+		// A map of a revision before the field was added lacks its key, and
+		// reads its default (docs/adr/0044).
+		lacked := codec.NewSceCursor([]byte{ {%- for b in f.default_cbor %}{{ b }}{{ ", " if not loop.last }}{% endfor -%} })
+{{ decode_record_field(f, "&lacked", "		") }}{% else %}
 		return record, codec.ErrCborRequiredKeyMissing
+{% endif %}
 	}
 {% endfor %}
 	return record, nil
