@@ -28,6 +28,9 @@ members = [
     # (docs/adr/0109, decision D4).
     "backends/rust/host-http",
     "backends/rust/crypto",
+    # The metrics port a server reports through, with its reference OpenMetrics adapter
+    # (docs/adr/0109, decision D16).
+    "backends/rust/metrics",
     "backends/rust/world",
     "backends/rust/trust",
     "backends/rust/relay",

@@ -252,6 +252,9 @@ scan_exclusions = [
     # implements no clause of the Recommendation and carries no `§` citation (measured
     # 2026-11-19).
     "backends/rust/crypto/",
+    # The metrics port a server reports through (`sce-rust-metrics`, ADR 0109 D16): it implements
+    # no clause of the Recommendation and carries no `§` citation (measured 2026-11-20).
+    "backends/rust/metrics/",
     # The group key agreement of a shared list (`sce-rust-mls`): it implements no clause of the
     # Recommendation and carries no `§` citation.
     "backends/rust/mls/",
