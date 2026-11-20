@@ -46,7 +46,9 @@
 {# A list or bytes output is written into a destination the caller holds
    (docs/adr/0082): the call hands one in and, where the algorithm wrote it,
    yields it, so the call reads as `Result<the list, _>` as it did before. #}
-{% set arguments %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
+{# A map is lent (docs/adr/0108, D6 items 1 and 2): `&` the map the harness
+   built, or `&mut` it where the parameter is `inout`. #}
+{% set arguments %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% elif arg_ty.map is defined %}&{% if arg_ty.inout %}mut {% endif %}arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
 {% if f.output.list_of is defined or f.output.type == "bytes" %}
 {% set call %}{ let mut sce_out = sce_portable_bytes::{% if f.output.type == "bytes" %}SceBytes{% else %}SceOwnedList{% endif %}::new(); let written = fixtures::{{ f.name }}::{{ f.function }}({{ arguments }}{% if f.args %}, {% endif %}&mut sce_out); written.map(|()| sce_out) }{% endset %}
 {% else %}
@@ -92,6 +94,25 @@
             .iter()
             .map(|x| {{ "x" | rust_unmarshal(arg_ty.list_of) }})
             .collect();
+{% elif arg_ty.map is defined %}
+        let mut arg{{ i }}: ::sce_portable_bytes::BoundedMap<{{ values.part_type(arg_ty.map.key) }}, {{ values.part_type(arg_ty.map.value) }}, {{ arg_ty.capacity }}> =
+            ::sce_portable_bytes::BoundedMap::with_seed(::sce_portable_bytes::MapSeed::from_halves(
+                0x5CE0_0000_0000_0001,
+                0x5CE0_0000_0000_0002,
+            ));
+        for entry in case["args"][{{ i }}]
+            .as_array()
+            .expect("a map argument is the array of its saved entries")
+        {
+            assert_eq!(
+                arg{{ i }}.put(
+                    {{ values.saved_part(arg_ty.map.key, "entry[0]") }},
+                    {{ values.saved_part(arg_ty.map.value, "entry[1]") }},
+                ),
+                ::sce_portable_bytes::PutOutcome::Inserted,
+                "{{ f.name }} arg{{ i }}: a saved map holds each key once, within its bound"
+            );
+        }
 {% elif arg_ty.enum is defined %}
         let arg{{ i }} = {{ values.enum_value(arg_ty.enum, arg_ty.variants, "case[\"args\"][" ~ i ~ "]", f.name ~ " arg" ~ i) }};
 {% elif arg_ty.union is defined %}
@@ -172,6 +193,12 @@
         let actual = {{ call }};
 {% endif %}
         assert_eq!(actual, expected, "{{ f.name }}");
+{% elif f.output.union is defined %}
+        let expected = {{ values.union_value(f.output.shape, "case[\"expected\"]", f.name ~ " expected") }};
+{% if not f.may_fail %}
+        let actual = {{ call }};
+{% endif %}
+        assert_eq!(actual, expected, "{{ f.name }}");
 {% else %}
         let expected = {{ "case[\"expected\"]" | rust_unmarshal(f.output.type) }};
 {% if not f.may_fail %}
@@ -183,4 +210,27 @@
         assert_eq!(actual, expected, "{{ f.name }}");
 {% endif %}
 {% endif %}
+{# Each map written in place is compared with the one the case says the call
+   leaves, entry by entry in the map's order, after the count. #}
+{% for arg_ty in f.args %}
+{% if arg_ty.map is defined and arg_ty.inout %}
+{% set i = loop.index0 %}
+        let left = case["after"][{{ arg_ty.after_at }}]
+            .as_array()
+            .expect("{{ f.name }}: a case states the map each inout slot is left holding");
+        assert_eq!(arg{{ i }}.len(), left.len(), "{{ f.name }} arg{{ i }}: the entries left");
+        for ((key, value), entry) in arg{{ i }}.iter().zip(left.iter()) {
+            assert_eq!(
+                *key,
+                {{ values.saved_part(arg_ty.map.key, "entry[0]") }},
+                "{{ f.name }} arg{{ i }}: a key left, in the map's order"
+            );
+            assert_eq!(
+                *value,
+                {{ values.saved_part(arg_ty.map.value, "entry[1]") }},
+                "{{ f.name }} arg{{ i }}: the value left at a key"
+            );
+        }
+{% endif %}
+{% endfor %}
     }

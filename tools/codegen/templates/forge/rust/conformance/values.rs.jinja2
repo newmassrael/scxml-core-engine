@@ -22,3 +22,12 @@
    record of that case built field by field, or the case alone where it holds
    none. #}
 {% macro union_value(u, raw, label) %}match {{ raw }}["{{ u.tag }}"].as_str().expect("{{ label }}: a union's tag is the name a variant declares") { {% for c in u.cases %}"{{ c.variant }}" => fixtures::{{ u.document }}::{{ u.type_name }}::{{ c.ident }}{% if c.record %}(fixtures::{{ c.record.record }}::{{ c.record.record | to_pascal_case }}Payload { {% for fld in c.record.fields %}{{ fld.ident }}: {{ field_value(fld, raw ~ "[\"" ~ fld.name ~ "\"]", label) }}, {% endfor %}}){% endif %}, {% endfor %}other => panic!("{{ label }}: no case is the variant {other}") }{% endmacro %}
+{# A key or a value of a map's saved entries (docs/adr/0108, D8), read from the
+   oracle's JSON `raw`: a 64-bit integer from the text of its digits and every
+   other integer or `bool` as the oracle writes it anywhere, and a record as the
+   object of its fields, each read the same way, built as the type its unit
+   declares (D6 item 4). #}
+{% macro saved_part(part, raw) %}{% if part.record is defined %}fixtures::{{ part.record }}::{{ part.record | to_pascal_case }}Payload { {% for fld in part.fields %}{{ fld.ident }}: {{ (raw ~ "[\"" ~ fld.name ~ "\"]") | rust_saved_unmarshal(fld.type) }}, {% endfor %}}{% else %}{{ raw | rust_saved_unmarshal(part) }}{% endif %}{% endmacro %}
+{# The Rust type a key or a value of a map is held in: a record the type its
+   unit declares, every other part the type of its canonical type. #}
+{% macro part_type(part) %}{% if part.record is defined %}fixtures::{{ part.record }}::{{ part.record | to_pascal_case }}Payload{% else %}{{ part | rust_type }}{% endif %}{% endmacro %}

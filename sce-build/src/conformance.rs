@@ -160,9 +160,10 @@ impl ListElemArg {
 }
 
 /// What an algorithm fixture's single call returns: one scalar, a
-/// `list<T>`, a record, or a scalar that may be absent. Untagged so a scalar
-/// output keeps its `{type, compare}` spelling; the list form is told apart by
-/// `list_of`, the record form by `record`, the optional form by `optional`.
+/// `list<T>`, a record, a scalar that may be absent, or a value of a union.
+/// Untagged so a scalar output keeps its `{type, compare}` spelling; the list
+/// form is told apart by `list_of`, the record form by `record`, the optional
+/// form by `optional`, the union form by `union`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
@@ -170,6 +171,7 @@ pub enum AlgorithmOutput {
     List(ListOutput),
     Record(RecordRef),
     Optional(OptionalOutput),
+    Union(UnionArg),
     Scalar(ScalarOutput),
 }
 
@@ -193,9 +195,11 @@ pub struct OptionalOutput {
 /// record typed by an event-schema fixture (`{"record": "<fixture>"}`), a
 /// read-only `list<T>` (`{"list_of": "i64"}`) — SCE_FORGE.md §4.12 — a value
 /// of an enum (`{"enum": "<enum fixture>"}`), a scalar that may be absent
-/// (`{"optional": "i32"}`, docs/adr/0055), or a value of a union
-/// (`{"union": "<union fixture>"}`, docs/adr/0092). Untagged so a scalar
-/// argument keeps its bare-string spelling.
+/// (`{"optional": "i32"}`, docs/adr/0055), a value of a union
+/// (`{"union": "<union fixture>"}`, docs/adr/0092), or a map lent to the
+/// algorithm (`{"map": {"key": "u32", "value": "u64"}, "capacity": 4}`,
+/// docs/adr/0108). Untagged so a scalar argument keeps its bare-string
+/// spelling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
@@ -206,6 +210,109 @@ pub enum AlgorithmArg {
     Enum(EnumArg),
     Optional(OptionalArg),
     Union(UnionArg),
+    Map(MapArg),
+}
+
+/// A map lent to an algorithm (docs/adr/0108, D6 items 1 and 2). The oracle
+/// writes it in its saved form (D8): the array of its entries in the map's
+/// order, each `[key, value]`, a 64-bit integer as the text of its digits and a
+/// record as the object of its fields. Each fragment puts the entries, in that
+/// order, into a map of `capacity` and lends it: read-only, or written in place
+/// where the parameter is `inout`, and then each case states under `after` the
+/// map the call leaves in each `inout` slot, in the order of the arguments,
+/// compared entry by entry in the map's order. Only a backend that lowers an
+/// algorithm's map schedules the fixture ([`lang_supports_fixture`]).
+///
+/// ⚠ `after_at` and `c11` are DERIVED, never written: the place of the slot's
+/// map among a case's `after`, and the type C11 holds the map in. A manifest
+/// that carries either is refused.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MapArg {
+    /// What the map's keys and values are.
+    pub map: MapParts,
+    /// The bound of the map each fragment builds: the caller's, which the
+    /// algorithm, whose parameter states none, writes up to.
+    pub capacity: u32,
+    /// Whether the algorithm declares the parameter `inout` and writes the map
+    /// in place.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inout: bool,
+    /// The place of this slot's map among the maps a case states under
+    /// `after`, for an `inout` slot. Derived when the harness renders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_at: Option<u32>,
+    /// The type C11 holds the map in and its declaration. Derived when the C11
+    /// harness renders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub c11: Option<C11MapType>,
+}
+
+/// The key and the value of a map argument.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MapParts {
+    pub key: MapPartArg,
+    pub value: MapPartArg,
+}
+
+/// A key or a value of a map argument: a fixed-width integer or a `bool`
+/// (`"u64"`), or a record typed by an event-schema fixture (`{"record":
+/// "<fixture>"}`) whose fields are each one of those — the parts whose saved
+/// form every fragment reads. Untagged, as [`AlgorithmArg`] is.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum MapPartArg {
+    Scalar(CanonicalType),
+    Record(RecordRef),
+}
+
+impl MapPartArg {
+    /// The record the part is, or `None` for a scalar part.
+    pub fn record(&self) -> Option<&RecordRef> {
+        match self {
+            Self::Record(r) => Some(r),
+            Self::Scalar(_) => None,
+        }
+    }
+
+    fn record_mut(&mut self) -> Option<&mut RecordRef> {
+        match self {
+            Self::Record(r) => Some(r),
+            Self::Scalar(_) => None,
+        }
+    }
+}
+
+impl MapArg {
+    /// The records the map's key and value are, in that order.
+    fn records(&self) -> impl Iterator<Item = &RecordRef> {
+        self.map
+            .key
+            .record()
+            .into_iter()
+            .chain(self.map.value.record())
+    }
+
+    fn records_mut(&mut self) -> impl Iterator<Item = &mut RecordRef> {
+        let MapParts { key, value } = &mut self.map;
+        key.record_mut().into_iter().chain(value.record_mut())
+    }
+}
+
+/// The C11 type a map argument is held in, the one a machine names for a map
+/// of the same parts and bound (`static_lowering::c11_map_type`), and its
+/// declaration with the function that writes its key's canonical bytes
+/// (`static_lowering::c11_map_type_decl`), under the guard every header that
+/// holds one shares.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct C11MapType {
+    pub type_name: String,
+    pub declaration: String,
 }
 
 /// A value of an enum as an argument: the oracle writes it as the name its
@@ -1135,6 +1242,57 @@ pub fn rust_unmarshal_expr(raw: &str, ty: &str) -> String {
     }
 }
 
+/// Build a Rust expression that reads `raw`, a scalar of canonical type `ty`
+/// written as a saved state writes it (docs/adr/0108, D8; the runtime's
+/// `SavedValue`): a 64-bit integer as the text of its digits, which a reader
+/// that holds JSON numbers as doubles would round, and every other scalar as
+/// [`rust_unmarshal_expr`] reads it. What a fragment reads a map's saved
+/// entries with.
+pub fn rust_saved_unmarshal_expr(raw: &str, ty: &str) -> String {
+    match ty {
+        "i64" | "u64" => format!(
+            "{raw}.as_str().expect(\"a 64-bit integer is saved as its digits\")\
+             .parse::<{ty}>().expect(\"{ty}\")"
+        ),
+        _ => rust_unmarshal_expr(raw, ty),
+    }
+}
+
+/// The oracle's `value`, a scalar of canonical type `ty` written as a saved
+/// state writes it, as the value the oracle writes everywhere else: a 64-bit
+/// integer's digits as the number they write, and every other scalar as it is.
+/// `None` for a 64-bit integer that is not the text of one. What the C11
+/// fragment bakes a map's saved entries with ([`c_literal_for`]).
+pub fn from_saved_scalar(value: &serde_json::Value, ty: &str) -> Option<serde_json::Value> {
+    match (ty, value) {
+        ("u64", serde_json::Value::String(digits)) => digits.parse::<u64>().ok().map(Into::into),
+        ("i64", serde_json::Value::String(digits)) => digits.parse::<i64>().ok().map(Into::into),
+        ("u64" | "i64", _) => None,
+        _ => Some(value.clone()),
+    }
+}
+
+/// The type a scalar key or value of a map argument is of: a fixed-width
+/// integer or a `bool`, the scalars whose saved form every fragment reads.
+/// `None` for a real, a text or a byte string.
+fn map_part_scalar(ty: CanonicalType) -> Option<crate::forge::model::SceType> {
+    use crate::forge::model::SceType;
+    Some(match ty {
+        CanonicalType::Bool => SceType::Bool,
+        CanonicalType::I8 => SceType::Int8,
+        CanonicalType::I16 => SceType::Int16,
+        CanonicalType::I32 => SceType::Int32,
+        CanonicalType::I64 => SceType::Int64,
+        CanonicalType::U8 => SceType::Uint8,
+        CanonicalType::U16 => SceType::Uint16,
+        CanonicalType::U32 => SceType::Uint32,
+        CanonicalType::U64 => SceType::Uint64,
+        CanonicalType::F32 | CanonicalType::F64 | CanonicalType::String | CanonicalType::Bytes => {
+            return None
+        }
+    })
+}
+
 /// Map a canonical type to its C++ native type name.
 pub fn cpp_type_for(ty: &str) -> &'static str {
     match ty {
@@ -1465,6 +1623,11 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
     env.add_filter("rust_unmarshal", |raw: String, ty: String| {
         rust_unmarshal_expr(&raw, &ty)
     });
+    // A scalar of a map's saved entries (docs/adr/0108, D8), a 64-bit integer
+    // read from the text of its digits.
+    env.add_filter("rust_saved_unmarshal", |raw: String, ty: String| {
+        rust_saved_unmarshal_expr(&raw, &ty)
+    });
     env.add_filter("cpp_type", |ty: String| cpp_type_for(&ty).to_string());
     env.add_filter("go_type", |ty: String| go_type_for(&ty).to_string());
     env.add_filter("kt_type", |ty: String| kt_type_for(&ty).to_string());
@@ -1512,6 +1675,20 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
             let json: serde_json::Value =
                 serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
             c_literal_for(&json, &ty)
+        },
+    );
+    // A scalar of a map's saved entries (docs/adr/0108, D8), baked as
+    // `c_literal` bakes the number it writes. One that is not a saved scalar of
+    // its type bakes a comment where the literal stands, which does not compile.
+    env.add_filter(
+        "c_saved_literal",
+        |value: minijinja::Value, ty: String| -> String {
+            let json: serde_json::Value =
+                serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
+            match from_saved_scalar(&json, &ty) {
+                Some(plain) => c_literal_for(&plain, &ty),
+                None => format!("/* not a saved {ty}: {json} */"),
+            }
         },
     );
 }
@@ -1956,21 +2133,62 @@ impl Manifest {
                     // and its fields are that document's, derived when the
                     // harness renders — never written here.
                     // A list's record element is held to the same rule.
-                    let records = args
-                        .iter()
-                        .filter_map(|a| match a {
-                            AlgorithmArg::Record(r) => Some(r),
-                            AlgorithmArg::List(list) => list.list_of.record(),
+                    // A map's record key or value too.
+                    let mut records: Vec<&RecordRef> = Vec::new();
+                    for a in args {
+                        match a {
+                            AlgorithmArg::Record(r) => records.push(r),
+                            AlgorithmArg::List(list) => records.extend(list.list_of.record()),
+                            AlgorithmArg::Map(m) => records.extend(m.records()),
                             AlgorithmArg::Scalar(_)
                             | AlgorithmArg::Enum(_)
                             | AlgorithmArg::Optional(_)
-                            | AlgorithmArg::Union(_) => None,
-                        })
-                        .chain(match output {
-                            AlgorithmOutput::Record(r) => Some(r),
-                            AlgorithmOutput::List(list) => list.list_of.record(),
-                            AlgorithmOutput::Optional(_) | AlgorithmOutput::Scalar(_) => None,
-                        });
+                            | AlgorithmArg::Union(_) => {}
+                        }
+                    }
+                    records.extend(match output {
+                        AlgorithmOutput::Record(r) => Some(r),
+                        AlgorithmOutput::List(list) => list.list_of.record(),
+                        AlgorithmOutput::Optional(_)
+                        | AlgorithmOutput::Union(_)
+                        | AlgorithmOutput::Scalar(_) => None,
+                    });
+                    // A map's key and value are what its saved form holds and
+                    // every fragment reads: an integer, a `bool`, or a record
+                    // (whose fields are held to the same rule when the harness
+                    // renders). What a fragment derives is never written, and an
+                    // algorithm answers no map: a map return is taken whole by a
+                    // statechart's variable, which no fragment holds.
+                    for m in args.iter().filter_map(|a| match a {
+                        AlgorithmArg::Map(m) => Some(m),
+                        _ => None,
+                    }) {
+                        for part in [&m.map.key, &m.map.value] {
+                            if let MapPartArg::Scalar(ty) = part {
+                                if map_part_scalar(*ty).is_none() {
+                                    return Err(format!(
+                                        "fixture {}: a map's key or value is an integer, a \
+                                         bool or a record; {ty:?} is none of them",
+                                        f.name
+                                    ));
+                                }
+                            }
+                        }
+                        if m.capacity == 0 {
+                            return Err(format!(
+                                "fixture {}: a map's `capacity` is at least 1 \
+                                 (docs/adr/0108, D8)",
+                                f.name
+                            ));
+                        }
+                        if m.after_at.is_some() || m.c11.is_some() {
+                            return Err(format!(
+                                "fixture {}: a map argument carries `after_at` or `c11`, \
+                                 which are derived when the harness renders; remove them",
+                                f.name
+                            ));
+                        }
+                    }
                     // A value of an enum names an enum fixture of this manifest,
                     // whose variants are derived when the harness renders.
                     for e in args.iter().filter_map(|a| match a {
@@ -1996,12 +2214,19 @@ impl Manifest {
                     }
                     // A value of a union names a union fixture of this manifest,
                     // whose cases are derived when the harness renders; so does
-                    // the element of a list of unions.
-                    for u in args.iter().filter_map(|a| match a {
-                        AlgorithmArg::Union(u) => Some(u),
-                        AlgorithmArg::List(list) => list.list_of.union(),
-                        _ => None,
-                    }) {
+                    // the element of a list of unions, and a union answered.
+                    let unions = args
+                        .iter()
+                        .filter_map(|a| match a {
+                            AlgorithmArg::Union(u) => Some(u),
+                            AlgorithmArg::List(list) => list.list_of.union(),
+                            _ => None,
+                        })
+                        .chain(match output {
+                            AlgorithmOutput::Union(u) => Some(u),
+                            _ => None,
+                        });
+                    for u in unions {
                         let names_a_union = self.fixtures.iter().any(|g| {
                             g.name == u.union_document
                                 && matches!(g.spec, FixtureSpec::Union { .. })
@@ -2314,6 +2539,18 @@ pub fn lang_supports_fixture(
     {
         let scxml_path = fixture.document_path(resource_dir);
         if document_exists(&scxml_path) && read_algorithm_may_fail(&scxml_path, &fixture.name)? {
+            return Ok(false);
+        }
+    }
+    // Per-fixture map gate (docs/adr/0108, D10): a backend lowers an algorithm
+    // that holds a map or a set in the landing that teaches it the lowering,
+    // and refuses it by name until then — so the harness schedules the
+    // fixture exactly where the generator's own list admits it.
+    if matches!(fixture.spec, FixtureSpec::Algorithm { .. })
+        && !crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS.contains(&language)
+    {
+        let scxml_path = fixture.document_path(resource_dir);
+        if document_exists(&scxml_path) && read_algorithm_holds_map(&scxml_path, &fixture.name)? {
             return Ok(false);
         }
     }
@@ -2735,6 +2972,27 @@ pub fn codec_has_mcu_only_features(scxml_path: &Path) -> Result<bool, String> {
 /// asked of the parse the generator reads, as [`read_transform_holder`]
 /// asks its question, so the harness and the product cannot disagree.
 fn read_algorithm_may_fail(scxml_path: &Path, fixture_name: &str) -> Result<bool, String> {
+    Ok(read_algorithm_model(scxml_path, fixture_name)?
+        .signature
+        .may_fail)
+}
+
+/// Whether an algorithm fixture holds a map or a set (docs/adr/0108, D5) — a
+/// parameter, a local or its return — which a backend lowers only where
+/// [`crate::forge::codegen_matrix::ALGORITHM_MAP_BACKENDS`] lists it and
+/// refuses by name everywhere else: the question the generator asks
+/// (`AlgorithmModel::first_map`), of the parse it reads.
+fn read_algorithm_holds_map(scxml_path: &Path, fixture_name: &str) -> Result<bool, String> {
+    Ok(read_algorithm_model(scxml_path, fixture_name)?
+        .first_map()
+        .is_some())
+}
+
+/// The algorithm fixture's document, as the generator parses it.
+fn read_algorithm_model(
+    scxml_path: &Path,
+    fixture_name: &str,
+) -> Result<crate::forge::model::AlgorithmModel, String> {
     let text = crate::load_forge_source(scxml_path, &[])
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
         .positions
@@ -2742,7 +3000,7 @@ fn read_algorithm_may_fail(scxml_path: &Path, fixture_name: &str) -> Result<bool
     match crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(fixture_name))
         .map_err(|e| format!("{}: {e}", scxml_path.display()))?
     {
-        Some(crate::forge::model::ForgeDocument::Algorithm(m)) => Ok(m.signature.may_fail),
+        Some(crate::forge::model::ForgeDocument::Algorithm(m)) => Ok(m),
         _ => Err(format!(
             "fixture {fixture_name}: the manifest says `algorithm`, and {} is not an \
              algorithm document",
@@ -3181,6 +3439,95 @@ fn read_record_fields(
             })
         })
         .collect()
+}
+
+/// Derive what a fragment builds a map argument from (docs/adr/0108, D6 item
+/// 4): the fields of each record part, read from its event-schema document as
+/// a record argument's are, each held to an integer or a `bool`, the scalars
+/// whose saved form every fragment reads; and on C11 the type the map is held
+/// in, with its declaration.
+fn derive_map_arg(
+    manifest: &Manifest,
+    resource_dir: &Path,
+    fixture_name: &str,
+    m: &mut MapArg,
+    language: Language,
+) -> Result<(), String> {
+    for r in m.records_mut() {
+        r.fields = read_record_fields(manifest, resource_dir, &r.record, language)?;
+        let unread = r
+            .fields
+            .iter()
+            .find(|f| f.enum_document.is_some() || map_part_scalar(f.ty).is_none());
+        if let Some(field) = unread {
+            return Err(format!(
+                "fixture {fixture_name}: the map's record `{}` has the field `{}`, which is no \
+                 integer and no bool, and a map's saved entries are read as nothing else",
+                r.record, field.name
+            ));
+        }
+    }
+    if matches!(language, Language::C11) {
+        m.c11 = Some(c11_map_type_of(&m.map, m.capacity).ok_or_else(|| {
+            format!("fixture {fixture_name}: C11 declares no map of the parts the manifest states")
+        })?);
+    }
+    Ok(())
+}
+
+/// The C11 type a map of `parts`, bounded by `capacity`, is held in, and its
+/// declaration: the type and the text a machine's or an algorithm's header
+/// writes for a map of the same parts and bound
+/// (`static_lowering::c11_map_type`, `c11_map_type_decl`), a record key with
+/// the function that writes its canonical bytes
+/// (`static_lowering::c11_record_map_key_def`), each under the guard every
+/// header that holds one shares. A record part is the type its unit declares
+/// (D6 item 4), and its fields are the ones [`derive_map_arg`] read. `None`
+/// for a part no C11 map holds.
+fn c11_map_type_of(parts: &MapParts, capacity: u32) -> Option<C11MapType> {
+    use crate::forge::model::{AlgorithmValueType, SceType};
+    use crate::forge::static_lowering::{c11_map_type, c11_map_type_decl, c11_record_map_key_def};
+    let held = |part: &MapPartArg| -> Option<String> {
+        Some(match part {
+            MapPartArg::Scalar(ty) => {
+                crate::forge::generator::c_type(&map_part_scalar(*ty)?).to_string()
+            }
+            MapPartArg::Record(r) => {
+                crate::forge::generator::event_schema_payload_type(&r.record, Language::C11)
+            }
+        })
+    };
+    let key_held = held(&parts.key)?;
+    let value_held = held(&parts.value)?;
+    let key_type = match &parts.key {
+        MapPartArg::Scalar(ty) => AlgorithmValueType::Scalar(map_part_scalar(*ty)?),
+        MapPartArg::Record(r) => AlgorithmValueType::Record {
+            alias: r.record.clone(),
+        },
+    };
+    let type_name = c11_map_type(&key_held, Some(&value_held), capacity);
+    let mut declaration = String::new();
+    if let MapPartArg::Record(r) = &parts.key {
+        let fields: Vec<(String, SceType)> = r
+            .fields
+            .iter()
+            .map(|f| Some((f.ident.clone(), map_part_scalar(f.ty)?)))
+            .collect::<Option<_>>()?;
+        let typed: Vec<(String, &SceType)> =
+            fields.iter().map(|(name, ty)| (name.clone(), ty)).collect();
+        declaration.push_str(&c11_record_map_key_def(&key_held, &typed)?);
+        declaration.push_str("\n\n");
+    }
+    declaration.push_str(&c11_map_type_decl(
+        &type_name,
+        (&key_held, &key_type),
+        Some(&value_held),
+        capacity,
+    )?);
+    Some(C11MapType {
+        type_name,
+        declaration,
+    })
 }
 
 /// The canonical type of the carrier an enum's values are held in, which a record
@@ -4990,15 +5337,32 @@ pub fn render_harness(
                     AlgorithmArg::Scalar(_)
                     | AlgorithmArg::Enum(_)
                     | AlgorithmArg::Optional(_)
-                    | AlgorithmArg::Union(_) => None,
+                    | AlgorithmArg::Union(_)
+                    | AlgorithmArg::Map(_) => None,
                 });
                 let output_record = match output {
                     AlgorithmOutput::Record(r) => Some(r),
                     AlgorithmOutput::List(list) => list.list_of.record_mut(),
-                    AlgorithmOutput::Optional(_) | AlgorithmOutput::Scalar(_) => None,
+                    AlgorithmOutput::Optional(_)
+                    | AlgorithmOutput::Union(_)
+                    | AlgorithmOutput::Scalar(_) => None,
                 };
                 for r in arg_records.chain(output_record) {
                     r.fields = read_record_fields(manifest, resource_dir, &r.record, language)?;
+                }
+                // A map lent to the algorithm: its record parts' fields, the
+                // place of an `inout` slot's map among a case's `after`, and on
+                // C11 the type it is held in.
+                let mut written_in_place = 0u32;
+                for arg in args.iter_mut() {
+                    let AlgorithmArg::Map(m) = arg else {
+                        continue;
+                    };
+                    derive_map_arg(manifest, resource_dir, &fixture_name, m, language)?;
+                    if m.inout {
+                        m.after_at = Some(written_in_place);
+                        written_in_place += 1;
+                    }
                 }
                 // A value of an enum is built from the name its variant
                 // declares, into the member this language emits for it.
@@ -5028,8 +5392,19 @@ pub fn render_harness(
                         AlgorithmArg::Scalar(_)
                         | AlgorithmArg::Record(_)
                         | AlgorithmArg::List(_)
-                        | AlgorithmArg::Optional(_) => {}
+                        | AlgorithmArg::Optional(_)
+                        | AlgorithmArg::Map(_) => {}
                     }
+                }
+                // A union answered is compared with the value built from the
+                // oracle's wire object, as a union argument is built.
+                if let AlgorithmOutput::Union(u) = output {
+                    u.shape = Some(read_union_shape(
+                        manifest,
+                        resource_dir,
+                        &u.union_document,
+                        language,
+                    )?);
                 }
                 // Symbol-name SSOT: lower the manifest's `function` to the
                 // exact per-language symbol the algorithm template defines,
@@ -7427,6 +7802,108 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A map argument is spelled by its parts and the bound of the map a
+    /// fragment builds, `inout` where the algorithm writes it in place, and a
+    /// union answer by the union fixture it is a value of: each reads as its own
+    /// form of the untagged slots, not as another that happens to fit.
+    #[test]
+    fn a_map_argument_and_a_union_answer_read_as_what_they_are() {
+        let args: Vec<AlgorithmArg> = serde_json::from_str(
+            r#"[{"map": {"key": {"record": "schema_map_peer"}, "value": "u64"},
+                 "capacity": 4, "inout": true},
+                {"map": {"key": "u32", "value": "u64"}, "capacity": 2},
+                {"record": "schema_map_peer"}]"#,
+        )
+        .expect("the arguments parse");
+        assert!(
+            matches!(&args[0], AlgorithmArg::Map(m)
+                if m.inout && m.capacity == 4
+                    && m.map.key.record().is_some_and(|r| r.record == "schema_map_peer")
+                    && matches!(m.map.value, MapPartArg::Scalar(CanonicalType::U64))),
+            "{:?}",
+            args[0]
+        );
+        assert!(
+            matches!(&args[1], AlgorithmArg::Map(m)
+                if !m.inout && matches!(m.map.key, MapPartArg::Scalar(CanonicalType::U32))),
+            "{:?}",
+            args[1]
+        );
+        assert!(matches!(&args[2], AlgorithmArg::Record(_)), "{:?}", args[2]);
+        let output: AlgorithmOutput =
+            serde_json::from_str(r#"{"union": "union_take_result"}"#).expect("the output parses");
+        assert!(
+            matches!(&output, AlgorithmOutput::Union(u)
+                if u.union_document == "union_take_result" && u.shape.is_none()),
+            "{output:?}"
+        );
+    }
+
+    /// A map's key and value are what its saved form holds and every fragment
+    /// reads: a real is refused, as is a map of no entry, and what a fragment
+    /// derives is never written.
+    #[test]
+    fn a_map_argument_is_held_to_what_its_saved_form_holds() {
+        validated_algorithm(
+            r#"[{"map": {"key": "u32", "value": "i64"}, "capacity": 2}, "i64"]"#,
+            r#"{"type": "bool", "compare": "equality"}"#,
+        )
+        .expect("a map of integers is admitted");
+        let real = validated_algorithm(
+            r#"[{"map": {"key": "u32", "value": "f64"}, "capacity": 2}]"#,
+            r#"{"type": "bool", "compare": "equality"}"#,
+        )
+        .expect_err("a map of reals is refused");
+        assert!(real.contains("is an integer, a bool or a record"), "{real}");
+        let empty = validated_algorithm(
+            r#"[{"map": {"key": "u32", "value": "u64"}, "capacity": 0}]"#,
+            r#"{"type": "bool", "compare": "equality"}"#,
+        )
+        .expect_err("a map of no entry is refused");
+        assert!(empty.contains("`capacity` is at least 1"), "{empty}");
+        let derived = validated_algorithm(
+            r#"[{"map": {"key": "u32", "value": "u64"}, "capacity": 2, "after_at": 0}]"#,
+            r#"{"type": "bool", "compare": "equality"}"#,
+        )
+        .expect_err("a written `after_at` is refused");
+        assert!(
+            derived.contains("derived when the harness renders"),
+            "{derived}"
+        );
+        let record = validated_algorithm(
+            r#"[{"map": {"key": {"record": "no_such_schema"}, "value": "u64"}, "capacity": 2}]"#,
+            r#"{"type": "bool", "compare": "equality"}"#,
+        )
+        .expect_err("a map keyed by a record the manifest does not hold is refused");
+        assert!(record.contains("names no event-schema fixture"), "{record}");
+    }
+
+    /// A scalar of a map's saved entries is read as the saved form writes it: a
+    /// 64-bit integer from the text of its digits, every other scalar as the
+    /// oracle writes it anywhere.
+    #[test]
+    fn a_saved_scalar_is_read_as_the_saved_form_writes_it() {
+        assert_eq!(
+            from_saved_scalar(&serde_json::json!("18446744073709551615"), "u64"),
+            Some(serde_json::json!(u64::MAX))
+        );
+        assert_eq!(
+            from_saved_scalar(&serde_json::json!("-9223372036854775808"), "i64"),
+            Some(serde_json::json!(i64::MIN))
+        );
+        assert_eq!(from_saved_scalar(&serde_json::json!(7), "u64"), None);
+        assert_eq!(
+            from_saved_scalar(&serde_json::json!(7), "u32"),
+            Some(serde_json::json!(7))
+        );
+        assert!(rust_saved_unmarshal_expr("x", "u64").contains("as_str()"));
+        assert!(rust_saved_unmarshal_expr("x", "u64").contains(".parse::<u64>()"));
+        assert_eq!(
+            rust_saved_unmarshal_expr("x", "u32"),
+            rust_unmarshal_expr("x", "u32")
+        );
     }
 
     /// A list output of unions is refused: the harness compares no two values of

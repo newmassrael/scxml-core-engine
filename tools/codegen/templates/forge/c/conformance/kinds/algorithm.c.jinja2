@@ -43,7 +43,23 @@
    and then by its value, so an absent answer equals only an absent one. #}
 {% macro c_optional(raw, ty) %}{% if raw is none %}{ .present = false, .value = 0 }{% else %}{ .present = true, .value = {{ raw | c_literal(ty) }} }{% endif %}{% endmacro %}
 {% set destination = f.output.list_of is defined or f.output.type == "bytes" %}
-{% set call_args %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
+{# A map is lent by the address of its storage's core (docs/adr/0108, D6 items
+   1, 2 and 4), which the algorithm reads `const` where it only reads it. #}
+{% set call_args %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% elif arg_ty.map is defined %}&arg{{ loop.index0 }}.core{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
+{# A map argument (docs/adr/0108) is held in the type a machine names for a map
+   of its parts and bound, declared here as every header that holds one
+   declares it, under the guard they share, with the function that writes its
+   key's canonical bytes. Its saved entries are baked into the case table as
+   long as the longest case's, and so is the map an `inout` slot is left
+   holding; the harness puts the entries into a map it starts under a fixed
+   seed, which no order of the map depends on, lends it, and compares what it
+   holds after the call entry by entry in the map's order. #}
+{% for arg_ty in f.args %}
+{% if arg_ty.map is defined %}
+{{ arg_ty.c11.declaration }}
+
+{% endif %}
+{% endfor %}
 {% if f.output.list_of is defined or f.output.type == "bytes" %}
 {% set ns = namespace(width=1) %}
 {% for c in f.cases %}
@@ -83,6 +99,23 @@ static void test_{{ f.name }}(void) {
         {{ arg_ty.list_of | c_type }} input_arg{{ ai }}[{{ w.n }}];
 {% endif %}
         size_t  input_arg{{ ai }}_len;
+{% elif arg_ty.map is defined %}
+{% set ai = loop.index0 %}
+{% set w = namespace(arg=1, left=1) %}
+{% for c in f.cases %}
+{% if c.args[ai] | length > w.arg %}
+{% set w.arg = c.args[ai] | length %}
+{% endif %}
+{% if arg_ty.inout and c.after is defined and c.after[arg_ty.after_at] | length > w.left %}
+{% set w.left = c.after[arg_ty.after_at] | length %}
+{% endif %}
+{% endfor %}
+        struct { {{ values.part_type(arg_ty.map.key) }} key; {{ values.part_type(arg_ty.map.value) }} value; } input_arg{{ ai }}[{{ w.arg }}];
+        size_t  input_arg{{ ai }}_len;
+{% if arg_ty.inout %}
+        struct { {{ values.part_type(arg_ty.map.key) }} key; {{ values.part_type(arg_ty.map.value) }} value; } after_arg{{ ai }}[{{ w.left }}];
+        size_t  after_arg{{ ai }}_len;
+{% endif %}
 {% elif arg_ty.enum is defined %}
         {{ arg_ty.enum | to_pascal_case }}_t input_arg{{ loop.index0 }};
 {% elif arg_ty.union is defined %}
@@ -106,6 +139,8 @@ static void test_{{ f.name }}(void) {
 {% elif f.output.type == "bytes" %}
         uint8_t expected[{{ ns.width }}];
         size_t  expected_len;
+{% elif f.output.union is defined %}
+        {{ f.output.shape.type_name }} expected;
 {% else %}
         {{ f.output.type | c_type }} expected;
 {% endif %}
@@ -134,6 +169,13 @@ static void test_{{ f.name }}(void) {
 {% elif arg_ty.list_of is defined %}
             .input_arg{{ ai }} = { {% for v in c.args[ai] %}{{ v | c_literal(arg_ty.list_of) }}, {% else %}0{% endfor %} },
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
+{% elif arg_ty.map is defined %}
+            .input_arg{{ ai }} = { {% for e in c.args[ai] %}{ .key = {{ values.saved_part(arg_ty.map.key, e[0]) }}, .value = {{ values.saved_part(arg_ty.map.value, e[1]) }} }, {% else %}{0}{% endfor %} },
+            .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
+{% if arg_ty.inout and c.after is defined %}
+            .after_arg{{ ai }} = { {% for e in c.after[arg_ty.after_at] %}{ .key = {{ values.saved_part(arg_ty.map.key, e[0]) }}, .value = {{ values.saved_part(arg_ty.map.value, e[1]) }} }, {% else %}{0}{% endfor %} },
+            .after_arg{{ ai }}_len = {{ c.after[arg_ty.after_at] | length }},
+{% endif %}
 {% elif arg_ty.enum is defined %}
             .input_arg{{ ai }} = {{ values.c_enum(arg_ty.variants, c.args[ai]) }},
 {% elif arg_ty.union is defined %}
@@ -159,6 +201,8 @@ static void test_{{ f.name }}(void) {
 {% elif f.output.type == "bytes" %}
             .expected = {{ c.expected | c_literal("bytes") }},
             .expected_len = {{ c.expected | length }},
+{% elif f.output.union is defined %}
+            .expected = {{ values.union_value(f.output.shape, c.expected) }},
 {% else %}
             .expected = {{ c.expected | c_literal(f.output.type) }},
 {% endif %}
@@ -183,6 +227,19 @@ static void test_{{ f.name }}(void) {
         const {{ arg_ty.list_of.record | to_pascal_case }}Payload_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };
 {% elif arg_ty.list_of is defined %}
         const sce_forge_{{ (arg_ty.list_of | c_type) | replace("_t", "") }}_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };
+{% elif arg_ty.map is defined %}
+{% set ai = loop.index0 %}
+        {{ arg_ty.c11.type_name }} arg{{ ai }};
+        {{ arg_ty.c11.type_name[:-2] }}_start(&arg{{ ai }}, sce_map_seed_from_halves(UINT64_C(0x5CE0000000000001), UINT64_C(0x5CE0000000000002)));
+        for (size_t k = 0; k < cases[i].input_arg{{ ai }}_len; ++k) {
+            if ({{ arg_ty.c11.type_name[:-2] }}_put(&arg{{ ai }}, cases[i].input_arg{{ ai }}[k].key, cases[i].input_arg{{ ai }}[k].value)
+                != SCE_MAP_PUT_INSERTED) {
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu: arg{{ ai }} entry %zu is a key the saved map holds twice, or past its bound\n",
+                    i, k);
+                ++g_failures;
+            }
+        }
 {% elif arg_ty.enum is defined %}
         {{ arg_ty.enum | to_pascal_case }}_t arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% elif arg_ty.union is defined %}
@@ -338,6 +395,33 @@ static void test_{{ f.name }}(void) {
                 (int)cases[i].expected.present, (long long)cases[i].expected.value);
             ++g_failures;
         }
+{% elif f.output.union is defined %}
+{# A union answered (docs/adr/0092) is compared by its tag, and where the tag
+   names a case that holds a record, by that record field by field. #}
+{% set u = f.output.shape %}
+        const {{ u.type_name }} actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({{ call_args }}){% endif %};
+        if (actual.{{ u.tag_member }} != cases[i].expected.{{ u.tag_member }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: the answer is of the case numbered %d, expected %d\n",
+                i, (int)actual.{{ u.tag_member }}, (int)cases[i].expected.{{ u.tag_member }});
+            ++g_failures;
+        }
+{% for uc in u.cases %}
+{% if uc.record %}
+        if (actual.{{ u.tag_member }} == {{ uc.kind }} && cases[i].expected.{{ u.tag_member }} == {{ uc.kind }}) {
+{% for fld in uc.record.fields %}
+{% if fld.type == "string" %}
+            if (strcmp(actual.{{ u.cases_member }}.{{ uc.ident }}.{{ fld.ident }}.data, cases[i].expected.{{ u.cases_member }}.{{ uc.ident }}.{{ fld.ident }}.data) != 0) {
+{% else %}
+            if (actual.{{ u.cases_member }}.{{ uc.ident }}.{{ fld.ident }} != cases[i].expected.{{ u.cases_member }}.{{ uc.ident }}.{{ fld.ident }}) {
+{% endif %}
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu: the answer's {{ uc.variant }}.{{ fld.name }} differs\n", i);
+                ++g_failures;
+            }
+{% endfor %}
+        }
+{% endif %}
+{% endfor %}
 {% else %}
         {{ f.output.type | c_type }} actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({{ call_args }}){% endif %};
 {% if f.output.compare == "tolerance" %}
@@ -356,5 +440,30 @@ static void test_{{ f.name }}(void) {
         }
 {% endif %}
 {% endif %}
+{# Each map written in place is compared with the one the case says the call
+   leaves, entry by entry in the map's order, and then by its count. #}
+{% for arg_ty in f.args %}
+{% if arg_ty.map is defined and arg_ty.inout %}
+{% set ai = loop.index0 %}
+        {
+            size_t k = 0;
+            for (uint32_t at = sce_map_first(&arg{{ ai }}); at != SCE_MAP_NO_ENTRY && k < cases[i].after_arg{{ ai }}_len;
+                 at = sce_map_next(&arg{{ ai }}, at), ++k) {
+                const {{ values.part_type(arg_ty.map.key) }} *key = (const {{ values.part_type(arg_ty.map.key) }} *)sce_map_key_at(&arg{{ ai }}, at);
+                const {{ values.part_type(arg_ty.map.value) }} *value = (const {{ values.part_type(arg_ty.map.value) }} *)sce_map_value_at(&arg{{ ai }}, at);
+                if ({{ values.part_differs(arg_ty.map.key, "(*key)", "cases[i].after_arg" ~ ai ~ "[k].key") }}
+                    || {{ values.part_differs(arg_ty.map.value, "(*value)", "cases[i].after_arg" ~ ai ~ "[k].value") }}) {
+                    fprintf(stderr, "FAIL: {{ f.name }} case %zu: arg{{ ai }} holds another entry at %zu\n", i, k);
+                    ++g_failures;
+                }
+            }
+            if ((size_t)sce_map_count(&arg{{ ai }}) != cases[i].after_arg{{ ai }}_len) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu: arg{{ ai }} holds %zu entries, expected %zu\n", i,
+                        (size_t)sce_map_count(&arg{{ ai }}), cases[i].after_arg{{ ai }}_len);
+                ++g_failures;
+            }
+        }
+{% endif %}
+{% endfor %}
     }
 }

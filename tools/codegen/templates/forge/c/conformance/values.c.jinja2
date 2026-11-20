@@ -23,3 +23,16 @@
    the value zero, as the unit's constructor of the case does. A tag that names
    no case bakes no value, and the table does not compile. #}
 {% macro union_value(u, raw) %}{% for c in u.cases %}{% if c.variant == raw[u.tag] %}{ .{{ u.tag_member }} = {{ c.kind }}{% if c.record %}, .{{ u.cases_member }} = { .{{ c.ident }} = { {% for fld in c.record.fields %}.{{ fld.ident }} = {{ c_field(fld, raw[fld.name]) }}, {% endfor %}} }{% endif %} }{% endif %}{% endfor %}{% endmacro %}
+{# The C type a key or a value of a map is held in (docs/adr/0108, D6 item 4):
+   a record the type its unit declares, every other part the type of its
+   canonical type. #}
+{% macro part_type(part) %}{% if part.record is defined %}{{ part.record | to_pascal_case }}Payload_t{% else %}{{ part | c_type }}{% endif %}{% endmacro %}
+{# A key or a value of a map's saved entries (D8), baked from the oracle's JSON
+   `raw`: a 64-bit integer from the text of its digits and every other integer
+   or `bool` as the oracle writes it anywhere, and a record as the designated
+   initializer of its fields, each baked the same way. #}
+{% macro saved_part(part, raw) %}{% if part.record is defined %}{ {% for fld in part.fields %}.{{ fld.ident }} = {{ raw[fld.name] | c_saved_literal(fld.type) }}, {% endfor %}}{% else %}{{ raw | c_saved_literal(part) }}{% endif %}{% endmacro %}
+{# Whether the key or the value `actual`, read where the map holds it, differs
+   from the baked `expected`: a record field by field, every other part as the
+   number it is. #}
+{% macro part_differs(part, actual, expected) %}{% if part.record is defined %}({% for fld in part.fields %}{{ actual }}.{{ fld.ident }} != {{ expected }}.{{ fld.ident }}{% if not loop.last %} || {% endif %}{% endfor %}){% else %}{{ actual }} != {{ expected }}{% endif %}{% endmacro %}
