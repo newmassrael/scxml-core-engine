@@ -7,6 +7,10 @@ use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use crate::audit::{
+    rules as audit_rules, AuditAppend, AuditCheckpoint, AuditHead, AuditRow, AuditStore,
+    NoCheckpointAt,
+};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
@@ -63,6 +67,12 @@ struct Records {
     values_last: u64,
     /// The first result of each put-if, by its identity: session, invoke, start.
     first_results: BTreeMap<(String, String, u64), PutIf>,
+    /// The audit log (module [`crate::audit`]): each stream's head, its rows and its
+    /// checkpoints by stream and sequence, and the sequence each identity was appended at.
+    audit_heads: BTreeMap<String, AuditHead>,
+    audit_rows: BTreeMap<(String, u64), AuditRow>,
+    audit_checkpoints: BTreeMap<(String, u64), AuditCheckpoint>,
+    audit_identities: BTreeMap<(String, String, u64), u64>,
 }
 
 impl Records {
@@ -216,6 +226,9 @@ impl SessionStore for MemoryStore {
                 records.take_notes(key, None);
                 records
                     .first_results
+                    .retain(|(session, _, _), _| !write.sessions.contains(&session.as_str()));
+                records
+                    .audit_identities
                     .retain(|(session, _, _), _| !write.sessions.contains(&session.as_str()));
                 0
             }
@@ -529,5 +542,130 @@ impl KvStore for MemoryStore {
             }
             _ => false,
         })
+    }
+}
+
+/// The audit log, kept beside the sessions so that a removal of a session deletes its
+/// identities under the one lock that is its transaction.
+impl AuditStore for MemoryStore {
+    fn audit_head(&self, stream: &str) -> Result<AuditHead, Failure> {
+        Ok(self
+            .records()
+            .audit_heads
+            .get(stream)
+            .copied()
+            .unwrap_or(AuditHead::EMPTY))
+    }
+
+    fn audit_append(
+        &self,
+        row: &AuditRow,
+        checkpoint: Option<&[u8]>,
+        identity: Option<&Identity<'_>>,
+    ) -> Result<AuditAppend, Failure> {
+        let mut records = self.records();
+        if let Some(identity) = identity {
+            if let Some(sequence) = records.audit_identities.get(&identity_key(identity)) {
+                return Ok(AuditAppend::Repeated {
+                    sequence: *sequence,
+                });
+            }
+        }
+        let head = records
+            .audit_heads
+            .get(&row.stream)
+            .copied()
+            .unwrap_or(AuditHead::EMPTY);
+        if let Err(moved) = audit_rules::follows(&head, row) {
+            return Ok(moved);
+        }
+        records.audit_heads.insert(
+            row.stream.clone(),
+            AuditHead {
+                sequence: row.sequence,
+                chain: row.chain,
+            },
+        );
+        records
+            .audit_rows
+            .insert((row.stream.clone(), row.sequence), row.clone());
+        if let Some(signature) = checkpoint {
+            records.audit_checkpoints.insert(
+                (row.stream.clone(), row.sequence),
+                AuditCheckpoint {
+                    stream: row.stream.clone(),
+                    sequence: row.sequence,
+                    chain: row.chain,
+                    signature: signature.to_vec(),
+                },
+            );
+        }
+        if let Some(identity) = identity {
+            records
+                .audit_identities
+                .insert(identity_key(identity), row.sequence);
+        }
+        Ok(AuditAppend::Appended)
+    }
+
+    fn audit_checkpoint(&self, checkpoint: &AuditCheckpoint) -> Result<bool, Failure> {
+        let mut records = self.records();
+        let key = (checkpoint.stream.clone(), checkpoint.sequence);
+        if records.audit_checkpoints.contains_key(&key) {
+            return Ok(false);
+        }
+        records.audit_checkpoints.insert(key, checkpoint.clone());
+        Ok(true)
+    }
+
+    fn audit_rows(&self, stream: &str, after: u64, limit: usize) -> Result<Vec<AuditRow>, Failure> {
+        let records = self.records();
+        let Some(from) = after.checked_add(1) else {
+            return Ok(Vec::new());
+        };
+        Ok(records
+            .audit_rows
+            .range((stream.to_string(), from)..=(stream.to_string(), u64::MAX))
+            .take(limit)
+            .map(|(_, row)| row.clone())
+            .collect())
+    }
+
+    fn audit_checkpoints(&self, stream: &str) -> Result<Vec<AuditCheckpoint>, Failure> {
+        let records = self.records();
+        Ok(records
+            .audit_checkpoints
+            .range((stream.to_string(), 0)..=(stream.to_string(), u64::MAX))
+            .map(|(_, checkpoint)| checkpoint.clone())
+            .collect())
+    }
+
+    fn audit_drop_through(&self, stream: &str, through: u64) -> Result<u64, Failure> {
+        let mut records = self.records();
+        if !records
+            .audit_checkpoints
+            .contains_key(&(stream.to_string(), through))
+        {
+            return Err(Failure::new(NoCheckpointAt {
+                stream: stream.to_string(),
+                sequence: through,
+            }));
+        }
+        let before = records.audit_rows.len();
+        records
+            .audit_rows
+            .retain(|(of, sequence), _| of != stream || *sequence > through);
+        records
+            .audit_checkpoints
+            .retain(|(of, sequence), _| of != stream || *sequence >= through);
+        Ok((before - records.audit_rows.len()) as u64)
+    }
+
+    fn audit_first(&self, identity: &Identity<'_>) -> Result<Option<u64>, Failure> {
+        Ok(self
+            .records()
+            .audit_identities
+            .get(&identity_key(identity))
+            .copied())
     }
 }

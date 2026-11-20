@@ -43,19 +43,26 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
 ";
 
 /// The layout this build writes, which a file of an earlier one is brought to when it is opened.
-const LAYOUT: i64 = 6;
+const LAYOUT: i64 = 7;
 
-/// The tables layouts 5 (ADR 0109, D10) and 6 (D13) added, dropped from a file this build made so
-/// that it is left as a build of layout 4 or earlier left it: the later layout's first.
-const WITHOUT_LAYOUT_5: &str = "DROP TABLE kv_first_results; DROP TABLE kv_numbers; \
-     DROP TABLE kv_values; \
+/// The tables layout 7 added (ADR 0109, D14), dropped from a file this build made so that it is
+/// left as a build of layout 6 left it.
+const WITHOUT_LAYOUT_7: &str = "DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
+     DROP TABLE audit_rows; DROP TABLE audit_heads;";
+
+/// The tables layouts 6 (ADR 0109, D13) and 7 (D14) added, dropped from a file this build made so
+/// that it is left as a build of layout 5 left it: the later layout's first.
+const WITHOUT_LAYOUT_6: &str = "DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
+     DROP TABLE audit_rows; DROP TABLE audit_heads; \
+     DROP TABLE kv_first_results; DROP TABLE kv_numbers; DROP TABLE kv_values;";
+
+/// The tables layouts 5 (ADR 0109, D10) to 7 (D14) added, dropped from a file this build made so
+/// that it is left as a build of layout 4 or earlier left it: the later layouts' first.
+const WITHOUT_LAYOUT_5: &str = "DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
+     DROP TABLE audit_rows; DROP TABLE audit_heads; \
+     DROP TABLE kv_first_results; DROP TABLE kv_numbers; DROP TABLE kv_values; \
      DROP INDEX outbox_notes_by_session; DROP TABLE outbox_notes; \
      DROP TABLE outbox_entries; DROP TABLE outbox_heads;";
-
-/// The tables layout 6 added (ADR 0109, D13), dropped from a file this build made so that it is
-/// left as a build of layout 5 left it.
-const WITHOUT_LAYOUT_6: &str =
-    "DROP TABLE kv_first_results; DROP TABLE kv_numbers; DROP TABLE kv_values;";
 
 /// ADR 0109, Open question 1: a file of layout 1 is brought to this build's layout when it is
 /// opened, its sessions and its counter kept, and the keys of layout 2, the credentials of
@@ -648,11 +655,11 @@ mod kv {
         start: 1,
     };
 
-    /// ADR 0109, D13: a file of layout 5 is brought to layout 6 when it is opened, in place, its
-    /// sessions kept, and the values of the key-value feature are then kept in it, numbered from
-    /// their own counter.
+    /// ADR 0109, D13: a file of layout 5 is brought to this build's layout when it is opened, in
+    /// place, its sessions kept, and the values of the key-value feature are then kept in it,
+    /// numbered from their own counter.
     #[test]
-    fn a_file_of_layout_5_is_brought_to_layout_6_and_keeps_values() {
+    fn a_file_of_layout_5_is_brought_to_this_layout_and_keeps_values() {
         let scratch = Scratch::new("layout-5");
         {
             let store = SqliteStore::open(scratch.database()).expect("making the store");
@@ -798,6 +805,159 @@ mod kv {
             PutIf::Written { version: 2 },
             "a start that kept no result is judged again, and the number the failed one took \
              was given back with the rest of it"
+        );
+    }
+}
+
+/// The audit log (ADR 0109, D14).
+mod audit {
+    use rusqlite::Connection;
+    use sce_rust_session_store::{
+        AuditAppend, AuditHead, AuditRow, AuditStore, Identity, SessionStore, SqliteStore,
+    };
+
+    use super::{LAYOUT, WITHOUT_LAYOUT_7};
+    use crate::common::Scratch;
+
+    /// Row `sequence` of the stream `s`, its chain the sequence's bytes.
+    fn row(sequence: u64) -> AuditRow {
+        let mut chain = [0u8; 32];
+        chain[24..].copy_from_slice(&sequence.to_be_bytes());
+        AuditRow {
+            stream: "s".to_string(),
+            sequence,
+            at_ms: sequence * 1_000,
+            entry: format!("{{\"n\":{sequence}}}").into_bytes(),
+            chain,
+        }
+    }
+
+    /// ADR 0109, D14: a file of layout 6 is brought to this build's layout when it is opened, in
+    /// place, its sessions kept, and an audit log is then kept in it.
+    #[test]
+    fn a_file_of_layout_6_is_brought_to_this_layout_and_keeps_an_audit_log() {
+        let scratch = Scratch::new("layout-6");
+        {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            let lease = store.acquire("k", "a", 1_000, 0).expect("a lease");
+            SessionStore::put(&store, "k", b"of layout 6", None, 0, lease.fence)
+                .expect("a session");
+        }
+        {
+            let connection =
+                Connection::open(scratch.database()).expect("a connection of a build of layout 6");
+            connection
+                .execute_batch(WITHOUT_LAYOUT_7)
+                .expect("the file without layout 7's tables");
+            connection
+                .pragma_update(None, "user_version", 6)
+                .expect("the file as layout 6 left it");
+        }
+        let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 6");
+        let layout: i64 = Connection::open(scratch.database())
+            .expect("a second connection")
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("its layout");
+        assert_eq!(
+            layout, LAYOUT,
+            "the file was brought to this build's layout"
+        );
+        assert_eq!(
+            SessionStore::get(&store, "k")
+                .expect("its session")
+                .map(|held| held.state),
+            Some(b"of layout 6".to_vec())
+        );
+        assert_eq!(
+            store
+                .audit_append(&row(1), None, None)
+                .expect("a row in the upgraded file"),
+            AuditAppend::Appended
+        );
+    }
+
+    /// ADR 0109, D14: what the store kept of the log is there when its file is opened again: the
+    /// rows, the checkpoints, the identities and the head, which retention left.
+    #[test]
+    fn the_audit_log_is_there_when_the_file_is_opened_again() {
+        let scratch = Scratch::new("audit-reopen");
+        let start = Identity {
+            session: "s-1",
+            invoke: "audit",
+            start: 1,
+        };
+        {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            store
+                .audit_append(&row(1), None, Some(&start))
+                .expect("a row under an identity");
+            store
+                .audit_append(&row(2), Some(b"signature"), None)
+                .expect("a row with its checkpoint");
+            store.audit_append(&row(3), None, None).expect("a row");
+            store.audit_drop_through("s", 2).expect("a segment");
+        }
+        let store = SqliteStore::open(scratch.database()).expect("opening the store again");
+        assert_eq!(
+            store.audit_head("s").expect("the head"),
+            AuditHead {
+                sequence: 3,
+                chain: row(3).chain
+            }
+        );
+        assert_eq!(
+            store.audit_rows("s", 0, 10).expect("the rows"),
+            [row(3)],
+            "the segment retention deleted is gone, the rest kept as written"
+        );
+        assert_eq!(
+            store.audit_checkpoints("s").expect("the checkpoints").len(),
+            1
+        );
+        assert_eq!(store.audit_first(&start).expect("its identity"), Some(1));
+        assert_eq!(
+            store
+                .audit_append(&row(4), None, None)
+                .expect("the next row"),
+            AuditAppend::Appended,
+            "numbered on from the head the closed file kept"
+        );
+    }
+
+    /// ADR 0109, D14: an append, its checkpoint and its identity are one transaction, so a process
+    /// that stopped inside it left none of them, and the head did not move.
+    #[test]
+    fn an_append_that_fails_part_of_the_way_through_leaves_nothing_of_itself() {
+        let scratch = Scratch::new("audit-partway");
+        let store = SqliteStore::open(scratch.database()).expect("making the store");
+        store.audit_append(&row(1), None, None).expect("a row");
+        let raw = Connection::open(scratch.database()).expect("a connection of another program");
+        raw.execute_batch(
+            "CREATE TRIGGER refuse_identities AFTER INSERT ON audit_identities \
+             BEGIN SELECT RAISE(ABORT, 'refused by the test'); END;",
+        )
+        .expect("the trigger");
+        let start = Identity {
+            session: "s-1",
+            invoke: "audit",
+            start: 1,
+        };
+        assert!(
+            store
+                .audit_append(&row(2), Some(b"signature"), Some(&start))
+                .is_err(),
+            "the append failed with its identity"
+        );
+        assert_eq!(store.audit_head("s").expect("the head").sequence, 1);
+        assert_eq!(store.audit_rows("s", 0, 10).expect("the rows").len(), 1);
+        assert!(store.audit_checkpoints("s").expect("none").is_empty());
+        raw.execute_batch("DROP TRIGGER refuse_identities")
+            .expect("dropping the trigger");
+        assert_eq!(
+            store
+                .audit_append(&row(2), Some(b"signature"), Some(&start))
+                .expect("the append made again"),
+            AuditAppend::Appended
         );
     }
 }

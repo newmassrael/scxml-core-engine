@@ -58,6 +58,12 @@
 //! and `SqliteStore` in the same file (layout 6), held to [`kv_conformance`]. A removal of a
 //! session deletes the first results of the sessions it ends ([`Write::sessions`]).
 //!
+//! A host's audit log is kept behind [`AuditStore`] (ADR 0109, D14; module [`audit`]): streams of
+//! rows appended in order, each chained on the one before by its writer, the signed checkpoints
+//! beside them, and segments deleted whole by retention: [`MemoryStore`] in memory, and
+//! `SqliteStore` in the same file (layout 7), held to [`audit_conformance`]. A removal of a
+//! session deletes the identities its sessions appended under, never a row.
+//!
 //! # Building the SQLite store
 //!
 //! The reference store links the system's SQLite (3.14 or later), found through `pkg-config`, or
@@ -82,6 +88,8 @@
 use std::error::Error;
 use std::fmt;
 
+pub mod audit;
+pub mod audit_conformance;
 pub mod conformance;
 pub mod credential_conformance;
 pub mod credentials;
@@ -96,6 +104,9 @@ mod rules;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
+pub use audit::{
+    AuditAppend, AuditCheckpoint, AuditHead, AuditRow, AuditStore, Chain, NoCheckpointAt,
+};
 pub use credentials::{
     CredentialStore, Digest, MemoryCredentials, PinRow, PinStore, Revoked, TokenRow, TokenStore,
 };
