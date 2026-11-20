@@ -25,6 +25,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::RuntimeRequirement;
+
 /// The headers C11 requires of a freestanding implementation (C11 clause 4,
 /// paragraph 6), the only standard headers a core may include.
 const FREESTANDING: [&str; 9] = [
@@ -82,9 +84,16 @@ fn hosted_unit(name: &str) -> bool {
     name.ends_with("_saved.h") || name == "sce/request_field.h" || name.starts_with("sce/test/")
 }
 
-/// The C11 files one generation wrote, by file name, or `None` when the
-/// generator refused the document.
-fn generate(document: &Path, out: &Path) -> Option<BTreeMap<String, String>> {
+/// What one generation wrote: its C11 files by file name, and what its
+/// manifest states its machines require (`runtime_requires`).
+struct Generation {
+    files: BTreeMap<String, String>,
+    requires: Vec<String>,
+}
+
+/// One generation of `document` into `out`, or `None` when the generator
+/// refused the document.
+fn generate(document: &Path, out: &Path) -> Option<Generation> {
     let input_root = document.parent().expect("a fixture has a directory");
     let run = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
         .arg("generate")
@@ -99,6 +108,25 @@ fn generate(document: &Path, out: &Path) -> Option<BTreeMap<String, String>> {
     if !run.status.success() {
         return None;
     }
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    let manifest: serde_json::Value = serde_json::from_str(
+        stdout
+            .lines()
+            .last()
+            .unwrap_or_else(|| panic!("{} wrote no manifest", document.display())),
+    )
+    .unwrap_or_else(|e| panic!("{}: the manifest is not JSON: {e}", document.display()));
+    let requires = manifest["runtime_requires"]
+        .as_array()
+        .unwrap_or_else(|| {
+            panic!(
+                "{}: a C11 manifest states runtime_requires",
+                document.display()
+            )
+        })
+        .iter()
+        .map(|v| v.as_str().expect("a requirement is a string").to_string())
+        .collect();
     let mut files = BTreeMap::new();
     for entry in std::fs::read_dir(out).expect("read the output directory") {
         let path = entry.expect("an output file").path();
@@ -114,7 +142,7 @@ fn generate(document: &Path, out: &Path) -> Option<BTreeMap<String, String>> {
             );
         }
     }
-    Some(files)
+    Some(Generation { files, requires })
 }
 
 /// One `#include` of a text: what it names, and whether it is quoted.
@@ -161,19 +189,17 @@ fn includes(text: &str) -> Vec<Include> {
             "endif" => {
                 frames.pop();
             }
-            "include" => {
-                if frames.iter().all(|(_, read)| *read) {
-                    let (quoted, close) = match rest.chars().next() {
-                        Some('"') => (true, '"'),
-                        Some('<') => (false, '>'),
-                        _ => continue,
-                    };
-                    if let Some(end) = rest[1..].find(close) {
-                        found.push(Include {
-                            name: rest[1..1 + end].to_string(),
-                            quoted,
-                        });
-                    }
+            "include" if frames.iter().all(|(_, read)| *read) => {
+                let (quoted, close) = match rest.chars().next() {
+                    Some('"') => (true, '"'),
+                    Some('<') => (false, '>'),
+                    _ => continue,
+                };
+                if let Some(end) = rest[1..].find(close) {
+                    found.push(Include {
+                        name: rest[1..1 + end].to_string(),
+                        quoted,
+                    });
                 }
             }
             _ => {}
@@ -280,6 +306,7 @@ fn a_c11_machines_core_reaches_only_freestanding_headers() {
     // walk met that its generation did not write, with what met them.
     let mut walked_headers: BTreeSet<String> = BTreeSet::new();
     let mut met_elsewhere: Vec<(String, String)> = Vec::new();
+    let mut stating_real = 0usize;
     for document in &documents {
         let out = tempfile::tempdir().expect("an output directory");
         let name = document
@@ -287,7 +314,7 @@ fn a_c11_machines_core_reaches_only_freestanding_headers() {
             .and_then(|n| n.to_str())
             .expect("a UTF-8 fixture name")
             .to_string();
-        let Some(files) = generate(document, out.path()) else {
+        let Some(Generation { files, requires }) = generate(document, out.path()) else {
             assert!(
                 !gate_set.contains(document),
                 "{name}, which the gate of docs/adr/0110 D3 weighs, does not generate"
@@ -295,6 +322,26 @@ fn a_c11_machines_core_reaches_only_freestanding_headers() {
             refused.push(name);
             continue;
         };
+        // docs/adr/0110, D1: a machine whose core hands a real to the seams
+        // states `real`, so its build links what defines them, exactly when it
+        // includes them. The conformance registry's machines are ECMAScript
+        // statecharts that hand none
+        // (`a_c11_machine_includes_what_it_states_it_requires`); these are the
+        // corpus that states it.
+        let real = RuntimeRequirement::Real;
+        let stated = requires.iter().any(|r| r == real.wire_name());
+        let included = files
+            .values()
+            .any(|text| text.lines().any(|line| line.trim() == real.c11_include()));
+        if stated != included {
+            violations.push(format!(
+                "{name}: states `real` {stated} and includes `{}` {included}",
+                real.c11_include()
+            ));
+        }
+        if stated {
+            stating_real += 1;
+        }
         let cores: Vec<&String> = files.keys().filter(|f| f.ends_with("_sm.c")).collect();
         assert!(
             !gate_set.contains(document) || !cores.is_empty(),
@@ -323,6 +370,13 @@ fn a_c11_machines_core_reaches_only_freestanding_headers() {
             ));
         }
     }
+    // Every `sce-static` machine writes its events' data through the wire
+    // writer, which hands a real to the seam, so the corpus states `real`.
+    assert!(
+        stating_real >= FEWEST_MACHINES,
+        "only {stating_real} generations state `real`, so the comparison of what a machine \
+         states with what it includes measured little"
+    );
     assert!(
         walked >= FEWEST_MACHINES,
         "the walk judged {walked} machines of {} documents, fewer than {FEWEST_MACHINES}; the \

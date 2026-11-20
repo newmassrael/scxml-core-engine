@@ -335,12 +335,28 @@ fn every_registry_fixture_states_what_its_c11_machine_includes() {
     );
 
     // Each requirement is stated by some fixture and left out by another, or
-    // the comparison above measured nothing for it.
+    // the comparison above measured nothing for it. `real` is the one the
+    // registry cannot state: its documents are ECMAScript statecharts with no
+    // event schema and no typed host-run invocation, so none of their machines
+    // hands a real number to text (docs/adr/0110, D1), and the registry is the
+    // side that leaves it out. The side that states it is every `sce-static`
+    // machine, held to stating it exactly when it includes it by
+    // `a_c11_machines_core_reaches_only_freestanding_headers`.
     for requirement in RuntimeRequirement::ALL {
         let stating = outputs
             .iter()
             .filter(|(_, _, generations)| fixture_requires(generations).contains(&requirement))
             .count();
+        if requirement == RuntimeRequirement::Real {
+            assert_eq!(
+                stating,
+                0,
+                "`real` is stated by {stating} of {} registry fixtures, none of which writes or \
+                 reads a real number as text",
+                outputs.len()
+            );
+            continue;
+        }
         assert!(
             stating > 0 && stating < outputs.len(),
             "`{}` is stated by {stating} of {} fixtures; the corpus no longer tells a \
