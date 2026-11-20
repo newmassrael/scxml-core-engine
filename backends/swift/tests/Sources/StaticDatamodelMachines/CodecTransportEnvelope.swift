@@ -235,7 +235,7 @@ public struct CodecTransportEnvelope: Equatable, Sendable, CodecTransportEnvelop
         if header_S_derived_said2 != nil { header_folded = (header_folded & ~0x40) | ((UInt8(truncatingIfNeeded: (header_S_derived_said2 ?? 0)) & 0x1) << 6) }
         header_folded = (header_folded & ~0x1F) | ((UInt8(truncatingIfNeeded: source.body.tag) & 0x1F) << 0)
         if let set = overrides.headerZ { header_folded = set ? (header_folded | 0x80) : (header_folded & ~0x80) }
-        var frame: [UInt8] = []
+        var frame = [UInt8](repeating: 0, count: 1)
         storeInteger(header_folded, into: &frame, at: 0, .big)
         var body_arm = BytesSink()
         switch source.body {

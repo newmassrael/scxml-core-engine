@@ -158,7 +158,7 @@ public struct CodecZenohPushBody: Equatable, Sendable, CodecZenohPushBodySource 
     public static func encodeSource<Source: CodecZenohPushBodySource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
         var header_folded = source.header
         header_folded = (header_folded & ~0x1F) | ((UInt8(truncatingIfNeeded: source.body.tag) & 0x1F) << 0)
-        var frame: [UInt8] = []
+        var frame = [UInt8](repeating: 0, count: 1)
         storeInteger(header_folded, into: &frame, at: 0, .big)
         var body_arm = BytesSink()
         switch source.body {

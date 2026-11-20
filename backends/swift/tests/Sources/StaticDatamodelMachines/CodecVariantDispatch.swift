@@ -137,7 +137,7 @@ public struct CodecVariantDispatch: Equatable, Sendable, CodecVariantDispatchSou
     /// `bufferOverflow` and holds none of it.
     public static func encodeSource<Source: CodecVariantDispatchSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
         let msg_id_derived: UInt8 = UInt8(truncatingIfNeeded: source.body.tag)
-        var frame: [UInt8] = []
+        var frame = [UInt8](repeating: 0, count: 1)
         storeInteger(msg_id_derived, into: &frame, at: 0, .big)
         var body_arm = BytesSink()
         switch source.body {

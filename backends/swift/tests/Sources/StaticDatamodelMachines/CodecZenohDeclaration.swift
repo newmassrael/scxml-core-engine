@@ -257,7 +257,7 @@ public struct CodecZenohDeclaration: Equatable, Sendable, CodecZenohDeclarationS
         if header_Z_derived_said4 != nil { header_folded = (header_folded & ~0x80) | ((UInt8(truncatingIfNeeded: (header_Z_derived_said4 ?? 0)) & 0x1) << 7) }
         header_folded = (header_folded & ~0x1F) | ((UInt8(truncatingIfNeeded: source.body.tag) & 0x1F) << 0)
         if let set = overrides.headerM { header_folded = set ? (header_folded | 0x40) : (header_folded & ~0x40) }
-        var frame: [UInt8] = []
+        var frame = [UInt8](repeating: 0, count: 1)
         storeInteger(header_folded, into: &frame, at: 0, .big)
         var body_arm = BytesSink()
         switch source.body {
