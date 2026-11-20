@@ -418,6 +418,7 @@ mod outbox_in_memory {
             an_outbox_is_opened_once_and_numbers_on,
             an_acknowledgement_deletes_what_it_covers_in_its_incarnation,
             an_old_entry_expires_and_its_sender_is_noted,
+            an_entry_and_a_note_are_replaced_only_from_what_they_hold,
             a_batch_appends_and_acknowledges_item_by_item,
         ]
     );
@@ -433,6 +434,7 @@ mod outbox_on_sqlite {
             an_outbox_is_opened_once_and_numbers_on,
             an_acknowledgement_deletes_what_it_covers_in_its_incarnation,
             an_old_entry_expires_and_its_sender_is_noted,
+            an_entry_and_a_note_are_replaced_only_from_what_they_hold,
             a_batch_appends_and_acknowledges_item_by_item,
         ]
     );
@@ -556,6 +558,7 @@ mod audit_in_memory {
             a_segment_is_deleted_whole_up_to_a_checkpoint,
             streams_are_kept_apart,
             handles_share_the_log,
+            an_entry_and_a_signature_are_replaced_only_from_what_they_hold,
             a_removal_of_a_session_deletes_its_identities_and_no_row,
         ]
     );
@@ -573,6 +576,7 @@ mod audit_on_sqlite {
             a_segment_is_deleted_whole_up_to_a_checkpoint,
             streams_are_kept_apart,
             handles_share_the_log,
+            an_entry_and_a_signature_are_replaced_only_from_what_they_hold,
             a_removal_of_a_session_deletes_its_identities_and_no_row,
         ]
     );
@@ -1265,5 +1269,176 @@ fn a_reseal_pass_moves_every_row_to_the_active_key() {
         c.revoke("phone").expect("revoking phone").count(),
         2,
         "the revocation finds the token and the pin by the name's entry"
+    );
+}
+
+/// ADR 0109, D8: the outboxes and the audit log are re-sealed as every other row is: each
+/// envelope of an outbox and of an expiry's note, each audit row's entry and each checkpoint's
+/// signature is written again under the active key, by a replacement from the bytes the pass
+/// read, its number, its moment, its sender and its chain kept, so the stream still verifies. A
+/// replacement made from the bytes a pass already replaced writes nothing, and a store given the
+/// new key alone reads everything.
+#[test]
+fn a_reseal_pass_moves_every_envelope_and_audit_record_to_the_active_key() {
+    use sce_rust_crypto::audit::{verify, Verdict, Writer};
+    use sce_rust_crypto::keyring::AUDIT_SIGNING_KEY_ID;
+    use sce_rust_session_store::AuditStore;
+
+    let store = MemoryStore::new();
+    let s = Sealed::new(store.clone(), first_keys());
+    saved(&s, "k", b"the sending session");
+    let incarnation = "00112233445566778899aabbccddeeff";
+    let append =
+        |client: &'static str, sender: Option<&'static str>, envelope: &'static [u8]| Append {
+            client,
+            incarnation,
+            sender,
+            envelope,
+        };
+    s.append(
+        &[
+            append("phone", Some("k"), &b"one"[..]),
+            append("phone", Some("k"), &b"two"[..]),
+            append("tablet", None, &b"three"[..]),
+        ],
+        1_000,
+    )
+    .expect("three appends");
+    s.expire("phone", 1_500, 1)
+        .expect("an expiry of the first, which writes a note for its sender");
+    let keyring = Keyring::in_memory();
+    let mut random = ScriptedRandom::new();
+    for (n, entry) in [&b"{\"n\":1}"[..], &b"{\"n\":2}"[..]].iter().enumerate() {
+        let mut writer = Writer {
+            store: &s,
+            keyring: &keyring,
+            random: &mut random,
+            now_ms: 2_000 + n as u64,
+        };
+        writer
+            .append("log", entry, 2, None)
+            .expect("an append, the second with its checkpoint");
+    }
+    let log = s.digest_of("log");
+    let rows_before = store.audit_rows(&log, 0, 10).expect("the wrapped rows");
+    let stale_envelope = store
+        .outbox(&s.digest_of("phone"))
+        .expect("read")
+        .expect("held")
+        .entries[0]
+        .envelope
+        .clone();
+
+    s.set_keys(keys_of(ID_2, &[(ID_1, KEY_1), (ID_2, KEY_2)]));
+    assert_eq!(
+        s.reseal_outboxes().expect("the outboxes' pass"),
+        Resealed {
+            resealed: 3,
+            left: 0,
+            refused: 0,
+        },
+        "the entry of each client and the note"
+    );
+    assert_eq!(
+        s.reseal_audit().expect("the audit log's pass"),
+        Resealed {
+            resealed: 3,
+            left: 0,
+            refused: 0,
+        },
+        "the two rows and the checkpoint"
+    );
+
+    for client in ["phone", "tablet"] {
+        let outbox = store
+            .outbox(&s.digest_of(client))
+            .expect("read")
+            .expect("held");
+        for entry in &outbox.entries {
+            assert_eq!(record_key_id(&entry.envelope).expect("a record"), ID_2);
+        }
+    }
+    let notes = store.notes(&s.digest_of("k")).expect("the wrapped notes");
+    assert_eq!(notes.len(), 1);
+    assert_eq!(record_key_id(&notes[0].envelope).expect("a record"), ID_2);
+    let rows = store.audit_rows(&log, 0, 10).expect("the wrapped rows");
+    for row in &rows {
+        assert_eq!(record_key_id(&row.entry).expect("a record"), ID_2);
+    }
+    assert_eq!(
+        rows.iter()
+            .map(|row| (row.sequence, row.at_ms, row.chain))
+            .collect::<Vec<_>>(),
+        rows_before
+            .iter()
+            .map(|row| (row.sequence, row.at_ms, row.chain))
+            .collect::<Vec<_>>(),
+        "the sequences, the moments and the chain are kept"
+    );
+    let checkpoints = store
+        .audit_checkpoints(&log)
+        .expect("the wrapped checkpoints");
+    assert_eq!(checkpoints.len(), 1);
+    assert_eq!(
+        record_key_id(&checkpoints[0].signature).expect("a record"),
+        ID_2
+    );
+
+    assert!(
+        !store
+            .reseal_entry(&s.digest_of("phone"), 2, &stale_envelope, &stale_envelope)
+            .expect("a replacement from the bytes before the pass"),
+        "a change made in between is not overwritten"
+    );
+    assert!(
+        !store
+            .audit_reseal_row(&log, 1, &rows_before[0].entry, &rows_before[0].entry)
+            .expect("a replacement from the bytes before the pass"),
+        "a change made in between is not overwritten"
+    );
+    assert_eq!(
+        s.reseal_outboxes().expect("a second pass"),
+        Resealed::default()
+    );
+    assert_eq!(
+        s.reseal_audit().expect("a second pass"),
+        Resealed::default()
+    );
+
+    let only = Sealed::new(store, keys_of(ID_2, &[(ID_2, KEY_2)]));
+    assert_eq!(
+        only.outbox("phone")
+            .expect("read")
+            .expect("held")
+            .entries
+            .iter()
+            .map(|entry| (
+                entry.number,
+                entry.at_ms,
+                entry.sender.as_deref(),
+                entry.envelope.clone()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(2, 1_000, Some("k"), b"two".to_vec())]
+    );
+    assert_eq!(
+        only.outbox("tablet").expect("read").expect("held").entries[0].envelope,
+        b"three".to_vec()
+    );
+    assert_eq!(
+        only.notes("k").expect("the notes")[0].envelope,
+        b"one".to_vec()
+    );
+    let public_key = keyring
+        .public_key(AUDIT_SIGNING_KEY_ID)
+        .expect("the audit key");
+    assert_eq!(
+        verify(&only, "log", &public_key).expect("a reading"),
+        Verdict::Verified {
+            from: 1,
+            through: 2,
+            checkpoints: 1
+        },
+        "the stream verifies under the new key alone"
     );
 }
