@@ -30259,8 +30259,9 @@ struct BroadcastLogRenderInputs {
 ///   that the caller still gives it for the others and the encode does not
 ///   take it);
 /// * `said_flags` and `given_flags`: whether some flag input is said, and
-///   whether some is not; `derives_flags`: whether some is said, in every value
-///   or in some, so that `publish` reads it off the element;
+///   whether some is not; `partly_flags`: whether some is said in some values
+///   only; `derives_flags`: whether some is said, in every value or in some, so
+///   that `publish` reads it off the element;
 /// * `flag_words`, `has_tag`, `tag_word` (relative as well; the slot index is
 ///   `1 + tag_word`), `context_words`, and `payload_start`, the slot index of
 ///   the first payload word.
@@ -30311,6 +30312,7 @@ fn broadcast_log_context_value(
     minijinja::context! {
         flags => flags,
         said_flags => said > 0,
+        partly_flags => partly > 0,
         derives_flags => said + partly > 0,
         given_flags => said < element.caller_flag_inputs.len(),
         flag_words => flag_words,
