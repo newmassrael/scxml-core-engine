@@ -1005,7 +1005,8 @@ event schema on the invoke, and the build carries the record across.
 - **Refused at parse** (`validation/payload-record-schema`): the attribute on
   an `<invoke>` of any other type, an empty one, one that names no event schema
   the document imports (an enum or a union included, which no record codec
-  writes), a record whose type has no CBOR form, and a record whose largest
+  writes), a record whose type has no CBOR form, a record that holds a float
+  or an open enum at any depth, and a record whose largest
   deterministic CBOR is past the bound of the byte string it crosses in: `C` of
   the record (docs/adr/0101, section 4.1), the `<NAME>_MAX_BYTES` a codec
   holding it states, against `cose_payload` for a signing and a verification
@@ -1013,6 +1014,19 @@ event schema on the invoke, and the build carries the record across.
   so `--limit` that raises the bound admits the record. A `<param>` that is no
   record of the schema is refused where it is written
   (`scxml/static-datamodel-rule`).
+- **One set of bytes with the printed codec.** A peer reads a signed record
+  with the codec ADR 0101 prints for the same schema, so the record codec and
+  that codec write every record alike and each reads what the other writes.
+  The two kinds they could not hold alike are refused at parse: a float, whose
+  values that are not finite the printed codec writes (`f9 7e 00` for a NaN)
+  and no payload spells, and an open enum, whose numbers no variant names the
+  printed codec writes and no payload, which names a value by its variant,
+  spells. Every other kind (integers of every width and sign, `bool`, bounded
+  texts and byte strings, closed enums, records, unions, lists and optional
+  values, at any depth) is held to one set of bytes on Rust and C++ by
+  `codec_cbor_payload_record` of `tests/forge/conformance/numerical_reference.json`
+  (`backends/rust/forge-conformance/tests/forge_cbor_payload_record.rs`,
+  `tests/integration/APayloadRecordCodecTest.cpp`).
 - **The lanes.** Rust and C++ serve it (docs/adr/0109, D0): the record codec
   is `sce_rust_runtime::record_cbor` (the runtime's feature `record-cbor`) and
   `common/RecordCbor.h`, each the one map between the record's JSON, as a

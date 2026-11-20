@@ -39,7 +39,11 @@
 //! - **It refuses what it cannot carry** ([`resolve`]): the attribute on an
 //!   invoke of any other type, an alias that names no event schema the
 //!   document imports, a record whose type has no CBOR form (a map or a set at
-//!   any depth), and a record whose largest encoding is past the bound of the
+//!   any depth), a record that holds a float or an open enum at any depth
+//!   (values the codec a peer prints from the schema writes and no payload
+//!   spells, so the record codec could not write and read the record byte for
+//!   byte as that codec does, [`describe`]), and a record whose largest
+//!   encoding is past the bound of the
 //!   field its bytes cross in (`cose_payload`, `cose_plaintext`, which
 //!   `--limit` moves).
 //! - **It refuses a lane that reads no record** ([`refuse_unread`]): Rust and
@@ -190,7 +194,8 @@ pub fn resolve(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forge
         };
         if let Err(why) = describe(&record, &model.imported_type_scope) {
             return Err(refuse(format!(
-                "names {}, whose type has no CBOR form (docs/adr/0101, section 2): {why}",
+                "names {}, whose type a record signed by name cannot hold (docs/adr/0101, \
+                 section 2): {why}",
                 schema.name
             )));
         }
@@ -254,11 +259,10 @@ fn bytes_bound(model: &SCXMLModel, alias: &str, field: &str) -> Option<(u32, Opt
 /// |---|---|
 /// | `uint8`-`uint64` | `{"uint":<bits>}` |
 /// | `int8`-`int64` | `{"int":<bits>}` |
-/// | `float32`, `float64` | `{"float":<bits>}` |
 /// | `bool` | `{"bool":{}}` |
 /// | `string[B]` | `{"text":B}` |
 /// | `bytes[B]` | `{"bytes":B}` |
-/// | `enum:E` | `{"enum":{"closed":<bool>,"variants":[[<name>,<number>],...]}}` |
+/// | `enum:E`, closed | `{"enum":{"closed":true,"variants":[[<name>,<number>],...]}}` |
 /// | `record:R` | `{"record":[[<id>,<optional>,<type>],...]}`, the fields in the order their keys' encodings sort (RFC 8949 section 4.2.1), each the type of its present value |
 /// | `union:U` | `{"union":{"tag":<key>,"cases":[[<variant>,<fields or null>],...]}}` |
 /// | `list<T>[M..B]` | `{"list":{"min":M,"max":B,"of":<type>}}` |
@@ -267,7 +271,13 @@ fn bytes_bound(model: &SCXMLModel, alias: &str, field: &str) -> Option<(u32, Opt
 /// The order of a record's fields is decided here, once, so no runtime sorts.
 /// The refusal of what has no CBOR form: a map or a set, a text or a byte
 /// string with no bound, an alias `env` does not resolve, a record that holds
-/// itself.
+/// itself. And the refusal of what the record codec could not write and read
+/// byte for byte as the codec a peer prints from the same schema
+/// (docs/adr/0101) does: a float, whose values that are not finite no payload
+/// spells, and an open enum, whose numbers no variant names no payload spells.
+/// Every other type is written by the two alike, which
+/// `tests/forge/conformance/numerical_reference.json`
+/// (`codec_cbor_payload_record`) holds on Rust and C++.
 pub fn describe(ty: &ValueType, env: &dyn TypeEnv) -> Result<String, String> {
     describe_value(ty, env, &mut Vec::new()).map(|value| value.to_string())
 }
@@ -338,8 +348,19 @@ fn describe_scalar(scalar: &SceType, env: &dyn TypeEnv) -> Result<serde_json::Va
     use serde_json::json;
     Ok(match scalar {
         SceType::Bool => json!({ "bool": {} }),
-        SceType::Float32 => json!({ "float": 32 }),
-        SceType::Float64 => json!({ "float": 64 }),
+        // A float that is not finite is a value of its type, which the codec a
+        // peer prints writes (`f9 7e 00` for a NaN, docs/adr/0101 section
+        // 2.1), and no payload spells: the record codec would refuse bytes the
+        // printed codec reads and a value the printed codec writes, so the two
+        // writers of a record signed by name would differ.
+        SceType::Float32 | SceType::Float64 => {
+            return Err(format!(
+                "`{}` holds values that are not finite, which the printed codec writes and \
+                 no payload spells, so the record codec could not write or read every value \
+                 of it as the printed codec does",
+                scalar.as_attr()
+            ))
+        }
         SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
             json!({ "uint": scalar.int_bit_width().unwrap_or(64) })
         }
@@ -350,6 +371,17 @@ fn describe_scalar(scalar: &SceType, env: &dyn TypeEnv) -> Result<serde_json::Va
             let enumeration = env
                 .enum_type(&reference.alias)
                 .ok_or_else(|| format!("`enum:{}` names no enum", reference.alias))?;
+            // An open enum holds every number of its carrier, and a number no
+            // variant names is written by the printed codec and spelled by no
+            // payload, which names a value by its variant.
+            if !enumeration.strict {
+                return Err(format!(
+                    "`enum:{}` is open, and a number no variant of it names, which the printed \
+                     codec writes, is spelled by no payload, so the record codec could not \
+                     write or read every value of it as the printed codec does",
+                    reference.alias
+                ));
+            }
             let mut variants = Vec::with_capacity(enumeration.variants.len());
             for variant in &enumeration.variants {
                 let number = if variant.value < 0 {
@@ -882,6 +914,75 @@ mod tests {
         )
         .expect_err("a map has no CBOR form");
         assert!(why.contains("map or a set"), "{why}");
+    }
+
+    /// A scope of the record `Probe`, whose one field `v` is of `ty`.
+    fn probe_scope(ty: ValueType, enums: TypeScope) -> TypeScope {
+        let mut scope = enums.clone();
+        scope.records.insert(
+            "Probe".to_string(),
+            ScopedRecord {
+                identity: "/here/probe.scxml".to_string(),
+                name: "probe".to_string(),
+                fields: vec![("v".to_string(), ty)],
+                scope: enums,
+                added: Default::default(),
+            },
+        );
+        scope
+    }
+
+    fn described(scope: &TypeScope) -> Result<String, String> {
+        describe(
+            &ValueType::Record {
+                alias: "Probe".to_string(),
+            },
+            scope,
+        )
+    }
+
+    #[test]
+    fn a_float_is_refused_since_no_payload_spells_one_that_is_not_finite() {
+        for float in [SceType::Float32, SceType::Float64] {
+            let why = described(&probe_scope(TypeOf::Scalar(float), TypeScope::default()))
+                .expect_err("a float is refused");
+            assert!(why.contains("not finite"), "{why}");
+        }
+        // Inside a list it is refused as well.
+        let listed = TypeOf::List {
+            elem: Box::new(TypeOf::Scalar(SceType::Float64)),
+            max: Bound::of(2),
+        };
+        assert!(described(&probe_scope(listed, TypeScope::default())).is_err());
+    }
+
+    #[test]
+    fn an_open_enum_is_refused_and_a_closed_one_described() {
+        let level = |strict: bool| {
+            let mut enums = TypeScope::default();
+            enums.enums.insert(
+                "Level".to_string(),
+                ScopedEnum {
+                    name: "level".to_string(),
+                    variants: vec![ScopedVariant {
+                        name: "low".to_string(),
+                        value: 0,
+                    }],
+                    underlying: SceType::Uint8,
+                    strict,
+                },
+            );
+            let ty = TypeOf::Scalar(SceType::Enum(crate::forge::model::EnumRef {
+                alias: "Level".to_string(),
+            }));
+            probe_scope(ty, enums)
+        };
+        let why = described(&level(false)).expect_err("an open enum is refused");
+        assert!(why.contains("is open"), "{why}");
+        assert_eq!(
+            described(&level(true)).expect("a closed enum is described"),
+            r#"{"record":[["v",false,{"enum":{"closed":true,"variants":[["low",0]]}}]]}"#
+        );
     }
 
     #[test]

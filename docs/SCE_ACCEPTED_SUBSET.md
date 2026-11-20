@@ -5347,7 +5347,10 @@ bytes; bytes that are no value of the record make the completion the failure
 `not_a_record`, every other field at its zero. `validation/payload-record-schema`
 refuses the attribute on an invoke of another type, an empty one, one naming no event
 schema the document imports (an enum or a union among them), a record whose type has no
-CBOR form, one whose largest CBOR is past the bound of the byte string it crosses in
+CBOR form, one that holds a float or an open enum at any depth (whose values that are not
+finite, or numbers no variant names, the codec a peer prints writes and no payload spells,
+so the two writers of the record could not agree), one whose largest CBOR is past the
+bound of the byte string it crosses in
 (`cose_payload`, `cose_plaintext`, which `--limit` moves), and a completion record whose
 derived alias (`<result alias>Of<invoke>`) the document imports another record under.
 Rust and C++ read the record (docs/adr/0109, D0); every other lane, the Interpreter
