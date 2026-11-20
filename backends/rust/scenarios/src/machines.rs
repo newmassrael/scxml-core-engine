@@ -240,6 +240,7 @@ scenarios! {
     "static_map_full" => static_map_full_sm::{StaticMapFullPolicy, StaticMapFullPersist};
     "static_map_order" => static_map_order_sm::{StaticMapOrderPolicy, StaticMapOrderPersist};
     "static_map_record" => static_map_record_sm::{StaticMapRecordPolicy, StaticMapRecordPersist};
+    "static_map_returned" => static_map_returned_sm::{StaticMapReturnedPolicy, StaticMapReturnedPersist};
     "static_map_take" => static_map_take_sm::{StaticMapTakePolicy, StaticMapTakePersist};
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};

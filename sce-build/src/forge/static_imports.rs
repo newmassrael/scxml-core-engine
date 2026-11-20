@@ -841,8 +841,26 @@ fn value_signature(
     // algorithm writes it in place, and never copied (docs/adr/0108, D6 items 1,
     // 2 and 4): its key and value name the statechart's own imports of the same
     // documents, by identity, whatever their records hold, since nothing of it
-    // crosses field by field. A map returned is not yet a value a statechart
-    // takes, and stays refused by `slot` above.
+    // crosses field by field. A map returned is named the same way and taken
+    // whole into a map variable of the same entries (D5), which holds the
+    // bound the return states, and declares may-fail, which the parser holds
+    // it to; a map nested in another slot stays refused by `slot` above.
+    let map_slot =
+        |name: &str, ty: &AlgorithmValueType, inout: bool| -> Result<StaticSlot, String> {
+            let enum_alias = |alias: &str| enum_slot(name, alias);
+            let lent = LentNames {
+                what: name,
+                imports: callee_imports,
+                base: callee_base,
+                own,
+                own_unions,
+                enum_alias: &enum_alias,
+            };
+            Ok(StaticSlot::Map(MapSlot {
+                ty: lent.type_of(ty)?,
+                inout,
+            }))
+        };
     let params = signature
         .params
         .iter()
@@ -850,19 +868,7 @@ fn value_signature(
             let name = format!("parameter `{}`", p.name);
             match &p.sce_type {
                 AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => {
-                    let enum_alias = |alias: &str| enum_slot(&name, alias);
-                    let lent = LentNames {
-                        what: &name,
-                        imports: callee_imports,
-                        base: callee_base,
-                        own,
-                        own_unions,
-                        enum_alias: &enum_alias,
-                    };
-                    Ok(StaticSlot::Map(MapSlot {
-                        ty: lent.type_of(&p.sce_type)?,
-                        inout: p.written_in_place(),
-                    }))
+                    map_slot(&name, &p.sce_type, p.written_in_place())
                 }
                 ty => slot(&name, ty),
             }
@@ -871,7 +877,12 @@ fn value_signature(
     let ret = signature
         .return_type
         .as_ref()
-        .map(|t| slot("return", t))
+        .map(|t| match t {
+            AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => {
+                map_slot("return", t, false)
+            }
+            t => slot("return", t),
+        })
         .transpose()?;
     let max_size = match &ret {
         Some(StaticSlot::ScalarList(_) | StaticSlot::RecordList(_)) => {

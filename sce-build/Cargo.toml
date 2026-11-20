@@ -2045,6 +2045,14 @@ name = "a_call_that_writes_a_map_in_place_is_a_statement_the_checker_judges"
 path = "tests/a_call_that_writes_a_map_in_place_is_a_statement_the_checker_judges.rs"
 required-features = ["cli"]
 
+# A map variable takes the map an algorithm returns whole, judged by the checker, lowered by the
+# Interpreter, Rust and C11 and refused by name on every other lane (docs/adr/0108, D5). It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_map_an_algorithm_returns_is_taken_whole_by_a_map_variable"
+path = "tests/a_map_an_algorithm_returns_is_taken_whole_by_a_map_variable.rs"
+required-features = ["cli"]
+
 # A union variable is built where it is declared or starts absent. It runs `sce-codegen`, so it
 # carries the `cli` gate.
 [[test]]

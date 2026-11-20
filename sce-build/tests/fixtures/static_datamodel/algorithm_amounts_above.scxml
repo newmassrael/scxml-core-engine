@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A map an algorithm returns (docs/adr/0108, D5): the entries of `amounts`
+  whose amount is above `least`, in the order `amounts` holds them, built in a
+  map of two. The put names no outcome, so a third such entry fails the put
+  and the call; a map return declares may-fail, and its caller takes nothing
+  of a map that was not built.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="amounts_above"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="amounts" type="map&lt;uint32, int32&gt;"/>
+    <sce:param name="least" type="int32"/>
+    <sce:return type="map&lt;uint32, int32&gt;[2]" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="kept" type="map&lt;uint32, int32&gt;[2]"/>
+    <sce:foreach in="amounts" item="amount" key="id">
+      <sce:if cond="amount &gt; least">
+        <sce:put target="kept" key="id" expr="amount"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="kept"/>
+  </sce:body>
+</scxml>

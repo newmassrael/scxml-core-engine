@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/adr/0108, D5): a map variable takes the map an
+  imported algorithm returns, whole, by an <assign> whose expression is the
+  call, as a list variable takes a list.
+
+  `ledger.entry` puts the amount at its id into `amounts`, which holds four.
+  `keep` assigns `kept`, a map of three, the entries
+  `algorithm_amounts_above.scxml` keeps above `least`: it returns a map of
+  two, which `kept` holds, and builds it by puts that name no outcome, so a
+  third entry above `least` fails the call, which raises error.execution and
+  leaves `kept` as it was. `raise` moves `least` to 25, and the next `keep`
+  replaces what `kept` held with what the call returns.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="keeping" datamodel="sce-static" name="static_map_returned">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:import kind="algorithm" src="algorithm_amounts_above.scxml" as="AmountsAbove"/>
+  <datamodel>
+    <data id="amounts" sce:type="map&lt;uint32, int32&gt;[4]" sce:direction="out"/>
+    <data id="kept" sce:type="map&lt;uint32, int32&gt;[3]" sce:direction="out"/>
+    <data id="least" sce:type="int32" expr="10" sce:direction="out"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="keeping">
+    <transition event="ledger.entry" type="internal">
+      <sce:put target="amounts" key="_event.data.id" expr="_event.data.amount"/>
+    </transition>
+    <transition event="keep" type="internal">
+      <assign location="kept" expr="AmountsAbove(amounts, least)"/>
+    </transition>
+    <transition event="raise" type="internal">
+      <assign location="least" expr="25"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

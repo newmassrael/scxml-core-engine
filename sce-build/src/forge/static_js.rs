@@ -196,7 +196,7 @@ use crate::forge::model::{
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
     lower, Callee, CalleeImport, InPlaceCall, LiftStatement, Lifted, LoweredElement, LoweredSite,
-    MapEntry, MapOp, MapWrite, RenderCall, StaticTarget,
+    MapEntry, MapOp, MapWrite, RenderCall, ReturnedMap, StaticTarget,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
@@ -1248,6 +1248,17 @@ impl StaticTarget for JsTarget {
         _to: &crate::forge::model::AlgorithmValueType,
     ) -> Option<String> {
         Some(value.to_string())
+    }
+    // A map an algorithm returns is the array it built, a value never changed
+    // in place, which the document's own `<assign>` writes into the variable
+    // once the call has returned (docs/adr/0108, D5): the walk writes the call
+    // into its expression. A call that throws writes nothing, which the
+    // Interpreter answers as it does any assignment that fails (§scxml-4.9).
+    fn returned_map_assign(&self, returned: &ReturnedMap<'_>) -> Option<(String, bool)> {
+        Some((
+            self.assign(returned.location, &returned.call.text),
+            returned.call.can_fail,
+        ))
     }
     // The element that replaces the `<sce:put>` or the `<sce:remove>`
     // (docs/adr/0108, D3 and D4). One that names no outcome is an `<assign>` of
