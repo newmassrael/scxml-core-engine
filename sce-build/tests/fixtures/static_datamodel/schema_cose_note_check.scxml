@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The event `static_host_cose.scxml` is told to verify a signed note with: the
+  trust set to verify it under and the object, whose payload it reads back as
+  the record of schema_cose_note.scxml (sce:payload, docs/adr/0109, D9).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_cose_note_check"
+       sce:event-name="cose.note.verify">
+  <datamodel>
+    <data id="trust_set" sce:type="string[64]" sce:direction="in"/>
+    <data id="cose" sce:type="bytes[cose_signed=4352]" sce:direction="in"/>
+  </datamodel>
+</scxml>

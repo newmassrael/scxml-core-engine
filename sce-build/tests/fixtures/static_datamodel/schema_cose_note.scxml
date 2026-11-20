@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The record `static_host_cose.scxml` signs and seals by name (sce:payload,
+  docs/adr/0109, D9), and the event that hands it the record to sign. Its
+  deterministic CBOR (docs/adr/0101, section 2) writes the fields in the order
+  their keys encode: `blob`, `owner`, `active`, `offset`, `serial`. The record
+  of tests/host_features/payload_record_cross_language.json is a value of it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_cose_note"
+       sce:event-name="cose.note.sign">
+  <datamodel>
+    <data id="serial" sce:type="uint32" sce:direction="in"/>
+    <data id="owner" sce:type="string[24]" sce:direction="in"/>
+    <data id="blob" sce:type="bytes[8]" sce:direction="in"/>
+    <data id="active" sce:type="bool" sce:direction="in"/>
+    <data id="offset" sce:type="int16" sce:direction="in"/>
+  </datamodel>
+</scxml>
