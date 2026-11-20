@@ -3578,3 +3578,30 @@ maps when it is generated again.
   its map, `BoundedMap<K, V, N, Inline>`, and lends it to the same algorithm, whose own maps then follow it inline;
   a `static` of it built with `BoundedMap::with_seed(MapSeed::from_halves(0, 0))` is all zero bytes and placed in
   `.bss`. A heap node in the same build keeps `BoundedMap<K, V, N>` or names `Heap`.
+
+## A record is signed, verified, sealed and opened by name, and crosses as its deterministic CBOR (ADR 0109 D9)
+
+Landing: the commits that add this section. The fixture `static_host_cose.scxml` signs, verifies, seals and opens
+a note by name, beside three new event schemas of the fixture directory, so the static-datamodel trees are
+regenerated; a consumer regenerates a machine only when one of its invokes names `sce:payload`. A machine that
+names none generates the bytes it generated before.
+
+- `<invoke sce:payload="R">` on `sce-host-cose-sign1`, `-verify1`, `-encrypt0` and `-decrypt0` (Rust and C++ only):
+  the signing's `payload` and the seal's `plaintext` `<param>` is a record of `R`, written as its deterministic
+  CBOR where the invocation starts; the completion of a verification and an opening is bound to a record the build
+  derives (`<result alias>Of<invoke>`), whose `payload` (`plaintext`) is an `optional<record:R>`. A machine that
+  assigned that field to a byte string assigns it to an `optional<record:R>` instead. Bytes that are no value of
+  `R` are the operation's failure `not_a_record`, which a machine that matches `error` reads as any failure code.
+- **A Rust crate that compiles such a machine asks for `sce-rust-runtime`'s feature `record-cbor`**, which adds
+  the module `record_cbor` and the dependency `sce-forge-runtime` (with `alloc`), the crate whose CBOR items it
+  writes and reads. The feature is not a default, since `sce-forge-runtime` declares a newer Rust than the
+  runtime's floor; without it the build fails with `E0433` at `::sce_rust_runtime::record_cbor`.
+- A C++ machine that names `sce:payload` includes `common/RecordCbor.h`, header-only, which reads JSON with
+  `saved/SavedJson.h` and CBOR with `sce/forge/cbor.h`; no library is linked for it.
+- C++ `CoseFeature` has `setTrustedKeys`, public keys by id that a trust set may name with no seed held: a client
+  that verifies its server's objects is given the server's public key and nothing else. A trust set's id that names
+  a signing key of the host is read as before.
+- A new diagnostic code, `validation/payload-record-schema`; a `match` over `DiagnosticCode` names
+  `ValidationPayloadRecordSchema`, and one over `ValidationError` names `PayloadRecordSchema`.
+  `UnsupportedInvokeInfo` has `payload_schema`, `payload_schema_at`, `payload_result`, `payload_param` and
+  `payload_cbor`, which `..Default::default()` fills.

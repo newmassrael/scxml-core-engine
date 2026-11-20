@@ -499,6 +499,20 @@ not) on Rust and C++; a scenario that tags in one host and verifies in the other
 - **A record signed by name**, kept or forwarded beyond the exchange, is ADR 0107 Open question 1's `sce:payload`, as
   decided there. It lands after ADR 0101's steps 4a (Rust) and 4b (C++), with the build's writer of a record in that
   form and its reader. Until then a document signs bytes it holds.
+
+  Landed (2026-11-21), Rust and C++ only (D0): `sce:payload` on the four COSE operations. The build writes a
+  description of the record's type once (`sce_build::forge::payload_record::describe`), each record's fields in the
+  order their keys encode, and each lane's record codec is the one map between the record's JSON, as a machine
+  writes and lifts a payload, and its deterministic CBOR (`sce_rust_runtime::record_cbor`, the runtime's feature
+  `record-cbor`; `common/RecordCbor.h`): the machine encodes the record where a signing or a seal starts, and reads
+  the bytes a verification or an opening answers as the record where the completion is lifted, into the result's
+  record the build derives (`<result alias>Of<invoke>`, its byte string an `optional<record:...>`). Bytes that are
+  no value of the record are the operation's failure `not_a_record`. The record's largest CBOR is held to
+  `cose_payload` or `cose_plaintext` at the parse (`validation/payload-record-schema`). The C++ reference host's
+  trust sets name public keys it holds no seed of (`CoseFeature::setTrustedKeys`), so a client verifies a record its
+  server signed offline, with the server's public key alone. Every other lane refuses the machine by name. Held by
+  `tests/host_features/payload_record_cross_language.json` on both lanes, by the record steps of `static_host_cose`'s
+  scenario, and by the build's tests in `sce-build/tests/the_standard_host_features_are_one_set.rs`.
 - **Lands before it:** D7 (the key pairs and the export a client's trust set is made from), D3 (the store the `key`
   authenticator pins in). The binding's signature code calls the COSE and Ed25519 primitives the host features
   already have; they move to a crate both `sce-rust-mesh` and `sce-rust-host-features` depend on, so there is one.
