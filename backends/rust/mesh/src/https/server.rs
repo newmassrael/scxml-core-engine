@@ -30,6 +30,11 @@
 //! 10.11) answers an exchange that carried envelopes only once a durable checkpoint holds them
 //! ([`ServerHost::deliver`], [`Durability`], [`HttpsServer::durable`]); a keyed pool reports it
 //! per exchange from the receipts of the envelopes it was handed ([`crate::pool::Receipt`]).
+//!
+//! The host is told what one client's exchanges carried one exchange at a time, in the order
+//! decided, under that client's order, and what different clients' exchanges carried at once
+//! (docs/adr/0109, D15): their sessions then run beside each other, and their checkpoints share
+//! the pool's commits, while no `200` goes out before the commit that holds its envelopes.
 
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
@@ -387,9 +392,13 @@ pub enum Durability {
 /// is then in the mailboxes, which is what lets an exchange answer with the replies its own
 /// request caused.
 ///
-/// Called on a thread of tokio's blocking pool, one call at a time, in the order the binding
-/// observed the events. A closure that takes the events is a host whose endpoint does not
-/// checkpoint.
+/// Called on a thread of tokio's blocking pool, with the events of one client each time.
+/// Calls for different clients are made at once, so that their checkpoints can share a commit
+/// (docs/adr/0109, D15): a host serves them side by side (a keyed pool runs different keys in
+/// parallel) or takes a lock of its own. Calls for one client are made one at a time, in the
+/// order the binding observed that client's events, so what the host is told of a client
+/// arrives in the order it was decided. A closure that takes the events is a host whose
+/// endpoint does not checkpoint.
 pub trait ServerHost: Send + Sync + 'static {
     /// Hand `events` to the endpoint, in order ([`super::deliver`]), and run the machine; answer
     /// when a `200` may acknowledge the envelopes among them ([`Durability`]). The server reads
@@ -419,6 +428,10 @@ struct Client {
     in_flight: usize,
     last_seen: Instant,
     arrived: Arc<Notify>,
+    /// The client's order (docs/adr/0109, D15): held while its readiness is decided and the host
+    /// is told, so what the host is told of this client arrives in the order it was decided,
+    /// while other clients' exchanges reach the host at once.
+    order: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Client {
@@ -431,14 +444,19 @@ impl Client {
             in_flight: 0,
             last_seen: Instant::now(),
             arrived: Arc::new(Notify::new()),
+            order: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
     /// Whether the entry holds nothing the server owes or is doing for the client (docs/adr/0109,
-    /// D1): its mailbox is empty, no exchange of it is in flight, and it is not ready. Such an
-    /// entry is removed.
+    /// D1): its mailbox is empty, no exchange of it is in flight, it is not ready, and nothing
+    /// holds or waits for its order. Such an entry is removed; one whose order is held is not,
+    /// so an entry made again for the client never tells the host beside one still telling it.
     fn holds_nothing(&self) -> bool {
-        self.entries.is_empty() && self.in_flight == 0 && !self.ready
+        self.entries.is_empty()
+            && self.in_flight == 0
+            && !self.ready
+            && Arc::strong_count(&self.order) == 1
     }
 
     /// The numbered envelopes a response carries: the oldest first, as many as fit in `most`
@@ -593,9 +611,6 @@ struct Shared {
     is_bound: Box<dyn Fn(&str) -> bool + Send + Sync>,
     host: Arc<dyn ServerHost>,
     mailboxes: Arc<Mailboxes>,
-    /// Held while readiness is decided and the host is told, so that what the host is told about
-    /// a client arrives in the order it was decided.
-    telling: tokio::sync::Mutex<()>,
     exchanges: AtomicUsize,
     /// The last checkpoint the host reported durable ([`HttpsServer::durable`]), and the signal
     /// an exchange waiting for one wakes on.
@@ -736,7 +751,6 @@ impl HttpsServer {
                 is_bound: Box::new(is_bound),
                 host: Arc::new(host),
                 mailboxes,
-                telling: tokio::sync::Mutex::new(()),
                 exchanges: AtomicUsize::new(0),
                 durable_through: AtomicU64::new(0),
                 durable_reported: Notify::new(),
@@ -975,32 +989,40 @@ impl HttpsServer {
         let absence = self.shared.settings.absence;
         let every = (absence / 4).clamp(Duration::from_millis(10), Duration::from_secs(1));
         let mut ticker = tokio::time::interval(every);
+        let is_absent = |client: &Client| {
+            client.ready && client.in_flight == 0 && client.last_seen.elapsed() >= absence
+        };
         loop {
             ticker.tick().await;
-            let _telling = self.shared.telling.lock().await;
-            let lost: Vec<LinkEvent> = {
-                let mut clients = self.shared.mailboxes.lock();
-                clients
-                    .iter_mut()
-                    .filter(|(_, client)| {
-                        client.ready
-                            && client.in_flight == 0
-                            && client.last_seen.elapsed() >= absence
-                    })
-                    .map(|(name, client)| {
+            let absent: Vec<(String, Arc<tokio::sync::Mutex<()>>)> = self
+                .shared
+                .mailboxes
+                .lock()
+                .iter()
+                .filter(|&(_, client)| is_absent(client))
+                .map(|(name, client)| (name.clone(), Arc::clone(&client.order)))
+                .collect();
+            // docs/adr/0109, D15: each client's absence is decided and told under its own
+            // order, decided again once the order is held, since an exchange of the client may
+            // have come between; other clients' exchanges reach the host meanwhile.
+            for (name, order) in absent {
+                let _told = order.lock().await;
+                let lost = match self.shared.mailboxes.lock().get_mut(&name) {
+                    Some(client) if Arc::ptr_eq(&client.order, &order) && is_absent(client) => {
                         client.ready = false;
-                        LinkEvent::Lost(
-                            name.clone(),
-                            alloc::format!("no exchange for more than {} ms", absence.as_millis()),
-                        )
-                    })
-                    .collect()
-            };
-            if !lost.is_empty() {
-                tell(&self.shared, lost).await;
+                        true
+                    }
+                    _ => false,
+                };
+                if lost {
+                    let reason =
+                        alloc::format!("no exchange for more than {} ms", absence.as_millis());
+                    tell(&self.shared, alloc::vec![LinkEvent::Lost(name, reason)]).await;
+                }
             }
-            // Under the telling lock, so that an entry is not removed between an exchange
-            // deciding a client ready and the host being told.
+            // An entry whose order is held or waited for is not removed (`holds_nothing`), so
+            // none is removed between an exchange deciding its client ready and the host being
+            // told.
             self.shared.mailboxes.sweep();
         }
     }
@@ -1446,7 +1468,9 @@ async fn exchange(
                 .to_string()
         });
 
-    let in_flight = {
+    // The client's order is taken from the entry the exchange holds in flight, so it is the one
+    // every other exchange of the client and its absence are told under.
+    let (in_flight, order) = {
         let mut clients = shared.mailboxes.lock();
         // docs/adr/0109, D1: a name past `max_clients` is load shed, and so is one whose mailbox
         // could draw no incarnation.
@@ -1458,10 +1482,13 @@ async fn exchange(
         }
         client.in_flight += 1;
         client.last_seen = Instant::now();
-        InFlight {
-            mailboxes: Arc::clone(&shared.mailboxes),
-            name: name.clone(),
-        }
+        (
+            InFlight {
+                mailboxes: Arc::clone(&shared.mailboxes),
+                name: name.clone(),
+            },
+            Arc::clone(&client.order),
+        )
     };
 
     // docs/adr/0109, D1: a body that takes longer than `body_timeout` to arrive whole is answered
@@ -1519,26 +1546,42 @@ async fn exchange(
     // again.
     // Named apart from the checkpoint's verdict below, which says whether the exchange's
     // envelopes are durable; this one is the outboxes the client is answered from.
+    //
+    // docs/adr/0109, D15: the acknowledgement is committed through the pool's committer with the
+    // checkpoints handed meanwhile, and waits for that commit, so it runs on the blocking pool
+    // rather than on the runtime's workers.
     let durable_outboxes = shared.mailboxes.outboxes_of(&name).cloned();
     if let Some(outboxes) = &durable_outboxes {
         let now = unix_millis();
         let Ok(drawn) = draw_epoch() else {
             return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
         };
-        let Ok(incarnation) = outboxes.open(&name, &drawn, now) else {
-            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
-        };
-        let acknowledges = ack > 0 && acked_in.as_deref() == Some(incarnation.as_str());
-        if acknowledges && outboxes.acknowledge(&name, &incarnation, ack, now).is_err() {
+        let outboxes = Arc::clone(outboxes);
+        let client = name.clone();
+        let acked_in = acked_in.clone();
+        let kept = tokio::task::spawn_blocking(move || {
+            let Ok(incarnation) = outboxes.open(&client, &drawn, now) else {
+                return false;
+            };
+            let acknowledges = ack > 0 && acked_in.as_deref() == Some(incarnation.as_str());
+            !acknowledges
+                || outboxes
+                    .acknowledge(&client, &incarnation, ack, now)
+                    .is_ok()
+        })
+        .await
+        .unwrap_or(false);
+        if !kept {
             return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
         }
     }
 
     // Taken in: the acknowledgement, readiness and the envelopes, told in the order decided
-    // (§mesh-22.3). The body is split as §mesh-22.2 frames it, a CBOR sequence whose unreadable
-    // tail reaches the core as one last envelope.
+    // (§mesh-22.3), under the client's own order (docs/adr/0109, D15): the exchanges of other
+    // clients reach the host at once. The body is split as §mesh-22.2 frames it, a CBOR sequence
+    // whose unreadable tail reaches the core as one last envelope.
     let (arrived, held_by) = {
-        let telling = shared.telling.lock().await;
+        let telling = order.lock().await;
         let (became_ready, arrived) = {
             let mut clients = shared.mailboxes.lock();
             // The exchange is in flight, so its entry is held: no sweep removes it.
@@ -2502,6 +2545,113 @@ mod tests {
             received.load(Ordering::SeqCst),
             2,
             "each copy reached the host"
+        );
+    }
+
+    /// What [`Meeting`] saw of the calls its server made.
+    #[derive(Default)]
+    struct Met {
+        /// The client of each call inside `deliver` now.
+        inside: Mutex<Vec<String>>,
+        changed: std::sync::Condvar,
+        /// The most clients that were inside at once.
+        most: AtomicUsize,
+        /// Whether two calls for one client were ever inside at once.
+        overlapped: AtomicBool,
+    }
+
+    /// A host that notes whose deliveries are inside it at once (docs/adr/0109, D15): each call
+    /// waits, at most half a second, until a call for another client is inside too.
+    struct Meeting(Arc<Met>);
+
+    impl ServerHost for Meeting {
+        fn deliver(&self, events: Vec<LinkEvent>) -> Durability {
+            let client = events
+                .iter()
+                .find_map(|event| match event {
+                    LinkEvent::Ready(name)
+                    | LinkEvent::Received(name, _)
+                    | LinkEvent::Lost(name, _) => Some(name.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let clients = |inside: &[String]| {
+                let mut names = inside.to_vec();
+                names.sort_unstable();
+                names.dedup();
+                names.len()
+            };
+            let met = &self.0;
+            let mut inside = met.inside.lock().expect(HELD);
+            if inside.contains(&client) {
+                met.overlapped.store(true, Ordering::SeqCst);
+            }
+            inside.push(client.clone());
+            met.most.fetch_max(clients(&inside), Ordering::SeqCst);
+            met.changed.notify_all();
+            let until = Instant::now() + Duration::from_millis(500);
+            while clients(&inside) < 2 {
+                let left = until.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    break;
+                }
+                inside = met.changed.wait_timeout(inside, left).expect(HELD).0;
+            }
+            if let Some(at) = inside.iter().position(|name| *name == client) {
+                inside.remove(at);
+            }
+            met.changed.notify_all();
+            Durability::Now
+        }
+    }
+
+    /// docs/adr/0109, D15: the server tells its host the exchanges of different clients at once,
+    /// and those of one client one at a time. Two clients that post together are inside the
+    /// host's `deliver` together; two exchanges of one client never are. Red if the server holds
+    /// one lock across every client's delivery (the two clients never meet: at most one is
+    /// inside), or no order for a client (its two exchanges overlap).
+    #[test]
+    fn clients_are_delivered_at_once_and_each_one_at_a_time() {
+        use super::super::HttpsTransport;
+
+        let met = Arc::new(Met::default());
+        let Serving {
+            _runtime,
+            server: _,
+            address,
+            port,
+        } = serving_with(
+            ServerSettings {
+                rates: EdgeRates::NONE,
+                ..ServerSettings::default()
+            },
+            |name: &str| name == "phone" || name == "tablet",
+            Meeting(Arc::clone(&met)),
+        );
+        let post = |name: &'static str| {
+            let port = Arc::clone(&port);
+            std::thread::spawn(move || {
+                port.exchange(request_as(name, address, alloc::vec![0x01]))
+                    .expect("a response")
+                    .status
+            })
+        };
+
+        for exchange in [post("phone"), post("tablet")] {
+            assert_eq!(exchange.join().expect("no exchange panicked"), 200);
+        }
+        assert_eq!(
+            met.most.load(Ordering::SeqCst),
+            2,
+            "two clients' exchanges did not reach the host at once"
+        );
+
+        for exchange in [post("phone"), post("phone")] {
+            assert_eq!(exchange.join().expect("no exchange panicked"), 200);
+        }
+        assert!(
+            !met.overlapped.load(Ordering::SeqCst),
+            "two exchanges of one client were inside the host at once"
         );
     }
 
