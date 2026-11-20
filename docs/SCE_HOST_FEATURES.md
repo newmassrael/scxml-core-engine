@@ -55,6 +55,12 @@
   reference hosts judge by the numbers the build gave them, as for
   `mac_message` and `random_bytes` of sections 11 and 12; section 8, how a
   reference host is given them.
+- Amended by: ADR 0109 (D16): section 8, what the Rust and C++ reference hosts
+  report through the metrics port a server's program gives them.
+- Amended by: ADR 0109 (step 15 of its order of work): section 9, a server
+  program as the parts that landed make it: its stores in one file sealed at
+  rest, the reference hosts' constructors and setters, the metrics port and the
+  named bounds; the orderly stop leaves what a server lacks.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -668,6 +674,19 @@ module `static_datamodel_large` of the tree `rust-static-datamodel`
 executable `standard_host_named_bounds_test`
 (`tests/integration/AStandardHostNamedBoundsTest.cpp`).
 
+**What a reference host reports** (docs/adr/0109, D16). A Rust or C++
+reference host given a metrics port (Rust's `ReferenceHost::set_metrics`, an
+`Arc<dyn sce_rust_metrics::Metrics>`; C++'s `ReferenceHost::setMetrics` and
+`AuditFeature::setMetrics`, a `SCE::Metrics::Metrics` of `host/Metrics.h` that
+outlives the host) reports, by the operation's type, how long each start it
+answered at once took (`sce_host_operation_duration_seconds`; a start it holds
+is not observed) and the code of each failure and refusal
+(`sce_host_operation_failures_total`, a code no operation names counted as
+`other`), and each entry appended to the audit log
+(`sce_host_audit_appends_total`; a repeat under one identity appends none). A
+host given none reports nothing. The names are a registry, `sce-metrics-1`,
+which `docs/SCE_SERVER_DEPLOY.md` section 10 lists.
+
 Three things differ by lane and are not hidden:
 
 - **The order of a response's fields.** The Python transport and the C++ libcurl
@@ -697,21 +716,48 @@ These are not built, and nothing here stands in for them:
   (`SharedPreferences` or DataStore) and no Android HTTP stack. The Kotlin
   reference host keeps its semantics in common code and the JVM's clock and HTTP
   client beside it; it is not an Android host.
-- **A server program.** The parts a server is made of are built in the Rust host
-  core (docs/adr/0107): the keyed pool of sessions (`sce_rust_mesh::pool`,
-  SCE_MESH.md section 14.4), the session store with its lease and fence
-  (`sce-rust-session-store`, SQLite in its reference implementation), the
-  checkpoint of a session (SCE_MESH.md section 10.11) and the server of the
-  `https` binding (`sce_rust_mesh::https::server`, SCE_MESH.md section 22).
-  `docs/SCE_SERVER_DEPLOY.md` is the runbook for a program built from them. No
-  such program is built here: each deployment writes the program that joins them
-  to its machine, its keys and its credentials. Beside it there is still no
-  quota policy, no delivery of notifications, and no orderly stop of a pool that
-  saves every session it holds as a clean checkpoint. The keys of section 13 and
-  the credentials of section 14, the `install` authenticator's pins among them
-  (SCE_MESH.md section 22.5), are kept in the session store's file
-  (`SqliteStore` is a `KeyStore` and a `CredentialStore` too, layout 7), which a
-  server keeps sealed at rest (`Sealed`, docs/SCE_SEALED_RECORD.md).
+- **A server program.** No server program is built here: each deployment
+  writes the program that joins SCE's parts to its machine, its keys and its
+  credentials, and `docs/SCE_SERVER_DEPLOY.md` is the runbook for one. The parts
+  are built in the Rust host core (docs/adr/0107, docs/adr/0109): the keyed pool
+  of sessions with its bounds, its orderly stop and its group commit
+  (`sce_rust_mesh::pool`, `sce_rust_mesh::commit`, SCE_MESH.md section 14.4),
+  the checkpoint of a session (SCE_MESH.md section 10.11), the server of the
+  `https` binding with its edge limits, its durable outboxes and its message
+  signatures (`sce_rust_mesh::https::server`, SCE_MESH.md section 22), the
+  health checks, and the metrics port (`sce-rust-metrics`). The reference host
+  of these features serves such a program's machine as it serves any other:
+  - **Its stores.** One SQLite file holds every store a server keeps
+    (`sce_rust_session_store::SqliteStore`, layout 7): the sessions the pool
+    keeps, and the host's key-value store (section 3), key ring (section 13),
+    credentials (section 14) and audit log (section 15); `SqliteStore` is a
+    `SessionStore`, a `KvStore`, a `KeyStore`, a `CredentialStore` and an
+    `AuditStore`. A server keeps it sealed at rest: `Sealed<S>`
+    (`sce_rust_crypto::sealed`, docs/SCE_SEALED_RECORD.md) implements each of
+    those contracts over the file, every value a sealed record and every key
+    its keyed digest, under keys of a key ring whose key-encryption key the
+    program holds apart from the file.
+  - **Its constructor and setters.** Rust's `ReferenceHost::new(clock,
+    transport)` keeps its key-value store in memory, and
+    `ReferenceHost::with_kv_store(clock, transport, store)` in the store it is
+    given; `set_keyring`, `set_credentials`, `set_audit_store` and
+    `set_audit_streams` give it the other stores and the streams it keeps,
+    each in memory until given; `set_cose_keys` its configured keys;
+    `set_random_source` and `set_nonce_source` the source of what it draws;
+    `set_named_bounds` the numbers of the named bounds its machine's build
+    resolved (section 8); `set_metrics` the metrics port (section 8). A
+    server's transport is `NetworkTransport` of `sce-rust-host-http`, built
+    with a destination policy (section 5). The audit log's passes are the
+    program's to call: `audit_retain` on its schedule and `audit_stop` at the
+    orderly stop. The C++ host is built the same way, `ReferenceHost(clock,
+    transport)` or `ReferenceHost(clock, transport, store)`, with each feature
+    of sections 10 to 15 added (`addFeature`): `CoseFeature(crypto, bounds)`,
+    `CredentialFeature(keyRing, crypto, clock)` and `AuditFeature(crypto,
+    clock)` with `setStreams`; `ReferenceHost::setMetrics` and
+    `AuditFeature::setMetrics` give the metrics port. Its key ring, tokens and
+    audit log are in memory (below), since the server is the Rust host
+    core's.
+  Beside it there is no quota policy and no delivery of notifications.
 - **A durable key-value store on the lanes other than Rust.** The Rust host
   keeps section 3's values in a durable store when it is given one, the session
   store's SQLite file (section 3, "Durability"); the reference stores of the
