@@ -1765,6 +1765,14 @@ name = "a_c11_machine_includes_what_it_states_it_requires"
 path = "tests/a_c11_machine_includes_what_it_states_it_requires.rs"
 required-features = ["cli"]
 
+# A C11 machine's core reaches only freestanding headers (docs/adr/0110, D1).
+# It generates every static fixture by spawning `sce-codegen generate`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_c11_machines_core_reaches_only_freestanding_headers"
+path = "tests/a_c11_machines_core_reaches_only_freestanding_headers.rs"
+required-features = ["cli"]
+
 # `orchestrate --go-module-prefix` reaches every statechart of the set and every
 # child one carries. It spawns `sce-codegen orchestrate` and `check`, so it
 # carries the `cli` gate.

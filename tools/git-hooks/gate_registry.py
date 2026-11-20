@@ -1038,6 +1038,12 @@ GATES: dict[str, dict] = {
             # The runtime's text unit, the real seams' definitions, which the
             # same test links a machine with (docs/adr/0110, D2).
             "backends/c/runtime/text/real_text.c",
+            # The C11 runtime's headers, whose includes
+            # `a_c11_machines_core_reaches_only_freestanding_headers` walks from
+            # every machine's core (docs/adr/0110, D1): an edit of one alone
+            # has to start the suite that judges it.
+            "backends/c/runtime/include/**",
+            "backends/c/forge-runtime/include/**",
             # The standard library, whose statecharts that save are held to
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.
