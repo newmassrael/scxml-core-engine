@@ -1638,6 +1638,15 @@ name = "a_static_log_shows_a_value_every_target_writes"
 path = "tests/a_static_log_shows_a_value_every_target_writes.rs"
 required-features = ["cli"]
 
+# A `<log>` of a value read from a field its schema marks writes the mark's
+# marker on every lane (docs/adr/0109, Open question 9), and a statechart of
+# another data model that imports a marked schema is refused by the binary, so
+# the target spawns `sce-codegen` and carries the `cli` gate.
+[[test]]
+name = "a_log_writes_a_marked_value_as_its_marker"
+path = "tests/a_log_writes_a_marked_value_as_its_marker.rs"
+required-features = ["cli"]
+
 # A guard that reads the data of an event with no schema is refused by the binary
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), so the target spawns `sce-codegen` and
 # carries the `cli` gate.
