@@ -2700,7 +2700,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                           schema_goal goal_earliest goal_until goal_undated goal_day_sum
                           schema_item_pick item_pick_first
                           schema_map_face schema_map_peer
-                          enum_take_kind schema_take_duplicate union_take_result take_generation)
+                          enum_take_kind schema_take_duplicate union_take_result take_generation
+                          amounts_above)
         if(_STATE_HEADER MATCHES "^(schema|enum|union)_")
             set(_STATE_SOURCE
                 "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_HEADER}.scxml")
@@ -3022,6 +3023,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         STAGE_ALSO schema_map_peer.scxml enum_take_kind.scxml schema_take_duplicate.scxml
                    union_take_result.scxml algorithm_take_generation.scxml
     )
+    # A map machine takes the map an algorithm returns, built in the destination of the
+    # machine's storage for the call and taken whole into a map variable (docs/adr/0108,
+    # D5). The algorithm's header is generated beside it (`_STATE_ALGORITHM_HEADERS`).
+    sce_generate_static_integration_c_test(static_map_returned
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_map_returned.scxml"
+        STAGE_ALSO schema_entry.scxml algorithm_amounts_above.scxml
+    )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
@@ -3313,6 +3322,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_map_record_SOURCES}
         ${INTEGRATION_C_TEST_static_map_order_SOURCES}
         ${INTEGRATION_C_TEST_static_map_take_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_returned_SOURCES}
         ${INTEGRATION_C_TEST_static_map_composite_key_SOURCES}
         ${INTEGRATION_C_TEST_static_set_SOURCES}
     )

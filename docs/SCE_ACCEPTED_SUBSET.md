@@ -6381,6 +6381,32 @@ answers, `scenarios/static_map_take.json` replays it through a full table, and
 `sce-build/tests/a_call_that_writes_a_map_in_place_is_a_statement_the_checker_judges.rs`
 holds what is accepted and each refusal.
 
+**Taking a map an algorithm returns.** A map variable takes the map or set an
+imported algorithm returns whole, by an `<assign>` whose `expr` is the call
+written whole, as a list variable takes a list (docs/adr/0108, D5):
+`<assign location="kept" expr="AmountsAbove(amounts, least)"/>`. The variable's
+key and value are the return's types, and its bound is at least the one the
+return states, so it holds every map the call may build; a smaller bound is
+refused naming the call, the variable and both bounds, and a map of other
+entries naming what the call returns. The map a call returns is no value
+anywhere else, an operand, an argument or a condition. A map return declares
+`may-fail`, so the call may fail, which raises `error.execution` and leaves the
+variable as it was (§scxml-4.9). The Interpreter writes the call into the
+`<assign>`, whose array is the map. Rust and C11 call the machine's adapter,
+which has the algorithm build the map in a destination of the return's bound,
+keyed under a seed drawn from the one the machine keeps for its algorithms
+(D8): Rust a map of the adapter's own, which it answers, and C11 a member of the
+machine's `scratch` for the call, which the adapter starts and the algorithm
+builds through its core. Only a map the call built is taken: the variable is
+emptied and takes each entry in its order, under the seed it was started with.
+A generated lane that lends no algorithm a map refuses the call as
+`generate/unsupported-feature`, naming that record.
+`sce-build/tests/fixtures/static_datamodel/static_map_returned.scxml` takes
+what `algorithm_amounts_above.scxml` keeps,
+`scenarios/static_map_returned.json` replays it through a call that fails, and
+`sce-build/tests/a_map_an_algorithm_returns_is_taken_whole_by_a_map_variable.rs`
+holds what is accepted and each refusal.
+
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports
 (`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge
 kind does, `DaysInMonth(shown.year, shown.month)`, in a guard, an assignment

@@ -2013,8 +2013,8 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
-    /// An `<assign>` of what `callee` returns, a record or a list, to the variable
-    /// `target` that holds a value of that type. The call is the whole of the right
+    /// An `<assign>` of what `callee` returns, a record, a list or a map, to the
+    /// variable `target` that holds a value of that type. The call is the whole of the right
     /// side; its arguments are judged by the rewrite every expression passes through
     /// ([`Self::expr`]), and the type returned has to be the variable's own.
     fn state_from_call(
@@ -2056,6 +2056,14 @@ impl<'a> Judge<'a> {
             // A union a call answers is taken whole into a union variable of the
             // same document (docs/adr/0092, section 6.1 item 7).
             Some(StaticSlot::Union(returned)) if held_union == Some(returned.alias.as_str()) => {
+                InferredType::Unknown
+            }
+            // A map or a set a call answers is taken whole into a map variable
+            // whose entries are its own (docs/adr/0108, D5); its bound is judged
+            // below.
+            Some(StaticSlot::Map(returned))
+                if self.scope.map_argument(returned, &target.id).is_ok() =>
+            {
                 InferredType::Unknown
             }
             // An optional record a call answers is taken whole into an optional
@@ -2151,6 +2159,19 @@ impl<'a> Judge<'a> {
                 )));
             }
         }
+        // ... and a map's the same way: the variable holds every entry the map
+        // returned may hold, so a bound it could pass is refused here
+        // (docs/adr/0108, D5).
+        if let Some(StaticSlot::Map(returned)) = &value.ret {
+            let holds = target.capacity().unwrap_or(0);
+            if let Some(max) = returned.bound().filter(|max| *max > holds) {
+                return Err(place(format!(
+                    "`{}` may return a map of {max} entries, and `{}` holds at most {holds} \
+                     (its bound): declare it at least {max}",
+                    callee.alias, target.id
+                )));
+            }
+        }
         self.whole_state_call_ok.set(true);
         let judged = self.expr(
             ctx,
@@ -2241,8 +2262,15 @@ impl<'a> Judge<'a> {
     /// `faces[k].open`) is refused, naming the statement. The whole map takes
     /// only the whole of another map or set variable whose type it fits, a
     /// copy that cannot fail ([`list_fits`], the relation "fits" of
-    /// docs/adr/0086, section 5.1); anything else is refused.
-    fn map_assign(&self, action: &Action) -> Option<Result<(), Located<ForgeError>>> {
+    /// docs/adr/0086, section 5.1), or the map an imported algorithm returns,
+    /// the call the whole of the right side, when its entries are the
+    /// variable's and the variable holds its bound (D5,
+    /// [`Self::state_from_call`]); anything else is refused.
+    fn map_assign(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+    ) -> Option<Result<(), Located<ForgeError>>> {
         let location = action.location.trim();
         let root = location.split(['.', '[']).next().unwrap_or(location).trim();
         let (map, _) = self.scope.map_variable(root)?;
@@ -2285,6 +2313,13 @@ impl<'a> Judge<'a> {
                 written,
             )
         };
+        if let Some(callee) = self
+            .scope
+            .whole_value_call(written)
+            .filter(|c| StaticScope::returns_state(c))
+        {
+            return Some(self.state_from_call(ctx, action, map, callee));
+        }
         let Some(held) = self
             .scope
             .map_variable(written)
@@ -5365,7 +5400,7 @@ impl<'a> Judge<'a> {
                 }
                 // A map is written by its statements, and taken whole only from
                 // another map (docs/adr/0108, D2 and D3).
-                if let Some(judged) = self.map_assign(action) {
+                if let Some(judged) = self.map_assign(ctx, action) {
                     return judged;
                 }
                 // A union is put into one whole, and its tag is never written

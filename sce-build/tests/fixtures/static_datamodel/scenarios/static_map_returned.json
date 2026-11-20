@@ -1,0 +1,37 @@
+{
+  "machine": "static_map_returned",
+  "about": "A map variable takes the map an imported algorithm returns, whole, by an <assign> whose expression is the call (docs/adr/0108, D5): `kept`, a map of three, takes the entries of `amounts` above `least` that `AmountsAbove` builds in a map of two. What it held before is replaced, not merged. A third entry above `least` fails the algorithm's put, which names no outcome, so the call fails: error.execution is raised and `kept` is as it was. A map is stated as the array of its entries, each [key, value], in the order its keys were first put. Expected values are derived from the documents, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "keeping", "variables": { "amounts": [], "kept": [], "least": 10, "errors": 0 } } },
+
+    { "event": "ledger.entry", "data": { "id": 1, "amount": 20 },
+      "expect": { "variables": { "amounts": [[1, 20]] } } },
+    { "note": "the one entry above 10 is the map the call returns",
+      "event": "keep",
+      "expect": { "variables": { "kept": [[1, 20]], "errors": 0 } } },
+
+    { "event": "ledger.entry", "data": { "id": 2, "amount": 5 },
+      "expect": { "variables": { "amounts": [[1, 20], [2, 5]] } } },
+    { "note": "5 is not above 10, so the map returned is the same one entry",
+      "event": "keep",
+      "expect": { "variables": { "kept": [[1, 20]], "errors": 0 } } },
+
+    { "event": "ledger.entry", "data": { "id": 3, "amount": 30 },
+      "expect": { "variables": { "amounts": [[1, 20], [2, 5], [3, 30]] } } },
+    { "note": "two entries above 10, in the order `amounts` holds them",
+      "event": "keep",
+      "expect": { "variables": { "kept": [[1, 20], [3, 30]], "errors": 0 } } },
+
+    { "event": "ledger.entry", "data": { "id": 4, "amount": 40 },
+      "expect": { "variables": { "amounts": [[1, 20], [2, 5], [3, 30], [4, 40]] } } },
+    { "note": "a third entry above 10 fails the algorithm's put into its map of two: the call fails, error.execution is raised, and `kept` is as it was",
+      "event": "keep",
+      "expect": { "variables": { "kept": [[1, 20], [3, 30]], "errors": 1 } } },
+
+    { "event": "raise",
+      "expect": { "variables": { "least": 25 } } },
+    { "note": "the map returned replaces what `kept` held: 1 is gone, and 4 goes after 3",
+      "event": "keep",
+      "expect": { "variables": { "amounts": [[1, 20], [2, 5], [3, 30], [4, 40]], "kept": [[3, 30], [4, 40]], "errors": 1 } } }
+  ]
+}

@@ -1048,6 +1048,12 @@ pub struct AdapterSpec<'a> {
     /// D6 item 3): storage of that bound holds a copy of any of them. `None`
     /// for a parameter that takes no map, and where the machine holds none.
     pub lent_map_storage: Vec<Option<String>>,
+    /// The type the machine holds the map the callee returns in, of the bound
+    /// the return states ([`map_type_of`]): the destination the adapter has
+    /// the algorithm build it in, which the variable takes it from whole
+    /// (docs/adr/0108, D5). `None` for a callee that returns no map, and on a
+    /// target that holds no map in a type of its own.
+    pub returned_map_type: Option<String>,
 }
 
 impl<'a> AdapterSpec<'a> {
@@ -1239,6 +1245,32 @@ pub struct InPlaceCall<'a> {
     pub store: Option<CallStore<'a>>,
 }
 
+/// An `<assign>` of the map or the set an imported algorithm returns to a map
+/// or set variable (docs/adr/0108, D5), as the walk lowered its parts, for a
+/// target to spell ([`StaticTarget::returned_map_assign`]). The judge held the
+/// variable to the return's entries and to a bound no smaller than the
+/// return's. The algorithm declares `may-fail`, and builds the map whole or
+/// fails, so the variable takes it only once the call has built it, and keeps
+/// the seed it was started under (D8); a call that fails leaves it as it was
+/// (§scxml-4.9).
+pub struct ReturnedMap<'a> {
+    /// The variable, as the target names it.
+    pub location: &'a str,
+    /// The call, lowered: the algorithm's adapter called
+    /// ([`StaticTarget::state_adapter_name`]) with the storage and the seed the
+    /// target hands it, or the algorithm itself on a target that has no
+    /// adapter ([`StaticTarget::has_state_adapters`]).
+    pub call: &'a Receiving,
+    /// The adapter [`Self::call`] calls, whose storage holds the destination
+    /// the map was built in on a target that holds one there.
+    pub adapter: &'a str,
+    /// Whether the variable is a set, whose entries are keys alone.
+    pub set: bool,
+    /// What a target that raises `error.execution` itself raises where the call
+    /// fails ([`MapWrite::failed`]).
+    pub failed: &'a str,
+}
+
 /// A map or a set variable a `<sce:call>` lends to be written in place
 /// ([`InPlaceCall::lent`]).
 pub struct LentMap<'a> {
@@ -1348,24 +1380,35 @@ pub(crate) fn sce_call_unlowered(action: &Action) -> String {
 /// its lowering of a `sce-static` document begins, before it reads the
 /// document's maps or lowers the algorithms it imports, so that a document
 /// that makes such a call is refused for the call on every such lane. The
-/// caller asks whether its lane lends a map; this answers for the scope. `Ok`
-/// for a scope that lends no map.
+/// caller asks whether its lane lends a map; this answers for the scope. A
+/// map an algorithm returns is built in a destination its caller holds and
+/// taken from there whole (D5), which a lane lowers in the same step, so a
+/// scope that imports one is refused the same way. `Ok` for a scope that lends
+/// no map and takes none back.
 pub(crate) fn lent_map_unlowered(scope: &StaticScope, lane: &str) -> Result<(), GenerateError> {
     let lent_map = scope.callees.iter().find_map(|callee| {
-        callee.value.as_ref()?.params.iter().find_map(|slot| {
+        let lent = callee.value.as_ref()?.params.iter().find_map(|slot| {
             if let StaticSlot::Map(map) = slot {
-                Some((callee, map))
+                Some((
+                    if map.inout {
+                        "takes the inout"
+                    } else {
+                        "takes the read-only"
+                    },
+                    map,
+                ))
             } else {
                 None
             }
-        })
+        });
+        lent.or_else(|| Some(("returns the", callee.returned_map()?)))
+            .map(|(how, map)| (callee, how, map))
     });
     match lent_map {
-        Some((callee, map)) => Err(GenerateError::unsupported(format!(
-            "`{}(…)`: an imported algorithm that takes the {} {} has no {lane} lowering of \
-             the call yet ({})",
+        Some((callee, how, map)) => Err(GenerateError::unsupported(format!(
+            "`{}(…)`: an imported algorithm that {how} {} has no {lane} lowering of the call \
+             yet ({})",
             callee.alias,
-            if map.inout { "inout" } else { "read-only" },
             map.ty.as_attr(),
             crate::forge::value_type::MAP_CALL_LANDING
         ))),
@@ -2896,6 +2939,15 @@ pub trait StaticTarget {
     ) -> Option<String> {
         self.map_copy(value, from, to)
             .map(|copy| self.assign(location, &copy))
+    }
+    /// The statement an `<assign>` of the map an imported algorithm returns
+    /// lowers to ([`ReturnedMap`], docs/adr/0108, D5), and whether it answers
+    /// a failure its dispatcher acts on ([`crate::model::Action::native_fails`]).
+    /// `None` for a target whose machine takes no map an algorithm returns,
+    /// which a lane that lends none refuses before the walk
+    /// ([`lent_map_unlowered`]).
+    fn returned_map_assign(&self, _returned: &ReturnedMap<'_>) -> Option<(String, bool)> {
+        None
     }
     /// The statement an `<sce:put>` or an `<sce:remove>` lowers to
     /// ([`MapWrite`]). `None` for a target whose machine holds no map yet.
@@ -5433,6 +5485,11 @@ impl StaticTarget for RustTarget {
         if spec.callee.takes_map_seed {
             declarations.push("sce_seed: ::sce_rust_runtime::MapSeed".to_string());
             arguments.push("sce_seed".to_string());
+        } else if spec.callee.handed_map_seed() {
+            // ... and one that returns a map is handed it for the destination
+            // the adapter builds the map in, keyed under a seed drawn from it
+            // (D5 and D8), which the algorithm draws its own maps' from.
+            declarations.push("sce_seed: ::sce_rust_runtime::MapSeed".to_string());
         }
         let bounds = if bounds.is_empty() {
             String::new()
@@ -5505,16 +5562,21 @@ impl StaticTarget for RustTarget {
                     from_algorithm(alias, "r")?
                 ),
             ),
-            // A map is a parameter only, never what a call answers.
-            StaticSlot::Map(_) => return None,
+            // A map, in the machine's own type of the bound the return states,
+            // which holds its entries in the types the algorithm's slot holds
+            // them in (docs/adr/0108, D5 and D6 item 4): handed back whole.
+            StaticSlot::Map(_) => (spec.returned_map_type.clone()?, "r".to_string()),
         };
         // A list the algorithm returns is written into a destination the adapter
-        // holds (docs/adr/0082), and read from there as a returned value is.
+        // holds (docs/adr/0082), and read from there as a returned value is; a
+        // map is built in one of its type, keyed under a seed drawn from the one
+        // the adapter is handed (docs/adr/0108, D5 and D8).
         let returns_list = matches!(
             returned,
             StaticSlot::ScalarList(_) | StaticSlot::RecordList(_)
         );
-        if returns_list {
+        let returns_map = matches!(returned, StaticSlot::Map(_));
+        if returns_list || returns_map {
             arguments.push("&mut r".to_string());
         }
         let call = format!("{}({})", spec.call, arguments.join(", "));
@@ -5522,6 +5584,11 @@ impl StaticTarget for RustTarget {
         Some(if spec.callee.may_fail {
             let received = if returns_list {
                 format!("    let mut r = {RUST_LIST_DESTINATION};\n    {call}?;\n")
+            } else if returns_map {
+                format!(
+                    "    let mut r: {returned_type} = \
+                     ::sce_rust_runtime::FromSeed::from_seed(sce_seed.derive(0));\n    {call}?;\n"
+                )
             } else {
                 format!("    let r = {call}?;\n")
             };
@@ -5530,9 +5597,10 @@ impl StaticTarget for RustTarget {
                 spec.name,
                 declarations.join(", ")
             )
-        } else if returns_list {
-            // A list is taken only from an algorithm that declares `may-fail`
-            // (docs/SCE_ACCEPTED_SUBSET.md §2.15); this call is refused by name.
+        } else if returns_list || returns_map {
+            // A list or a map is taken only from an algorithm that declares
+            // `may-fail` (docs/SCE_ACCEPTED_SUBSET.md §2.15, docs/adr/0108, D5);
+            // this call is refused by name.
             return None;
         } else {
             format!(
@@ -6267,6 +6335,36 @@ impl StaticTarget for RustTarget {
             _ => return None,
         })
     }
+    // docs/adr/0108, D5: the adapter answers the map it had the algorithm
+    // build, in a destination of the return's bound; the variable is emptied,
+    // keeping its seed and its storage, and takes its entries in their order,
+    // each key and value the one the map holds. The judge held the two to the
+    // same entries and the variable to a bound no smaller, so no put is
+    // refused. A call that fails returns out of the closure the statement is
+    // received in before the variable is written (§scxml-4.9).
+    fn returned_map_assign(&self, returned: &ReturnedMap<'_>) -> Option<(String, bool)> {
+        let location = returned.location;
+        let clone = "::core::clone::Clone::clone";
+        let take = if returned.set {
+            format!(
+                "for sce_key in sce_returned.iter() {{ let _ = {location}.put({clone}(sce_key)); }}"
+            )
+        } else {
+            format!(
+                "for (sce_key, sce_value) in sce_returned.iter() {{ let _ = \
+                 {location}.put({clone}(sce_key), {clone}(sce_value)); }}"
+            )
+        };
+        let statement = format!(
+            "{{ let sce_returned = {}; {location}.clear(); {take} }}",
+            returned.call.text
+        );
+        Some(if returned.call.can_fail {
+            (self.receiving_statement(&statement, returned.failed), true)
+        } else {
+            (statement, false)
+        })
+    }
     // An expression that is `true` when the statement failed, as an append's is
     // ([`Self::append`]): the call runs in a closure a key or a value that
     // fails returns out of before the map is written. What a put or a remove
@@ -6982,10 +7080,11 @@ fn lowering_ctx<'a>(
     target.hand_call_storage(scope, machine, &mut ctx);
     ctx.map_units = map_units.clone();
     // docs/adr/0108, D8: each call of an algorithm that takes its caller's
-    // seed, by its alias and by each name a rewrite gives a call of it, is
-    // handed the one the machine keeps for its algorithms.
+    // seed, or returns a map, by its alias and by each name a rewrite gives a
+    // call of it, is handed the one the machine keeps for its algorithms
+    // ([`StaticCallee::handed_map_seed`]).
     if let Some(seed) = target.algorithm_seed() {
-        for callee in scope.callees.iter().filter(|c| c.takes_map_seed) {
+        for callee in scope.callees.iter().filter(|c| c.handed_map_seed()) {
             ctx.seeded_calls.insert(callee.alias.as_str(), seed.clone());
             for made in scope
                 .state_calls()
@@ -8318,11 +8417,12 @@ pub fn lower(
     if !target.lends_maps() {
         lent_map_unlowered(&scope, lang)?;
     }
-    // docs/adr/0108, D8: an algorithm that takes its caller's seed is handed
-    // the one the machine keeps for it, on a target whose algorithms take one
-    // ([`StaticTarget::algorithm_seed`]).
-    let seeds_algorithms =
-        target.algorithm_seed().is_some() && scope.callees.iter().any(|c| c.takes_map_seed);
+    // docs/adr/0108, D8: an algorithm that takes its caller's seed, or returns
+    // a map whose destination the call keys under one, is handed the one the
+    // machine keeps for it, on a target whose algorithms take one
+    // ([`StaticTarget::algorithm_seed`], [`StaticCallee::handed_map_seed`]).
+    let seeds_algorithms = target.algorithm_seed().is_some()
+        && scope.callees.iter().any(StaticCallee::handed_map_seed);
     // A call that hands an algorithm a record or a list, or takes one back, needs
     // the target's adapter for it; a target without one refuses the document by
     // name instead of leaving the call undefined where the machine runs.
@@ -9530,6 +9630,25 @@ pub fn lower(
             declarations.type_defs.push(def);
         }
     }
+    // docs/adr/0108, D5: the type of the destination a call builds the map an
+    // algorithm returns in, of the bound the return states, declared as a
+    // variable's map type is, by the alias of the algorithm. The variable
+    // takes the map from there whole once the call has built it, so a call
+    // that fails leaves the variable as it was (§scxml-4.9).
+    let mut returned_map_types: BTreeMap<String, String> = BTreeMap::new();
+    if target.types_maps() {
+        for callee in &scope.callees {
+            let Some((returned, bound)) = callee
+                .returned_map()
+                .and_then(|returned| Some((returned, returned.bound()?)))
+            else {
+                continue;
+            };
+            let element = format!("<sce:import as=\"{}\">", callee.alias);
+            let held = map_type_of(&element, &returned.ty, bound, &records, &mut declarations)?;
+            returned_map_types.insert(callee.alias.clone(), held);
+        }
+    }
     let type_defs = declarations.type_defs;
     let mut adapter_defs = payload_key_defs;
     // The types and the reader functions a lift of a value read whole reached,
@@ -9673,6 +9792,7 @@ pub fn lower(
             record_list_bounds: &record_list_bounds,
             enums: &held_enums,
             lent_map_storage,
+            returned_map_type: returned_map_types.get(&callee.alias).cloned(),
         };
         // What the adapter copies the machine's records into and has the algorithm write
         // its list into is the machine's, whatever the bound, and not the stack's.
@@ -10273,25 +10393,42 @@ fn map_variable_type(
     records: &BTreeMap<String, EntrySchema>,
     declarations: &mut TypeDeclarations<'_>,
 ) -> Result<String, GenerateError> {
-    use crate::forge::model::AlgorithmValueType;
     let element = format!("<data id=\"{}\">", var.id);
-    let lang = declarations.target.name();
     let capacity = var.capacity().ok_or_else(|| {
         GenerateError::unsupported(format!("{element}: a map or a set states its bound"))
     })?;
+    map_type_of(&element, ty, capacity, records, declarations)
+}
+
+/// The type a map or a set of the type `ty`, bounded by `capacity`, is held in
+/// on a target that holds a map in a type of its own
+/// ([`StaticTarget::types_maps`]): its key's and its value's types declared
+/// ([`TypeDeclarations::map_part`]), and the map's own type declared once
+/// after them. `element` is what a refusal names. A variable's
+/// ([`map_variable_type`]) and the destination a call builds the map an
+/// algorithm returns in, of the return's bound (docs/adr/0108, D5).
+fn map_type_of(
+    element: &str,
+    ty: &crate::forge::model::AlgorithmValueType,
+    capacity: u32,
+    records: &BTreeMap<String, EntrySchema>,
+    declarations: &mut TypeDeclarations<'_>,
+) -> Result<String, GenerateError> {
+    use crate::forge::model::AlgorithmValueType;
+    let lang = declarations.target.name();
     let (key_part, value_part) = match ty {
         AlgorithmValueType::Map { key, value, .. } => (key.as_ref(), Some(value.as_ref())),
         AlgorithmValueType::Set { key, .. } => (key.as_ref(), None),
-        _ => return Err(map_not_lowered(&element, lang)),
+        _ => return Err(map_not_lowered(element, lang)),
     };
-    let key = declarations.map_part(key_part, true, records, &element)?;
+    let key = declarations.map_part(key_part, true, records, element)?;
     let value = value_part
-        .map(|value| declarations.map_part(value, false, records, &element))
+        .map(|value| declarations.map_part(value, false, records, element))
         .transpose()?;
     let held = declarations
         .target
         .map_type(&key, value.as_deref(), capacity)
-        .ok_or_else(|| map_not_lowered(&element, lang))?;
+        .ok_or_else(|| map_not_lowered(element, lang))?;
     // A target that declares its map types declares each once, after the
     // types of its parts.
     let def = declarations.target.map_type_def(
@@ -12689,7 +12826,9 @@ impl StaticTarget for CppTarget {
                 StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => {
                     from.to_string()
                 }
-                // A map is a parameter only, never what a call answers.
+                // A map this lane takes back from no call: a scope that imports
+                // an algorithm that returns one is refused before the walk
+                // ([`lent_map_unlowered`]).
                 StaticSlot::Map(_) => return None,
                 // The machine's own struct, built case by case from the one the
                 // union's unit declares, which the algorithm gave back
@@ -18388,6 +18527,12 @@ impl StaticTarget for CTarget {
         if spec.callee.takes_map_seed {
             declarations.push("sce_map_seed_t seed".to_string());
             arguments.push("seed".to_string());
+        } else if spec.callee.handed_map_seed() {
+            // ... and one that returns a map is handed it for the destination
+            // the adapter starts the map in, keyed under a seed drawn from it
+            // (docs/adr/0108, D5 and D8), which the algorithm draws its own
+            // maps' from.
+            declarations.push("sce_map_seed_t seed".to_string());
         }
         if maps.locals {
             arguments.push("&s->maps".to_string());
@@ -18419,10 +18564,11 @@ impl StaticTarget for CTarget {
                 format!("{}\n\n{adapter}", helpers.join("\n\n"))
             });
         }
-        // The machine's own element or value.
+        // The machine's own element or value, or a map built in the storage.
         enum Shape {
             Value(String),
             List(String),
+            Map(String),
         }
         let shape = match value.ret.as_ref()? {
             StaticSlot::Scalar(SceType::Enum(reference)) => {
@@ -18436,6 +18582,10 @@ impl StaticTarget for CTarget {
             StaticSlot::Record(alias) => Shape::Value(machine_record(alias)),
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => Shape::List(self.scalar_type(ty)),
             StaticSlot::RecordList(alias) => Shape::List(machine_record(alias)),
+            // The machine's own map type of the bound the return states, whose
+            // entries are the types the algorithm's slot holds (docs/adr/0108,
+            // D5 and D6 item 4).
+            StaticSlot::Map(_) => Shape::Map(spec.returned_map_type.clone()?),
             // The machine's own struct, which the adapter builds case by case.
             StaticSlot::Union(union) => {
                 use crate::forge::composed_lowering::ComposedSpelling;
@@ -18557,6 +18707,30 @@ impl StaticTarget for CTarget {
                     .collect::<Vec<_>>()
                     .join(", "),
             ),
+            // docs/adr/0108, D5: the destination `r` of the storage is started
+            // empty under a seed drawn from the one the adapter is handed, the
+            // algorithm builds the map in it through its core and answers
+            // whether it did, as a list's call does, and the statement has the
+            // variable take the map from there whole only when it did
+            // ([`StaticTarget::returned_map_assign`]).
+            (true, Shape::Map(ty)) => format!(
+                "static inline bool {name}({}) {{\n{prelude}    {}_start(&s->r, \
+                 sce_map_seed_derive(seed, 0u));\n    return {}({});\n}}",
+                declarations
+                    .iter()
+                    .map(String::as_str)
+                    .chain(["sce_forge_algorithm_failure_t *failure"])
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                ty.trim_end_matches("_t"),
+                spec.call,
+                arguments
+                    .iter()
+                    .map(String::as_str)
+                    .chain(["&s->r.core", "failure"])
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             (false, Shape::Value(ty)) => {
                 // What the algorithm returns, in the algorithm's own type.
                 let returned = match value.ret.as_ref()? {
@@ -18575,7 +18749,7 @@ impl StaticTarget for CTarget {
                     scalar_or_record_value("r")?
                 )
             }
-            (false, Shape::List(..)) => return None,
+            (false, Shape::List(..) | Shape::Map(..)) => return None,
         };
         Some(if helpers.is_empty() {
             adapter
@@ -18612,6 +18786,11 @@ impl StaticTarget for CTarget {
                 "{} r;",
                 crate::forge::generator::c11_list_destination_type(&spec.call)
             ));
+        }
+        // docs/adr/0108, D5: the destination a map it returns is built in, of
+        // the bound the return states, which the variable takes it from.
+        if matches!(value.ret, Some(StaticSlot::Map(_))) {
+            members.push(format!("{} r;", spec.returned_map_type.as_deref()?));
         }
         // docs/adr/0108, D4 "Storage" and D6 item 3: the algorithm's maps of its
         // own, the struct its unit declares, and for each walk of a map it is
@@ -19376,9 +19555,11 @@ impl StaticTarget for CTarget {
             let Some(value) = callee.value.as_ref() else {
                 continue;
             };
-            let returns_list = matches!(
+            // A list, and a map (docs/adr/0108, D5), is built in a destination
+            // of the call's storage.
+            let into_destination = matches!(
                 value.ret,
-                Some(StaticSlot::ScalarList(_) | StaticSlot::RecordList(_))
+                Some(StaticSlot::ScalarList(_) | StaticSlot::RecordList(_) | StaticSlot::Map(_))
             );
             let copies_records = value
                 .params
@@ -19389,13 +19570,13 @@ impl StaticTarget for CTarget {
             // seed one that takes its caller's is handed comes before it, as every
             // lane hands it ([`StaticTarget::algorithm_seed`]).
             let holds_maps = !value.map_storage.is_empty();
-            if !(returns_list || copies_records || holds_maps) {
+            if !(into_destination || copies_records || holds_maps) {
                 continue;
             }
             let adapter = self.state_adapter_name(machine, callee, &call.name);
             if let Some(sig) = ctx.funcs.get_mut(call.name.as_str()) {
                 sig.storage = Some(format!("&{}", c11_scratch(&adapter)));
-                if returns_list {
+                if into_destination {
                     sig.reading = CallReading::IntoDestination;
                 }
             }
@@ -19776,6 +19957,26 @@ impl StaticTarget for CTarget {
         _to: &crate::forge::model::AlgorithmValueType,
     ) -> Option<String> {
         Some(format!("sce_map_assign(&({location}), &({value}));"))
+    }
+    // docs/adr/0108, D5: the call builds the map in the destination of the
+    // machine's storage for its adapter and answers whether it did, its
+    // failure in the statement's record, as a list's call does
+    // ([`Self::receiving_held_list`]). Only a map it built is taken, whole and
+    // in its order, into the variable's own storage under the variable's own
+    // seed (`sce_map_assign`), so a call that fails leaves it as it was
+    // (§scxml-4.9).
+    fn returned_map_assign(&self, returned: &ReturnedMap<'_>) -> Option<(String, bool)> {
+        Some((
+            format!(
+                "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; (void){}; \
+                 if (sce_failure_.failed) {{ {} return; }} sce_map_assign(&({}), &({}.r)); }}",
+                returned.call.text,
+                returned.failed,
+                returned.location,
+                c11_scratch(returned.adapter)
+            ),
+            true,
+        ))
     }
     // A block of its own, as an append is ([`Self::append`]): the key and the
     // value are computed into locals of the slot's types first, and a failure
@@ -23537,6 +23738,27 @@ fn lower_action(
             if let Some((_, to)) = rewrites.scope.map_variable(&action.location) {
                 let location = action.location.trim();
                 let element = format!("<assign location=\"{location}\">");
+                // ... or the map an imported algorithm returns, the call the
+                // whole of the right side, taken whole once the call has built
+                // it: the judge held the variable to the return's entries and
+                // to its bound (docs/adr/0108, D5).
+                if let Some((adapter, StaticSlot::Map(_))) = rewrites.whole_state_call(&action.expr)
+                {
+                    let call = lower(&action.expr, InferredType::Unknown)?;
+                    rewrites.note(&action.expr, action.spellings.get("expr"), &call.text);
+                    let name = renames.get(location).copied().unwrap_or(location);
+                    let set = matches!(to, crate::forge::model::AlgorithmValueType::Set { .. });
+                    (action.native_code, action.native_fails) = target
+                        .returned_map_assign(&ReturnedMap {
+                            location: name,
+                            call: &call,
+                            adapter: &adapter,
+                            set,
+                            failed: &failed(element.clone()),
+                        })
+                        .ok_or_else(|| map_not_lowered(&element, lang))?;
+                    return Ok(reads_payload);
+                }
                 let (_, from) = rewrites
                     .scope
                     .map_variable(&action.expr)

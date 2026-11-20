@@ -119,6 +119,9 @@ use sce_rust_tests::integration::static_datamodel::static_map_order_sm::{
 use sce_rust_tests::integration::static_datamodel::static_map_record_sm::{
     StaticMapRecordPersist, StaticMapRecordPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_map_returned_sm::{
+    StaticMapReturnedPersist, StaticMapReturnedPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_map_sm::{
     StaticMapPersist, StaticMapPolicy,
 };
@@ -739,6 +742,20 @@ fn static_map_take_lends_its_table_to_an_algorithm_that_writes_it_in_place() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_take.json"
+        ),
+    );
+}
+
+// A map an algorithm returns, built in the adapter's destination of the
+// return's bound and taken whole into a map variable of a larger bound, which
+// keeps what it held where the call fails (docs/adr/0108, D5).
+#[test]
+fn static_map_returned_takes_the_map_an_algorithm_returns_whole() {
+    replay(
+        Engine::new(StaticMapReturnedPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_returned.json"
         ),
     );
 }

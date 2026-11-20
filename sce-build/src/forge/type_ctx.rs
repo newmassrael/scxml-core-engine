@@ -214,6 +214,27 @@ impl StaticCallee {
             })
             .collect()
     }
+
+    /// The map or the set it returns ([`StaticSlot::Map`], docs/adr/0108,
+    /// D5), which a statechart takes whole into a map variable that holds its
+    /// bound. `None` for a callee that returns no map.
+    pub fn returned_map(&self) -> Option<&MapSlot> {
+        match self.value.as_ref()?.ret.as_ref()? {
+            StaticSlot::Map(map) => Some(map),
+            _ => None,
+        }
+    }
+
+    /// Whether a call of it is handed the seed the machine keeps for its
+    /// algorithms after the arguments it is written with (docs/adr/0108, D8,
+    /// [`crate::forge::static_lowering::StaticTarget::algorithm_seed`]): it
+    /// takes its caller's seed ([`Self::takes_map_seed`]), or it returns a map,
+    /// which the call builds in a destination of its own keyed under a seed
+    /// drawn from that one before the variable takes it
+    /// ([`Self::returned_map`]).
+    pub fn handed_map_seed(&self) -> bool {
+        self.takes_map_seed || self.returned_map().is_some()
+    }
 }
 
 /// What a `sce-static` statechart's imported callee is, as a target spells a call
@@ -287,25 +308,38 @@ pub enum StaticSlot {
     /// taken back whole into one, mapped case by case between the machine's own
     /// sum and the type the union's unit declares, which the algorithm holds.
     Union(UnionSlot),
-    /// `map<K, V>` or `set<K>` (docs/adr/0108, D5 and D6), a parameter only: a
+    /// `map<K, V>` or `set<K>` (docs/adr/0108, D5 and D6): as a parameter, a
     /// map the statechart holds in a variable of its own, lent whole by the name
-    /// of that variable and never copied (D6 items 1 and 4).
+    /// of that variable and never copied (D6 items 1 and 4); as the return, a
+    /// map taken whole into a map variable whose entries are its own and that
+    /// holds its bound, as a list returned is taken (D5).
     Map(MapSlot),
 }
 
-/// A map or a set an imported algorithm's parameter takes ([`StaticSlot::Map`]):
-/// its type, its key and its value named by the aliases the STATECHART imports
-/// their documents under, and whether the algorithm writes it in place.
+/// A map or a set an imported algorithm's parameter takes or its return gives
+/// back ([`StaticSlot::Map`]): its type, its key and its value named by the
+/// aliases the STATECHART imports their documents under, and whether the
+/// algorithm writes it in place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapSlot {
-    /// The parameter's type, which states no bound of its own: the map lent is
-    /// the argument's, whatever bound its variable states.
+    /// The slot's type. A parameter's states no bound of its own: the map lent
+    /// is the argument's, whatever bound its variable states. The return's
+    /// states the most entries the map it returns holds.
     pub ty: AlgorithmValueType,
     /// `<sce:param inout="true">` (docs/adr/0108, D6 item 2): the algorithm
     /// writes the map it is lent, and the caller sees each write when the call
     /// returns. A call of such an algorithm is a `<sce:call>` statement, never
     /// a value of an expression.
     pub inout: bool,
+}
+
+impl MapSlot {
+    /// The most entries the slot's map holds, where its type states it: the
+    /// return's bound, which the variable that takes the map holds at least
+    /// (docs/adr/0108, D5). `None` for a parameter, whose map is the caller's.
+    pub fn bound(&self) -> Option<u32> {
+        self.ty.stated_outer_bound().map(|bound| bound.max)
+    }
 }
 
 /// A union an imported algorithm's slot holds, as the statechart that calls it
@@ -423,13 +457,15 @@ impl StaticValueSignature {
     /// adapter maps by declared name, as it does what an enum is returned as; and
     /// so is a union returned, which the adapter maps case by case into the
     /// machine's own sum whatever the parameters are (docs/adr/0092, section 6.1
-    /// item 7).
+    /// item 7), and a map returned, which the adapter has the algorithm build in
+    /// a destination it holds (docs/adr/0108, D5).
     pub fn adapted(&self) -> bool {
         self.params
             .iter()
             .any(|slot| slot.is_state() || slot.enum_alias().is_some())
             || self.ret.as_ref().is_some_and(|slot| {
-                slot.enum_alias().is_some() || matches!(slot, StaticSlot::Union(_))
+                slot.enum_alias().is_some()
+                    || matches!(slot, StaticSlot::Union(_) | StaticSlot::Map(_))
             })
     }
 
@@ -1312,12 +1348,9 @@ fn value_sig(callee: &StaticCallee, nothing: Option<InferredType>) -> Option<Fun
     let ret = match returned {
         StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
         StaticSlot::Optional(t) => optional(t),
-        // A union is taken back whole into a union variable, as a record is.
-        StaticSlot::Record(_) | StaticSlot::Union(_) => InferredType::Unknown,
-        // A map is a parameter only: what an algorithm returns as a map is no
-        // value a statechart takes through a call's signature
-        // ([`crate::forge::static_imports`] refuses the import).
-        StaticSlot::Map(_) => return None,
+        // A union is taken back whole into a union variable, as a record is,
+        // and a map into a map variable (docs/adr/0108, D5).
+        StaticSlot::Record(_) | StaticSlot::Union(_) | StaticSlot::Map(_) => InferredType::Unknown,
         StaticSlot::OptionalRecord(_) => {
             InferredType::Optional(crate::forge::types::OptionalElem::Record)
         }
@@ -1531,7 +1564,8 @@ impl StaticScope {
     /// an assignment to a variable of its type and nothing else. An optional record
     /// is one too (docs/adr/0055, step 9): taken whole into an optional record
     /// variable; and so is a union (docs/adr/0092, section 6.1 item 7), taken whole
-    /// into a union variable.
+    /// into a union variable, and a map or a set (docs/adr/0108, D5), taken whole
+    /// into a map variable.
     pub fn returns_state(callee: &StaticCallee) -> bool {
         callee.value.as_ref().is_some_and(|v| {
             matches!(
@@ -1542,6 +1576,7 @@ impl StaticScope {
                         | StaticSlot::ScalarList(_)
                         | StaticSlot::RecordList(_)
                         | StaticSlot::Union(_)
+                        | StaticSlot::Map(_)
                 )
             )
         })
