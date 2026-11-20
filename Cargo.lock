@@ -4122,6 +4122,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-rust-metrics"
+version = "0.1.0"
+
+[[package]]
 name = "sce-rust-mls"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-metrics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The metrics port of an SCE server: counters, gauges and histograms by fixed names and closed label sets, a reference adapter that renders the OpenMetrics text exposition, and a recording adapter for tests"
+publish = false
+
+# A port, not a library (docs/adr/0109, D16): the server, the pool, the store's committer and the
+# reference host report what they do to the `Metrics` trait, and a program chooses the adapter.
+# The crate depends on nothing, so a core that reports through it links no metrics library; the
+# reference adapter is SCE's own code over the standard library.
+
+[lib]
+name = "sce_rust_metrics"
+path = "src/lib.rs"
+
+[dependencies]
+
+[lints]
+workspace = true
