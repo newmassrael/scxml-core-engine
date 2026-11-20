@@ -106,6 +106,12 @@ fn main() {
         let base_dir = scxml_path
             .parent()
             .map_or_else(|| resource_dir.clone(), std::path::Path::to_path_buf);
+        // A document the catalog names outside the resources (an algorithm
+        // of the statechart fixtures, docs/adr/0108 step 7b) is an input of
+        // its own, which the watch of the resources does not cover.
+        if !sce_build::forge::stdlib::names_standard(&scxml_path) {
+            println!("cargo:rerun-if-changed={}", scxml_path.display());
+        }
 
         // Read + expand. Handing raw bytes to the compiler generates a
         // fixture with its templated nodes missing, and says nothing.
