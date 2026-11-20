@@ -4221,6 +4221,7 @@ dependencies = [
  "sce-portable-bytes",
  "sce-rust-host-features",
  "sce-rust-runtime",
+ "sce-rust-session-store",
  "serde_json",
  "wasm-bindgen",
 ]

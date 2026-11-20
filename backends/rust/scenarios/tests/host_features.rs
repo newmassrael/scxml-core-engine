@@ -18,9 +18,9 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_host_features::{
     cose, serve, AnswerSchema, ClockSource, CoseKeys, ExhaustiveProvider, HttpRequest,
-    HttpResponse, Invocation, MemoryCredentials, OutcomeClass, Params, Reading, ReferenceHost,
-    ScriptedAnswer, ScriptedClock, ScriptedProvider, ScriptedRandom, Shared, TokenStore, Transport,
-    TransportFailure, TrustedKey, Zone,
+    HttpResponse, Invocation, KvStore, MemoryCredentials, MemoryStore, OutcomeClass, Params,
+    Reading, ReferenceHost, ScriptedAnswer, ScriptedClock, ScriptedProvider, ScriptedRandom,
+    Shared, TokenStore, Transport, TransportFailure, TrustedKey, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, HostInvokeEvent, SceClock, StatePolicy, TransitionTaken};
@@ -36,6 +36,7 @@ use sce_rust_scenarios::integration::static_datamodel::{
         StaticModelHarnessTransition, ANSWER_SCHEMAS as HARNESS_ANSWER_SCHEMAS,
     },
 };
+use sce_rust_session_store::SqliteStore;
 use serde_json::{json, Map, Value};
 
 fn scenario(name: &str) -> Value {
@@ -390,6 +391,7 @@ impl Rig {
             let value = match name.as_str() {
                 "store" => Value::Object(
                     host.store_entries()
+                        .expect("the host's key-value store lists its values")
                         .into_iter()
                         .map(|(key, value)| (key, Value::String(value)))
                         .collect(),
@@ -452,17 +454,26 @@ fn replay<P: StatePolicy>(
     machine: &str,
     answer_schemas: &[AnswerSchema],
 ) {
-    replay_scenario(engine, save, machine, machine, answer_schemas);
+    replay_scenario(
+        engine,
+        save,
+        machine,
+        machine,
+        answer_schemas,
+        Arc::new(MemoryStore::new()),
+    );
 }
 
 /// Replay the scenario `stem` against `machine`, the machine the scenario names: a
 /// machine whose run ends has one scenario a run (the reference harness's cases).
+/// The host keeps its key-value store in `kv`.
 fn replay_scenario<P: StatePolicy>(
     mut engine: Engine<P>,
     save: impl Fn(&Engine<P>) -> SavedState,
     stem: &str,
     machine: &str,
     answer_schemas: &[AnswerSchema],
+    kv: Arc<dyn KvStore>,
 ) {
     let scenario = scenario(stem);
     assert_eq!(
@@ -474,9 +485,10 @@ fn replay_scenario<P: StatePolicy>(
     let model = Arc::new(Mutex::new(ScriptedProvider::default()));
     let random = Arc::new(Mutex::new(ScriptedRandom::new()));
     let credentials = MemoryCredentials::new();
-    let mut reference = ReferenceHost::new(
+    let mut reference = ReferenceHost::with_kv_store(
         Box::new(Arc::clone(&clock)) as Box<dyn ClockSource + Send>,
         Scripted(Arc::clone(&script)),
+        kv,
     );
     reference.set_answer_schemas(answer_schemas);
     reference.set_model_provider(Box::new(Arc::clone(&model)));
@@ -665,6 +677,156 @@ fn a_restored_put_if_is_answered_with_the_first_result_of_its_invocation() {
         .all(|start| start.session_id == saved.session_id));
 }
 
+/// A directory of its own for a test's database, removed with everything in
+/// it when the test ends.
+struct Scratch(std::path::PathBuf);
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        static MADE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "sce-host-features-{name}-{}-{}",
+            std::process::id(),
+            MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        Self(dir)
+    }
+
+    /// The store in the directory's database file, opened as a process that
+    /// starts opens it.
+    fn store(&self) -> Arc<SqliteStore> {
+        Arc::new(SqliteStore::open(self.0.join("host.db")).expect("opening the store"))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// docs/adr/0109, D13: section 3's scenario replayed against a host whose
+/// key-value store is the session store's SQLite file: the durable reference
+/// store answers as the store in memory does, versions included.
+#[test]
+fn a_machine_asks_the_durable_key_value_store_of_its_host() {
+    let scratch = Scratch::new("kv-scenario");
+    replay_scenario(
+        Engine::new(StaticHostKvPolicy::new()),
+        |engine| engine.save_at(0).expect("saves"),
+        "static_host_kv",
+        "static_host_kv",
+        &[],
+        scratch.store(),
+    );
+}
+
+/// docs/adr/0109, D13: a put-if whose process stopped after the host wrote and
+/// before the machine took the answer is started again by the restore under
+/// its identity, and a host of the next process, built on the same durable
+/// store, answers it with the first result and writes nothing; a start the
+/// document makes afterwards is judged against the store as it is.
+#[test]
+fn a_put_if_stopped_before_its_completion_is_answered_with_its_first_result_after_a_restart() {
+    let scratch = Scratch::new("kv-restart");
+
+    // The first process: its host writes, and the process goes before the
+    // machine takes the answer.
+    let saved = {
+        let host: Shared<Scripted> = Arc::new(Mutex::new(ReferenceHost::with_kv_store(
+            Box::new(ScriptedClock::new()) as Box<dyn ClockSource + Send>,
+            Scripted(Arc::default()),
+            scratch.store(),
+        )));
+        let mut first = Engine::new(StaticHostKvPolicy::new());
+        serve(&mut first, &host);
+        let carried_out = Arc::clone(&host);
+        first.register_invoker("sce-host-kv-put-if", move |event| {
+            if let HostInvokeEvent::Start(request) = event {
+                let params: Params = request
+                    .params
+                    .iter()
+                    .filter_map(|(name, values)| Some((name.clone(), values.first()?.clone())))
+                    .collect();
+                let invocation =
+                    Invocation::new(&request.session_id, &request.invoke_id, request.start);
+                carried_out.lock().expect("the host").start(
+                    "sce-host-kv-put-if",
+                    &invocation,
+                    &params,
+                );
+            }
+            None
+        });
+        first.set_clock(SceClock::Manual(0));
+        first.initialize().expect("the machine starts");
+        settle(&mut first);
+        first.raise_external_by_name(
+            "host.kv.put_if.request",
+            r#"{"key":"k","value":"a","expected_version":"0"}"#,
+        );
+        settle(&mut first);
+        first.save_at(0).expect("saves")
+    };
+    let [running] = saved.host_invokes.as_slice() else {
+        panic!("the put-if is running: {:?}", saved.host_invokes)
+    };
+    assert_eq!((running.invoke_id.as_str(), running.start), ("putif", 1));
+
+    // The second process: a host of its own on the store the first one wrote.
+    let host: Shared<Scripted> = Arc::new(Mutex::new(ReferenceHost::with_kv_store(
+        Box::new(ScriptedClock::new()) as Box<dyn ClockSource + Send>,
+        Scripted(Arc::default()),
+        scratch.store(),
+    )));
+    assert_eq!(
+        host.lock()
+            .expect("the host")
+            .store_entries()
+            .expect("the durable store"),
+        [("k".to_string(), "a".to_string())],
+        "the first process wrote once"
+    );
+    let mut second = Engine::<StaticHostKvPolicy>::restore_with(
+        StaticHostKvPolicy::new(),
+        &saved,
+        SceClock::Manual(0),
+        0,
+    )
+    .expect("restores");
+    serve(&mut second, &host);
+    settle(&mut second);
+    let variables = published(&second.save_at(0).expect("saves"));
+    assert_eq!(variables["outcome"], "done");
+    assert_eq!(
+        variables["written"], true,
+        "the first result, kept by the store with the write"
+    );
+    assert_eq!(variables["put_version"], "1");
+    assert_eq!(
+        host.lock()
+            .expect("the host")
+            .store_entries()
+            .expect("the durable store"),
+        [("k".to_string(), "a".to_string())],
+        "nothing written twice"
+    );
+
+    second.raise_external_by_name(
+        "host.kv.put_if.request",
+        r#"{"key":"k","value":"b","expected_version":"0"}"#,
+    );
+    settle(&mut second);
+    let variables = published(&second.save_at(0).expect("saves"));
+    assert_eq!(
+        variables["written"], false,
+        "the next start is judged against the store as it is"
+    );
+    assert_eq!(variables["put_version"], "1");
+}
+
 #[test]
 fn a_machine_reads_the_clock_of_its_host() {
     replay(
@@ -735,6 +897,7 @@ fn the_reference_harness_runs_each_case_of_its_scenario() {
             stem,
             "static_model_harness",
             HARNESS_ANSWER_SCHEMAS,
+            Arc::new(MemoryStore::new()),
         );
     }
 }

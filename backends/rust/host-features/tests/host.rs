@@ -66,7 +66,10 @@ fn a_put_if_repeated_under_its_identity_is_answered_with_its_first_result() {
     // false; it is answered as the first start was, and the store is as it was.
     let again = done(host.start("sce-host-kv-put-if", &first, &put_if("k", "a", "0")));
     assert_eq!(again, wrote);
-    assert_eq!(host.store_entries(), [("k".to_string(), "a".to_string())]);
+    assert_eq!(
+        host.store_entries().expect("the store in memory"),
+        [("k".to_string(), "a".to_string())]
+    );
 
     // Each of these is a new identity, judged against the store as it is.
     for other in [
@@ -117,7 +120,10 @@ fn a_put_if_keeps_its_failure_and_not_its_refusal() {
     host.set_quota(8);
     let again = done(host.start("sce-host-kv-put-if", &failed, &put_if("k", "a", "0")));
     assert_eq!(again, first, "the repeat is answered with the failure");
-    assert!(host.store_entries().is_empty());
+    assert!(host
+        .store_entries()
+        .expect("the store in memory")
+        .is_empty());
 }
 
 /// docs/SCE_HOST_FEATURES.md, section 5: each failure a transport reports is
@@ -207,7 +213,10 @@ fn a_put_if_with_a_nul_in_its_key_is_refused() {
         host.start("sce-host-kv-put-if", &invocation("putif"), &params),
         Some(Outcome::Refuse(_))
     ));
-    assert!(host.store_entries().is_empty());
+    assert!(host
+        .store_entries()
+        .expect("the store in memory")
+        .is_empty());
 }
 
 /// Keys are ordered by their UTF-8 bytes.
