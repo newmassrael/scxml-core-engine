@@ -156,6 +156,13 @@ fn multi_target_transition_rejects_the_unresolved_token() {
         }
         other => panic!("expected TransitionTargetUnknown, got {other:?}"),
     }
+    // SCE_ERROR_CONTRACT.md §2.2: the record stands where the token it names
+    // begins, `    <transition event="go" target="par ` being 39 columns.
+    assert_eq!(
+        (err.location.line, err.location.col),
+        (Some(5), Some(40)),
+        "{err:?}"
+    );
 }
 
 #[test]
@@ -555,6 +562,13 @@ fn a_target_set_inside_one_compound_state_is_rejected() {
 "#,
     );
     let err = compile_expect_err(dir.path(), "siblings.scxml");
+    // SCE_ERROR_CONTRACT.md §2.2: the record stands where the target set it
+    // names begins, `    <transition event="go" target="` being 35 columns.
+    assert_eq!(
+        (err.location.line, err.location.col),
+        (Some(5), Some(36)),
+        "{err:?}"
+    );
     let (position, breach) = specification_breach(&err);
     assert_eq!(position, &StateSpecificationPosition::TransitionTarget);
     assert_eq!(

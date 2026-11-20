@@ -64,6 +64,7 @@
 // *referencing* transition instead of at the `<history>` element that
 // declares it.
 
+use crate::attribute_spelling::{AttributeSpelling, Written};
 use crate::forge::error::{ForgeError, Located, SourceLocation};
 use crate::model::SCXMLModel;
 use crate::scxml_semantic::{
@@ -203,31 +204,70 @@ pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forg
         // a multi-target attribute resolves independently — and then,
         // §scxml-3.11, the tokens together are a legal state specification.
         for trans in &state.transitions {
+            let spelling = trans.target_spelling.as_ref();
+            let element = trans.source_location.as_ref();
             for token in trans.target.split_whitespace() {
                 if !resolves(model, token) {
+                    let at = site_of(spelling.and_then(|s| token_written(s, token)), element);
                     return Err(reject_target(
                         &state.id,
                         token,
                         &declared_states,
-                        trans.source_location.as_ref(),
+                        at.as_ref().or(element),
                         diag_label,
                         model,
                     ));
                 }
             }
+            let at = site_of(spelling.and_then(AttributeSpelling::value), element);
             check_specification(
                 model,
                 &state.id,
                 StateSpecificationPosition::TransitionTarget,
                 &trans.target,
                 None,
-                trans.source_location.as_ref(),
+                at.as_ref().or(element),
                 diag_label,
             )?;
         }
     }
 
     Ok(())
+}
+
+/// The position `written` begins at, in the coordinates the element's
+/// recorded position is in, for [`located`] to resolve: a refusal names the
+/// value it refuses on the column it is written at (SCE_ERROR_CONTRACT.md
+/// §2.2), which the element's own column does not begin. `None` where the
+/// value was not read from a document.
+fn site_of(
+    written: Option<Written<'_>>,
+    element: Option<&SourceLocation>,
+) -> Option<SourceLocation> {
+    written.map(|written| SourceLocation {
+        file: element.map(|at| at.file.clone()).unwrap_or_default(),
+        line: Some(written.row),
+        col: Some(written.col),
+    })
+}
+
+/// Where the id `token` is written in a whitespace-separated list of ids:
+/// the first occurrence that is a whole token, so `b` in `ab b` is the
+/// second token and not the end of the first.
+fn token_written<'s>(spelling: &'s AttributeSpelling, token: &str) -> Option<Written<'s>> {
+    let decoded = spelling.decoded()?;
+    let start = decoded.match_indices(token).map(|(at, _)| at).find(|&at| {
+        let end = at + token.len();
+        decoded[..at]
+            .chars()
+            .next_back()
+            .is_none_or(char::is_whitespace)
+            && decoded[end..]
+                .chars()
+                .next()
+                .is_none_or(char::is_whitespace)
+    })?;
+    spelling.locate(start..start + token.len())
 }
 
 /// True when `id` names a declared state or history pseudostate.

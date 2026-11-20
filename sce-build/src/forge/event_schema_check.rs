@@ -2595,9 +2595,15 @@ fn check_send_param(
         let mut candidates: Vec<String> = schema.fields.iter().map(|f| f.id.clone()).collect();
         candidates.sort();
         candidates.dedup();
+        // The name stands where it is written (SCE_ERROR_CONTRACT.md §2.2):
+        // the record's `actual` is the name, which the `<param>`'s own column
+        // does not begin.
         return Err(located_on_param(
             param,
-            None,
+            param
+                .name_spelling
+                .as_ref()
+                .and_then(crate::attribute_spelling::AttributeSpelling::value),
             action,
             diag_label,
             ValidationError::EventPayloadFieldUnknown {

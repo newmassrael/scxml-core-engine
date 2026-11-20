@@ -4644,6 +4644,7 @@ impl SCXMLParser {
             target: target.to_string(),
             // §scxml-3.13: the target set, one id per token, as written.
             targets: target.split_whitespace().map(str::to_string).collect(),
+            target_spelling: AttributeSpelling::of(elem, None, "target"),
             cond,
             cond_spelling,
             cond_cpp: resolved.cond_cpp,
@@ -4860,6 +4861,7 @@ impl SCXMLParser {
             let static_value = literal.unwrap_or_default();
             action.params.push(Param {
                 name: param_elem.attribute("name").unwrap_or("").to_string(),
+                name_spelling: AttributeSpelling::of(&param_elem, None, "name"),
                 expr: param_expr,
                 expr_spelling: AttributeSpelling::of(&param_elem, None, "expr"),
                 location: param_elem.attribute("location").unwrap_or("").to_string(),
@@ -5650,10 +5652,12 @@ impl SCXMLParser {
             let literal = static_string_literal(&expr);
             let is_sl = literal.is_some();
             let param_at = source_location_of(&param, source_name);
+            let name_spelling = AttributeSpelling::of(&param, None, "name");
             let expr_spelling = AttributeSpelling::of(&param, None, "expr");
             let location_spelling = AttributeSpelling::of(&param, None, "location");
             static_params.push(Param {
                 name: name.clone(),
+                name_spelling: name_spelling.clone(),
                 expr: expr.clone(),
                 expr_spelling: expr_spelling.clone(),
                 location: location.clone(),
@@ -5666,6 +5670,7 @@ impl SCXMLParser {
             });
             hybrid_params.push(Param {
                 name,
+                name_spelling,
                 expr,
                 expr_spelling,
                 location,
@@ -6252,6 +6257,7 @@ impl SCXMLParser {
                 let literal = static_string_literal(&expr);
                 payload_params.push(Param {
                     name,
+                    name_spelling: AttributeSpelling::of(&param, None, "name"),
                     expr: expr.clone(),
                     expr_spelling: AttributeSpelling::of(&param, None, "expr"),
                     location,

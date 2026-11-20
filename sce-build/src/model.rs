@@ -83,6 +83,13 @@ pub struct Transition {
     /// specification (§scxml-3.11, `scxml_references`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<String>,
+    /// The `target` attribute as written and where, for the reason
+    /// [`Self::cond_spelling`] gives: a refusal of the target set, or of one
+    /// id in it, names the value on the column it is written at, not where
+    /// the `<transition>` begins. `None` for a transition no document
+    /// produced or one written without a target. Not part of the IR.
+    #[serde(skip)]
+    pub target_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     pub cond: String,
     /// The attribute `cond` was read from, as written and where — so a
     /// refusal of a piece of the guard names it as the author spelled it,
@@ -1367,6 +1374,12 @@ impl Action {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Param {
     pub name: String,
+    /// The `name` attribute as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives: a refusal of the name (a field
+    /// the event's schema does not declare) names it on the column it is
+    /// written at, not where the `<param>` begins.
+    #[serde(skip)]
+    pub name_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     pub expr: String,
     /// The `expr` attribute as written and where, for the reason
     /// [`Transition::cond_spelling`] gives.

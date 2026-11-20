@@ -449,6 +449,13 @@ fn negative_send_extra_param_rejects_with_did_you_mean() {
     let err = run(&[staged[1].as_path()], &[staged[0].as_path()])
         .err()
         .expect("orchestrator should reject statechart with unknown <param name>");
+    // SCE_ERROR_CONTRACT.md §2.2: the record stands where the name it refuses
+    // begins, `        <param name="` being 21 columns.
+    assert_eq!(
+        (err.location.line, err.location.col),
+        (Some(21), Some(22)),
+        "{err:?}"
+    );
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::EventPayloadFieldUnknown {
