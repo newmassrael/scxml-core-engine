@@ -1,0 +1,142 @@
+{
+  "note": "The registry of the names an SCE server's parts report through the metrics port (docs/adr/0109, D16; docs/SCE_SERVER_DEPLOY.md section 10; SCE_WIRE_CONTRACTS.md, Server metrics): every family's name as the exposition names it before its suffix, its type, its unit, its labels in order and each label's closed set of values, and the lanes that report it. The Rust crate sce-rust-metrics (backends/rust/metrics/tests/metric_names.rs) and the C++ header host/Metrics.h (tests/integration/AStandardHostMetricsTest.cpp) are each held to every family listed for their lane, and to no family more. A status of `none` is one a client reports for an exchange that got no response; the label's type is one closed set for the server and the client.",
+  "registry": "sce-metrics-1",
+  "families": [
+    {
+      "name": "sce_metrics",
+      "type": "info",
+      "unit": "",
+      "labels": [{"name": "registry", "values": ["sce-metrics-1"]}],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_server_exchanges",
+      "type": "counter",
+      "unit": "",
+      "labels": [{"name": "status", "values": ["200", "400", "401", "404", "405", "408", "413", "415", "429", "503", "other", "none"]}],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_server_held_exchanges",
+      "type": "gauge",
+      "unit": "",
+      "labels": [],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_server_sheds",
+      "type": "counter",
+      "unit": "",
+      "labels": [{"name": "reason", "values": ["rate", "concurrency", "max_clients", "max_connections", "max_connections_per_address", "durability", "store", "stopping", "random_source"]}],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_server_authentication_failures",
+      "type": "counter",
+      "unit": "",
+      "labels": [{"name": "authenticator", "values": ["bearer", "install", "mtls", "key"]}],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_pool_live_sessions",
+      "type": "gauge",
+      "unit": "",
+      "labels": [],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_pool_loads",
+      "type": "counter",
+      "unit": "",
+      "labels": [],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_pool_restores",
+      "type": "counter",
+      "unit": "",
+      "labels": [{"name": "checkpoint", "values": ["clean", "not_clean"]}],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_pool_evictions",
+      "type": "counter",
+      "unit": "",
+      "labels": [{"name": "reason", "values": ["idle", "max_live"]}],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_pool_sheds",
+      "type": "counter",
+      "unit": "",
+      "labels": [{"name": "reason", "values": ["max_live", "max_inbox", "stopping"]}],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_pool_lease_renewals_refused",
+      "type": "counter",
+      "unit": "",
+      "labels": [],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_pool_outbox_depth",
+      "type": "gauge",
+      "unit": "",
+      "labels": [],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_pool_outbox_expiries",
+      "type": "counter",
+      "unit": "",
+      "labels": [],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_store_commit_duration_seconds",
+      "type": "histogram",
+      "unit": "seconds",
+      "labels": [],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_store_commit_batch_size",
+      "type": "histogram",
+      "unit": "",
+      "labels": [],
+      "lanes": ["rust"]
+    },
+    {
+      "name": "sce_host_operation_duration_seconds",
+      "type": "histogram",
+      "unit": "seconds",
+      "labels": [{"name": "type", "values": ["sce-host-clock-now", "sce-host-clock-zone", "sce-host-kv-get", "sce-host-kv-put", "sce-host-kv-put-if", "sce-host-kv-delete", "sce-host-kv-next-key", "sce-host-notify-permission", "sce-host-notify-request-permission", "sce-host-notify-post", "sce-host-notify-cancel", "sce-host-http-fetch", "sce-host-model-generate", "sce-host-cose-sign1", "sce-host-cose-verify1", "sce-host-cose-encrypt0", "sce-host-cose-decrypt0", "sce-host-key-derive", "sce-host-random-bytes", "sce-host-mac", "sce-host-mac-verify", "sce-host-key-generate", "sce-host-key-public", "sce-host-key-retire", "sce-host-credential-issue", "sce-host-credential-revoke", "sce-host-audit-append"]}],
+      "lanes": ["rust", "cpp"]
+    },
+    {
+      "name": "sce_host_operation_failures",
+      "type": "counter",
+      "unit": "",
+      "labels": [
+        {"name": "type", "values": ["sce-host-clock-now", "sce-host-clock-zone", "sce-host-kv-get", "sce-host-kv-put", "sce-host-kv-put-if", "sce-host-kv-delete", "sce-host-kv-next-key", "sce-host-notify-permission", "sce-host-notify-request-permission", "sce-host-notify-post", "sce-host-notify-cancel", "sce-host-http-fetch", "sce-host-model-generate", "sce-host-cose-sign1", "sce-host-cose-verify1", "sce-host-cose-encrypt0", "sce-host-cose-decrypt0", "sce-host-key-derive", "sce-host-random-bytes", "sce-host-mac", "sce-host-mac-verify", "sce-host-key-generate", "sce-host-key-public", "sce-host-key-retire", "sce-host-credential-issue", "sce-host-credential-revoke", "sce-host-audit-append"]},
+        {"name": "code", "values": ["unavailable", "quota_exceeded", "network", "response_too_large", "invalid_body", "destination_refused", "busy", "context_exceeded", "answer_too_large", "declined", "unknown_key", "key_retired", "unknown_stream", "invalid_argument", "other"]}
+      ],
+      "lanes": ["rust", "cpp"]
+    },
+    {
+      "name": "sce_host_audit_appends",
+      "type": "counter",
+      "unit": "",
+      "labels": [],
+      "lanes": ["rust", "cpp"]
+    },
+    {
+      "name": "sce_client_exchanges",
+      "type": "counter",
+      "unit": "",
+      "labels": [{"name": "status", "values": ["200", "400", "401", "404", "405", "408", "413", "415", "429", "503", "other", "none"]}],
+      "lanes": ["rust", "cpp"]
+    }
+  ]
+}
