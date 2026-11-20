@@ -13,6 +13,7 @@ use crate::credentials::{
     CredentialStore, Digest, PinRow, PinStore, Revoked, TokenRow, TokenStore, DIGEST_BYTES,
 };
 use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
+use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
 };
@@ -24,7 +25,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 5;
+const LAYOUT_VERSION: i64 = 6;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -133,6 +134,31 @@ const LAYOUT_5: &str = "
     CREATE INDEX outbox_notes_by_session ON outbox_notes (session, id);
 ";
 
+/// What layout 6 adds to layout 5: the values of the key-value feature (ADR 0109, D13), each at
+/// the version a number of the feature's own counter gave it, so that its versions do not share
+/// the sessions' counter; and the first result of each put-if by the identity of its invocation,
+/// written in the transaction that judged it, which a removal of a session deletes by its session.
+const LAYOUT_6: &str = "
+    CREATE TABLE kv_values (
+        key TEXT PRIMARY KEY NOT NULL,
+        value BLOB NOT NULL,
+        version INTEGER NOT NULL
+    );
+    CREATE TABLE kv_numbers (
+        id INTEGER PRIMARY KEY CHECK (id = 0),
+        issued INTEGER NOT NULL
+    );
+    INSERT INTO kv_numbers (id, issued) VALUES (0, 0);
+    CREATE TABLE kv_first_results (
+        session TEXT NOT NULL,
+        invoke TEXT NOT NULL,
+        start INTEGER NOT NULL,
+        outcome TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        PRIMARY KEY (session, invoke, start)
+    );
+";
+
 /// A session store in one SQLite database file.
 ///
 /// The database is in WAL mode, so that reads go on while a write is made, with
@@ -211,12 +237,12 @@ impl SqliteStore {
     }
 }
 
-/// Make the tables in a database that has none, bring one of layout 1 to 4 to [`LAYOUT_VERSION`],
-/// or check that the ones there are this store's. A database is changed in one transaction, so a
-/// failed upgrade leaves it at the layout it had.
+/// Make the tables in a database that has none, bring one of an earlier layout to
+/// [`LAYOUT_VERSION`], or check that the ones there are this store's. A database is changed in one
+/// transaction, so a failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     // Each layout's additions, in order: layout `n` is the first `n` of them.
-    const ADDITIONS: [&str; 5] = [LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5];
+    const ADDITIONS: [&str; 6] = [LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
     match layout {
@@ -234,7 +260,7 @@ fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
                 transaction.execute_batch(addition)?;
             }
         }
-        1..=4 => {
+        1..LAYOUT_VERSION => {
             let held = usize::try_from(layout).unwrap_or(ADDITIONS.len());
             for addition in &ADDITIONS[held..] {
                 transaction.execute_batch(addition)?;
@@ -338,6 +364,11 @@ impl SessionStore for SqliteStore {
                 transaction
                     .prepare_cached("DELETE FROM outbox_notes WHERE session = ?1")?
                     .execute((key,))?;
+                for &session in write.sessions {
+                    transaction
+                        .prepare_cached("DELETE FROM kv_first_results WHERE session = ?1")?
+                        .execute((session,))?;
+                }
                 0
             }
         };
@@ -1002,6 +1033,245 @@ impl CredentialStore for SqliteStore {
             tokens: u32::try_from(tokens).unwrap_or(u32::MAX),
             pin: pins == 1,
         })
+    }
+}
+
+/// The value `key` names in `connection`, if it holds one.
+fn value_of(connection: &Connection, key: &str) -> rusqlite::Result<Option<KvEntry>> {
+    connection
+        .prepare_cached("SELECT value, version FROM kv_values WHERE key = ?1")?
+        .query_row((key,), |row| {
+            Ok(KvEntry {
+                value: row.get(0)?,
+                version: row.get(1)?,
+            })
+        })
+        .optional()
+}
+
+/// The next number of the key-value feature's counter.
+fn next_value_number(connection: &Connection) -> rusqlite::Result<u64> {
+    connection
+        .prepare_cached("UPDATE kv_numbers SET issued = issued + 1 WHERE id = 0")?
+        .execute([])?;
+    connection
+        .prepare_cached("SELECT issued FROM kv_numbers WHERE id = 0")?
+        .query_row([], |row| row.get(0))
+}
+
+/// Whether writing a key would hold more values than `quota` allows, in `connection`: `held` is
+/// whether the store holds a value of the key, which a write replaces.
+fn values_over_quota(
+    connection: &Connection,
+    held: bool,
+    quota: Option<u64>,
+) -> rusqlite::Result<bool> {
+    if held || quota.is_none() {
+        return Ok(false);
+    }
+    let count: u64 = connection
+        .prepare_cached("SELECT count(*) FROM kv_values")?
+        .query_row([], |row| row.get(0))?;
+    Ok(kv_rules::over_quota(true, count, quota))
+}
+
+/// Keep `value` under `key` at the counter's next number in `connection`; that number.
+fn write_value(connection: &Connection, key: &str, value: &[u8]) -> rusqlite::Result<u64> {
+    let version = next_value_number(connection)?;
+    connection
+        .prepare_cached(
+            "INSERT OR REPLACE INTO kv_values (key, value, version) VALUES (?1, ?2, ?3)",
+        )?
+        .execute((key, value, version))?;
+    Ok(version)
+}
+
+/// The first result `connection` keeps under `identity`, if it keeps one.
+fn first_result_of(
+    connection: &Connection,
+    identity: &Identity<'_>,
+) -> Result<Option<PutIf>, Failure> {
+    let kept: Option<(String, u64)> = connection
+        .prepare_cached(
+            "SELECT outcome, version FROM kv_first_results \
+             WHERE session = ?1 AND invoke = ?2 AND start = ?3",
+        )?
+        .query_row((identity.session, identity.invoke, identity.start), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .optional()?;
+    kept.map(|(outcome, version)| {
+        PutIf::from_kept(&outcome, version).ok_or_else(|| {
+            Failure::new(format!(
+                "a first result is kept as '{outcome}', which this build does not know"
+            ))
+        })
+    })
+    .transpose()
+}
+
+/// Keep `result` under `identity` in `connection`; the caller found none kept there.
+fn keep_first_in(
+    connection: &Connection,
+    identity: &Identity<'_>,
+    result: &PutIf,
+) -> rusqlite::Result<()> {
+    connection
+        .prepare_cached(
+            "INSERT INTO kv_first_results (session, invoke, start, outcome, version) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?
+        .execute((
+            identity.session,
+            identity.invoke,
+            identity.start,
+            result.outcome(),
+            result.version(),
+        ))?;
+    Ok(())
+}
+
+impl KvStore for SqliteStore {
+    fn get(&self, key: &str) -> Result<Option<KvEntry>, Failure> {
+        Ok(value_of(&self.connection(), key)?)
+    }
+
+    fn put(&self, key: &str, value: &[u8], quota: Option<u64>) -> Result<Put, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let replaced = value_of(&transaction, key)?.is_some();
+        if values_over_quota(&transaction, replaced, quota)? {
+            return Ok(Put::OverQuota);
+        }
+        let version = write_value(&transaction, key, value)?;
+        transaction.commit()?;
+        Ok(Put::Written { replaced, version })
+    }
+
+    fn put_if(
+        &self,
+        key: &str,
+        value: &[u8],
+        expected: Option<u64>,
+        quota: Option<u64>,
+        identity: Option<&Identity<'_>>,
+    ) -> Result<PutIf, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        if let Some(identity) = identity {
+            if let Some(first) = first_result_of(&transaction, identity)? {
+                return Ok(first);
+            }
+        }
+        let held = value_of(&transaction, key)?;
+        let current = held.as_ref().map_or(0, |entry| entry.version);
+        let result = if !kv_rules::matches(expected, current) {
+            PutIf::Unwritten { version: current }
+        } else if values_over_quota(&transaction, held.is_some(), quota)? {
+            PutIf::OverQuota
+        } else {
+            PutIf::Written {
+                version: write_value(&transaction, key, value)?,
+            }
+        };
+        if let Some(identity) = identity {
+            keep_first_in(&transaction, identity, &result)?;
+        }
+        transaction.commit()?;
+        Ok(result)
+    }
+
+    fn delete(&self, key: &str) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let removed = transaction
+            .prepare_cached("DELETE FROM kv_values WHERE key = ?1")?
+            .execute((key,))?;
+        if removed == 1 {
+            next_value_number(&transaction)?;
+        }
+        transaction.commit()?;
+        Ok(removed == 1)
+    }
+
+    fn next_key(&self, after: &str, prefix: &str) -> Result<Option<String>, Failure> {
+        // A key is TEXT compared by the BINARY collation, which is the order of its UTF-8 bytes;
+        // the keys with the prefix are contiguous in it, so the walk starts at the later of the
+        // prefix and `after` and the first key it meets answers or ends it.
+        let connection = self.connection();
+        let found: Option<String> = if after.is_empty() || after < prefix {
+            connection
+                .prepare_cached("SELECT key FROM kv_values WHERE key >= ?1 ORDER BY key LIMIT 1")?
+                .query_row((prefix,), |row| row.get(0))
+                .optional()?
+        } else {
+            connection
+                .prepare_cached("SELECT key FROM kv_values WHERE key > ?1 ORDER BY key LIMIT 1")?
+                .query_row((after,), |row| row.get(0))
+                .optional()?
+        };
+        Ok(found.filter(|key| kv_rules::walks_to(key, after, prefix)))
+    }
+
+    fn entries_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<(String, KvEntry)>, Failure> {
+        let connection = self.connection();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let entry = |row: &rusqlite::Row<'_>| -> rusqlite::Result<(String, KvEntry)> {
+            Ok((
+                row.get(0)?,
+                KvEntry {
+                    value: row.get(1)?,
+                    version: row.get(2)?,
+                },
+            ))
+        };
+        let listed = match after {
+            Some(after) => {
+                let mut statement = connection.prepare_cached(
+                    "SELECT key, value, version FROM kv_values WHERE key > ?1 \
+                     ORDER BY key LIMIT ?2",
+                )?;
+                let rows = statement.query_map((after, limit), entry)?;
+                rows.collect::<rusqlite::Result<Vec<(String, KvEntry)>>>()?
+            }
+            None => {
+                let mut statement = connection.prepare_cached(
+                    "SELECT key, value, version FROM kv_values ORDER BY key LIMIT ?1",
+                )?;
+                let rows = statement.query_map((limit,), entry)?;
+                rows.collect::<rusqlite::Result<Vec<(String, KvEntry)>>>()?
+            }
+        };
+        Ok(listed)
+    }
+
+    fn first_result(&self, identity: &Identity<'_>) -> Result<Option<PutIf>, Failure> {
+        first_result_of(&self.connection(), identity)
+    }
+
+    fn keep_first(&self, identity: &Identity<'_>, result: &PutIf) -> Result<PutIf, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        if let Some(first) = first_result_of(&transaction, identity)? {
+            return Ok(first);
+        }
+        keep_first_in(&transaction, identity, result)?;
+        transaction.commit()?;
+        Ok(result.clone())
+    }
+
+    fn reseal(&self, key: &str, held: &[u8], value: &[u8]) -> Result<bool, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let changed = transaction
+            .prepare_cached("UPDATE kv_values SET value = ?3 WHERE key = ?1 AND value = ?2")?
+            .execute((key, held, value))?;
+        transaction.commit()?;
+        Ok(changed == 1)
     }
 }
 
