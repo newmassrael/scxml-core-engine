@@ -6,3 +6,9 @@ commit = "44a6a46e16b003a709540c7be9b37e879657ae24"
 base = "5c4d66649f9db06b9f3bafc3f5071e273a319d9a"
 machine = "mf977c53d872e"
 at = 1795162554
+
+[return]
+reason = "conflict"
+detail = "backends/rust/session-store/src/lib.rs backends/rust/session-store/src/memory.rs backends/rust/session-store/src/outbox.rs backends/rust/session-store/src/sqlite.rs backends/rust/session-store/tests/a_sqlite_session_store_survives_its_process.rs"
+report = "m6a944ec3ba29:0000000315-aae29497cf67/attempt-1.log"
+at = 1795162566
