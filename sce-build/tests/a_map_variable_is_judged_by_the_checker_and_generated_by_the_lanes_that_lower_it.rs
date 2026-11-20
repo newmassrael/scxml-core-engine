@@ -2850,3 +2850,77 @@ fn an_algorithm_that_calls_one_that_takes_a_seed_takes_one_itself() {
         assert!(code.contains(held), "no `{held}` in the caller:\n{code}");
     }
 }
+
+/// A statechart that holds no map and counts the distinct numbers of two of
+/// its variables by `DistinctPair(a, b)`, an algorithm of scalar slots called
+/// by its own name, which takes its caller's seed for a set of its own.
+const SEED_BY_NAME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="seed_by_name">
+  <sce:import kind="algorithm" src="algorithm_distinct_pair.scxml" as="DistinctPair"/>
+  <datamodel>
+    <data id="a" sce:type="uint32" expr="1" sce:direction="out"/>
+    <data id="b" sce:type="uint32" expr="2" sce:direction="out"/>
+    <data id="n" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal">
+      <assign location="n" expr="DistinctPair(a, b)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+
+/// What `generate -l c11` of [`SEED_BY_NAME`], beside `DistinctPair`, writes.
+fn seed_by_name_c11() -> String {
+    let documents = [
+        ("algorithm_distinct_pair.scxml", DISTINCT_PAIR.to_string()),
+        ("seed_by_name.scxml", SEED_BY_NAME.to_string()),
+    ];
+    let (ok, printed, code) = generate_c11_among(&documents, "seed_by_name.scxml");
+    assert!(
+        ok,
+        "C11 generates a machine that holds no map and calls an algorithm that takes a \
+         seed:\n{printed}"
+    );
+    code
+}
+
+/// docs/adr/0108, D8 on C11: a machine that holds no map but calls an
+/// algorithm that takes its caller's seed takes a seed at every start, its
+/// construction's and its restore's, and keeps it to hand each call; its
+/// saved-state judge puts no map's entries anywhere, so it is handed no
+/// storage to judge them in. The header's and `saved.c`'s seed is the
+/// machine's maps' or its algorithms', and their judge only its maps'.
+#[test]
+fn a_c11_machine_that_holds_no_map_takes_a_seed_for_the_algorithm_it_calls() {
+    let code = seed_by_name_c11();
+    for held in [
+        "seed_by_name_init(seed_by_name_t *sm, sce_map_seed_t map_seed)",
+        "    sce_map_seed_t map_seed;\n",
+        "sce_map_seed_t map_seed, sce_saved_error_t *err) {",
+        "bool seed_by_name_judge(const char *text, size_t len, sce_saved_error_t *err)",
+    ] {
+        assert!(code.contains(held), "no `{held}` in the machine:\n{code}");
+    }
+    assert!(
+        !code.contains("seed_by_name_saved_check_t"),
+        "a machine that holds no map judges no map of a saved state:\n{code}"
+    );
+}
+
+/// docs/adr/0108, D4 "Storage" and D8 on C11: an algorithm a statechart calls
+/// by its own name that takes its caller's seed holds maps of its own, in
+/// storage the machine holds for the call: a member of its `scratch` of the
+/// struct of the algorithm's maps, handed after the seed the machine keeps for
+/// its algorithms (`ScratchSite::Maps`).
+#[test]
+fn a_c11_machine_holds_the_maps_of_an_algorithm_it_calls_by_its_own_name() {
+    let code = seed_by_name_c11();
+    for held in [
+        "distinct_pair_maps_t maps_distinct_pair;",
+        "sm->map_seed, &sm->scratch.call.maps_distinct_pair",
+    ] {
+        assert!(code.contains(held), "no `{held}` in the machine:\n{code}");
+    }
+}
