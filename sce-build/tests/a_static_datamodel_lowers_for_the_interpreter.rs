@@ -714,13 +714,7 @@ fn a_standard_host_type_the_interpreter_does_not_serve_is_refused_by_name() {
         "the refusal is placed on the <invoke>, not on the document: {refusal:?}"
     );
 
-    let mut held = std::collections::BTreeMap::new();
-    for name in ["static_host_cose.scxml", "schema_cose_held.scxml"] {
-        held.insert(
-            name.to_string(),
-            std::fs::read_to_string(fixtures().join(name)).expect("a fixture"),
-        );
-    }
+    let held = held_with_its_imports("static_host_cose.scxml");
     let from_memory = lower_documents("static_host_cose.scxml", &held).expect_err("a refusal");
     assert_eq!(
         from_memory.to_diagnostics()[0].code.as_str(),
@@ -808,6 +802,38 @@ fn invoke_srcs(document: &str) -> Vec<String> {
         .filter(|n| n.is_element() && n.tag_name().name() == "invoke")
         .filter_map(|n| n.attribute("src").map(str::to_string))
         .collect()
+}
+
+/// The fixture `name` and every document beside it that it imports, and those
+/// import in turn: the set a caller with no file system hands over, read from
+/// what the documents declare so an import a fixture gains is held with it. A
+/// library name (`sce:std/...`) is built in, so it stays out of the set.
+fn held_with_its_imports(name: &str) -> std::collections::BTreeMap<String, String> {
+    let mut held = std::collections::BTreeMap::new();
+    let mut pending = vec![name.to_string()];
+    while let Some(next) = pending.pop() {
+        if held.contains_key(&next) {
+            continue;
+        }
+        let text = std::fs::read_to_string(fixtures().join(&next)).expect("a fixture");
+        {
+            let parsed = roxmltree::Document::parse(&text).expect("well-formed");
+            pending.extend(
+                parsed
+                    .descendants()
+                    .filter(|n| {
+                        n.is_element()
+                            && n.tag_name().name() == "import"
+                            && n.tag_name().namespace() == Some("http://sce.dev/ext")
+                    })
+                    .filter_map(|n| n.attribute("src"))
+                    .filter(|src| !src.starts_with("sce:std/"))
+                    .map(str::to_string),
+            );
+        }
+        held.insert(next, text);
+    }
+    held
 }
 
 /// The names of a lowered set, the document asked for first.
