@@ -30,6 +30,7 @@
 {%- import '_macros/c_child_begin.jinja2' as child_begin %}
 {%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
 {%- import '_macros/c_section_attribute.jinja2' as section_attribute %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {#- A scalar's saved form, one text with a test component's read of its module
     parameters (`c/state_machine.c.jinja2`). -#}
 {%- from '_macros/c_saved_value.jinja2' import put_scalar, get_scalar %}
@@ -127,6 +128,10 @@ if (({{ expr }}).present) {
 {% set shape_revised = namespace(any=false) %}
 {% for record in static_saved_shape.records %}{% if record.revisions %}{% set shape_revised.any = true %}{% endif %}{% endfor %}
 {% for lineage in static_saved_shape.enums %}{% if lineage.revisions %}{% set shape_revised.any = true %}{% endif %}{% endfor %}
+
+{# The SCE-MAP marker every emitted file carries (`_macros/sce_map_marker.jinja2`),
+   at module level as the machine's own source has it. #}
+{{ sce_map.source_marker(model.source_location, "c", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 /* docs/adr/0110, D2: the saved unit, hosted by design. Its header declares the doors a host
    saves and restores through and the saved form of every type the machine declares; the
