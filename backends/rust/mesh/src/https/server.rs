@@ -1517,8 +1517,10 @@ async fn exchange(
     // there before the request's envelopes are taken in, the order of section 22.3. A store that
     // cannot be read or written is answered as load shed: the client is not at fault, and sends
     // again.
-    let durable = shared.mailboxes.outboxes_of(&name).cloned();
-    if let Some(outboxes) = &durable {
+    // Named apart from the checkpoint's verdict below, which says whether the exchange's
+    // envelopes are durable; this one is the outboxes the client is answered from.
+    let durable_outboxes = shared.mailboxes.outboxes_of(&name).cloned();
+    if let Some(outboxes) = &durable_outboxes {
         let now = unix_millis();
         let Ok(drawn) = draw_epoch() else {
             return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
@@ -1596,7 +1598,7 @@ async fn exchange(
         let stopped = shared.stopped.notified();
         tokio::pin!(stopped);
         stopped.as_mut().enable();
-        let waiting = match &durable {
+        let waiting = match &durable_outboxes {
             Some(outboxes) => outboxes.holds(&name),
             None => shared
                 .mailboxes
@@ -1618,7 +1620,7 @@ async fn exchange(
     // At most `max_response_bytes` of the mailbox (docs/adr/0109, D1); the rest at the next
     // exchange, which the numbering of §mesh-22.3 allows. A durable client's is its outbox
     // (docs/adr/0109, D10), numbered in the outbox's incarnation.
-    let (epoch, first, body) = match &durable {
+    let (epoch, first, body) = match &durable_outboxes {
         Some(outboxes) => match outboxes.response(&name, settings.max_response_bytes) {
             Some(carried) => (Some(carried.incarnation), carried.first, carried.body),
             None => (None, None, Vec::new()),
@@ -1774,6 +1776,7 @@ mod tests {
             capacity: 2,
             max_clients: 2,
             clients: Mutex::new(HashMap::new()),
+            durable: OnceLock::new(),
         });
         let mut transport = MailboxTransport {
             mailboxes: Arc::clone(&mailboxes),
@@ -1803,6 +1806,7 @@ mod tests {
             capacity: 4,
             max_clients: 1,
             clients: Mutex::new(HashMap::new()),
+            durable: OnceLock::new(),
         });
         let mut transport = MailboxTransport {
             mailboxes: Arc::clone(&mailboxes),
@@ -1827,6 +1831,7 @@ mod tests {
             capacity: 4,
             max_clients: 8,
             clients: Mutex::new(HashMap::new()),
+            durable: OnceLock::new(),
         };
         {
             let mut clients = mailboxes.lock();
