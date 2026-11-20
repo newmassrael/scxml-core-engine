@@ -3399,3 +3399,22 @@ health checks, adds the calls below; one that implements or wraps a part named h
 - The registry of names, the reasons a server sheds and the readiness and liveness checks are
   `docs/SCE_SERVER_DEPLOY.md` section 10.
 
+## A rotation re-seals the outboxes and the audit log as it re-seals every other row (ADR 0109 D8)
+
+Landing: the commits that add this section. No generated tree changes, and no layout changes; a consumer that
+implements or wraps an audit store, or wraps a session store that keeps outboxes, changes that code.
+
+- `AuditStore` has three required methods: `audit_streams_after(after, limit)`, the streams a page at a time by the
+  names the store keeps them under; `audit_reseal_row(stream, sequence, held, entry)` and
+  `audit_reseal_checkpoint(stream, sequence, held, signature)`, a replacement of an entry's or a signature's bytes
+  from the bytes held, every other column kept. A store of the consumer's own implements them, held to
+  `audit_conformance::an_entry_and_a_signature_are_replaced_only_from_what_they_hold`; a store that wraps another
+  forwards them. `audit_indexed(stream)` is provided: a store that keeps names as they are leaves it.
+- `SessionStore` has `outbox_clients_after`, `reseal_entry` and `reseal_note`, provided as the other outbox calls
+  are (they answer `NoOutbox`): a store that keeps outboxes implements them, held to
+  `outbox_conformance::an_entry_and_a_note_are_replaced_only_from_what_they_hold`, and one that wraps such a store
+  forwards them.
+- `Sealed::reseal_outboxes()` and `Sealed::reseal_audit()` join the other passes of a rotation
+  (`docs/SCE_SERVER_DEPLOY.md` section 3, "Rotation"); a retired sealing key may be destroyed once every pass
+  answers no row left and none refused.
+

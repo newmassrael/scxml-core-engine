@@ -3,7 +3,8 @@
 Status: `pre-release` (registered in `SCE_WIRE_CONTRACTS.md`). Decided by ADR 0109, D8
 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`).
 
-A server keeps its sessions (ADR 0107), its credentials (ADR 0109, D3) and its keys (D7) in a store. SCE_MESH.md
+A server keeps its sessions (ADR 0107) with its durable clients' outboxes (ADR 0109, D10), its credentials (D3), its
+keys (D7), its key-value feature's values (D13) and its audit log (D14) in a store. SCE_MESH.md
 section 10.11 asks a host to store a checkpoint encrypted at rest under its own key, since the saved state in it holds
 a document's values in the clear. A **sealing store** does that over any store: every value it writes is a sealed
 record, and every key it finds a row by is kept as a keyed digest of the key, its **entry**. This document fixes the
@@ -61,6 +62,7 @@ the store named in the second column with the row's entry:
 | Tokens (`TokenStore`, D3) | `credential_tokens` | the keyed digest of the token's digest | `[digest: bytes, name: text, issued_ms: uint, expires_ms: uint, sealed: bytes]` | the revocation; the row's name is the entry of the name, which a revocation matches; its moments are 0 |
 | Keys (`KeyStore`, D7) | `keys` | the entry of the key's id | `[id: text, label: text, wrapped: bytes]` | the use, the algorithm, the creation, the state; the label is empty |
 | The naming key of a key store | `key_naming` | empty | the wrapped naming key's bytes | nothing else |
+| Outboxes of a durable client (`SessionStore`, D10) | `outbox` | the entry of the client's name | `[client: text, envelope: bytes]`, or `[client: text, envelope: bytes, sender: text]` for an envelope a session sent, the sender its key | the number, the moment and the sender's entry; the outbox's incarnation and next number. An expiry's note holds the record of the entry it was written for, under the same entry, and names the session it is for by that session's entry |
 | Values of the key-value feature (`KvStore`, D13) | `kv_values` | the entry of the value's key | `[key: text, value: bytes]` | the version; a first result of a put-if is kept under its identity's session and invoke, each as its entry, its outcome and version in the clear |
 | Rows of an audit log (`AuditStore`, D14) | `audit_rows` | the entry of the stream's name, a colon and the row's sequence in decimal | `[stream: text, entry: bytes]` | the sequence, the moment, the chain (docs/SCE_AUDIT_LOG.md), which a reader verifies without the sealing keys; the head; an append's identity as a first result's is |
 | Checkpoints of an audit log (`AuditStore`, D14) | `audit_checkpoints` | as the row's | `[stream: text, signature: bytes]` | the sequence and the chain |
@@ -83,11 +85,15 @@ store's first use; of the active sealing keys, the latest made seals what is wri
 at one moment).
 
 **Rotation.** `SealingKeys::rotate` makes a new sealing key and retires every other active one; a retired key still
-opens what it sealed. A store given the new keys writes under the new one, and a **re-seal pass** writes every row
-sealed under any other key again through the store's ordinary write: a session's versioned and fenced put, under a
-lease the pass takes and gives back (a session another process holds is left for a later pass); a pin's or a token's
-replacement from the bytes it read; a key's rewrap. Once a pass leaves nothing and refuses nothing, no row names the
-retired key, and it may be destroyed.
+opens what it sealed. A store given the new keys writes under the new one, and a **re-seal pass** of each contract
+writes every row sealed under any other key again through the store's ordinary write: a session's versioned and
+fenced put, under a lease the pass takes and gives back (a session another process holds is left for a later pass;
+`Sealed::reseal_sessions`); a pin's, a token's, a value's, an outbox envelope's, a note's, an audit entry's or a
+checkpoint signature's replacement from the bytes it read, every other column kept, so a row another process changed
+in between is left (`reseal_credentials`, `reseal_values`, `reseal_outboxes`, `reseal_audit`); a key's rewrap
+(`reseal_keys`). An audit row keeps its chain, which is over the entry the record holds and not over the record, so a
+re-sealed stream verifies as before. Once every pass leaves nothing and refuses nothing, no row names the retired
+key, and it may be destroyed.
 
 ## 5. What it does not give
 
