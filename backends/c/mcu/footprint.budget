@@ -26,19 +26,23 @@
 # Each machine's figures are `<MACHINE>_TEXT`, `<MACHINE>_RODATA`,
 # `<MACHINE>_DATA` and `<MACHINE>_BSS`, `<MACHINE>` its name in upper case.
 #
-# UNMEASURED. This first entry holds no figure: the gate was written where no
-# ARM compiler could run, and a guessed budget is the thing this file exists to
+# UNMEASURED. This entry holds no figure yet: the gate was written where no ARM
+# compiler could run, and a guessed budget is the thing this file exists to
 # refuse. The gate REFUSES TO PASS while any figure below is empty, and prints
-# every figure it measured as the `NAME=value` lines to put here. The first run
-# on a machine with the declared toolchain (`[platform.linux.tools.arm-none-eabi-gcc]`
-# and `[platform.linux.tools.qemu-system-arm]` in bx.toml) measures them; that
-# commit sets MEASURED_WITH and TOLERANCE_BYTES too, and says why the tolerance
-# is what it is.
+# every figure it measured as the `NAME=value` lines to put here. The figures
+# will be measured with Arm GNU Toolchain 13.2.rel1, the release
+# scripts/install_arm_gnu_toolchain.sh pins and the gate runs (bx.toml's
+# `[platform.linux.tools.arm-none-eabi-gcc]` on a build machine, the same script
+# in c11-mcu.yml); the first run on such a machine measures them, and that
+# commit sets TOLERANCE_BYTES too and says why the tolerance is what it is.
 
-# The toolchain the figures were measured with, as `arm-none-eabi-gcc --version`
-# prints its first line. Printed beside the running one when a figure is out of
-# its band, so a red that is only the toolchain says so.
-MEASURED_WITH=''
+# The toolchain the figures are measured with, as `arm-none-eabi-gcc --version`
+# prints its first line: Arm's build of the release the install script pins,
+# which the gate refuses to run without. Printed beside the running one when a
+# figure is out of its band, so a red that is only the toolchain says so. It is
+# named before the figures are, so the commit that measures them cannot take
+# them from another build.
+MEASURED_WITH='arm-none-eabi-gcc (Arm GNU Toolchain 13.2.rel1 (Build arm-13.7)) 13.2.1 20231009'
 
 # Drift allowed either way before the gate speaks, in bytes, for each figure.
 TOLERANCE_BYTES=''

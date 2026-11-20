@@ -504,6 +504,21 @@ PACE_NORMALISED: dict[str, str] = {
 # of its class, and is a scheduling estimate until a run is read: 5 for a gate
 # that compiles (cargo, C and C++, Gradle, Go, Swift), 1 for a script that runs
 # built tools over the tree.
+#
+# `packages` is the system packages a gate's own script runs a program of, past
+# what the platform of bx.toml asks of every machine; a unit names those of
+# every gate it runs (`packages`, bx RFC 0004, section 6), and bx places it only
+# on a machine that has them. It is for a program whose release the verdict
+# does not move with: one whose release it does move with is a tool of bx.toml
+# with pinned bytes (bx RFC 0009, section 4.8), as the ARM compiler is. Absent
+# is none (`gate_packages`), unlike `cache`, which nothing defaults, because the
+# two errors differ: a gate that needs a package it does not name is placed on
+# a machine without it and ends "could not run" (exit 3), which names the
+# machine and claims nothing about the tree, where an unsaid `cache` would keep
+# a pass it never earned.
+# `every-unit-names-the-packages-its-gates-need` in the self-test holds the
+# shape, and holds each name to the gate's own script, so a declaration cannot
+# outlive the program it was for.
 PEAK_MEASURED: dict[str, str] = {
     "codegen-build": "4.98 GB at the peak of an sce-codegen build (bx, "
                      "2026-11-04)",
@@ -536,6 +551,10 @@ COMMIT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 # The commit names a gate's `commits` may hold: the ones the plan carries.
 CARRIED_COMMITS = ("HEAD",)
+
+# The shape of a Debian package name (Debian Policy, section 5.6.1), which a
+# gate's `packages` may hold.
+PACKAGE_NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]+$")
 
 # The name of the one unit a plan carries when the change selects no gate: bx
 # refuses a plan that lists nothing ("a plan that lists nothing has measured
@@ -1608,26 +1627,34 @@ GATES: dict[str, dict] = {
     # compiles and six QEMU runs of a second or two each, after the generator
     # build `codegen-build` owns. Time it on its first run and date it here.
     #
-    # `ci_only` for `genmc-queue`'s reason: the ARM compiler and QEMU are tools
-    # bx.toml declares (`[platform.linux.tools.arm-none-eabi-gcc]`,
-    # `[platform.linux.tools.qemu-system-arm]`) and not every build machine is
-    # verified to carry them; the gate refuses (exit 3) without them, so a push
-    # that selected it there would be refused for a reason that says nothing
-    # about the tree. c11-mcu.yml installs both on its runner.
+    # `ci_only` for `genmc-queue`'s reason: the ARM compiler is a tool bx.toml
+    # declares (`[platform.linux.tools.arm-none-eabi-gcc]`, Arm's tarball of the
+    # release scripts/install_arm_gnu_toolchain.sh pins) and QEMU a package the
+    # unit requires (`packages` below), and not every build machine is verified
+    # to carry them; the gate refuses (exit 3) without them, so a push that
+    # selected it there would be refused for a reason that says nothing about
+    # the tree. c11-mcu.yml installs both on its runner.
     "c11-mcu": {
         "workflows": ["c11-mcu.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "ci_only": "an ARM cross compiler and QEMU, which bx.toml declares "
-                   "and not every build machine is verified to carry; the "
-                   "gate ends 'could not run' without them, so a push that "
-                   "selected it there would be refused for a reason that says "
-                   "nothing about the tree. c11-mcu.yml installs both.",
+        "ci_only": "Arm's GNU Toolchain, a tool bx.toml pins by the install "
+                   "script's digests, and QEMU, a package the gate's unit "
+                   "requires, which not every build machine is verified to "
+                   "carry; the gate ends 'could not run' without them, so a "
+                   "push that selected it there would be refused for a reason "
+                   "that says nothing about the tree. c11-mcu.yml installs both.",
         "cost_s": 60,
         "summary": "C11 machines linked with no libc, weighed and run on a Cortex-M4",
-        # The compiler and the emulator are tools of the platform at the
-        # versions bx.toml checks, the budget and the scenarios are tracked,
-        # and the run is on a counter clock the scenario alone moves.
+        # QEMU's release does not move the verdict: a run passes or fails on
+        # the scenario's expectations, on a counter clock the scenario alone
+        # moves. So it is a requirement of the unit, not a tool with pinned
+        # bytes (docs/adr/0110, D4).
+        "packages": ["qemu-system-arm"],
+        # The compiler is a tool of the platform at the release bx.toml checks
+        # (and the gate refuses another build of it), the budget and the
+        # scenarios are tracked, and the run is on a counter clock the
+        # scenario alone moves.
         "cache": True,
         "inputs": None,
         "commits": [],
@@ -3636,6 +3663,15 @@ def head_commit(repo_root: Path):
     return commit if done.returncode == 0 and COMMIT_ID.match(commit) else None
 
 
+def gate_packages(spec: dict) -> list[str]:
+    """The system packages a gate's entry requires of its unit's machine.
+
+    An entry with no `packages` requires none (see `packages` beside
+    `peak_gb` above for why absence may mean none).
+    """
+    return list(spec.get("packages", []))
+
+
 def plan_units(selected, rust=None, tree_is_head=True, table=None,
                head=None) -> list[dict]:
     """The bx check units (bx RFC 0004, section 6) that verify `selected`.
@@ -3670,6 +3706,9 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     `exclusive` is `UNIT_EXCLUSIVE` for every unit. `secs` is the declared
     cost of everything the unit runs, a first estimate that bx replaces with
     its own timings, and `mem_gb` the largest `peak_gb` among them.
+    `packages` is every package a gate the unit runs requires
+    (`gate_packages`), sorted, and absent when there is none, as bx reads an
+    absent key.
     """
     table = GATES if table is None else table
     chosen = set(selected)
@@ -3697,13 +3736,16 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
             "broke": f"gate {slug} FAILED: run just this one with "
                      f"`scripts/gate {slug}`",
             "blind": f"gate {slug} COULD NOT RUN on that machine: its own "
-                     f"tools, or the Rust release the plan named, are missing "
-                     f"there. Nothing is claimed about the tree.",
+                     f"tools or packages, or the Rust release the plan named, "
+                     f"are missing there. Nothing is claimed about the tree.",
         }
         cost = sum(table[s].get("cost_s") or 0 for s in closure)
         if cost > 0:
             unit["secs"] = float(cost)
         unit["mem_gb"] = float(max(table[s]["peak_gb"] for s in closure))
+        packages = sorted({p for s in closure for p in gate_packages(table[s])})
+        if packages:
+            unit["packages"] = packages
         inputs = unit_inputs(closure, table)
         if kept and inputs:
             unit["inputs"] = inputs
@@ -4694,6 +4736,132 @@ def go_toolchain_failures(repo_root: Path, tables=None, actions=None,
         failures.append(f"needed_by {spec.get('needed_by')} names the plan command, "
                         f"which runs no go")
     return failures
+
+
+# ── The ARM compiler bx.toml declares ─────────────────────────────
+#
+# `c11-mcu` holds each machine's bytes to backends/c/mcu/footprint.budget, and
+# those figures are the compiler's, so the compiler is a tool with pinned bytes
+# (bx RFC 0009, section 4.8): Arm's tarball of the release
+# `scripts/install_arm_gnu_toolchain.sh` pins with a digest per host. The claim
+# has five halves that can each go stale without a gate turning red: the table
+# reads the script's release line and checks Arm's build by name, the script pins
+# a digest for every host it accepts, the gate puts that release first on PATH
+# and refuses another build, the hosted lane installs it with the same script,
+# and the budget names the build its figures are measured with. QEMU is no tool
+# here: its release does not move the verdict, so it is `packages` of the gate.
+ARM_TOOLCHAIN_INSTALL = "scripts/install_arm_gnu_toolchain.sh"
+ARM_TOOLCHAIN_PLACE = "~/.local/share/arm-gnu-toolchain/{version}"
+ARM_TOOLCHAIN_GATE = "c11-mcu"
+ARM_TOOLCHAIN_BUDGET = "backends/c/mcu/footprint.budget"
+# The hosts the install accepts, as Arm names them in its archives.
+ARM_TOOLCHAIN_HOSTS = ("x86_64", "aarch64")
+# The shape of an Arm GNU Toolchain release (`13.2.rel1`).
+ARM_TOOLCHAIN_RELEASE = re.compile(r"^[0-9]+\.[0-9]+\.rel[0-9]+$")
+
+
+def arm_toolchain_failures(repo_root: Path, tables=None) -> list[str]:
+    """What is wrong with the ARM compiler bx.toml declares, as sentences.
+
+    `tables` replaces bx.toml's tool tables, so the self-test can show a
+    drifted declaration refused.
+    """
+    tables = bx_tool_tables(repo_root) if tables is None else tables
+    declared = {name: spec for name, spec in tables.items()
+                if ARM_TOOLCHAIN_INSTALL in spec.get("install", "")}
+    if len(declared) != 1:
+        return [f"{len(declared)} [platform.linux.tools.*] table(s) install with "
+                f"{ARM_TOOLCHAIN_INSTALL} ({sorted(declared)}), and one does: without "
+                f"it `{ARM_TOOLCHAIN_GATE}` goes to a machine whose compiler is "
+                f"whatever release it carries, and its budget is one build's"]
+    name, spec = next(iter(declared.items()))
+    failures: list[str] = []
+    shape = {
+        "version_file": spec.get("version_file") == ARM_TOOLCHAIN_INSTALL,
+        "path": spec.get("path") == ARM_TOOLCHAIN_PLACE + "/bin/arm-none-eabi-gcc",
+        "prefix_link": spec.get("prefix_link") == ARM_TOOLCHAIN_PLACE,
+        "check": spec.get("check") == "Arm GNU Toolchain {version}",
+        "install_inputs": spec.get("install_inputs") == [ARM_TOOLCHAIN_INSTALL],
+        "needed_by": spec.get("needed_by") == [ARM_TOOLCHAIN_GATE],
+    }
+    for key, ok in shape.items():
+        if not ok:
+            failures.append(
+                f"[platform.linux.tools.{name}] {key} is {spec.get(key)!r}: the "
+                f"release is read from {ARM_TOOLCHAIN_INSTALL}, linked at "
+                f"{ARM_TOOLCHAIN_PLACE} where the gate looks, checked by the name "
+                f"Arm's build prints, keyed by {ARM_TOOLCHAIN_INSTALL}, and needed "
+                f"by `{ARM_TOOLCHAIN_GATE}` alone")
+
+    version = bx_tool_version(repo_root, spec)
+    if version is None or not ARM_TOOLCHAIN_RELEASE.match(version):
+        failures.append(f"[platform.linux.tools.{name}] resolves to {version!r}, not "
+                        f"one release such as 13.2.rel1 read from {ARM_TOOLCHAIN_INSTALL}")
+        return failures
+    build = f"Arm GNU Toolchain {version}"
+
+    # The install pins the digest of that release's archive for every host.
+    install = repo_root / ARM_TOOLCHAIN_INSTALL
+    install_text = install.read_text(encoding="utf-8") if install.is_file() else ""
+    for host in ARM_TOOLCHAIN_HOSTS:
+        archive = f"arm-gnu-toolchain-{version}-{host}-arm-none-eabi.tar.xz"
+        if not re.search(rf'"{re.escape(archive)} [0-9a-f]{{64}}"', install_text):
+            failures.append(f"{ARM_TOOLCHAIN_INSTALL} pins no SHA-256 for {archive}, "
+                            f"so provision refuses to install {build} on a {host} host")
+
+    # The gate reads the release from the script's line, puts it first on PATH
+    # and refuses another build.
+    script = gate_script(repo_root, ARM_TOOLCHAIN_GATE)
+    code = script_code(script) if script.is_file() else ""
+    for needle, what in (
+            (ARM_TOOLCHAIN_INSTALL, f"read the release from {ARM_TOOLCHAIN_INSTALL}"),
+            (".local/share/arm-gnu-toolchain/", "put the release's bin/ on PATH"),
+            ("Arm GNU Toolchain $ARM_GNU_TOOLCHAIN_REV", "refuse another build")):
+        if needle not in code:
+            failures.append(f"scripts/gates/{ARM_TOOLCHAIN_GATE}.sh does not {what} "
+                            f"(no `{needle}` in its code)")
+
+    # The hosted lane installs the same build with the same script, and not the
+    # distribution's.
+    for workflow in GATES.get(ARM_TOOLCHAIN_GATE, {}).get("workflows", []):
+        path = repo_root / ".github" / "workflows" / workflow
+        lines = [line.strip() for line in
+                 (path.read_text(encoding="utf-8").splitlines() if path.is_file() else [])
+                 if not line.strip().startswith("#")]
+        if not any("run:" in line and ARM_TOOLCHAIN_INSTALL in line for line in lines):
+            failures.append(f".github/workflows/{workflow} runs `{ARM_TOOLCHAIN_GATE}` and "
+                            f"does not install {build} with {ARM_TOOLCHAIN_INSTALL}")
+        if any("apt-get install" in line and "gcc-arm-none-eabi" in line.split()
+               for line in lines):
+            failures.append(f".github/workflows/{workflow} installs the distribution's "
+                            f"gcc-arm-none-eabi, another build than {build}")
+
+    # The budget names the build its figures are measured with.
+    budget = repo_root / ARM_TOOLCHAIN_BUDGET
+    measured = [line for line in (budget.read_text(encoding="utf-8").splitlines()
+                                  if budget.is_file() else [])
+                if line.startswith("MEASURED_WITH=")]
+    if len(measured) != 1 or f"({build} " not in measured[0]:
+        failures.append(f"{ARM_TOOLCHAIN_BUDGET} states MEASURED_WITH {measured}, which "
+                        f"does not name {build}, the build the gate runs")
+    return failures
+
+
+def distribution_link_failures(tables: dict[str, dict]) -> list[str]:
+    """Each tool table whose install links a file of the distribution, as a
+    sentence.
+
+    bx keys a tool by its declared version and checks it by what `path`
+    prints, and a link into /usr is a file apt can replace under the same key
+    (bx RFC 0009, section 4.8). A program whose release moves the verdict is a
+    tool with pinned bytes; one whose release does not is a requirement of the
+    unit (`packages` of a gate), not a tool.
+    """
+    return [f"[platform.linux.tools.{name}] installs by linking a file of the "
+            f"distribution ({spec.get('install')!r}): its bytes are apt's and not "
+            f"the declaration's; pin a tarball, or make it `packages` of the gate"
+            for name, spec in sorted(tables.items())
+            if re.search(r"\bln\s+-[a-zA-Z]*s[a-zA-Z]*\s+/usr/", spec.get("install", ""))]
 
 
 def self_test(repo_root: Path) -> int:
@@ -5981,6 +6149,39 @@ def self_test(repo_root: Path) -> int:
     for slug in sorted(set(PEAK_MEASURED) - set(GATES)):
         failures.append(f"verdict: PEAK_MEASURED names {slug}, which is no gate")
 
+    # every-unit-names-the-packages-its-gates-need. A gate's `packages` is
+    # absent or a non-empty list of distinct package names, and each name is in
+    # the code of the gate's own script, which is what runs the package's
+    # program: a name the script no longer mentions would keep the unit off
+    # machines for nothing.
+    cases += 1
+    declaring = 0
+    for slug, spec in sorted(GATES.items()):
+        if "packages" not in spec:
+            continue
+        declaring += 1
+        packages = spec["packages"]
+        if not isinstance(packages, list) or not packages \
+                or len(set(packages)) != len(packages) \
+                or any(not isinstance(p, str) or not PACKAGE_NAME.match(p)
+                       for p in packages):
+            failures.append(
+                f"packages: {slug} declares packages={packages!r}; it is a "
+                f"non-empty list of distinct package names, or absent for none")
+            continue
+        script = gate_script(repo_root, slug)
+        code = script_code(script) if script.is_file() else ""
+        for package in packages:
+            if package not in code:
+                failures.append(
+                    f"packages: {slug} requires the package {package}, which "
+                    f"scripts/gates/{slug}.sh names nowhere in its code, so the "
+                    f"requirement keeps its unit off machines for nothing")
+    if declaring == 0:
+        failures.append(
+            "packages: no gate declares a package, so the check above read "
+            "nothing; `c11-mcu` requires qemu-system-arm")
+
     # a-verdict-that-reads-head-carries-it. A gate script that hands git the
     # name HEAD (`--rev HEAD`, `git worktree add … HEAD`, `git show HEAD:…`)
     # reads a commit the key does not hold, so a gate whose pass is kept has
@@ -6075,6 +6276,12 @@ def self_test(repo_root: Path) -> int:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} may share a checkout "
                     f"with another unit ({unit['exclusive']})")
+            packages = sorted({p for s in closure for p in gate_packages(GATES[s])})
+            if unit.get("packages", []) != packages:
+                failures.append(
+                    f"plan[{label}]: unit {unit['name']} requires the packages "
+                    f"{unit.get('packages', [])}, and what it runs requires "
+                    f"{packages}")
             others = set(names) - {unit["name"]}
             if others & transitive_deps(unit["name"]):
                 failures.append(
@@ -6102,6 +6309,12 @@ def self_test(repo_root: Path) -> int:
                   "commits": [], "peak_gb": 1},
         "at-head": {"cost_s": 1, "cache": True, "inputs": None,
                     "commits": ["HEAD"], "peak_gb": 1},
+        "emulated": {"cost_s": 1, "cache": True, "inputs": None,
+                     "commits": [], "peak_gb": 1,
+                     "packages": ["qemu-system-arm"]},
+        "over-emulated": {"cost_s": 1, "deps": ["emulated"], "cache": True,
+                          "inputs": None, "commits": [], "peak_gb": 1,
+                          "packages": ["binutils", "qemu-system-arm"]},
     }
     by_name = {u["name"]: u for u in plan_units(
         {"parent", "child", "alone"}, rust="1.0.0", table=fixture)}
@@ -6147,6 +6360,20 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             "plan-fixture: a gate that reads no commit carried HEAD's id, "
             "which would make its key a commit's for nothing")
+    # A unit requires every package of what it runs, once each, and a unit
+    # whose gates require none carries no `packages` key.
+    cases += 1
+    emulated = plan_units({"emulated", "over-emulated"}, rust="1.0.0", table=fixture)
+    if [(u["name"], u.get("packages")) for u in emulated] \
+            != [("over-emulated", ["binutils", "qemu-system-arm"])]:
+        failures.append(
+            f"plan-fixture: `over-emulated` runs `emulated`, and its unit should "
+            f"require binutils and qemu-system-arm once each; planned as "
+            f"{[(u['name'], u.get('packages')) for u in emulated]}")
+    if "packages" in plan_units({"alone"}, rust="1.0.0", table=fixture)[0]:
+        failures.append(
+            "plan-fixture: a unit whose gates require no package carried a "
+            "`packages` key")
     for rust, clean, why in ((None, True, "no Rust release was named"),
                              ("1.0.0", False, "the tree differs from HEAD")):
         cases += 1
@@ -6253,6 +6480,58 @@ def self_test(repo_root: Path) -> int:
         failures.append(f"go-toolchain-refuses: the scan for go commands found "
                         f"{sorted(scanned)}, not forge-go and w3c-go, whose scripts "
                         f"run `go test`")
+
+    # the-arm-compiler-is-declared-pinned-and-run-by-its-gate. The table, the
+    # install's digests, the gate's PATH, the hosted lane and the budget, held
+    # to one another (see "The ARM compiler bx.toml declares" above).
+    cases += 1
+    failures.extend(f"arm-toolchain: {f}" for f in arm_toolchain_failures(repo_root))
+
+    # the-arm-check-refuses-a-drifted-declaration. Its silence above is a
+    # reading only if it refuses a table needed by more than the gate, one that
+    # checks a version any build prints, one that reads no release, and the
+    # absence of the table.
+    cases += 1
+    arm_tables = bx_tool_tables(repo_root)
+    arm_names = [n for n, s in arm_tables.items()
+                 if ARM_TOOLCHAIN_INSTALL in s.get("install", "")]
+
+    def arm_drifted(edit):
+        return {n: (edit(dict(s)) if n in arm_names else s)
+                for n, s in arm_tables.items()}
+
+    for label, edit_spec, want_refused in (
+            ("as declared", lambda s: s, False),
+            ("needed by every gate", lambda s: {**s, "needed_by": ["scripts/gate"]}, True),
+            ("checking the version any build prints",
+             lambda s: {**s, "check": "13.2.1"}, True),
+            ("reading another line",
+             lambda s: {**s, "version_pattern": '^GO_REV="([0-9.]+)"'}, True)):
+        refused = bool(arm_toolchain_failures(repo_root, tables=arm_drifted(edit_spec)))
+        if refused != want_refused:
+            failures.append(f"arm-toolchain-refuses: the table {label} was "
+                            f"{'refused' if refused else 'passed'}")
+    if not arm_toolchain_failures(
+            repo_root, tables={n: s for n, s in arm_tables.items() if n not in arm_names}):
+        failures.append("arm-toolchain-refuses: no ARM compiler table was passed")
+
+    # a-link-to-the-distribution-is-not-a-tool. No tool table installs by
+    # linking a file under /usr (bx RFC 0009, section 4.8): its bytes are apt's.
+    # The fixture shows the reader refuses the shape the ARM tools had until
+    # 2026-11-21 and passes a pinned install, so its silence on bx.toml is a
+    # reading.
+    cases += 1
+    failures.extend(f"distribution-link: {f}"
+                    for f in distribution_link_failures(bx_tool_tables(repo_root)))
+    linked = distribution_link_failures({
+        "linked": {"install": "mkdir -p {prefix}/bin && ln -s /usr/bin/qemu-system-arm "
+                              "{prefix}/bin/qemu-system-arm"},
+        "pinned": {"install": "ARM_GNU_TOOLCHAIN_ROOT={prefix} bash "
+                              "scripts/install_arm_gnu_toolchain.sh"},
+    })
+    if len(linked) != 1 or "[platform.linux.tools.linked]" not in linked[0]:
+        failures.append(f"distribution-link: of a table linking /usr/bin and a pinned "
+                        f"one, the reader refused {linked}")
 
     # the-release-rustups-proxy-finds-is-installed-once. The check of the table
     # linked into rustup's home answers for the tree above; here it is shown

@@ -608,34 +608,37 @@ install = "GO_ROOT={prefix} bash scripts/install_go.sh {version}"
 install_inputs = ["scripts/install_go.sh"]
 needed_by = ["forge-go", "w3c-go", "workspace-tests", "mutation-rounds", "regen-reproduces", "scripts/capture_cbor_pin.sh", "scripts/regen_all_committed_trees.sh go-round-trip", "scripts/regen_all_committed_trees.sh forge-goldens", "sce_go_select"]
 
-# THE ARM CROSS COMPILER AND THE EMULATOR `c11-mcu` RUNS ITS IMAGES ON (docs/adr/0110, D4). The gate
-# compiles each C11 machine of its set for a Cortex-M4, links it with no C library, weighs it against
+# THE ARM CROSS COMPILER `c11-mcu` BUILDS ITS IMAGES WITH (docs/adr/0110, D4). The gate compiles each
+# C11 machine of its set for a Cortex-M4, links it with no C library, weighs it against
 # backends/c/mcu/footprint.budget and runs it under QEMU's `mps2-an386`. The figures of the budget are
-# the compiler's, so the compiler is pinned to the release they were measured with, and a machine
-# whose distribution carries another release is no candidate for the gate rather than a red for the
-# tree: `check` is the release `--version` prints.
+# the compiler's, so the compiler is a tool with pinned bytes, not a package: Arm's own tarball of the
+# release the budget is measured with, which `scripts/install_arm_gnu_toolchain.sh` downloads and
+# refuses unless its SHA-256 is the one Arm publishes. The distribution's gcc-arm-none-eabi is no
+# such pin: Ubuntu 22.04 ships 10.3 and 24.04 a rebuild of 13.2.1, and apt can replace the file
+# behind /usr/bin while the name a link to it is keyed by stays the same, so a link to it would be
+# a tool whose bytes nobody declared.
 #
-# Both are the distribution's packages (`packages`), installed where the tool is: Ubuntu 24.04's
-# gcc-arm-none-eabi 13.2.1, which brings newlib's headers and the libgcc of every multilib, and its
-# qemu-system-arm 8.2.2, the release the hosted lane's image installs. bx tells a machine has a tool by
-# running `path` under the run account's home, so the install links the distribution's binary into
-# the store entry; the other binaries the gate runs (`arm-none-eabi-size`) come with the same package
-# and are found on PATH. `needed_by` is the gate alone, so a machine without them still takes every
-# other job of this repository.
+# The release is the script's `ARM_GNU_TOOLCHAIN_REV`, which the gate reads from the same line to put
+# the toolchain's `bin/` first on PATH (bx adds no tool directory to a run's PATH). `prefix_link`
+# makes the unpacked tree the store entry, because the compiler finds newlib, libgcc and binutils
+# (`arm-none-eabi-size` among them) beside itself. `check` is what Arm's build prints and a
+# distribution's build of the same compiler does not: "arm-none-eabi-gcc (Arm GNU Toolchain 13.2.rel1
+# (Build arm-13.7)) 13.2.1 20231009". `needed_by` is the gate alone, so a machine without it still
+# takes every other job of this repository.
+#
+# QEMU is not a tool here. The verdict does not move with its release (a run passes or fails on the
+# scenario's expectations, on a counter clock the scenario alone moves), so it is a requirement of
+# the gate's unit: `packages` of the `c11-mcu` entry in tools/git-hooks/gate_registry.py, which the
+# plan puts on the unit's line (bx RFC 0004, section 6) and bx places the unit only on a machine
+# that has it.
 [platform.linux.tools.arm-none-eabi-gcc]
-version = "13.2.1"
-path = "~/.local/share/arm-none-eabi-gcc/{version}/bin/arm-none-eabi-gcc"
-install = "mkdir -p {prefix}/bin && ln -s /usr/bin/arm-none-eabi-gcc {prefix}/bin/arm-none-eabi-gcc"
-prefix_file = "bin/arm-none-eabi-gcc"
-packages = ["gcc-arm-none-eabi", "binutils-arm-none-eabi"]
-needed_by = ["c11-mcu"]
-
-[platform.linux.tools.qemu-system-arm]
-version = "8.2.2"
-path = "~/.local/share/qemu-system-arm/{version}/bin/qemu-system-arm"
-install = "mkdir -p {prefix}/bin && ln -s /usr/bin/qemu-system-arm {prefix}/bin/qemu-system-arm"
-prefix_file = "bin/qemu-system-arm"
-packages = ["qemu-system-arm"]
+version_file = "scripts/install_arm_gnu_toolchain.sh"
+version_pattern = '^ARM_GNU_TOOLCHAIN_REV="([0-9]+\.[0-9]+\.rel[0-9]+)"'
+path = "~/.local/share/arm-gnu-toolchain/{version}/bin/arm-none-eabi-gcc"
+check = "Arm GNU Toolchain {version}"
+prefix_link = "~/.local/share/arm-gnu-toolchain/{version}"
+install = "ARM_GNU_TOOLCHAIN_ROOT={prefix} bash scripts/install_arm_gnu_toolchain.sh"
+install_inputs = ["scripts/install_arm_gnu_toolchain.sh"]
 needed_by = ["c11-mcu"]
 
 # The two named commands, each a table of its own: in platform tables a command

@@ -24,10 +24,14 @@
 # What it measured goes to target/c11-mcu/report.md: the toolchain, the flags,
 # the board and each figure, which a consumer cites for its own image.
 #
-# The toolchain is declared in bx.toml (`[platform.linux.tools.arm-none-eabi-gcc]`,
-# `[platform.linux.tools.qemu-system-arm]`, each needed by this gate), so a build
-# machine without it is not given this gate; anywhere else a missing tool ends
-# the gate as "could not run" (exit 3), never as a pass.
+# The compiler is Arm's build of the release scripts/install_arm_gnu_toolchain.sh
+# pins (`[platform.linux.tools.arm-none-eabi-gcc]` in bx.toml), because the
+# budget's figures are that compiler's; the gate puts its `bin/` first on PATH,
+# under the release read from the script's own line. QEMU is a package the
+# gate's unit requires (`packages` of its entry in tools/git-hooks/gate_registry.py),
+# so bx gives this gate only to a machine that has both; anywhere else a missing
+# tool, or a compiler that is not that build, ends the gate as "could not run"
+# (exit 3), never as a pass.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -59,13 +63,25 @@ INCLUDES=(-I backends/c/runtime/include -I backends/c/forge-runtime/include -I "
 # The board's own sources, linked beside each machine and weighed with none.
 BOARD_SOURCES=("$MCU_DIR/startup.c" "$MCU_DIR/semihosting.c" "$MCU_DIR/seams.c")
 
+# The Arm GNU Toolchain release, read from the one line that pins it, and its
+# `bin/` where the install script and bx's store entry put it.
+ARM_GNU_TOOLCHAIN_REV="$(sed -n 's/^ARM_GNU_TOOLCHAIN_REV="\(.*\)"$/\1/p' scripts/install_arm_gnu_toolchain.sh)"
+[[ -n "$ARM_GNU_TOOLCHAIN_REV" ]] \
+    || sce_gate_fail "scripts/install_arm_gnu_toolchain.sh states no ARM_GNU_TOOLCHAIN_REV=\"...\" line"
+PATH="$HOME/.local/share/arm-gnu-toolchain/$ARM_GNU_TOOLCHAIN_REV/bin:$PATH"
+
 for tool in arm-none-eabi-gcc arm-none-eabi-size qemu-system-arm timeout; do
     command -v "$tool" >/dev/null 2>&1 \
-        || sce_gate_cannot_run "$tool is not on PATH. A build machine gets the ARM toolchain and QEMU from bx.toml ([platform.linux.tools.arm-none-eabi-gcc], [platform.linux.tools.qemu-system-arm]: bx-provision <alias> --apply); anywhere else: apt install gcc-arm-none-eabi qemu-system-arm"
+        || sce_gate_cannot_run "$tool is not on PATH. The compiler is Arm GNU Toolchain $ARM_GNU_TOOLCHAIN_REV under ~/.local/share/arm-gnu-toolchain/$ARM_GNU_TOOLCHAIN_REV, installed by scripts/install_arm_gnu_toolchain.sh (a build machine: [platform.linux.tools.arm-none-eabi-gcc] of bx.toml, bx-provision <alias> --apply); QEMU is the apt package qemu-system-arm, which this gate's unit requires"
 done
 
 CODEGEN="$(sce_gate_codegen)"
 GCC_VERSION="$(arm-none-eabi-gcc --version | sed -n '1p')"
+# Another build of the compiler weighs differently, and the budget is this
+# one's: a distribution's arm-none-eabi-gcc found first is a property of the
+# machine, not of the tree.
+[[ "$GCC_VERSION" == *"Arm GNU Toolchain $ARM_GNU_TOOLCHAIN_REV"* ]] \
+    || sce_gate_cannot_run "arm-none-eabi-gcc is '$GCC_VERSION', not Arm GNU Toolchain $ARM_GNU_TOOLCHAIN_REV; install it with scripts/install_arm_gnu_toolchain.sh"
 QEMU_VERSION="$(qemu-system-arm --version | sed -n '1p')"
 sce_gate_step "$GCC_VERSION; $QEMU_VERSION"
 
@@ -113,7 +129,11 @@ BOARD_OBJECTS+=("$OUT/board/memory.o")
     printf -- '- Emulator: %s\n' "$QEMU_VERSION"
     printf -- '- Flags: `%s`\n' "${CFLAGS[*]}"
     printf -- '- Link: `-nostdlib -T %s/mps2_an386.ld -lgcc`, with the board'"'"'s startup, memory functions and seams\n' "$MCU_DIR"
-    printf -- '- Budget: `%s` (measured with: %s)\n\n' "$BUDGET" "${MEASURED_WITH:-unmeasured}"
+    if [[ -n "${TOLERANCE_BYTES:-}" ]]; then
+        printf -- '- Budget: `%s` (measured with: %s)\n\n' "$BUDGET" "${MEASURED_WITH:-unnamed}"
+    else
+        printf -- '- Budget: `%s` (unmeasured; to be measured with: %s)\n\n' "$BUDGET" "${MEASURED_WITH:-unnamed}"
+    fi
     printf '| Machine | .text | .rodata | .data | .bss | image .text | image .rodata | image .data | image .bss | libgcc members | run |\n'
     printf '|---|---|---|---|---|---|---|---|---|---|---|\n'
 } >"$REPORT"
