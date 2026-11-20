@@ -22,13 +22,16 @@
 //! - [`keyring`]: the life of a key a host generates or derives, over a key store
 //!   (`sce_rust_session_store::KeyStore`);
 //! - [`sealed`]: every store a server keeps sealed at rest, each key it finds a row by kept as a
-//!   keyed digest (ADR 0109, D8).
+//!   keyed digest (ADR 0109, D8);
+//! - [`audit`]: a durable audit log's chain, its checkpoints signed under the host's audit key, a
+//!   reader that verifies a stream, and retention by whole segments (ADR 0109, D14).
 //!
 //! Key material is held in [`zeroize::Zeroizing`] wherever this crate holds it, and no type here
 //! prints a key through `Debug`.
 
 #![forbid(unsafe_code)]
 
+pub mod audit;
 pub mod cose;
 pub mod credential;
 pub mod ed25519;
