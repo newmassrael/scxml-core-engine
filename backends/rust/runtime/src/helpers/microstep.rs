@@ -323,6 +323,11 @@ pub trait Behaviour {
     /// (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1), which happens before the
     /// exit set is exited. The default takes nothing: a statechart's transition
     /// has nothing to take.
+    ///
+    /// Only with the crate's `test-component` feature: without it the trait
+    /// has no such hook and [`microstep`] makes no call for it, so a program
+    /// of statecharts carries neither the call nor its frame.
+    #[cfg(feature = "test-component")]
     fn take_transition(&mut self, _transition: TransitionId) {}
 
     /// Run the state's onexit and cancel its invocations. The procedure removes
@@ -897,14 +902,17 @@ pub struct Entered {
     pub current: Option<StateId>,
 }
 
-/// Appendix D's microstep: exit, run the transitions' content, enter; each
-/// transition taken before anything exits ([`take_transitions`]).
+/// Appendix D's microstep: exit, run the transitions' content, enter. With the
+/// crate's `test-component` feature each transition is taken before anything
+/// exits (`take_transitions`); without it the microstep is Appendix D's and
+/// nothing more.
 pub fn microstep(
     tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     transitions: &[TransitionId],
     mut scratch: Scratch<'_>,
 ) -> Entered {
+    #[cfg(feature = "test-component")]
     take_transitions(machine, transitions);
     // §scxml-D-microstepProcedure: every exit, then every transition's
     // content, then every entry — for the whole set at once, which is what lets
@@ -950,7 +958,9 @@ pub fn compute_states_to_exit(
 /// test component removes what it matched from the round's snapshot at P4 step
 /// 1, and its exits, content and entries are P4 step 2
 /// (docs/SCE_TEST_PROFILE.md §4.4). Appendix D has no such step; a machine
-/// whose transitions take nothing answers each call with nothing.
+/// whose transitions take nothing answers each call with nothing. Only with
+/// the crate's `test-component` feature.
+#[cfg(feature = "test-component")]
 pub fn take_transitions(machine: &mut dyn Behaviour, transitions: &[TransitionId]) {
     for &transition in transitions {
         machine.take_transition(transition);

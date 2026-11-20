@@ -567,8 +567,14 @@ pub trait StatePolicy: Sized + 'static {
     /// Whether a transition of the document takes something before the
     /// microstep exits anything ([`take_transition`](StatePolicy::take_transition)):
     /// a branch of a test component (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1).
-    /// The engine asks the policy only where this holds, so a statechart pays
-    /// nothing for the step.
+    /// The engine asks the policy only where this holds, so the policy of a
+    /// statechart in a build that also holds a test component is never asked.
+    ///
+    /// Only with the crate's `test-component` feature, as is
+    /// [`take_transition`](StatePolicy::take_transition): a build without it
+    /// has no take step at all, and the policy of a test component, which
+    /// names both, compiles only where the feature is on.
+    #[cfg(feature = "test-component")]
     const TAKES_TRANSITIONS: bool = false;
 
     /// Take one selected transition before the microstep exits any state: a
@@ -577,7 +583,8 @@ pub trait StatePolicy: Sized + 'static {
     /// took as the payload its content reads (docs/SCE_TEST_PROFILE.md §4.4,
     /// P4 step 1, §12.3). Asked only where
     /// [`TAKES_TRANSITIONS`](StatePolicy::TAKES_TRANSITIONS) holds; the
-    /// default takes nothing.
+    /// default takes nothing. Only with the crate's `test-component` feature.
+    #[cfg(feature = "test-component")]
     fn take_transition(&mut self, _transition: TransitionId, _engine: &mut Engine<Self>) {}
 
     /// Execute one transition's executable content (§scxml-3.13 — run between

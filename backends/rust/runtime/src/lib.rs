@@ -91,6 +91,12 @@
 //!   host each transition the engine takes by the row of its emitted
 //!   transition table (docs/adr/0089). Without it the engine holds no field
 //!   and makes no call for it.
+//! - `test-component`: the take step of a test component
+//!   (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1), which the shared microstep
+//!   runs over the selected transitions before it exits anything, and the
+//!   hooks a generated test component's policy implements for it; asks for
+//!   `std`. Without it the microstep is Appendix D's exit, content and entry,
+//!   and the crate holds no code for the step.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(clippy::undocumented_unsafe_blocks)]

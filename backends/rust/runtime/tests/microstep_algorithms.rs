@@ -672,7 +672,9 @@ struct Chart {
     recorded_at_first_exit: Option<[Option<Vec<St>>; 2]>,
     /// Each transition taken (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1), with
     /// how many lines the log held when it was: none, where it is taken before
-    /// anything exits.
+    /// anything exits. The step exists only with the runtime's
+    /// `test-component` feature.
+    #[cfg(feature = "test-component")]
     taken: Vec<(String, usize)>,
 }
 
@@ -685,6 +687,7 @@ impl Default for Chart {
             log: Vec::new(),
             exited_while_active: Vec::new(),
             recorded_at_first_exit: None,
+            #[cfg(feature = "test-component")]
             taken: Vec::new(),
         }
     }
@@ -749,6 +752,7 @@ impl Behaviour for Chart {
             .map(|position| TransitionId(position as u16))
     }
 
+    #[cfg(feature = "test-component")]
     fn take_transition(&mut self, transition: TransitionId) {
         let (source, index) = label(transition);
         self.taken
@@ -1317,7 +1321,9 @@ fn a_microstep_exits_then_runs_content_in_selection_order_then_enters() {
 
 /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1): each selected transition is
 /// taken, in selection order, before the microstep exits any state, runs any
-/// content or enters any state: the log was empty at every take.
+/// content or enters any state: the log was empty at every take. The step is
+/// the runtime's `test-component` feature.
+#[cfg(feature = "test-component")]
 #[test]
 fn every_transition_is_taken_before_anything_exits() {
     let mut chart = Chart::at_initial_configuration();
@@ -1332,6 +1338,44 @@ fn every_transition_is_taken_before_anything_exits() {
         ]
     );
     assert_eq!(chart.log.first().map(String::as_str), Some("exit B1"));
+}
+
+/// Without the runtime's `test-component` feature the machine a microstep
+/// drives has no take step (docs/SCE_TEST_PROFILE.md §4.4): `Behaviour` holds
+/// no `take_transition`, so the call below resolves to `TakeStepAbsent`'s,
+/// which answers `ABSENT`. Were the hook back in the trait of such a build,
+/// the call would resolve to the trait object's own method, which answers
+/// `()`, and this file would not compile: the build a program of statecharts
+/// gets would carry the call, its loop and its frame again.
+#[cfg(not(feature = "test-component"))]
+mod a_build_without_the_test_component_feature {
+    use sce_rust_runtime::helpers::microstep::Behaviour;
+    use sce_rust_runtime::TransitionId;
+
+    use super::Chart;
+
+    /// What a call of `take_transition` on a machine answers where its
+    /// `Behaviour` has no hook of that name.
+    const ABSENT: &str = "Behaviour has no take_transition";
+
+    /// A method of the hook's name for every machine, which a call reaches
+    /// only while `Behaviour` declares none.
+    trait TakeStepAbsent {
+        fn take_transition(&mut self, transition: TransitionId) -> &'static str;
+    }
+
+    impl<B: Behaviour + ?Sized> TakeStepAbsent for B {
+        fn take_transition(&mut self, _transition: TransitionId) -> &'static str {
+            ABSENT
+        }
+    }
+
+    #[test]
+    fn has_no_take_step_on_the_machine_a_microstep_drives() {
+        let mut chart = Chart::at_initial_configuration();
+        let machine: &mut dyn Behaviour = &mut chart;
+        assert_eq!(machine.take_transition(TransitionId(0)), ABSENT);
+    }
 }
 
 #[test]

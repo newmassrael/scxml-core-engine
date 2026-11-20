@@ -25,7 +25,10 @@ description = "Replays the engine-neutral scenarios of a datamodel=\"sce-static\
 
 [dependencies]
 # `std` without `http-send`: wasm32-unknown-unknown has `std` but no sockets.
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
+# `test-component`: the tree the build script writes holds the test profile's
+# test components, whose policies implement the take step
+# (docs/SCE_TEST_PROFILE.md §4.4), which only that feature declares.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "test-component"] }
 # A `datamodel="sce-static"` machine checks its integer operations with the forge
 # runtime's helpers (SCE_FORGE.md §3.4.1); the crate is `#![no_std]`, so it needs
 # nothing of the operating system.
@@ -54,7 +57,7 @@ sce-rust-session-store = { path = "../session-store" }
 # run of the reference harness measures its transition coverage by
 # (docs/adr/0087, section 9.4). A test-only feature: the library and its wasm32
 # build keep the engine as `[dependencies]` states it.
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "transition-observer"] }
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std", "test-component", "transition-observer"] }
 
 # The wasm32 build is a cdylib a host script loads (`wasm/run.mjs`); every other
 # target uses the rlib, which is what the native tests link.

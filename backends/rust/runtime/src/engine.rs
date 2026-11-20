@@ -5515,7 +5515,10 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
     }
 
     // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1): only a policy whose document
-    // takes a transition is asked, so a statechart's microstep costs no call.
+    // takes a transition is asked. The hook exists only with the crate's
+    // `test-component` feature; without it a statechart's microstep has no
+    // take step to call.
+    #[cfg(feature = "test-component")]
     fn take_transition(&mut self, transition: TransitionId) {
         if P::TAKES_TRANSITIONS {
             self.engine

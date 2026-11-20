@@ -16,8 +16,10 @@ description = "SCE W3C SCXML 1.0 conformance test harness (202 tests)"
 # (`truncated_macrosteps` and its siblings), which is a feature of its own
 # (docs/adr/0053) and not part of `http-send`'s `std`. `transition-observer`: the
 # tests that hold the rows a run takes to the machine's emitted transition table
-# (docs/adr/0089).
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer"] }
+# (docs/adr/0089). `test-component`: the tree `rust-static-datamodel` holds the
+# test components of the test profile, whose policies implement the take step
+# (docs/SCE_TEST_PROFILE.md §4.4), which only that feature declares.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics", "transition-observer", "test-component"] }
 # A `datamodel="sce-static"` machine checks its integer operations with the
 # forge runtime's helpers, and the algorithms it calls answer through the
 # same crate's error type (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).

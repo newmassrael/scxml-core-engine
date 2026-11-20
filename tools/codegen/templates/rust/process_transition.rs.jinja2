@@ -174,8 +174,10 @@
     // is taken before the microstep exits anything: it removes what it matched
     // from the round's snapshot, writes its record in the test log, and holds
     // a message its content reads in the payload channel, which the content
-    // binds as its `_event.data` (`Transition::native_take`).
-    const TAKES_TRANSITIONS: bool = true;
+    // binds as its `_event.data` (`Transition::native_take`). Both items are
+    // the runtime's `test-component` feature, which the crate that compiles a
+    // test component names: a build without it has no take step.
+    const TAKES_TRANSITIONS: bool = true; // sce-rust-runtime's `test-component` feature
 
     fn take_transition(
         &mut self,

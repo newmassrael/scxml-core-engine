@@ -112,6 +112,25 @@ macrostep-diagnostics = []
 # `std` in.
 transition-observer = []
 
+# The take step of a test component (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1):
+# `Behaviour::take_transition`, `StatePolicy::TAKES_TRANSITIONS` and
+# `StatePolicy::take_transition`, and the loop the shared microstep runs over
+# the selected transitions before it exits anything. Appendix D has no such
+# step, and without this feature the microstep is exactly its exit, content and
+# entry: a program of statecharts carries no indirect call per microstep for
+# it, no loop and no frame (a downstream bare-metal consumer measured the step
+# in every build at 152 bytes of `.text` and 16 bytes of the static stack
+# bound on its Cortex-M4 images, 2026-11).
+# A run-time flag could not take those away, which is why the step is a feature.
+#
+# It only adds (docs/adr/0053): a policy that names neither item compiles with
+# it on, so a build that unifies it in for a crate holding a test component
+# leaves a statechart crate beside it compiling, and such a statechart's policy
+# answers `TAKES_TRANSITIONS` false, so the engine does not ask it. A generated
+# test component's policy names both items, so its crate names this feature;
+# the component is driven by the `test` module, which needs `std`.
+test-component = ["std"]
+
 [dependencies]
 log = { workspace = true }
 # `thiserror` is consumed only inside `pub mod scripting` (gated to

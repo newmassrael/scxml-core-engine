@@ -43,7 +43,12 @@ cargo clippy -p sce-rust-runtime --no-default-features \
 # reads — the refusal of a BasicHTTP send, the bound without its report on a
 # host — is compiled, linted and run nowhere else. The tests that read the
 # refusal (`a_basic_http_send_needs_the_http_send_feature`,
-# `helpers::send`'s `supported_send_types`) run their other half here.
+# `helpers::send`'s `supported_send_types`) run their other half here. So does
+# the take step of a test component (`test-component`, docs/SCE_TEST_PROFILE.md
+# §4.4): the workspace's union turns it on for the crates that compile test
+# components, and only here is the runtime built without it, where
+# `microstep_algorithms`'s `a_build_without_the_test_component_feature` holds
+# that the machine a microstep drives has no take step to call.
 sce_gate_step "std runtime without http-send or the macrostep report: clippy + tests"
 cargo clippy -p sce-rust-runtime --no-default-features --features std \
     --all-targets -- -D warnings \
