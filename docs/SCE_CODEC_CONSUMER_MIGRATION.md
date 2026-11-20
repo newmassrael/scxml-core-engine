@@ -3421,3 +3421,27 @@ event schema or an enum document is regenerated.
 - A new diagnostic code, `algorithm/inout-on-may-fail`: an `inout` map slot on an algorithm that declares
   `may-fail`. A `match` over `DiagnosticCode` names `AlgorithmInoutOnMayFail`.
 
+## A test component's take step is a feature of the Rust runtime, and a statechart pays nothing for it
+
+Landing: the commits that add this section. No generated tree changes. The take step of a test component
+(docs/SCE_TEST_PROFILE.md §4.4, P4 step 1), which the shared Rust microstep ran over the selected transitions before
+it exited anything, was in every build of `sce-rust-runtime`, so a program of statecharts paid for a step none of its
+machines has. It is now the runtime's `test-component` feature.
+
+- A crate that compiles a test component (`sce:kind="test-component"`) names `sce-rust-runtime/test-component` in its
+  `Cargo.toml`, for example `features = ["std", "test-component"]`; the feature asks for `std`, which the test
+  runtime (`sce_rust_runtime::test`) already needs. Without it the generated policy of the component does not
+  compile: it defines `StatePolicy::TAKES_TRANSITIONS` and `StatePolicy::take_transition`, which only the feature
+  declares, and rustc reports each as not a member of `StatePolicy`; the generated line of `TAKES_TRANSITIONS` names
+  the feature in a comment.
+- A crate of statecharts changes nothing. Without the feature `Behaviour::take_transition`,
+  `StatePolicy::TAKES_TRANSITIONS`, `StatePolicy::take_transition` and `helpers::microstep::take_transitions` are
+  absent, and the microstep is Appendix D's exit, content and entry. Such a program no longer pays, per the
+  measurement a bare-metal consumer made on its Cortex-M4 images: one indirect call per microstep, about 152 bytes of
+  `.text` and 16 bytes of the static stack bound.
+- The feature only adds (docs/adr/0053). A build that unifies it in for a crate holding a test component compiles a
+  statechart crate beside it unchanged: a statechart's policy names neither item, answers `TAKES_TRANSITIONS` false,
+  and is never asked to take a transition. Such a build carries the step's call once per selected transition.
+- C11 and C++ need nothing: C11 writes the step into a test component's machine only, and the C++ engine dispatches
+  it at compile time to a policy that declares `takeTransition`. The Go, Kotlin, Python and Swift runtimes keep the
+  step in every build (docs/SCE_TEST_PROFILE.md §4.4 says why).
