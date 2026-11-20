@@ -12,5 +12,7 @@
 #![allow(clippy::all, dead_code)]
 
 // `#[path]` cannot take `env!("OUT_DIR")`, so the build script writes the
-// declaration of `static_datamodel`, read from its `mod.rs` there.
+// declaration of `static_datamodel` and of `static_datamodel_large` (the
+// signing and sealing machine built with its records' bounds moved,
+// docs/adr/0109, D17), each read from its `mod.rs` there.
 include!(concat!(env!("OUT_DIR"), "/static_datamodel.rs"));
