@@ -72,25 +72,39 @@ inline constexpr std::array<const char *, 11> COSE_TYPES = {COSE_SIGN1,   COSE_V
                                                             KEY_DERIVE,   RANDOM_BYTES, MAC,           MAC_VERIFY,
                                                             KEY_GENERATE, KEY_PUBLIC,   KEY_RETIRE};
 
-/// The bounds of the records' fields, in bytes (`sce:max-size` of each).
+/// The bounds of the records' fields that no build moves, in bytes. The payload, the plaintext, the objects
+/// made of them, a keyed digest's message and a draw are named bounds, which the feature holds as its build
+/// gave them (NamedBounds).
 namespace CoseBounds {
 inline constexpr size_t KEY_ID = 64;
 inline constexpr size_t TRUST_SET = 64;
-inline constexpr size_t PAYLOAD = 4096;
-inline constexpr size_t SIGN1 = 4352;
-inline constexpr size_t PLAINTEXT = 4352;
-inline constexpr size_t ENCRYPT0 = 4480;
 inline constexpr size_t EXTERNAL_AAD = 256;
 inline constexpr size_t SECRET = 256;
 inline constexpr size_t SALT = 64;
 inline constexpr size_t INFO = 256;
-/// `random_bytes`: the most bytes a draw gives.
-inline constexpr size_t RANDOM_DRAW = 256;
-/// `mac_message`: the most bytes a keyed digest's message holds.
-inline constexpr size_t MAC_MESSAGE = 4096;
 inline constexpr size_t TAG = 32;
 inline constexpr size_t LABEL = 64;
 }  // namespace CoseBounds
+
+/// The numbers of the named bounds of the records the feature judges a request and its answer by, in bytes
+/// (docs/adr/0109, D17). Each is a bound the library's records name (`bytes[cose_payload=4096]`), which a
+/// build moves with `sce-codegen --limit name=N`; the machine the build writes declares each it names as a
+/// static member of `<Machine>Limits` (`COSE_PAYLOAD` and its neighbours), and the embedding gives the feature
+/// those numbers. A value built by default holds the library's numbers, the bounds of a build given no limit.
+struct NamedBounds {
+    /// `cose_payload`: what a signing signs and a verification answers.
+    size_t cosePayload = 4096;
+    /// `cose_signed`: the object a signing makes and a verification reads.
+    size_t coseSigned = 4352;
+    /// `cose_plaintext`: what a seal seals and an opening answers.
+    size_t cosePlaintext = 4352;
+    /// `cose_sealed`: the object a seal makes and an opening reads.
+    size_t coseSealed = 4480;
+    /// `mac_message`: the message a keyed digest tags or verifies.
+    size_t macMessage = 4096;
+    /// `random_bytes`: the most bytes a draw gives.
+    size_t randomBytes = 256;
+};
 
 /// The length of an Ed25519 seed, of a ChaCha20/Poly1305 key and of a generated or derived key.
 inline constexpr size_t COSE_KEY_BYTES = 32;
@@ -236,7 +250,16 @@ inline std::string lowerHex(const Cose::Bytes &bytes, size_t count) {
 /// generation names no use of the four.
 class CoseFeature : public Feature {
 public:
-    explicit CoseFeature(CoseCrypto &crypto) : crypto_(crypto) {}
+    /// The operations over `crypto`, judging requests and answers by `bounds`: the numbers the build of the
+    /// machine it serves gave the records' named bounds, the library's when none are given (docs/adr/0109,
+    /// D17). A request past one is refused, and a verification or an opening whose payload or plaintext is
+    /// past one answers as one that does not verify or open.
+    explicit CoseFeature(CoseCrypto &crypto, NamedBounds bounds = NamedBounds{}) : crypto_(crypto), bounds_(bounds) {}
+
+    /// The bounds the feature judges by.
+    const NamedBounds &namedBounds() const {
+        return bounds_;
+    }
 
     CoseFeature(const CoseFeature &) = delete;
     CoseFeature &operator=(const CoseFeature &) = delete;
@@ -348,33 +371,33 @@ public:
             return true;
         };
         if (operation == COSE_SIGN1) {
-            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("payload", PAYLOAD) &&
+            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("payload", bounds_.cosePayload) &&
                    bytesWithin("external_aad", EXTERNAL_AAD);
         }
         if (operation == COSE_VERIFY1) {
-            return named("trust_set") && within("trust_set", TRUST_SET) && bytesWithin("cose", SIGN1) &&
+            return named("trust_set") && within("trust_set", TRUST_SET) && bytesWithin("cose", bounds_.coseSigned) &&
                    bytesWithin("external_aad", EXTERNAL_AAD);
         }
         if (operation == COSE_ENCRYPT0) {
-            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("plaintext", PLAINTEXT) &&
+            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("plaintext", bounds_.cosePlaintext) &&
                    bytesWithin("external_aad", EXTERNAL_AAD);
         }
         if (operation == COSE_DECRYPT0) {
-            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("cose", ENCRYPT0) &&
+            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("cose", bounds_.coseSealed) &&
                    bytesWithin("external_aad", EXTERNAL_AAD);
         }
         if (operation == RANDOM_BYTES) {
             if (!drawLength(argument(params, "length"))) {
-                why = "length is not a count from 1 to " + std::to_string(CoseBounds::RANDOM_DRAW);
+                why = "length is not a count from 1 to " + std::to_string(bounds_.randomBytes);
                 return false;
             }
             return true;
         }
         if (operation == MAC) {
-            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("message", MAC_MESSAGE);
+            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("message", bounds_.macMessage);
         }
         if (operation == MAC_VERIFY) {
-            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("message", MAC_MESSAGE) &&
+            return named("key_id") && within("key_id", KEY_ID) && bytesWithin("message", bounds_.macMessage) &&
                    bytesWithin("tag", TAG);
         }
         if (operation == KEY_GENERATE) {
@@ -483,12 +506,12 @@ private:
     };
 
     /// A draw's `length`: its decimal digits as a count from 1 to the bound, or nothing.
-    static std::optional<size_t> drawLength(const std::string &digits) {
+    std::optional<size_t> drawLength(const std::string &digits) const {
         if (digits.empty() || digits.size() > 5 || digits.find_first_not_of("0123456789") != std::string::npos) {
             return std::nullopt;
         }
         const auto length = static_cast<size_t>(std::stoul(digits));
-        if (length == 0 || length > CoseBounds::RANDOM_DRAW) {
+        if (length == 0 || length > bounds_.randomBytes) {
             return std::nullopt;
         }
         return length;
@@ -605,7 +628,7 @@ private:
         if (object->protectedHeaders.crit || object->unprotectedHeaders.crit) {
             return invalid("it names a critical header");
         }
-        if (object->payload.size() > CoseBounds::PAYLOAD) {
+        if (object->payload.size() > bounds_.cosePayload) {
             return invalid("its payload is past the bound of the result");
         }
         // With a kid, only the entry of the set it names is tried; without one, each entry in order.
@@ -694,7 +717,7 @@ private:
         if (!plaintext) {
             return unopened("its ciphertext does not open under the key");
         }
-        if (plaintext->size() > CoseBounds::PLAINTEXT) {
+        if (plaintext->size() > bounds_.cosePlaintext) {
             return unopened("its plaintext is past the bound of the result");
         }
         return detail::record({detail::boolean("opened", true), byteField("plaintext", *plaintext)});
@@ -861,6 +884,7 @@ private:
     }
 
     CoseCrypto &crypto_;
+    NamedBounds bounds_;
     std::map<std::string, Cose::Bytes> signing_;
     std::map<std::string, Cose::Bytes> sealing_;
     std::map<std::string, Cose::Bytes> mac_;
