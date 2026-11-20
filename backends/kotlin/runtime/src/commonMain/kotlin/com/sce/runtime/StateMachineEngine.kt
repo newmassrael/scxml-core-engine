@@ -5732,12 +5732,22 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *   own `expr`, `src` or content is not evaluated: it raises nothing and has
      *   no effect. A value the session cannot hold is the error of that
      *   `<data>`'s initialization, as [declareDatamodel] reports one: [failed]
-     *   is raised, and the `<data>` is left as one whose own expression failed
-     *   is.
+     *   is raised, and the `<data>` is left empty.
+     *
+     * §scxml-5.3: a value the environment supplies that is not a legal data
+     * value raises error.execution AND leaves an empty `<data>` of that id in
+     * the datamodel. So the `<data>` is declared empty (undefined) before it is
+     * given the handed value, and a refused value leaves it exactly that. The
+     * name is then the session's whether or not the value was held: an engine
+     * that resolves names before it evaluates (the Lua engine's ECMAScript
+     * frontend refuses an expression naming what its session never declared)
+     * answers `typeof refusable === 'undefined' ? 'unbound' : refusable` with
+     * `'unbound'`, as an engine that resolves on evaluation does.
      */
     protected fun declareHandedValue(engine: ScxmlScriptEngine, sid: String, id: String, failed: E): Boolean {
         if (!pendingInvokeParams.containsKey(id)) return false
         try {
+            engine.setVariable(sid, id, null)
             engine.setVariable(sid, id, pendingInvokeParams[id])
         } catch (_: Exception) {
             raisePlatformError(failed, ErrorReason.DATA_INIT_FAILED, "<data id='$id'> could not take the value its invoke handed it")

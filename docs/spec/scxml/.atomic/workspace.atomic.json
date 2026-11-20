@@ -6830,6 +6830,11 @@
           "file": "sce/src/runtime/DataModelInitializer.cpp",
           "symbol": "DataModelInitializer::declareHandedValue",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "declareHandedValue",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
