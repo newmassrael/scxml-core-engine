@@ -4542,6 +4542,9 @@ pub struct KeyedPool {
     pub max_live: u32,
     /// deploy.yaml's `sessions.max_inbox`, its default applied.
     pub max_inbox: u32,
+    /// deploy.yaml's `sessions.commit_delay_us`, `0` when the section sets none
+    /// (docs/adr/0109, D15).
+    pub commit_delay_us: u64,
 }
 
 /// `machine`'s `sessions:` section resolved against its document `model`
@@ -4583,6 +4586,7 @@ pub fn resolve_keyed_pool(
                 idle_ms: sessions.idle_ms,
                 max_live: sessions.max_live,
                 max_inbox: sessions.max_inbox,
+                commit_delay_us: sessions.commit_delay_us,
             })
         }
         SessionKeySource::Field(field) => field,
@@ -4633,6 +4637,7 @@ pub fn resolve_keyed_pool(
         idle_ms: sessions.idle_ms,
         max_live: sessions.max_live,
         max_inbox: sessions.max_inbox,
+        commit_delay_us: sessions.commit_delay_us,
     })
 }
 
@@ -7726,6 +7731,7 @@ topology:
             idle_ms: 60_000,
             max_live: 500,
             max_inbox: 8,
+            commit_delay_us: 250,
         }
     }
 
@@ -7752,6 +7758,7 @@ topology:
                 idle_ms: 60_000,
                 max_live: 500,
                 max_inbox: 8,
+                commit_delay_us: 250,
             }
         );
         let model = rooms_with(
@@ -7774,6 +7781,7 @@ topology:
                 idle_ms: 60_000,
                 max_live: 500,
                 max_inbox: 8,
+                commit_delay_us: 250,
             }
         );
     }

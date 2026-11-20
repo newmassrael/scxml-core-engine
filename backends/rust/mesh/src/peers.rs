@@ -225,6 +225,10 @@ pub struct Sessions {
     /// deploy.yaml's `sessions.max_inbox`: the most envelopes that wait in one
     /// session's inbox (docs/adr/0109, D1).
     pub max_inbox: u32,
+    /// deploy.yaml's `sessions.commit_delay_us`: how long, in microseconds,
+    /// the pool's committer waits before it takes what was handed to it into
+    /// one commit; `0` waits for nothing (docs/adr/0109, D15).
+    pub commit_delay_us: u64,
 }
 
 /// One machine's side of a deployment.

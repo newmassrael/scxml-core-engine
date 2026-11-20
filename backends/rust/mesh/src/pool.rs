@@ -2776,6 +2776,7 @@ mod tests {
         idle_ms: 1_000,
         max_live: 100_000,
         max_inbox: 64,
+        commit_delay_us: 0,
     };
 
     /// [`ROOMS`] holding at most `max_live` sessions in memory and
