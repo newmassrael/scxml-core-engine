@@ -152,8 +152,8 @@ public struct CodecContentLineRecords: Equatable, Sendable {
                         attendeeRoleLine = param
                     }
                 }
-                let v = try line.readString(maxSize: 40, text: false)
                 guard let attendeeRoleFinal = attendeeRoleLine else { throw CodecError.lineRequiredMissing }
+                let v = try line.readString(maxSize: 40, text: false)
                 attendeeValues.append(CodecContentLineRecordsAttendeeLine(attendeeCn: attendeeCnLine, attendeeRole: attendeeRoleFinal, value: v))
             } else if line.isNamed("EXDATE") {
                 if exdateValues.count >= 3 { throw CodecError.lineTooMany }

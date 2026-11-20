@@ -213,8 +213,8 @@ public struct CodecContentLineEnums: Equatable, Sendable {
                         attendeeStatusLine = param
                     }
                 }
-                let v = try line.readString(maxSize: 24, text: false)
                 guard let attendeeRoleFinal = attendeeRoleLine else { throw CodecError.lineRequiredMissing }
+                let v = try line.readString(maxSize: 24, text: false)
                 attendeeValues.append(CodecContentLineEnumsAttendeeLine(attendeeRole: attendeeRoleFinal, attendeeStatus: attendeeStatusLine, value: v))
             } else if line.isNamed("X-STEP") {
                 if stepValues.count >= 2 { throw CodecError.lineTooMany }
