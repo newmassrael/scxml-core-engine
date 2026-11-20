@@ -32,20 +32,20 @@ mutation_oracles backends/c/tests/integration/test_a_computed_event_name_is_matc
 
 mutation_case "an immediate computed name is looked up in the exact table again" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name);",
-     "                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name) &&\n                        {{ csym_prefix }}{{ model.name }}_event_exact(_send_evt_name) != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;")
+     "                        _send_evt_name, sce_text_length(_send_evt_name), &_send_evt.event, _send_evt.name);",
+     "                        _send_evt_name, sce_text_length(_send_evt_name), &_send_evt.event, _send_evt.name) &&\n                        {{ csym_prefix }}{{ model.name }}_event_exact(_send_evt_name) != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;")
 PY
 
 mutation_case "a delayed computed name is looked up in the exact table again" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "if ({{ P }}_arrive(_send_evt_name, strlen(_send_evt_name), &_send_delayed, _send_arrival)) {",
-     "if ({{ P }}_arrive(_send_evt_name, strlen(_send_evt_name), &_send_delayed, _send_arrival) &&\n                        {{ P }}_event_exact(_send_evt_name) != {{ PU }}_EVENT_NONE) {")
+     "if ({{ P }}_arrive(_send_evt_name, sce_text_length(_send_evt_name), &_send_delayed, _send_arrival)) {",
+     "if ({{ P }}_arrive(_send_evt_name, sce_text_length(_send_evt_name), &_send_delayed, _send_arrival) &&\n                        {{ P }}_event_exact(_send_evt_name) != {{ PU }}_EVENT_NONE) {")
 PY
 
 mutation_case "an immediate send does not carry the name it was sent under" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name);",
-     "                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name);\n                    _send_evt.name[0] = '\\0';")
+     "                        _send_evt_name, sce_text_length(_send_evt_name), &_send_evt.event, _send_evt.name);",
+     "                        _send_evt_name, sce_text_length(_send_evt_name), &_send_evt.event, _send_evt.name);\n                    _send_evt.name[0] = '\\0';")
 PY
 
 mutation_case "a delayed send waits without the name it was sent under" <<'PY'

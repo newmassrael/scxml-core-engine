@@ -167,8 +167,8 @@ PY
 
 mutation_case "a record field is assigned its own value back" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        format!(\"{target}.{field} = {value};\")\n    }\n    // To stderr, as the machine's other `<log>` is.",
-     "        format!(\"{target}.{field} = {target}.{field};\")\n    }\n    // To stderr, as the machine's other `<log>` is.")
+     "        format!(\"{target}.{field} = {value};\")\n    }\n    // Through the log seams, as the machine's other `<log>` is",
+     "        format!(\"{target}.{field} = {target}.{field};\")\n    }\n    // Through the log seams, as the machine's other `<log>` is")
 PY
 
 mutation_case "a record starts with every field zero" <<'PY'
@@ -192,8 +192,8 @@ PY
 
 mutation_case "a string is copied without its terminator" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "format!(\"memmove({target}, {value}, strlen({value}) + 1u);\")",
-     "format!(\"memmove({target}, {value}, strlen({value}));\")")
+     "format!(\"memmove({target}, {value}, sce_text_length({value}) + 1u);\")",
+     "format!(\"memmove({target}, {value}, sce_text_length({value}));\")")
 PY
 
 mutation_case "a published string reads as nothing" <<'PY'

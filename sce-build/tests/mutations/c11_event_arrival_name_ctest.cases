@@ -42,8 +42,8 @@ PY
 
 mutation_case "the name is cut at any character, not at a token boundary" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "        char *cut = strrchr(candidate, '.');\n",
-     "        char *cut = strlen(candidate) == 0u ? NULL : candidate + strlen(candidate) - 1;\n")
+     "        const char *cut = sce_text_find_last(candidate, '.');\n",
+     "        const char *cut = sce_text_length(candidate) == 0u ? NULL : candidate + sce_text_length(candidate) - 1;\n")
 PY
 
 mutation_case "a name no event of the document matches is dropped although it has a wildcard" <<'PY'

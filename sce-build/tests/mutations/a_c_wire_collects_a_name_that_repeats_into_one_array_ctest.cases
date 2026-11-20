@@ -29,8 +29,8 @@ mutation_oracles backends/c/tests/unit/forge_wire_repeat_test.c backends/c/tests
 
 mutation_case "a key that repeats is a pair of its own" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
-     "    if (w->any && w->last_key != NULL && strcmp(w->last_key, key) == 0) {",
-     "    if (false && w->any && w->last_key != NULL && strcmp(w->last_key, key) == 0) {")
+     "    if (w->any && w->last_key != NULL && sce_text_compare(w->last_key, key) == 0) {",
+     "    if (false && w->any && w->last_key != NULL && sce_text_compare(w->last_key, key) == 0) {")
 PY
 
 mutation_case "the open bracket is not written where the first value was" <<'PY'

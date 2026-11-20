@@ -120,10 +120,10 @@ PY
 
 mutation_case "a reply naming an undeclared event is raised anyway" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """        if (!{{ csym_prefix }}{{ model.name }}_arrive(_name, strlen(_name), &_reply_evt.event, _reply_evt.name)) {
+     """        if (!{{ csym_prefix }}{{ model.name }}_arrive(_name, sce_text_length(_name), &_reply_evt.event, _reply_evt.name)) {
             continue;
         }""",
-     """        (void){{ csym_prefix }}{{ model.name }}_arrive(_name, strlen(_name), &_reply_evt.event, _reply_evt.name);""")
+     """        (void){{ csym_prefix }}{{ model.name }}_arrive(_name, sce_text_length(_name), &_reply_evt.event, _reply_evt.name);""")
 PY
 
 # ── The bounded report is shortened instead of reported ─────────────
@@ -173,7 +173,7 @@ PY
 mutation_case "registering a type twice appends instead of replacing" <<'PY'
 edit("backends/c/runtime/include/sce/host_processor.h",
      """    for (int i = 0; i < registry->count; i++) {
-        if (strcmp(registry->entries[i].type, type) == 0) {
+        if (sce_text_compare(registry->entries[i].type, type) == 0) {
             registry->entries[i].handler = handler;
             registry->entries[i].user_data = user_data;
             return true;
@@ -191,7 +191,7 @@ PY
 mutation_case "the registry serves any type once something is registered" <<'PY'
 edit("backends/c/runtime/include/sce/host_processor.h",
      """    for (int i = 0; i < registry->count; i++) {
-        if (strcmp(registry->entries[i].type, type) == 0) {
+        if (sce_text_compare(registry->entries[i].type, type) == 0) {
             return &registry->entries[i];
         }
     }
@@ -211,7 +211,7 @@ PY
 mutation_case "the param lookup ignores the name it was given" <<'PY'
 edit("backends/c/runtime/include/sce/host_processor.h",
      """    for (int i = 0; i < request->param_count; i++) {
-        if (strcmp(request->params[i].name, name) == 0) {
+        if (sce_text_compare(request->params[i].name, name) == 0) {
             return request->params[i].value;
         }
     }

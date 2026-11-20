@@ -67,8 +67,8 @@ PY
 
 mutation_case "a bool crosses as text with a capital" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
-     "        written = snprintf(buf, cap, \"%s\", value.as.b ? \"true\" : \"false\");",
-     "        written = snprintf(buf, cap, \"%s\", value.as.b ? \"True\" : \"False\");")
+     "        return sce_text_place(value.as.b ? \"true\" : \"false\", value.as.b ? 4u : 5u, buf, cap) != 0u;",
+     "        return sce_text_place(value.as.b ? \"True\" : \"False\", value.as.b ? 4u : 5u, buf, cap) != 0u;")
 PY
 
 # ── The members come in the one order every engine writes ──────────

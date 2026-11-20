@@ -29,8 +29,8 @@ mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/te
 
 mutation_case "a value that is none of the declared routes is let through" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                if ({% for entry in action.targets %}strcmp(_send_route, \"",
-     "                if (1 || {% for entry in action.targets %}strcmp(_send_route, \"")
+     "                if ({% for entry in action.targets %}sce_text_compare(_send_route, \"",
+     "                if (1 || {% for entry in action.targets %}sce_text_compare(_send_route, \"")
 PY
 
 mutation_case "a value that is none of the declared routes is taken for this session's queue" <<'PY'

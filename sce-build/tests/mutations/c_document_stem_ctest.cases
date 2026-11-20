@@ -19,8 +19,8 @@ mutation_oracles backends/c/tests/unit/document_stem_test.c backends/c/tests/uni
 
 mutation_case "a file: scheme stays in the stem" <<'PY'
 edit("backends/c/runtime/include/sce/invoke.h",
-     "    if (strncmp(name, \"file:\", 5u) == 0) {",
-     "    if (strncmp(name, \"file:\", 5u) != 0) {")
+     "    if (sce_text_starts_with(name, \"file:\", 5u)) {",
+     "    if (!sce_text_starts_with(name, \"file:\", 5u)) {")
 PY
 
 mutation_case "a backslash does not end a directory" <<'PY'
@@ -31,6 +31,6 @@ PY
 
 mutation_case "a leading dot is an extension" <<'PY'
 edit("backends/c/runtime/include/sce/invoke.h",
-     "    size_t len = (dot != NULL && dot > name) ? (size_t)(dot - name) : strlen(name);",
-     "    size_t len = dot != NULL ? (size_t)(dot - name) : strlen(name);")
+     "    size_t len = (dot != NULL && dot > name) ? (size_t)(dot - name) : sce_text_length(name);",
+     "    size_t len = dot != NULL ? (size_t)(dot - name) : sce_text_length(name);")
 PY
