@@ -428,9 +428,10 @@ public final class AHostNamesItsOriginInItsOwnTermsPolicy: InvocablePolicy {
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
     /// `reason` is the code of sce:std/engine/error_reason the record carries
-    /// (docs/adr/0106 #111).
+    /// (docs/adr/0106 #111), named by its module: a module of machines may hold
+    /// the same enum under the same name, generated from the document.
     private func raiseExecutionError(
-        _ reason: ErrorReason, _ message: String, engine: Engine<AHostNamesItsOriginInItsOwnTermsPolicy>
+        _ reason: SceRuntime.ErrorReason, _ message: String, engine: Engine<AHostNamesItsOriginInItsOwnTermsPolicy>
     ) {
         engine.raise(EventWithMetadata.platformError(AHostNamesItsOriginInItsOwnTermsEvent.errorExecution, reason: reason, message: message))
     }

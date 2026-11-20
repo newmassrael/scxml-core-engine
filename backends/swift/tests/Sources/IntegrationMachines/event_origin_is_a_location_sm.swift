@@ -475,9 +475,10 @@ public final class EventOriginIsALocationPolicy: InvocablePolicy {
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
     /// `reason` is the code of sce:std/engine/error_reason the record carries
-    /// (docs/adr/0106 #111).
+    /// (docs/adr/0106 #111), named by its module: a module of machines may hold
+    /// the same enum under the same name, generated from the document.
     private func raiseExecutionError(
-        _ reason: ErrorReason, _ message: String, engine: Engine<EventOriginIsALocationPolicy>
+        _ reason: SceRuntime.ErrorReason, _ message: String, engine: Engine<EventOriginIsALocationPolicy>
     ) {
         engine.raise(EventWithMetadata.platformError(EventOriginIsALocationEvent.errorExecution, reason: reason, message: message))
     }
@@ -1084,8 +1085,10 @@ public final class EventOriginIsALocationPolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an

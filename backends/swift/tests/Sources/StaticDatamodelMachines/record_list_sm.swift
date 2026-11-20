@@ -3191,8 +3191,10 @@ public final class RecordListPolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
@@ -3467,8 +3469,10 @@ break sceBlock
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
@@ -3665,8 +3669,10 @@ break sceBlock
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
@@ -4663,8 +4669,10 @@ break sceBlock
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
@@ -5151,8 +5159,10 @@ break sceBlock
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
@@ -5348,8 +5358,10 @@ break sceBlock
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
@@ -5482,8 +5494,10 @@ break sceBlock
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
@@ -5602,8 +5616,10 @@ break sceBlock
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document

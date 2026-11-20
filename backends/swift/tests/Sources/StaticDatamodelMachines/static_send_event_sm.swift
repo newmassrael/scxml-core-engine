@@ -571,8 +571,10 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
@@ -616,8 +618,10 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that

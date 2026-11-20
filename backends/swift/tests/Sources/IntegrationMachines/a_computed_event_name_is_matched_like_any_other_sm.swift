@@ -523,9 +523,10 @@ public final class AComputedEventNameIsMatchedLikeAnyOtherPolicy: InvocablePolic
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
     /// `reason` is the code of sce:std/engine/error_reason the record carries
-    /// (docs/adr/0106 #111).
+    /// (docs/adr/0106 #111), named by its module: a module of machines may hold
+    /// the same enum under the same name, generated from the document.
     private func raiseExecutionError(
-        _ reason: ErrorReason, _ message: String, engine: Engine<AComputedEventNameIsMatchedLikeAnyOtherPolicy>
+        _ reason: SceRuntime.ErrorReason, _ message: String, engine: Engine<AComputedEventNameIsMatchedLikeAnyOtherPolicy>
     ) {
         engine.raise(EventWithMetadata.platformError(AComputedEventNameIsMatchedLikeAnyOtherEvent.errorExecution, reason: reason, message: message))
     }
@@ -826,8 +827,10 @@ public final class AComputedEventNameIsMatchedLikeAnyOtherPolicy: InvocablePolic
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
@@ -871,8 +874,10 @@ public final class AComputedEventNameIsMatchedLikeAnyOtherPolicy: InvocablePolic
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
@@ -916,8 +921,10 @@ public final class AComputedEventNameIsMatchedLikeAnyOtherPolicy: InvocablePolic
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
@@ -958,8 +965,10 @@ public final class AComputedEventNameIsMatchedLikeAnyOtherPolicy: InvocablePolic
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
@@ -1000,8 +1009,10 @@ public final class AComputedEventNameIsMatchedLikeAnyOtherPolicy: InvocablePolic
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
@@ -1107,8 +1118,10 @@ public final class AComputedEventNameIsMatchedLikeAnyOtherPolicy: InvocablePolic
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that

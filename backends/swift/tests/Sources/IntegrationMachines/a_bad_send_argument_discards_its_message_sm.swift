@@ -429,9 +429,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
     /// `reason` is the code of sce:std/engine/error_reason the record carries
-    /// (docs/adr/0106 #111).
+    /// (docs/adr/0106 #111), named by its module: a module of machines may hold
+    /// the same enum under the same name, generated from the document.
     private func raiseExecutionError(
-        _ reason: ErrorReason, _ message: String, engine: Engine<ABadSendArgumentDiscardsItsMessagePolicy>
+        _ reason: SceRuntime.ErrorReason, _ message: String, engine: Engine<ABadSendArgumentDiscardsItsMessagePolicy>
     ) {
         engine.raise(EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: reason, message: message))
     }
@@ -737,8 +738,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     sendArgError = "<send> namelist names 'undeclaredA', which is not declared"; sendArgReason = .locationInvalid
                     if !sendArgError.isEmpty {
@@ -785,8 +788,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
@@ -836,8 +841,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
@@ -939,8 +946,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
@@ -1029,8 +1038,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 do {
                     var sendArgError = ""
                     // Why the argument failed, a code of sce:std/engine/error_reason
-                    // (docs/adr/0106 #111), set with every sentence below.
-                    var sendArgReason = ErrorReason.expressionFailed
+                    // (docs/adr/0106 #111), set with every sentence below. The
+                    // runtime's type by its module: a module of machines may hold
+                    // the same enum under the same name, generated from the document.
+                    var sendArgReason = SceRuntime.ErrorReason.expressionFailed
                     _ = sendArgReason
                     // W3C SCXML 6.2: a typeexpr is the processor type, read from the engine now
                     // (test 174: its current value, not the initial one). A value that is none of
