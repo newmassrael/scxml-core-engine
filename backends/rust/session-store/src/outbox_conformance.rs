@@ -21,6 +21,8 @@
 //! * [`an_old_entry_expires_and_its_sender_is_noted`]: an expiry deletes what is older than its
 //!   moment, writes a note for each entry's sender and makes it due at once, closes an outbox
 //!   left empty and untouched, and a write of the sender takes its notes, a removal all of them.
+//! * [`an_entry_and_a_note_are_replaced_only_from_what_they_hold`] (ADR 0109, D8): the outboxes
+//!   are listed a page at a time, and an envelope is replaced only from the bytes it holds.
 //! * [`a_batch_appends_and_acknowledges_item_by_item`] (ADR 0109, D15): a batch's
 //!   acknowledgements and writes are decided in order, item by item, and a write it refuses
 //!   appends nothing.
@@ -479,6 +481,118 @@ pub fn an_old_entry_expires_and_its_sender_is_noted(harness: &impl Harness) {
         (reopened[0].incarnation.as_str(), reopened[0].number),
         (SECOND, 1),
         "a closed outbox opens anew, in another incarnation"
+    );
+}
+
+/// ADR 0109, D8: the outboxes are listed a page at a time by the entries the store keeps their
+/// clients under, and an entry's envelope and a note's are replaced only from the bytes they
+/// hold, every other field kept: a replacement made from bytes another one already replaced
+/// writes nothing, so a change made in between is not overwritten.
+pub fn an_entry_and_a_note_are_replaced_only_from_what_they_hold(harness: &impl Harness) {
+    let store = harness.handle();
+    let sender = lease(&store, "k");
+    store
+        .put("k", b"sender", None, 0, sender.fence)
+        .expect("the sending session");
+    store
+        .append(&appends("phone", Some("k"), &[b"one", b"two"]), 1_000)
+        .expect("two appends a session sent");
+    store
+        .append(&appends("tablet", None, &[b"three"]), 1_000)
+        .expect("an append to another client");
+
+    let mut entries = vec![store.indexed("phone"), store.indexed("tablet")];
+    entries.sort();
+    assert_eq!(
+        store.outbox_clients_after(None, 10).expect("every outbox"),
+        entries,
+        "each client by the entry the store keeps it under, in the order of its bytes"
+    );
+    assert_eq!(
+        store.outbox_clients_after(None, 1).expect("a page of one"),
+        entries[..1].to_vec()
+    );
+    assert_eq!(
+        store
+            .outbox_clients_after(Some(entries[0].as_str()), 10)
+            .expect("the page after the first"),
+        entries[1..].to_vec()
+    );
+
+    assert!(
+        !store
+            .reseal_entry("phone", 2, b"other bytes", b"two again")
+            .expect("a replacement from bytes the entry does not hold"),
+        "replaced from bytes the entry does not hold"
+    );
+    assert!(
+        !store
+            .reseal_entry("phone", 9, b"two", b"two again")
+            .expect("a replacement of no entry"),
+        "a number the outbox holds no entry at"
+    );
+    assert!(store
+        .reseal_entry("phone", 2, b"two", b"two again")
+        .expect("a replacement from the bytes held"));
+    assert!(
+        !store
+            .reseal_entry("phone", 2, b"two", b"stale")
+            .expect("a replacement from the bytes it held before"),
+        "a replacement made from bytes already replaced is refused"
+    );
+    let outbox = store.outbox("phone").expect("the outbox").expect("held");
+    assert_eq!(outbox.incarnation, FIRST);
+    assert_eq!(
+        outbox
+            .entries
+            .iter()
+            .map(|entry| (
+                entry.number,
+                entry.at_ms,
+                entry.sender.as_deref(),
+                entry.envelope.as_slice()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (1, 1_000, Some("k"), &b"one"[..]),
+            (2, 1_000, Some("k"), &b"two again"[..])
+        ],
+        "the number, the moment and the sender are kept"
+    );
+    assert_eq!(held(&store, "tablet"), vec![(1, b"three".to_vec())]);
+
+    store.expire("phone", 5_000, 1).expect("an expiry of one");
+    let note = store
+        .notes("k")
+        .expect("the sender's notes")
+        .pop()
+        .expect("a note of the expired entry");
+    assert!(!store
+        .reseal_note("k", note.id, b"other bytes", b"one again")
+        .expect("a replacement from bytes the note does not hold"));
+    assert!(!store
+        .reseal_note("another", note.id, b"one", b"one again")
+        .expect("a replacement of another session's note"));
+    assert!(store
+        .reseal_note("k", note.id, b"one", b"one again")
+        .expect("a replacement from the bytes held"));
+    assert!(!store
+        .reseal_note("k", note.id, b"one", b"stale")
+        .expect("a replacement from the bytes it held before"));
+    let notes = store.notes("k").expect("the notes after it");
+    assert_eq!(
+        notes
+            .iter()
+            .map(|kept| (
+                kept.id,
+                kept.client.as_str(),
+                kept.number,
+                kept.at_ms,
+                kept.envelope.as_slice()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(note.id, "phone", 1, 1_000, &b"one again"[..])],
+        "the note's other fields are kept"
     );
 }
 
