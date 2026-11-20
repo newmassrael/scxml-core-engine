@@ -3598,6 +3598,10 @@ names none generates the bytes it generated before.
   runtime's floor; without it the build fails with `E0433` at `::sce_rust_runtime::record_cbor`.
 - A C++ machine that names `sce:payload` includes `common/RecordCbor.h`, header-only, which reads JSON with
   `saved/SavedJson.h` and CBOR with `sce/forge/cbor.h`; no library is linked for it.
+- A record named by `sce:payload` holds no float and no open enum, at any depth: the codec a peer prints from
+  the schema writes values of them (a NaN, a number no variant names) that no payload spells, so the record's two
+  writers could not agree, and the build refuses it (`validation/payload-record-schema`). A schema that needs one
+  carries the value as an integer of a stated scale, or a closed enum.
 - C++ `CoseFeature` has `setTrustedKeys`, public keys by id that a trust set may name with no seed held: a client
   that verifies its server's objects is given the server's public key and nothing else. A trust set's id that names
   a signing key of the host is read as before.
