@@ -182,10 +182,11 @@ fn cpp_happy_compile_const_with_index_by() {
         ),
         "expected typed find_by_index over const uint32_t&; got:\n{code}"
     );
-    // The field name appears in the comparison body.
+    // The element is printed from its plan (docs/adr/0081 step 4), so the
+    // comparison body reads the index field through its accessor.
     assert!(
-        code.contains("slots_[slot].key_expr_id == key"),
-        "expected `slots_[slot].key_expr_id == key` comparison body"
+        code.contains("slots_[slot].key_expr_id() == key"),
+        "expected `slots_[slot].key_expr_id() == key` comparison body; got:\n{code}"
     );
 }
 
