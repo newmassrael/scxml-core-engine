@@ -4914,9 +4914,8 @@ pub struct BroadcastLogResolution {
 /// signature asks the caller for (the flag inputs, and a variant's tag) is the
 /// element's **context**: the log stores it in the slot beside the bytes, so that
 /// every reader decodes an entry under what it was published under (ADR 0062
-/// section 4, "Caller inputs are part of the element"). Whether the form a
-/// language decodes to can outlive the buffer it was read from depends on the
-/// language, and is the one fact a language may still refuse.
+/// section 4, "Caller inputs are part of the element"). What a language may still
+/// refuse is a codec its emitter does not write.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BroadcastLogElementFacts {
     /// The flag inputs the element's `encode` and `decode` take from the caller,
@@ -4940,20 +4939,6 @@ pub struct BroadcastLogElementFacts {
     /// The element is a variant whose tag the caller supplies, because the wire
     /// form carries no tag field. The tag is a `u8` on decode.
     pub caller_variant_tag: bool,
-    /// The element is a CBOR map with a string or byte-string entry: the one
-    /// shape whose decoded form can hold a view into the buffer it was read from.
-    pub cbor_text_or_bytes_entry: bool,
-    /// A string or byte-string entry of the CBOR map states neither `sce:max-size`
-    /// nor `sce:length` and has no capacity
-    /// ([`forge::cbor_codec::has_unbounded_text_or_bytes`]): no container of a
-    /// fixed size holds it, so `Inline`, which a Rust log's read copies a decoded
-    /// value into, does not answer for it. Read together with
-    /// [`Self::cbor_text_or_bytes_entry`]. A document set never reaches a log with
-    /// such an element, since a slot is sized from the element's largest encoded
-    /// size and `broadcast-log/element-size-unbounded` refuses one that has none;
-    /// the fact is what keeps the verdict of a render that is handed its numbers
-    /// by hand the same.
-    pub cbor_entry_unbounded: bool,
     /// The id of an entry of the CBOR map that holds a bounded list of records
     /// (docs/adr/0085, Landing order step 3a), or `None` for a map with none: a
     /// language whose codec template does not write the array
@@ -4990,17 +4975,17 @@ impl BroadcastLogElementFacts {
     ///
     /// What a caller must give is not a refusal: every broadcast-log template
     /// stores it with the entry ([`Self::context_words`],
-    /// [`forge::codegen_matrix::BROADCAST_LOG_BACKENDS`]). The one fact left is each language's own: a
-    /// language whose decode of a CBOR text or byte-string entry yields a value
-    /// that owns its bytes (a copy into the value) holds the element, and one
-    /// whose value borrows the buffer holds it when it has an owned form to
-    /// copy into (Rust's `{Name}Owned<S>`, which every entry that states a bound
-    /// has). Every arm is written out, so that a language added to
-    /// [`generator::Language`] is decided here and does not inherit another's
-    /// answer, and the change that gives a language its template states, in its
-    /// arm, which it is and why. Swift's is decided by its codec emitter: it refuses
-    /// the element when that emitter does not write the codec ([`Self::swift_unlowered`]),
-    /// and stores the context of one it writes.
+    /// [`forge::codegen_matrix::BROADCAST_LOG_BACKENDS`]). Nor is a CBOR text or
+    /// byte-string entry: it carries its bound in its type or is refused at it
+    /// (docs/adr/0101, section 1.3), so the decode of every language that copies
+    /// it holds it, and Rust, whose decode borrows the buffer, copies it into the
+    /// owned mirror `{Name}Owned<S>`, which every map with such an entry has
+    /// ([`forge::cbor_codec::rust_owned_mirror`]). What is left is a codec the
+    /// language's emitter does not write: Swift's is decided by its codec emitter,
+    /// which refuses the element when it does not write the codec
+    /// ([`Self::swift_unlowered`]) and stores the context of one it writes, and a
+    /// language whose codec template does not write a list of records refuses an
+    /// element that holds one ([`Self::cbor_record_list_entry`]).
     pub fn refusal_for(&self, language: generator::Language) -> Option<String> {
         use generator::Language;
         // The Swift log is written over the unit the Swift codec emitter writes, so a codec
@@ -5020,80 +5005,7 @@ impl BroadcastLogElementFacts {
                 ));
             }
         }
-        let borrows = match language {
-            // The decoded form is `<'a>` over the cursor's buffer: a string entry
-            // is a `&str` and a byte-string entry a `&[u8]` of it. The map has an
-            // owned mirror, `{Name}Owned<S>`, that copies each of them into the
-            // profile's `Str<N>` or `Bytes<N>` of the entry's declared bound
-            // (`codec_cbor.rs.jinja2`), and a log's `read` hands back that form,
-            // built by `try_into_owned_in::<Inline>()` from the decode that
-            // borrowed its stack buffer. So the map is held, as the other
-            // languages' are. What `Inline` does not hold is an entry that
-            // states no bound and has no capacity (docs/adr/0077 §7), so the
-            // log's read has no form to build; a document set refuses such an
-            // element for its size before a render, and a render given its
-            // numbers by hand refuses it here.
-            Language::Rust => self.cbor_text_or_bytes_entry && self.cbor_entry_unbounded,
-            // Every value a Python decode returns owns what it holds, so a CBOR
-            // text or byte-string entry is held and never refused. The log gives
-            // the decode a `bytes` (not a `memoryview`), and the generated CBOR
-            // codec reads an entry through `sce_forge_runtime.cbor`, whose
-            // `read_text` decodes to a `str` and whose `read_bytes` copies
-            // (`bytes(c.peek_slice(n))`); a plain codec's byte field is
-            // `bytes(raw)`, also a copy. Nothing the log's buffer owns outlives
-            // the call, so there is no view to refuse.
-            Language::Python => false,
-            // A Kotlin decode returns values that own what they hold, so a CBOR
-            // text or byte-string entry is held and never refused:
-            // `Cbor.readText` builds a new `String` with `decodeToString`, and
-            // `Cbor.readBytes` and `Cbor.readBytesExact` take a copy through
-            // `SceCursor.peekSlice`, which is `copyOfRange`; a plain codec's
-            // `bytes` payload is the same copy. Nothing points into the buffer
-            // a read decodes from, so there is no view to refuse.
-            Language::Kotlin => false,
-            // Go's decoded struct owns what it read of a CBOR entry: the
-            // runtime's `CborReadText` and `CborReadBytes` copy the payload out of
-            // the cursor's buffer (`cborReadPayload` appends into a fresh slice,
-            // and a `string` is a copy by the language), so a text or byte-string
-            // entry holds no view of the buffer and nothing is left to copy it
-            // into. A positional `bytes` field of a non-CBOR codec does alias the
-            // cursor's buffer (`raw[off:]`), which is not this fact's shape: the
-            // typed read gives every entry a buffer of its own and nothing else
-            // writes it, so the alias keeps that buffer alive and stays valid.
-            Language::Go => false,
-            // The decoded struct owns its bytes: a CBOR text entry is a
-            // `char name[N]` and a byte-string entry a `uint8_t name[N]`, each
-            // with its length beside it (`codec_cbor.h.jinja2`), and
-            // `sce_forge_cbor_read_text` and `sce_forge_cbor_read_bytes` copy
-            // into them, so the value outlives the buffer it was read from and
-            // a log can hand it back after its own stack buffer is gone. Read
-            // from the template, not assumed: no entry kind there holds a
-            // pointer into the cursor.
-            Language::C11 => false,
-            // The decoded form owns its bytes: the CBOR reader of the C++ runtime
-            // returns a text entry as a `std::string` and a byte-string entry as
-            // a `std::vector<std::uint8_t>` (`sce/forge/cbor.h`, `read_text`,
-            // `read_bytes`, `read_bytes_exact`), and the codec's struct holds
-            // those types, so the value outlives the buffer it was read from and
-            // a log's `read` hands it back as it decoded it. The other codec
-            // encodings own theirs as well: a `bytes` field is a
-            // `std::vector<uint8_t>` and a string a `std::string`.
-            Language::Cpp => false,
-            // Nothing a codec the Swift emitter lowers decodes to borrows its input: that
-            // emitter writes a frame of fixed-width integers, a struct of values that own
-            // their bytes, and refuses every shape that holds a string, a byte string or a
-            // CBOR entry (`swift_unlowered`, above). For the same reason every element it
-            // lowers asks its caller for nothing (no flag input, no variant tag), so the
-            // context check above has nothing to refuse for it either.
-            Language::Swift => false,
-        };
-        borrows.then(|| {
-            "a CBOR map with a string or byte string entry that states neither sce:max-size \
-             nor sce:length decodes to a value that borrows the buffer it was read from, and \
-             has no owned form to copy it into: the owned form holds each entry in a \
-             container of its declared bound"
-                .to_string()
-        })
+        None
     }
 }
 
@@ -7113,8 +7025,9 @@ fn codec_may_exceed_capacity_recursive(
 /// has an owned mirror, `{Codec}Owned`, which is what a container that stores the
 /// element names in place of the view
 /// ([`forge::cbor_codec::rust_owned_mirror`]: a map that borrows a string or a
-/// byte string, bounded or not, since the mirror holds each in its profile's
-/// container for the entry's tag, docs/adr/0077 §7).
+/// byte string, each of which carries its bound in its type, docs/adr/0101
+/// section 1.3, so the mirror holds it in its profile's container for the
+/// entry's tag).
 fn codec_is_borrowed_recursive(
     cm: &forge::model::CodecModel,
     imports: &[forge::model::ForgeImport],
@@ -9057,15 +8970,6 @@ fn broadcast_log_element_facts(
             .variant
             .as_ref()
             .is_some_and(|variant| variant.tag_field.is_none()),
-        cbor_text_or_bytes_entry: codec.encoding == forge::model::CodecEncoding::Cbor
-            && codec.cbor_entries.iter().any(|entry| {
-                matches!(
-                    entry.leaf_type(),
-                    Some(forge::model::SceType::String | forge::model::SceType::Bytes)
-                )
-            }),
-        cbor_entry_unbounded: codec.encoding == forge::model::CodecEncoding::Cbor
-            && forge::cbor_codec::has_unbounded_text_or_bytes(codec),
         cbor_record_list_entry: forge::cbor_codec::first_record_list(codec)
             .map(|entry| entry.id.clone()),
         // A log hands the codec what it asks its caller for, which it stores beside the bytes: a

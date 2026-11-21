@@ -1088,10 +1088,10 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
     };
     let result = super::write_result(may_fail, "K");
 
-    // The owned mirror (`{name}Owned<S>`, generated when every string and byte
-    // string of the map states a bound) says what it holds through the same
-    // interface, so `encode_source` writes it as it writes the view, and the
-    // mirror's `as_borrowed` reads each entry from here.
+    // The owned mirror (`{name}Owned<S>`, generated for every map with a string or
+    // a byte string, each of which states its bound) says what it holds through
+    // the same interface, so `encode_source` writes it as it writes the view, and
+    // the mirror's `as_borrowed` reads each entry from here.
     let owned_impl = if cbor_codec::rust_owned_mirror(m) {
         let mut items = String::new();
         for item in &plan.entries {

@@ -242,10 +242,12 @@ edit("sce-build/src/forge/generator.rs",
      r'''    if retention == u32::MAX {''')
 PY
 
-# The refusal of an element the template cannot hold is placed on the row that names the
-# element, so that a reader finds the line to repair. Placed on the retention row, it points
-# at a line that is not wrong. Killed by `an_element_the_template_cannot_hold_is_refused_on_the_element_type_row`
-# (`row_text` must hold `<sce:element-type>event_record<`).
+# The refusal of an element whose codec the language's emitter does not write is placed on
+# the row that names the element, so that a reader finds the line to repair. Placed on the
+# retention row, it points at a line that is not wrong. Killed by
+# `a_render_given_a_swift_refusal_in_the_facts_refuses_before_it_writes` (`row_text` must
+# hold `<sce:element-type>event_record<`): no element is left that the Rust template
+# refuses, so the Swift render is the one that reaches the shared refusal.
 mutation_case "the refusal of an element is placed on the retention row" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''            template = broadcast_log_template_label(language),

@@ -36,9 +36,7 @@
 //!   at its type (docs/adr/0101, section 1.3), so every map that borrows has a
 //!   mirror `Inline` holds; a map of scalars borrows nothing and has none: one
 //!   predicate (`cbor_codec::rust_owned_mirror`) says it for the codec and the
-//!   answer a container is given for the element, and another
-//!   (`cbor_codec::has_unbounded_text_or_bytes`) the fact a log is judged by,
-//!   which no map read from a document sets.
+//!   answer a container is given for the element.
 //! * With `generate --owned-origin` the mirror gains `try_into_owned_in_origin`, as
 //!   every other generated owned form does: a string is built by what the profile
 //!   answers for the entry's tag, `OriginStr<Tag>::str_from`, and a byte string by
@@ -51,7 +49,7 @@
 
 use std::path::Path;
 
-use sce_build::forge::cbor_codec::{has_unbounded_text_or_bytes, rust_owned_mirror};
+use sce_build::forge::cbor_codec::rust_owned_mirror;
 use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::model::{CodecModel, ForgeDocument};
 use sce_build::forge::parser::parse_forge;
@@ -154,11 +152,10 @@ fn assert_holds(code: &str, needles: &[&str]) {
 #[test]
 fn one_predicate_says_which_map_has_a_mirror() {
     // Every map that borrows has a mirror, and the map that borrows nothing has
-    // none; no map read from a document holds a text with no bound.
+    // none.
     for (entries, mirror) in [(BOUNDED, true), (SCALARS, false)] {
         let m = codec(&document(entries));
         assert_eq!(rust_owned_mirror(&m), mirror, "{entries}");
-        assert!(!has_unbounded_text_or_bytes(&m), "{entries}");
     }
 }
 
