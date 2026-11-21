@@ -129,9 +129,9 @@ struct CodecZenohUndeclToken {
     /// advances past the consumed bytes and the value is answered; a
     /// refused frame answers the `CodecError` that refused it
     /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
-    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
-    /// L494-519), which the caller resumes after appending bytes, and
-    /// another kind for a frame no more bytes make whole.
+    /// the cursor's tail is shorter than the frame (RFC
+    /// §synth-5-B L494-519), which the caller resumes after appending
+    /// bytes, and another kind for a frame no more bytes make whole.
     static ::SCE::Forge::Decoded<CodecZenohUndeclToken> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t z) {
         // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
