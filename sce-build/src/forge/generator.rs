@@ -7664,11 +7664,11 @@ impl C11DataSlot {
 
 /// The slot of `_event.data` of the C11 machine `model` (docs/adr/0086,
 /// section 8.1), its symbols prefixed by `csym_prefix`: every schema the
-/// statechart imports whose event a transition takes or whose record a
-/// host-run invocation completes with is an input, at its `DATA_MAX_LEN`, in
-/// the order of the aliases the schemas are imported by. A schema whose
-/// largest payload has no size is refused, in the words the schema's own
-/// unit refuses it in.
+/// statechart imports that declares a field, whose event a transition takes
+/// or whose record a host-run invocation completes with, is an input, at its
+/// `DATA_MAX_LEN`, in the order of the aliases the schemas are imported by. A
+/// schema whose largest payload has no size is refused, in the words the
+/// schema's own unit refuses it in.
 pub fn c11_data_slot(
     model: &crate::model::SCXMLModel,
     csym_prefix: &str,
@@ -7687,6 +7687,14 @@ pub fn c11_data_slot(
         .collect();
     let mut inputs = Vec::new();
     for (alias, schema) in &model.imported_records {
+        // A schema that declares no field (`sce:payload="none"` or an open
+        // question) is a build-time contract and nothing else: the machine
+        // for its event is the machine generated with no schema, so a
+        // delivery that carries data is held where the event of no schema
+        // is, and the schema sizes nothing.
+        if schema.fields.is_empty() {
+            continue;
+        }
         let taken = model.states.values().any(|state| {
             state.transitions.iter().any(|transition| {
                 crate::event_descriptor::attribute_matches(&transition.event, &schema.event_name)
