@@ -7,7 +7,7 @@
 // markers above every generated function header and to drive the
 // per-symbol attribution sourcemap JSON. The
 // markers are silent when the IR field is `None`, which would
-// regress the spec contract (lines 3280-3284 + 3289-3290) without
+// regress the spec contract (lines 3281-3285 + 3290-3291) without
 // any visible signal — a classic silently-broken-hook situation.
 //
 // This pre-emit walker is the consumer that prevents that regression.
@@ -34,7 +34,7 @@
 // resolve_history_targets stubs) that do not derive from a single
 // authored XML element are *intentionally* left `None` and excluded
 // from this walker per the inherited-content-branch carve-out
-// documented in spec line 3286-3289 ("XInclude / sce:template
+// documented in spec lines 3286-3288 ("XInclude / sce:template
 // composition MUST track per-element coordinates and attach them to
 // every IR node"). The walker covers the four types above; the
 // per-action attribution emit extends coverage to statement level.
@@ -226,7 +226,7 @@ fn action_pinned_id(state_id: &str, action: &Action) -> String {
 /// non-statechart kinds: each `ForgeDocument` variant lowers to a
 /// per-kind body function that carries an SCE-MAP marker driven by
 /// the model's `source_location`. A `None` here would silently strip
-/// the marker, regressing spec lines 3280-3284 + 3286-3290 — the
+/// the marker, regressing spec lines 3281-3285 + 3287-3291 — the
 /// same silently-broken-hook regression the SCXML-side walker
 /// prevents.
 ///

@@ -4189,7 +4189,7 @@ enum Commands {
     ///                     record per frame in the order given. Exits 1
     ///                     when any frame is unresolvable.
     ///
-    /// Spec lines 3253-3278 fix the tool's resolution contract:
+    /// Spec lines 3254-3279 fix the tool's resolution contract:
     /// PC → symbol → sourcemap → SCXML file:line + state_path. The
     /// per-symbol attribution data ships in the sourcemap, so the
     /// address→symbol hop reads the ELF symbol table rather than a
@@ -16291,7 +16291,7 @@ impl TestInfo {
 // symbol or PC address back to SCXML coordinates (file + state path +
 // line range).
 //
-// Three modes (spec lines 3253-3278):
+// Three modes (spec lines 3254-3279):
 //   `--symbol <NAME>` — direct sourcemap key lookup.
 //   `--pc <ADDR>`     — resolve the address to the function symbol
 //                        containing it, then look that symbol up.

@@ -94,8 +94,12 @@ const SPEC_DOCS: &[&str] = &["SCE_MESH.md"];
 /// with the same citations re-pointed again (+60);
 /// 4544 until section 5.S (the `broadcast-log` kind) went in after 5.R, with
 /// the one citation that sat past it re-pointed (`§synth-8 Q8`, 4233 to 4404,
-/// in eight places: the driver-class diagnostic and its text) (+171).
-const SYNTH_RFC_LINES: usize = 4715;
+/// in eight places: the driver-class diagnostic and its text) (+171);
+/// 4715 until the per-file input closure went into sections 5.O and 6.2.6
+/// and the ZInt64 decode rule into Appendix B, with the citations past
+/// line 3248 re-pointed: `§synth-8 Q8` 4404 to 4420, the sourcemap and
+/// `addr2sce` lines of 5.O by one, the C11 items of section 7 (+31).
+const SYNTH_RFC_LINES: usize = 4746;
 
 /// The document the exclusion above is granted to.
 const SYNTH_RFC: &str = "docs/spec/synth/rfc-sce-protocol-synthesis.md";
