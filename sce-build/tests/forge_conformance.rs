@@ -10260,7 +10260,7 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
     assert!(
         generated.contains(
             "body: CodecVariantDefaultMarkerVariant = \
-             field(default_factory=sce_codec_default_marker_arm_b.CodecDefaultMarkerArmB)"
+             field(default_factory=lambda: sce_codec_default_marker_arm_b.CodecDefaultMarkerArmB())"
         ),
         "outer body must default to a value of the arm marked \
          default=\"true\" (CodecDefaultMarkerArmB). Generated source:\n{generated}"
@@ -10268,7 +10268,7 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
     assert!(
         !generated.contains(
             "body: CodecVariantDefaultMarkerVariant = \
-             field(default_factory=sce_codec_default_marker_arm_a.CodecDefaultMarkerArmA)"
+             field(default_factory=lambda: sce_codec_default_marker_arm_a.CodecDefaultMarkerArmA())"
         ),
         "outer body must NOT default to the first declared arm \
          (CodecDefaultMarkerArmA) when another arm is marked default. \
