@@ -25426,7 +25426,10 @@ fn byte_read(byte: &str, signed: bool, lang: crate::generator::Language) -> Stri
         (Language::Swift, _) => no_swift_emitter("byte_read"),
         (Language::Kotlin, true) => byte.to_string(),
         (Language::Kotlin, false) => format!("{byte}.toUByte()"),
-        (_, false) => byte.to_string(),
+        (
+            Language::Rust | Language::Go | Language::Cpp | Language::C11 | Language::Python,
+            false,
+        ) => byte.to_string(),
         (Language::Rust, true) => format!("{byte} as i8"),
         (Language::Go, true) => format!("int8({byte})"),
         (Language::Cpp, true) => format!("static_cast<int8_t>({byte})"),
