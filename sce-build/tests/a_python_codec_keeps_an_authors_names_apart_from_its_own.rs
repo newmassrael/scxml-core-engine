@@ -197,6 +197,20 @@ const SHAPES: &[Shape] = &[
         frames: &[&[1, 0, 2]],
         check: "{v} == 1",
     },
+    // The same field written as a `<data>` that carries its byte, which a
+    // positional codec reads as one of its fields, as it reads a
+    // `<sce:field>`.
+    Shape {
+        id: "fixed_data",
+        root: POSITIONAL,
+        imports: &[],
+        encode_may_fail: false,
+        datamodel: r#"
+    <data id="NAME" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="b" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>"#,
+        frames: &[&[1, 0, 2]],
+        check: "{v} == 1",
+    },
     Shape {
         id: "vle",
         root: POSITIONAL,
