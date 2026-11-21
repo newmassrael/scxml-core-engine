@@ -2227,12 +2227,18 @@ fn rust_lowers_an_algorithm_that_writes_a_map_it_is_lent_in_place() {
     let functions = functions_of(&files);
     let take = function_named(&functions, "take_generation");
     let (generics, inputs) = signature_of(take);
-    assert_eq!(generics, ["const N0 : usize"]);
+    assert_eq!(
+        generics,
+        [
+            "const N0 : usize",
+            "S0 : :: sce_portable_bytes :: MapStorage"
+        ]
+    );
     assert_eq!(
         inputs.first().map(String::as_str),
         Some(
             "& mut :: sce_portable_bytes :: BoundedMap < schema_map_peer :: \
-             SchemaMapPeerPayload , u64 , N0 >"
+             SchemaMapPeerPayload , u64 , N0 , S0 >"
         ),
         "{inputs:?}"
     );
@@ -2377,12 +2383,22 @@ fn rust_copies_no_map_it_reads_and_only_the_map_a_walk_writes() {
 
     let refill = function_named(&functions, "refill");
     let (generics, inputs) = signature_of(refill);
-    assert_eq!(generics, ["const N0 : usize", "const N1 : usize"]);
+    // Each map lent is the caller's variable, generic over its own bound and
+    // its own storage (docs/adr/0108, D4 "Storage").
+    assert_eq!(
+        generics,
+        [
+            "const N0 : usize",
+            "S0 : :: sce_portable_bytes :: MapStorage",
+            "const N1 : usize",
+            "S1 : :: sce_portable_bytes :: MapStorage",
+        ]
+    );
     assert_eq!(
         inputs,
         [
-            "& mut :: sce_portable_bytes :: BoundedMap < u32 , u64 , N0 >",
-            "& :: sce_portable_bytes :: BoundedMap < u32 , u64 , N1 >",
+            "& mut :: sce_portable_bytes :: BoundedMap < u32 , u64 , N0 , S0 >",
+            "& :: sce_portable_bytes :: BoundedMap < u32 , u64 , N1 , S1 >",
         ]
     );
     let mut methods = MethodCalls::default();
@@ -2458,12 +2474,19 @@ fn a_rust_algorithm_returns_a_map_into_its_callers_destination() {
     let functions = functions_of(&files);
     let distinct = function_named(&functions, "distinct");
     let (generics, inputs) = signature_of(distinct);
-    assert_eq!(generics, ["const N0 : usize"]);
+    assert_eq!(
+        generics,
+        [
+            "const N0 : usize",
+            "S0 : :: sce_portable_bytes :: MapStorage",
+            "SR : :: sce_portable_bytes :: MapStorage",
+        ]
+    );
     assert_eq!(
         inputs,
         [
-            "& :: sce_portable_bytes :: BoundedMap < u32 , u64 , N0 >",
-            "& mut :: sce_portable_bytes :: BoundedMap < u32 , u64 , 4 >",
+            "& :: sce_portable_bytes :: BoundedMap < u32 , u64 , N0 , S0 >",
+            "& mut :: sce_portable_bytes :: BoundedMap < u32 , u64 , 4 , SR >",
         ]
     );
     assert_eq!(
@@ -2506,6 +2529,13 @@ fn a_rust_algorithm_returns_a_map_into_its_callers_destination() {
         .iter()
         .find(|(_, text)| text.contains("pub fn distinct"))
         .expect("the algorithm's file");
+    // docs/adr/0108, D4 "Storage": the set the body builds for itself is kept
+    // in the storage of the map its seed is drawn from, so a caller that lends
+    // an inline map has nothing allocated for it.
+    assert!(
+        text.contains("seen: ::sce_portable_bytes::BoundedSet<u32, 4, S0> ="),
+        "the set local is kept in the storage of the map it is lent:\n{text}"
+    );
     assert!(
         text.contains("== ::sce_portable_bytes::PutOutcome::Full {")
             && text.contains(
@@ -2578,14 +2608,22 @@ fn a_map_keyed_by_a_text_is_lent_to_a_rust_algorithm() {
     let functions = functions_of(&files);
     let keep = function_named(&functions, "keep");
     let (generics, inputs) = signature_of(keep);
-    assert_eq!(generics, ["const N0 : usize", "const N1 : usize"]);
+    assert_eq!(
+        generics,
+        [
+            "const N0 : usize",
+            "S0 : :: sce_portable_bytes :: MapStorage",
+            "const N1 : usize",
+            "S1 : :: sce_portable_bytes :: MapStorage",
+        ]
+    );
     assert_eq!(
         inputs,
         [
             "& mut :: sce_portable_bytes :: BoundedMap < :: sce_portable_bytes :: SceString < 8 \
-             > , u32 , N0 >",
+             > , u32 , N0 , S0 >",
             "& :: sce_portable_bytes :: BoundedMap < :: sce_portable_bytes :: SceString < 8 > , \
-             u32 , N1 >",
+             u32 , N1 , S1 >",
         ]
     );
     let (_, text) = files
@@ -2683,11 +2721,27 @@ fn a_rust_machine_hands_its_seed_to_an_algorithm_that_builds_a_map() {
     );
     let functions = functions_of(&files);
     let distinct = function_named(&functions, "distinct_count");
-    let (_, inputs) = signature_of(distinct);
+    let (generics, inputs) = signature_of(distinct);
     assert_eq!(
         inputs.last().map(String::as_str),
         Some(":: sce_portable_bytes :: MapSeed"),
         "{inputs:?}"
+    );
+    // Lent no map, it has no storage to follow: its set is kept in the
+    // default storage, and the function is generic over none.
+    assert!(
+        !generics
+            .iter()
+            .any(|generic| generic.contains("MapStorage")),
+        "{generics:?}"
+    );
+    let (_, text) = files
+        .iter()
+        .find(|(_, text)| text.contains("pub fn distinct_count"))
+        .expect("the algorithm's file");
+    assert!(
+        text.contains("seen: ::sce_portable_bytes::BoundedSet<u32, 4> ="),
+        "the set local is kept in the default storage:\n{text}"
     );
     let mut methods = MethodCalls::default();
     syn::visit::Visit::visit_item_fn(&mut methods, distinct);

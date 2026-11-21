@@ -2252,9 +2252,10 @@ fn keyed_entries<T>(
 /// entries in its order, each the array of its key and its value, each written
 /// by `key` and `value` in the form its type has in a saved state: a byte
 /// string as its Latin-1 text ([`bytes_to_saved`]), every other value by its
-/// own [`SavedValue`]. What a generated machine writes a map variable with.
-pub fn map_to_saved<K, V, const N: usize>(
-    map: &crate::BoundedMap<K, V, N>,
+/// own [`SavedValue`]. What a generated machine writes a map variable with,
+/// and a host a map of any storage.
+pub fn map_to_saved<K, V, const N: usize, S: crate::MapStorage>(
+    map: &crate::BoundedMap<K, V, N, S>,
     key: impl Fn(&K) -> Value,
     value: impl Fn(&V) -> Value,
 ) -> Value {
@@ -2268,13 +2269,14 @@ pub fn map_to_saved<K, V, const N: usize>(
 /// A saved map `saved`, named `what` in a refusal, its keys read by `key` and
 /// its values by `value` as [`map_to_saved`] wrote them (a byte string by
 /// [`bounded_bytes`]), held to its bound with no key twice
-/// (`keyed_entries`). What a generated machine reads a map variable back with.
-pub fn map_from_saved<K: crate::MapKey, V, const N: usize>(
+/// (`keyed_entries`). What a generated machine reads a map variable back with,
+/// in the storage of the place it is read into.
+pub fn map_from_saved<K: crate::MapKey, V, const N: usize, S: crate::MapStorage>(
     saved: &Value,
     what: &str,
     mut key: impl FnMut(&Value, &str) -> Result<K, StateRefusal>,
     mut value: impl FnMut(&Value, &str) -> Result<V, StateRefusal>,
-) -> Result<crate::BoundedMap<K, V, N>, StateRefusal> {
+) -> Result<crate::BoundedMap<K, V, N, S>, StateRefusal> {
     let mut map = crate::BoundedMap::with_seed(crate::map_seed());
     keyed_entries(
         saved,
@@ -2302,8 +2304,8 @@ pub fn map_from_saved<K: crate::MapKey, V, const N: usize>(
 
 /// A set a machine holds, written as the array of its keys in its order, each
 /// by `key` as [`map_to_saved`] writes a map's.
-pub fn set_to_saved<K, const N: usize>(
-    set: &crate::BoundedSet<K, N>,
+pub fn set_to_saved<K, const N: usize, S: crate::MapStorage>(
+    set: &crate::BoundedSet<K, N, S>,
     key: impl Fn(&K) -> Value,
 ) -> Value {
     Value::Array(set.iter().map(key).collect())
@@ -2311,11 +2313,11 @@ pub fn set_to_saved<K, const N: usize>(
 
 /// A saved set `saved`, its keys read by `key`, held to its bound with no key
 /// twice, as [`map_from_saved`] reads a map.
-pub fn set_from_saved<K: crate::MapKey, const N: usize>(
+pub fn set_from_saved<K: crate::MapKey, const N: usize, S: crate::MapStorage>(
     saved: &Value,
     what: &str,
     key: impl FnMut(&Value, &str) -> Result<K, StateRefusal>,
-) -> Result<crate::BoundedSet<K, N>, StateRefusal> {
+) -> Result<crate::BoundedSet<K, N, S>, StateRefusal> {
     let mut set = crate::BoundedSet::with_seed(crate::map_seed());
     keyed_entries(saved, what, N, key, |k| set.put(k))?;
     Ok(set)
@@ -2323,8 +2325,8 @@ pub fn set_from_saved<K: crate::MapKey, const N: usize>(
 
 /// A map whose keys and values each write themselves ([`map_to_saved`] by
 /// their own [`SavedValue`]).
-impl<K: SavedValue + crate::MapKey, V: SavedValue, const N: usize> SavedValue
-    for crate::BoundedMap<K, V, N>
+impl<K: SavedValue + crate::MapKey, V: SavedValue, const N: usize, S: crate::MapStorage> SavedValue
+    for crate::BoundedMap<K, V, N, S>
 {
     fn to_saved(&self) -> Value {
         map_to_saved(self, K::to_saved, V::to_saved)
@@ -2335,7 +2337,9 @@ impl<K: SavedValue + crate::MapKey, V: SavedValue, const N: usize> SavedValue
 }
 
 /// A set whose keys each write themselves ([`set_to_saved`]).
-impl<K: SavedValue + crate::MapKey, const N: usize> SavedValue for crate::BoundedSet<K, N> {
+impl<K: SavedValue + crate::MapKey, const N: usize, S: crate::MapStorage> SavedValue
+    for crate::BoundedSet<K, N, S>
+{
     fn to_saved(&self) -> Value {
         set_to_saved(self, K::to_saved)
     }
@@ -5787,6 +5791,12 @@ mod tests {
             crate::BoundedMap::<u32, i32, 3>::from_saved(&saved, "amounts").expect("restores");
         assert_eq!(restored, amounts);
         assert_eq!(restored.get(&7), Some(&5));
+        // A map a host keeps inline is saved and read back alike, into the
+        // storage of the place it is read into.
+        let inline = crate::BoundedMap::<u32, i32, 3, crate::Inline>::from_saved(&saved, "amounts")
+            .expect("restores");
+        assert_eq!(inline, amounts);
+        assert_eq!(inline.to_saved(), saved);
 
         let mut items = crate::BoundedMap::<u32, Item, 2>::with_seed(crate::map_seed());
         let item = Item {
@@ -5855,7 +5865,7 @@ mod tests {
             set_from_saved(&saved, "ids", bounded_bytes).expect("restores");
         assert_eq!(restored, ids);
         let long = Value::Array(vec![Value::Text("x".repeat(17))]);
-        assert!(set_from_saved::<Key, 2>(&long, "ids", bounded_bytes).is_err());
+        assert!(set_from_saved::<Key, 2, crate::Inline>(&long, "ids", bounded_bytes).is_err());
     }
 
     /// docs/adr/0108, D8: a saved map with more entries than its bound, or with
