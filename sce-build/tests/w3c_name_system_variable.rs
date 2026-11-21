@@ -177,10 +177,15 @@ fn binding_sites(text: &str) -> Vec<String> {
         .join(" ");
     let collapsed = code.split_whitespace().collect::<Vec<_>>().join(" ");
 
-    const CALLS: [&str; 6] = [
+    // Each backend's call that takes the name: Rust, C++ and Go hand it to
+    // the engine's setup, Kotlin to the runtime's `makeScriptSession`, which
+    // binds it (docs/adr/0096), C11 assigns it in Lua, and Python answers it
+    // from `machine_name`.
+    const CALLS: [&str; 7] = [
         "setup_system_variables",
         "setupSystemVariables",
         "SetupSystemVariables",
+        "makeScriptSession(",
         "\"_name\"",
         "_name = ",
         "def machine_name",
