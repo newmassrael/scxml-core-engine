@@ -22,9 +22,9 @@
 //! each shape that binds a local (a fixed field, a VLE, both roles of a
 //! length-ref pair, a string, a flags carrier a later field is gated on, a
 //! tail, a repeat and its count, a TLV chain, an embed), and to an entry of a
-//! CBOR map, a property of a content-line component and a parameter of the
-//! lines of a repeated one, each an attribute of a class whose body evaluates
-//! names of its own. The generated module is run: a frame is decoded and
+//! CBOR map, a property of a content-line component, a parameter of the lines
+//! of a repeated one and a field beside a variant of each kind, each an
+//! attribute of a class whose body evaluates names of its own. The generated module is run: a frame is decoded and
 //! encoded back to the same bytes, the field is read back, and a value made by
 //! default is asked what it holds under the name, which is never a method of
 //! its class.
@@ -69,7 +69,9 @@ fn python_runtime() -> PathBuf {
 /// its line records and theirs, a list of values, an enum entry and an enum
 /// parameter, and a map that reads a list of records. The positional ones hold
 /// a field of an enum's type, alone, gated, and a member of a group's arm,
-/// each a default the class body would otherwise make by the enum's module.
+/// each a default the class body would otherwise make by the enum's module,
+/// and a variant whose caller supplies its tag, whose value answers it by a
+/// method no committed output shows.
 const GENERATED_HERE: &[&str] = &[
     "../tests/forge/resources/codec_cbor_map.scxml",
     "../tests/forge/resources/codec_content_line_enums.scxml",
@@ -87,6 +89,7 @@ const GENERATED_HERE: &[&str] = &[
     "../tests/forge/resources/codec_enum_fields.scxml",
     "../tests/forge/resources/codec_enum_gated.scxml",
     "../tests/forge/resources/codec_group_enum.scxml",
+    "../tests/forge/resources/codec_source_leaf.scxml",
 ];
 
 /// The Python each of [`GENERATED_HERE`] generates, as `<stem>.py` in a new
@@ -140,6 +143,11 @@ const SLICE_SET: &[&str] = &["codec_chain_has_marker_slice.scxml"];
 /// An enum a field is typed by, imported as an enum. A closed one whose first
 /// variant, the default of a field of its type, is 1 and not the zero.
 const ENUM_SET: &[&str] = &["enum_session_state.scxml"];
+/// The two arms of a variant: a `uint16` and a `uint8`.
+const ARM_SET: &[&str] = &[
+    "codec_variant_session_open.scxml",
+    "codec_variant_session_close.scxml",
+];
 
 /// One construct that binds a local to the value it decodes, with the name
 /// under test standing where an author's name stands.
@@ -400,6 +408,41 @@ const SHAPES: &[Shape] = &[
         frames: &[&[1, 7, 1], &[0]],
         check: "{value} is not None",
     },
+    // A field beside a variant with a tag of its own: the value holds the
+    // arm in a member of its own, which the field must not be.
+    Shape {
+        id: "beside_a_variant",
+        root: POSITIONAL,
+        imports: ARM_SET,
+        encode_may_fail: false,
+        datamodel: r#"
+    <sce:field id="NAME" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="k" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:variant tag="k">
+      <sce:arm value="0x01" type="codec_variant_session_open"/>
+      <sce:arm value="0x02" type="codec_variant_session_close" default="true"/>
+      <sce:default type="codec_variant_session_close"/>
+    </sce:variant>"#,
+        frames: &[&[1, 1, 0, 2]],
+        check: "{v} == 1",
+    },
+    // A field beside a variant whose caller supplies its tag: the value holds
+    // the arm, and answers the tag by a member of its own, which the field
+    // must be neither of.
+    Shape {
+        id: "beside_a_caller_tag",
+        root: POSITIONAL,
+        imports: ARM_SET,
+        encode_may_fail: false,
+        datamodel: r#"
+    <sce:field id="NAME" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant>
+      <sce:arm value="0x00" type="codec_variant_session_open"/>
+      <sce:arm value="0x01" type="codec_variant_session_close" default="true"/>
+    </sce:variant>"#,
+        frames: &[&[1, 0, 2]],
+        check: "{v} == 1",
+    },
 ];
 
 impl Shape {
@@ -548,7 +591,12 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
 /// - the methods a codec class, or a dataclass of the codec's module, defines
 ///   and does not spell from a name its document declares (`decode`, `encode`,
 ///   …, and the `_decode_at` of a map's and a component's class), any of which
-///   an author's field of the same name would replace, or be replaced by;
+///   an author's field of the same name would replace, or be replaced by; the
+///   one a codec whose variant takes its tag from the caller defines besides
+///   (`scxml_identifier::CALLER_TAG_MEMBER`), which is the generator's only in
+///   such a codec; and the field every value of a codec with a variant holds
+///   the arm in (`scxml_identifier::VARIANT_MEMBER`), a member of the same
+///   class;
 /// - the names a class body evaluates while it is built — a decorator, a
 ///   default — outside any function and outside the annotations, which are
 ///   lazy under `from __future__ import annotations`, and outside a lambda's
@@ -646,6 +694,14 @@ def declares_fields(cls):
     # named them.
     return is_dataclass(cls) or is_protocol(cls)
 
+def variant_of(path):
+    # "caller" where the document's variant takes its tag from the caller,
+    # "own" where it reads its own, None where it declares none.
+    variant = ET.parse(path).getroot().find(".//" + SCE + "variant")
+    if variant is None:
+        return None
+    return "own" if variant.get("tag") else "caller"
+
 def is_codec(cls):
     fns = {f.name for f in cls.body if isinstance(f, ast.FunctionDef)}
     return "decode" in fns and "encode" in fns
@@ -658,6 +714,9 @@ def spelled_from(name, names):
     return name in names or stem in names
 
 methods = set()
+caller_tag_methods = set()
+variant_classes = 0
+variant_classes_without_member = []
 class_body = set()
 first_params = set()
 unowned_f_locals = []
@@ -673,7 +732,9 @@ for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
         # codec class has none of.
         stem = os.path.splitext(os.path.basename(path))[0]
         codec_module = any(is_codec(c) for c in classes)
-        names = declared(os.path.join(doc_dir, stem + ".scxml")) if codec_module else set()
+        doc = os.path.join(doc_dir, stem + ".scxml")
+        names = declared(doc) if codec_module else set()
+        variant = variant_of(doc) if codec_module else None
         for cls in classes:
             fns = {f.name: f for f in cls.body if isinstance(f, ast.FunctionDef)}
             codec = is_codec(cls)
@@ -683,10 +744,26 @@ for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
             # A `__x__` name is refused as a form; a flag's accessor is the
             # author's own name.
             if codec_module and (codec or is_dataclass(cls)):
-                methods |= {
+                own = {
                     f for f in fns
                     if not (f.startswith("__") and f.endswith("__")) and not spelled_from(f, names)
                 }
+                # A value whose caller supplies its variant's tag answers it by
+                # a method of its own, which is held apart: it is the
+                # generator's only in such a codec.
+                if codec and variant == "caller":
+                    caller_tag_methods |= own
+                else:
+                    methods |= own
+            # The member the value holds its variant's arm in.
+            if codec and variant is not None:
+                variant_classes += 1
+                fields = {
+                    s.target.id for s in cls.body
+                    if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)
+                }
+                if sys.argv[4] not in fields:
+                    variant_classes_without_member.append(f"{path}:{cls.name}")
             if codec or declares_fields(cls):
                 for stmt in cls.body:
                     if isinstance(stmt, ast.FunctionDef):
@@ -714,6 +791,9 @@ print(json.dumps({
     "codec_classes": codec_classes,
     "generated_here_classes": generated_here_classes,
     "methods": sorted(methods),
+    "caller_tag_methods": sorted(caller_tag_methods - methods),
+    "variant_classes": variant_classes,
+    "variant_classes_without_member": variant_classes_without_member,
     "class_body": sorted(n for n in class_body if n[:1].islower()),
     "first_params": sorted(first_params),
     "unowned_f_locals": unowned_f_locals,
@@ -726,6 +806,7 @@ print(json.dumps({
         .arg(expected_dir())
         .arg(resource_dir())
         .arg(generated.path())
+        .arg(sce_build::scxml_identifier::VARIANT_MEMBER)
         .output()
         .expect("python3 derives the names");
     assert!(
@@ -761,6 +842,25 @@ print(json.dumps({
         listed(sce_build::reader_names::PYTHON_CODEC_METHODS),
         "the methods a generated Python codec class, or a dataclass of its module, defines \
          are not the ones reader_names::PYTHON_CODEC_METHODS lists"
+    );
+    assert_eq!(
+        strings("caller_tag_methods"),
+        listed(&[sce_build::scxml_identifier::CALLER_TAG_MEMBER]),
+        "the methods the value of a codec whose variant takes its tag from the caller defines \
+         beside every codec's are not scxml_identifier::CALLER_TAG_MEMBER"
+    );
+    assert!(
+        derived["variant_classes"].as_u64().unwrap_or(0) > 5,
+        "implausibly few codec classes with a variant ({}); the derivation broke",
+        derived["variant_classes"]
+    );
+    assert!(
+        derived["variant_classes_without_member"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "a codec class with a variant holds its arm in no field named \
+         scxml_identifier::VARIANT_MEMBER: {}",
+        derived["variant_classes_without_member"]
     );
     assert_eq!(
         strings("class_body"),
@@ -818,7 +918,7 @@ fn an_authors_field_name_never_decides_what_the_generated_python_does() {
 
     // The imported documents, generated once.
     let mut written: BTreeSet<String> = BTreeSet::new();
-    for set in [ENTRY_SET, SLICE_SET, ENUM_SET] {
+    for set in [ENTRY_SET, SLICE_SET, ENUM_SET, ARM_SET] {
         for file in set {
             let src = std::fs::read_to_string(resource_dir().join(file)).expect("read import");
             let stem = file.trim_end_matches(".scxml");
@@ -895,9 +995,12 @@ for line in open(sys.argv[2], encoding="utf-8").read().splitlines():
         # every field it reads, never shows it.
         made = getattr(cls(), name, None)
         assert not callable(made), f"a value made by default holds {made!r} as {name}"
+        # A decode whose variant takes its tag from the caller is handed 0, the
+        # tag of the first arm of every such shape.
+        handed = {"tag": 0} if "tag" in inspect.signature(cls.decode).parameters else {}
         for number, hexframe in enumerate(frames.split(",")):
             frame = bytes.fromhex(hexframe)
-            value = cls.decode(SceCursor(frame))
+            value = cls.decode(SceCursor(frame), **handed)
             assert value is not None, "decode returned None"
             again = value.encode_to_bytes()
             assert again == frame, f"round trip {again.hex()} != {frame.hex()}"
