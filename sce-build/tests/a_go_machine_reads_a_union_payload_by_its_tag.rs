@@ -131,9 +131,12 @@ fn a_union_variable_starts_built_or_absent() {
     holds(
         &code,
         &[
-            &format!("vBuilt: {UNION}Rect(StaticUnionRectRecord{{width: "),
-            &format!("vKept: optional.None[{UNION}](),"),
-            &format!("vLifted: optional.None[{UNION}](),"),
+            &format!("\tvar vBuilt {UNION} = {UNION}Rect(StaticUnionRectRecord{{width: "),
+            &format!("\tvar vKept optional.Of[{UNION}] = optional.None[{UNION}]()\n"),
+            &format!("\tvar vLifted optional.Of[{UNION}] = optional.None[{UNION}]()\n"),
+            "\t\tvBuilt: vBuilt,\n",
+            "\t\tvKept: vKept,\n",
+            "\t\tvLifted: vLifted,\n",
         ],
     );
 }

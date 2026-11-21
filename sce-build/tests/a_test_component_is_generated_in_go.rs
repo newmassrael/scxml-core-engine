@@ -811,7 +811,8 @@ fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
     for needle in [
         "\t// docs/SCE_TEST_PROFILE.md §11.5: the module parameter `job`, which takes the",
         "\tvJob uint32\n",
-        "\t\tvJob: 0,\n",
+        "\tvar vJob uint32 = 0\n",
+        "\t\tvJob: vJob,\n",
         "func (p *ParamAskerPolicy) sceAcceptModuleParameters(given \
          *scetestprofile.ModuleParameters) error {",
         "raw1, err := given.Of(\"job\")",
@@ -890,8 +891,10 @@ fn a_bounded_module_parameter_is_read_back_held_to_its_bound() {
     for needle in [
         "\tvKey []byte\n",
         "\tvLabel string\n",
-        "\t\tvKey: nil,\n",
-        "\t\tvLabel: \"\",\n",
+        "\tvar vKey []byte = nil\n",
+        "\tvar vLabel string = \"\"\n",
+        "\t\tvKey: vKey,\n",
+        "\t\tvLabel: vLabel,\n",
         "read1, err := sce.SavedReadBytes(raw1, \"key\", 2)",
         "read2, err := sce.SavedReadBoundedString(raw2, \"label\", 8)",
         "p.vKey = read1",
@@ -944,7 +947,8 @@ fn an_enum_module_parameter_is_read_through_the_enums_saved_form() {
         "func ColorPickerColorEnumFromSaved(value any, what string) (ColorPickerColorEnum, \
          error) {",
         "\tvTint ColorPickerColorEnum\n",
-        "\t\tvTint: ColorPickerColorEnumRed,\n",
+        "\tvar vTint ColorPickerColorEnum = ColorPickerColorEnumRed\n",
+        "\t\tvTint: vTint,\n",
         "read1, err := ColorPickerColorEnumFromSaved(raw1, \"tint\")",
     ] {
         assert!(
