@@ -35,12 +35,13 @@
 // That last one is not hypothetical and is the reason the fix is more
 // than swapping a field. The stem this replaced was a filename and
 // could not contain a quote; the attribute is author text and can. The
-// C11 backend embeds the value in Lua source *inside* a C string
+// C11 backend once embedded the value in Lua source *inside* a C string
 // literal — two boundaries — and a host-only escape gave
 // `_name = 'it's'`: a translation unit that compiles and Lua that does
-// not parse. `mlua` (the same interpreter the runtimes use) is what
-// decides that here, rather than a hand-rolled check that could drift
-// from the grammar.
+// not parse. Since 2026-11-08 it pushes the value onto the Lua stack and
+// binds it through the shared binder, so the name crosses the C string
+// literal alone, and the C11 check below decodes that literal and holds
+// it to the author's value.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -103,6 +104,14 @@ const DECLARED: &str = "machineName";
 /// something. Measured: all six backends emit it for this fixture.
 const MIN_BACKENDS_BINDING: usize = 6;
 
+/// The statement C11 binds `_name` with. The value is not an argument of
+/// it: the statement before pushes the value onto the Lua stack
+/// (`lua_pushstring`), and this one binds what the stack holds.
+const C11_NAME_BIND: &str = "bind_system_variable(sm->L, \"_name\")";
+
+/// The statement C11 pushes a text onto the Lua stack with.
+const C11_PUSH: &str = "lua_pushstring(sm->L, ";
+
 /// Stage `FIXTURE` under `stem`, with its root `name` attribute set to
 /// `declared`, or removed entirely when `declared` is `None`.
 fn stage(stem: &str, declared: Option<&str>, into: &Path) -> PathBuf {
@@ -155,7 +164,8 @@ fn generate(doc: &Path, language: &str) -> String {
 }
 
 /// The binding sites in `text`, each as the call and the text that
-/// follows it.
+/// follows it, and for C11, whose value precedes the call, as the push
+/// and the bind.
 ///
 /// Comment lines are dropped first — the templates explain the rule in
 /// prose that names the same identifiers — and what remains is
@@ -179,15 +189,14 @@ fn binding_sites(text: &str) -> Vec<String> {
 
     // Each backend's call that takes the name: Rust, C++ and Go hand it to
     // the engine's setup, Kotlin to the runtime's `makeScriptSession`, which
-    // binds it (docs/adr/0096), C11 assigns it in Lua, and Python answers it
-    // from `machine_name`.
-    const CALLS: [&str; 7] = [
+    // binds it (docs/adr/0096), and Python answers it from `machine_name`.
+    // C11's value precedes its call, and is read below.
+    const CALLS: [&str; 6] = [
         "setup_system_variables",
         "setupSystemVariables",
         "SetupSystemVariables",
         "makeScriptSession(",
         "\"_name\"",
-        "_name = ",
         "def machine_name",
     ];
     let mut sites = Vec::new();
@@ -204,6 +213,20 @@ fn binding_sites(text: &str) -> Vec<String> {
             sites.push(collapsed[start..end].to_string());
             from = start + call.len();
         }
+    }
+    // C11: the push the bind takes its value from, when it is the
+    // statement right before the bind.
+    let mut from = 0usize;
+    while let Some(rel) = collapsed[from..].find(C11_NAME_BIND) {
+        let bind = from + rel;
+        let end = bind + C11_NAME_BIND.len();
+        if let Some(push) = collapsed[..bind].rfind(C11_PUSH) {
+            let site = &collapsed[push..end];
+            if site.matches("; ").count() == 1 {
+                sites.push(site.to_string());
+            }
+        }
+        from = end;
     }
     sites
 }
@@ -306,31 +329,29 @@ fn an_author_hostile_name_survives_every_literal_boundary_it_crosses() {
         );
     }
 
-    // C11 is the one backend where the value crosses two boundaries. Its
-    // emitted Lua is decoded out of the C string literal and handed to
-    // the real interpreter, because "compiles" and "parses as Lua" are
-    // different questions and only the second one failed.
+    // C11 is the backend whose value once crossed two boundaries, a Lua
+    // chunk inside a C string literal. It now pushes the value onto the Lua
+    // stack in the statement right before the bind, so the C string literal
+    // of that push is what the engine binds: decoded as the compiler reads
+    // it, it is the author's value, whole.
     let c = generate(&doc, "c11");
-    let line = c
-        .lines()
-        .map(str::trim)
-        .find(|l| l.starts_with("\"_name = "))
-        .expect("c11 emits a `_name = ...` Lua assignment");
-    let lua = decode_c_string_literal(line);
-    let interpreter = mlua::Lua::new();
-    interpreter
-        .load(&lua)
-        .into_function()
-        .unwrap_or_else(|e| panic!("c11 emitted Lua that does not parse: {lua:?}\n  {e}"));
-    // And the value it assigns is the author's, not a truncation of it.
-    let value: String = interpreter
-        .load(format!("{lua}\nreturn _name"))
-        .eval()
-        .expect("the emitted assignment evaluates");
+    let lines: Vec<&str> = c.lines().map(str::trim).collect();
+    let bind = lines
+        .iter()
+        .position(|l| l.contains(C11_NAME_BIND))
+        .expect("c11 binds `_name` through the shared binder");
+    let push = lines[..bind]
+        .iter()
+        .rev()
+        .find(|l| !l.is_empty())
+        .expect("a statement before the bind");
+    let literal = push.strip_prefix(C11_PUSH).unwrap_or_else(|| {
+        panic!("c11: the statement before the `_name` bind is not its push: {push:?}")
+    });
     assert_eq!(
-        value, HOSTILE,
-        "c11: the Lua assignment parses but binds a different string than the \
-         document declared"
+        decode_c_string_literal(literal),
+        HOSTILE,
+        "c11: the text pushed for `_name` is not the name the document declared"
     );
 }
 
