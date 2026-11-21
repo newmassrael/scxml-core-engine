@@ -3538,7 +3538,11 @@ fn request_field_enums(
     let lowering = match language {
         Language::Rust => crate::forge::static_lowering::lower_rust(&mut lowered, machine_name),
         Language::Cpp => crate::forge::static_lowering::lower_cpp(&mut lowered, machine_name),
-        _ => return Some(Vec::new()),
+        // Only the Rust and C++ host interfaces are handed the enums; no other
+        // backend's interface renders here.
+        Language::Kotlin | Language::Go | Language::Python | Language::C11 | Language::Swift => {
+            return Some(Vec::new())
+        }
     };
     lowering.ok().map(|lowering| lowering.enums)
 }
