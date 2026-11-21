@@ -19,7 +19,7 @@
     "nothing with either lane (the Python `cryptography` package over OpenSSL, with a CBOR writer of its own),",
     "which first reproduced every object of tests/host_features/cose_cross_language.json."
   ],
-  "description": "{\"record\":[[\"blob\",false,{\"bytes\":8}],[\"owner\",false,{\"text\":24}],[\"active\",false,{\"bool\":{}}],[\"offset\",false,{\"int\":16}],[\"serial\",false,{\"uint\":32}]]}",
+  "description": "{\"record\":[[\"blob\",false,{\"bytes\":8},null],[\"owner\",false,{\"text\":24},null],[\"active\",false,{\"bool\":{}},null],[\"offset\",false,{\"int\":16},null],[\"serial\",false,{\"uint\":32},null]]}",
   "record": {"serial": 4242, "owner": "alice", "blob": "\u0000ÿ\u0010", "active": true, "offset": -300},
   "record_cbor": "a564626c6f624300ff10656f776e657265616c69636566616374697665f5666f666673657439012b6673657269616c191092",
   "signing_key": {
