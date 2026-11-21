@@ -3568,8 +3568,10 @@ attribute of the value's dataclass, or of a line record, and a member of the
 `Protocol` its source satisfies, so it is refused the same names a codec
 field is. What a class body can name where it is called instead it names
 there: a list's default is made by `field(default_factory=lambda: [])`, an
-enum entry's default by a lambda as well, so a field spelled as the module
-alias the enum is imported under is not read in its place, and a CBOR map
+enum's default, of a map's or a component's entry and of a positional
+codec's field alone or in a group's arm, by a lambda as well, so a field
+spelled as the module alias the enum is imported under is not read in its
+place, and a CBOR map
 reads a record by a function of the module rather than a `@staticmethod`,
 so `list` and `staticmethod` are names an author may use. The lists are not
 written by hand:

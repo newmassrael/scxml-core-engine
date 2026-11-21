@@ -15247,7 +15247,10 @@ fn render_codec(
                     // on-wire decode round-trips correctly.
                     "None".to_string()
                 } else {
-                    l.default_expr(&f.sce_type)
+                    // An enum's first variant is made where it is called, so
+                    // the class body names the enum's module nowhere a field
+                    // declared before it could stand in for it.
+                    python_source::class_body_default(&l, &f.sce_type)
                 };
                 obj.insert("default_value".into(), py_default.into());
                 // RFC §synth-5-B flags primitive on Python: ints are

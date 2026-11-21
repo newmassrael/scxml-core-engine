@@ -270,8 +270,9 @@ pub enum PythonNameClash {
     /// the `Protocol`. A field of that name binds it in the class scope first,
     /// and the next decorator or default is a call on the field's default.
     /// What can be named where it is called is kept out of the class body
-    /// instead: a list's and an arm's default, and an enum entry's of a CBOR
-    /// map or a content-line component, is made by a lambda, which reads the
+    /// instead: a list's and an arm's default, and an enum's of any encoding
+    /// (a positional field alone or in a group's arm, a CBOR map's or a
+    /// content-line component's entry), is made by a lambda, which reads the
     /// module's names when it runs, and a CBOR map reads a record by a function
     /// of the module, so neither `list` nor `staticmethod` is a name an
     /// author is refused.
