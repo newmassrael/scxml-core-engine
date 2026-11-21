@@ -1984,6 +1984,8 @@ fn variant_part(
         );
         let body = format!("{}.{}", arm.module, import.type_name);
         let class = default_arm_class(struct_name);
+        // The body's factory names the arm's module where it is called, as the
+        // value's own does below.
         gathered.runtime("bounded", "UnknownTag");
         gathered.factory = true;
         gathered.classes.push_str(&format!(
@@ -1999,7 +2001,7 @@ fn variant_part(
              \x20   names, which it keeps, and its body.\"\"\"\n\
              \n\
              \x20   tag: {tag_class} = {tag_class}({least})\n\
-             \x20   body: {body} = field(default_factory={body})\n\
+             \x20   body: {body} = field(default_factory=lambda: {body}())\n\
              \n\
              \x20   def __setattr__(self, name: str, value: object) -> None:\n\
              \x20       # The tag is held to the tags no arm names wherever it is set,\n\
@@ -2036,9 +2038,14 @@ fn variant_part(
         .iter()
         .position(|arm| arm.is_default)
         .unwrap_or(0);
+    // The factory names the arm's class where it is called, in the module's
+    // scope: a class body binds each field as it goes, so a field declared
+    // before the variant and spelled as an arm's module alias
+    // (`python_module_alias`) would be read in the module's place, and only
+    // `PYTHON_CLASS_BODY_NAMES` may be evaluated there.
     gathered.factory = true;
     Some(VariantField {
-        default: format!("field(default_factory={})", classes[start]),
+        default: format!("field(default_factory=lambda: {}())", classes[start]),
         default_arm,
     })
 }
