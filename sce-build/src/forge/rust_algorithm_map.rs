@@ -11,18 +11,20 @@
 //! the type a value of its type is held in (D6 item 4).
 //!
 //! * A **parameter** states no bound of its own: its map is the caller's,
-//!   whatever bound the caller's variable states, so the function is generic
-//!   over it (`const N0: usize`) and takes the map lent, `&` to be read (D6
-//!   item 1) and `&mut` where it is declared `inout` (D6 item 2). A text or a
-//!   byte string key or value is held to the bound the parameter's type states
-//!   inside it, or, where it states none, to the caller's, a bound the function
-//!   is generic over too (`K0` for the key's, `V0` for the value's). Nothing is
-//!   copied into or out of the map.
+//!   whatever bound the caller's variable states and in whatever storage the
+//!   caller keeps it (`Inline` or `Heap`, D4 "Storage"), so the function is
+//!   generic over both (`const N0: usize`, `S0: MapStorage`) and takes the map
+//!   lent, `&` to be read (D6 item 1) and `&mut` where it is declared `inout`
+//!   (D6 item 2). A text or a byte string key or value is held to the bound the
+//!   parameter's type states inside it, or, where it states none, to the
+//!   caller's, a bound the function is generic over too (`K0` for the key's,
+//!   `V0` for the value's). Nothing is copied into or out of the map.
 //! * The **local a body returns** is the caller's destination, as a returned
 //!   list is (docs/adr/0082): a parameter of its own name after the declared
-//!   ones, `&mut` the map of the local's bound, emptied where the local is
-//!   declared, and the return says only that it was written. A map return
-//!   declares `may-fail` (D5), so its `Result` carries the failure.
+//!   ones, `&mut` the map of the local's bound in the caller's storage (`SR`),
+//!   emptied where the local is declared, and the return says only that it was
+//!   written. A map return declares `may-fail` (D5), so its `Result` carries
+//!   the failure.
 //! * Any **other local** is the body's own, built empty under a seed drawn,
 //!   by its number among such locals, from the seed of a map the algorithm was
 //!   lent or the destination it writes (the runtime's `derived_seed`): the
@@ -32,7 +34,16 @@
 //!   a parameter of its own after the declared ones, `sce_map_seed`
 //!   ([`crate::forge::model::AlgorithmModel::takes_map_seed`]), which its
 //!   caller hands it, and draws each local's from that. An algorithm that
-//!   calls one hands it a seed drawn from its own, after its locals'.
+//!   calls one hands it a seed drawn from its own, after its locals'. Such a
+//!   local is kept in the storage of the map its seed is drawn from, so an
+//!   algorithm lent an inline map builds its own maps inline and allocates
+//!   nothing; one that takes its caller's seed is lent no storage to follow,
+//!   and its locals take the default (`DefaultMapStorage`).
+//!
+//! Each map an algorithm is lent or writes into is a variable of its caller,
+//! kept in the storage the caller chose for it as it chose its bound, so the
+//! function is generic over each map's storage apart, as it is over each
+//! bound: a caller may lend an inline map beside one that grows.
 //!
 //! `<sce:put>` and `<sce:remove>` are the map's own `put` and `remove`, whose
 //! answer the statement writes into its `outcome` as the variant of the same
@@ -61,6 +72,10 @@ pub(crate) const RUST_ALGORITHM_MAP_CRATE: &str = "::sce_portable_bytes";
 /// The module whose functions a Rust algorithm's reads of a map call
 /// ([`crate::forge::types::AlgorithmMapReads::Rust`]).
 pub(crate) const RUST_ALGORITHM_MAP_READS: &str = "::sce_portable_bytes::map";
+
+/// The storage the destination of a map return is kept in, which the function
+/// is generic over ([`RustAlgorithmMaps::destination`]): the caller's.
+pub(crate) const RUST_ALGORITHM_OUTPUT_STORAGE: &str = "SR";
 
 /// The parameter an algorithm that takes its caller's seed takes it in
 /// ([`RustAlgorithmMaps::seed_parameter`]). Under the generator's own prefix,
@@ -180,13 +195,18 @@ pub(crate) struct RustAlgorithmMaps {
     /// The bounds the function takes from its caller: `const N<i>: usize` for
     /// the map of the parameter at position `i`, `K<i>` and `V<i>` for its
     /// key's and its value's where they are texts or byte strings that state
-    /// none.
+    /// none, and the storage of each map it is lent, `S<i>: MapStorage`, and of
+    /// the destination it writes, [`RUST_ALGORITHM_OUTPUT_STORAGE`].
     bounds: Vec<String>,
     /// The local the body returns, by its declared name.
     output: Option<String>,
     /// What a working local's seed is drawn from: the first map parameter, or
     /// the destination, as the body spells it.
     seed_source: Option<String>,
+    /// The storage a working local is kept in: that of the map its seed is
+    /// drawn from (`S<i>` of the first map parameter, or the destination's),
+    /// and the default where the seed is the caller's.
+    working_storage: Option<String>,
     /// Whether the function takes its caller's seed ([`RUST_ALGORITHM_SEED_PARAM`]).
     seed_param: bool,
     /// Each imported algorithm the body calls that takes its caller's seed, by
@@ -234,15 +254,18 @@ impl RustAlgorithmMaps {
                     bound
                 }
             };
+            let storage = format!("S{index}");
             let spelled =
-                MapSpelling::of(&param.sce_type, &bound, part, Some(index))?.ok_or_else(|| {
-                    refused(format!(
-                        "holds `{}` of {}, a map whose key or value no algorithm's map holds",
-                        param.name,
-                        param.sce_type.as_attr()
-                    ))
-                })?;
+                MapSpelling::of(&param.sce_type, &bound, Some(&storage), part, Some(index))?
+                    .ok_or_else(|| {
+                        refused(format!(
+                            "holds `{}` of {}, a map whose key or value no algorithm's map holds",
+                            param.name,
+                            param.sce_type.as_attr()
+                        ))
+                    })?;
             maps.bounds.extend(spelled.generics.iter().cloned());
+            maps.bounds.push(storage_bound(&storage));
             maps.insert(
                 &param.name,
                 &param.sce_type,
@@ -253,6 +276,7 @@ impl RustAlgorithmMaps {
             );
             if maps.seed_source.is_none() {
                 maps.seed_source = Some(local(&param.name));
+                maps.working_storage = Some(storage);
             }
         }
         let locals: Vec<(&str, &AlgorithmValueType)> = m
@@ -301,6 +325,11 @@ impl RustAlgorithmMaps {
             };
             maps.output = Some(output);
         }
+        // A working local follows the storage of the map its seed is drawn
+        // from: the first map lent, or else the destination.
+        if maps.working_storage.is_none() && maps.output.is_some() {
+            maps.working_storage = Some(RUST_ALGORITHM_OUTPUT_STORAGE.to_string());
+        }
         let mut ordinal = 0u32;
         for &(name, ty) in &map_locals {
             let bound = ty
@@ -314,16 +343,6 @@ impl RustAlgorithmMaps {
                         ty.as_attr()
                     ))
                 })?;
-            // A local holds its entries, so a text or a byte string in it states
-            // its bound, which no caller gives it.
-            let spelled =
-                MapSpelling::of(ty, &bound.to_string(), part, None)?.ok_or_else(|| {
-                    refused(format!(
-                        "holds the local `{name}` of {}, a map whose key or value no algorithm's \
-                     map holds, or whose text or byte string states no bound",
-                        ty.as_attr()
-                    ))
-                })?;
             let role = if maps.output.as_deref() == Some(name) {
                 MapRole::Output
             } else {
@@ -331,6 +350,25 @@ impl RustAlgorithmMaps {
                 ordinal += 1;
                 role
             };
+            let storage = match role {
+                MapRole::Output => {
+                    maps.bounds
+                        .push(storage_bound(RUST_ALGORITHM_OUTPUT_STORAGE));
+                    Some(RUST_ALGORITHM_OUTPUT_STORAGE.to_string())
+                }
+                MapRole::Working { .. } => maps.working_storage.clone(),
+                MapRole::Lent { .. } => None,
+            };
+            // A local holds its entries, so a text or a byte string in it states
+            // its bound, which no caller gives it.
+            let spelled = MapSpelling::of(ty, &bound.to_string(), storage.as_deref(), part, None)?
+                .ok_or_else(|| {
+                    refused(format!(
+                        "holds the local `{name}` of {}, a map whose key or value no algorithm's \
+                     map holds, or whose text or byte string states no bound",
+                        ty.as_attr()
+                    ))
+                })?;
             maps.insert(name, ty, spelled, role);
         }
         if maps.seed_source.is_none() {
@@ -521,15 +559,19 @@ struct MapSpelling {
 }
 
 impl MapSpelling {
-    /// The map or set `ty` of the bound `bound`, each part spelled by `part`,
-    /// a text or a byte string by the bound it states or, for the parameter at
-    /// `param`, the caller's; `Ok(None)` for a part spelled by neither.
+    /// The map or set `ty` of the bound `bound`, kept in the storage the
+    /// function names `storage` or, where it is `None`, in the default one;
+    /// each part spelled by `part`, a text or a byte string by the bound it
+    /// states or, for the parameter at `param`, the caller's; `Ok(None)` for a
+    /// part spelled by neither.
     fn of(
         ty: &AlgorithmValueType,
         bound: &str,
+        storage: Option<&str>,
         part: PartSpelling<'_>,
         param: Option<usize>,
     ) -> Result<Option<Self>, ForgeError> {
+        let stored = storage.map_or_else(String::new, |storage| format!(", {storage}"));
         let mut generics = Vec::new();
         let mut spell = |held: &AlgorithmValueType,
                          side: &str|
@@ -565,7 +607,7 @@ impl MapSpelling {
                 match (spell(key, "K")?, spell(value, "V")?) {
                     (Some((key, key_bound)), Some((value, value_bound))) => Some(Self {
                         ty: format!(
-                            "{RUST_ALGORITHM_MAP_CRATE}::BoundedMap<{key}, {value}, {bound}>"
+                            "{RUST_ALGORITHM_MAP_CRATE}::BoundedMap<{key}, {value}, {bound}{stored}>"
                         ),
                         key_bound,
                         value_bound,
@@ -575,7 +617,7 @@ impl MapSpelling {
                 }
             }
             AlgorithmValueType::Set { key, .. } => spell(key, "K")?.map(|(key, key_bound)| Self {
-                ty: format!("{RUST_ALGORITHM_MAP_CRATE}::BoundedSet<{key}, {bound}>"),
+                ty: format!("{RUST_ALGORITHM_MAP_CRATE}::BoundedSet<{key}, {bound}{stored}>"),
                 key_bound,
                 value_bound: None,
                 generics,
@@ -589,6 +631,12 @@ impl MapSpelling {
             | AlgorithmValueType::Optional { .. } => None,
         })
     }
+}
+
+/// The bound a function states on the storage it is generic over, named
+/// `storage`: one of the runtime's (D4 "Storage").
+fn storage_bound(storage: &str) -> String {
+    format!("{storage}: {RUST_ALGORITHM_MAP_CRATE}::MapStorage")
 }
 
 /// Every name a `<sce:return>` of `stmts` returns, nested bodies included, in
@@ -794,7 +842,7 @@ mod tests {
 
     fn held(value: Option<AlgorithmValueType>) -> HeldMap {
         HeldMap {
-            ty: "::sce_portable_bytes::BoundedMap<u32, u64, N0>".to_string(),
+            ty: "::sce_portable_bytes::BoundedMap<u32, u64, N0, S0>".to_string(),
             key: AlgorithmValueType::Scalar(SceType::Uint32),
             value,
             key_bound: None,
@@ -868,36 +916,56 @@ mod tests {
         assert_eq!(remove("", "m", "k", None), "let _ = m.remove(&k);\n");
     }
 
-    /// docs/adr/0108, D1 and D5: a text or a byte string part of a parameter's
-    /// map is held to the bound its type states, or, where it states none, to
-    /// one the function takes from its caller; a local's states its own, and
-    /// one that does not is no map a local holds.
+    /// docs/adr/0108, D1, D4 "Storage" and D5: a text or a byte string part of
+    /// a parameter's map is held to the bound its type states, or, where it
+    /// states none, to one the function takes from its caller; a local's states
+    /// its own, and one that does not is no map a local holds. A map is kept in
+    /// the storage the function names, or in the default where it names none.
     #[test]
     fn a_text_part_is_held_to_its_stated_bound_or_the_callers() {
         let scalar = |_: &AlgorithmValueType| -> Result<Option<String>, ForgeError> {
             Ok(Some("u32".to_string()))
         };
         let read = |text: &str| AlgorithmValueType::algorithm_from_attr(text).expect("a type");
-        let stated = MapSpelling::of(&read("map<string[8], uint32>"), "N0", &scalar, Some(0))
-            .expect("spelled")
-            .expect("held");
+        let stated = MapSpelling::of(
+            &read("map<string[8], uint32>"),
+            "N0",
+            Some("S0"),
+            &scalar,
+            Some(0),
+        )
+        .expect("spelled")
+        .expect("held");
         assert_eq!(
             stated.ty,
-            "::sce_portable_bytes::BoundedMap<::sce_portable_bytes::SceString<8>, u32, N0>"
+            "::sce_portable_bytes::BoundedMap<::sce_portable_bytes::SceString<8>, u32, N0, S0>"
         );
         assert_eq!(stated.key_bound.as_deref(), Some("8"));
         assert!(stated.generics.is_empty());
-        let callers = MapSpelling::of(&read("map<uint32, bytes>"), "N2", &scalar, Some(2))
-            .expect("spelled")
-            .expect("held");
+        let callers = MapSpelling::of(
+            &read("map<uint32, bytes>"),
+            "N2",
+            Some("S2"),
+            &scalar,
+            Some(2),
+        )
+        .expect("spelled")
+        .expect("held");
         assert_eq!(
             callers.ty,
-            "::sce_portable_bytes::BoundedMap<u32, ::sce_portable_bytes::SceBytes<V2>, N2>"
+            "::sce_portable_bytes::BoundedMap<u32, ::sce_portable_bytes::SceBytes<V2>, N2, S2>"
         );
         assert_eq!(callers.generics, ["const V2: usize"]);
-        assert!(MapSpelling::of(&read("set<string>[4]"), "4", &scalar, None)
+        let local = MapSpelling::of(&read("set<uint32>[4]"), "4", None, &scalar, None)
             .expect("spelled")
-            .is_none());
+            .expect("held");
+        assert_eq!(local.ty, "::sce_portable_bytes::BoundedSet<u32, 4>");
+        assert!(
+            MapSpelling::of(&read("set<string>[4]"), "4", None, &scalar, None)
+                .expect("spelled")
+                .is_none()
+        );
+        assert_eq!(storage_bound("SR"), "SR: ::sce_portable_bytes::MapStorage");
         assert_eq!(
             literal_text("K0", "ab"),
             "::sce_portable_bytes::SceString::<K0>::proven::<{ \"ab\".len() }>(\"ab\")"

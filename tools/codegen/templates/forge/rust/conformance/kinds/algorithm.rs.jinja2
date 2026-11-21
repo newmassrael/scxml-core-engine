@@ -47,7 +47,10 @@
    (docs/adr/0082): the call hands one in and, where the algorithm wrote it,
    yields it, so the call reads as `Result<the list, _>` as it did before. #}
 {# A map is lent (docs/adr/0108, D6 items 1 and 2): `&` the map the harness
-   built, or `&mut` it where the parameter is `inout`. #}
+   built, or `&mut` it where the parameter is `inout`. The harness keeps it
+   inline (D4 "Storage"), whatever features the build turns on, so the lane
+   holds a generated algorithm to a map that never allocates; a machine lends
+   the default storage, which the static scenarios replay. #}
 {% set arguments %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% elif arg_ty.map is defined %}&{% if arg_ty.inout %}mut {% endif %}arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
 {% if f.output.list_of is defined or f.output.type == "bytes" %}
 {% set call %}{ let mut sce_out = sce_portable_bytes::{% if f.output.type == "bytes" %}SceBytes{% else %}SceOwnedList{% endif %}::new(); let written = fixtures::{{ f.name }}::{{ f.function }}({{ arguments }}{% if f.args %}, {% endif %}&mut sce_out); written.map(|()| sce_out) }{% endset %}
@@ -95,7 +98,7 @@
             .map(|x| {{ "x" | rust_unmarshal(arg_ty.list_of) }})
             .collect();
 {% elif arg_ty.map is defined %}
-        let mut arg{{ i }}: ::sce_portable_bytes::BoundedMap<{{ values.part_type(arg_ty.map.key) }}, {{ values.part_type(arg_ty.map.value) }}, {{ arg_ty.capacity }}> =
+        let mut arg{{ i }}: ::sce_portable_bytes::BoundedMap<{{ values.part_type(arg_ty.map.key) }}, {{ values.part_type(arg_ty.map.value) }}, {{ arg_ty.capacity }}, ::sce_portable_bytes::Inline> =
             ::sce_portable_bytes::BoundedMap::with_seed(::sce_portable_bytes::MapSeed::from_halves(
                 0x5CE0_0000_0000_0001,
                 0x5CE0_0000_0000_0002,
