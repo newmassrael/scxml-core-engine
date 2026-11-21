@@ -3573,7 +3573,11 @@ and `property` (what
 the class bodies of the value and of the `Protocol` its source satisfies
 evaluate while they are built), any `__x__` name, and for a
 flag-input `cls`, `cursor`, `self`, `w`, `tag`, `parent_flags` or a name
-beginning `f_`. An entry of a CBOR map or of a content-line component (a
+beginning `f_`. A positional codec's field is a field however it is written:
+a `<data>` that carries `sce:byte` is read as a `<sce:field>` is and is held
+under its id the same way, so it is refused the same names; a `<data>` that
+is the input frame, or carries no byte, is no field. An entry of a CBOR map
+or of a content-line component (a
 `<data>` that is not the input frame, a line's parameter too) is an
 attribute of the value's dataclass, or of a line record, and a member of the
 `Protocol` its source satisfies, so it is refused the same names a codec
