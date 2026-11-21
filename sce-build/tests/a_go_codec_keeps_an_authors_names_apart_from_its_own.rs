@@ -199,8 +199,12 @@ const SHAPES: &[Shape] = &[
     <sce:repeat id="items" type="codec_chain_has_marker_slice" sce:byte="1"
                 count="NAME" max-count="4"/>"#,
         frames: &[&[1, 0, 2, 0xAA, 0xBB], &[0]],
+        // Printed from its plan (docs/adr/0081 step 4): the author's count is
+        // derived and no field of the value, which holds the list it counts
+        // alone, a `codec.List` whose one field holds the entries; the name
+        // binds the decode's local and the encode's derived one.
         field_index: 0,
-        check: "f.Uint() == 1",
+        check: "f.Field(0).Len() == 1",
     },
     Shape {
         id: "repeat_named",
@@ -211,8 +215,11 @@ const SHAPES: &[Shape] = &[
     <sce:repeat id="NAME" type="codec_chain_has_marker_slice" sce:byte="1"
                 count="n" max-count="4"/>"#,
         frames: &[&[1, 0, 2, 0xAA, 0xBB], &[0]],
-        field_index: 1,
-        check: "f.Len() == 1",
+        // Printed from its plan: the count is derived and no field of the
+        // value, and the list is a `codec.List`, whose one field holds the
+        // entries.
+        field_index: 0,
+        check: "f.Field(0).Len() == 1",
     },
     Shape {
         id: "chain_named",
@@ -223,8 +230,10 @@ const SHAPES: &[Shape] = &[
                    max-depth="4"                   terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:field id="z" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>"#,
         frames: &[&[0x03, 9], &[0x83, 0x04, 9]],
+        // Printed from its plan: a chain is a `codec.List`, whose one field
+        // holds the entries.
         field_index: 0,
-        check: "f.Len() == 1",
+        check: "f.Field(0).Len() == 1",
     },
     Shape {
         id: "embed_named",
@@ -235,7 +244,11 @@ const SHAPES: &[Shape] = &[
     <sce:embed id="NAME" type="codec_chain_has_marker_slice" sce:byte="1"/>"#,
         frames: &[&[1, 0, 2, 0xAA, 0xBB]],
         field_index: 1,
-        check: "f.Kind() == reflect.Struct",
+        // Printed from its plan: a body is held as its codec's source
+        // interface, which the decode fills with the address of the value it
+        // read.
+        check: "f.Kind() == reflect.Interface && !f.IsNil() && \
+                f.Elem().Kind() == reflect.Pointer && f.Elem().Elem().Kind() == reflect.Struct",
     },
 ];
 
