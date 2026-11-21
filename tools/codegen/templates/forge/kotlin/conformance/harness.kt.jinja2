@@ -14,7 +14,7 @@
 // This scaffold is kind-agnostic; the body of each test method comes from
 // kinds/<kind>.kt.jinja2 via a dynamic include. Adding a new fixture kind
 // means one new kind fragment, zero edits to this scaffold. A codec's byte
-// cases are functions of the class of their own (kinds/codec_cases.kt.jinja2),
+// cases are functions of the class of their own (codec_cases.kt.jinja2),
 // written after its test method, which calls them.
 //
 // The unsigned arrays (`UIntArray`, `ULongArray`, ...) a `list<T>` argument or
@@ -127,9 +127,9 @@ class NumericalConformanceTest {
     }
 {# A codec's byte cases are functions of the class, one per case, which the
    method above calls: a JVM method holds at most 64 KB of code, and the cases
-   of one codec pass it together (kinds/codec_cases.kt.jinja2). #}
+   of one codec pass it together (codec_cases.kt.jinja2). #}
 {% if f.kind == "codec" and not f.content_line %}
-{% include "kinds/codec_cases.kt.jinja2" %}
+{% include "codec_cases.kt.jinja2" %}
 {% endif %}
 {% endfor %}
 }
