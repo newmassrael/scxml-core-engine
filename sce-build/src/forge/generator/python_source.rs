@@ -1012,7 +1012,10 @@ fn held_as(
                 lawful: false,
             };
         }
+        // An enum's first variant is made where it is called
+        // (`class_body_default`), by the factory the class body names.
         Value::Scalar(ty) => {
+            gathered.factory |= !gated && matches!(field.sce_type, SceType::Enum(_));
             let ty = l.type_name(ty);
             return Held {
                 presented: optional(&ty),
@@ -1020,7 +1023,7 @@ fn held_as(
                 default: if gated {
                     "None".to_string()
                 } else {
-                    l.default_expr(&field.sce_type)
+                    class_body_default(l, &field.sce_type)
                 },
                 hold: None,
                 class: None,
@@ -1411,13 +1414,16 @@ fn aligned_member(l: &LangCtx, first: &str, second: &str) -> String {
 }
 
 /// The default a class body declares a field of `ty` with, in a class whose
-/// members are the author's names: an enum's first variant made by a lambda,
-/// which reaches it through the module alias its import is bound to
-/// (`python_module_alias`) where it is called, since a field declared before it
-/// and spelled as that alias would be read in the module's place in the class
-/// body; any other type's literal (`LangCtx::default_expr`), which names
-/// nothing.
-fn class_body_default(l: &LangCtx, ty: &SceType) -> String {
+/// members are the author's names (the value of a positional codec, of a CBOR
+/// map or of a content-line component, a group's arm, a line record): an
+/// enum's first variant made by a lambda, which reaches it through the module
+/// alias its import is bound to (`python_module_alias`) where it is called,
+/// since a field declared before it and spelled as that alias would be read in
+/// the module's place in the class body; any other type's literal
+/// (`LangCtx::default_expr`), which names nothing. The template's default of
+/// a positional codec's field is made here too (`render_codec`), so the class
+/// body of every encoding names an enum's module nowhere.
+pub(super) fn class_body_default(l: &LangCtx, ty: &SceType) -> String {
     let default = l.default_expr(ty);
     if matches!(ty, SceType::Enum(_)) {
         format!("field(default_factory=lambda: {default})")
