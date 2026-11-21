@@ -816,18 +816,17 @@ mod tests {
     #[test]
     fn every_lane_is_named_once_backends_first_then_the_interpreter() {
         let names: Vec<&str> = HostLane::all().map(HostLane::wire_name).collect();
+        let backends: Vec<&str> = Language::ALL
+            .iter()
+            .map(|&language| crate::forge::codegen_matrix::language_wire_name(language))
+            .collect();
+        assert_eq!(names[..backends.len()], backends[..]);
+        assert_eq!(names[backends.len()..], ["interpreter"]);
+        let distinct: std::collections::BTreeSet<&str> = names.iter().copied().collect();
         assert_eq!(
-            names,
-            [
-                "rust",
-                "cpp",
-                "kotlin",
-                "go",
-                "python",
-                "c11",
-                "swift",
-                "interpreter"
-            ]
+            distinct.len(),
+            names.len(),
+            "a lane is named twice: {names:?}"
         );
     }
 

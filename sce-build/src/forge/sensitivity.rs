@@ -381,6 +381,7 @@ fn untyped_rule(datamodel: &str, field: &str, mark: Sensitivity) -> String {
 mod tests {
     use super::*;
     use crate::forge::value_type::{Bound, ScopedCase, ScopedRecord, ScopedUnion, ScopedVariant};
+    use crate::generator::Language;
 
     fn text(max: u32) -> ValueType {
         ValueType::Text {
@@ -678,20 +679,19 @@ mod tests {
 
     /// What `lane` lowers each expression of [`logging`]'s `sce-static`
     /// machine to, by the expression as written.
-    fn lowered(lane: &str) -> BTreeMap<String, String> {
+    fn lowered(language: Language) -> BTreeMap<String, String> {
         use crate::forge::static_lowering as lowering;
         let mut model = parsed("sce-static", SIGN_IN_SCHEMA).expect("the machine parses");
-        let lowered = match lane {
-            "rust" => lowering::lower_rust(&mut model, "m"),
-            "kotlin" => lowering::lower_kotlin(&mut model, "m"),
-            "cpp" => lowering::lower_cpp(&mut model, "m"),
-            "go" => lowering::lower_go(&mut model, "m", None),
-            "python" => lowering::lower_python(&mut model, "m"),
-            "c11" => lowering::lower_c11(&mut model, ""),
-            "swift" => lowering::lower_swift(&mut model, "m"),
-            other => unreachable!("no lane {other}"),
+        let lowered = match language {
+            Language::Rust => lowering::lower_rust(&mut model, "m"),
+            Language::Kotlin => lowering::lower_kotlin(&mut model, "m"),
+            Language::Cpp => lowering::lower_cpp(&mut model, "m"),
+            Language::Go => lowering::lower_go(&mut model, "m", None),
+            Language::Python => lowering::lower_python(&mut model, "m"),
+            Language::C11 => lowering::lower_c11(&mut model, ""),
+            Language::Swift => lowering::lower_swift(&mut model, "m"),
         }
-        .unwrap_or_else(|e| panic!("{lane} lowers the machine: {e:?}"));
+        .unwrap_or_else(|e| panic!("{language:?} lowers the machine: {e:?}"));
         lowered
             .sites
             .into_iter()
@@ -703,8 +703,9 @@ mod tests {
     /// which lowers [`logged_marker`] in place of the expression.
     #[test]
     fn every_lane_lowers_a_log_of_a_marked_field_to_its_marker_alone() {
-        for lane in ["rust", "kotlin", "cpp", "go", "python", "c11", "swift"] {
-            let sites = lowered(lane);
+        for &language in Language::ALL {
+            let lane = language.canonical_name();
+            let sites = lowered(language);
             let site = |source: &str| {
                 sites
                     .get(source)
