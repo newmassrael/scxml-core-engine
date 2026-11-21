@@ -169,10 +169,7 @@ pub(super) fn resolve(
         .iter()
         .map(|(from, to)| (from.as_str(), to.as_str()))
         .collect();
-    let target = match lang {
-        Language::C11 => ExprTarget::C,
-        _ => ExprTarget::Rust,
-    };
+    let target = ExprTarget::of(lang);
 
     let mut inbound_events: Vec<LinkEventName> = Vec::new();
     let mut inbound_rows = Vec::with_capacity(m.inbound.len());
@@ -238,7 +235,7 @@ pub(super) fn resolve(
         outbound.push(LinkOutboundRow {
             snake: filters::to_snake_case(row.event.clone()),
             name,
-            codec_type: codec_type(codec, lang),
+            codec_type: codec.member_type.clone(),
             codec_prefix: codec.namespace.clone(),
             codec_borrowed: codec.codec_is_borrowed,
             max_bytes: max_bytes.max(1),
@@ -264,7 +261,7 @@ pub(super) fn resolve(
     let outbound_borrowed = outbound.iter().any(|row| row.codec_borrowed);
     Ok(Some(LinkEvents {
         framer_include: framer.include_stmt.clone(),
-        framer_type: codec_type(framer, lang),
+        framer_type: framer.member_type.clone(),
         framer_prefix: framer.namespace.clone(),
         framer_borrowed: framer.codec_is_borrowed,
         inbound_events,
@@ -333,13 +330,6 @@ fn takes_caller_inputs(codec: &ImportContext, direction: Direction) -> Option<St
         return Some("takes its variant's tag from its caller".to_string());
     }
     None
-}
-
-fn codec_type(codec: &ImportContext, lang: Language) -> String {
-    match lang {
-        Language::C11 => codec.member_type.clone(),
-        _ => codec.type_name.clone(),
-    }
 }
 
 /// The pool `pool` names: by its import when the link imports it (the import's
