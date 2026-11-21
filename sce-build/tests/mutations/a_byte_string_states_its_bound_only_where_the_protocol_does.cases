@@ -25,13 +25,16 @@ mutation_oracles sce-build/tests/forge_conformance.rs
 
 # A bound read off the document alone calls a text whose length a `u8` carries
 # unbounded. Killed by `a_byte_string_with_no_bound_reads_what_its_frame_holds`
-# (`Text<'a, 255>`, `InlineStr<255>`).
+# (`Text<'a, 255>`, `InlineStr<255>`). The edit keeps the call that reads
+# `fields`, the function's only read of it: a mutant that drops the last read of
+# a binding does not compile under `warnings = "deny"`, and its tests never run.
 mutation_case "a bound ignores the width of its length" <<'PY'
 edit("sce-build/src/forge/model.rs",
      r'''        self.length_bound(fields)
             .and_then(|b| b.max)
             .filter(|max| *max <= u64::from(u32::MAX))''',
-     r'''        self.declared_bound()
+     r'''        self.length_bound(fields)
+            .and(self.declared_bound())
             .filter(|max| *max <= u64::from(u32::MAX))''')
 PY
 
