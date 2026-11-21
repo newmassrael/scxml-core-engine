@@ -1489,7 +1489,7 @@ fn payload_probe(sign_attrs: &str, payload: &str, verify_attrs: &str) -> String 
       <sce:set name="owner" expr="'alice'"/>
     </data>
     <data id="label" sce:type="string[24]" expr="''"/>
-    <data id="object" sce:type="bytes[cose_signed=4352]" expr="''"/>
+    <data id="cose_object" sce:type="bytes[cose_signed=4352]" expr="''"/>
     <data id="got" sce:type="optional&lt;record:Note&gt;" expr="null" sce:direction="out"/>
   </datamodel>
   <state id="idle">
@@ -1502,13 +1502,13 @@ fn payload_probe(sign_attrs: &str, payload: &str, verify_attrs: &str) -> String 
       <param name="external_aad" expr="''"/>
     </invoke>
     <transition event="done.invoke.sign" target="verifying">
-      <assign location="object" expr="_event.data.cose"/>
+      <assign location="cose_object" expr="_event.data.cose"/>
     </transition>
   </state>
   <state id="verifying">
     <invoke type="sce-host-cose-verify1" id="verify"{verify_attrs} sce:request="Verify1Request" sce:result="Verify1Result">
       <param name="trust_set" expr="'t'"/>
-      <param name="cose" expr="object"/>
+      <param name="cose" expr="cose_object"/>
       <param name="external_aad" expr="''"/>
     </invoke>
     <transition event="done.invoke.verify" target="idle">
