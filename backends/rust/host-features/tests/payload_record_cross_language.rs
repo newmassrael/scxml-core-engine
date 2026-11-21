@@ -135,22 +135,22 @@ fn verifier(vectors: &Value) -> ReferenceHost<Unreachable> {
 
 /// The completion of a verification of `object` by `host`, read as the note.
 fn verified(host: &mut ReferenceHost<Unreachable>, vectors: &Value, object: &[u8]) -> Value {
+    verified_as(host, text(object), member(vectors, "description"))
+}
+
+/// The completion of a verification of the object whose text is `cose` by
+/// `host`, read as the record `description` describes.
+fn verified_as(host: &mut ReferenceHost<Unreachable>, cose: String, description: &str) -> Value {
     let data = done(host.start(
         "sce-host-cose-verify1",
         &Invocation::new("session", "verify_note", 1),
         &params(&[
             ("trust_set", TRUST_SET.to_string()),
-            ("cose", text(object)),
+            ("cose", cose),
             ("external_aad", String::new()),
         ]),
     ));
-    let read = record_cbor::open_completion(
-        &data,
-        "payload",
-        "valid",
-        member(vectors, "description"),
-        VERIFY_FAILURE,
-    );
+    let read = record_cbor::open_completion(&data, "payload", "valid", description, VERIFY_FAILURE);
     serde_json::from_str(&read).expect("a completion is JSON")
 }
 
@@ -273,6 +273,73 @@ fn bytes_that_verify_or_open_and_are_no_record_are_the_failure_not_a_record() {
     assert_eq!(
         read,
         serde_json::from_str::<Value>(OPEN_FAILURE).expect("JSON")
+    );
+}
+
+/// A machine built from the second revision of the note's schema reads the
+/// note the first revision wrote, each field the second revision added at what
+/// such a note reads in its place (docs/adr/0044); a note that lacks a field
+/// of the first revision is no note of either revision.
+#[test]
+fn a_later_revision_reads_a_note_the_first_revision_wrote_with_its_defaults() {
+    let vectors = vectors();
+    let revised = &vectors["revised"];
+    let description = member(revised, "description");
+    let read = record_cbor::decode(&hex(member(&vectors, "record_cbor")), description)
+        .expect("a note of the first revision is a note of the second");
+    let read: Value = serde_json::from_str(&read).expect("a record is JSON");
+    assert_eq!(read, revised["record"]);
+    let refused = record_cbor::decode(&hex(member(revised, "lacking_serial")), description)
+        .expect_err("a note that lacks a field of the first revision");
+    assert_eq!(refused.pointer, "/serial", "{refused}");
+    assert!(
+        refused.reason.contains("CborRequiredKeyMissing"),
+        "{refused}"
+    );
+}
+
+/// A host of the second revision verifies a note a host of the first signed,
+/// with nothing but the signer's public key, and the machine receives the note
+/// with each later field at its default; an object of a note that lacks a
+/// field of the first revision verifies, and is the failure `not_a_record`.
+#[test]
+fn a_later_revision_verifies_a_note_the_first_revision_signed() {
+    let vectors = vectors();
+    let revised = &vectors["revised"];
+    let description = member(revised, "description");
+    let mut host = verifier(&vectors);
+    let read = verified_as(
+        &mut host,
+        text(&hex(member(&vectors, "signed"))),
+        description,
+    );
+    assert_eq!(read["error"], "");
+    assert_eq!(read["valid"], true);
+    assert_eq!(
+        read["payload"], revised["record"],
+        "the machine receives the note with the later fields' defaults"
+    );
+    let mut signing = signer(&vectors);
+    let signed: Value = serde_json::from_str(&done(signing.start(
+        "sce-host-cose-sign1",
+        &Invocation::new("session", "sign_note", 1),
+        &params(&[
+            ("key_id", member(&vectors["signing_key"], "id").to_string()),
+            ("payload", text(&hex(member(revised, "lacking_serial")))),
+            ("external_aad", String::new()),
+        ]),
+    )))
+    .expect("a result is JSON");
+    assert_eq!(
+        signed["error"], "",
+        "the bytes are signed whatever they hold"
+    );
+    let cose = member(&signed, "cose").to_string();
+    let read = verified_as(&mut host, cose, description);
+    assert_eq!(
+        read,
+        serde_json::from_str::<Value>(VERIFY_FAILURE).expect("JSON"),
+        "a note that lacks `serial` is no note"
     );
 }
 

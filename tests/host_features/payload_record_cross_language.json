@@ -17,7 +17,15 @@
     "",
     "Every hexadecimal value is the bytes it spells. The objects were computed by an implementation that shares",
     "nothing with either lane (the Python `cryptography` package over OpenSSL, with a CBOR writer of its own),",
-    "which first reproduced every object of tests/host_features/cose_cross_language.json."
+    "which first reproduced every object of tests/host_features/cose_cross_language.json.",
+    "",
+    "`revised` is the note under the second revision of its schema (docs/adr/0044; the event schema",
+    "sce-build/tests/fixtures/static_datamodel/schema_cose_note_revised.scxml), which added `rank` (default -2),",
+    "`label` (default 'none'), the list `tags` and the optional `memo`. `description` is the build's description of",
+    "it, each added field with the hexadecimal deterministic CBOR a note written before the field existed reads in its",
+    "place; `record` is `record_cbor`, which the first revision wrote, read under it; and `lacking_serial` is",
+    "`record_cbor` without `serial`, a field of the first revision, which no revision reads. A test signs",
+    "`lacking_serial` with the signing key where it runs: the object verifies, and is the failure `not_a_record`."
   ],
   "description": "{\"record\":[[\"blob\",false,{\"bytes\":8},null],[\"owner\",false,{\"text\":24},null],[\"active\",false,{\"bool\":{}},null],[\"offset\",false,{\"int\":16},null],[\"serial\",false,{\"uint\":32},null]]}",
   "record": {"serial": 4242, "owner": "alice", "blob": "\u0000ÿ\u0010", "active": true, "offset": -300},
@@ -39,5 +47,10 @@
     "bytes": "68656c6c6f",
     "signed": "d2844da2012704486465766963652d61a04568656c6c6f58403c7580c3c0f236344cbad1d9d1d50544dffd5a488d675fe23e96c6d13acc3174c9dbb6f53b28d6b5164f5bb9167beae5d80734889aeca460ef34f904268db80d",
     "sealed": "d08344a1011818a204457661756c74054c202122232425262728292a2b557b9b92fa61d4308bcc8c6e0283b283ab800d06ea31"
+  },
+  "revised": {
+    "description": "{\"record\":[[\"blob\",false,{\"bytes\":8},null],[\"memo\",true,{\"text\":8},null],[\"rank\",false,{\"int\":8},\"21\"],[\"tags\",false,{\"list\":{\"max\":2,\"min\":0,\"of\":{\"uint\":8}}},\"80\"],[\"label\",false,{\"text\":8},\"646e6f6e65\"],[\"owner\",false,{\"text\":24},null],[\"active\",false,{\"bool\":{}},null],[\"offset\",false,{\"int\":16},null],[\"serial\",false,{\"uint\":32},null]]}",
+    "record": {"serial": 4242, "owner": "alice", "blob": "\u0000ÿ\u0010", "active": true, "offset": -300, "rank": -2, "label": "none", "tags": [], "memo": null},
+    "lacking_serial": "a464626c6f624300ff10656f776e657265616c69636566616374697665f5666f666673657439012b"
   }
 }

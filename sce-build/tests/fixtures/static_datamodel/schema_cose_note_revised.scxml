@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The note of schema_cose_note.scxml after its schema grew (docs/adr/0044): the
+  first revision's five fields, and four a second revision added, each with
+  what a note written before it existed reads in its place: `rank` its default
+  -2, `label` its default "none", the list `tags` the empty list, and the
+  optional `memo` absent. A machine that verifies or opens a note by this
+  schema (sce:payload, docs/adr/0109, D9) reads a note the first revision
+  signed with those values, and refuses one that lacks a field of the first
+  revision as `not_a_record` (tests/host_features/payload_record_cross_language.json,
+  `revised`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_cose_note_revised"
+       sce:event-name="cose.note.revised"
+       sce:revision="2">
+  <datamodel>
+    <data id="serial" sce:type="uint32" sce:direction="in"/>
+    <data id="owner" sce:type="string[24]" sce:direction="in"/>
+    <data id="blob" sce:type="bytes[8]" sce:direction="in"/>
+    <data id="active" sce:type="bool" sce:direction="in"/>
+    <data id="offset" sce:type="int16" sce:direction="in"/>
+    <data id="rank" sce:type="int8" sce:direction="in" sce:since="2" sce:default="-2"/>
+    <data id="label" sce:type="string[8]" sce:direction="in" sce:since="2" sce:default="none"/>
+    <data id="tags" sce:type="list&lt;uint8&gt;[2]" sce:direction="in" sce:since="2"/>
+    <data id="memo" sce:type="optional&lt;string[8]&gt;" sce:direction="in" sce:since="2"/>
+  </datamodel>
+</scxml>
