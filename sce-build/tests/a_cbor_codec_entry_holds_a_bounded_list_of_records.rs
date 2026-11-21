@@ -638,9 +638,13 @@ fn the_go_map_holds_each_list_in_a_slice_of_the_schemas_payload() {
 /// `int`, so the encode refuses a record past either bound before the map
 /// head, as it refuses one past a byte string's.
 ///
+/// The map reads a record by a function of the module, as it writes one, so
+/// its class body evaluates no `@staticmethod` a field could stand in for.
+///
 /// Turns red where `python_source::cbor::checks` checks a record after the
-/// first byte, or drops the check of a record's text, or where `held` holds a
-/// list in a bare `list`.
+/// first byte, or drops the check of a record's text, where `held` holds a
+/// list in a bare `list`, or where `codec_cbor.py.jinja2` reads a record by a
+/// method of the value's class.
 #[test]
 fn the_python_map_holds_each_list_in_a_list_of_the_schemas_payload() {
     holds(
@@ -656,7 +660,8 @@ fn the_python_map_holds_each_list_in_a_list_of_the_schemas_payload() {
             // A read past the bound is refused before any record is read.
             "if n > 2:",
             "if n > 3:",
-            "v = [CodecCborRecordList._decode_record_causal_entry(c) for _ in range(n)]",
+            "v = [_decode_record_causal_entry(c) for _ in range(n)]",
+            "\ndef _decode_record_causal_entry(c: SceCursor) -> ",
             "held_author = cbor.read_text(c, 16)",
             // Each record is held to the bounds its payload does not hold
             // before the map head is written.
