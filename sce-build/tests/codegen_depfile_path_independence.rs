@@ -57,8 +57,10 @@ const MIN_DECLARED_TEMPLATES: usize = 15;
 /// that writes only part of a kind, or none, has a probe it can only refuse.
 /// The matrix used to be every supported language, and Swift's arrival made it
 /// 14 probes of which its two were refusals, which the count reported before the
-/// refusals could be read (2026-10-23).
-const EXPECTED_PROBES: usize = 12;
+/// refusals could be read (2026-10-23). Six statechart probes and six codec
+/// probes until Swift's codec joined the matrix whole (`a5c41df4b1f`), which
+/// gave the forge pipeline its seventh probe.
+const EXPECTED_PROBES: usize = 13;
 
 fn codegen_bin() -> &'static str {
     env!("CARGO_BIN_EXE_sce-codegen")
