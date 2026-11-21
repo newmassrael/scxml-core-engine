@@ -32,8 +32,8 @@
 //! The names are DERIVED, not listed: a hand-written list of "names to keep
 //! away from" is exactly what drifts when a template starts to use one more
 //! builtin. The set is `dir(builtins)` joined with every bare identifier and
-//! parameter in `tests/forge/expected/*.py` and in the Python the CBOR and
-//! content-line documents of `MAP_AND_LINE` generate, so a template that
+//! parameter in `tests/forge/expected/*.py` and in the Python the documents
+//! of `GENERATED_HERE` generate, so a template that
 //! begins to use a name widens the question by itself.
 //!
 //! A name the parser refuses (`validation/reserved-code-identifier`, a
@@ -62,13 +62,15 @@ fn python_runtime() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/python/forge-runtime")
 }
 
-/// The CBOR and content-line documents the names are also read off, as paths
-/// from the crate. Their Python is committed nowhere, so each is generated
-/// where it is read. Between them they hold every class body the two printers
-/// write: a map's value and the `Protocol` its source satisfies, a component's
-/// value, its line records and theirs, a list of values, an enum entry and an
-/// enum parameter, and a map that reads a list of records.
-const MAP_AND_LINE: &[&str] = &[
+/// The documents the names are also read off, as paths from the crate. Their
+/// Python is committed nowhere, so each is generated where it is read. The
+/// CBOR and content-line ones hold every class body those two printers write:
+/// a map's value and the `Protocol` its source satisfies, a component's value,
+/// its line records and theirs, a list of values, an enum entry and an enum
+/// parameter, and a map that reads a list of records. The positional ones hold
+/// a field of an enum's type, alone, gated, and a member of a group's arm,
+/// each a default the class body would otherwise make by the enum's module.
+const GENERATED_HERE: &[&str] = &[
     "../tests/forge/resources/codec_cbor_map.scxml",
     "../tests/forge/resources/codec_content_line_enums.scxml",
     "../tests/forge/resources/codec_content_line_event.scxml",
@@ -82,14 +84,17 @@ const MAP_AND_LINE: &[&str] = &[
     "tests/fixtures/cbor_codec/codec_cbor_record_list_least.scxml",
     "tests/fixtures/cbor_codec/codec_cbor_signed_enum.scxml",
     "../stdlib/mesh/envelope.scxml",
+    "../tests/forge/resources/codec_enum_fields.scxml",
+    "../tests/forge/resources/codec_enum_gated.scxml",
+    "../tests/forge/resources/codec_group_enum.scxml",
 ];
 
-/// The Python each of [`MAP_AND_LINE`] generates, as `<stem>.py` in a new
+/// The Python each of [`GENERATED_HERE`] generates, as `<stem>.py` in a new
 /// directory, beside a copy of the document as `<stem>.scxml`, which the
 /// derivation reads the names the document declares from.
-fn map_and_line_modules() -> tempfile::TempDir {
+fn generated_here_modules() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory for the generated modules");
-    for document in MAP_AND_LINE {
+    for document in GENERATED_HERE {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(document);
         let stem = path
             .file_stem()
@@ -132,6 +137,9 @@ const ENTRY_SET: &[&str] = &[
     "codec_zenoh_ext_entry.scxml",
 ];
 const SLICE_SET: &[&str] = &["codec_chain_has_marker_slice.scxml"];
+/// An enum a field is typed by, imported as an enum. A closed one whose first
+/// variant, the default of a field of its type, is 1 and not the zero.
+const ENUM_SET: &[&str] = &["enum_session_state.scxml"];
 
 /// One construct that binds a local to the value it decodes, with the name
 /// under test standing where an author's name stands.
@@ -359,6 +367,39 @@ const SHAPES: &[Shape] = &[
         check: "getattr({value}.z[0], {name}) == 'ab' and {value}.z[0].value == 'cd' \
                 and not callable(getattr(type({value}.z[0])(), {name}))",
     },
+    // A field of an enum's type declared after the one under test: its default,
+    // the enum's first variant, is made through the module the enum is
+    // imported as, which a field declared before it and spelled as that module
+    // would stand in for in the class body.
+    Shape {
+        id: "enum_after",
+        root: POSITIONAL,
+        imports: ENUM_SET,
+        encode_may_fail: false,
+        datamodel: r#"
+    <sce:field id="NAME" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="e" sce:type="enum:enum_session_state" sce:byte="1" sce:bit-size="8"/>"#,
+        frames: &[&[1, 1]],
+        check: "{v} == 1",
+    },
+    // The same pair as members of one arm of a gate group (docs/adr/0065 §6
+    // R4b), whose class body makes the enum's default as the value's does.
+    Shape {
+        id: "group_enum",
+        root: POSITIONAL,
+        imports: ENUM_SET,
+        encode_may_fail: false,
+        datamodel: r#"
+    <sce:flags id="f" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="on" bit="0"/>
+    </sce:flags>
+    <sce:field id="NAME" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="f.on"/>
+    <sce:field id="e" sce:type="enum:enum_session_state" sce:byte="2" sce:bit-size="8"
+               sce:present-if="f.on"/>"#,
+        frames: &[&[1, 7, 1], &[0]],
+        check: "{value} is not None",
+    },
 ];
 
 impl Shape {
@@ -370,7 +411,7 @@ impl Shape {
 }
 
 /// Every name that could be in the way, derived. See the module comment.
-/// `generated` holds the Python of [`MAP_AND_LINE`] ([`map_and_line_modules`]).
+/// `generated` holds the Python of [`GENERATED_HERE`] ([`generated_here_modules`]).
 fn candidate_names(generated: &Path) -> Vec<String> {
     let script = r#"
 import ast, builtins, glob, re, sys
@@ -433,7 +474,12 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
         .filter(|f| !ENTRY_SET[..3].contains(f))
         .map(|f| {
             let stem = f.trim_end_matches(".scxml");
-            format!("  <sce:import src=\"{f}\" kind=\"codec\" as=\"{stem}\"/>\n")
+            let kind = if ENUM_SET.contains(f) {
+                "enum"
+            } else {
+                "codec"
+            };
+            format!("  <sce:import src=\"{f}\" kind=\"{kind}\" as=\"{stem}\"/>\n")
         })
         .collect();
     let declared = if shape.encode_may_fail {
@@ -495,8 +541,8 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
 /// The names the backend keeps for itself are the ones the output shows.
 ///
 /// A list written by hand is what drifts, so each one is derived from the
-/// committed Python output, and from the Python the CBOR and content-line
-/// documents of [`MAP_AND_LINE`] generate, which is committed nowhere, and
+/// committed Python output, and from the Python the documents of
+/// [`GENERATED_HERE`] generate, which is committed nowhere, and
 /// compared:
 ///
 /// - the methods a codec class, or a dataclass of the codec's module, defines
@@ -523,8 +569,9 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
 /// makes this fail, and the failure says which list to extend. So does a CBOR
 /// map that reads a record by a `@staticmethod` of its class
 /// (`codec_cbor.py.jinja2`), a content-line list whose default names `list`
-/// (`python_source::content_line::EMPTY_LIST`), and an enum entry whose default
-/// names its module in the class body (`python_source::class_body_default`).
+/// (`python_source::content_line::EMPTY_LIST`), and an enum entry or field,
+/// alone or in a group's arm, whose default names its module in the class body
+/// (`python_source::class_body_default`).
 #[test]
 fn the_names_the_generated_python_keeps_for_itself_are_the_ones_its_output_shows() {
     if !python_present() {
@@ -615,9 +662,9 @@ class_body = set()
 first_params = set()
 unowned_f_locals = []
 codec_classes = 0
-map_and_line_classes = 0
+generated_here_classes = 0
 # The committed output, its documents among the resources; and the Python of
-# the CBOR and content-line documents, generated beside a copy of each.
+# the documents committed nowhere, generated beside a copy of each.
 for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
     for path in sorted(glob.glob(py_dir + "/*.py")):
         tree = ast.parse(open(path, encoding="utf-8").read())
@@ -655,7 +702,7 @@ for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
                 continue
             codec_classes += 1
             if py_dir == sys.argv[3]:
-                map_and_line_classes += 1
+                generated_here_classes += 1
             for fname in ("decode", "encode"):
                 args = fns[fname].args.args
                 first_params |= {a.arg for a in args[:2]}
@@ -665,14 +712,14 @@ for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
                         unowned_f_locals.append(f"{path}:{cls.name}:{node.id}")
 print(json.dumps({
     "codec_classes": codec_classes,
-    "map_and_line_classes": map_and_line_classes,
+    "generated_here_classes": generated_here_classes,
     "methods": sorted(methods),
     "class_body": sorted(n for n in class_body if n[:1].islower()),
     "first_params": sorted(first_params),
     "unowned_f_locals": unowned_f_locals,
 }))
 "#;
-    let generated = map_and_line_modules();
+    let generated = generated_here_modules();
     let out = Command::new("python3")
         .arg("-c")
         .arg(script)
@@ -705,9 +752,9 @@ print(json.dumps({
         derived["codec_classes"]
     );
     assert_eq!(
-        derived["map_and_line_classes"].as_u64(),
-        Some(MAP_AND_LINE.len() as u64),
-        "each CBOR and content-line document generates one codec class the names are read off"
+        derived["generated_here_classes"].as_u64(),
+        Some(GENERATED_HERE.len() as u64),
+        "each document generated here generates one codec class the names are read off"
     );
     assert_eq!(
         strings("methods"),
@@ -756,7 +803,7 @@ fn an_authors_field_name_never_decides_what_the_generated_python_does() {
         return;
     }
 
-    let generated = map_and_line_modules();
+    let generated = generated_here_modules();
     let names = candidate_names(generated.path());
     assert!(
         names.len() > 100,
@@ -771,7 +818,7 @@ fn an_authors_field_name_never_decides_what_the_generated_python_does() {
 
     // The imported documents, generated once.
     let mut written: BTreeSet<String> = BTreeSet::new();
-    for set in [ENTRY_SET, SLICE_SET] {
+    for set in [ENTRY_SET, SLICE_SET, ENUM_SET] {
         for file in set {
             let src = std::fs::read_to_string(resource_dir().join(file)).expect("read import");
             let stem = file.trim_end_matches(".scxml");
