@@ -534,7 +534,7 @@ fn parts_literal(
 
 /// The member a source states a variant's arm by, and the accessor of it
 /// (docs/adr/0058 §1, `fn body(&self)`).
-pub(super) const VARIANT_MEMBER: &str = "body";
+pub(super) const VARIANT_MEMBER: &str = crate::scxml_identifier::VARIANT_MEMBER;
 
 /// The arm of a variant a source states (ADR 0081 §5).
 pub(super) struct ChosenArm<'p> {

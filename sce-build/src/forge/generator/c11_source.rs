@@ -38,7 +38,7 @@ pub(super) mod source_case;
 
 /// The member the codec's struct holds its variant's arm in, and the function
 /// of the table of a source that presents the arm (`{snake}_body_ref_t`).
-const BODY: &str = "body";
+const BODY: &str = crate::scxml_identifier::VARIANT_MEMBER;
 
 /// The constant of `{codec}_body_kind_t` that names the arm whose codec is
 /// imported as `arm`, or the catch-all where `arm` is `None`: the kind the
