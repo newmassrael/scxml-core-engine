@@ -304,7 +304,11 @@ fn every_other_backend_refuses_a_deployment_value_by_name() {
             Language::Rust | Language::Cpp => {
                 assert!(ok, "{name} reads a deployment value:\n{out}");
             }
-            _ => {
+            Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift => {
                 assert!(!ok, "{name} reads no deployment value yet:\n{out}");
                 assert!(
                     out.contains("\"code\":\"generate/unsupported-feature\""),
