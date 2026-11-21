@@ -31,6 +31,7 @@
 // The requests themselves are held field by field to the generated engine's in
 // HostRequestTest.cpp; this file is about the lifecycle.
 
+#include "common/ErrorData.h"
 #include "common/SendHelper.h"
 #include "core/HostProcessor.h"
 #include "events/EventDispatcherImpl.h"
@@ -303,7 +304,7 @@ TEST_F(HostDoorTest, ATypeNobodyServesRaisesErrorExecution) {
     <invoke id="job" type="x-sce-host"/>
     <transition event="error.execution">
       <assign location="errors" expr="errors + 1"/>
-      <assign location="seen" expr="seen + _event.data + ';'"/>
+      <assign location="seen" expr="seen + _event.data.reason + ' ' + _event.data.detail + ';'"/>
     </transition>
   </state>
 </scxml>)scxml");
@@ -314,9 +315,12 @@ TEST_F(HostDoorTest, ATypeNobodyServesRaisesErrorExecution) {
     ASSERT_TRUE(sm->start());
 
     EXPECT_EQ(read("errors"), "2") << "seen: " << read("seen");
-    EXPECT_NE(read("seen").find("<invoke type='x-sce-host'> names an external service this platform does not support"),
-              std::string::npos)
-        << read("seen");
+    // SCE_MESH.md section 10.7.1 (docs/adr/0106, #111): the invoke's refusal is
+    // the record of its code, read here as `reason detail`.
+    const std::string invokeRefusal =
+        std::string(::SCE::Generated::ErrorReason::declared_name(Common::ErrorReason::InvokeTypeUnsupported)) +
+        " <invoke type='x-sce-host'> names an external service this platform does not support";
+    EXPECT_NE(read("seen").find(invokeRefusal), std::string::npos) << read("seen");
     EXPECT_TRUE(sent().empty()) << "a processor registered for another type served this one";
     EXPECT_TRUE(invoker_.lines().empty()) << "an invoker registered for another type was asked to start this one";
 }
