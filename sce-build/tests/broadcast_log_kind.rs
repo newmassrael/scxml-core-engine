@@ -1921,43 +1921,6 @@ fn a_retention_that_resolves_to_nothing_is_refused() {
     );
 }
 
-#[test]
-fn an_element_the_template_cannot_hold_is_refused_on_the_element_type_row() {
-    let xml = event_ring();
-    let why = "a CBOR map with a string or byte string entry that states neither sce:max-size \
-               nor sce:length decodes to a value that borrows";
-    let facts = BroadcastLogElementFacts {
-        cbor_text_or_bytes_entry: true,
-        cbor_entry_unbounded: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    let located = compile_single(&xml, &resolution_options(None, 4, facts))
-        .err()
-        .unwrap_or_else(|| panic!("an element the template cannot hold is refused"));
-    assert!(
-        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
-        "the refusal is placed on the element-type row"
-    );
-    let detail = invalid_config(located);
-    assert!(
-        detail.contains("the element 'event_record' cannot be stored by the Rust template"),
-        "{detail}"
-    );
-    assert!(detail.contains(why), "{detail}");
-}
-
-#[test]
-fn an_element_with_a_string_entry_that_states_its_bound_is_not_refused_by_the_template() {
-    // The same shape as above with every entry bounded: the map has an owned form to
-    // copy a decoded string into, so the render is not refused and writes the module.
-    let facts = BroadcastLogElementFacts {
-        cbor_text_or_bytes_entry: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    compile_single(&event_ring(), &resolution_options(None, 4, facts))
-        .unwrap_or_else(|located| panic!("a bounded text entry is held: {located:?}"));
-}
-
 // --- The facts of an element are the codec's; the verdict on them is a language's ---
 
 #[test]
@@ -2016,51 +1979,6 @@ fn an_element_with_nothing_unusual_is_refused_by_no_language() {
             "{language:?}"
         );
     }
-}
-
-#[test]
-fn a_cbor_entry_with_no_bound_is_refused_only_where_the_decoded_form_borrows() {
-    // A map whose every string and byte string states its bound is held by every
-    // language: Rust copies each into the container of its declared bound
-    // (`{Name}Owned<S>`), and the others' decoded values own their bytes (their arms
-    // of `refusal_for` say why: each decode copies a text or byte-string entry out
-    // of the buffer it reads).
-    let bounded = BroadcastLogElementFacts {
-        cbor_text_or_bytes_entry: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    for language in Language::ALL.iter().copied() {
-        assert_eq!(bounded.refusal_for(language), None, "{language:?}");
-    }
-    // An entry with no bound has no container to be copied into, which only Rust's
-    // decoded form needs: it is refused there, and held by the languages whose
-    // decoded value owns its bytes. A language with no template yet has not decided
-    // that its decoded form borrows; the change that gives one its template says
-    // which it is in its arm of `refusal_for`.
-    let unbounded = BroadcastLogElementFacts {
-        cbor_text_or_bytes_entry: true,
-        cbor_entry_unbounded: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    let why = unbounded
-        .refusal_for(Language::Rust)
-        .expect("Rust has no owned form for a string with no bound");
-    assert!(why.contains("a CBOR map with a string"), "{why}");
-    assert!(why.contains("sce:max-size"), "{why}");
-    for language in Language::ALL
-        .iter()
-        .copied()
-        .filter(|language| *language != Language::Rust)
-    {
-        assert_eq!(unbounded.refusal_for(language), None, "{language:?}");
-    }
-    // The fact is read with the shape it qualifies: an unbounded flag on a map with
-    // no text or byte string says nothing.
-    let alone = BroadcastLogElementFacts {
-        cbor_entry_unbounded: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    assert_eq!(alone.refusal_for(Language::Rust), None);
 }
 
 // --- Go generates the log over its runtime row ---
@@ -2689,8 +2607,8 @@ fn c11_refuses_what_the_shared_judgement_refuses_in_the_shared_words() {
     assert!(invalid_config(located).contains("the retention resolves to 0"));
 
     // No element is left that the C11 template cannot hold: a flag input and a
-    // variant's tag are stored with the entry, and a CBOR text entry is copied into
-    // the struct, so the facts that name them are accepted and generate a header.
+    // variant's tag are stored with the entry, so the facts that name them are
+    // accepted and generate a header.
     let element_xml = event_ring();
     for facts in [
         BroadcastLogElementFacts {
@@ -2699,10 +2617,6 @@ fn c11_refuses_what_the_shared_judgement_refuses_in_the_shared_words() {
         },
         BroadcastLogElementFacts {
             caller_flag_inputs: vec!["S".to_string()],
-            ..BroadcastLogElementFacts::default()
-        },
-        BroadcastLogElementFacts {
-            cbor_text_or_bytes_entry: true,
             ..BroadcastLogElementFacts::default()
         },
     ] {
@@ -3069,17 +2983,7 @@ fn c11_counts_the_context_words_in_the_words_it_refuses_past_32_bits() {
 #[test]
 fn c11_holds_a_cbor_element_with_text_because_its_struct_owns_the_bytes() {
     // The C codec copies a CBOR text entry into a `char name[N]` of the struct, so
-    // the decoded value outlives the buffer it was read from: the log holds an
-    // element whose text states no bound as well, which the Rust template does not
-    // (its decoded form borrows the buffer, and its owned form needs a bound).
-    let facts = BroadcastLogElementFacts {
-        cbor_text_or_bytes_entry: true,
-        cbor_entry_unbounded: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    assert_eq!(facts.refusal_for(Language::C11), None);
-    assert!(facts.refusal_for(Language::Rust).is_some());
-
+    // the decoded value outlives the buffer it was read from and the log holds it.
     let xml = event_ring();
     let borrowing = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
@@ -5032,29 +4936,16 @@ fn cpp_the_names_the_narrow_header_calls_are_the_ones_the_runtime_declares() {
 #[test]
 fn cpp_holds_a_cbor_element_with_a_string_entry_because_its_decoded_value_owns_the_text() {
     let xml = event_ring();
-    let facts = BroadcastLogElementFacts {
-        cbor_text_or_bytes_entry: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    assert_eq!(
-        facts.refusal_for(Language::Cpp),
-        None,
-        "the C++ CBOR reader returns a std::string and a std::vector, which own their bytes"
-    );
-    assert_eq!(
-        facts.refusal_for(Language::Rust),
-        None,
-        "Rust's decoded form borrows, and its owned form holds the bounded entry"
-    );
     // What a caller must give is stored with the entry, so a tag adds no refusal.
     let tag = BroadcastLogElementFacts {
         caller_variant_tag: true,
-        ..facts
+        ..BroadcastLogElementFacts::default()
     };
     assert_eq!(tag.refusal_for(Language::Cpp), None);
 
-    // The same element, as the document set sees it: the string entry is read
-    // from the codec and the log is generated, as it is for Rust.
+    // The C++ CBOR reader returns a text entry as a std::string, which owns its
+    // bytes: the string entry is read from the codec and the log is generated,
+    // as it is for Rust.
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
     );
@@ -5715,19 +5606,20 @@ fn a_deploy_key_retention_is_read_from_the_target_machines_limits_for_python() {
 fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_python_and_cpp() {
     // `blocking` is within the ceiling of every language, so none refuses the
     // progress and each reaches the checks that are the same for every
-    // language: no resolution at all, a deploy key nothing resolved, a
-    // retention of 0, and an element the language cannot hold (the one place
-    // the language's name is written).
+    // language: no resolution at all, a deploy key nothing resolved, and a
+    // retention of 0. None of these four refuses an element of its own: each
+    // writes every codec a log names, a CBOR text entry included, since it
+    // carries its bound in its type.
     let xml = simple_doc("event_ring", "one", "blocking", DEPLOY_KEY_RETENTION);
     let languages = [
-        (Language::Rust, "Rust"),
-        (Language::Kotlin, "Kotlin"),
-        (Language::Python, "Python"),
-        (Language::Cpp, "C++"),
+        Language::Rust,
+        Language::Kotlin,
+        Language::Python,
+        Language::Cpp,
     ];
     let details: Vec<Vec<String>> = languages
         .into_iter()
-        .map(|(language, _)| {
+        .map(|language| {
             vec![
                 single_refusal(language, &xml, &ForgeCompileOptions::default()),
                 single_refusal(
@@ -5746,32 +5638,6 @@ fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_python_an
     assert_eq!(details[0], details[1], "Rust and Kotlin");
     assert_eq!(details[0], details[2], "Rust and Python");
     assert_eq!(details[0], details[3], "Rust and C++");
-    // An element a language cannot hold is refused by the fact that language
-    // refuses, in the one sentence that names the language: of these four, Rust
-    // alone, which has no owned form for a CBOR string that states no bound. The
-    // other three hold that element.
-    let element = BroadcastLogElementFacts {
-        cbor_text_or_bytes_entry: true,
-        cbor_entry_unbounded: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    for (language, name) in languages {
-        if language != Language::Rust {
-            assert_eq!(element.refusal_for(language), None, "{language:?}");
-            continue;
-        }
-        let detail = single_refusal(
-            language,
-            &xml,
-            &resolution_options(Some(3), 4, element.clone()),
-        );
-        assert!(
-            detail.contains(&format!(
-                "the element 'event_record' cannot be stored by the {name} template"
-            )),
-            "{language:?}: {detail}"
-        );
-    }
 }
 
 // --- Kotlin generates the log over its runtime row ---
