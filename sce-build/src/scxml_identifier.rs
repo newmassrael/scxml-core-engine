@@ -416,7 +416,9 @@ fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Gr
 /// What the generated Python makes of the name `node`'s attribute `attr`
 /// declares, when it is a name of the class or call the codec generates:
 /// a field, flag, chain, repeat or embed is the dataclass attribute or its
-/// accessor, a flag-input is a parameter of `decode` and `encode`; and a
+/// accessor, and so is an entry of a CBOR map or of a content-line component
+/// (a `<data>` of its datamodel that is not the input frame, a parameter of a
+/// line too), a flag-input is a parameter of `decode` and `encode`; and a
 /// procedure's input or helper is given a public setter `set_<name>`, which the
 /// base class already has for the service handler. `None` for a name that is
 /// only ever a local of a function body, which the generator keeps apart from
@@ -427,18 +429,30 @@ fn python_declaration(
     attr: &str,
 ) -> Option<crate::reader_names::PythonDeclaration> {
     use crate::reader_names::PythonDeclaration::{CallParameter, ClassAttribute, ProcedureSetter};
-    let in_a_procedure = node
-        .document()
-        .root_element()
-        .attribute((crate::forge::model::SCE_NAMESPACE, "kind"))
-        == Some("procedure");
-    // A procedure's `<data>` is an input, and has a setter, when it declares
-    // `sce:direction="in"`; an internal has none.
+    let root = node.document().root_element();
+    let kind = root.attribute((crate::forge::model::SCE_NAMESPACE, "kind"));
+    let in_a_procedure = kind == Some("procedure");
     if node.tag_name().namespace() == Some(crate::model::SCXML_NAMESPACE) {
-        let an_input = node.tag_name().name() == "data"
-            && attr == "id"
-            && node.attribute((crate::forge::model::SCE_NAMESPACE, "direction")) == Some("in");
-        return (in_a_procedure && an_input).then_some(ProcedureSetter);
+        if node.tag_name().name() != "data" || attr != "id" {
+            return None;
+        }
+        let an_input =
+            node.attribute((crate::forge::model::SCE_NAMESPACE, "direction")) == Some("in");
+        // A procedure's `<data>` is an input, and has a setter, when it
+        // declares `sce:direction="in"`; an internal has none.
+        if in_a_procedure {
+            return an_input.then_some(ProcedureSetter);
+        }
+        // A CBOR map's or a content-line component's entries are `<data>`, and
+        // each is an attribute of the value's dataclass and a member of the
+        // `Protocol` its source satisfies, as a positional codec's field is;
+        // the input frame names no field.
+        let map_or_line = kind == Some("codec")
+            && matches!(
+                root.attribute((crate::forge::model::SCE_NAMESPACE, "encoding")),
+                Some("cbor" | "content-line")
+            );
+        return (map_or_line && !an_input).then_some(ClassAttribute);
     }
     if node.tag_name().namespace() != Some(crate::forge::model::SCE_NAMESPACE) {
         return None;
@@ -886,6 +900,62 @@ mod tests {
         assert!(
             !refuse("", "false"),
             "a statechart's state is not this rule's"
+        );
+    }
+
+    /// An entry of a CBOR map or of a content-line component is an attribute of
+    /// the generated Python dataclass, as a positional codec's field is, so it is
+    /// refused a name that class already uses (`python_name_clash`): a method
+    /// every codec class defines, or a name its body evaluates while it is built.
+    /// The input frame is no attribute, and a positional codec's `<data>` is
+    /// not this rule's.
+    #[test]
+    fn an_entry_of_a_map_or_of_a_line_is_a_python_class_attribute() {
+        let refuse = |encoding: &str, entry: &str| -> bool {
+            let text = format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext"
+                          sce:kind="codec" {encoding} version="1.0">
+                     <datamodel>
+                       {entry}
+                     </datamodel>
+                   </scxml>"#
+            );
+            let parsed = roxmltree::Document::parse(&text).expect("a well-formed document");
+            let root = parsed.root_element();
+            let dialect = Dialect::of(&root);
+            reject_malformed(&root, "t", dialect).is_err()
+        };
+        let cbor = r#"sce:encoding="cbor""#;
+        let line = r#"sce:encoding="content-line""#;
+        let entry = |id: &str| format!(r#"<data id="{id}" sce:type="uint8"/>"#);
+        for encoding in [cbor, line] {
+            for name in ["decode", "encodeToBytes", "classmethod", "property"] {
+                assert!(
+                    refuse(encoding, &entry(name)),
+                    "an entry named `{name}` ({encoding})"
+                );
+            }
+            for name in ["list", "staticmethod", "uid"] {
+                assert!(
+                    !refuse(encoding, &entry(name)),
+                    "an entry named `{name}` ({encoding}) is no name the class uses"
+                );
+            }
+            assert!(
+                !refuse(
+                    encoding,
+                    r#"<data id="decode" sce:type="bytes" sce:direction="in"/>"#
+                ),
+                "the input frame ({encoding}) is no attribute of the class"
+            );
+        }
+        assert!(
+            !refuse(
+                r#"sce:default-endian="big""#,
+                r#"<data id="decode" sce:type="bytes" sce:direction="in"/>"#
+            ),
+            "a positional codec's input is not this rule's"
         );
     }
 
