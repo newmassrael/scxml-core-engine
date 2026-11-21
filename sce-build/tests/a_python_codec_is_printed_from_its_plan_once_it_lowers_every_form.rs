@@ -722,13 +722,14 @@ fn a_variant_is_the_arm_the_value_holds_and_the_default_arm_keeps_its_tag() {
             "class CodecVariantDefaultMarkerUnknownTag(UnknownTag):\n",
             "    MOST = 3\n    KNOWN = frozenset({1, 2})\n",
             "    tag: CodecVariantDefaultMarkerUnknownTag = CodecVariantDefaultMarkerUnknownTag(0)\n",
-            &format!("    body: {arm_b} = field(default_factory={arm_b})\n"),
+            &format!("    body: {arm_b} = field(default_factory=lambda: {arm_b}())\n"),
             &format!(
                 "CodecVariantDefaultMarkerVariant = Union[{arm_a}, {arm_b}, \
                  CodecVariantDefaultMarkerDefault]\n"
             ),
             &format!(
-                "    body: CodecVariantDefaultMarkerVariant = field(default_factory={arm_b})\n"
+                "    body: CodecVariantDefaultMarkerVariant = \
+                 field(default_factory=lambda: {arm_b}())\n"
             ),
             "    def body(self) -> CodecVariantDefaultMarkerVariant: ...\n",
             &format!(
