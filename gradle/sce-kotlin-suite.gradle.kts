@@ -125,6 +125,16 @@ tasks.named<Test>("test") {
         systemProperty("sce.script.engine", engineProp.get())
     }
 
+    // The language the machines this run compiles hold, named by the caller
+    // that chose them (`scripts/gates/w3c-kotlin.sh`, each row its own):
+    // `W3CTestBase.machineLanguage` reads it. Forwarded, not derived, for the
+    // reason the overlay block above gives: which language is which is the
+    // caller's decision, and a second copy of it here would drift.
+    val languageProp = providers.gradleProperty("sce.script.language")
+    if (languageProp.isPresent) {
+        systemProperty("sce.script.language", languageProp.get())
+    }
+
     // Where the Lua engine appends its lowering census, when asked for one.
     //
     // ⚠ Forwarded as a PROPERTY, and that is the whole reason this block
