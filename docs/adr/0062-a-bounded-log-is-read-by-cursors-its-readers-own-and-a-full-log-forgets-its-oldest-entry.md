@@ -1636,9 +1636,12 @@ something outside ended is no reading either way. The declaration is refused whe
 another runner or with no nightly declared; a full round checks that the toolchain has the `miri` component; `--declares` prints
 a `miri` key, and the mutation-rounds gate installs the component beside `rust-src` for a casefile that declares it.
 
-The casefile `a_broadcast_log_orders_are_seen_weakened_by_miri.cases` holds the nine weakenings the table above records as
+The casefile `a_broadcast_log_orders_are_seen_weakened_by_miri.cases` held the nine weakenings the table above records as
 caught, under the pinned nightly of `scripts/lib/queue_sanitizer.sh` and the gate's eight seeds, with a declared bound of 900
-seconds that `mutation_corpus_fits_its_lane` holds against the lane. Results on build machines: four contract tests of the runner
+seconds that `mutation_corpus_fits_its_lane` holds against the lane. On 2026-11-21 the cargo row of the cost model rose to 20
+minutes a case, and nine cases at that cost and the bound passed the lane's 330 minutes, so the casefile became two,
+`a_broadcast_log_publisher_orders_are_seen_weakened_by_miri.cases` (three cases) and
+`a_broadcast_log_reader_orders_are_seen_weakened_by_miri.cases` (six), with the same bound and every case. Results on build machines: four contract tests of the runner
 pass (`mutation_runner_under_miri`: a probe crate runs under a stand-in `cargo-miri` that records its calls and hands the run to
 `cargo test`, so the runner is measured without a nightly: the baseline and each case go through `cargo miri test` once each
 with the selector's arguments, a mutant that fails a test and one that kills the process are both CAUGHT with the second saying
