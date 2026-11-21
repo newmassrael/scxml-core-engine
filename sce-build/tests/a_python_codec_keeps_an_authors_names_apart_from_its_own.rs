@@ -947,3 +947,57 @@ for f in failures:
         failures.join("\n")
     );
 }
+
+/// An event schema's payload is a dataclass whose fields are the schema's
+/// `<data>` ids as written, and the standard library names one `field`
+/// (`stdlib/shared/record_*.scxml`), the name a codec's class body calls its
+/// defaults by and so refuses a codec's entry. A schema's datum keeps it
+/// because the payload's class body binds nothing: each field is declared by
+/// its annotation alone, which binds no name, so a later field's annotation
+/// reads the module's names whatever an earlier field is called, and nothing
+/// in the body calls `field(...)` or names an enum's module where a field
+/// could stand in for it. A default would bind its field's name in the class
+/// scope, and the next default read there would be read off it; this holds the
+/// payload's class to annotations alone, on a schema that declares `field`
+/// and a field a later revision added with a default.
+#[test]
+fn an_event_schemas_payload_class_binds_no_name_a_later_field_reads() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../stdlib/shared/record_clear.scxml");
+    let output = compile_forge_file(
+        &path,
+        Language::Python,
+        &[],
+        &ForgeCompileOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("record_clear generates on Python: {:?}", e.error));
+    let (_, source) = output
+        .files
+        .into_iter()
+        .find(|(file, _)| file.as_str() == "record_clear.py")
+        .expect("record_clear generates record_clear.py");
+    let lines: Vec<&str> = source.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.starts_with("class "))
+        .expect("the payload is a class of the module");
+    assert_eq!(
+        lines[at.saturating_sub(1)],
+        "@dataclass",
+        "the payload is a dataclass:\n{source}"
+    );
+    let body: Vec<&str> = lines[at + 1..]
+        .iter()
+        .copied()
+        .take_while(|line| line.starts_with("    "))
+        .collect();
+    assert!(
+        body.iter().any(|line| line.starts_with("    field: ")),
+        "the payload declares the datum `field`:\n{source}"
+    );
+    for line in &body {
+        assert!(
+            !line.contains('=') && !line.trim_start().starts_with('@'),
+            "a line of the payload's class body binds or calls a name: {line}\n{source}"
+        );
+    }
+}
