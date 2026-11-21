@@ -3538,7 +3538,10 @@ its accessor, a flag-input a parameter of `decode` and `encode`. Those are
 refused, as `validation/reserved-code-identifier` with the reason in the
 message, when the generated class or call already uses the name for
 something else: `decode`, `encode` and `encode_to_bytes` (methods every
-generated codec class defines), `classmethod`, `field` and `property` (what
+generated codec class defines) and `_decode_at` (the read a CBOR map's and
+a content-line component's `decode` makes, a method of its class, which a
+field declared before it would take as its default), `classmethod`, `field`
+and `property` (what
 the class bodies of the value and of the `Protocol` its source satisfies
 evaluate while they are built), any `__x__` name, and for a
 flag-input `cls`, `cursor`, `self`, `w`, `tag`, `parent_flags` or a name
@@ -3558,7 +3561,8 @@ from the committed Python output and from the Python it generates of the
 CBOR and content-line documents it names, fails when a template change makes
 one stale, and runs every Python builtin and every name that output uses as a
 field of each shape that binds a local, an entry of a map and a property of a
-component.
+component, reading the field back from a decoded value and from one made by
+default.
 
 Go was measured, not assumed. It writes a codec field and its decode local
 Pascal and keeps its own locals lower case, so the Python defect was not
