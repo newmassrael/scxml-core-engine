@@ -36,6 +36,15 @@
 #
 # `$SCE_BUILD_JOBS` overrides, for a runner that really does own its cores.
 #
+# `$BX_GRANT_CORES` comes next: the cores bx granted the run this build is
+# part of (bx RFC 0042; a unit of a check set is granted the `cores` its plan
+# line names, bx RFC 0062 4.5, and `tools/git-hooks/gate_registry.py` says
+# what each gate names). Inside a bx run that grant IS the decision, and the
+# reading below would make it a second one: bx placed the run knowing the
+# machine's other runs, and subtracting their run queue again asks for fewer
+# cores than were granted. MEASURED 2026-11-21: on a build machine with 32
+# cores at load 31, the reading below answered 1, whatever bx had granted.
+#
 # Usage:
 #   source "<repo>/scripts/lib/sce_build_jobs.sh"
 #   cmake --build "$dir" --parallel "$(sce_build_jobs_value)"
@@ -45,6 +54,13 @@ sce_build_jobs_value() {
         printf '%s' "$SCE_BUILD_JOBS"
         return 0
     fi
+    case "${BX_GRANT_CORES:-}" in
+        '' | *[!0-9]* | 0) ;;
+        *)
+            printf '%s' "$BX_GRANT_CORES"
+            return 0
+            ;;
+    esac
     local cores queued jobs
     cores="$(nproc)"
     queued="$(awk '{printf "%d", ($1 == int($1)) ? $1 : int($1) + 1}' /proc/loadavg)"
