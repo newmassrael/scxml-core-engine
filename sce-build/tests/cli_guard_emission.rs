@@ -575,6 +575,9 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
                 }
                 Err(e) => panic!("{document} parsed as a string but not as a file: {e:?}"),
             };
+            // Read before the lowering takes the model: whether the document
+            // declares a migration of a saved state.
+            let declares_migration = !model.migrations.is_empty();
             // The machine name only names the record classes it declares,
             // which no guard reads.
             match sce_build::forge::static_lowering::lower_kotlin(&mut model, "Sweep") {
@@ -586,6 +589,19 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
                 Err(sce_build::forge::error::GenerateError::UnsupportedFeature {
                     detail, ..
                 }) if detail.contains("no Kotlin lowering yet") => continue,
+                // docs/adr/0109, D0 and D11: a migration of a saved state is
+                // applied by the Rust and C++ restores, and every other backend
+                // refuses the document that declares one, by name, before it
+                // renders. Held to that refusal and no other: a document with
+                // no migration refused this way is a defect, and one Kotlin
+                // lowers in a later build is swept like any other.
+                Err(sce_build::forge::error::GenerateError::UnsupportedFeature {
+                    detail, ..
+                }) if declares_migration
+                    && detail.starts_with("<sce:migration> has no Kotlin lowering") =>
+                {
+                    continue
+                }
                 Err(e) => panic!("{document}: Kotlin does not lower it: {e:?}"),
             }
             lowered.push(document.clone());
