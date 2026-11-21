@@ -25,6 +25,7 @@
 //
 // Fixture: integration_resources/invoke_expression_failure_is_reported/invoke_expression_failure_is_reported.scxml
 
+#include "common/ErrorData.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
@@ -114,7 +115,9 @@ TEST_F(InvokeExpressionFailureIsReportedTest, AnUnevaluatableInvokeExpressionRai
 // `sce-build/tests/one_wording_for_an_invoke_expression_failure.rs`, which
 // reads their emitted text. That test cannot reach this engine: its literal is
 // compiled rather than generated, so the only way to read it is to run a
-// machine and look at what arrived.
+// machine and look at what arrived. The field is the record SCE_MESH.md
+// section 10.7.1 pins (docs/adr/0106, #111): the sentence is its `detail` and
+// the code its `reason`, and both are read.
 //
 // The document is built here rather than added to the canonical fixture for
 // the reason the fixture's own header gives: it is deliberately single-axis
@@ -127,11 +130,13 @@ TEST_F(InvokeExpressionFailureIsReportedTest, TheRaisedErrorNamesTheExpressionIn
     <datamodel>
         <data id="target" expr="null"/>
         <data id="seen" expr="''"/>
+        <data id="reason" expr="''"/>
     </datamodel>
     <state id="probe">
         <invoke type="scxml" srcexpr="target.path"/>
         <transition event="error.execution" target="pass">
-            <assign location="seen" expr="_event.data"/>
+            <assign location="seen" expr="_event.data.detail"/>
+            <assign location="reason" expr="_event.data.reason"/>
         </transition>
     </state>
     <final id="pass"/>
@@ -168,10 +173,16 @@ TEST_F(InvokeExpressionFailureIsReportedTest, TheRaisedErrorNamesTheExpressionIn
 
     const std::string expected = "<invoke srcexpr='target.path'> could not be evaluated";
     const auto seen = engine_->evaluateExpression(sm->getSessionId(), "seen").get();
-    ASSERT_TRUE(seen.isSuccess()) << "could not read the captured `_event.data`";
+    ASSERT_TRUE(seen.isSuccess()) << "could not read the captured `_event.data.detail`";
     EXPECT_EQ(seen.getValue<std::string>(), expected)
         << "this engine's §6.4.3 wording drifted from the one the six generated backends emit. "
            "One W3C fact, one wording — the same collapse §6.4.1 already paid for.";
+
+    const auto reason = engine_->evaluateExpression(sm->getSessionId(), "reason").get();
+    ASSERT_TRUE(reason.isSuccess()) << "could not read the captured `_event.data.reason`";
+    EXPECT_EQ(reason.getValue<std::string>(),
+              std::string(::SCE::Generated::ErrorReason::declared_name(Common::ErrorReason::ExpressionFailed)))
+        << "an expression that cannot be evaluated is raised under another code of the vocabulary";
 }
 
 // §scxml-6.4.1: "if the value of 'src' ... is invalid, the processor MUST
@@ -193,11 +204,13 @@ TEST_F(InvokeExpressionFailureIsReportedTest, ADocumentThatCannotBeLoadedIsRepor
     <datamodel>
         <data id="target" expr="'file:no-such-document-8f3a.scxml'"/>
         <data id="seen" expr="''"/>
+        <data id="reason" expr="''"/>
     </datamodel>
     <state id="probe">
         <invoke type="scxml" srcexpr="target"/>
         <transition event="error.execution" target="pass">
-            <assign location="seen" expr="_event.data"/>
+            <assign location="seen" expr="_event.data.detail"/>
+            <assign location="reason" expr="_event.data.reason"/>
         </transition>
         <transition event="done.invoke" target="fail"/>
     </state>
@@ -239,10 +252,16 @@ TEST_F(InvokeExpressionFailureIsReportedTest, ADocumentThatCannotBeLoadedIsRepor
            "waits for a `done.invoke` that will never arrive.";
 
     const auto seen = engine_->evaluateExpression(sm->getSessionId(), "seen").get();
-    ASSERT_TRUE(seen.isSuccess()) << "could not read the captured `_event.data`";
+    ASSERT_TRUE(seen.isSuccess()) << "could not read the captured `_event.data.detail`";
     EXPECT_EQ(seen.getValue<std::string>(), "<invoke> could not load 'file:no-such-document-8f3a.scxml'")
         << "the refusal must name the document that did not load — that is the whole of what an "
            "author can act on here";
+
+    const auto reason = engine_->evaluateExpression(sm->getSessionId(), "reason").get();
+    ASSERT_TRUE(reason.isSuccess()) << "could not read the captured `_event.data.reason`";
+    EXPECT_EQ(reason.getValue<std::string>(),
+              std::string(::SCE::Generated::ErrorReason::declared_name(Common::ErrorReason::InvokeSrcNotFound)))
+        << "a document that did not load is raised under another code than the one that names it";
 }
 
 }  // namespace Tests

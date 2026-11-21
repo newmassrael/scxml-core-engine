@@ -4,6 +4,7 @@
 #include "actions/CancelAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
+#include "common/ErrorData.h"
 #include "common/SendSchedulingHelper.h"
 #include "common/TestUtils.h"
 #include "events/EventDispatcherImpl.h"
@@ -241,7 +242,9 @@ TEST_F(SCXMLEventTest, SendActionValidationMissingEvent) {
     // W3C SCXML 6.2: Verify error.execution event was raised for invalid send action
     EXPECT_EQ(raisedEvents_.size(), 1);
     EXPECT_EQ(raisedEvents_[0].first, "error.execution");
-    EXPECT_EQ(raisedEvents_[0].second, "Send action has no event or eventexpr");
+    // The data is the record SCE_MESH.md section 10.7.1 pins (docs/adr/0106, #111)
+    EXPECT_EQ(raisedEvents_[0].second,
+              Common::errorData(Common::ErrorReason::ExpressionFailed, "Send action has no event or eventexpr"));
 }
 
 /**

@@ -26,6 +26,7 @@
 //
 // Fixture: integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml
 
+#include "common/ErrorData.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
@@ -155,6 +156,10 @@ TEST_F(InvokeUnsupportedTypeTest, UnsupportedTypeRaisesErrorExecutionOnTheIntern
 // from one place; this reads the seventh's at runtime, which is the only way to
 // reach a literal that is compiled rather than generated.
 //
+// The field is the record SCE_MESH.md section 10.7.1 pins (docs/adr/0106,
+// #111): the sentence is its `detail` and the code its `reason`, so both are
+// read, the code by the vocabulary's own spelling.
+//
 // The document is built here rather than added to the canonical fixture: it
 // needs a datamodel to capture `_event.data` into, and the shared fixture is
 // deliberately single-axis (see its header) and is driven by six other channels
@@ -163,12 +168,13 @@ TEST_F(InvokeUnsupportedTypeTest, TheRaisedErrorNamesTheTypeInTheOneSharedWordin
     const std::string scxml = std::string(R"(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="probe" name="invoke_unsupported_type_message">
-    <datamodel><data id="seen" expr="''"/></datamodel>
+    <datamodel><data id="seen" expr="''"/><data id="reason" expr="''"/></datamodel>
     <state id="probe">
         <invoke type=")") + UNSUPPORTED_TYPE +
                               R"("/>
         <transition event="error.execution" target="pass">
-            <assign location="seen" expr="_event.data"/>
+            <assign location="seen" expr="_event.data.detail"/>
+            <assign location="reason" expr="_event.data.reason"/>
         </transition>
     </state>
     <final id="pass"/>
@@ -206,11 +212,17 @@ TEST_F(InvokeUnsupportedTypeTest, TheRaisedErrorNamesTheTypeInTheOneSharedWordin
     const std::string expected = std::string("<invoke type='") + UNSUPPORTED_TYPE +
                                  "'> names an external service this platform does not support";
     const auto seen = engine_->evaluateExpression(sm->getSessionId(), "seen").get();
-    ASSERT_TRUE(seen.isSuccess()) << "could not read the captured `_event.data`";
+    ASSERT_TRUE(seen.isSuccess()) << "could not read the captured `_event.data.detail`";
     EXPECT_EQ(seen.getValue<std::string>(), expected)
         << "the Interpreter's §6.4.1 refusal drifted from the wording the six AOT backends emit. "
            "One W3C fact, one wording — a per-engine phrasing is what this round collapsed a "
            "six-row table to remove.";
+
+    const auto reason = engine_->evaluateExpression(sm->getSessionId(), "reason").get();
+    ASSERT_TRUE(reason.isSuccess()) << "could not read the captured `_event.data.reason`";
+    EXPECT_EQ(reason.getValue<std::string>(),
+              std::string(::SCE::Generated::ErrorReason::declared_name(Common::ErrorReason::InvokeTypeUnsupported)))
+        << "the refusal of an unsupported type is raised under another code of the vocabulary";
 }
 
 }  // namespace Tests
