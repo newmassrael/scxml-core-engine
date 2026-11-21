@@ -4,7 +4,10 @@
 //! The Swift backend holds a value that may be absent, `optional<T>`
 //! (docs/adr/0055), in a `sce-static` statechart: a field of a record the machine
 //! holds and a field of an event's payload are `T?` over the type of the present
-//! value and start at `nil`, a payload field is read as absent from `null` and
+//! value, built whole by the memberwise initializer with no member initializer
+//! (docs/adr/0099, section 4), so an absent value is the `nil` someone wrote; a
+//! variable that may be absent is `T?` and declared at the initial value its
+//! `<data>` writes; a payload field is read as absent from `null` and
 //! refused where the key is lacking, a payload is written back with the key always
 //! present, and a `<param>` that carries one is `null` where it is absent.
 //!
@@ -91,21 +94,28 @@ fn holds_each(written: &str, needles: &[&str]) {
     }
 }
 
-/// A payload's field that may be absent is `T?` and starts at `nil`, where it held
-/// the present type at its zero: the delivery's `null` was a zero.
+/// A payload's field that may be absent is `T?`, where it held the present type at
+/// its zero: the delivery's `null` was a zero. The struct declares its members with
+/// no initializer and is built whole from the fields the delivery was read into
+/// (docs/adr/0099, section 4), so no member holds a value nobody wrote.
 #[test]
-fn a_payload_field_that_may_be_absent_is_the_optional_type_and_starts_at_nil() {
+fn a_payload_field_that_may_be_absent_is_the_optional_type_and_is_built_whole() {
     let code = swift_of("static_optional.scxml");
     holds_each(
         &code,
         &[
-            "    var due: Int64? = nil\n    var title: String? = nil\n    var status: StaticOptionalStatusEnum? = nil\n",
+            "struct StaticOptionalDueSentPayload {\n    var due: Int64?\n    var title: String?\n    var status: StaticOptionalStatusEnum?\n}\n",
+            "StaticOptionalDueSentPayload(due: sceField0, title: sceField1, status: sceField2)",
             "public var due: Int64? { vDue }",
         ],
     );
     assert!(
         !code.contains("var due: Int64 = 0\n    var title: String = \"\""),
         "a field that may be absent is not held at the zero of its present type:\n{code}"
+    );
+    assert!(
+        !code.contains("    var due: Int64? = nil\n"),
+        "a payload member has no initializer of its own:\n{code}"
     );
 }
 
@@ -140,30 +150,41 @@ fn a_param_that_carries_a_value_that_may_be_absent_is_null_where_it_is_absent() 
 }
 
 /// A record the schema declares with a field that may be absent holds it as `T?`:
-/// the machine's own struct, and the initializer that builds it whole.
+/// the machine's own struct, with no member initializer, and the initializer that
+/// builds it whole, which the `<data>` whose `<sce:set>` writes `null` hands `nil`.
 #[test]
 fn a_record_field_that_may_be_absent_is_the_optional_type() {
     let code = swift_of("static_state_algorithm_optional.scxml");
     holds_each(
         &code,
         &[
-            "    public var day: Int64? = nil\n",
+            "    public var day: Int64?\n",
             "public init(id: UInt32, day: Int64?, weight: Int32)",
+            "StaticStateAlgorithmOptionalGoalRecord(id: 0, day: nil, weight: 0)",
         ],
+    );
+    assert!(
+        !code.contains("    public var day: Int64? = nil\n"),
+        "a record member has no initializer of its own:\n{code}"
     );
 }
 
 /// A field a later revision widened to one that may be absent is `T?` as the
 /// payload carries it, and the key a first-revision entry lacks reads as its default.
+/// The variables it is assigned to are `T?`, declared at the `null` their `<data>`
+/// writes when the machine is built.
 #[test]
 fn a_widened_payload_field_is_the_optional_type() {
     let code = swift_of("static_optional_widened.scxml");
     holds_each(
         &code,
         &[
-            "    var due: Int64? = nil\n    var remind: Int64? = nil\n",
-            "var vDue: Int64? = nil",
-            "var vRemind: Int64? = nil",
+            "    var due: Int64?\n    var remind: Int64?\n}\n",
+            r#"PayloadFields.decode(metadata.data, defaults: "{\"remind\":null}")"#,
+            "    var vDue: Int64?\n",
+            "    var vRemind: Int64?\n",
+            "let vDue: Int64? = nil\n",
+            "let vRemind: Int64? = nil\n",
         ],
     );
 }
