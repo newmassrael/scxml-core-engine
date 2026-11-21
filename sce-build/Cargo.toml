@@ -86,7 +86,7 @@ toml = "0.8"
 # CLI argument parsing (for sce-codegen binary)
 clap = { version = "4", features = ["derive"], optional = true }
 # ELF symbol-table reader for `addr2sce --pc` / `--hardfault`
-# (SCE Protocol-Synthesis RFC §synth-5-O lines 3253-3278). The spec's
+# (SCE Protocol-Synthesis RFC §synth-5-O lines 3254-3279). The spec's
 # resolution contract is PC -> function symbol -> sourcemap; the
 # symbol table is what carries the first hop, and the sourcemap
 # carries the SCXML coordinates, so no DWARF line program is read.
