@@ -172,6 +172,61 @@ TEST(APayloadRecord, ACompletionIsReadAsTheRecordOrAsTheFailure) {
     EXPECT_EQ(opened(file.at("not_a_record").at("sealed").get<std::string>()), json::parse(kOpenFailure));
 }
 
+/// A machine built from the second revision of the note's schema reads the note the first revision wrote, each field
+/// the second revision added at what such a note reads in its place (docs/adr/0044): the record codec reads the
+/// file's bytes so, and a host that holds nothing but the signer's public key verifies the file's object, which a host
+/// of the first revision signed, to that record. A note that lacks a field of the first revision is no note of either
+/// revision: its bytes are refused, and an object of it verifies and is the failure `not_a_record`.
+TEST(APayloadRecord, ALaterRevisionReadsANoteTheFirstRevisionSigned) {
+    const json file = vectors();
+    const json &revised = file.at("revised");
+    const std::string description = revised.at("description").get<std::string>();
+    const Bytes lacking = hex(revised.at("lacking_serial").get<std::string>());
+    std::string refusal;
+    const auto read = Common::RecordCbor::decode(hex(file.at("record_cbor").get<std::string>()), description, refusal);
+    ASSERT_TRUE(read.has_value()) << refusal;
+    EXPECT_EQ(json::parse(*read), revised.at("record")) << "a note of the first revision is a note of the second";
+    EXPECT_FALSE(Common::RecordCbor::decode(lacking, description, refusal).has_value())
+        << "a note that lacks a field of the first revision is refused";
+    EXPECT_NE(refusal.find("/serial"), std::string::npos) << refusal;
+
+    // A host of the first revision signs the note that lacks `serial`.
+    HostScenario::ScriptedRandomCrypto signingCrypto;
+    host::ScriptedClock signingClock;
+    HostScenario::ScriptTransport signingTransport;
+    host::ReferenceHost signingHost{signingClock, signingTransport};
+    host::CoseFeature signing(signingCrypto);
+    ASSERT_TRUE(signingHost.addFeature(signing));
+    const std::string signer = file.at("signing_key").at("id").get<std::string>();
+    ASSERT_TRUE(signing.setSigningKeys({{signer, hex(file.at("signing_key").at("seed").get<std::string>())}}));
+    const json signedLacking = json::parse(
+        done(signingHost, host::COSE_SIGN1, {{"key_id", signer}, {"payload", latin1(lacking)}, {"external_aad", ""}}));
+    ASSERT_EQ(signedLacking.at("error"), "") << "the bytes are signed whatever they hold";
+
+    // A host of the second revision verifies with the signer's public key alone.
+    HostScenario::ScriptedRandomCrypto crypto;
+    host::ScriptedClock clock;
+    HostScenario::ScriptTransport transport;
+    host::ReferenceHost reference{clock, transport};
+    host::CoseFeature feature(crypto);
+    ASSERT_TRUE(reference.addFeature(feature));
+    ASSERT_TRUE(feature.setTrustedKeys({{signer, hex(file.at("signing_key").at("public_key").get<std::string>())}}));
+    feature.setTrustSets({{"devices", {signer}}});
+    const auto verified = [&](const std::string &cose) {
+        return json::parse(Common::RecordCbor::openCompletion(
+            done(reference, host::COSE_VERIFY1, {{"trust_set", "devices"}, {"cose", cose}, {"external_aad", ""}}),
+            "payload", "valid", description, kVerifyFailure));
+    };
+
+    const json signedNote = verified(latin1(hex(file.at("signed").get<std::string>())));
+    EXPECT_EQ(signedNote.at("error"), "");
+    EXPECT_EQ(signedNote.at("valid"), true);
+    EXPECT_EQ(signedNote.at("payload"), revised.at("record"))
+        << "the machine receives the note with the later fields' defaults";
+    EXPECT_EQ(verified(signedLacking.at("cose").get<std::string>()), json::parse(kVerifyFailure))
+        << "a note that lacks `serial` is no note";
+}
+
 /// A client verifies what its server signed with nothing but the server's public key: the generated machine
 /// reads a COSE_Sign1 object from a file, asks its host to verify it under a trust set of that key, and receives
 /// the record. The host serves the COSE operations on libsodium alone, with no transport that reaches anything,

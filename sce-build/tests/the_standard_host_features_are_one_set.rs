@@ -1704,6 +1704,65 @@ fn the_build_describes_the_fixtures_note_as_the_cross_language_vector_does() {
     );
 }
 
+/// The build describes the note's second revision
+/// (`schema_cose_note_revised.scxml`) as the cross-language vector does: each
+/// field the revision added with the bytes a note the first revision wrote
+/// reads in its place, so the two lanes' codecs, held to the vector, read an
+/// earlier revision's note as a machine built from the later schema does
+/// (docs/adr/0044).
+#[test]
+fn the_build_describes_a_later_revision_of_the_note_as_the_cross_language_vector_does() {
+    use sce_build::forge::value_type::ValueType;
+    const REVISED: &str = "schema_cose_note_revised.scxml";
+    let dir = tempdir().expect("tempdir");
+    std::fs::copy(
+        repo_root()
+            .join("sce-build/tests/fixtures/static_datamodel")
+            .join(REVISED),
+        dir.path().join(REVISED),
+    )
+    .expect("copy the revised note");
+    // A statechart that imports the record and runs nothing, read so the build
+    // describes the record as a machine that imports it would.
+    let holder = dir.path().join("holder.scxml");
+    std::fs::write(
+        &holder,
+        format!(
+            r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="holder">
+  <sce:import kind="event-schema" src="{REVISED}" as="Note"/>
+  <state id="idle"/>
+</scxml>
+"#
+        ),
+    )
+    .expect("write the holder");
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_file(holder.to_str().expect("a utf-8 path"))
+        .expect("the holder parses");
+    let described = sce_build::forge::payload_record::describe(
+        &ValueType::Record {
+            alias: "Note".to_string(),
+        },
+        &model.imported_type_scope,
+    )
+    .expect("the revised note has a CBOR form");
+    let vectors: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            repo_root().join("tests/host_features/payload_record_cross_language.json"),
+        )
+        .expect("the vector file is readable"),
+    )
+    .expect("the vector file is JSON");
+    assert_eq!(
+        described,
+        vectors["revised"]["description"]
+            .as_str()
+            .expect("the vector describes the revised note")
+    );
+}
+
 /// The corpus that holds the runtimes' record codecs and the codecs ADR 0101
 /// prints to one set of bytes (`codec_cbor_payload_record`) describes each of
 /// its records as the build does, so the descriptions the runtimes are held
