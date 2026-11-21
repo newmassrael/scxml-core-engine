@@ -33,8 +33,14 @@ edit("sce-build/src/forge/codec_totality.rs",
             .and(None),''')
 PY
 
+# No content is held to its offset, so a `+1` length whose content's type holds
+# at least one byte is refused as one that may be shorter than the offset.
+# Killed by `a_length_its_content_is_held_within_does_not_refuse_however_narrow`
+# (its `sce:length-arith="+1"` row). The edit keeps every parameter read: a body
+# of `false` leaves `field`, `fields` and `arith` unused, which does not compile
+# under `warnings = "deny"`.
 mutation_case "a content held to its offset still refuses the offset" <<'PY'
 edit("sce-build/src/forge/codec_totality.rs",
      r'''    arith > 0 && byte_bound(field, fields).is_some_and(|b| b.min >= u64::from(arith.unsigned_abs()))''',
-     r'''    false''')
+     r'''    arith > 0 && byte_bound(field, fields).filter(|_| false).is_some_and(|b| b.min >= u64::from(arith.unsigned_abs()))''')
 PY
