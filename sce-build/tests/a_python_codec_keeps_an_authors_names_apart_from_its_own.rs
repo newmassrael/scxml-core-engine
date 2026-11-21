@@ -24,7 +24,9 @@
 //! tail, a repeat and its count, a TLV chain, an embed), and to an entry of a
 //! CBOR map and a property of a content-line component, each an attribute of a
 //! class whose body evaluates names of its own. The generated module is run: a
-//! frame is decoded and encoded back to the same bytes.
+//! frame is decoded and encoded back to the same bytes, the field is read back,
+//! and a value made by default is asked what it holds under the name, which is
+//! never a method of its class.
 //!
 //! The names are DERIVED, not listed: a hand-written list of "names to keep
 //! away from" is exactly what drifts when a template starts to use one more
@@ -477,7 +479,10 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
 /// documents of [`MAP_AND_LINE`] generate, which is committed nowhere, and
 /// compared:
 ///
-/// - the methods every generated codec class defines (`decode`, `encode`, …);
+/// - the methods a codec class, or a dataclass of the codec's module, defines
+///   and does not spell from a name its document declares (`decode`, `encode`,
+///   …, and the `_decode_at` of a map's and a component's class), any of which
+///   an author's field of the same name would replace, or be replaced by;
 /// - the names a class body evaluates while it is built — a decorator, a
 ///   default — outside any function and outside the annotations, which are
 ///   lazy under `from __future__ import annotations`, and outside a lambda's
@@ -561,15 +566,31 @@ def loads(node):
     walk(node)
     return found
 
-def declares_fields(cls):
-    # A dataclass (the value, a group's arm, the variant's default arm) or
-    # the Protocol a source of the codec satisfies: a class whose members
-    # are the codec's elements, named as the author named them.
-    dataclass = any(isinstance(d, ast.Name) and d.id == "dataclass" for d in cls.decorator_list)
-    protocol = any(isinstance(b, ast.Name) and b.id == "Protocol" for b in cls.bases)
-    return dataclass or protocol
+def is_dataclass(cls):
+    # The value, a group's arm, the variant's default arm, a line record.
+    return any(isinstance(d, ast.Name) and d.id == "dataclass" for d in cls.decorator_list)
 
-methods = None
+def is_protocol(cls):
+    # What a source of the codec, or of a line record, satisfies.
+    return any(isinstance(b, ast.Name) and b.id == "Protocol" for b in cls.bases)
+
+def declares_fields(cls):
+    # A class whose members are the codec's elements, named as the author
+    # named them.
+    return is_dataclass(cls) or is_protocol(cls)
+
+def is_codec(cls):
+    fns = {f.name for f in cls.body if isinstance(f, ast.FunctionDef)}
+    return "decode" in fns and "encode" in fns
+
+def spelled_from(name, names):
+    # A method an author's name makes: a flag's accessor and its `set_` twin,
+    # a quantity's `<id>_phys` pair.
+    stem = name[len("set_"):] if name.startswith("set_") else name
+    stem = stem[: -len("_phys")] if stem.endswith("_phys") else stem
+    return name in names or stem in names
+
+methods = set()
 class_body = set()
 first_params = set()
 unowned_f_locals = []
@@ -580,11 +601,25 @@ map_and_line_classes = 0
 for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
     for path in sorted(glob.glob(py_dir + "/*.py")):
         tree = ast.parse(open(path, encoding="utf-8").read())
-        for cls in tree.body:
-            if not isinstance(cls, ast.ClassDef):
-                continue
+        classes = [c for c in tree.body if isinstance(c, ast.ClassDef)]
+        # The names a codec's document declares, which a module that holds no
+        # codec class has none of.
+        stem = os.path.splitext(os.path.basename(path))[0]
+        codec_module = any(is_codec(c) for c in classes)
+        names = declared(os.path.join(doc_dir, stem + ".scxml")) if codec_module else set()
+        for cls in classes:
             fns = {f.name: f for f in cls.body if isinstance(f, ast.FunctionDef)}
-            codec = "decode" in fns and "encode" in fns
+            codec = is_codec(cls)
+            # Every method the generator gives a class an author's names are
+            # attributes of, whichever encoding wrote it: a field of the
+            # same name is bound in the same class, and one of the two wins.
+            # A `__x__` name is refused as a form; a flag's accessor is the
+            # author's own name.
+            if codec_module and (codec or is_dataclass(cls)):
+                methods |= {
+                    f for f in fns
+                    if not (f.startswith("__") and f.endswith("__")) and not spelled_from(f, names)
+                }
             if codec or declares_fields(cls):
                 for stmt in cls.body:
                     if isinstance(stmt, ast.FunctionDef):
@@ -601,13 +636,9 @@ for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
             codec_classes += 1
             if py_dir == sys.argv[3]:
                 map_and_line_classes += 1
-            names = set(fns)
-            methods = names if methods is None else methods & names
             for fname in ("decode", "encode"):
                 args = fns[fname].args.args
                 first_params |= {a.arg for a in args[:2]}
-            stem = os.path.splitext(os.path.basename(path))[0]
-            names = declared(os.path.join(doc_dir, stem + ".scxml"))
             for node in ast.walk(fns["decode"]):
                 if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
                     if node.id.startswith("f_") and node.id[2:] not in names:
@@ -615,7 +646,7 @@ for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
 print(json.dumps({
     "codec_classes": codec_classes,
     "map_and_line_classes": map_and_line_classes,
-    "methods": sorted(methods or []),
+    "methods": sorted(methods),
     "class_body": sorted(n for n in class_body if n[:1].islower()),
     "first_params": sorted(first_params),
     "unowned_f_locals": unowned_f_locals,
@@ -661,8 +692,8 @@ print(json.dumps({
     assert_eq!(
         strings("methods"),
         listed(sce_build::reader_names::PYTHON_CODEC_METHODS),
-        "the methods every generated Python codec class defines are not the ones \
-         reader_names::PYTHON_CODEC_METHODS lists"
+        "the methods a generated Python codec class, or a dataclass of its module, defines \
+         are not the ones reader_names::PYTHON_CODEC_METHODS lists"
     );
     assert_eq!(
         strings("class_body"),
@@ -791,6 +822,12 @@ for line in open(sys.argv[2], encoding="utf-8").read().splitlines():
             c for _, c in inspect.getmembers(mod, inspect.isclass)
             if c.__module__ == mod.__name__ and hasattr(c, "decode") and hasattr(c, "encode_to_bytes")
         )
+        # A value made by default holds a value of each field, never what the
+        # class names itself: a field declared before a method of its name
+        # takes the method as its default, and a round trip, which sets
+        # every field it reads, never shows it.
+        made = getattr(cls(), name, None)
+        assert not callable(made), f"a value made by default holds {made!r} as {name}"
         for number, hexframe in enumerate(frames.split(",")):
             frame = bytes.fromhex(hexframe)
             value = cls.decode(SceCursor(frame))
