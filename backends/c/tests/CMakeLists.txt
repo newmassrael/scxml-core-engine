@@ -5430,6 +5430,25 @@ set_tests_properties(c11_unit_text PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )
+# The expression language's round(x) and floor(x) as the forge runtime's integer
+# header computes them for a machine's core (sce/forge/algorithm.h, docs/adr/0110
+# D1), held to C99's llround and floor, which only this test links (libm).
+add_executable(sce_c_forge_real_unit_test unit/forge_real_test.c)
+target_include_directories(sce_c_forge_real_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+)
+target_link_libraries(sce_c_forge_real_unit_test PRIVATE sce_c_runtime m)
+target_compile_options(sce_c_forge_real_unit_test PRIVATE -Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion)
+set_target_properties(sce_c_forge_real_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_forge_real COMMAND sce_c_forge_real_unit_test)
+set_tests_properties(c11_unit_forge_real PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
 # The writer and the reader a saved state's text goes through (docs/adr/0045, section 7),
 # held to the same cases as the C++ unit suite and to every shared saved text. Header-only
 # and allocation-free, so the test needs nothing a configuration can leave out.

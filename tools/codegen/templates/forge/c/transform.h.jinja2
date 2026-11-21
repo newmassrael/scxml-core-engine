@@ -14,16 +14,10 @@
 #include <stdint.h>
 {% if uses_forge_algorithm %}#include "sce/forge/algorithm.h"
 {% endif %}#include <stdbool.h>
-{# `round(x)` lowers to C99 `llround` and `floor(x)` to C99 `floor`, both
-   declared in <math.h>. Conditional for the same reason as the C++ template:
-   an unused header in every file that does neither is noise, and the condition
-   reads the emitted bodies so it cannot drift from them.
-   ⚠ ONE CLAUSE PER LOWERED <math.h> NAME — see the C++ template. #}
-{% set body = functions | map(attribute='expr') | join(' ') %}
-{% set needs_math = 'llround' in body or 'floor(' in body %}
-{% if needs_math %}
-#include <math.h>
-{% endif %}
+{# `round(x)` and `floor(x)` lower to the forge runtime's `sce_forge_real_round`
+   and `sce_forge_real_floor`, not to <math.h>: a transform a machine's core calls
+   links no mathematics library (docs/adr/0110, D1). Their prefix is one the
+   generator reads off the body, so `uses_forge_algorithm` above includes them. #}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
