@@ -428,7 +428,7 @@ fn variant_unlowered(
 }
 
 /// The name of the field a variant's arm is held in.
-const VARIANT_FIELD: &str = "body";
+const VARIANT_FIELD: &str = crate::scxml_identifier::VARIANT_MEMBER;
 
 /// The Swift compilation condition that leaves out an arm compiled under the build feature
 /// `feature` (docs/adr/0072): the C and C++ macro's name ([`c_feature_macro`]) followed by `_OFF`.
@@ -441,7 +441,7 @@ fn feature_off_condition(feature: &str) -> String {
 }
 
 /// The name of the tag a caller gives a decode, and of the property that answers it for a value.
-const CALLER_TAG: &str = "tag";
+const CALLER_TAG: &str = crate::scxml_identifier::CALLER_TAG_MEMBER;
 
 /// What of the list `f` (a `<sce:repeat>`) of `m` the Swift codec does not lower yet; `None` for one
 /// it does.

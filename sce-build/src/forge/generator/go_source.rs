@@ -2494,7 +2494,7 @@ fn group_gate_bit(g: &GoGroup<'_>, gate: usize, local: &str) -> String {
 }
 
 /// The field a printed Go value holds the arm of its variant in.
-const VARIANT_MEMBER: &str = "body";
+const VARIANT_MEMBER: &str = crate::scxml_identifier::VARIANT_MEMBER;
 
 /// What [`variant_declarations`] declares of a codec's variant.
 struct VariantDeclarations {
