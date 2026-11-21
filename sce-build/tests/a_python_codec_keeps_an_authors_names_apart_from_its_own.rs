@@ -21,14 +21,17 @@
 //! identifier the committed Python output itself uses — is given to a field of
 //! each shape that binds a local (a fixed field, a VLE, both roles of a
 //! length-ref pair, a string, a flags carrier a later field is gated on, a
-//! tail, a repeat and its count, a TLV chain, an embed). The generated module
-//! is run: a frame is decoded and encoded back to the same bytes.
+//! tail, a repeat and its count, a TLV chain, an embed), and to an entry of a
+//! CBOR map and a property of a content-line component, each an attribute of a
+//! class whose body evaluates names of its own. The generated module is run: a
+//! frame is decoded and encoded back to the same bytes.
 //!
 //! The names are DERIVED, not listed: a hand-written list of "names to keep
 //! away from" is exactly what drifts when a template starts to use one more
 //! builtin. The set is `dir(builtins)` joined with every bare identifier and
-//! parameter in `tests/forge/expected/*.py`, so a template that begins to use
-//! a name widens the question by itself.
+//! parameter in `tests/forge/expected/*.py` and in the Python the CBOR and
+//! content-line documents of `MAP_AND_LINE` generate, so a template that
+//! begins to use a name widens the question by itself.
 //!
 //! A name the parser refuses (`validation/reserved-code-identifier`, a
 //! keyword in some target language) is an answer, not a failure: the author is
@@ -40,7 +43,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sce_build::generator::Language;
-use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
+use sce_build::{
+    compile_forge_file, compile_forge_with_imports, DocumentLabel, ForgeCompileOptions,
+};
 
 fn resource_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources")
@@ -52,6 +57,58 @@ fn expected_dir() -> PathBuf {
 
 fn python_runtime() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/python/forge-runtime")
+}
+
+/// The CBOR and content-line documents the names are also read off, as paths
+/// from the crate. Their Python is committed nowhere, so each is generated
+/// where it is read. Between them they hold every class body the two printers
+/// write: a map's value and the `Protocol` its source satisfies, a component's
+/// value, its line records and theirs, a list of values, an enum entry and an
+/// enum parameter, and a map that reads a list of records.
+const MAP_AND_LINE: &[&str] = &[
+    "../tests/forge/resources/codec_cbor_map.scxml",
+    "../tests/forge/resources/codec_content_line_enums.scxml",
+    "../tests/forge/resources/codec_content_line_event.scxml",
+    "../tests/forge/resources/codec_content_line_open.scxml",
+    "../tests/forge/resources/codec_content_line_records.scxml",
+    "../tests/forge/resources/codec_content_line_required_lists.scxml",
+    "../tests/forge/conformance/broadcast_log_text/broadcast_log_conformance_text_event.scxml",
+    "../tests/forge/conformance/codec_cbor_open_enum/codec_cbor_open_enum.scxml",
+    "tests/fixtures/cbor_codec/codec_cbor_record_list.scxml",
+    "tests/fixtures/cbor_codec/codec_cbor_record_list_bytes.scxml",
+    "tests/fixtures/cbor_codec/codec_cbor_record_list_least.scxml",
+    "tests/fixtures/cbor_codec/codec_cbor_signed_enum.scxml",
+    "../stdlib/mesh/envelope.scxml",
+];
+
+/// The Python each of [`MAP_AND_LINE`] generates, as `<stem>.py` in a new
+/// directory, beside a copy of the document as `<stem>.scxml`, which the
+/// derivation reads the names the document declares from.
+fn map_and_line_modules() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("a directory for the generated modules");
+    for document in MAP_AND_LINE {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(document);
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("a document has a stem")
+            .to_string();
+        std::fs::copy(&path, dir.path().join(format!("{stem}.scxml"))).expect("copy the document");
+        let output = compile_forge_file(
+            &path,
+            Language::Python,
+            &[],
+            &ForgeCompileOptions::default(),
+        )
+        .unwrap_or_else(|e| panic!("{document} generates on Python: {:?}", e.error));
+        let (_, source) = output
+            .files
+            .into_iter()
+            .find(|(file, _)| *file == format!("{stem}.py"))
+            .unwrap_or_else(|| panic!("{document} generates no `{stem}.py`"));
+        std::fs::write(dir.path().join(format!("{stem}.py")), source).expect("write the module");
+    }
+    dir
 }
 
 /// Whether `python3` can be run here. Absent is reported, and refused under
@@ -77,6 +134,9 @@ const SLICE_SET: &[&str] = &["codec_chain_has_marker_slice.scxml"];
 /// under test standing where an author's name stands.
 struct Shape {
     id: &'static str,
+    /// The root's attributes after `sce:kind="codec"`: the encoding the
+    /// document is written in, and what that encoding asks the root to say.
+    root: &'static str,
     /// Resource documents it imports, generated alongside it.
     imports: &'static [&'static str],
     /// Whether the document states that its encode can refuse a value
@@ -97,9 +157,19 @@ struct Shape {
     check: &'static str,
 }
 
+/// The root of a codec of fields at their positions, big-endian.
+const POSITIONAL: &str = r#" sce:default-endian="big""#;
+/// The root of a codec that writes one CBOR map (SCE_FORGE.md, section 4.6.1).
+const CBOR: &str = r#" sce:encoding="cbor" sce:codec-format="2""#;
+/// The root of a codec that writes one component of content lines
+/// (SCE_FORGE.md, section 4.6.4).
+const CONTENT_LINE: &str =
+    r#" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT""#;
+
 const SHAPES: &[Shape] = &[
     Shape {
         id: "fixed",
+        root: POSITIONAL,
         imports: &[],
         encode_may_fail: false,
         datamodel: r#"
@@ -110,6 +180,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "vle",
+        root: POSITIONAL,
         imports: &[],
         encode_may_fail: false,
         datamodel: r#"
@@ -120,6 +191,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "bytes_named",
+        root: POSITIONAL,
         imports: &[],
         encode_may_fail: false,
         datamodel: r#"
@@ -134,6 +206,7 @@ const SHAPES: &[Shape] = &[
     // read back.
     Shape {
         id: "length_named",
+        root: POSITIONAL,
         imports: &[],
         encode_may_fail: false,
         datamodel: r#"
@@ -145,6 +218,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "string_named",
+        root: POSITIONAL,
         imports: &[],
         encode_may_fail: false,
         datamodel: r#"
@@ -156,6 +230,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "flags_gate",
+        root: POSITIONAL,
         imports: &[],
         encode_may_fail: false,
         datamodel: r#"
@@ -169,6 +244,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "tail",
+        root: POSITIONAL,
         imports: &[],
         encode_may_fail: false,
         datamodel: r#"
@@ -180,6 +256,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "repeat_count",
+        root: POSITIONAL,
         imports: SLICE_SET,
         encode_may_fail: false,
         datamodel: r#"
@@ -193,6 +270,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "repeat_named",
+        root: POSITIONAL,
         imports: SLICE_SET,
         encode_may_fail: false,
         datamodel: r#"
@@ -204,6 +282,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "chain_named",
+        root: POSITIONAL,
         imports: ENTRY_SET,
         encode_may_fail: false,
         datamodel: r#"
@@ -215,6 +294,7 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         id: "embed_named",
+        root: POSITIONAL,
         imports: SLICE_SET,
         encode_may_fail: false,
         datamodel: r#"
@@ -223,28 +303,73 @@ const SHAPES: &[Shape] = &[
         frames: &[&[1, 0, 2, 0xAA, 0xBB]],
         check: "{v} is not None",
     },
+    // An entry of a CBOR map, declared before another: the value's dataclass
+    // holds both and the `Protocol` its source satisfies presents both, each
+    // made by a decorator its class body evaluates.
+    Shape {
+        id: "map_entry",
+        root: CBOR,
+        imports: &[],
+        encode_may_fail: false,
+        datamodel: r#"
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="NAME" sce:type="uint8" sce:key="0" sce:direction="out"/>
+    <data id="z" sce:type="uint8" sce:key="1" sce:direction="out"/>"#,
+        frames: &[&[0xA2, 0x00, 0x01, 0x01, 0x02]],
+        check: "{v} == 1",
+    },
+    // A property of a content-line component declared before a repeated one,
+    // whose list each value holds anew: the default of that list is made in
+    // the class body the author's name is bound in.
+    Shape {
+        id: "line_property",
+        root: CONTENT_LINE,
+        imports: &[],
+        encode_may_fail: true,
+        datamodel: r#"
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="NAME" sce:type="uint8" sce:property="X-A"/>
+    <data id="z" sce:type="optional&lt;string&gt;" sce:property="X-Z" sce:repeated="true"
+          sce:max-count="2" sce:max-size="8"/>"#,
+        frames: &[
+            b"BEGIN:VEVENT\r\nX-A:1\r\nX-Z:ab\r\nEND:VEVENT\r\n",
+            b"BEGIN:VEVENT\r\nX-A:1\r\nEND:VEVENT\r\n",
+        ],
+        check: "{v} == 1",
+    },
 ];
 
+impl Shape {
+    /// Whether the shape's own datamodel declares `name`, besides the name
+    /// under test.
+    fn declares(&self, name: &str) -> bool {
+        self.datamodel.contains(&format!("id=\"{name}\""))
+    }
+}
+
 /// Every name that could be in the way, derived. See the module comment.
-fn candidate_names() -> Vec<String> {
+/// `generated` holds the Python of [`MAP_AND_LINE`] ([`map_and_line_modules`]).
+fn candidate_names(generated: &Path) -> Vec<String> {
     let script = r#"
 import ast, builtins, glob, re, sys
 names = set(dir(builtins))
-for path in glob.glob(sys.argv[1] + "/*.py"):
-    tree = ast.parse(open(path, encoding="utf-8").read())
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            names.add(node.id)
-        elif isinstance(node, ast.arg):
-            names.add(node.arg)
-        elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-            names.add(node.name)
+for directory in sys.argv[1:]:
+    for path in glob.glob(directory + "/*.py"):
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                names.add(node.id)
+            elif isinstance(node, ast.arg):
+                names.add(node.arg)
+            elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                names.add(node.name)
 print("\n".join(sorted(n for n in names if re.fullmatch(r"[a-z_][a-z0-9_]*", n))))
 "#;
     let out = Command::new("python3")
         .arg("-c")
         .arg(script)
         .arg(expected_dir())
+        .arg(generated)
         .output()
         .expect("python3 runs the name-derivation script");
     assert!(
@@ -294,10 +419,11 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
     } else {
         ""
     };
+    let root = shape.root;
     let scxml = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec"{declared} sce:default-endian="big" name="{doc_name}">
+       sce:kind="codec"{declared}{root} name="{doc_name}">
 {imports}  <datamodel>{}
   </datamodel>
 </scxml>"#,
@@ -347,7 +473,9 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
 /// The names the backend keeps for itself are the ones the output shows.
 ///
 /// A list written by hand is what drifts, so each one is derived from the
-/// committed Python output and compared:
+/// committed Python output, and from the Python the CBOR and content-line
+/// documents of [`MAP_AND_LINE`] generate, which is committed nowhere, and
+/// compared:
 ///
 /// - the methods every generated codec class defines (`decode`, `encode`, …);
 /// - the names a class body evaluates while it is built — a decorator, a
@@ -367,7 +495,11 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
 ///   arm's class.
 ///
 /// A template edit that adds a method, a class-body reference or an `f_` name
-/// makes this fail, and the failure says which list to extend.
+/// makes this fail, and the failure says which list to extend. So does a CBOR
+/// map that reads a record by a `@staticmethod` of its class
+/// (`codec_cbor.py.jinja2`), a content-line list whose default names `list`
+/// (`python_source::content_line::EMPTY_LIST`), and an enum entry whose default
+/// names its module in the class body (`python_source::class_body_default`).
 #[test]
 fn the_names_the_generated_python_keeps_for_itself_are_the_ones_its_output_shows() {
     if !python_present() {
@@ -442,51 +574,60 @@ class_body = set()
 first_params = set()
 unowned_f_locals = []
 codec_classes = 0
-for path in sorted(glob.glob(sys.argv[1] + "/*.py")):
-    tree = ast.parse(open(path, encoding="utf-8").read())
-    for cls in tree.body:
-        if not isinstance(cls, ast.ClassDef):
-            continue
-        fns = {f.name: f for f in cls.body if isinstance(f, ast.FunctionDef)}
-        codec = "decode" in fns and "encode" in fns
-        if codec or declares_fields(cls):
-            for stmt in cls.body:
-                if isinstance(stmt, ast.FunctionDef):
-                    for d in stmt.decorator_list:
-                        class_body |= loads(d)
-                    for default in stmt.args.defaults + [k for k in stmt.args.kw_defaults if k]:
-                        class_body |= loads(default)
-                elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
-                    class_body |= loads(stmt.value)
-                elif isinstance(stmt, ast.Assign):
-                    class_body |= loads(stmt.value)
-        if not codec:
-            continue
-        codec_classes += 1
-        names = set(fns)
-        methods = names if methods is None else methods & names
-        for fname in ("decode", "encode"):
-            args = fns[fname].args.args
-            first_params |= {a.arg for a in args[:2]}
-        stem = os.path.splitext(os.path.basename(path))[0]
-        names = declared(os.path.join(sys.argv[2], stem + ".scxml"))
-        for node in ast.walk(fns["decode"]):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                if node.id.startswith("f_") and node.id[2:] not in names:
-                    unowned_f_locals.append(f"{path}:{cls.name}:{node.id}")
+map_and_line_classes = 0
+# The committed output, its documents among the resources; and the Python of
+# the CBOR and content-line documents, generated beside a copy of each.
+for py_dir, doc_dir in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[3])):
+    for path in sorted(glob.glob(py_dir + "/*.py")):
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        for cls in tree.body:
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            fns = {f.name: f for f in cls.body if isinstance(f, ast.FunctionDef)}
+            codec = "decode" in fns and "encode" in fns
+            if codec or declares_fields(cls):
+                for stmt in cls.body:
+                    if isinstance(stmt, ast.FunctionDef):
+                        for d in stmt.decorator_list:
+                            class_body |= loads(d)
+                        for default in stmt.args.defaults + [k for k in stmt.args.kw_defaults if k]:
+                            class_body |= loads(default)
+                    elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+                        class_body |= loads(stmt.value)
+                    elif isinstance(stmt, ast.Assign):
+                        class_body |= loads(stmt.value)
+            if not codec:
+                continue
+            codec_classes += 1
+            if py_dir == sys.argv[3]:
+                map_and_line_classes += 1
+            names = set(fns)
+            methods = names if methods is None else methods & names
+            for fname in ("decode", "encode"):
+                args = fns[fname].args.args
+                first_params |= {a.arg for a in args[:2]}
+            stem = os.path.splitext(os.path.basename(path))[0]
+            names = declared(os.path.join(doc_dir, stem + ".scxml"))
+            for node in ast.walk(fns["decode"]):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                    if node.id.startswith("f_") and node.id[2:] not in names:
+                        unowned_f_locals.append(f"{path}:{cls.name}:{node.id}")
 print(json.dumps({
     "codec_classes": codec_classes,
+    "map_and_line_classes": map_and_line_classes,
     "methods": sorted(methods or []),
     "class_body": sorted(n for n in class_body if n[:1].islower()),
     "first_params": sorted(first_params),
     "unowned_f_locals": unowned_f_locals,
 }))
 "#;
+    let generated = map_and_line_modules();
     let out = Command::new("python3")
         .arg("-c")
         .arg(script)
         .arg(expected_dir())
         .arg(resource_dir())
+        .arg(generated.path())
         .output()
         .expect("python3 derives the names");
     assert!(
@@ -511,6 +652,11 @@ print(json.dumps({
         derived["codec_classes"].as_u64().unwrap_or(0) > 100,
         "implausibly few generated codec classes ({}); the derivation broke",
         derived["codec_classes"]
+    );
+    assert_eq!(
+        derived["map_and_line_classes"].as_u64(),
+        Some(MAP_AND_LINE.len() as u64),
+        "each CBOR and content-line document generates one codec class the names are read off"
     );
     assert_eq!(
         strings("methods"),
@@ -559,7 +705,8 @@ fn an_authors_field_name_never_decides_what_the_generated_python_does() {
         return;
     }
 
-    let names = candidate_names();
+    let generated = map_and_line_modules();
+    let names = candidate_names(generated.path());
     assert!(
         names.len() > 100,
         "the derived candidate set is implausibly small ({}); the derivation broke",
@@ -599,6 +746,11 @@ fn an_authors_field_name_never_decides_what_the_generated_python_does() {
     let mut generation_failures: Vec<String> = Vec::new();
     for shape in SHAPES {
         for (index, name) in names.iter().enumerate() {
+            // A shape's own ids are not candidates for it: a document cannot
+            // declare an id twice, and that is a different refusal.
+            if shape.declares(name) {
+                continue;
+            }
             match generate(shape, index, name) {
                 Ok(Outcome::Refused) => {
                     refused.insert(name.clone());
