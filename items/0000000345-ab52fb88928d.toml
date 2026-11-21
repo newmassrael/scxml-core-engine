@@ -6,3 +6,9 @@ commit = "0b2d3c473e97c508895786fae228475dd762fb04"
 base = "8525a3e265b9e2f514cb18fc520655d1c622c78b"
 machine = "mf977c53d872e"
 at = 1795265536
+
+[return]
+reason = "conflict"
+detail = "tools/codegen/templates/forge/c/codec_cbor.h.jinja2"
+report = "m6a944ec3ba29:0000000345-ab52fb88928d/attempt-2.log"
+at = 1795269767
