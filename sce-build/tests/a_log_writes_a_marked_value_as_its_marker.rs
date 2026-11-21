@@ -142,15 +142,7 @@ fn generated(path: &Path, language: Language) -> String {
 #[test]
 fn every_generated_lane_logs_a_marked_value_as_its_marker() {
     let (_dir, path) = written(LOGGING, SIGN_IN_SCHEMA);
-    for language in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-        Language::Swift,
-    ] {
+    for &language in Language::ALL {
         logs_the_markers(&format!("{language:?}"), &generated(&path, language));
     }
 }

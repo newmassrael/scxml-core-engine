@@ -236,15 +236,7 @@ mod tests {
     #[test]
     fn the_backends_that_name_a_refusal() {
         for f in EncodeFailure::ALL {
-            for lang in [
-                Language::Rust,
-                Language::Cpp,
-                Language::Python,
-                Language::Swift,
-                Language::Kotlin,
-                Language::Go,
-                Language::C11,
-            ] {
+            for &lang in Language::ALL {
                 assert!(f.symbol(lang).is_some(), "{lang:?} {f:?}");
             }
         }

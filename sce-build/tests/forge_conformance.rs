@@ -4778,14 +4778,7 @@ fn an_identifier_of_an_enums_type_is_refused_on_every_backend() {
     )
     .expect("the enum resource copies");
     std::fs::write(dir.path().join("kind_entry.scxml"), ENTRY).expect("write the entry");
-    for language in [
-        sce_build::generator::Language::Rust,
-        sce_build::generator::Language::Cpp,
-        sce_build::generator::Language::Kotlin,
-        sce_build::generator::Language::Go,
-        sce_build::generator::Language::Python,
-        sce_build::generator::Language::C11,
-    ] {
+    for &language in sce_build::generator::Language::ALL {
         let error = match sce_build::compile_forge_with_imports(
             CHAIN,
             sce_build::DocumentLabel::symmetric("kind_chain"),
@@ -4828,14 +4821,7 @@ fn a_signed_field_of_part_of_its_bytes_is_refused_on_every_backend() {
     <sce:field id="high" sce:type="uint8" sce:byte="0" sce:bit-offset="4" sce:bit-size="4"/>
   </datamodel>
 </scxml>"#;
-    for language in [
-        sce_build::generator::Language::Rust,
-        sce_build::generator::Language::Cpp,
-        sce_build::generator::Language::Kotlin,
-        sce_build::generator::Language::Go,
-        sce_build::generator::Language::Python,
-        sce_build::generator::Language::C11,
-    ] {
+    for &language in sce_build::generator::Language::ALL {
         let error = match sce_build::compile_forge_from_string(
             NIBBLE,
             sce_build::DocumentLabel::symmetric("signed_nibble"),
@@ -4904,15 +4890,7 @@ fn an_enum_of_a_signed_carrier_in_part_of_its_bytes_is_refused_on_every_backend(
         .expect("write the unsigned enum");
     let signed = nibble("enum_signed_nibble.scxml");
     let unsigned = nibble("enum_unsigned_nibble.scxml");
-    for language in [
-        sce_build::generator::Language::Rust,
-        sce_build::generator::Language::Cpp,
-        sce_build::generator::Language::Kotlin,
-        sce_build::generator::Language::Go,
-        sce_build::generator::Language::Python,
-        sce_build::generator::Language::C11,
-        sce_build::generator::Language::Swift,
-    ] {
+    for &language in sce_build::generator::Language::ALL {
         let compile = |source: &str| {
             sce_build::compile_forge_with_imports(
                 source,
