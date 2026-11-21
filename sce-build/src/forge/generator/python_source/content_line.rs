@@ -35,6 +35,11 @@ use crate::forge::model::ContentLineEntry;
 use crate::generator::Language;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The default of a list a class body declares, which each instance holds anew:
+/// a new empty list made by a lambda, so the class body names no builtin that
+/// a field declared before it and called `list` would stand in for.
+const EMPTY_LIST: &str = "field(default_factory=lambda: [])";
+
 /// The Python text the printer gives a content-line codec's module.
 pub(in super::super) struct ContentLineSource {
     /// Before the line records and the value's class: the class of each
@@ -149,12 +154,12 @@ impl Printer<'_> {
 
     /// The default a required value of `e` held alone takes: an integer's
     /// zero, which its class is made of, an enum's first declared variant,
-    /// else its type's zero.
+    /// made where it is called (`class_body_default`), else its type's zero.
     fn default_of(&self, e: &ContentLineEntry) -> String {
         if self.int_class(e).is_some() {
             "0".to_string()
         } else {
-            self.l.default_expr(e.present_type())
+            super::class_body_default(self.l, e.present_type())
         }
     }
 
@@ -174,7 +179,7 @@ impl Printer<'_> {
     /// default of the field that holds it.
     fn property_declared(&self, p: &Property<'_>) -> (String, String, String) {
         let e = p.entry;
-        let list = "field(default_factory=list)".to_string();
+        let list = EMPTY_LIST.to_string();
         match p.shape {
             LineShape::Records { .. } => (
                 format!("Sequence[{}]", self.record_source(e)),
@@ -462,7 +467,7 @@ impl Printer<'_> {
                         (
                             self.member("values"),
                             "List[str]".to_string(),
-                            "field(default_factory=list)".to_string(),
+                            EMPTY_LIST.to_string(),
                         )
                     } else {
                         (self.member("value"), self.one(e), self.default_of(e))

@@ -132,10 +132,12 @@ fn held(
             class: None,
             default: "False".to_string(),
         },
+        // The enum's first variant, made where it is called
+        // (`class_body_default`).
         CborShape::Enum(_) => Held {
             ty: l.type_name(leaf(e)).into_owned(),
             class: None,
-            default: l.default_expr(leaf(e)),
+            default: super::class_body_default(l, leaf(e)),
         },
         CborShape::Int { signed: false, .. } => {
             let bits = leaf(e)

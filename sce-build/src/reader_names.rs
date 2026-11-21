@@ -261,11 +261,18 @@ pub enum PythonNameClash {
     /// bound before or after the method, and one of them wins.
     ClassMethod,
     /// A name a class body evaluates while the class is being built, of a
-    /// class whose members are the author's names: the `@classmethod` on
-    /// `decode`, the `field(…)` a default is made by, and the `@property` on
-    /// each member of the `Protocol` a source of the codec satisfies. A field
-    /// of that name binds it in the class scope first, and the next decorator
-    /// or default is a call on the field's default.
+    /// class whose members are the author's names (the value of a positional
+    /// codec, of a CBOR map or of a content-line component, a line record, the
+    /// `Protocol` a source satisfies): the `@classmethod` on `decode`, the
+    /// `field(…)` a default is made by, and the `@property` on each member of
+    /// the `Protocol`. A field of that name binds it in the class scope first,
+    /// and the next decorator or default is a call on the field's default.
+    /// What can be named where it is called is kept out of the class body
+    /// instead: a list's and an arm's default, and an enum entry's of a CBOR
+    /// map or a content-line component, is made by a lambda, which reads the
+    /// module's names when it runs, and a CBOR map reads a record by a function
+    /// of the module, so neither `list` nor `staticmethod` is a name an
+    /// author is refused.
     ClassBody,
     /// A `__x__` name. Python reserves the form: `__debug__` cannot be
     /// assigned, and `__init__` or `__doc__` replaces what the class is made of.
