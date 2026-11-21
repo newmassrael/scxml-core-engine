@@ -253,9 +253,9 @@ struct WinHttpHttpsTransport::Impl {
     bool clientCertificateMissing = false;
 
     explicit Impl(Options opts) : options(std::move(opts)) {
-        const std::wstring agent = widen(options.user_agent);
-        session =
-            WinHttpOpen(agent.c_str(), WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+        const std::wstring userAgent = widen(options.user_agent);
+        session = WinHttpOpen(userAgent.c_str(), WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
+                              WINHTTP_NO_PROXY_BYPASS, 0);
         readProxyConfiguration();
         findClientCertificate();
     }
