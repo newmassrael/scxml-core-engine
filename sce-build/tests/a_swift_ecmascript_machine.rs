@@ -83,8 +83,10 @@ fn a_guard_and_a_data_initialiser_are_lowered_to_lua_and_run_by_the_engine() {
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, GUARDED), &[]);
     assert_eq!(status, Some(0), "{said}");
     assert!(machine.contains("import SceLua"), "{machine}");
+    // A top-level `<data>` is declared with the value a parent's `<invoke>` handed it,
+    // where there is one, in place of its own initialiser.
     assert!(
-        machine.contains(r#"defineData("n", as: "1", engine: engine)"#),
+        machine.contains(r#"defineData("n", handed: handed["n"], as: "1", engine: engine)"#),
         "the initialiser is lowered and handed to the session: {machine}"
     );
     assert!(
@@ -220,7 +222,7 @@ fn the_name_of_a_data_variable_is_a_string_and_never_source() {
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
     assert_eq!(status, Some(0), "{said}");
     assert!(
-        machine.contains(r#"defineData("screen-rules", as: "#),
+        machine.contains(r#"defineData("screen-rules", handed: handed["screen-rules"], as: "#),
         "{machine}"
     );
 }
@@ -757,12 +759,13 @@ fn the_inline_text_of_a_data_is_an_expression_or_the_string_it_spells() {
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
     assert_eq!(status, Some(0), "{said}");
     assert!(
-        machine.contains(r#"defineData("doc", as: "_scxml_parse_xml(\"<item "#)
+        machine
+            .contains(r#"defineData("doc", handed: handed["doc"], as: "_scxml_parse_xml(\"<item "#)
             && machine.contains(r#"a=\\\"1\\\"></item>\")", orText: "<item "#),
         "XML content is built into a DOM, with the string it spells as the last reading: {machine}"
     );
     assert!(
-        machine.contains(r#"defineData("n", as: ""#)
+        machine.contains(r#"defineData("n", handed: handed["n"], as: ""#)
             && machine.contains(r#", orText: "42", engine"#),
         "the text is lowered as an expression with its own text as the last reading: {machine}"
     );
@@ -791,7 +794,7 @@ fn the_text_a_data_src_names_is_read_when_the_machine_is_generated() {
     );
     assert_eq!(status, Some(0), "{said}");
     assert!(
-        machine.contains(r#"defineData("list", as: ""#)
+        machine.contains(r#"defineData("list", handed: handed["list"], as: ""#)
             && machine.contains(r#"orText: "[1, 2, 3]""#),
         "the JSON the file holds is the inline text of the variable: {machine}"
     );
@@ -1091,7 +1094,7 @@ fn a_function_expression_is_an_initialiser_like_any_other() {
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
     assert_eq!(status, Some(0), "{said}");
     assert!(
-        machine.contains(r#"defineData("inc", as: "function("#),
+        machine.contains(r#"defineData("inc", handed: handed["inc"], as: "function("#),
         "the initialiser is the lowered function: {machine}"
     );
 }
