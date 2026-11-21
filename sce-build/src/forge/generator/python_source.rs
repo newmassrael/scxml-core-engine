@@ -1410,6 +1410,22 @@ fn aligned_member(l: &LangCtx, first: &str, second: &str) -> String {
     super::rust_source::aligned_name(&l.codec_field_id(first), &l.codec_field_id(second))
 }
 
+/// The default a class body declares a field of `ty` with, in a class whose
+/// members are the author's names: an enum's first variant made by a lambda,
+/// which reaches it through the module alias its import is bound to
+/// (`python_module_alias`) where it is called, since a field declared before it
+/// and spelled as that alias would be read in the module's place in the class
+/// body; any other type's literal (`LangCtx::default_expr`), which names
+/// nothing.
+fn class_body_default(l: &LangCtx, ty: &SceType) -> String {
+    let default = l.default_expr(ty);
+    if matches!(ty, SceType::Enum(_)) {
+        format!("field(default_factory=lambda: {default})")
+    } else {
+        default
+    }
+}
+
 /// The `__setattr__` of a class whose branches are `hold`, which holds each
 /// byte string, text and list to its bound wherever it is set, where a value
 /// is made and after; empty where it has none.
