@@ -200,7 +200,7 @@ fn a_loop_walks_a_list_the_payload_or_an_enclosing_item_holds() {
         "",
         r#"<foreach array="_event.data.note" item="c"/>"#,
         "scxml/static-datamodel-rule",
-        "walks a list variable, or a list the event's payload",
+        "walks a list variable, a map or a set variable, or a list the event's payload",
     );
 }
 
