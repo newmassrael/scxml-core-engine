@@ -482,7 +482,8 @@ mutation_tests() { mutation_declare_runner cargo "$@"; }
 # The selector's normal test executables are still resolved and hashed, for the
 # check every runner is asked: that the mutation reached what the run read (see
 # `mutation_miri_run`). Flags for Miri itself are the environment's, declared
-# beside it: `mutation_env MIRIFLAGS=-Zmiri-many-seeds=0..8`.
+# beside it: `mutation_env MIRIFLAGS=-Zmiri-many-seeds=0..8`; the run adds the
+# one that has Miri finish every seed it is given, for the count (see there).
 #
 # A selector's `--lib` and `--test` targets are what Miri sees; a `--release` or
 # a `--target-dir` is cargo's and passes through as it does for `mutation_tests`.
@@ -1669,11 +1670,27 @@ mutation_cargo_run() {
 # and Miri reads the same sources those executables were compiled from. A cfg
 # that only Miri sets would break that, and the sources under study declare none
 # (a casefile whose target did would say so in its own header).
+#
+# Every seed is run to its end (`-Zmiri-many-seeds-keep-going`), because the
+# count the verdict compares with the baseline's is libtest's `running N tests`
+# headers, and under `-Zmiri-many-seeds` each seed is one run of the test
+# binary that prints its own. Without the flag Miri runs the seeds in parallel,
+# one per core, and ends the whole process at the first seed that fails: the
+# baseline, which fails none, reports its tests times its seeds, and a mutant
+# that fails one reports them times the seeds that had started, a number the
+# host's core count decides. The run-count guard then reads the case as one that
+# changed which tests exist, before its failure is read. CI run 44107166637 was
+# that: three tests under eight seeds were 24 in the baseline, and every case of
+# the casefile 12 (four seeds, on a four-core runner), so all nine read
+# INCONCLUSIVE. Kept going, a run reports every seed's header whether a seed
+# fails or not, and the exit status is the worst seed's. Miri reads the flag
+# only beside `-Zmiri-many-seeds`, so a run of one seed is the run it was.
 mutation_miri_run() {
     local out rc=0 run failed timed_out=0
     : > "$MUTATION_FAILING"
     : > "$MUTATION_FAILURE_DETAIL"
-    out="$(timeout "$MUTATION_ARTIFACT_TIMEOUT" cargo miri test "${MUTATION_RUNNER_ARGS[@]}" 2>&1)" || rc=$?
+    out="$(MIRIFLAGS="${MIRIFLAGS:+$MIRIFLAGS }-Zmiri-many-seeds-keep-going" \
+        timeout "$MUTATION_ARTIFACT_TIMEOUT" cargo miri test "${MUTATION_RUNNER_ARGS[@]}" 2>&1)" || rc=$?
     if [[ "$rc" == "124" ]]; then
         timed_out=1
         printf 'cargo miri test (did not terminate within %ss)\n' \
