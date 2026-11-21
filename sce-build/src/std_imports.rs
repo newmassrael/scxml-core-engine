@@ -228,8 +228,9 @@ pub fn cpp_used_in(source: &str) -> Vec<&'static str> {
 
 /// The forge runtime's integer header, which declares the checked operations
 /// of a `may-fail` body (SCE_FORGE.md §3.4.1), the wrapping and saturating
-/// operations any body may name (§3.4.2, docs/adr/0063) and the failure type
-/// they share: `<sce/forge/algorithm.h>` in C++, `"sce/forge/algorithm.h"` in
+/// operations any body may name (§3.4.2, docs/adr/0063), the failure type
+/// they share, and, in C11, a real made an integer (`round`, `floor`), which
+/// calls nothing from `<math.h>` (docs/adr/0110, D1): `<sce/forge/algorithm.h>` in C++, `"sce/forge/algorithm.h"` in
 /// C11.
 pub(crate) const FORGE_ALGORITHM_HEADER: &str = "sce/forge/algorithm.h";
 
@@ -251,6 +252,7 @@ const C_FORGE_ALGORITHM_PREFIXES: &[&str] = &[
     "sce_forge_wrapping_",
     "sce_forge_saturating_",
     "sce_forge_algorithm_",
+    "sce_forge_real_",
 ];
 
 /// Whether a C++ `source` names a member of `SCE::Forge` that the forge
@@ -635,6 +637,8 @@ mod tests {
             "return sce_forge_saturating_sub_u32(p, e);"
         ));
         assert!(c_uses_forge_algorithm("sce_forge_algorithm_failure_t f;"));
+        // A real made an integer (docs/adr/0110, D1): no `<math.h>`, the header.
+        assert!(c_uses_forge_algorithm("return sce_forge_real_round(x);"));
     }
 
     #[test]

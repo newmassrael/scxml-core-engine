@@ -14301,13 +14301,16 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 });
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
-                // C99 `llround` is half away from zero, same as C++. C99
-                // `floor` returns an integral-VALUED double, so the cast is
-                // exact rather than a second conversion.
+                // The forge runtime's own `round` (half away from zero, as C99
+                // `llround` and C++) and `floor`, not `<math.h>`'s: a machine's
+                // core and the kinds it calls link no mathematics library
+                // (docs/adr/0110, D1). Both answer an `int64_t`, and the name
+                // makes the kind's template include `sce/forge/algorithm.h`
+                // (`std_imports::c_uses_forge_algorithm`).
                 let inner = emit_c(&args[0], InferredType::Float { bits: 64 })?;
                 return Ok(match op {
-                    RealToInt::Round => format!("llround({inner})"),
-                    RealToInt::Floor => format!("(long long)floor({inner})"),
+                    RealToInt::Round => format!("sce_forge_real_round({inner})"),
+                    RealToInt::Floor => format!("sce_forge_real_floor({inner})"),
                 });
             }
             let mut a = Vec::with_capacity(args.len());

@@ -20,6 +20,10 @@
  * `may-fail` body or not, and is lowered to one of the
  * `sce_forge_wrapping_<op>_<width>` and `sce_forge_saturating_<op>_<width>`
  * helpers, which take no failure record.
+ *
+ * A real made an integer (`round(x)`, `floor(x)`) is lowered to
+ * `sce_forge_real_round` and `sce_forge_real_floor`, which have a value on
+ * every input too and call nothing from `<math.h>` (docs/adr/0110, D1).
  */
 
 #ifndef SCE_FORGE_ALGORITHM_H
@@ -577,6 +581,68 @@ static inline uint64_t sce_forge_checked_narrow_u64_from_i(sce_forge_algorithm_f
         return 0;
     }
     return (uint64_t)v;
+}
+
+/*
+ * A real made an integer by the expression language's `round(x)` and
+ * `floor(x)` (SCE_FORGE.md §3.4.1): `round` half away from zero, as C99's
+ * `llround` and every other backend round, and `floor` toward negative
+ * infinity. Written here and not taken from `<math.h>`, which is not a
+ * freestanding header: a machine's core, and every forge kind it calls, links no
+ * mathematics library (docs/adr/0110, D1).
+ *
+ * From 2^52 on, every double is a whole number, so its conversion is exact.
+ * Below it, the conversion toward zero is exact and so is the fraction `x - t`,
+ * which is less than one in magnitude and lies on the grid of `x`'s last digit;
+ * one comparison of it decides the step. For every value an `int64_t` holds the
+ * answer is C99's. Where C99 leaves the answer unspecified and a conversion
+ * would be undefined (NaN, an infinity, a value past `int64_t`), the answer is a
+ * saturating conversion's: NaN is 0, and a value past either end is that end.
+ */
+#define SCE_FORGE_REAL_WHOLE_FROM 4503599627370496.0   /* 2^52 */
+#define SCE_FORGE_REAL_INT64_END 9223372036854775808.0 /* 2^63 */
+
+/* Whether `x` needs no rounding, and then its integer in `*whole`. No
+ * comparison holds for NaN, so it reaches the last branch. */
+static inline bool sce_forge_real_whole_already(double x, int64_t *whole) {
+    if (x > -SCE_FORGE_REAL_WHOLE_FROM && x < SCE_FORGE_REAL_WHOLE_FROM) {
+        return false;
+    }
+    if (x >= SCE_FORGE_REAL_INT64_END) {
+        *whole = INT64_MAX;
+    } else if (x < -SCE_FORGE_REAL_INT64_END) {
+        *whole = INT64_MIN;
+    } else if (x >= SCE_FORGE_REAL_WHOLE_FROM || x <= -SCE_FORGE_REAL_WHOLE_FROM) {
+        *whole = (int64_t)x;
+    } else {
+        *whole = 0;
+    }
+    return true;
+}
+
+static inline int64_t sce_forge_real_floor(double x) {
+    int64_t whole;
+    if (sce_forge_real_whole_already(x, &whole)) {
+        return whole;
+    }
+    const int64_t t = (int64_t)x;
+    return (double)t > x ? t - 1 : t;
+}
+
+static inline int64_t sce_forge_real_round(double x) {
+    int64_t whole;
+    if (sce_forge_real_whole_already(x, &whole)) {
+        return whole;
+    }
+    const int64_t t = (int64_t)x;
+    const double fraction = x - (double)t;
+    if (fraction >= 0.5) {
+        return t + 1;
+    }
+    if (fraction <= -0.5) {
+        return t - 1;
+    }
+    return t;
 }
 
 #endif /* SCE_FORGE_ALGORITHM_H */
