@@ -50,6 +50,15 @@
 //! generator expression; and only variables assigned in the same file
 //! are considered, because CMake variable scope is per directory while
 //! targets are global.
+//!
+//! A fragment a CMake file `include()`s runs where it is included, so a
+//! fragment every `include()` of which lies under a guard is under that
+//! guard as a whole (`tests/cmake/mesh_https.cmake`, included only inside
+//! the mesh block, links `sce_mesh_common`). The includes are matched by
+//! file name rather than by a resolved path, so an include whose path reads
+//! a variable this scan cannot expand still counts, and an include outside
+//! the guard of any file of that name leaves the fragment unguarded: a
+//! missed guard, never an invented one.
 
 mod common;
 
@@ -87,6 +96,7 @@ pattern!(
     RE_CREATE,
     r"\badd_(?:library|executable|custom_target)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)"
 );
+pattern!(RE_INCLUDE, r#"\binclude\s*\(\s*"?([^")\s]+)"#);
 
 /// A clean result has to be earned. If the pathspec, the option
 /// scanner or the region scanner ever stops matching, every count
@@ -230,6 +240,65 @@ fn inside(regions: &[(usize, usize)], line: usize) -> bool {
     regions.iter().any(|&(a, b)| line >= a && line <= b)
 }
 
+/// The last component of a path: the file an `include()` names.
+fn file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// Per document, the regions guarding `opt`: the blocks of its own text, or
+/// the whole document where it is `include()`d and every include of it lies
+/// in a block guarding `opt` or in a document so guarded as a whole.
+///
+/// A document no include names (a directory's `CMakeLists.txt`, which
+/// `add_subdirectory` reaches) keeps its own blocks only.
+fn guard_regions_in(docs: &[Doc], opt: &str) -> Vec<Vec<(usize, usize)>> {
+    let own: Vec<Vec<(usize, usize)>> = docs.iter().map(|d| guard_regions(&d.lines, opt)).collect();
+    // Each file name an include names, with the (document, line) of every
+    // include of it.
+    let mut includes: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
+    for (at, doc) in docs.iter().enumerate() {
+        for (n, line) in doc.lines.iter().enumerate() {
+            for cap in RE_INCLUDE.captures_iter(line) {
+                let name = file_name(cap.get(1).expect("group").as_str());
+                includes.entry(name).or_default().push((at, n));
+            }
+        }
+    }
+    // A fragment included from a fragment is guarded once its includer is,
+    // so the set grows until no document joins it.
+    let mut whole = vec![false; docs.len()];
+    let mut grew = true;
+    while grew {
+        grew = false;
+        for (index, doc) in docs.iter().enumerate() {
+            if whole[index] {
+                continue;
+            }
+            let Some(sites) = includes.get(file_name(&doc.path)) else {
+                continue;
+            };
+            if sites
+                .iter()
+                .all(|&(at, n)| whole[at] || inside(&own[at], n))
+            {
+                whole[index] = true;
+                grew = true;
+            }
+        }
+    }
+    docs.iter()
+        .zip(own)
+        .zip(whole)
+        .map(|((doc, regions), whole)| {
+            if whole && !doc.lines.is_empty() {
+                vec![(0, doc.lines.len() - 1)]
+            } else {
+                regions
+            }
+        })
+        .collect()
+}
+
 /// Bare words on a line: quoted strings and `${...}` expansions removed
 /// first, then split on whitespace and parens only. Keeping `::` and
 /// `/` inside a word is what stops a namespaced target and a file path
@@ -250,13 +319,7 @@ fn regions_by_option(
     opts: &BTreeSet<String>,
 ) -> BTreeMap<String, Vec<Vec<(usize, usize)>>> {
     opts.iter()
-        .map(|opt| {
-            let per_doc = docs
-                .iter()
-                .map(|d| guard_regions(&d.lines, opt))
-                .collect::<Vec<_>>();
-            (opt.clone(), per_doc)
-        })
+        .map(|opt| (opt.clone(), guard_regions_in(docs, opt)))
         .filter(|(_, per_doc)| per_doc.iter().any(|r| !r.is_empty()))
         .collect()
 }
@@ -388,5 +451,52 @@ fn no_guard_scoped_target_is_named_outside_its_guard() {
          accepts the resulting `-lname`, and the tree fails at link.",
         violations.len(),
         violations.join("\n  "),
+    );
+}
+
+/// A fragment `include()`d only under a guard is under it as a whole, and so
+/// is a fragment included only from it; one also included outside the guard,
+/// or included by nothing, keeps only its own blocks.
+#[test]
+fn a_fragment_included_only_under_a_guard_is_guarded_whole() {
+    let doc = |path: &str, text: &str| Doc {
+        path: path.to_string(),
+        lines: text.lines().map(code).collect(),
+    };
+    let docs = [
+        doc(
+            "CMakeLists.txt",
+            "if(OPT)\n  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/guarded.cmake)\n  \
+             include(\"${X}/open.cmake\")\nendif()\ninclude(cmake/open.cmake)\n",
+        ),
+        doc(
+            "cmake/guarded.cmake",
+            "add_library(t STATIC t.c)\ninclude(nested.cmake)\n",
+        ),
+        doc("cmake/nested.cmake", "target_link_libraries(x PRIVATE t)\n"),
+        doc("cmake/open.cmake", "target_link_libraries(y PRIVATE t)\n"),
+        doc("cmake/orphan.cmake", "target_link_libraries(z PRIVATE t)\n"),
+    ];
+    let regions = guard_regions_in(&docs, "OPT");
+    assert_eq!(regions[0], [(0, 3)], "the includer keeps its own block");
+    assert_eq!(
+        regions[1],
+        [(0, 1)],
+        "a fragment included only under the guard is guarded whole"
+    );
+    assert_eq!(
+        regions[2],
+        [(0, 0)],
+        "a fragment included only from a guarded fragment is guarded whole"
+    );
+    assert!(
+        regions[3].is_empty(),
+        "a fragment also included outside the guard is not guarded: {:?}",
+        regions[3]
+    );
+    assert!(
+        regions[4].is_empty(),
+        "a fragment nothing includes is not guarded: {:?}",
+        regions[4]
     );
 }
