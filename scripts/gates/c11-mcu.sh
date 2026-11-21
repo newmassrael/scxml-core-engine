@@ -151,9 +151,11 @@ for entry in "${C11_MCU_SET[@]}"; do
     mkdir -p "$gen" "$obj"
     sce_gate_step "$name: generate"
 
-    # 1. Generate. `--no-format`: the gate compiles what is written, and its
-    # spelling is not what is judged.
-    "$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate -l c11 --no-format \
+    # 1. Generate, with every unit the document imports (`--with-imports`), as a
+    # build generates it: a machine's header includes the header of each schema,
+    # enum, union and algorithm it names. `--no-format`: the gate compiles what
+    # is written, and its spelling is not what is judged.
+    "$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate -l c11 --with-imports --no-format \
         --input-root "$(dirname "$document")" --output-dir "$gen" "$document" >"$dir/generate.log" 2>&1 \
         || { cat "$dir/generate.log" >&2; sce_gate_fail "$name: the C11 generation failed"; }
 
