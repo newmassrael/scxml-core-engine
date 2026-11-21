@@ -171,6 +171,19 @@ storage as it is filled, up to its bound, and does not reserve the bound at cons
 with a large bound pays for the entries it holds. A lane without a heap (Rust without `std`, C11) reserves the bound
 in the machine, as it does for a list (docs/adr/0082 for C11's storage).
 
+(Amended 2026-11-21.) On Rust a map's storage is a parameter of its type, not a feature of the build.
+`BoundedMap<K, V, N, S>` and `BoundedSet<K, N, S>` take `S`: `Inline`, the bound reserved in the value, which never
+allocates, or `Heap`, grown as this paragraph says, which exists where the runtime has an allocator. A type that names
+none takes `DefaultMapStorage`, `Heap` where there is an allocator and `Inline` where there is none, so a generated
+machine's map keeps the storage this paragraph gives it. The storage was chosen by the leaf crate's `alloc` feature,
+and Cargo turns a feature on for every crate of a build once any crate of it asks for it: as soon as one crate of a
+build had an allocator, every map of the build grew on the heap, and a node of fixed memory that must never allocate
+could not keep its map inline beside a node with a heap in the same build. The runtime's list types already chose
+by type (`InlineList` and `HeapList`, with `SceOwnedList` the default), and the map now does the same. A
+generated algorithm is generic over the storage of each map it is lent or writes into, as over each map's bound, and
+a map it builds for itself takes the storage of the map its seed is drawn from (D8), so an algorithm lent an inline
+map allocates nothing. C11 and the heap lanes are unchanged.
+
 ### D5. A statechart walks a map with `<foreach>`, and an algorithm takes one by name
 
 `<foreach array="m" item="v" sce:key="k" index="i">` walks a map in its order: `item` is the value, `sce:key` the

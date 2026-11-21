@@ -6300,9 +6300,13 @@ into it through `<Type>ToDocument` and a read of an entry crossing back through
 (docs/adr/0108, D8) an array of `N` entry slots with a free
 list, a doubly linked order through them, which is the order a walk, the saved
 form and the snapshot follow, and an open-addressing index of twice the bound
-with tombstones, so no put or remove moves an entry. With `std` the slots and the
-index grow as the map fills, up to the bound; without it they are inline, the
-bound reserved. The index hashes a key's canonical bytes (the runtime's
+with tombstones, so no put or remove moves an entry. A machine's map is kept in
+the runtime's default storage: with `std` the slots and the index grow as the map
+fills, up to the bound; without it they are inline, the bound reserved. The
+storage is a parameter of the type, not a feature of the build
+(`BoundedMap<K, V, N, S>`, `S` the runtime's `Inline` or `Heap`, docs/adr/0108,
+D4 "Storage"), so a host keeps a map of its own inline, never allocating, beside a
+machine's map that grows. The index hashes a key's canonical bytes (the runtime's
 `MapKey`: an integer as the 16 bytes of its value whatever its width, a `bool`
 as one, an enum by its declared number, a text and a byte string by their length
 and their bytes, a record by its fields in order) with SipHash-1-3 under a
@@ -6433,10 +6437,14 @@ variable, and leaves the array it ends with in, however it returns. Rust and
 C11 hold an algorithm's map in the type a machine's variable of the same parts
 is held in, a record in the type its unit declares and a value of an enum in
 its document's type (D6 item 4), and lend it where the caller holds it, never
-copied and never crossed. Rust names `BoundedMap<K, V, N>` or
-`BoundedSet<K, N>` through `sce_portable_bytes`, and a parameter, generic over
-the bound its caller's variable states (`const N0: usize`), takes the map `&`
-to be read or `&mut` where it is `inout`. C11 lends the address of the caller's
+copied and never crossed. Rust names `BoundedMap<K, V, N, S>` or
+`BoundedSet<K, N, S>` through `sce_portable_bytes`, and a parameter, generic over
+the bound its caller's variable states and the storage the caller keeps it in
+(`const N0: usize`, `S0: MapStorage`), takes the map `&` to be read or `&mut`
+where it is `inout`. A map the body returns is written into the caller's
+destination, generic over its storage too (`SR`), and a map the body builds for
+itself is kept in the storage of the map its seed is drawn from, so a caller that
+lends an inline map has nothing allocated for it. C11 lends the address of the caller's
 storage, the core every map type of `sce/forge/map.h` begins with
 (`const sce_map_core_t *` for a slot read, `sce_map_core_t *` for one declared
 `inout`), which views a map of any bound, a value read as the type the

@@ -3516,3 +3516,31 @@ generated before.
   `added: Default::default()` where the record has one revision. `TypeEnv` has a provided method,
   `record_added`, which an implementation that reads records with revisions answers. `encode_plan::CborField`
   has a new public member, `default`, the deterministic CBOR of what a missing key reads.
+
+## A Rust map keeps its entries in the storage its type names, not one a feature chose (ADR 0108 D4)
+
+Landing: the commits that add this section. No committed generated tree changes. A generated Rust algorithm that is
+lent a map, returns one into its caller's destination or builds one for itself is generic over the storage of those
+maps when it is generated again.
+
+- `BoundedMap<K, V, N>` and `BoundedSet<K, N>` take one more parameter, the storage `S: MapStorage`: `Inline`, the
+  bound reserved in the value, which never allocates in any build, or `Heap`, grown as the map fills, which exists
+  under `sce-portable-bytes/alloc`. A type that names none takes `DefaultMapStorage`, which is what the type was
+  before in every build (`Heap` with `alloc`, `Inline` without), so `BoundedMap<K, V, N>` written as a type,
+  `BoundedMap::<K, V, N>::with_seed(..)` and a generated machine's map variable mean what they meant. Before, the
+  storage followed the crate's `alloc` feature, which Cargo turns on for every crate of a build once one asks for
+  it, so a fixed-memory node could not keep its map inline beside a heap node in the same build. `sce_rust_runtime`
+  re-exports `Inline`, `MapStorage` and `DefaultMapStorage`; `Heap` is `sce_portable_bytes::Heap`.
+- What stops compiling: a call of `saved_state::map_from_saved` or `set_from_saved` that names its generic arguments,
+  `set_from_saved::<K, 2>(..)`, names the storage as well, `set_from_saved::<K, 2, DefaultMapStorage>(..)`; one
+  whose answer goes into a place of a written type infers it, as a generated machine's does. `PartialEq` now
+  compares two maps, or two sets, of different storages, so `a == b` where nothing else says `b`'s storage needs its
+  type written. A function of the consumer's own that takes `&BoundedMap<K, V, N>` keeps compiling and takes the
+  default storage only.
+- How to write it now: a function that should take a map of any storage adds `S: MapStorage` beside its bound and
+  takes `&BoundedMap<K, V, N, S>`, as a generated algorithm now does (`S0: MapStorage` beside `const N0: usize`, and
+  `SR` for the destination of a map it returns). A call site infers `S` from the map it lends, so a host calls a
+  generated algorithm as before. A fixed-memory node that must never allocate names the storage where it declares
+  its map, `BoundedMap<K, V, N, Inline>`, and lends it to the same algorithm, whose own maps then follow it inline;
+  a `static` of it built with `BoundedMap::with_seed(MapSeed::from_halves(0, 0))` is all zero bytes and placed in
+  `.bss`. A heap node in the same build keeps `BoundedMap<K, V, N>` or names `Heap`.
