@@ -2566,7 +2566,7 @@ pub enum DeployError {
         driver_floor: u32,
     },
 
-    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4404 —
+    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4420 —
     /// the forge `<sce:link-class>` value declared on the link doc
     /// does not match the protocol class implied by the deploy.yaml
     /// `driver:` allowlist entry. Each core driver implements
@@ -2583,7 +2583,7 @@ pub enum DeployError {
              `<sce:link-class>{}</sce:link-class>` but \
              deploy.yaml binds `driver: {}` which implements \
              class '{}'. SCE Protocol-Synthesis RFC §5.C lines \
-             765-771 + §8 Q8 line 4404 \
+             765-771 + §8 Q8 line 4420 \
              (`deploy/link-driver-class-mismatch`) — each core \
              driver implements exactly one protocol class. Repair: \
              change `driver:` to the entry matching the declared \
