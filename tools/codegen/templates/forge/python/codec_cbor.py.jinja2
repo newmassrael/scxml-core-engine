@@ -32,7 +32,7 @@
                 n = cbor.read_array_len(c)
                 if n > {{ e.list_max }}{% if e.list_min > 0 %} or n < {{ e.list_min }}{% endif %}:
                     raise cbor.CborOutOfRange()
-                v = [{{ struct_name }}.{{ e.record_decode_fn }}(c) for _ in range(n)]
+                v = [{{ e.record_decode_fn }}(c) for _ in range(n)]
 {% else %}
                 v = cbor.read_uint_upto(c, {{ e.max }})
 {% endif %}
@@ -70,17 +70,63 @@ from sce_forge_runtime.codec import BytearraySink, CodecError, SceCursor, SceSin
 {% endif %}
 {% endfor %}
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Protocol
 
 
 {# docs/adr/0081 step 4: the map is printed from its plan. The printer names
    the class of each entry's bound or width, the Protocol a source of it
    satisfies, the write of each record and the encode over any source, before
-   the value's class. #}
+   the value's class. The read of each record follows them, a function of the
+   module as its write is: a method of the value's class would be made by a
+   decorator its class body evaluates, which a field of the same name would
+   stand in for. #}
 {{ python_source.before }}
 
 
+{% for r in cbor_records %}
+def {{ r.decode_fn }}(c: SceCursor) -> {{ r.type_name }}:
+    """Read one record of the event schema ``{{ r.schema }}``
+    (``record:{{ r.alias }}``), as a list of :class:`{{ struct_name }}` holds it
+    (docs/adr/0085, Landing order step 3a), into the payload type the
+    schema's own unit declares: one CBOR map of every field, each under its
+    id as text (docs/adr/0086, section 9.2). Its keys in any order, a key
+    the schema does not declare skipped whole; a key given twice raises
+    :class:`~sce_forge_runtime.cbor.CborDuplicateKey`, a field missing
+    :class:`~sce_forge_runtime.cbor.CborRequiredKeyMissing`, and a text or
+    byte string past its bound
+    :class:`~sce_forge_runtime.cbor.CborOutOfRange`."""
+    count = cbor.read_map_len(c)
+{% for f in r.fields %}
+    held_{{ f.name }}: Optional[{{ f.value_type }}] = None
+{% endfor %}
+    for _ in range(count):
+        key = cbor.read_text(c, None)
+{% for f in r.fields %}
+{% if loop.first %}        if{% else %}        elif{% endif %} key == {{ f.key_literal }}:
+            # A key given twice is not one map entry.
+            if held_{{ f.name }} is not None:
+                raise cbor.CborDuplicateKey()
+{{ decode_record_field(f, "c", "            ") }}{% endfor %}
+        else:
+            cbor.skip(c)
+{% for f in r.fields %}
+    if held_{{ f.name }} is None:
+{% if f.default_cbor is not none %}
+        # A map of a revision before the field was added lacks its key,
+        # and reads its default (docs/adr/0044).
+{{ decode_record_field(f, "SceCursor(bytes([" ~ (f.default_cbor | join(", ")) ~ "]))", "        ") }}{% else %}
+        raise cbor.CborRequiredKeyMissing()
+{% endif %}
+{% endfor %}
+    return {{ r.type_name }}(
+{% for f in r.fields %}
+        {{ f.name }}=held_{{ f.name }},
+{% endfor %}
+    )
+
+
+{% endfor %}
 @dataclass
 class {{ struct_name }}:
     """One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order
@@ -156,46 +202,3 @@ class {{ struct_name }}:
         out = bytearray()
         self.encode(BytearraySink(out))
         return bytes(out)
-{% for r in cbor_records %}
-
-    @staticmethod
-    def {{ r.decode_fn }}(c: SceCursor) -> {{ r.type_name }}:
-        """Read one record of the event schema ``{{ r.schema }}``
-        (``record:{{ r.alias }}``), as a list of this map holds it
-        (docs/adr/0085, Landing order step 3a), into the payload type the
-        schema's own unit declares: one CBOR map of every field, each under its
-        id as text (docs/adr/0086, section 9.2). Its keys in any order, a key
-        the schema does not declare skipped whole; a key given twice raises
-        :class:`~sce_forge_runtime.cbor.CborDuplicateKey`, a field missing
-        :class:`~sce_forge_runtime.cbor.CborRequiredKeyMissing`, and a text or
-        byte string past its bound
-        :class:`~sce_forge_runtime.cbor.CborOutOfRange`."""
-        count = cbor.read_map_len(c)
-{% for f in r.fields %}
-        held_{{ f.name }}: Optional[{{ f.value_type }}] = None
-{% endfor %}
-        for _ in range(count):
-            key = cbor.read_text(c, None)
-{% for f in r.fields %}
-{% if loop.first %}            if{% else %}            elif{% endif %} key == {{ f.key_literal }}:
-                # A key given twice is not one map entry.
-                if held_{{ f.name }} is not None:
-                    raise cbor.CborDuplicateKey()
-{{ decode_record_field(f, "c", "                ") }}{% endfor %}
-            else:
-                cbor.skip(c)
-{% for f in r.fields %}
-        if held_{{ f.name }} is None:
-{% if f.default_cbor is not none %}
-            # A map of a revision before the field was added lacks its key,
-            # and reads its default (docs/adr/0044).
-{{ decode_record_field(f, "SceCursor(bytes([" ~ (f.default_cbor | join(", ")) ~ "]))", "            ") }}{% else %}
-            raise cbor.CborRequiredKeyMissing()
-{% endif %}
-{% endfor %}
-        return {{ r.type_name }}(
-{% for f in r.fields %}
-            {{ f.name }}=held_{{ f.name }},
-{% endfor %}
-        )
-{% endfor %}
