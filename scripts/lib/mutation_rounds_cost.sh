@@ -53,7 +53,13 @@
 #                    held_within_its_bound_ctest`: setup 32, two cases in
 #                    88 minutes. That is the heaviest target a ctest casefile
 #                    selects, `static_datamodel_generated_cpp_test`.
-#   *       15  17   The setup is unchanged. A case is 17: two cargo jobs of the
+#   *       15  20   The setup is unchanged. A case is 20: on run 44911860395
+#                    (2026-11-21) `a_c11_slot_holds_the_done_data_a_machine_
+#                    writes` took 109 minutes against the 100 that 17 promised
+#                    it, setup 13 (job start to baseline) and five cases in 96,
+#                    19.2 each. Its test spawns `sce-codegen`, so each case
+#                    rebuilds that binary as well as the library and the test.
+#                    It was 17 before that: two cargo jobs of the
 #                    sweep of 2026-10-25/26 overran the 13 this row held, both
 #                    on `cargo test` of a 87- and a 163-test oracle, setup 9 and
 #                    8 minutes, a case 16.1 (2 cases in 32) and 16.4 (3 in 49).
@@ -69,7 +75,7 @@
 mutation_rounds_cost() {
     case "$1" in
         ctest) printf '35 45\n' ;;
-        *) printf '15 17\n' ;;
+        *) printf '15 20\n' ;;
     esac
 }
 
