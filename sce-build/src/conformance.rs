@@ -6257,13 +6257,13 @@ mod tests {
     /// A byte case of a codec that holds others is several kilobytes of code:
     /// the test method of codec_zenoh_network_envelope, which held its eight
     /// source cases inline, did not compile. Each case is a private function of
-    /// the class (`forge/kotlin/conformance/kinds/codec_cases.kt.jinja2`), which
+    /// the class (`forge/kotlin/conformance/codec_cases.kt.jinja2`), which
     /// the test method calls. No JVM runs here, so a case is read by the one
     /// line each kind of case writes: the `encodeSource(` call of a source or a
     /// refused case, and the byte literal of a reject vector.
     ///
     /// Turns red where `kinds/codec.kt.jinja2` writes a case's body into the
-    /// test method again, or `kinds/codec_cases.kt.jinja2` writes two cases
+    /// test method again, or `codec_cases.kt.jinja2` writes two cases
     /// into one function.
     #[test]
     fn no_kotlin_harness_method_holds_more_than_one_codec_byte_case() {

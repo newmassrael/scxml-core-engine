@@ -115,7 +115,7 @@
 
 {# The byte cases (`sources`, `refused`) and the decode-rejection vectors
    (`rejects`) are one private function each, written after this method by
-   kinds/codec_cases.kt.jinja2, which states what each holds and why it is not
+   codec_cases.kt.jinja2, which states what each holds and why it is not
    inline: a JVM method holds at most 64 KB of code, and the cases of a codec
    that holds others pass it together. The method calls them in order. #}
 {% for s in f.sources %}
