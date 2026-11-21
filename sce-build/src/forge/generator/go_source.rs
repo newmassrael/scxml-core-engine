@@ -524,15 +524,12 @@ pub(super) fn grouped_field(plan: &EncodePlan<'_>, id: &str) -> bool {
 /// The unexported field a Go value printed from its plan holds the element
 /// `id` in: the name of its method, the element's Go field name, with its
 /// first letter lowered. Lowering the first letter of distinct exported names
-/// keeps them distinct, and a Go keyword is refused in the document, so the
-/// name needs no escape.
+/// keeps them distinct. A name whose field would be a Go keyword is refused in
+/// the document by this same fold (`Case::LowerPascal` in the Go column of a
+/// codec member's spellings, `scxml_identifier::spellings_of`), so the name
+/// needs no escape.
 pub(super) fn member(id: &str) -> String {
-    let exported = filters::to_pascal_case(id.to_string());
-    let mut chars = exported.chars();
-    match chars.next() {
-        Some(first) => first.to_lowercase().chain(chars).collect(),
-        None => exported,
-    }
+    crate::reader_names::Case::LowerPascal.spell(id)
 }
 
 /// The local a rebuild reads a bounded element it made through
