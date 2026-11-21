@@ -360,6 +360,54 @@ fn a_const_swift_spells_as_one_of_its_keywords_is_refused() {
     );
 }
 
+fn codec_with_field(id: &str) -> String {
+    format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" version="1.0" name="named_input">
+  <datamodel>
+    <sce:field id="{id}" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="b" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#
+    )
+}
+
+/// A codec member Go prints from its plan is held in an unexported field, its
+/// Pascal name with the first letter lowered, behind the exported method of the
+/// Pascal name: `Map` and `range` are the fields `map` and `range` there,
+/// words Go reserves, though neither method `Map()` nor `Range()` is one and no
+/// other backend reserves either word. Both are refused naming Go's spelling,
+/// and a name that folds to no keyword is accepted.
+#[test]
+fn a_codec_member_go_holds_in_a_keyword_field_is_refused() {
+    let refusal = forge_refusal(&codec_with_field("Map"));
+    assert_eq!(code_of(&refusal), "\"validation/reserved-code-identifier\"");
+    assert!(
+        refusal
+            .error
+            .to_string()
+            .contains("go spells 'Map' as 'map', a word it reserves"),
+        "{}",
+        refusal.error
+    );
+    let refusal = forge_refusal(&codec_with_field("range"));
+    assert_eq!(code_of(&refusal), "\"validation/reserved-code-identifier\"");
+    assert!(
+        refusal
+            .error
+            .to_string()
+            .contains("'range' is a reserved word in go"),
+        "{}",
+        refusal.error
+    );
+    let label = sce_build::DocumentLabel {
+        identifier: "named_input",
+        diagnostic_label: "named_input.scxml",
+    };
+    sce_build::forge::parser::parse_forge_with_imports(&codec_with_field("ranged"), label)
+        .expect("a member `ranged` is the field `ranged`, which nothing reserves");
+}
+
 /// The discriminator: the same document with a name no language reserves
 /// parses, so the two tests above are about the word and not the document.
 #[test]

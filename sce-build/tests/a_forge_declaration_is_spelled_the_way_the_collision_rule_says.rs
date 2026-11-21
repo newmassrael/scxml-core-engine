@@ -66,6 +66,7 @@ fn case_name(case: Case) -> &'static str {
         Case::Pascal => "pascal",
         Case::Camel => "camel",
         Case::UpperSnake => "upper",
+        Case::LowerPascal => "lower-pascal",
     }
 }
 
