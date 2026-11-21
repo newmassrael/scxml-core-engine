@@ -416,9 +416,11 @@ fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Gr
 /// What the generated Python makes of the name `node`'s attribute `attr`
 /// declares, when it is a name of the class or call the codec generates:
 /// a field, flag, chain, repeat or embed is the dataclass attribute or its
-/// accessor, and so is an entry of a CBOR map or of a content-line component
-/// (a `<data>` of its datamodel that is not the input frame, a parameter of a
-/// line too), a flag-input is a parameter of `decode` and `encode`; and a
+/// accessor, and so is a positional codec's field written as a `<data>`
+/// ([`positional_data_field`]) and an entry of a CBOR map or of a
+/// content-line component (a `<data>` of its datamodel that is not the input
+/// frame, a parameter of a line too), a flag-input is a parameter of `decode`
+/// and `encode`; and a
 /// procedure's input or helper is given a public setter `set_<name>`, which the
 /// base class already has for the service handler. `None` for a name that is
 /// only ever a local of a function body, which the generator keeps apart from
@@ -446,13 +448,17 @@ fn python_declaration(
         // A CBOR map's or a content-line component's entries are `<data>`, and
         // each is an attribute of the value's dataclass and a member of the
         // `Protocol` its source satisfies, as a positional codec's field is;
-        // the input frame names no field.
+        // the input frame names no field. A positional codec's `<data>` that
+        // carries `sce:byte` is one of its fields, read as a `<sce:field>` is
+        // and held under its id as one is (`version` in
+        // `tests/forge/expected/codec_variant_session_open.py`).
         let map_or_line = kind == Some("codec")
             && matches!(
                 root.attribute((crate::forge::model::SCE_NAMESPACE, "encoding")),
                 Some("cbor" | "content-line")
             );
-        return (map_or_line && !an_input).then_some(ClassAttribute);
+        return ((map_or_line && !an_input) || positional_data_field(node))
+            .then_some(ClassAttribute);
     }
     if node.tag_name().namespace() != Some(crate::forge::model::SCE_NAMESPACE) {
         return None;
@@ -471,6 +477,26 @@ fn python_declaration(
         ("flag-input", "name") => Some(CallParameter),
         _ => None,
     }
+}
+
+/// Whether `node` is a field of a positional codec written as a `<data>`: one
+/// that carries `sce:byte` and is not the input frame (`sce:direction="in"`),
+/// which `parse_codec` reads into the codec's fields by the same
+/// `parse_codec_field_from_node` a `<sce:field>` is read by, so every backend
+/// declares it where it declares a `<sce:field>`. A `<data>` with neither is
+/// read into nothing, and declares no member.
+fn positional_data_field(node: &roxmltree::Node) -> bool {
+    use crate::forge::model::SCE_NAMESPACE;
+    let root = node.document().root_element();
+    node.tag_name().namespace() == Some(crate::model::SCXML_NAMESPACE)
+        && node.tag_name().name() == "data"
+        && root.attribute((SCE_NAMESPACE, "kind")) == Some("codec")
+        && matches!(
+            root.attribute((SCE_NAMESPACE, "encoding")),
+            None | Some("positional")
+        )
+        && node.attribute((SCE_NAMESPACE, "direction")) != Some("in")
+        && node.attribute((SCE_NAMESPACE, "byte")).is_some()
 }
 
 /// Why a parameter [`line_record_member`] finds is refused, as the clause
@@ -672,13 +698,8 @@ fn variant_member(
         {
             true
         }
-        // A positional codec's `<data>` is a field; its input frame is none.
-        ("data", "id")
-            if node.tag_name().namespace() == Some(crate::model::SCXML_NAMESPACE)
-                && node.attribute((SCE_NAMESPACE, "direction")) != Some("in") =>
-        {
-            false
-        }
+        // A positional codec's `<data>` that is one of its fields.
+        ("data", "id") if positional_data_field(node) => false,
         _ => return None,
     };
     let root = node.document().root_element();
@@ -1227,6 +1248,35 @@ mod tests {
                 r#"<data id="decode" sce:type="bytes" sce:direction="in"/>"#
             ),
             "a positional codec's input is not this rule's"
+        );
+        // A positional codec's `<data>` that carries `sce:byte` is one of its
+        // fields, an attribute of the class as a `<sce:field>` is; one with no
+        // byte is read into nothing.
+        let positional = r#"sce:default-endian="big""#;
+        let placed = |id: &str| {
+            format!(r#"<data id="{id}" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>"#)
+        };
+        for name in [
+            "decode",
+            "encode_to_bytes",
+            "_decode_at",
+            "field",
+            "property",
+        ] {
+            assert!(
+                refuse(positional, &placed(name)),
+                "a positional field `<data id=\"{name}\">`"
+            );
+        }
+        for name in ["list", "staticmethod", "uid"] {
+            assert!(
+                !refuse(positional, &placed(name)),
+                "a positional field `<data id=\"{name}\">` is no name the class uses"
+            );
+        }
+        assert!(
+            !refuse(positional, r#"<data id="decode" sce:type="uint8"/>"#),
+            "a positional `<data>` with no byte is no field"
         );
     }
 
