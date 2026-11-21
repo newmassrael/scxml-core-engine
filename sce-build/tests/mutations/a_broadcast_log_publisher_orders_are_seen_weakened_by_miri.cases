@@ -1,7 +1,7 @@
-# Mutation cases for "a broadcast log's orders are seen weakened by Miri".
+# Mutation cases for "a broadcast log's publisher orders are seen weakened by Miri".
 #
 # Run with
-# `scripts/mutate sce-build/tests/mutations/a_broadcast_log_orders_are_seen_weakened_by_miri.cases`.
+# `scripts/mutate sce-build/tests/mutations/a_broadcast_log_publisher_orders_are_seen_weakened_by_miri.cases`.
 #
 # The oracle of `a_broadcast_log_orders_every_slot_hand_over.cases` is the loom
 # models, which explore every interleaving and every outcome the C11 memory model
@@ -23,7 +23,10 @@
 # gate declares them: eight, `-Zmiri-many-seeds=0..8`. Miri is deterministic for a
 # seed, so a case that is CAUGHT here is CAUGHT again on the same nightly.
 #
-# The nine cases below are the nine weakenings the ADR's table records as caught.
+# The nine weakenings the ADR's table records as caught are two casefiles: the
+# three below are the publisher's orders, and the six of the reader are
+# `a_broadcast_log_reader_orders_are_seen_weakened_by_miri.cases`.
+#
 # Two orders are not claimed, as in the loom casefile and for the same reason: the
 # done stamp's release and the acquire of the head's reload after a mismatch are
 # not observable (the loom casefile gives the argument), and a second tool failing
@@ -35,6 +38,16 @@
 #
 # Anchors are literal slices of the source, the ones of the loom casefile; an edit
 # that moves one is reported INCONCLUSIVE with the anchor quoted, never as a pass.
+#
+# `mutation_timeout 900` bounds one Miri run of the suite, and a mutant whose run
+# never ends is CAUGHT only when the bound ends it, so a job pays the bound for
+# every case at worst. No round has measured a case under Miri: the one round CI
+# ran (run 44107166637, 2026-11-17, on the one casefile they then were) read every
+# case INCONCLUSIVE within seconds and timed nothing, so the bound stands as
+# written. The nine cases were one casefile
+# until the cargo row of `scripts/lib/mutation_rounds_cost.sh` rose to 20 minutes
+# a case: nine at that cost and the bound are 345 minutes, past the lane's 330, so
+# they are two casefiles, each a job that fits (`mutation_corpus_fits_its_lane`).
 
 source "$SCE_REPO_ROOT/scripts/lib/queue_sanitizer.sh"
 mutation_env "RUSTUP_TOOLCHAIN=$QUEUE_SANITIZER_NIGHTLY" "MIRIFLAGS=-Zmiri-many-seeds=0..8"
@@ -64,48 +77,4 @@ mutation_case "the publisher moves the head without releasing the slot" <<'PY'
 edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
      r'''L::store(&self.log.head.0, next, Ordering::Release);''',
      r'''L::store(&self.log.head.0, next, Ordering::Relaxed);''')
-PY
-
-# ── The reader's orders ─────────────────────────────────────────────
-
-mutation_case "a reader loads the head without acquiring the slot behind it" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
-     r'''        } else {
-            L::load(&self.head.0, Ordering::Acquire)
-        };''',
-     r'''        } else {
-            L::load(&self.head.0, Ordering::Relaxed)
-        };''')
-PY
-
-mutation_case "a reader loads the first stamp without acquiring" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
-     r'''let first = L::load(&slot.stamp, Ordering::Acquire);''',
-     r'''let first = L::load(&slot.stamp, Ordering::Relaxed);''')
-PY
-
-mutation_case "a reader copies the words without an acquire fence before the second stamp" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
-     r'''            fence(Ordering::Acquire);''',
-     r'''            /* no acquire fence */''')
-PY
-
-mutation_case "a reader loads the second stamp without acquiring" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
-     r'''if L::load(&slot.stamp, Ordering::Acquire) == first {''',
-     r'''if L::load(&slot.stamp, Ordering::Relaxed) == first {''')
-PY
-
-# ── What the stamp and the window mean ──────────────────────────────
-
-mutation_case "a reader accepts any written stamp instead of the sequence it wants" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
-     r'''        if first == Self::done(r) {''',
-     r'''        if first != L::UNWRITTEN {''')
-PY
-
-mutation_case "a reader reads an entry a whole ring behind the head as retained" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
-     r'''        if behind >= SLOTS as u64 {''',
-     r'''        if behind > SLOTS as u64 {''')
 PY
