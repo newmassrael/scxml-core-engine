@@ -473,6 +473,109 @@ fn python_declaration(
     }
 }
 
+/// Why a parameter [`line_record_member`] finds is refused, as the clause
+/// `validation/reserved-code-identifier` gives after the name.
+const LINE_RECORD_MEMBER: &str = "a member the record of one line of a repeated property \
+                                  declares for the line's value, beside the line's parameters";
+
+/// How every backend spells a member of a content-line line record, a
+/// parameter's and the line's value's alike (`LangCtx::codec_field_id`), in
+/// [`crate::generator::Language::ALL`] order: Rust, Python and C11 snake_case,
+/// Go Pascal, C++, Kotlin and Swift as written.
+const LINE_RECORD_SPELLING: [crate::reader_names::Case; 7] = [
+    crate::reader_names::Case::Snake,
+    crate::reader_names::Case::Verbatim,
+    crate::reader_names::Case::Verbatim,
+    crate::reader_names::Case::Pascal,
+    crate::reader_names::Case::Snake,
+    crate::reader_names::Case::Snake,
+    crate::reader_names::Case::Verbatim,
+];
+
+/// The first backend, in [`crate::generator::Language::ALL`] order, that
+/// spells the parameter `node`'s attribute `attr` declares as a member the
+/// record of its line already declares for the line's value, with that
+/// spelling; `None` for any other name.
+///
+/// A parameter of a repeated property is a member of the record each line of
+/// the property is read into (docs/adr/0014), and every backend names the
+/// line's value in that record `value`, or `values` where `sce:separator`
+/// makes it a list (`content_line_codec::entries_context`, `value_member`).
+/// C11 holds a text beside its length and a list beside its length and count
+/// (`codec_content_line.h.jinja2`), so it also declares `value_len` for a
+/// text, and `values_len` and `values_count` for a list. A parameter spelled
+/// as one of them declared that member twice: a duplicate member in Rust, C11,
+/// C++ and Go, two properties of one name in Kotlin and Swift, and in Python
+/// one dataclass field whose second annotation replaced the first, so the
+/// parameter was read into the value's place. No name of the member is out of
+/// an author's reach, since an author may write any code identifier, so the
+/// member is not renamed: the parameter is refused, for every backend at once,
+/// as a reserved word is.
+fn line_record_member(
+    node: &roxmltree::Node,
+    attr: &str,
+) -> Option<(crate::generator::Language, String)> {
+    use crate::forge::model::SCE_NAMESPACE;
+    if node.tag_name().namespace() != Some(crate::model::SCXML_NAMESPACE)
+        || node.tag_name().name() != "data"
+        || attr != "id"
+    {
+        return None;
+    }
+    let root = node.document().root_element();
+    if root.attribute((SCE_NAMESPACE, "kind")) != Some("codec")
+        || root.attribute((SCE_NAMESPACE, "encoding")) != Some("content-line")
+    {
+        return None;
+    }
+    node.attribute((SCE_NAMESPACE, "param"))?;
+    let property = node.attribute((SCE_NAMESPACE, "property"))?;
+    // The property's own entry, which its parameters follow
+    // (`parse_content_line_entry`); without one the parser refuses the
+    // parameter for that.
+    let owner = node.prev_siblings().skip(1).find(|sibling| {
+        sibling.is_element()
+            && sibling.tag_name().name() == "data"
+            && sibling.attribute((SCE_NAMESPACE, "param")).is_none()
+            && sibling
+                .attribute((SCE_NAMESPACE, "property"))
+                .is_some_and(|p| p.eq_ignore_ascii_case(property))
+    })?;
+    // A parameter of a property that occurs once is a member of the codec's
+    // value, beside the property's own entry, and is no record's.
+    if owner.attribute((SCE_NAMESPACE, "repeated")) != Some("true") {
+        return None;
+    }
+    let text = !owner
+        .attribute((SCE_NAMESPACE, "type"))
+        .is_some_and(|ty| ty.contains("enum:"));
+    let (member, c11_beside): (&str, &[&str]) =
+        if owner.attribute((SCE_NAMESPACE, "separator")).is_some() {
+            ("values", &["values_len", "values_count"])
+        } else if text {
+            ("value", &["value_len"])
+        } else {
+            ("value", &[])
+        };
+    let id = node.attribute(attr)?;
+    crate::generator::Language::ALL
+        .iter()
+        .copied()
+        .zip(LINE_RECORD_SPELLING)
+        .find_map(|(language, case)| {
+            let spelled = case.spell(id);
+            let beside: &[&str] = if language == crate::generator::Language::C11 {
+                c11_beside
+            } else {
+                &[]
+            };
+            std::iter::once(member)
+                .chain(beside.iter().copied())
+                .any(|declared| case.spell(declared) == spelled)
+                .then_some((language, spelled))
+        })
+}
+
 /// How each backend spells the name `node`'s attribute `attr` declares, for
 /// the reserved-word check — the folds a keyword could equal, in
 /// [`crate::generator::Language::ALL`] order (Rust, C++, Kotlin, Go,
@@ -750,17 +853,24 @@ pub fn reject_malformed(
                     // field is the generated class's attribute, a flag its
                     // accessor, a flag-input a parameter of its calls, and the
                     // class already uses a few names for itself.
+                    // A parameter of a repeated content-line property cannot
+                    // be the member its line record holds the line's value by.
                     let reserved = crate::reader_names::reserved_in(
                         attribute.value(),
                         spellings_of(dialect, &node, attribute.name()),
                     )
+                    .map(|(language, spelled)| (language, spelled, None::<&'static str>))
                     .or_else(|| {
                         let kind = python_declaration(&node, attribute.name())?;
                         let spelled = crate::reader_names::Case::Snake.spell(attribute.value());
                         crate::reader_names::python_name_clash(kind, &spelled)?;
-                        Some((crate::generator::Language::Python, spelled))
+                        Some((crate::generator::Language::Python, spelled, None))
+                    })
+                    .or_else(|| {
+                        let (language, spelled) = line_record_member(&node, attribute.name())?;
+                        Some((language, spelled, Some(LINE_RECORD_MEMBER)))
                     });
-                    if let Some((language, spelled)) = reserved {
+                    if let Some((language, spelled, reason)) = reserved {
                         return Err(Located::new(
                             ValidationError::ReservedCodeIdentifier {
                                 element,
@@ -768,6 +878,7 @@ pub fn reject_malformed(
                                 value,
                                 spelled,
                                 language: language.canonical_name(),
+                                reason,
                             }
                             .into(),
                             doc_name,
@@ -963,6 +1074,84 @@ mod tests {
             ),
             "a positional codec's input is not this rule's"
         );
+    }
+
+    /// A parameter of a repeated content-line property is a member of the
+    /// record each of its lines is read into, beside the member every backend
+    /// names the line's value by (`line_record_member`): `value`, or `values`
+    /// for a list cut at a separator, and in C11 the length and count held
+    /// beside it. A parameter spelled as one, in any backend's spelling, is
+    /// refused; one of a property that occurs once is a member of the codec's
+    /// value instead, and is not.
+    #[test]
+    fn a_parameter_of_a_repeated_property_is_no_member_its_line_record_declares() {
+        let check = |owner: &str, param: &str| -> Result<(), String> {
+            let text = format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext"
+                          sce:kind="codec" sce:encoding="content-line" version="1.0">
+                     <datamodel>
+                       <data id="raw" sce:type="bytes" sce:direction="in"/>
+                       {owner}
+                       <data id="{param}" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE"
+                             sce:param="ROLE" sce:max-size="8"/>
+                     </datamodel>
+                   </scxml>"#
+            );
+            let parsed = roxmltree::Document::parse(&text).expect("a well-formed document");
+            let root = parsed.root_element();
+            let dialect = Dialect::of(&root);
+            reject_malformed(&root, "t", dialect).map_err(|e| e.error.to_string())
+        };
+        let text = r#"<data id="who" sce:type="string" sce:property="ATTENDEE"
+                            sce:repeated="true" sce:max-count="4" sce:max-size="8"/>"#;
+        let listed = r#"<data id="who" sce:type="string" sce:property="ATTENDEE"
+                              sce:repeated="true" sce:max-count="4" sce:max-size="8"
+                              sce:separator=","/>"#;
+        let named = r#"<data id="who" sce:type="enum:role" sce:property="ATTENDEE"
+                             sce:repeated="true" sce:max-count="4"/>"#;
+        let once = r#"<data id="who" sce:type="string" sce:property="ATTENDEE"
+                            sce:max-size="8"/>"#;
+
+        // `Value` and `VALUE` are `value` in Rust's snake_case, `_value` is `Value` in
+        // Go's Pascal, and `value_len` is the length C11 holds a text beside.
+        for param in ["value", "Value", "VALUE", "_value", "value_len", "valueLen"] {
+            let refused = check(text, param)
+                .err()
+                .unwrap_or_else(|| panic!("a parameter `{param}` of a line of text"));
+            assert!(
+                refused.contains("declares for the line's value"),
+                "the refusal of `{param}` says why: {refused}"
+            );
+        }
+        for param in ["values", "values_len", "values_count", "valuesCount"] {
+            assert!(
+                check(listed, param).is_err(),
+                "a parameter `{param}` of a line of a list of values"
+            );
+        }
+        assert!(
+            check(named, "value").is_err(),
+            "a parameter `value` of a line of an enum"
+        );
+        // C11 holds an enum without a length, a list without a single value, and
+        // a property that occurs once in the codec's value.
+        for (owner, param) in [
+            (named, "value_len"),
+            (listed, "value"),
+            (listed, "value_len"),
+            (text, "values"),
+            (text, "values_count"),
+            (once, "value"),
+            (once, "values"),
+            (text, "role"),
+        ] {
+            assert_eq!(
+                check(owner, param),
+                Ok(()),
+                "a parameter `{param}` beside {owner} is no member its line record declares"
+            );
+        }
     }
 
     #[test]
