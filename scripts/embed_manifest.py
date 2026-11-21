@@ -130,10 +130,13 @@ def include_dirs(snapshot: Snapshot) -> list[str]:
     text = snapshot.read(SOURCES_CMAKE)
     if text is None:
         raise SystemExit(f"embed_manifest: {SOURCES_CMAKE} not found")
-    block = re.search(r"set\(SCE_BASE_INCLUDE_DIRS\s+(.*?)\)", text, re.S)
+    # A comment ends at its line and may hold a parenthesis, which would end
+    # the block where it stands, so the comments go before the block is found.
+    code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+    block = re.search(r"set\(SCE_BASE_INCLUDE_DIRS\s+(.*?)\)", code, re.S)
     if block is None:
         raise SystemExit(f"embed_manifest: {SOURCES_CMAKE} sets no SCE_BASE_INCLUDE_DIRS")
-    lines = (line.split("#", 1)[0].strip() for line in block.group(1).splitlines())
+    lines = (line.strip() for line in block.group(1).splitlines())
     return [line for line in lines if line]
 
 

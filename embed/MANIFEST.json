@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "2a51fed",
+  "embed_version": "43d74f3",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 618,
+  "symbol_count": 799,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -504,6 +504,190 @@
         "method void (const ForwardedEvent &) raiseExternal"
       ],
       "name": "SCE::Common::NoParent"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::decode",
+      "signature": "std::optional<std::string> SCE::Common::RecordCbor::decode(const std::vector<std::uint8_t> &, std::string_view, std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::below",
+      "signature": "std::string SCE::Common::RecordCbor::detail::below(const std::string &, const std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::codecRefusal",
+      "signature": "Refused SCE::Common::RecordCbor::detail::codecRefusal(const std::string &, ::SCE::Forge::CodecError)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::count",
+      "signature": "std::uint64_t SCE::Common::RecordCbor::detail::count(const JsonValue &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::fieldsOf",
+      "signature": "std::vector<Field> SCE::Common::RecordCbor::detail::fieldsOf(const JsonValue &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::hexBytes",
+      "signature": "std::optional<std::vector<std::uint8_t>> SCE::Common::RecordCbor::detail::hexBytes(const std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::limits",
+      "signature": "void SCE::Common::RecordCbor::detail::limits(const Shape &, std::uint64_t &, std::uint64_t &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::member",
+      "signature": "const JsonValue * SCE::Common::RecordCbor::detail::member(const JsonObject &, const std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::readDefault",
+      "signature": "JsonValue SCE::Common::RecordCbor::detail::readDefault(const Shape &, const std::string &, const std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::readDescription",
+      "signature": "std::shared_ptr<Shape> SCE::Common::RecordCbor::detail::readDescription(std::string_view)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::readRecord",
+      "signature": "JsonObject SCE::Common::RecordCbor::detail::readRecord(const std::vector<Field> &, ::SCE::Forge::SceCursor &, const std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::readValue",
+      "signature": "JsonValue SCE::Common::RecordCbor::detail::readValue(const Shape &, ::SCE::Forge::SceCursor &, const std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::shapeOf",
+      "signature": "std::shared_ptr<Shape> SCE::Common::RecordCbor::detail::shapeOf(const JsonValue &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::took<T>",
+      "signature": "T SCE::Common::RecordCbor::detail::took<T>(::SCE::Forge::Decoded<T>, const std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::wholeNumber",
+      "signature": "std::optional<std::pair<bool, std::uint64_t>> SCE::Common::RecordCbor::detail::wholeNumber(const std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::writeRecord",
+      "signature": "void SCE::Common::RecordCbor::detail::writeRecord(const std::vector<Field> &, const JsonObject &, const std::string &, ::SCE::Forge::SceSink &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::detail::writeValue",
+      "signature": "void SCE::Common::RecordCbor::detail::writeValue(const Shape &, const JsonValue &, const std::string &, ::SCE::Forge::SceSink &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::encode",
+      "signature": "std::optional<std::vector<std::uint8_t>> SCE::Common::RecordCbor::encode(const std::string &, std::string_view, std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::encodeText",
+      "signature": "std::optional<std::string> SCE::Common::RecordCbor::encodeText(const std::string &, std::string_view, std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::encodeValue",
+      "signature": "std::optional<std::string> SCE::Common::RecordCbor::encodeValue(const ScriptValue &, std::string_view, std::string &)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "function",
+      "name": "SCE::Common::RecordCbor::openCompletion",
+      "signature": "std::string SCE::Common::RecordCbor::openCompletion(const std::string &, std::string_view, std::string_view, std::string_view, std::string_view)"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "struct",
+      "members": [
+        "enum Kind",
+        "field Kind kind",
+        "field std::shared_ptr<Shape> of",
+        "field std::string tag",
+        "field std::uint32_t bits",
+        "field std::uint64_t max",
+        "field std::uint64_t min",
+        "field std::vector<Case> cases",
+        "field std::vector<Field> fields",
+        "field std::vector<Variant> variants"
+      ],
+      "name": "SCE::Common::RecordCbor::detail::Shape"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "struct",
+      "members": [
+        "field bool holdsRecord",
+        "field std::string name",
+        "field std::vector<Field> fields"
+      ],
+      "name": "SCE::Common::RecordCbor::detail::Case"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "struct",
+      "members": [
+        "field bool negative",
+        "field std::string name",
+        "field std::uint64_t argument"
+      ],
+      "name": "SCE::Common::RecordCbor::detail::Variant"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "struct",
+      "members": [
+        "field bool optional",
+        "field std::optional<JsonValue> lacked",
+        "field std::shared_ptr<Shape> shape",
+        "field std::string id"
+      ],
+      "name": "SCE::Common::RecordCbor::detail::Field"
+    },
+    {
+      "header": "common/RecordCbor.h",
+      "kind": "struct",
+      "members": [
+        "field std::string pointer",
+        "field std::string reason",
+        "method std::string () const sentence"
+      ],
+      "name": "SCE::Common::RecordCbor::detail::Refused"
     },
     {
       "header": "common/SceClock.h",
@@ -2597,6 +2781,1113 @@
       "kind": "class",
       "members": [],
       "name": "SCE::TypeRegistry"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::cloneParams",
+      "signature": "SavedParams SCE::Saved::detail::cloneParams(const std::map<std::string, std::vector<std::string>> &)"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::describeHistory<T>",
+      "signature": "std::string SCE::Saved::detail::describeHistory<T>(const Core::HistoryRejection<typename Policy::State> &)"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::dueOn",
+      "signature": "std::int64_t SCE::Saved::detail::dueOn(std::int64_t, std::uint64_t, std::uint64_t)"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::readyAt",
+      "signature": "std::uint64_t SCE::Saved::detail::readyAt(std::uint64_t, std::int64_t, std::int64_t)"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::saturatingAddMs",
+      "signature": "std::int64_t SCE::Saved::detail::saturatingAddMs(std::int64_t, std::uint64_t)"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "function",
+      "name": "SCE::Saved::restoreHistory<T>",
+      "signature": "std::vector<std::pair<typename Policy::History, std::vector<typename Policy::State>>> SCE::Saved::restoreHistory<T>(const SavedState &)"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "function",
+      "name": "SCE::Saved::saveHistory<T>",
+      "signature": "std::vector<SavedHistory> SCE::Saved::saveHistory<T>(const Policy &)"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "struct",
+      "members": [
+        "field SavedAct act",
+        "field std::int64_t due",
+        "field std::optional<Event> event"
+      ],
+      "name": "SCE::Saved::ReadSend<T>"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "struct",
+      "members": [
+        "field std::vector<ReadSend<typename Engine::Event>> pending",
+        "field std::vector<std::string> restarts",
+        "field std::vector<typename Engine::EventWithMetadata> external",
+        "field std::vector<typename Engine::State> configuration",
+        "field typename Engine::State current"
+      ],
+      "name": "SCE::Saved::JudgedSession<T>"
+    },
+    {
+      "header": "saved/SavedEngine.h",
+      "kind": "struct",
+      "members": [
+        "method std::string (const std::vector<std::string> &) quoted",
+        "template FunctionTemplateDecl armPending",
+        "template FunctionTemplateDecl enterSession",
+        "template FunctionTemplateDecl judge",
+        "template FunctionTemplateDecl judgeChildEntry",
+        "template FunctionTemplateDecl judgeSession",
+        "template FunctionTemplateDecl readPendingSend",
+        "template FunctionTemplateDecl rearmHostInvokes",
+        "template FunctionTemplateDecl resolveEvent",
+        "template FunctionTemplateDecl saveHostInvokes",
+        "template FunctionTemplateDecl savePending",
+        "template FunctionTemplateDecl saveSession"
+      ],
+      "name": "SCE::Saved::EngineAccess"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Saved::JsonError"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Saved::JsonObject"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Saved::JsonValue"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Saved::detail::Reader"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::malformed",
+      "signature": "JsonError SCE::Saved::detail::malformed(const std::string &)"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::utf16Units",
+      "signature": "std::u16string SCE::Saved::detail::utf16Units(std::string_view)"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::writeCanonicalInto",
+      "signature": "void SCE::Saved::detail::writeCanonicalInto(const JsonValue &, std::string &)"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::writeInto",
+      "signature": "void SCE::Saved::detail::writeInto(const JsonValue &, std::string &)"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "function",
+      "name": "SCE::Saved::parseJson",
+      "signature": "JsonValue SCE::Saved::parseJson(std::string_view)"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "function",
+      "name": "SCE::Saved::writeCanonical",
+      "signature": "std::string SCE::Saved::writeCanonical(const JsonValue &)"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "function",
+      "name": "SCE::Saved::writeJson",
+      "signature": "std::string SCE::Saved::writeJson(const JsonValue &)"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "struct",
+      "members": [
+        "field std::string text",
+        "method bool (const JsonNumber &) const operator=="
+      ],
+      "name": "SCE::Saved::JsonNumber"
+    },
+    {
+      "header": "saved/SavedJson.h",
+      "kind": "typedef",
+      "name": "SCE::Saved::JsonArray",
+      "type": "std::vector<JsonValue>"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Saved::StateRefusal"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "enum",
+      "name": "SCE::Saved::SavedActKind",
+      "values": [
+        "Parent",
+        "Child",
+        "Raise",
+        "Internal",
+        "Host"
+      ]
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::checkSavedFeatures",
+      "signature": "void SCE::Saved::checkSavedFeatures(const SavedState &, const std::optional<std::vector<std::string>> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::checkSavedShape",
+      "signature": "void SCE::Saved::checkSavedShape(const SavedState &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::applyMigrationStep",
+      "signature": "void SCE::Saved::detail::applyMigrationStep(SavedState &, const MigrationStep &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::checkEnumHolder",
+      "signature": "void SCE::Saved::detail::checkEnumHolder(const SavedState &, const EnumLineage &, const EnumHolder &, int, const std::vector<const AddedVariant *> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::checkSenderOrigin",
+      "signature": "void SCE::Saved::detail::checkSenderOrigin(const StoredOrigin &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::checkWidenedHolder",
+      "signature": "void SCE::Saved::detail::checkWidenedHolder(const SavedState &, const RecordLineage &, const RecordHolder &, int, const std::vector<const WidenedField *> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::checkWidenedRecord",
+      "signature": "void SCE::Saved::detail::checkWidenedRecord(const JsonValue &, const std::string &, const RecordLineage &, int, const std::vector<const WidenedField *> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::countText",
+      "signature": "JsonValue SCE::Saved::detail::countText(std::int64_t)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::eventToJson",
+      "signature": "JsonValue SCE::Saved::detail::eventToJson(const SavedEvent &, bool)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::featureList",
+      "signature": "std::string SCE::Saved::detail::featureList(const std::vector<std::string> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::featuresNotIn",
+      "signature": "std::vector<std::string> SCE::Saved::detail::featuresNotIn(const std::vector<std::string> &, const std::vector<std::string> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::grownRecord",
+      "signature": "JsonValue SCE::Saved::detail::grownRecord(const JsonValue &, const std::string &, const RecordLineage &, int, const std::vector<const AddedField *> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::hostInvokeToJson",
+      "signature": "JsonValue SCE::Saved::detail::hostInvokeToJson(const SavedHostInvoke &, bool)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::isDigits",
+      "signature": "bool SCE::Saved::detail::isDigits(const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::isLowerHexDigest",
+      "signature": "bool SCE::Saved::detail::isLowerHexDigest(const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::memberObject",
+      "signature": "const JsonObject & SCE::Saved::detail::memberObject(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::memberText",
+      "signature": "std::string SCE::Saved::detail::memberText(const JsonObject &, const std::string &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::migrationCarryIds",
+      "signature": "void SCE::Saved::detail::migrationCarryIds(std::vector<std::string> &, const std::vector<Renamed> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::migrationCarryStarts",
+      "signature": "void SCE::Saved::detail::migrationCarryStarts(std::vector<SavedInvokeStart> &, const MigrationStep &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::migrationListed",
+      "signature": "bool SCE::Saved::detail::migrationListed(const std::vector<std::string> &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::migrationRenamed",
+      "signature": "const std::string * SCE::Saved::detail::migrationRenamed(const std::vector<Renamed> &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::optionalCount",
+      "signature": "JsonValue SCE::Saved::detail::optionalCount(const std::optional<std::int64_t> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::optionalMember<T>",
+      "signature": "std::optional<std::int64_t> SCE::Saved::detail::optionalMember<T>(const JsonObject &, const std::string &, const std::string &, Read)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::originToJson",
+      "signature": "JsonValue SCE::Saved::detail::originToJson(const std::optional<Core::EventOrigin> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::paramsToJson",
+      "signature": "JsonValue SCE::Saved::detail::paramsToJson(const SavedParams &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::parseSavedDigits",
+      "signature": "std::optional<std::int64_t> SCE::Saved::detail::parseSavedDigits(const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::readSavedCount",
+      "signature": "std::int64_t SCE::Saved::detail::readSavedCount(const std::string &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::readSavedMoment",
+      "signature": "std::int64_t SCE::Saved::detail::readSavedMoment(const std::string &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::readSavedToken",
+      "signature": "std::int64_t SCE::Saved::detail::readSavedToken(const std::string &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::refuse",
+      "signature": "void SCE::Saved::detail::refuse(const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedActOriginFromJson",
+      "signature": "void SCE::Saved::detail::savedActOriginFromJson(const JsonObject &, const std::string &, int, SavedAct &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedChildFromJson",
+      "signature": "SavedChild SCE::Saved::detail::savedChildFromJson(const JsonValue &, std::size_t, int)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedEventFromJson",
+      "signature": "SavedEvent SCE::Saved::detail::savedEventFromJson(const JsonValue &, const std::string &, int)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedHostInvokeFromJson",
+      "signature": "SavedHostInvoke SCE::Saved::detail::savedHostInvokeFromJson(const JsonValue &, const std::string &, int)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedOriginPairFromJson",
+      "signature": "StoredOrigin SCE::Saved::detail::savedOriginPairFromJson(const JsonObject &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedParamsFromJson",
+      "signature": "SavedParams SCE::Saved::detail::savedParamsFromJson(const JsonObject &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedRevisionFromJson",
+      "signature": "SavedRevision SCE::Saved::detail::savedRevisionFromJson(const std::string &, const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedSendFromJson",
+      "signature": "SavedSend SCE::Saved::detail::savedSendFromJson(const JsonValue &, const std::string &, int)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedSessionFromJson",
+      "signature": "SavedState SCE::Saved::detail::savedSessionFromJson(const JsonObject &, int)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::sendToJson",
+      "signature": "JsonValue SCE::Saved::detail::sendToJson(const SavedSend &, bool)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::senderToJson",
+      "signature": "JsonValue SCE::Saved::detail::senderToJson(const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::setOriginMembers",
+      "signature": "void SCE::Saved::detail::setOriginMembers(JsonObject &, const std::optional<Core::EventOrigin> &, const std::string &, bool, bool)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::stringsToJson",
+      "signature": "JsonValue SCE::Saved::detail::stringsToJson(const std::vector<std::string> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::migratedSavedState",
+      "signature": "std::optional<SavedState> SCE::Saved::migratedSavedState(const SavedState &, const std::vector<MigrationStep> &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::refusalWithin",
+      "signature": "StateRefusal SCE::Saved::refusalWithin(const std::exception &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedActIsOwnSend",
+      "signature": "bool SCE::Saved::savedActIsOwnSend(SavedActKind)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedActName",
+      "signature": "const char * SCE::Saved::savedActName(SavedActKind)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWallClockMs",
+      "signature": "std::int64_t SCE::Saved::savedWallClockMs()"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::upgradeSavedState",
+      "signature": "SavedState SCE::Saved::upgradeSavedState(const SavedState &, const SavedShape &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field JsonObject variables",
+        "field SavedInvokes invokes",
+        "field std::int64_t autoSendSeq",
+        "field std::int64_t hostInvokeToken",
+        "field std::optional<std::vector<std::string>> features",
+        "field std::string current",
+        "field std::string sessionId",
+        "field std::string shape",
+        "field std::vector<SavedEvent> external",
+        "field std::vector<SavedHistory> history",
+        "field std::vector<SavedHostInvoke> hostInvokes",
+        "field std::vector<SavedInvokeStart> hostInvokeStarts",
+        "field std::vector<SavedInvokeStart> invokeStarts",
+        "field std::vector<SavedRevision> revisions",
+        "field std::vector<SavedSend> pending",
+        "field std::vector<std::string> configuration",
+        "method JsonObject () const sessionMembers",
+        "method SavedState (std::string_view) fromJson",
+        "method const JsonValue &(const std::string &) const variable",
+        "method int () const format",
+        "method std::int64_t (const std::string &) const hostInvokeStart",
+        "method std::int64_t (const std::string &) const invokeStart",
+        "method std::optional<std::string> () const boundSessionId",
+        "method std::string () const toJson"
+      ],
+      "name": "SCE::Saved::SavedState"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field SavedAct act",
+        "field std::int64_t due"
+      ],
+      "name": "SCE::Saved::SavedSend"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field SavedActKind kind",
+        "field SavedParams params",
+        "field std::optional<Core::EventOrigin> origin",
+        "field std::string content",
+        "field std::string data",
+        "field std::string event",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field std::string sendId",
+        "field std::string sender",
+        "field std::string target"
+      ],
+      "name": "SCE::Saved::SavedAct"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field SavedParams params",
+        "field std::int64_t start",
+        "field std::optional<std::int64_t> due",
+        "field std::string content",
+        "field std::string data",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field std::string src"
+      ],
+      "name": "SCE::Saved::SavedHostInvoke"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field bool list",
+        "field std::optional<std::string> field",
+        "field std::string variable"
+      ],
+      "name": "SCE::Saved::EnumHolder"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field bool list",
+        "field std::string variable"
+      ],
+      "name": "SCE::Saved::RecordHolder"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field bool resumed",
+        "field std::vector<SavedChild> children",
+        "field std::vector<std::string> ids",
+        "method std::vector<std::string> () const invokeIds"
+      ],
+      "name": "SCE::Saved::SavedInvokes"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field int optionalSince",
+        "field int since",
+        "field std::string id"
+      ],
+      "name": "SCE::Saved::WidenedField"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field int revision",
+        "field std::string event",
+        "field std::vector<AddedField> added",
+        "field std::vector<RecordHolder> holders",
+        "field std::vector<WidenedField> widened",
+        "field std::vector<std::string> revisions"
+      ],
+      "name": "SCE::Saved::RecordLineage"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field int revision",
+        "field std::string fields",
+        "field std::string key"
+      ],
+      "name": "SCE::Saved::SavedRevision"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field int revision",
+        "field std::string key",
+        "field std::vector<AddedVariant> added",
+        "field std::vector<EnumHolder> holders",
+        "field std::vector<std::string> revisions"
+      ],
+      "name": "SCE::Saved::EnumLineage"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field int since",
+        "field std::string defaultText",
+        "field std::string id"
+      ],
+      "name": "SCE::Saved::AddedField"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field int since",
+        "field std::string name"
+      ],
+      "name": "SCE::Saved::AddedVariant"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::function<JsonValue (const JsonValue &, const std::string &)> convert",
+        "field std::string data"
+      ],
+      "name": "SCE::Saved::ConvertedData"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::int64_t count",
+        "field std::string id",
+        "method bool (const SavedInvokeStart &) const operator=="
+      ],
+      "name": "SCE::Saved::SavedInvokeStart"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::int64_t start",
+        "field std::shared_ptr<SavedState> session",
+        "field std::string document",
+        "field std::string id",
+        "field std::string invokeId"
+      ],
+      "name": "SCE::Saved::SavedChild"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<Core::EventOrigin> origin",
+        "field std::optional<std::int64_t> hostInvokeToken",
+        "field std::string data",
+        "field std::string invokeId",
+        "field std::string name",
+        "field std::string sendId",
+        "field std::string sender",
+        "field std::string type"
+      ],
+      "name": "SCE::Saved::SavedEvent"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<std::vector<std::string>> features",
+        "field std::string first",
+        "field std::string format2First",
+        "field std::string format2Revised",
+        "field std::string revised",
+        "field std::vector<EnumLineage> enums",
+        "field std::vector<MigrationStep> migrations",
+        "field std::vector<RecordLineage> records"
+      ],
+      "name": "SCE::Saved::SavedShape"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::string from",
+        "field std::string fromRevised",
+        "field std::string to",
+        "field std::string toRevised",
+        "field std::vector<AddedData> addedData",
+        "field std::vector<ConvertedData> converted",
+        "field std::vector<Renamed> data",
+        "field std::vector<Renamed> events",
+        "field std::vector<Renamed> histories",
+        "field std::vector<Renamed> invokes",
+        "field std::vector<Renamed> states",
+        "field std::vector<std::string> droppedData",
+        "field std::vector<std::string> droppedHistories",
+        "field std::vector<std::string> droppedInvokes",
+        "field std::vector<std::string> widenedToText"
+      ],
+      "name": "SCE::Saved::MigrationStep"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::string from",
+        "field std::string to"
+      ],
+      "name": "SCE::Saved::Renamed"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::string id",
+        "field std::string valueText"
+      ],
+      "name": "SCE::Saved::AddedData"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field std::string id",
+        "field std::vector<std::string> states"
+      ],
+      "name": "SCE::Saved::SavedHistory"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "typedef",
+      "name": "SCE::Saved::SavedParams",
+      "type": "std::map<std::string, std::vector<std::string>>"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::isSignedDigits",
+      "signature": "bool SCE::Saved::detail::isSignedDigits(const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::notA",
+      "signature": "void SCE::Saved::detail::notA(const JsonValue &, const std::string &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::parseInt64",
+      "signature": "std::optional<std::int64_t> SCE::Saved::detail::parseInt64(const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::parseUint64",
+      "signature": "std::optional<std::uint64_t> SCE::Saved::detail::parseUint64(const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedNumber",
+      "signature": "const std::string & SCE::Saved::detail::savedNumber(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedReal",
+      "signature": "double SCE::Saved::detail::savedReal(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedWhole",
+      "signature": "std::int64_t SCE::Saved::detail::savedWhole(const JsonValue &, const std::string &, std::int64_t, std::int64_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::savedWideText",
+      "signature": "const std::string & SCE::Saved::detail::savedWideText(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedBoundedBytes",
+      "signature": " SCE::Saved::savedBoundedBytes(lambda at /tmp/tmp.GHvmfmeyLs.embed/include/saved/SavedValues.h:400:9) (std::size_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedBoundedString",
+      "signature": " SCE::Saved::savedBoundedString(lambda at /tmp/tmp.GHvmfmeyLs.embed/include/saved/SavedValues.h:391:12) (std::size_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedField",
+      "signature": "const JsonValue & SCE::Saved::savedField(const JsonValue &, const std::string &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedOwnedBytes<T>",
+      "signature": "auto SCE::Saved::savedOwnedBytes<T>()"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedOwnedText<T>",
+      "signature": "auto SCE::Saved::savedOwnedText<T>()"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadBool",
+      "signature": "bool SCE::Saved::savedReadBool(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadBoundedString",
+      "signature": "std::string SCE::Saved::savedReadBoundedString(const JsonValue &, const std::string &, std::size_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadBytes",
+      "signature": "std::vector<std::uint8_t> SCE::Saved::savedReadBytes(const JsonValue &, const std::string &, std::size_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadFloat32",
+      "signature": "float SCE::Saved::savedReadFloat32(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadFloat64",
+      "signature": "double SCE::Saved::savedReadFloat64(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadInt16",
+      "signature": "std::int16_t SCE::Saved::savedReadInt16(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadInt32",
+      "signature": "std::int32_t SCE::Saved::savedReadInt32(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadInt64",
+      "signature": "std::int64_t SCE::Saved::savedReadInt64(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadInt8",
+      "signature": "std::int8_t SCE::Saved::savedReadInt8(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadList<T>",
+      "signature": "auto SCE::Saved::savedReadList<T>(const JsonValue &, const std::string &, std::size_t, Element)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadOptional<T>",
+      "signature": "auto SCE::Saved::savedReadOptional<T>(const JsonValue &, const std::string &, Present) -> std::optional<decltype(present(value, what))>"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadOwnedBytes<T>",
+      "signature": "::SCE::Forge::OwnedBytes<Max> SCE::Saved::savedReadOwnedBytes<T>(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadOwnedList<T>",
+      "signature": "auto SCE::Saved::savedReadOwnedList<T>(const JsonValue &, const std::string &, Element)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadOwnedListWithin<T>",
+      "signature": "auto SCE::Saved::savedReadOwnedListWithin<T>(const JsonValue &, const std::string &, std::size_t, Element)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadOwnedText<T>",
+      "signature": "::SCE::Forge::OwnedText<Max> SCE::Saved::savedReadOwnedText<T>(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadString",
+      "signature": "std::string SCE::Saved::savedReadString(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadUint16",
+      "signature": "std::uint16_t SCE::Saved::savedReadUint16(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadUint32",
+      "signature": "std::uint32_t SCE::Saved::savedReadUint32(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadUint64",
+      "signature": "std::uint64_t SCE::Saved::savedReadUint64(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadUint8",
+      "signature": "std::uint8_t SCE::Saved::savedReadUint8(const JsonValue &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadUnionTag",
+      "signature": "std::string SCE::Saved::savedReadUnionTag(const JsonValue &, const std::string &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedReadVariant<T>",
+      "signature": "T SCE::Saved::savedReadVariant<T>(const JsonValue &, const std::string &, const std::string &, const std::map<std::string, T> &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteBool",
+      "signature": "JsonValue SCE::Saved::savedWriteBool(bool)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteBytes",
+      "signature": "JsonValue SCE::Saved::savedWriteBytes(const std::vector<std::uint8_t> &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteFloat32",
+      "signature": "JsonValue SCE::Saved::savedWriteFloat32(float)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteFloat64",
+      "signature": "JsonValue SCE::Saved::savedWriteFloat64(double)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteInt16",
+      "signature": "JsonValue SCE::Saved::savedWriteInt16(std::int16_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteInt32",
+      "signature": "JsonValue SCE::Saved::savedWriteInt32(std::int32_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteInt64",
+      "signature": "JsonValue SCE::Saved::savedWriteInt64(std::int64_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteInt8",
+      "signature": "JsonValue SCE::Saved::savedWriteInt8(std::int8_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteList<T>",
+      "signature": "JsonValue SCE::Saved::savedWriteList<T>(const ::SCE::Forge::Bounded<std::vector<T>, Max, Min> &, Write)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteList<T>",
+      "signature": "JsonValue SCE::Saved::savedWriteList<T>(const std::vector<T> &, Write)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteOptional<T>",
+      "signature": "JsonValue SCE::Saved::savedWriteOptional<T>(const std::optional<T> &, Write)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteString",
+      "signature": "JsonValue SCE::Saved::savedWriteString(const std::string &)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteUint16",
+      "signature": "JsonValue SCE::Saved::savedWriteUint16(std::uint16_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteUint32",
+      "signature": "JsonValue SCE::Saved::savedWriteUint32(std::uint32_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteUint64",
+      "signature": "JsonValue SCE::Saved::savedWriteUint64(std::uint64_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteUint8",
+      "signature": "JsonValue SCE::Saved::savedWriteUint8(std::uint8_t)"
+    },
+    {
+      "header": "saved/SavedValues.h",
+      "kind": "function",
+      "name": "SCE::Saved::savedWriteUnion",
+      "signature": "JsonValue SCE::Saved::savedWriteUnion(const std::string &, const std::string &, const std::optional<JsonValue> &)"
+    },
+    {
+      "header": "saved/SessionId.h",
+      "kind": "function",
+      "name": "SCE::Saved::SessionId::detail::isNameChar",
+      "signature": "bool SCE::Saved::SessionId::detail::isNameChar(std::uint32_t)"
+    },
+    {
+      "header": "saved/SessionId.h",
+      "kind": "function",
+      "name": "SCE::Saved::SessionId::detail::isNameStartChar",
+      "signature": "bool SCE::Saved::SessionId::detail::isNameStartChar(std::uint32_t)"
+    },
+    {
+      "header": "saved/SessionId.h",
+      "kind": "function",
+      "name": "SCE::Saved::SessionId::detail::nextCodePoint",
+      "signature": "std::uint32_t SCE::Saved::SessionId::detail::nextCodePoint(std::string_view, std::size_t &)"
+    },
+    {
+      "header": "saved/SessionId.h",
+      "kind": "function",
+      "name": "SCE::Saved::SessionId::draw",
+      "signature": "std::string SCE::Saved::SessionId::draw()"
+    },
+    {
+      "header": "saved/SessionId.h",
+      "kind": "function",
+      "name": "SCE::Saved::SessionId::isNmtoken",
+      "signature": "bool SCE::Saved::SessionId::isNmtoken(std::string_view)"
+    },
+    {
+      "header": "saved/SessionId.h",
+      "kind": "function",
+      "name": "SCE::Saved::SessionId::refusalOf",
+      "signature": "std::optional<std::string> SCE::Saved::SessionId::refusalOf(std::string_view)"
     },
     {
       "header": "sce/forge/ProcedureServiceTypes.h",

@@ -65,4 +65,8 @@ set(SCE_BASE_INCLUDE_DIRS
     # tools/codegen/trees: common/ErrorData.h includes the reasons an engine
     # raises `error.*` for.
     generated
+    # The saved-state JSON value model (docs/adr/0045) a generated machine
+    # writes a record's and an enum's saved form with, and common/RecordCbor.h
+    # reads a record signed or sealed by name through (docs/adr/0109, D9).
+    saved
 )
