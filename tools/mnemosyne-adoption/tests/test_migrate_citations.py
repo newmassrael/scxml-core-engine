@@ -924,6 +924,35 @@ class PathsFromToml(unittest.TestCase):
             ]
             self.assertEqual(got, ["sce/include/core", "sce-build/src"])
 
+    def test_a_bracket_in_a_comment_does_not_end_the_array(self):
+        # A comment naming `lib.rs`'s `#[path]` ended the array at its `]`
+        # while comments were stripped after the array was found, and every
+        # directory enrolled below it went unread by the form and listing gates.
+        with tempfile.TemporaryDirectory() as d:
+            toml = Path(d) / "mnemosyne.toml"
+            toml.write_text(
+                "[plugins.set_equality_validator]\n"
+                "paths = [\n"
+                '    "backends/rust/runtime/src",\n'
+                "    # compiled into the crate by `lib.rs`'s `#[path]`\n"
+                '    "backends/rust/runtime/generated",  # a [bracket] after it\n'
+                '    "backends/go/runtime",\n'
+                "]\n",
+                encoding="utf-8",
+            )
+            got = [
+                os.path.relpath(p, mc.REPO_ROOT)
+                for p in mc.paths_from_toml(str(toml))
+            ]
+            self.assertEqual(
+                got,
+                [
+                    "backends/rust/runtime/src",
+                    "backends/rust/runtime/generated",
+                    "backends/go/runtime",
+                ],
+            )
+
 
 class OnlyEnrolled(unittest.TestCase):
     """The commit stage hands the form gate the staged set, and the gate CI runs
