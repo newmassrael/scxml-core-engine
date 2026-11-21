@@ -54,7 +54,7 @@ fun value({% for p in parameters %}{{ p.name }}: {{ p.ty }}{% if not loop.last %
  * The name of the record [Value] is, as the types module of the suite's TTCN-3 export names it
  * (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
  */
-const val TYPE: String = "{{ log_type | escape_kotlin }}"
+{{ kotlin_string_val("TYPE", log_type) }}
 
 /**
  * [value] in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
