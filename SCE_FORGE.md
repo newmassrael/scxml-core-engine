@@ -1400,10 +1400,10 @@ optional one as `Option<T>`, `string` and `bytes` as views of the input),
 `decode(&mut SceCursor)` — which moves the cursor only when the whole map
 decoded — `encode(&mut impl SceSink)` and `encode_to_vec()`, every CBOR item
 read and written by the runtime's `sce_forge_runtime::cbor`. A Rust map with a
-string or a byte string borrows the buffer it was read from (`Name<'a>`), and
-when every one of them states its bound (`sce:max-size`, or the `sce:length` of an
-exact byte string) it also has the owned mirror `{Name}Owned<S>` of a positional
-codec: each such entry is held in what the storage profile answers for its tag,
+string or a byte string borrows the buffer it was read from (`Name<'a>`), and,
+since every one of them states its bound (a bracket, `sce:max-size`, or the
+`sce:length` of an exact byte string), it also has the owned mirror
+`{Name}Owned<S>` of a positional codec: each such entry is held in what the storage profile answers for its tag,
 which on `Inline` is its bound, `try_into_owned_in::<S>()` copies them (a profile
 that holds less refuses with `CodecError::CapacityExceeded`), `as_borrowed`, `transcode_in`, `encode` and `encode_to_vec` are the positional
 mirror's, and the mirror implements the codec's source interface so that it is
@@ -1412,10 +1412,10 @@ written as the view is. With `generate --owned-origin` the mirror also has
 a string is built by what the profile answers for its tag,
 `OriginStr<Tag>::str_from`, and a byte string by `OriginBytes<Tag>::bytes_from`,
 each at its bound, through the `{Name}Origin` trait declared beside it, and the option appends it after
-the rest of the module without changing a byte of the output without it. A map
-with a string or byte string that states no bound has no mirror, since a
-container needs a capacity, and a map of scalars borrows
-nothing; a queue, a bounded collection or a broadcast log over an element stores
+the rest of the module without changing a byte of the output without it. A
+string or byte string that states no bound is refused at its type (docs/adr/0101,
+section 1.3), so no map lacks a mirror for that reason, and a map of scalars
+borrows nothing; a queue, a bounded collection or a broadcast log over an element stores
 the mirror, at the inline profile, where it exists. The refusals are
 typed: `CborMalformed`, `CborWrongType`, `CborDuplicateKey`,
 `CborRequiredKeyMissing`, `CborWrongLength`, `CborTooDeep`, `CborOutOfRange`,
