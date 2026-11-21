@@ -154,8 +154,12 @@ fn a_list_of_anything_but_a_record_is_read_and_refused_by_name_where_it_is_gener
                 let held = match lang {
                     Language::Rust => "pub n: ::sce_forge_runtime::codec::BoundedList<u8, 4>,",
                     Language::Cpp => "::SCE::Forge::OwnedList<uint8_t, 4> n_{};",
-                    other => {
-                        panic!("{other:?} prints a list of integers this test names no type of")
+                    Language::Kotlin
+                    | Language::Go
+                    | Language::Python
+                    | Language::C11
+                    | Language::Swift => {
+                        panic!("{lang:?} prints a list of integers this test names no type of")
                     }
                 };
                 assert!(code.contains(held), "{lang:?}:\n{code}");
@@ -695,7 +699,13 @@ fn a_record_with_a_field_of_another_type_is_refused_by_name_where_it_is_not_lowe
                         "if (auto _e = cbor::write_int(w, static_cast<std::int64_t>(record.delta)); \
                          _e) return _e;"
                     }
-                    other => panic!("{other:?} prints a signed field this test names no write of"),
+                    Language::Kotlin
+                    | Language::Go
+                    | Language::Python
+                    | Language::C11
+                    | Language::Swift => {
+                        panic!("{lang:?} prints a signed field this test names no write of")
+                    }
                 };
                 assert!(code.contains(written), "{lang:?}:\n{code}");
             }
