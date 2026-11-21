@@ -3537,11 +3537,23 @@ generated codec class defines), `classmethod`, `field` and `property` (what
 the class bodies of the value and of the `Protocol` its source satisfies
 evaluate while they are built), any `__x__` name, and for a
 flag-input `cls`, `cursor`, `self`, `w`, `tag`, `parent_flags` or a name
-beginning `f_`. The lists are not written by hand:
+beginning `f_`. An entry of a CBOR map or of a content-line component (a
+`<data>` that is not the input frame, a line's parameter too) is an
+attribute of the value's dataclass, or of a line record, and a member of the
+`Protocol` its source satisfies, so it is refused the same names a codec
+field is. What a class body can name where it is called instead it names
+there: a list's default is made by `field(default_factory=lambda: [])`, an
+enum entry's default by a lambda as well, so a field spelled as the module
+alias the enum is imported under is not read in its place, and a CBOR map
+reads a record by a function of the module rather than a `@staticmethod`,
+so `list` and `staticmethod` are names an author may use. The lists are not
+written by hand:
 `a_python_codec_keeps_an_authors_names_apart_from_its_own` derives each
-from the committed Python output and fails when a template change makes one
-stale, and runs every Python builtin and every name that output uses as a
-field of each shape that binds a local.
+from the committed Python output and from the Python it generates of the
+CBOR and content-line documents it names, fails when a template change makes
+one stale, and runs every Python builtin and every name that output uses as a
+field of each shape that binds a local, an entry of a map and a property of a
+component.
 
 Go was measured, not assumed. It writes a codec field and its decode local
 Pascal and keeps its own locals lower case, so the Python defect was not
