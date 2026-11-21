@@ -1338,7 +1338,8 @@ fn each_rule_names_the_row_and_column_of_its_attribute() {
     );
 }
 
-/// The library facade places each refusal as the CLI does.
+/// The library facade places each refusal as the CLI does: on the attribute's
+/// row, where its `actual` begins ([`expected_col`]).
 #[test]
 fn the_library_route_places_each_refusal_as_the_cli_does() {
     let dir = fixture();
@@ -1353,7 +1354,7 @@ fn the_library_route_places_each_refusal_as_the_cli_does() {
             Ok(_) => failures.push(format!("{}: accepted", case.file)),
             Err(err) => {
                 let at = (err.location.line, err.location.col);
-                let want = (Some(case.line as u32), Some(case.col as u32));
+                let want = (Some(case.line as u32), Some(expected_col(case) as u32));
                 if at != want {
                     failures.push(format!("{}: at {at:?}, want {want:?}: {err}", case.file));
                 }
