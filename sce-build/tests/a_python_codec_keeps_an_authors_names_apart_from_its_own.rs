@@ -22,11 +22,12 @@
 //! each shape that binds a local (a fixed field, a VLE, both roles of a
 //! length-ref pair, a string, a flags carrier a later field is gated on, a
 //! tail, a repeat and its count, a TLV chain, an embed), and to an entry of a
-//! CBOR map and a property of a content-line component, each an attribute of a
-//! class whose body evaluates names of its own. The generated module is run: a
-//! frame is decoded and encoded back to the same bytes, the field is read back,
-//! and a value made by default is asked what it holds under the name, which is
-//! never a method of its class.
+//! CBOR map, a property of a content-line component and a parameter of the
+//! lines of a repeated one, each an attribute of a class whose body evaluates
+//! names of its own. The generated module is run: a frame is decoded and
+//! encoded back to the same bytes, the field is read back, and a value made by
+//! default is asked what it holds under the name, which is never a method of
+//! its class.
 //!
 //! The names are DERIVED, not listed: a hand-written list of "names to keep
 //! away from" is exactly what drifts when a template starts to use one more
@@ -338,6 +339,25 @@ const SHAPES: &[Shape] = &[
             b"BEGIN:VEVENT\r\nX-A:1\r\nEND:VEVENT\r\n",
         ],
         check: "{v} == 1",
+    },
+    // A parameter of a repeated property, a member of the record each line is
+    // read into beside the line's own value: the record's class body holds
+    // both, and both are read back off the first line, and off a record made
+    // by default.
+    Shape {
+        id: "line_record_param",
+        root: CONTENT_LINE,
+        imports: &[],
+        encode_may_fail: true,
+        datamodel: r#"
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="z" sce:type="string" sce:property="X-Z" sce:repeated="true"
+          sce:max-count="2" sce:max-size="8"/>
+    <data id="NAME" sce:type="optional&lt;string&gt;" sce:property="X-Z" sce:param="P"
+          sce:max-size="8"/>"#,
+        frames: &[b"BEGIN:VEVENT\r\nX-Z;P=ab:cd\r\nEND:VEVENT\r\n"],
+        check: "getattr({value}.z[0], {name}) == 'ab' and {value}.z[0].value == 'cd' \
+                and not callable(getattr(type({value}.z[0])(), {name}))",
     },
 ];
 

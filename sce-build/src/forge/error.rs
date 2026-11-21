@@ -1149,7 +1149,7 @@ pub enum ValidationError {
     /// and its reader is escaped instead (`reader_names`).
     #[error(
         "{}",
-        reserved_code_identifier_message(element, attr, value, spelled, language)
+        reserved_code_identifier_message(element, attr, value, spelled, language, *reason)
     )]
     ReservedCodeIdentifier {
         element: String,
@@ -1159,6 +1159,14 @@ pub enum ValidationError {
         /// `value` when the backend emits the name as written.
         spelled: String,
         language: &'static str,
+        /// Why the generated code cannot declare `spelled` when it is neither a
+        /// word `language` reserves nor a name a generated Python class keeps
+        /// for itself, whose reasons the message finds by itself: the clause
+        /// the message gives after the name. A parameter of a repeated
+        /// content-line property spelled as the member its line record holds
+        /// the line's value by is one
+        /// (`scxml_identifier::line_record_member`).
+        reason: Option<&'static str>,
     },
 
     /// Two names a forge document declares that a backend spells as one, so
@@ -5650,8 +5658,20 @@ fn reserved_code_identifier_message(
     value: &str,
     spelled: &str,
     language: &str,
+    reason: Option<&str>,
 ) -> String {
     use crate::reader_names::{python_name_clash, python_name_clash_reason, PythonDeclaration};
+    if let Some(reason) = reason {
+        let word = if spelled == value {
+            format!("'{value}' is {reason}")
+        } else {
+            format!("{language} spells '{value}' as '{spelled}', which is {reason}")
+        };
+        return format!(
+            "<{element} {attr}=\"{value}\">: {word}, so the generated {language} code \
+             cannot declare it — rename it"
+        );
+    }
     if language == "python" {
         // The element says which kind of name it declared: a flag-input is a
         // parameter, and any other is a class attribute or, in a procedure, an

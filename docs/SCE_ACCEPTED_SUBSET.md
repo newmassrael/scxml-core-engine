@@ -3522,6 +3522,23 @@ mismatch at the rest. A statechart's
 reader is escaped or withheld instead (`unreadable_variables`,
 `SCE_ERROR_CONTRACT.md` §10.1).
 
+A parameter of a repeated content-line property is refused the same way,
+for a reason of its own. Each line of such a property is read into a record
+that holds the line's parameters beside its value, and every backend names
+that value `value`, or `values` where `sce:separator` makes it a list; C11
+also holds `value_len` beside a text, and `values_len` and `values_count`
+beside a list. A parameter spelled as one of them, in the spelling a backend
+gives a record's member (snake_case in Rust, Python and C11, Pascal in Go, as
+written in C++, Kotlin and Swift), would declare that member twice: a
+duplicate field in Rust and C11, and in Python one dataclass field whose
+second annotation replaced the first, so the parameter was read in the
+value's place. It is refused as `validation/reserved-code-identifier`,
+naming the first such backend and its spelling, with the reason in the
+message. The record's member is not renamed instead: an author may write any
+code identifier, so no name is one an author cannot reach. A parameter of a
+property that occurs once is a member of the codec's value, beside the
+property's own entry, and is not held to this.
+
 Python has a second kind of refusal, for a name that is no keyword and
 still cannot be the author's. A generated Python decoder is one function
 that reads from `cursor`, calls `bytes(…)` and `range(…)`, builds its
