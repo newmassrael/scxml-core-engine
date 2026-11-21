@@ -26,15 +26,11 @@
 # Each machine's figures are `<MACHINE>_TEXT`, `<MACHINE>_RODATA`,
 # `<MACHINE>_DATA` and `<MACHINE>_BSS`, `<MACHINE>` its name in upper case.
 #
-# UNMEASURED. This entry holds no figure yet: the gate was written where no ARM
-# compiler could run, and a guessed budget is the thing this file exists to
-# refuse. The gate REFUSES TO PASS while any figure below is empty, and prints
-# every figure it measured as the `NAME=value` lines to put here. The figures
-# will be measured with Arm GNU Toolchain 13.2.rel1, the release
-# scripts/install_arm_gnu_toolchain.sh pins and the gate runs (bx.toml's
-# `[platform.linux.tools.arm-none-eabi-gcc]` on a build machine, the same script
-# in c11-mcu.yml); the first run on such a machine measures them, and that
-# commit sets TOLERANCE_BYTES too and says why the tolerance is what it is.
+# MEASURED 2026-11-21, by the gate's first run on a build machine (hkl001), with
+# the compiler MEASURED_WITH names and the flags of D3, at 95ca0544d03, the
+# parent of the commit that pins them. Every machine of the set linked with no C library and ran its scenario
+# under QEMU's `mps2-an386`; target/c11-mcu/report.md of that run holds the
+# linked images' sections and the libgcc members beside these.
 
 # The toolchain the figures are measured with, as `arm-none-eabi-gcc --version`
 # prints its first line: Arm's build of the release the install script pins,
@@ -45,34 +41,40 @@
 MEASURED_WITH='arm-none-eabi-gcc (Arm GNU Toolchain 13.2.rel1 (Build arm-13.7)) 13.2.1 20231009'
 
 # Drift allowed either way before the gate speaks, in bytes, for each figure.
-TOLERANCE_BYTES=''
+# The figures are one pinned compiler's and are reproduced byte for byte, so the
+# band is not for noise between runs. It is there so that a change to a runtime
+# header all six share, which moves a figure by a few instructions, does not
+# re-pin every machine, while a new function or one more copy of a cold path does
+# speak: 64 bytes is 16 to 32 Thumb-2 instructions, under half the 170 bytes of
+# one instantiation the Rust lane's budget is tuned to catch.
+TOLERANCE_BYTES=64
 
-STATIC_COUNTER_TEXT=''
-STATIC_COUNTER_RODATA=''
-STATIC_COUNTER_DATA=''
-STATIC_COUNTER_BSS=''
+STATIC_COUNTER_TEXT=4976
+STATIC_COUNTER_RODATA=721
+STATIC_COUNTER_DATA=0
+STATIC_COUNTER_BSS=4
 
-PLAIN_FOOTPRINT_PROBE_TEXT=''
-PLAIN_FOOTPRINT_PROBE_RODATA=''
-PLAIN_FOOTPRINT_PROBE_DATA=''
-PLAIN_FOOTPRINT_PROBE_BSS=''
+PLAIN_FOOTPRINT_PROBE_TEXT=6456
+PLAIN_FOOTPRINT_PROBE_RODATA=1258
+PLAIN_FOOTPRINT_PROBE_DATA=0
+PLAIN_FOOTPRINT_PROBE_BSS=5
 
-STATIC_MAP_TEXT=''
-STATIC_MAP_RODATA=''
-STATIC_MAP_DATA=''
-STATIC_MAP_BSS=''
+STATIC_MAP_TEXT=10052
+STATIC_MAP_RODATA=1729
+STATIC_MAP_DATA=0
+STATIC_MAP_BSS=4
 
-STATIC_MAP_TAKE_TEXT=''
-STATIC_MAP_TAKE_RODATA=''
-STATIC_MAP_TAKE_DATA=''
-STATIC_MAP_TAKE_BSS=''
+STATIC_MAP_TAKE_TEXT=9730
+STATIC_MAP_TAKE_RODATA=1565
+STATIC_MAP_TAKE_DATA=0
+STATIC_MAP_TAKE_BSS=4
 
-STATIC_STATE_ALGORITHM_TEXT=''
-STATIC_STATE_ALGORITHM_RODATA=''
-STATIC_STATE_ALGORITHM_DATA=''
-STATIC_STATE_ALGORITHM_BSS=''
+STATIC_STATE_ALGORITHM_TEXT=8266
+STATIC_STATE_ALGORITHM_RODATA=1823
+STATIC_STATE_ALGORITHM_DATA=0
+STATIC_STATE_ALGORITHM_BSS=4
 
-CODEC_CBOR_MAP_TEXT=''
-CODEC_CBOR_MAP_RODATA=''
-CODEC_CBOR_MAP_DATA=''
-CODEC_CBOR_MAP_BSS=''
+CODEC_CBOR_MAP_TEXT=2334
+CODEC_CBOR_MAP_RODATA=144
+CODEC_CBOR_MAP_DATA=0
+CODEC_CBOR_MAP_BSS=1113
