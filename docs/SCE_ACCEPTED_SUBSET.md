@@ -3533,8 +3533,9 @@ its accessor, a flag-input a parameter of `decode` and `encode`. Those are
 refused, as `validation/reserved-code-identifier` with the reason in the
 message, when the generated class or call already uses the name for
 something else: `decode`, `encode` and `encode_to_bytes` (methods every
-generated codec class defines), `classmethod`, `field` and `list` (what the
-class body evaluates while it is built), any `__x__` name, and for a
+generated codec class defines), `classmethod`, `field` and `property` (what
+the class bodies of the value and of the `Protocol` its source satisfies
+evaluate while they are built), any `__x__` name, and for a
 flag-input `cls`, `cursor`, `self`, `w`, `tag`, `parent_flags` or a name
 beginning `f_`. The lists are not written by hand:
 `a_python_codec_keeps_an_authors_names_apart_from_its_own` derives each
