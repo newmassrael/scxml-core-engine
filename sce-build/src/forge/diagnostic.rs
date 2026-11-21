@@ -3408,7 +3408,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-mtu-below-driver-floor")]
     MeshDeployLinkMtuBelowDriverFloor,
 
-    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4404
+    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4420
     /// (`deploy/link-driver-class-mismatch`). The forge
     /// `<sce:link-class>` value on the link doc does not match the
     /// protocol class implied by the deploy.yaml `driver:` allowlist
@@ -3778,7 +3778,7 @@ pub enum DiagnosticCode {
     ForgeGeneratedOutputChanged,
 
     // ── Traceability §synth-5-O IR provenance pre-emit guard
-    //    (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290 verbatim:
+    //    (SCE Protocol-Synthesis RFC §synth-5-O lines 3286-3291 verbatim:
     //    "XInclude / sce:template composition MUST track per-element
     //    (file_id, line, column) and attach it to every IR node.
     //    Codegen failure ... surfaced via
@@ -3816,7 +3816,7 @@ pub enum DiagnosticCode {
     TraceabilitySymbolNameExceedsCIdentifierLimit,
 
     // ── Traceability §synth-5-O — sourcemap `source_hash` drift
-    //    against the §synth-6.2.6 header. Spec lines 3321-3324 require
+    //    against the §synth-6.2.6 header. Spec lines 3322-3325 require
     //    byte-equality between the sourcemap JSON's `source_hash`
     //    field and the per-file `// source-hash:` header value;
     //    drift indicates the sourcemap was emitted from a stale
@@ -4663,11 +4663,11 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ForgeSourceHashWalkUnbounded,
         ForgeGeneratedOutputChanged,
         // Traceability §synth-5-O — IR provenance pre-emit guard
-        // (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290).
+        // (SCE Protocol-Synthesis RFC §synth-5-O lines 3290-3291).
         TraceabilityScxmlLineRangeMissing,
         // Traceability §synth-5-O — symbol mangling + sourcemap
         // contract (SCE Protocol-Synthesis RFC §synth-5-O lines 3055-3057, 3219-3243,
-        // 3321-3324, OQ-W16 a/b locks).
+        // 3322-3325, OQ-W16 a/b locks).
         TraceabilityStateIdCollision,
         TraceabilitySymbolNameExceedsCIdentifierLimit,
         TraceabilitySourcemapSourceHashMismatch,
@@ -5543,7 +5543,7 @@ impl DiagnosticCode {
             ForgeGeneratedOutputChanged => Some("SCE Protocol-Synthesis RFC §6.2.6"),
 
             // ── §synth-5-O traceability IR provenance pre-emit
-            //    guard. Spec lines 3289-3290 verbatim: "Codegen failure
+            //    guard. Spec lines 3288-3291 verbatim: "Codegen failure
             //    ... surfaced via `traceability/scxml-line-range-
             //    missing` (codegen-internal)". Anchors the diagnostic
             //    against the per-IR-node `(file_id, line, column)`
@@ -5555,7 +5555,7 @@ impl DiagnosticCode {
             //    All 4 anchor at SCE Protocol-Synthesis RFC §synth-5-O (the same
             //    section heading): spec lines 3055-3057
             //    (mangling pattern), 3219-3243 (sourcemap JSON shape),
-            //    3321-3324 (source_hash byte-equality), OQ-W16 a/b
+            //    3322-3325 (source_hash byte-equality), OQ-W16 a/b
             //    (escape encoding + `#[doc]` preservation).
             TraceabilityStateIdCollision
             | TraceabilitySymbolNameExceedsCIdentifierLimit
@@ -19882,7 +19882,7 @@ mod tests {
                     },
                 ))
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 4404 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 4420 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
             ),
             (
                 "deploy/link-expected-p99-exceeds-mtu",

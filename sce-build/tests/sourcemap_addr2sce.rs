@@ -4,8 +4,8 @@
 // SCE Protocol-Synthesis RFC §synth-5-O — sourcemap + symbol mangling +
 // addr2sce integration fixture.
 //
-// The contract (spec lines 3055-3057, 3219-3243, 3253-3278,
-// 3321-3324):
+// The contract (spec lines 3055-3057, 3219-3243, 3254-3279,
+// 3322-3325):
 //
 //   D18(i)   Sourcemap JSON shape — version + source_hash + symbols
 //            map.
