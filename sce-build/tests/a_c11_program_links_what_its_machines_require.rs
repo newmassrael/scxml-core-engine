@@ -331,10 +331,10 @@ fn a_runtime_library_named_by_hand_is_refused() {
     assert!(violations("# target_link_libraries(x PRIVATE lua54)\n").is_empty());
 }
 
-/// The runner program of a generated suite makes its log directory through
-/// `sce_directory_make`, which no machine states: the program requires it,
-/// and the runtime knows that requirement and registers the tier that
-/// implements it.
+/// The runner program of a generated suite, and each test program that makes
+/// a suite's log directory, makes it through `sce_directory_make`, which no
+/// machine states: the program requires it, and the runtime knows that
+/// requirement and registers the tier that implements it.
 #[test]
 fn what_a_program_requires_of_the_runtime_is_a_requirement_it_knows() {
     let tests = c11_tests();
@@ -356,6 +356,7 @@ fn what_a_program_requires_of_the_runtime_is_a_requirement_it_knows() {
         [
             "sce_c_runtime_suite_runner",
             "sce_c_integration_a_runner_program_writes_the_log_of_each_trace",
+            "sce_c_integration_a_corpus_suite_replays_to_its_expected_logs",
         ],
         "the programs that make a suite's log directory no longer state `directory`"
     );

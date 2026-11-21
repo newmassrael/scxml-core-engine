@@ -5024,8 +5024,9 @@ if("${_sce_c_runner_unmet}" STREQUAL "" AND NOT EMSCRIPTEN)
     # machine makes its value of; and orders_suite and nested_suite, their
     # components' machines and their tables, beside the records, the union and the
     # templates generated above for the template test. The program
-    # makes the directory of its logs through `sce_directory_make`, so it is built
-    # where the POSIX tier is, as the runner program is.
+    # makes the directory of its logs through `sce_directory_make`, which no
+    # generated machine states: it requires it (`REQUIRES directory`), as the
+    # runner program does, and is built where a tier that implements it is.
     set(_CS_FIXTURE_DIR "${_TP_FIXTURE_DIR}/boundary")
     set(_CS_HEADERS ${_TS_HEADERS})
     set(_CS_SOURCES ${_TS_SOURCES})
@@ -5070,9 +5071,8 @@ if("${_sce_c_runner_unmet}" STREQUAL "" AND NOT EMSCRIPTEN)
         "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
     )
     sce_c_link_runtime(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs
-        EXCLUDES lua dom http clock)
-    target_link_libraries(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PRIVATE
-        sce_c_runtime_posix m)
+        REQUIRES directory EXCLUDES lua dom http clock)
+    target_link_libraries(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PRIVATE m)
     target_compile_definitions(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PRIVATE
         SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
     target_compile_options(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PRIVATE
