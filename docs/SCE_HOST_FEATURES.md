@@ -1002,6 +1002,25 @@ event schema on the invoke, and the build carries the record across.
   at its zero, the record absent. The object verified or opened, so the
   failure is not an answer about the signature or the seal: it says the signer
   or the sealer did not state a record of the kind the machine asked for.
+- **A record whose schema grew.** A machine built at a later revision of the
+  record's schema (docs/adr/0044) reads a record a machine of an earlier
+  revision signed or sealed by the rule every CBOR decode of the record keeps
+  (SCE_FORGE.md section 4.6.1, "A record whose schema grew"): where the map
+  lacks the key of a field a later revision added, the field reads its
+  `sce:default`, and a list the empty list; an optional field whose key is
+  missing reads absent; and a map that lacks a field of the first revision
+  that is not optional is no value of the record, so the completion is
+  `not_a_record`. The description the build hands the record codec names,
+  per field, its id, whether it is optional, its type and what a map that
+  lacks its key reads: the lowercase hexadecimal text of the deterministic
+  CBOR of the default for a field a later revision added, `null` for every
+  other field (`[id, optional, type, default]`). Those bytes are the ones the
+  plan of the codec ADR 0101 prints for the same schema holds
+  (`CborField::default`), made by the same function, and the record codec
+  reads them with the reader of the field's own value, so the record codec
+  and that codec read a record of an earlier revision alike. A description
+  whose default is no value of its field, or is followed by a byte, or that
+  gives an optional field a default, is refused before any record is read.
 - **Refused at parse** (`validation/payload-record-schema`): the attribute on
   an `<invoke>` of any other type, an empty one, one that names no event schema
   the document imports (an enum or a union included, which no record codec
@@ -1050,7 +1069,13 @@ event schema on the invoke, and the build carries the record across.
   implementation that shares nothing with either lane. Rust is held to it by
   `backends/rust/host-features/tests/payload_record_cross_language.rs`, C++ by
   `tests/integration/APayloadRecordTest.cpp`, and the scenario of
-  `static_host_cose` signs, verifies, seals and opens the note on both.
+  `static_host_cose` signs, verifies, seals and opens the note on both. Its
+  `revised` entry holds the note under a second revision of its schema
+  (`schema_cose_note_revised.scxml`): the build's description of it, the
+  record the first revision's bytes read as under it, defaults filled, and a
+  note that lacks `serial`, which no revision reads. Each lane verifies the
+  object the first revision signed to that record, and an object of the note
+  that lacks `serial` to `not_a_record`.
 
 **Derive.** The input keying material is `secret` or the key `input_key_id`
 names: a configured symmetric key, a derived key, or a generated key of use
