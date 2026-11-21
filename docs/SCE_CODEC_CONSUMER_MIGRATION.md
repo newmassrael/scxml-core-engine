@@ -3480,3 +3480,37 @@ implements or wraps an audit store, or wraps a session store that keeps outboxes
 - `Sealed::reseal_outboxes()` and `Sealed::reseal_audit()` join the other passes of a rotation
   (`docs/SCE_SERVER_DEPLOY.md` section 3, "Rotation"); a retired sealing key may be destroyed once every pass
   answers no row left and none refused.
+
+## A C11 machine's core and the runtime headers include no hosted header (ADR 0110)
+
+Landing: the commits that add this section (ADR 0110 steps 1 to 5). The C11 trees are build outputs (ADR 0097): a
+consumer regenerates its C11 machines and codecs at the new pin.
+
+- The C11 runtime headers a machine or a codec includes no longer include `<stdio.h>`, `<stdlib.h>`, `<string.h>`,
+  `<errno.h>` or `<math.h>` (among them `sce/forge/codec.h`, `cbor.h`, `wire.h`, `optional.h`, `map.h`,
+  `text_template.h`, `algorithm.h`, the `queue*.h` headers, and `sce/types.h`, `event_payload.h`, `invoke.h`,
+  `host_processor.h`, `send_target.h`, `session_id.h`). A consumer source file that called `printf`, `strlen`,
+  `memcpy` or `strtod` with only an SCE header included stops compiling, with an implicit declaration of that
+  function; it includes the C header it uses itself. Text routines the runtime needs are its own, in `sce/text.h`
+  (`sce_text_length`, `sce_text_compare`, `sce_text_of_u64`, ...), which a consumer may call too.
+- A generated machine's `<log>` and the runtime's diagnostics write through two seams the deployment defines,
+  declared in `sce/log.h`: `_sce_log_write(level, label, label_len, text, text_len)` and
+  `_sce_log_real(level, label, label_len, value)`. A hosted build links `sce_c_runtime_posix` (its `posix/log.c`
+  writes each line to `stderr` as before); `sce_c_link_runtime` and `sce_c_runtime_libraries` already name it for a
+  machine that logs. A deployment that builds without `SCE_C_RUNTIME_POSIX` defines both, or the link names them as
+  undefined.
+- A machine or a codec that carries a real number in an event's data reads and writes it through
+  `_sce_real_text` and `_sce_real_read` (`sce/real_text.h`). A hosted build links `sce_c_text`, which
+  `sce_c_runtime_libraries` names for a machine that states `real`; a bare-metal deployment defines the two itself.
+- A machine's saved state is a unit of its own: the generator writes `<machine>_saved.c` and `<machine>_saved.h`
+  beside `<machine>_sm.c`, and `<machine>_save` and the restore are defined there. A host that saves compiles the
+  saved unit with the machine and includes `<machine>_saved.h` where it calls them; a build that compiles only
+  `<machine>_sm.c` finds them undefined. A deployment that does not persist leaves the unit out.
+- `round(x)` and `floor(x)` in a C11 forge kind or a `sce-static` statechart lower to the runtime's
+  `sce_forge_real_round` and `sce_forge_real_floor` (`sce/forge/algorithm.h`), not to `llround` and `floor`.
+  The answers are the same for every value an `int64_t` holds; past it, and for NaN, they saturate instead of being
+  unspecified. A build that linked `-lm` only for a generated transform no longer needs it.
+- What a machine costs on a Cortex-M4 with no C library is measured by the gate `c11-mcu`
+  (`scripts/gates/c11-mcu.sh`) against `backends/c/mcu/footprint.budget`, and reported in
+  `target/c11-mcu/report.md`; `docs/SCE_ACCEPTED_SUBSET.md` §2.15, "What a C11 machine's core links", lists what
+  a core may include and what each hosted unit is.
