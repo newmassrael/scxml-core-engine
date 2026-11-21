@@ -397,13 +397,20 @@ fn cpp_holds_the_slot_of_an_optional_variable_in_the_optional_type_itself() {
 }
 
 /// C11 writes the whole optional value into the child's variable: the seed is the
-/// runtime's `sce_optional_int32_t`, copied as one value.
+/// runtime's `sce_optional_int32_t`, copied as one value into the slot of the
+/// child's `_invoke_params_t`, and the child declares its variable from that
+/// slot as one value (docs/adr/0098: the parent writes none of the child's
+/// variables).
 #[test]
 fn c11_writes_the_whole_optional_value_into_the_child() {
     let written = written_for("c11");
     assert!(
         written.contains("sce_optional_int32_t sce_value =")
-            && written.contains(".policy.v_size = sce_value;"),
+            && written.contains("_child_params.v_size = sce_value;"),
         "the seed is the optional value, written whole:\n{written}"
+    );
+    assert!(
+        written.contains("sm->policy.v_size = params->v_size;"),
+        "the child declares its variable from the whole handed value:\n{written}"
     );
 }
