@@ -1654,6 +1654,18 @@ since the deferred reader landed, so the table above is a measurement of the ear
 first run that will judge them, and a case that SURVIVES there is a finding about Miri's emulation or the source, not a fault of
 the runner.
 
+The first round CI ran of the casefile (run 44107166637, 2026-11-17) read all nine cases INCONCLUSIVE with `ran 12 tests,
+baseline ran 24`, each in about three and a half seconds, so it judged nothing. The count a run is compared by is libtest's
+`running N tests` headers, and under `-Zmiri-many-seeds` each seed is one run of the test binary that prints its own: three
+tests under eight seeds are 24. Miri runs the seeds in parallel, one per core, and unless it is given
+`-Zmiri-many-seeds-keep-going` ends the process at the first seed that fails (`run_many_seeds` in the driver of the pinned
+nightly), so a mutant it caught reported the headers of the four seeds a four-core runner had started, and the run-count guard,
+which is read before the failures are, called each case one that changed which tests exist. `mutation_miri_run` now gives every
+run the flag, so a run reports every seed whether one fails or not and its status is the worst seed's; Miri reads the flag only
+beside `-Zmiri-many-seeds`. `mutation_runner_under_miri` holds it with a stand-in `cargo-miri` that keeps the meaning of both
+flags: two tests under three seeds are six in the baseline and in a mutant that fails every seed. No round has run with the
+flag yet.
+
 ### Every template stores the context (2026-11-04, 2026-11-09)
 
 On 2026-11-04 (ab74ca01be) the Swift template came to store the context of the elements it writes: a flag input is a bit
