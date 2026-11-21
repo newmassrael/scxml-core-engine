@@ -260,10 +260,12 @@ pub enum PythonNameClash {
     /// `encode_to_bytes`). A field or flag of that name is a class attribute
     /// bound before or after the method, and one of them wins.
     ClassMethod,
-    /// A name the class body evaluates while the class is being built: the
-    /// `@classmethod` on `decode`, `field(…)` and `default_factory=list` on a
-    /// list or a variant body. A field of that name binds it in the class
-    /// scope first, and the next default is a call on the field's default.
+    /// A name a class body evaluates while the class is being built, of a
+    /// class whose members are the author's names: the `@classmethod` on
+    /// `decode`, the `field(…)` a default is made by, and the `@property` on
+    /// each member of the `Protocol` a source of the codec satisfies. A field
+    /// of that name binds it in the class scope first, and the next decorator
+    /// or default is a call on the field's default.
     ClassBody,
     /// A `__x__` name. Python reserves the form: `__debug__` cannot be
     /// assigned, and `__init__` or `__doc__` replaces what the class is made of.
@@ -294,7 +296,7 @@ pub const PYTHON_CODEC_METHODS: &[&str] = &["decode", "encode", "encode_to_bytes
 
 /// The names a generated class body evaluates. See [`PythonNameClash::ClassBody`];
 /// derived and compared in the same test.
-pub const PYTHON_CLASS_BODY_NAMES: &[&str] = &["classmethod", "field", "list"];
+pub const PYTHON_CLASS_BODY_NAMES: &[&str] = &["classmethod", "field", "property"];
 
 /// The parameters of the generated `decode` and `encode` calls: `cls` and
 /// `cursor`, `self` and `w`, and the `tag` and `parent_flags` a variant arm's

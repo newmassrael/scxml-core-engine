@@ -352,12 +352,19 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
 /// - the methods every generated codec class defines (`decode`, `encode`, …);
 /// - the names a class body evaluates while it is built — a decorator, a
 ///   default — outside any function and outside the annotations, which are
-///   lazy under `from __future__ import annotations`;
+///   lazy under `from __future__ import annotations`, and outside a lambda's
+///   body or a comprehension past its first iterable, which read the module's
+///   names when they run: of every class whose members are the codec's
+///   elements, the value's dataclass, each other dataclass (a group's arm, the
+///   variant's default arm) and the `Protocol` a source satisfies, since a
+///   field of each is spelled as the author named it;
 /// - the first parameters of `decode` and `encode`;
 /// - that no local the generator names itself begins `f_`, the prefix an
 ///   author's field becomes in a decoder (`python_field_local`): each local
-///   bound under that prefix is `f_` and the name of an attribute of its own
-///   class.
+///   bound under that prefix is `f_` and, snake_cased, a name the codec's
+///   document declares. Not an attribute of the class: an element the encode
+///   derives is none (docs/adr/0081 §3), and a group's member is one of its
+///   arm's class.
 ///
 /// A template edit that adds a method, a class-body reference or an `f_` name
 /// makes this fail, and the failure says which list to extend.
@@ -372,10 +379,63 @@ fn the_names_the_generated_python_keeps_for_itself_are_the_ones_its_output_shows
         return;
     }
     let script = r#"
-import ast, glob, json, sys
+import ast, glob, json, os, sys
+import xml.etree.ElementTree as ET
+
+SCE = "{http://sce.dev/ext}"
+SCXML = "{http://www.w3.org/2005/07/scxml}"
+DECLARING = {SCE + t for t in ("field", "flags", "repeat", "tlv-chain", "embed")} | {SCXML + "data"}
+
+def snake(name):
+    # filters::to_snake_case, the spelling a Python decoder's local takes.
+    name = name.replace(".", "_").replace("-", "_")
+    out = []
+    for i, ch in enumerate(name):
+        if i > 0 and ch.isascii() and ch.isupper() and (name[i - 1].islower() or name[i - 1].isdigit()):
+            out.append("_")
+        out.append(ch)
+    return "".join(out).lower()
+
+def declared(path):
+    # Every name the codec's document declares: a field, a flag set and each
+    # of its flags, a list, a chain, an embed.
+    names = set()
+    for node in ET.parse(path).getroot().iter():
+        if node.tag in DECLARING and node.get("id"):
+            names.add(snake(node.get("id")))
+        elif node.tag == SCE + "flag" and node.get("name"):
+            names.add(snake(node.get("name")))
+    return names
 
 def loads(node):
-    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+    # The names node reads in the class body. A lambda's body and a
+    # comprehension past its first iterable are scopes of their own, read
+    # when they run, and resolve a name in the module, never in the class.
+    found = set()
+
+    def walk(n):
+        if isinstance(n, ast.Lambda):
+            for default in n.args.defaults + [k for k in n.args.kw_defaults if k]:
+                walk(default)
+            return
+        if isinstance(n, (ast.GeneratorExp, ast.ListComp, ast.SetComp, ast.DictComp)):
+            walk(n.generators[0].iter)
+            return
+        if isinstance(n, ast.Name):
+            found.add(n.id)
+        for child in ast.iter_child_nodes(n):
+            walk(child)
+
+    walk(node)
+    return found
+
+def declares_fields(cls):
+    # A dataclass (the value, a group's arm, the variant's default arm) or
+    # the Protocol a source of the codec satisfies: a class whose members
+    # are the codec's elements, named as the author named them.
+    dataclass = any(isinstance(d, ast.Name) and d.id == "dataclass" for d in cls.decorator_list)
+    protocol = any(isinstance(b, ast.Name) and b.id == "Protocol" for b in cls.bases)
+    return dataclass or protocol
 
 methods = None
 class_body = set()
@@ -388,28 +448,31 @@ for path in sorted(glob.glob(sys.argv[1] + "/*.py")):
         if not isinstance(cls, ast.ClassDef):
             continue
         fns = {f.name: f for f in cls.body if isinstance(f, ast.FunctionDef)}
-        if "decode" not in fns or "encode" not in fns:
+        codec = "decode" in fns and "encode" in fns
+        if codec or declares_fields(cls):
+            for stmt in cls.body:
+                if isinstance(stmt, ast.FunctionDef):
+                    for d in stmt.decorator_list:
+                        class_body |= loads(d)
+                    for default in stmt.args.defaults + [k for k in stmt.args.kw_defaults if k]:
+                        class_body |= loads(default)
+                elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+                    class_body |= loads(stmt.value)
+                elif isinstance(stmt, ast.Assign):
+                    class_body |= loads(stmt.value)
+        if not codec:
             continue
         codec_classes += 1
         names = set(fns)
         methods = names if methods is None else methods & names
-        for stmt in cls.body:
-            if isinstance(stmt, ast.FunctionDef):
-                for d in stmt.decorator_list:
-                    class_body |= loads(d)
-                for default in stmt.args.defaults + [k for k in stmt.args.kw_defaults if k]:
-                    class_body |= loads(default)
-            elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
-                class_body |= loads(stmt.value)
-            elif isinstance(stmt, ast.Assign):
-                class_body |= loads(stmt.value)
         for fname in ("decode", "encode"):
             args = fns[fname].args.args
             first_params |= {a.arg for a in args[:2]}
-        attrs = {s.target.id for s in cls.body if isinstance(s, ast.AnnAssign)}
+        stem = os.path.splitext(os.path.basename(path))[0]
+        names = declared(os.path.join(sys.argv[2], stem + ".scxml"))
         for node in ast.walk(fns["decode"]):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                if node.id.startswith("f_") and node.id[2:] not in attrs:
+                if node.id.startswith("f_") and node.id[2:] not in names:
                     unowned_f_locals.append(f"{path}:{cls.name}:{node.id}")
 print(json.dumps({
     "codec_classes": codec_classes,
@@ -423,6 +486,7 @@ print(json.dumps({
         .arg("-c")
         .arg(script)
         .arg(expected_dir())
+        .arg(resource_dir())
         .output()
         .expect("python3 derives the names");
     assert!(
