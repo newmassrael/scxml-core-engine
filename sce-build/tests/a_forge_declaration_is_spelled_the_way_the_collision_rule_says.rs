@@ -243,21 +243,76 @@ fn generate(text: &str, language: Language) -> Result<String, String> {
         .join("\n"))
 }
 
-/// `source` without the lines that are only a comment, which write a name as
-/// the author wrote it whatever the code does with it.
+/// `source` without what writes a name as the author wrote it whatever the
+/// code does with it: the lines that are only a comment, the text of each
+/// string literal, and a triple-quoted text (a Python docstring, a Kotlin or
+/// Swift multi-line string) over every line it spans. A Python encode names a
+/// length it derives in its docstring and in the message of a refusal, and
+/// declares no name for it.
 fn code_only(source: &str) -> String {
-    source
-        .lines()
-        .filter(|line| {
-            let t = line.trim_start();
-            !(t.starts_with("//")
-                || t.starts_with('#')
-                || t.starts_with("/*")
-                || t.starts_with('*')
-                || t.starts_with("\"\"\""))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let mut kept = Vec::new();
+    let mut open = false;
+    for line in source.lines() {
+        let t = line.trim_start();
+        let comment =
+            t.starts_with("//") || t.starts_with('#') || t.starts_with("/*") || t.starts_with('*');
+        if comment && !open {
+            continue;
+        }
+        let (code, still_open) = without_strings(line, open);
+        open = still_open;
+        kept.push(code);
+    }
+    kept.join("\n")
+}
+
+/// `line` with the text of each string literal left out, a pair of quotes in
+/// its place, and whether a triple-quoted text is open where the line ends;
+/// `open` says one is open where it begins. A `'"'` is a character, not a
+/// string.
+fn without_strings(line: &str, open: bool) -> (String, bool) {
+    const TRIPLE: &str = "\"\"\"";
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    if open {
+        match rest.find(TRIPLE) {
+            Some(end) => {
+                out.push_str("\"\"");
+                rest = &rest[end + TRIPLE.len()..];
+            }
+            None => return (out, true),
+        }
+    }
+    while let Some(at) = rest.find('"') {
+        let (before, quoted) = rest.split_at(at);
+        out.push_str(before);
+        out.push_str("\"\"");
+        if let Some(text) = quoted.strip_prefix(TRIPLE) {
+            match text.find(TRIPLE) {
+                Some(end) => rest = &text[end + TRIPLE.len()..],
+                None => return (out, true),
+            }
+            continue;
+        }
+        let after = &quoted[1..];
+        if (before.ends_with('\'') || before.ends_with("'\\")) && after.starts_with('\'') {
+            rest = after;
+            continue;
+        }
+        // A one-line string ends at the first quote no backslash escapes.
+        let mut escaped = false;
+        let close = after.char_indices().find_map(|(i, c)| {
+            let closes = !escaped && c == '"';
+            escaped = !escaped && c == '\\';
+            closes.then_some(i)
+        });
+        match close {
+            Some(end) => rest = &after[end + 1..],
+            None => return (out, false),
+        }
+    }
+    out.push_str(rest);
+    (out, false)
 }
 
 /// Which spellings of the probe `source` mentions as identifiers in code.
