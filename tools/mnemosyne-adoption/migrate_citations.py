@@ -1038,7 +1038,10 @@ def paths_from_toml(toml_path):
     --check form gate in lockstep with what validate-code-refs covers: a
     dir enrolled in the toml is automatically form-gated, no second list to
     drift. Hand-rolled (no tomllib on the py3.10 CI image); the array is a
-    flat list of quoted strings, with `#` comments stripped per line."""
+    flat list of quoted strings, with `#` comments stripped per line before
+    the array is looked for: a `]` in a comment (`lib.rs`'s `#[path]`) ended
+    the array there when they were stripped after, and every directory
+    enrolled below that comment went unread."""
     with open(toml_path, "r", encoding="utf-8") as fh:
         text = fh.read()
     # Anchor the table header to a line start (re.MULTILINE) so a `#`-
@@ -1049,12 +1052,32 @@ def paths_from_toml(toml_path):
         text,
         re.DOTALL | re.MULTILINE,
     )
-    body = sec.group(1) if sec else text
+    body = _without_toml_comments(sec.group(1) if sec else text)
     arr = re.search(r"paths\s*=\s*\[(.*?)\]", body, re.DOTALL)
     if not arr:
         raise SystemExit(f"no set_equality_validator.paths in {toml_path}")
-    entries = re.sub(r"#[^\n]*", "", arr.group(1))
-    return [os.path.join(REPO_ROOT, p) for p in re.findall(r'"([^"]+)"', entries)]
+    return [os.path.join(REPO_ROOT, p) for p in re.findall(r'"([^"]+)"', arr.group(1))]
+
+
+def _without_toml_comments(text):
+    """`text` with each line's comment removed: from a `#` that stands outside a
+    basic string (`"..."`) to the end of its line."""
+    kept = []
+    for line in text.split("\n"):
+        in_string = False
+        escaped = False
+        for at, ch in enumerate(line):
+            if escaped:
+                escaped = False
+            elif in_string and ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = not in_string
+            elif ch == "#" and not in_string:
+                line = line[:at]
+                break
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def rewritable(path):
