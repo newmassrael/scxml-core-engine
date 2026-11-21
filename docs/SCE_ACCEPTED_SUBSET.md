@@ -5105,8 +5105,13 @@ is put into it by the rule a record variable takes one by: `<assign location="pi
 expr="…"/>` with a record variable, a `<foreach>`'s record item, `_event.data` when
 the event's schema is the record's, the element of a list of its schema at an index
 (`items[1]`), what an imported algorithm returns as a record or as an optional
-record, or another optional record of the same schema; a record of another schema,
-and any other value, is refused naming what is taken, and `null` makes it absent. A
+record, another optional record of the same schema, or a field of a record that
+holds a record or an optional record of its schema, copied whole as a list a place
+holds is (`_event.data.payload` of a completion that names a record by
+`sce:payload` among them, an optional record of the named schema): every place on
+the way to the field is a record, and the record is the same document whatever
+alias the field's own document names it by. A record of another schema, and any
+other value, is refused naming what is taken, and `null` makes it absent. A
 field of the record is read as `pick.value.<field>`, typed by the schema, only where
 a test proves `pick` present (`pick !== null` around the read, under the constructs
 above): elsewhere it is `expression/optional-read-unproven`, and a field the schema
@@ -5163,8 +5168,12 @@ variable is closed over its fields, so any other member is
 same schema by its name, `<assign location="shown" expr="chosen"/>` — a record
 variable, or the record item of a `<foreach>` over a list of it — or from the
 element a list of that schema holds at an index, `<assign location="shown"
-expr="days[0]"/>`. Nothing in an expression makes a record, so any other value
-assigned to the whole record is `scxml/static-datamodel-rule` on the `expr`,
+expr="days[0]"/>`, or from a field of a record that holds a record of that
+schema, `<assign location="shown" expr="_event.data.day"/>`, copied whole; a
+field that holds an optional record may be absent, so it is taken only into an
+optional record ("An optional record", above), and a record variable that would
+take it is refused saying so. Nothing in an expression makes a record, so any
+other value assigned to the whole record is `scxml/static-datamodel-rule` on the `expr`,
 which says which names it takes.
 A missing field is refused on the
 `sce:type` that names the record, an unknown or repeated one on its `name`,
