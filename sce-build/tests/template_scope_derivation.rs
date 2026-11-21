@@ -125,7 +125,9 @@ fn depfile_writer_holds_no_hand_kept_language_list() {
     .expect("the command line's source is readable");
 
     // The writer writes what one generation contributes, which `depfile_entry`
-    // computes, the exclusion with it, so both functions are read.
+    // computes. Its templates are `language_template_files`, the one place the
+    // exclusion is applied (`w3c_reads` takes them from it too), so all three
+    // functions are read, and the entry is held to taking them from there.
     let function = |name: &str| {
         let start = src.find(&format!("fn {name}(")).unwrap_or_else(|| {
             panic!("{name} still exists — if it was renamed, retarget this gate")
@@ -134,19 +136,24 @@ fn depfile_writer_holds_no_hand_kept_language_list() {
         let end = body.find("\nfn ").unwrap_or(body.len());
         body[..end].to_string()
     };
-    let body = format!(
-        "{}\n{}",
-        function("write_depfile_entry"),
-        function("depfile_entry")
-    );
-    let body = body.as_str();
+    let entry = function("depfile_entry");
+    let exclusion = function("language_template_files");
 
     assert!(
-        body.contains("foreign_template_prefixes"),
+        entry.contains("language_template_files("),
+        "depfile_entry no longer takes its templates from language_template_files, \
+         the function that excludes the other backends' templates; read the function \
+         it takes them from here instead"
+    );
+    assert!(
+        exclusion.contains("foreign_template_prefixes"),
         "write_depfile no longer derives its exclusion set from the language \
          registry; a hand-kept list here is what let `python/` and `c/` go \
          unfiltered after they were added"
     );
+
+    let body = format!("{}\n{entry}\n{exclusion}", function("write_depfile_entry"));
+    let body = body.as_str();
 
     // Two or more backend names as string literals is the shape of the
     // list that drifted. One may legitimately appear in prose.
