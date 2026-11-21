@@ -37,7 +37,7 @@ class CodecInitSynEnvelopeDefault:
     names, which it keeps, and its body."""
 
     tag: CodecInitSynEnvelopeUnknownTag = CodecInitSynEnvelopeUnknownTag(0)
-    body: sce_codec_init_syn_body.CodecInitSynBody = field(default_factory=sce_codec_init_syn_body.CodecInitSynBody)
+    body: sce_codec_init_syn_body.CodecInitSynBody = field(default_factory=lambda: sce_codec_init_syn_body.CodecInitSynBody())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -90,7 +90,7 @@ def encode_source(src: CodecInitSynEnvelopeSource, w: SceSink) -> None:
 @dataclass
 class CodecInitSynEnvelope:
     header: CodecInitSynEnvelopeHeaderInt = 0
-    body: CodecInitSynEnvelopeVariant = field(default_factory=sce_codec_init_syn_body.CodecInitSynBody)
+    body: CodecInitSynEnvelopeVariant = field(default_factory=lambda: sce_codec_init_syn_body.CodecInitSynBody())
 
     def __setattr__(self, name: str, value: object) -> None:
         # Each integer, byte string and text is held to its bound

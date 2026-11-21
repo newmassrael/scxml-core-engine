@@ -31,7 +31,7 @@ class CodecOriginChoiceDefault:
     names, which it keeps, and its body."""
 
     tag: CodecOriginChoiceUnknownTag = CodecOriginChoiceUnknownTag(0)
-    body: sce_codec_origin_scalar.CodecOriginScalar = field(default_factory=sce_codec_origin_scalar.CodecOriginScalar)
+    body: sce_codec_origin_scalar.CodecOriginScalar = field(default_factory=lambda: sce_codec_origin_scalar.CodecOriginScalar())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -80,7 +80,7 @@ def encode_source(src: CodecOriginChoiceSource, w: SceSink) -> None:
 
 @dataclass
 class CodecOriginChoice:
-    body: CodecOriginChoiceVariant = field(default_factory=sce_codec_origin_scalar.CodecOriginScalar)
+    body: CodecOriginChoiceVariant = field(default_factory=lambda: sce_codec_origin_scalar.CodecOriginScalar())
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecOriginChoice:

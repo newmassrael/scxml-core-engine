@@ -50,7 +50,7 @@ def encode_source(src: CodecVariantPeekBasicSource, w: SceSink) -> None:
 
 @dataclass
 class CodecVariantPeekBasic:
-    body: CodecVariantPeekBasicVariant = field(default_factory=sce_codec_peek_arm_a.CodecPeekArmA)
+    body: CodecVariantPeekBasicVariant = field(default_factory=lambda: sce_codec_peek_arm_a.CodecPeekArmA())
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecVariantPeekBasic:

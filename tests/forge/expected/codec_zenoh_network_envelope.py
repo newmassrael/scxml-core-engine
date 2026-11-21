@@ -41,7 +41,7 @@ class CodecZenohNetworkEnvelopeDefault:
     names, which it keeps, and its body."""
 
     tag: CodecZenohNetworkEnvelopeUnknownTag = CodecZenohNetworkEnvelopeUnknownTag(0)
-    body: sce_codec_zenoh_oam.CodecZenohOam = field(default_factory=sce_codec_zenoh_oam.CodecZenohOam)
+    body: sce_codec_zenoh_oam.CodecZenohOam = field(default_factory=lambda: sce_codec_zenoh_oam.CodecZenohOam())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -97,7 +97,7 @@ def encode_source(src: CodecZenohNetworkEnvelopeSource, w: SceSink) -> None:
 
 @dataclass
 class CodecZenohNetworkEnvelope:
-    body: CodecZenohNetworkEnvelopeVariant = field(default_factory=sce_codec_zenoh_oam.CodecZenohOam)
+    body: CodecZenohNetworkEnvelopeVariant = field(default_factory=lambda: sce_codec_zenoh_oam.CodecZenohOam())
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohNetworkEnvelope:

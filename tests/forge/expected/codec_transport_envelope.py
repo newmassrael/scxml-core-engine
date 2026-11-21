@@ -49,7 +49,7 @@ class CodecTransportEnvelopeDefault:
     names, which it keeps, and its body."""
 
     tag: CodecTransportEnvelopeUnknownTag = CodecTransportEnvelopeUnknownTag(0)
-    body: sce_codec_zenoh_close.CodecZenohClose = field(default_factory=sce_codec_zenoh_close.CodecZenohClose)
+    body: sce_codec_zenoh_close.CodecZenohClose = field(default_factory=lambda: sce_codec_zenoh_close.CodecZenohClose())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -120,7 +120,7 @@ def encode_source(src: CodecTransportEnvelopeSource, w: SceSink, *, override_hea
 @dataclass
 class CodecTransportEnvelope:
     header: CodecTransportEnvelopeHeaderInt = 0
-    body: CodecTransportEnvelopeVariant = field(default_factory=sce_codec_zenoh_close.CodecZenohClose)
+    body: CodecTransportEnvelopeVariant = field(default_factory=lambda: sce_codec_zenoh_close.CodecZenohClose())
 
     def __setattr__(self, name: str, value: object) -> None:
         # Each integer, byte string and text is held to its bound

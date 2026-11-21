@@ -86,9 +86,9 @@ struct CodecVariantSessionClose {
     /// advances past the consumed bytes and the value is answered; a
     /// refused frame answers the `CodecError` that refused it
     /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
-    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
-    /// L494-519), which the caller resumes after appending bytes, and
-    /// another kind for a frame no more bytes make whole.
+    /// the cursor's tail is shorter than the frame (RFC
+    /// §synth-5-B L494-519), which the caller resumes after appending
+    /// bytes, and another kind for a frame no more bytes make whole.
     static ::SCE::Forge::Decoded<CodecVariantSessionClose> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;

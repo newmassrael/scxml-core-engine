@@ -31,7 +31,7 @@ class CodecVariantDispatchDefault:
     names, which it keeps, and its body."""
 
     tag: CodecVariantDispatchUnknownTag = CodecVariantDispatchUnknownTag(0)
-    body: sce_codec_variant_session_close.CodecVariantSessionClose = field(default_factory=sce_codec_variant_session_close.CodecVariantSessionClose)
+    body: sce_codec_variant_session_close.CodecVariantSessionClose = field(default_factory=lambda: sce_codec_variant_session_close.CodecVariantSessionClose())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -80,7 +80,7 @@ def encode_source(src: CodecVariantDispatchSource, w: SceSink) -> None:
 
 @dataclass
 class CodecVariantDispatch:
-    body: CodecVariantDispatchVariant = field(default_factory=sce_codec_variant_session_close.CodecVariantSessionClose)
+    body: CodecVariantDispatchVariant = field(default_factory=lambda: sce_codec_variant_session_close.CodecVariantSessionClose())
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecVariantDispatch:

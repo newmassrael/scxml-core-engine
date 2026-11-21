@@ -61,7 +61,7 @@ class CodecZenohRequestDefault:
     names, which it keeps, and its body."""
 
     tag: CodecZenohRequestUnknownTag = CodecZenohRequestUnknownTag(0)
-    body: sce_codec_zenoh_query.CodecZenohQuery = field(default_factory=sce_codec_zenoh_query.CodecZenohQuery)
+    body: sce_codec_zenoh_query.CodecZenohQuery = field(default_factory=lambda: sce_codec_zenoh_query.CodecZenohQuery())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -139,7 +139,7 @@ class CodecZenohRequest:
     rid: CodecZenohRequestRidInt = 0
     keyexpr: CodecZenohWireexpr = field(default_factory=CodecZenohWireexpr)
     extensions: Optional[CodecZenohRequestExtensionsList] = None
-    body: CodecZenohRequestVariant = field(default_factory=sce_codec_zenoh_msg_put.CodecZenohMsgPut)
+    body: CodecZenohRequestVariant = field(default_factory=lambda: sce_codec_zenoh_msg_put.CodecZenohMsgPut())
 
     def __setattr__(self, name: str, value: object) -> None:
         # Each integer, byte string and text is held to its bound
