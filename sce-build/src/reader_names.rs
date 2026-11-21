@@ -312,8 +312,9 @@ pub const PYTHON_PROCEDURE_SETTERS: &[&str] = &["service_handler"];
 /// What kind of Python name a declaration is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PythonDeclaration {
-    /// A codec field, flag, chain, repeat or embed: a class attribute or an
-    /// accessor method of the generated class.
+    /// A codec field, flag, chain, repeat or embed, or an entry of a CBOR map
+    /// or of a content-line component: a class attribute or an accessor method
+    /// of the generated class.
     ClassAttribute,
     /// A `<sce:flag-input>`: a parameter of the generated call.
     CallParameter,
