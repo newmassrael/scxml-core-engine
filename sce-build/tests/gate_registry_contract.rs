@@ -1616,6 +1616,16 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                 "{changed:?}: unit {name} does not ask for the largest peak of \
                  what it runs"
             );
+            let cores = closure
+                .iter()
+                .filter_map(|s| mapping[s.as_str()]["cores"].as_f64())
+                .fold(0.0_f64, f64::max);
+            assert_eq!(
+                unit["cores"].as_f64(),
+                Some(cores),
+                "{changed:?}: unit {name} does not ask for the most cores of \
+                 what it runs"
+            );
             if mapping[name.as_str()]["cache"] == serde_json::Value::Bool(false) {
                 assert_eq!(
                     unit["cache"],
