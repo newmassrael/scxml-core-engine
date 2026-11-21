@@ -263,10 +263,23 @@ fn bytes_bound(model: &SCXMLModel, alias: &str, field: &str) -> Option<(u32, Opt
 /// | `string[B]` | `{"text":B}` |
 /// | `bytes[B]` | `{"bytes":B}` |
 /// | `enum:E`, closed | `{"enum":{"closed":true,"variants":[[<name>,<number>],...]}}` |
-/// | `record:R` | `{"record":[[<id>,<optional>,<type>],...]}`, the fields in the order their keys' encodings sort (RFC 8949 section 4.2.1), each the type of its present value |
+/// | `record:R` | `{"record":[[<id>,<optional>,<type>,<default>],...]}`, the fields in the order their keys' encodings sort (RFC 8949 section 4.2.1), each the type of its present value, and `<default>` what a map that lacks the field's key reads |
 /// | `union:U` | `{"union":{"tag":<key>,"cases":[[<variant>,<fields or null>],...]}}` |
 /// | `list<T>[M..B]` | `{"list":{"min":M,"max":B,"of":<type>}}` |
 /// | `optional<T>` as a list's element | `{"nullable":<type>}` |
+///
+/// A field's `<default>` is the rule of a record whose schema grew
+/// (docs/adr/0044; SCE_FORGE.md section 4.6.1, "A record whose schema grew"):
+/// the deterministic CBOR, as lowercase hexadecimal text, of the value a map
+/// written before a later revision added the field reads in its place, its
+/// `sce:default`, or the empty list (`80`) for a list; `null` for a field of
+/// the first revision, which a map that lacks it is refused for, and for an
+/// optional field, which a missing key leaves absent. The bytes are the ones
+/// the plan of the codec ADR 0101 prints for the same schema holds
+/// (`crate::forge::encode_plan::CborField::default`), made by the same
+/// function (`crate::forge::encode_plan::lacked_value`), and the record codec
+/// reads them with the reader of the field's own value, as the printed codec
+/// does: the two read a record of an earlier revision alike.
 ///
 /// The order of a record's fields is decided here, once, so no runtime sorts.
 /// The refusal of what has no CBOR form: a map or a set, a text or a byte
@@ -320,7 +333,8 @@ fn describe_value(
 }
 
 /// The fields of the record `alias` names in `env`, read in its own document's
-/// scope, in the order their keys' encodings sort.
+/// scope, in the order their keys' encodings sort, each with what a map that
+/// lacks its key reads.
 fn describe_record(
     alias: &str,
     env: &dyn TypeEnv,
@@ -328,16 +342,28 @@ fn describe_record(
 ) -> Result<serde_json::Value, String> {
     let (fields, inner) = crate::forge::value_type::enter_record(alias, env, records)
         .map_err(|why| format!("`record:{alias}` {why:?}"))?;
+    // The fields a later revision of the record's schema added, read where the
+    // alias resolves, as the CBOR plan of a printed codec reads them.
+    let added = env.record_added(alias);
     let order = crate::forge::encode_plan::text_key_order(fields.iter().map(|(id, _)| id.as_str()));
     let mut described = Vec::with_capacity(fields.len());
     for at in order {
         let (id, ty) = &fields[at];
         let optional = ty.optional_elem().is_some();
         let present = ty.optional_elem().unwrap_or(ty);
+        // What a map that lacks the field's key reads: the bytes the printed
+        // codec's plan holds for it (`CborField::default`), made by the one
+        // function both read, so the two readers of a record cannot part.
+        let lacked =
+            crate::forge::encode_plan::lacked_value(ty, added.and_then(|a| a.get(id)), inner)
+                .map_or(serde_json::Value::Null, |bytes| {
+                    serde_json::Value::String(bytes.iter().map(|b| format!("{b:02x}")).collect())
+                });
         described.push(serde_json::json!([
             id,
             optional,
-            describe_value(present, inner, records)?
+            describe_value(present, inner, records)?,
+            lacked
         ]));
     }
     records.pop();
@@ -882,8 +908,142 @@ mod tests {
         // `memo`), then the 5-byte ones (`level`, `title`).
         assert_eq!(
             described,
-            r#"{"record":[["id",false,{"uint":32}],["keys",false,{"list":{"max":2,"min":0,"of":{"bytes":4}}}],["memo",true,{"text":8}],["level",false,{"enum":{"closed":true,"variants":[["low",0],["fault",-1]]}}],["title",false,{"text":16}]]}"#
+            r#"{"record":[["id",false,{"uint":32},null],["keys",false,{"list":{"max":2,"min":0,"of":{"bytes":4}}},null],["memo",true,{"text":8},null],["level",false,{"enum":{"closed":true,"variants":[["low",0],["fault",-1]]}},null],["title",false,{"text":16},null]]}"#
         );
+    }
+
+    /// A scope that holds the record `Revised`, whose schema's first revision
+    /// carried `id` alone and whose second added a number, a text and an enum,
+    /// each with its `sce:default`, a list and an optional text.
+    fn revised_scope() -> TypeScope {
+        let mut inner = TypeScope::default();
+        inner.enums.insert(
+            "Level".to_string(),
+            ScopedEnum {
+                name: "level".to_string(),
+                variants: vec![
+                    ScopedVariant {
+                        name: "low".to_string(),
+                        value: 0,
+                    },
+                    ScopedVariant {
+                        name: "fault".to_string(),
+                        value: -1,
+                    },
+                ],
+                underlying: SceType::Int8,
+                strict: true,
+            },
+        );
+        let level = SceType::Enum(crate::forge::model::EnumRef {
+            alias: "Level".to_string(),
+        });
+        let added = |default: Option<&str>| crate::forge::value_type::AddedField {
+            since: 2,
+            default: default.map(str::to_string),
+        };
+        let mut scope = TypeScope::default();
+        scope.records.insert(
+            "Revised".to_string(),
+            ScopedRecord {
+                identity: "/here/revised.scxml".to_string(),
+                name: "revised".to_string(),
+                fields: vec![
+                    ("id".to_string(), TypeOf::Scalar(SceType::Uint32)),
+                    ("rank".to_string(), TypeOf::Scalar(SceType::Int8)),
+                    ("label".to_string(), TypeOf::Text { max: Bound::of(8) }),
+                    ("level".to_string(), TypeOf::Scalar(level)),
+                    (
+                        "tags".to_string(),
+                        TypeOf::List {
+                            elem: Box::new(TypeOf::Scalar(SceType::Uint8)),
+                            max: Bound::of(2),
+                        },
+                    ),
+                    (
+                        "memo".to_string(),
+                        TypeOf::Optional {
+                            elem: Box::new(TypeOf::Text { max: Bound::of(8) }),
+                        },
+                    ),
+                ],
+                scope: inner,
+                added: [
+                    ("rank", added(Some("-2"))),
+                    ("label", added(Some("none"))),
+                    ("level", added(Some("fault"))),
+                    ("tags", added(None)),
+                    ("memo", added(None)),
+                ]
+                .into_iter()
+                .map(|(id, field)| (id.to_string(), field))
+                .collect(),
+            },
+        );
+        scope
+    }
+
+    /// A field a later revision added is described with the deterministic CBOR
+    /// of what a map that lacks its key reads, the very bytes the plan of the
+    /// printed codec of the same record holds for it; a field of the first
+    /// revision and an optional field with none (docs/adr/0044).
+    #[test]
+    fn a_field_a_later_revision_added_is_described_with_the_bytes_its_plan_reads() {
+        let scope = revised_scope();
+        let record = ValueType::Record {
+            alias: "Revised".to_string(),
+        };
+        let described: serde_json::Value = serde_json::from_str(
+            &describe(&record, &scope).expect("a record of bounded fields has a CBOR form"),
+        )
+        .expect("a description is JSON");
+        let fields = described["record"]
+            .as_array()
+            .expect("a record's fields are an array");
+        assert!(
+            fields
+                .iter()
+                .all(|f| f.as_array().is_some_and(|f| f.len() == 4)),
+            "each field is an id, an optional mark, a type and a default: {described}"
+        );
+        let default_of = |id: &str| -> serde_json::Value {
+            fields
+                .iter()
+                .find(|f| f[0] == id)
+                .unwrap_or_else(|| panic!("`{id}` is described"))[3]
+                .clone()
+        };
+        // A field of the first revision: a map that lacks it is refused.
+        assert_eq!(default_of("id"), serde_json::Value::Null);
+        // -2, major type 1 of argument 1; the text "none"; `fault`, the number
+        // -1 its variant declares; the empty list.
+        assert_eq!(default_of("rank"), serde_json::json!("21"));
+        assert_eq!(default_of("label"), serde_json::json!("646e6f6e65"));
+        assert_eq!(default_of("level"), serde_json::json!("20"));
+        assert_eq!(default_of("tags"), serde_json::json!("80"));
+        // An optional field's missing key reads absent.
+        assert_eq!(default_of("memo"), serde_json::Value::Null);
+        // Each is what the plan of the printed codec holds for the field.
+        let crate::forge::encode_plan::CborShape::Record(plan) =
+            crate::forge::encode_plan::CborShape::of(&record, &scope)
+        else {
+            panic!("a record is planned as a record")
+        };
+        assert_eq!(plan.fields.len(), fields.len());
+        for field in &plan.fields {
+            let planned = field
+                .default
+                .as_ref()
+                .map_or(serde_json::Value::Null, |bytes| {
+                    serde_json::Value::String(bytes.iter().map(|b| format!("{b:02x}")).collect())
+                });
+            assert_eq!(
+                default_of(&field.id),
+                planned,
+                "`{}`: the description and the plan read one value",
+                field.id
+            );
+        }
     }
 
     #[test]
@@ -981,7 +1141,7 @@ mod tests {
         assert!(why.contains("is open"), "{why}");
         assert_eq!(
             described(&level(true)).expect("a closed enum is described"),
-            r#"{"record":[["v",false,{"enum":{"closed":true,"variants":[["low",0]]}}]]}"#
+            r#"{"record":[["v",false,{"enum":{"closed":true,"variants":[["low",0]]}},null]]}"#
         );
     }
 

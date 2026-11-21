@@ -1466,7 +1466,7 @@ const LEVEL: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce=
 /// record codecs read it, the fields in the order their keys encode, escaped
 /// as a Rust and a C++ text literal both spell it.
 const NOTE_DESCRIPTION_ESCAPED: &str =
-    r#"{\"record\":[[\"owner\",false,{\"text\":24}],[\"serial\",false,{\"uint\":32}]]}"#;
+    r#"{\"record\":[[\"owner\",false,{\"text\":24},null],[\"serial\",false,{\"uint\":32},null]]}"#;
 
 const PAYLOAD_SIBLINGS: [(&str, &str); 2] = [("note.scxml", NOTE), ("level.scxml", LEVEL)];
 

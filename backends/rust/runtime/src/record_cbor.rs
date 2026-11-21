@@ -32,12 +32,28 @@
 //! CBOR item is written and read by the forge runtime's items
 //! (`sce_forge_runtime::cbor`), so no CBOR is spelled here.
 //!
+//! The description of a record names each field by its id, whether it is
+//! optional, its type and what a map that lacks its key reads (docs/adr/0044;
+//! SCE_FORGE.md section 4.6.1, "A record whose schema grew"):
+//!
+//! | A field | Its default | A map that lacks its key reads |
+//! |---|---|---|
+//! | of the first revision, not optional | `null` | nothing: it is refused (`CborRequiredKeyMissing`) |
+//! | optional, of any revision | `null` | the field absent (`null`) |
+//! | added by a later revision | the hexadecimal text of the deterministic CBOR of its `sce:default`, or `80` for a list | the value those bytes hold, read by the reader of the field's own value |
+//!
+//! The bytes are the ones the plan of the codec ADR 0101 prints for the same
+//! schema holds for the field, which its decode reads the same way, so the
+//! two read a record an earlier revision wrote alike. A default that is no
+//! value of its field's type, or that bytes follow, is a description the codec
+//! cannot read, refused before any byte of a record is.
+//!
 //! A decode reads the profile of definite lengths, and refuses what is no
 //! value of the record (docs/adr/0101, section 3.3): an item of another type,
-//! a key given twice, a field that is not optional missing, a value outside
-//! its type, a variant no enum or union declares, and bytes after the record.
-//! It also refuses what the machine's payload holds no spelling of: a float
-//! that is not finite and a text that carries U+0000.
+//! a key given twice, a field of the first revision that is not optional
+//! missing, a value outside its type, a variant no enum or union declares, and
+//! bytes after the record. It also refuses what the machine's payload holds no
+//! spelling of: a float that is not finite and a text that carries U+0000.
 
 use core::fmt;
 
@@ -87,6 +103,10 @@ struct Field {
     id: String,
     optional: bool,
     shape: Shape,
+    /// What a map that lacks the field's key reads: for a field a later
+    /// revision of its schema added, the value its default's bytes hold; `None`
+    /// where such a map is refused, or, for an optional field, reads it absent.
+    lacked: Option<Value>,
 }
 
 /// A type, as the description names it.
@@ -229,21 +249,76 @@ fn fields_of(value: &Value) -> Result<Vec<Field>, String> {
     let Value::Array(fields) = value else {
         return Err("a record's fields are an array".to_string());
     };
+    const FIELD: &str = "a field is an id, whether it is optional, a type, and what a map that \
+                         lacks its key reads";
     let mut read = Vec::with_capacity(fields.len());
     for field in fields {
-        let Value::Array(triple) = field else {
-            return Err("a field is an id, whether it is optional, and a type".to_string());
+        let Value::Array(described) = field else {
+            return Err(FIELD.to_string());
         };
-        let [Value::Text(id), Value::Bool(optional), shape] = triple.as_slice() else {
-            return Err("a field is an id, whether it is optional, and a type".to_string());
+        let [Value::Text(id), Value::Bool(optional), shape, lacked] = described.as_slice() else {
+            return Err(FIELD.to_string());
+        };
+        let shape = shape_of(shape)?;
+        let lacked = match lacked {
+            Value::Null => None,
+            // A missing key of an optional field is how a writer of every
+            // revision spells it absent, so it reads no default.
+            Value::Text(_) if *optional => {
+                return Err(format!(
+                    "the optional field `{id}` names a default, and a map that lacks it reads it \
+                     absent"
+                ))
+            }
+            Value::Text(hex) => Some(
+                read_default(&shape, hex).map_err(|why| format!("the default of `{id}` {why}"))?,
+            ),
+            _ => return Err(format!("the default of `{id}` is neither a text nor null")),
         };
         read.push(Field {
             id: id.clone(),
             optional: *optional,
-            shape: shape_of(shape)?,
+            shape,
+            lacked,
         });
     }
     Ok(read)
+}
+
+/// The value the bytes `hex` spell, lowercase hexadecimal text, hold, read by
+/// the reader of a value of `shape`, which a field reads where a map lacks its
+/// key: a default is held to every rule a written value is held to, and bytes
+/// after the value are refused, as after a record.
+fn read_default(shape: &Shape, hex: &str) -> Result<Value, String> {
+    let bytes =
+        hex_bytes(hex).ok_or_else(|| format!("(`{hex}`) is no lowercase hexadecimal text"))?;
+    let mut cursor = SceCursor::new(&bytes);
+    let value = read_value(shape, &mut cursor, "")
+        .map_err(|why| format!("is no value of its type: {}", why.reason))?;
+    if cursor.remaining() != 0 {
+        return Err(format!(
+            "is followed by {} bytes that are no part of it",
+            cursor.remaining()
+        ));
+    }
+    Ok(value)
+}
+
+/// The bytes the lowercase hexadecimal text `text` spells, two digits a byte;
+/// `None` for a text of an odd length or a character that is no such digit.
+fn hex_bytes(text: &str) -> Option<Vec<u8>> {
+    let digit = |c: u8| match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        _ => None,
+    };
+    let pairs = text.as_bytes().chunks_exact(2);
+    if !pairs.remainder().is_empty() {
+        return None;
+    }
+    pairs
+        .map(|pair| Some((digit(pair[0])? << 4) | digit(pair[1])?))
+        .collect()
 }
 
 /// `token` below `pointer`, as RFC 6901 joins reference tokens.
@@ -620,8 +695,10 @@ fn read_value(shape: &Shape, c: &mut SceCursor<'_>, at: &str) -> Result<Value, R
 
 /// Read the map of a record of `fields`: its keys in any order, a key the
 /// record does not declare stepped over with its value, a declared key given
-/// twice and a field that is not optional missing refused. Every field is in
-/// the object read, one absent `null`.
+/// twice refused. A field whose key is missing reads absent if it is optional,
+/// the value of its default if a later revision of its schema added it, and is
+/// refused otherwise (docs/adr/0044). Every field is in the object read, one
+/// absent `null`.
 fn read_record(
     fields: &[Field],
     c: &mut SceCursor<'_>,
@@ -650,12 +727,16 @@ fn read_record(
         let value = match value {
             Some(value) => value,
             None if field.optional => Value::Null,
-            None => {
-                return Err(RecordCborRefusal::codec(
-                    &below(at, &field.id),
-                    CodecError::CborRequiredKeyMissing,
-                ))
-            }
+            // A map a writer of a revision before the field existed wrote.
+            None => match &field.lacked {
+                Some(lacked) => lacked.clone(),
+                None => {
+                    return Err(RecordCborRefusal::codec(
+                        &below(at, &field.id),
+                        CodecError::CborRequiredKeyMissing,
+                    ))
+                }
+            },
         };
         members.push((field.id.clone(), value));
     }
@@ -724,7 +805,7 @@ mod tests {
     /// A record of an id, an optional text, a level of an enum of a signed
     /// carrier, a list of byte strings and a nested record, its fields in the
     /// order their keys encode.
-    const NOTE: &str = r#"{"record":[["id",false,{"uint":32}],["keys",false,{"list":{"max":2,"min":0,"of":{"bytes":4}}}],["memo",true,{"text":8}],["level",false,{"enum":{"closed":true,"variants":[["low",0],["fault",-1]]}}],["title",false,{"text":16}]]}"#;
+    const NOTE: &str = r#"{"record":[["id",false,{"uint":32},null],["keys",false,{"list":{"max":2,"min":0,"of":{"bytes":4}}},null],["memo",true,{"text":8},null],["level",false,{"enum":{"closed":true,"variants":[["low",0],["fault",-1]]}},null],["title",false,{"text":16},null]]}"#;
 
     #[test]
     fn a_record_is_written_in_the_order_its_keys_encode() {
@@ -811,6 +892,84 @@ mod tests {
         .expect("a record of its type");
         assert!(text.starts_with('\u{a4}'), "{text:?}");
         assert!(text.chars().all(|c| u32::from(c) <= 0xff));
+    }
+
+    /// A record whose schema's first revision carried `id` alone, and whose
+    /// second added an optional text, a number and a text, each with its
+    /// default, and a list (docs/adr/0044): -2 (`21`), "none" (`64 6e6f6e65`)
+    /// and the empty list (`80`).
+    const REVISED: &str = r#"{"record":[["id",false,{"uint":32},null],["memo",true,{"text":8},null],["rank",false,{"int":8},"21"],["tags",false,{"list":{"max":2,"min":0,"of":{"uint":8}}},"80"],["label",false,{"text":8},"646e6f6e65"]]}"#;
+
+    #[test]
+    fn a_map_of_an_earlier_revision_reads_each_later_field_from_its_default() {
+        // {"id": 5}, as a writer of the first revision writes it.
+        let first = [0xa1, 0x62, b'i', b'd', 0x05];
+        assert_eq!(
+            decode(&first, REVISED).expect("a record of the first revision"),
+            r#"{"id":5,"memo":null,"rank":-2,"tags":[],"label":"none"}"#
+        );
+        // A key the map holds is read, not its default.
+        let written = [
+            0xa3, 0x62, b'i', b'd', 0x05, 0x64, b'r', b'a', b'n', b'k', 0x03, 0x64, b't', b'a',
+            b'g', b's', 0x81, 0x09,
+        ];
+        assert_eq!(
+            decode(&written, REVISED).expect("a record of the second revision"),
+            r#"{"id":5,"memo":null,"rank":3,"tags":[9],"label":"none"}"#
+        );
+    }
+
+    #[test]
+    fn a_map_that_lacks_a_field_of_the_first_revision_is_refused() {
+        // {"rank": 1}: every revision writes `id`.
+        let lacking = [0xa1, 0x64, b'r', b'a', b'n', b'k', 0x01];
+        let refused = decode(&lacking, REVISED).expect_err("a map that lacks `id`");
+        assert_eq!(refused.pointer, "/id", "{refused}");
+        assert!(
+            refused.reason.contains("CborRequiredKeyMissing"),
+            "{refused}"
+        );
+    }
+
+    #[test]
+    fn a_default_that_is_no_value_of_its_field_is_a_description_the_codec_cannot_read() {
+        let first = [0xa1, 0x62, b'i', b'd', 0x05];
+        for (field, why) in [
+            // A text where a number stands.
+            (
+                r#"["rank",false,{"int":8},"6178"]"#,
+                "is no value of its type",
+            ),
+            // A number past the width of an int8.
+            (
+                r#"["rank",false,{"int":8},"1880"]"#,
+                "is no value of its type",
+            ),
+            // A byte after the value.
+            (r#"["rank",false,{"int":8},"2100"]"#, "followed by 1 bytes"),
+            // Digits that are not lowercase hexadecimal, and an odd count.
+            (r#"["label",false,{"text":8},"646E6F6E65"]"#, "hexadecimal"),
+            (r#"["rank",false,{"int":8},"2"]"#, "hexadecimal"),
+            // An optional field reads absent, and names no default.
+            (r#"["memo",true,{"text":8},"60"]"#, "optional"),
+            // A field of three members, the form before a field said what a
+            // map that lacks it reads.
+            (
+                r#"["rank",false,{"int":8}]"#,
+                "what a map that lacks its key reads",
+            ),
+        ] {
+            let description = format!(r#"{{"record":[["id",false,{{"uint":32}},null],{field}]}}"#);
+            let refused = decode(&first, &description).expect_err(field);
+            assert_eq!(refused.pointer, "", "{refused}");
+            assert!(
+                refused
+                    .reason
+                    .contains("has a description the codec cannot read")
+                    && refused.reason.contains(why),
+                "{field}: {refused}"
+            );
+        }
     }
 
     const FAILURE: &str = r#"{"error":"not_a_record","key_id":"","payload":null,"valid":false}"#;
