@@ -76,6 +76,31 @@ impl ScratchDir {
         }
         all
     }
+
+    /// [`Self::generated_text`] with the comments of each artifact blanked
+    /// by its language's lexer (`common::source_lexing::comments_blanked`),
+    /// so a block comment's continuation lines read as nothing. An artifact
+    /// of a language the lexer does not know is kept whole, so it is still
+    /// read rather than passed over.
+    fn generated_code(&self) -> String {
+        let mut all = String::new();
+        for entry in std::fs::read_dir(&self.0).expect("read scratch dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().is_some_and(|e| e == "json") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let name = path.to_string_lossy();
+            match common::source_lexing::language_of(&name) {
+                Some(lang) => all.push_str(&common::source_lexing::comments_blanked(&text, lang)),
+                None => all.push_str(&text),
+            }
+            all.push('\n');
+        }
+        all
+    }
 }
 
 impl Drop for ScratchDir {
@@ -302,11 +327,14 @@ fn a_machine_with_no_data_model_names_no_engine() {
             manifest.contains("\"needs_script_engine\":false"),
             "{language} made a decided `<if>` carry a script engine: {manifest}"
         );
-        let generated = out.generated_text();
+        // Comments are blanked by the lexer of each file's language, not
+        // judged line by line: the prose of a block comment that wraps onto
+        // a line of its own, as C's `_destroy` declaration says
+        // "refused (sm->L is checked)", is no reference to an engine.
+        let generated = out.generated_code();
         let reaching: Vec<&str> = generated
             .lines()
             .map(str::trim)
-            .filter(|line| !is_comment(line))
             // Call shapes, not names: a machine that carries no engine
             // still *declares* the no-op lifecycle members a machine
             // that does would use, and declaring one reaches for
