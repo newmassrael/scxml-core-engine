@@ -301,8 +301,10 @@ pub enum PythonNameClash {
 /// edit.
 pub const PYTHON_CODEC_METHODS: &[&str] = &["decode", "encode", "encode_to_bytes"];
 
-/// The names a generated class body evaluates. See [`PythonNameClash::ClassBody`];
-/// derived and compared in the same test.
+/// The names a generated class body evaluates, of every codec encoding. See
+/// [`PythonNameClash::ClassBody`]; derived and compared in the same test, from
+/// the committed output and from the Python each CBOR and content-line
+/// document it names generates.
 pub const PYTHON_CLASS_BODY_NAMES: &[&str] = &["classmethod", "field", "property"];
 
 /// The parameters of the generated `decode` and `encode` calls: `cls` and
