@@ -22,10 +22,10 @@ public object {{ struct_name }} {
 {% if fenced %}
 
     /** The marker an untrusted hole's text opens with. */
-    public const val FENCE_OPEN: String = "{{ fence_open }}"
+    public {{ kotlin_string_val("FENCE_OPEN", fence_open, "    ") }}
 
     /** The marker an untrusted hole's text closes with. */
-    public const val FENCE_CLOSE: String = "{{ fence_close }}"
+    public {{ kotlin_string_val("FENCE_CLOSE", fence_close, "    ") }}
 {% endif %}
 
     /**
