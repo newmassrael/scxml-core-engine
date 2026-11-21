@@ -387,10 +387,11 @@ fn go_happy_compile_const_with_index_by() {
         ),
         "expected FindByIndex(key: uint32); got:\n{code}"
     );
-    // PascalCase field reference (matches Go codec's `codec_field_id`).
+    // The element is printed from its plan (docs/adr/0081 step 4), so the
+    // comparison body reads the index field through its PascalCase method.
     assert!(
-        code.contains("t.slots[slot].KeyExprId == key"),
-        "expected `t.slots[slot].KeyExprId == key` comparison body"
+        code.contains("t.slots[slot].KeyExprId() == key"),
+        "expected `t.slots[slot].KeyExprId() == key` comparison body; got:\n{code}"
     );
 }
 
