@@ -972,7 +972,7 @@ pub(super) fn render(
 
 /// The property a value presents the arm of its variant by, as the template's
 /// data class holds it.
-const VARIANT_PROPERTY: &str = "body";
+const VARIANT_PROPERTY: &str = crate::scxml_identifier::VARIANT_MEMBER;
 
 /// The sealed class the Kotlin value of the codec whose data class is
 /// `struct_name` holds the arm of its variant in, as the template declares it.

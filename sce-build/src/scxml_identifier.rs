@@ -478,11 +478,12 @@ fn python_declaration(
 const LINE_RECORD_MEMBER: &str = "a member the record of one line of a repeated property \
                                   declares for the line's value, beside the line's parameters";
 
-/// How every backend spells a member of a content-line line record, a
-/// parameter's and the line's value's alike (`LangCtx::codec_field_id`), in
-/// [`crate::generator::Language::ALL`] order: Rust, Python and C11 snake_case,
-/// Go Pascal, C++, Kotlin and Swift as written.
-const LINE_RECORD_SPELLING: [crate::reader_names::Case; 7] = [
+/// How every backend spells a member of a codec's value or of a content-line
+/// line record, an author's and the generator's own alike
+/// (`LangCtx::codec_field_id`), in [`crate::generator::Language::ALL`] order:
+/// Rust, Python and C11 snake_case, Go Pascal, C++, Kotlin and Swift as
+/// written.
+const CODEC_MEMBER_SPELLING: [crate::reader_names::Case; 7] = [
     crate::reader_names::Case::Snake,
     crate::reader_names::Case::Verbatim,
     crate::reader_names::Case::Verbatim,
@@ -561,7 +562,7 @@ fn line_record_member(
     crate::generator::Language::ALL
         .iter()
         .copied()
-        .zip(LINE_RECORD_SPELLING)
+        .zip(CODEC_MEMBER_SPELLING)
         .find_map(|(language, case)| {
             let spelled = case.spell(id);
             let beside: &[&str] = if language == crate::generator::Language::C11 {
@@ -573,6 +574,149 @@ fn line_record_member(
                 .chain(beside.iter().copied())
                 .any(|declared| case.spell(declared) == spelled)
                 .then_some((language, spelled))
+        })
+}
+
+/// The member every backend holds the arm of a codec's `<sce:variant>` in:
+/// a field of the value in Rust, Python, C11 and Swift, a property in Kotlin, a
+/// member and its accessor in C++, and an unexported field behind the method
+/// `Body` in Go. Each backend's constant for it is this one.
+pub const VARIANT_MEMBER: &str = "body";
+
+/// The member the value of a codec whose `<sce:variant>` takes its tag from
+/// the caller (no `tag` attribute) answers that tag by: the method `tag` in
+/// Python and C++, `Tag` in Go, and a property in Kotlin and Swift. Rust
+/// answers it on the arm's enum and C11 by a function of the module, neither a
+/// member of the value.
+pub const CALLER_TAG_MEMBER: &str = "tag";
+
+/// How every backend spells a flag's accessor, a method of the codec's value
+/// (`flag_getter_name`), in [`crate::generator::Language::ALL`] order. C11's
+/// is a function of the module and never meets a member; its column is unused.
+const FLAG_ACCESSOR_SPELLING: [crate::reader_names::Case; 7] = [
+    crate::reader_names::Case::Snake,
+    crate::reader_names::Case::Snake,
+    crate::reader_names::Case::Camel,
+    crate::reader_names::Case::Pascal,
+    crate::reader_names::Case::Snake,
+    crate::reader_names::Case::Snake,
+    crate::reader_names::Case::Camel,
+];
+
+/// A member the generator gives the value of a codec that declares a
+/// `<sce:variant>`, beside the author's own.
+struct VariantValueMember {
+    name: &'static str,
+    /// Whether only a variant whose caller supplies its tag declares it.
+    caller_tag: bool,
+    /// The backends, in [`crate::generator::Language::ALL`] order, whose
+    /// value holds it in the namespace a codec member is declared in.
+    beside_a_member: [bool; 7],
+    /// The backends whose value holds it in the namespace a flag's accessor is
+    /// declared in: C++, Go and Python, where a member and a method of one
+    /// name are one name (`forge::declared_names`, scope `codec-class`).
+    beside_a_flag: [bool; 7],
+    /// The clause `validation/reserved-code-identifier` gives after the name.
+    reason: &'static str,
+}
+
+/// See [`VariantValueMember`].
+const VARIANT_VALUE_MEMBERS: &[VariantValueMember] = &[
+    VariantValueMember {
+        name: VARIANT_MEMBER,
+        caller_tag: false,
+        beside_a_member: [true; 7],
+        beside_a_flag: [false, true, false, true, true, false, false],
+        reason: "the member the value of a codec with a <sce:variant> holds the variant's \
+                 arm in",
+    },
+    VariantValueMember {
+        name: CALLER_TAG_MEMBER,
+        caller_tag: true,
+        beside_a_member: [false, true, true, true, true, false, true],
+        beside_a_flag: [false, true, false, true, true, false, false],
+        reason: "the member the value of a codec whose <sce:variant> takes its tag from the \
+                 caller answers that tag by",
+    },
+];
+
+/// The first backend, in [`crate::generator::Language::ALL`] order, whose
+/// value of the codec `node` is declared in holds a member of the variant
+/// ([`VARIANT_MEMBER`], and [`CALLER_TAG_MEMBER`] where the caller supplies
+/// the tag) spelled as the name `node`'s attribute `attr` declares, with that
+/// spelling and why; `None` for any other name.
+///
+/// A codec's field, flags carrier, list, chain, embed or positional `<data>`
+/// is a member of the value, and a flag's accessor a method of it, in the
+/// namespace the variant's own members are declared in, so one spelled as
+/// either declared it twice: a duplicate field or property in Rust, C++,
+/// Kotlin, Go, C11 and Swift, and in Python a dataclass field whose default
+/// was the method `tag` or whose annotation `body` replaced the arm's. Swift
+/// and C11 refused the document by name when they printed it, and the rest
+/// generated it. The members are the generator's, so the name is refused, for
+/// every backend at once, as a reserved word is.
+fn variant_member(
+    node: &roxmltree::Node,
+    attr: &str,
+) -> Option<(crate::generator::Language, String, &'static str)> {
+    use crate::forge::model::SCE_NAMESPACE;
+    let in_sce = node.tag_name().namespace() == Some(SCE_NAMESPACE);
+    let flag = match (node.tag_name().name(), attr) {
+        ("field" | "flags" | "repeat" | "tlv-chain" | "embed", "id") if in_sce => false,
+        // Inside `<sce:peek-byte>` a flag is only a mask lookup.
+        ("flag", "name")
+            if in_sce
+                && !node
+                    .parent_element()
+                    .is_some_and(|p| p.tag_name().name() == "peek-byte") =>
+        {
+            true
+        }
+        // A positional codec's `<data>` is a field; its input frame is none.
+        ("data", "id")
+            if node.tag_name().namespace() == Some(crate::model::SCXML_NAMESPACE)
+                && node.attribute((SCE_NAMESPACE, "direction")) != Some("in") =>
+        {
+            false
+        }
+        _ => return None,
+    };
+    let root = node.document().root_element();
+    if root.attribute((SCE_NAMESPACE, "kind")) != Some("codec") {
+        return None;
+    }
+    let variant = root.descendants().find(|n| {
+        n.tag_name().namespace() == Some(SCE_NAMESPACE) && n.tag_name().name() == "variant"
+    })?;
+    let caller_tag = variant.attribute("tag").is_none();
+    let id = node.attribute(attr)?;
+    let spelling = if flag {
+        FLAG_ACCESSOR_SPELLING
+    } else {
+        CODEC_MEMBER_SPELLING
+    };
+    VARIANT_VALUE_MEMBERS
+        .iter()
+        .filter(|member| caller_tag || !member.caller_tag)
+        .find_map(|member| {
+            let held = if flag {
+                member.beside_a_flag
+            } else {
+                member.beside_a_member
+            };
+            crate::generator::Language::ALL
+                .iter()
+                .copied()
+                .zip(spelling)
+                .zip(held)
+                .find_map(|((language, case), holds)| {
+                    let spelled = case.spell(id);
+                    (holds && spelled == case.spell(member.name)).then_some((
+                        language,
+                        spelled,
+                        member.reason,
+                    ))
+                })
         })
 }
 
@@ -858,7 +1002,9 @@ pub fn reject_malformed(
                     // accessor, a flag-input a parameter of its calls, and the
                     // class already uses a few names for itself.
                     // A parameter of a repeated content-line property cannot
-                    // be the member its line record holds the line's value by.
+                    // be the member its line record holds the line's value by,
+                    // nor a member of a codec's value the member its variant's
+                    // arm or tag is held by.
                     let reserved = crate::reader_names::reserved_in(
                         attribute.value(),
                         spellings_of(dialect, &node, attribute.name()),
@@ -873,6 +1019,10 @@ pub fn reject_malformed(
                     .or_else(|| {
                         let (language, spelled) = line_record_member(&node, attribute.name())?;
                         Some((language, spelled, Some(LINE_RECORD_MEMBER)))
+                    })
+                    .or_else(|| {
+                        let (language, spelled, reason) = variant_member(&node, attribute.name())?;
+                        Some((language, spelled, Some(reason)))
                     });
                     if let Some((language, spelled, reason)) = reserved {
                         return Err(Located::new(
@@ -1154,6 +1304,88 @@ mod tests {
                 check(owner, param),
                 Ok(()),
                 "a parameter `{param}` beside {owner} is no member its line record declares"
+            );
+        }
+    }
+
+    /// The value of a codec that declares a `<sce:variant>` holds the arm in
+    /// `VARIANT_MEMBER`, and where the caller supplies the tag answers it by
+    /// `CALLER_TAG_MEMBER` (`variant_member`). A codec member or a flag spelled as
+    /// one, in any backend that holds it beside that kind of name, is refused; a
+    /// codec without a variant, and a variant with a tag of its own, leave the
+    /// names that are not theirs alone.
+    #[test]
+    fn a_member_of_a_variants_value_is_no_name_an_author_declares_beside_it() {
+        let check = |variant: &str, members: &str| -> Result<(), String> {
+            let text = format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext"
+                          sce:kind="codec" sce:default-endian="big" version="1.0">
+                     <datamodel>
+                       {members}
+                       {variant}
+                     </datamodel>
+                   </scxml>"#
+            );
+            let parsed = roxmltree::Document::parse(&text).expect("a well-formed document");
+            let root = parsed.root_element();
+            let dialect = Dialect::of(&root);
+            reject_malformed(&root, "t", dialect).map_err(|e| e.error.to_string())
+        };
+        let caller = r#"<sce:variant><sce:arm value="0" type="a"/></sce:variant>"#;
+        let tagged = r#"<sce:variant tag="kind"><sce:arm value="0" type="a"/></sce:variant>"#;
+        let kind = r#"<sce:field id="kind" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>"#;
+        let field = |id: &str| {
+            format!(
+                r#"{kind}<sce:field id="{id}" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>"#
+            )
+        };
+        let data = |id: &str| {
+            format!(r#"{kind}<data id="{id}" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>"#)
+        };
+        let flag = |name: &str| {
+            format!(
+                r#"{kind}<sce:flags id="bits" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+                     <sce:flag name="{name}" bit="0"/>
+                   </sce:flags>"#
+            )
+        };
+
+        // `Tag` is `tag` in Python's snake_case and Go's `Tag` as written.
+        for (variant, members) in [
+            (caller, field("tag")),
+            (caller, field("Tag")),
+            (caller, data("tag")),
+            (caller, flag("tag")),
+            (caller, field("body")),
+            (caller, data("body")),
+            (tagged, field("body")),
+            (tagged, field("Body")),
+            (tagged, flag("body")),
+        ] {
+            let refused = check(variant, &members)
+                .err()
+                .unwrap_or_else(|| panic!("{members} beside {variant}"));
+            assert!(
+                refused.contains("the member the value of a codec"),
+                "the refusal of {members} says why: {refused}"
+            );
+        }
+        let input = format!(r#"{kind}<data id="body" sce:type="bytes" sce:direction="in"/>"#);
+        for (variant, members) in [
+            (tagged, field("tag")),
+            (tagged, data("tag")),
+            (tagged, flag("tag")),
+            ("", field("body")),
+            ("", field("tag")),
+            ("", flag("body")),
+            (caller, field("tags")),
+            (caller, input),
+        ] {
+            assert_eq!(
+                check(variant, &members),
+                Ok(()),
+                "{members} beside {variant:?} is no member of the variant's value"
             );
         }
     }

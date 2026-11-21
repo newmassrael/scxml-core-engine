@@ -3534,6 +3534,22 @@ code identifier, so no name is one an author cannot reach. A parameter of a
 property that occurs once is a member of the codec's value, beside the
 property's own entry, and is not held to this.
 
+A codec that declares a `<sce:variant>` is held the same way to the members
+its value holds for the variant. Every backend holds the arm in a member
+named `body`, and the value of a codec whose variant takes its tag from the
+caller (no `tag` attribute) answers that tag by a member `tag`: a method in
+Python and C++, `Tag` in Go, a property in Kotlin and Swift. A field, flags
+carrier, list, chain, embed or positional `<data>` spelled as one of them, in
+a backend that holds the member beside the author's, and a flag whose
+accessor is spelled so in C++, Go or Python, would declare it twice: a
+duplicate member in most backends, and in Python a dataclass field whose
+default was the method `tag`. Swift and C11 refused such a document by name
+when they printed it and the rest generated it; it is refused at parse, for
+every backend, as `validation/reserved-code-identifier` with the reason in
+the message. A field named `tag` beside a variant with a tag of its own is
+no member of the variant's and is accepted, as `codec_origin_choice` writes
+it.
+
 Python has a second kind of refusal, for a name that is no keyword and
 still cannot be the author's. A generated Python decoder is one function
 that reads from `cursor`, calls `bytes(…)` and `range(…)`, builds its
