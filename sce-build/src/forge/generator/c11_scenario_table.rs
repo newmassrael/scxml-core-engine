@@ -1066,9 +1066,12 @@ mod tests {
     /// from the fixtures every lane replays.
     fn table_of(document: &str, scenario: &str) -> C11ScenarioTable {
         let document = fixture(document);
-        let model = crate::parser::SCXMLParser::new()
-            .parse_file(document.to_str().expect("a UTF-8 path"))
+        let path = document.to_str().expect("a UTF-8 path");
+        let mut model = crate::parser::SCXMLParser::new()
+            .parse_file(path)
             .expect("the fixture parses");
+        // As `sce-codegen scenario-table` reads it: analysed, as the generator does.
+        crate::analyzer::analyze(&mut model, path);
         let text = std::fs::read_to_string(fixture(scenario)).expect("the scenario reads");
         let scenario: Value = serde_json::from_str(&text).expect("the scenario is JSON");
         let stem = document
@@ -1110,6 +1113,27 @@ mod tests {
         assert!(table.source.contains(
             "return static_counter_init((static_counter_t *)machine) == STATIC_COUNTER_START_OK;"
         ));
+    }
+
+    /// A machine that waits on a delayed send is driven by its clock: the scenario
+    /// of the gate's `plain_footprint_probe` moves it 4 ms and then 1 ms, and
+    /// each move is the image's counter advanced and the machine ticked and
+    /// stepped. A model read without the analysis waited on nothing, and this
+    /// scenario was refused on the target.
+    #[test]
+    fn a_scenario_that_moves_the_clock_drives_the_machine_s_timer() {
+        let table = table_of(
+            "tests/fixtures/no_std/plain_footprint_probe.scxml",
+            "../backends/c/mcu/scenarios/plain_footprint_probe.json",
+        );
+        assert_eq!(table.steps, 4, "every step of the scenario is a row");
+        for line in [
+            "sce_mcu_clock_advance(UINT64_C(4));",
+            "sce_mcu_clock_advance(UINT64_C(1));",
+            "plain_footprint_probe_tick(m);",
+        ] {
+            assert!(table.source.contains(line), "{line}");
+        }
     }
 
     #[test]
@@ -1271,10 +1295,16 @@ mod tests {
     #[test]
     fn a_step_the_target_cannot_make_is_refused() {
         let document = fixture("tests/fixtures/static_datamodel/static_counter.scxml");
-        let model = crate::parser::SCXMLParser::new()
-            .parse_file(document.to_str().expect("a UTF-8 path"))
+        let path = document.to_str().expect("a UTF-8 path");
+        let mut model = crate::parser::SCXMLParser::new()
+            .parse_file(path)
             .expect("the fixture parses");
+        crate::analyzer::analyze(&mut model, path);
         let dir = document.parent().expect("a directory");
+        let clock = serde_json::json!({"machine": "static_counter", "steps": [{"advance_ms": 1}]});
+        let refused = render_c11_scenario_table(&model, "static_counter", dir, &clock)
+            .expect_err("a machine with no delayed send has no clock to move");
+        assert!(refused.contains("waits on none"), "{refused}");
         let restore =
             serde_json::json!({"machine": "static_counter", "steps": [{"restore": true}]});
         let refused = render_c11_scenario_table(&model, "static_counter", dir, &restore)

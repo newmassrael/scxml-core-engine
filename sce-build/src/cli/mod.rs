@@ -13900,9 +13900,14 @@ fn cmd_scenario_table(file: &str, machine: &str, error_format: ErrorFormat) {
                 .to_string(),
         )
     };
-    let model = crate::parser::SCXMLParser::new()
+    let mut model = crate::parser::SCXMLParser::new()
         .parse_file(machine)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    // The facts a table reads of the machine are the generator's, among them
+    // whether it waits on a delayed send, and the analysis records them: a model
+    // read without it waits on nothing, and a scenario that moves its clock was
+    // refused.
+    crate::analyzer::analyze(&mut model, machine);
     let document = Path::new(machine);
     let stem = document
         .file_stem()
