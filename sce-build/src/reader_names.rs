@@ -256,9 +256,11 @@ const PYTHON_KEYWORDS: &[&str] = &[
 /// replace that — silently, since Python lets a class body rebind any name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PythonNameClash {
-    /// A method every generated codec class defines (`decode`, `encode`,
-    /// `encode_to_bytes`). A field or flag of that name is a class attribute
-    /// bound before or after the method, and one of them wins.
+    /// A method a generated codec class defines: `decode`, `encode` and
+    /// `encode_to_bytes` on every one, and `_decode_at` on a CBOR map's and a
+    /// content-line component's. A field or flag of that name is a class
+    /// attribute bound before or after the method, and one of them wins: a
+    /// field declared before the method takes the method as its default.
     ClassMethod,
     /// A name a class body evaluates while the class is being built, of a
     /// class whose members are the author's names (the value of a positional
@@ -292,14 +294,20 @@ pub enum PythonNameClash {
     InheritedSetter,
 }
 
-/// The methods every generated Python codec class defines.
+/// The methods a generated Python codec class defines, of any encoding:
+/// `decode`, `encode` and `encode_to_bytes` on every one, and `_decode_at`,
+/// the read past the cursor's mark a CBOR map's or a content-line component's
+/// `decode` makes and puts the cursor back from on a refusal.
 ///
-/// Read off the committed output, not invented: the names of the methods that
-/// each class in `tests/forge/expected/*.py` has, which
-/// `a_python_codec_keeps_an_authors_names_apart_from_its_own` recomputes and
-/// compares, so a method added to the template is on this list by the same
+/// Read off the generated output, not invented: every method a codec class, or
+/// a dataclass of its module, defines in `tests/forge/expected/*.py` and in
+/// the Python of the documents
+/// `a_python_codec_keeps_an_authors_names_apart_from_its_own` generates,
+/// leaving out a `__x__` name and one spelled from a name the document
+/// declares (a flag's accessor and its `set_` twin). That test recomputes the
+/// list and compares it, so a method added to a template is on it by the same
 /// edit.
-pub const PYTHON_CODEC_METHODS: &[&str] = &["decode", "encode", "encode_to_bytes"];
+pub const PYTHON_CODEC_METHODS: &[&str] = &["_decode_at", "decode", "encode", "encode_to_bytes"];
 
 /// The names a generated class body evaluates, of every codec encoding. See
 /// [`PythonNameClash::ClassBody`]; derived and compared in the same test, from
@@ -369,8 +377,8 @@ pub fn python_name_clash(kind: PythonDeclaration, spelled: &str) -> Option<Pytho
 pub fn python_name_clash_reason(clash: PythonNameClash) -> &'static str {
     match clash {
         PythonNameClash::ClassMethod => {
-            "a method every generated python codec class defines, so a field or \
-             flag of that name would replace it"
+            "a method a generated python codec class defines, so a field or flag \
+             of that name would replace it"
         }
         PythonNameClash::ClassBody => {
             "a name the generated python class body evaluates while it is built, \

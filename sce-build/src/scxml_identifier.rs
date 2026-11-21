@@ -930,7 +930,13 @@ mod tests {
         let line = r#"sce:encoding="content-line""#;
         let entry = |id: &str| format!(r#"<data id="{id}" sce:type="uint8"/>"#);
         for encoding in [cbor, line] {
-            for name in ["decode", "encodeToBytes", "classmethod", "property"] {
+            for name in [
+                "decode",
+                "encodeToBytes",
+                "_decode_at",
+                "classmethod",
+                "property",
+            ] {
                 assert!(
                     refuse(encoding, &entry(name)),
                     "an entry named `{name}` ({encoding})"
