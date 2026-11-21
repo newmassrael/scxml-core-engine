@@ -5909,7 +5909,7 @@ not lower.
 
 - `swift` lowers reads, copies, unions, records, sends; refuses none
 
-- `ecmascript` lowers reads, copies, unions, sends; refuses records
+- `ecmascript` lowers reads, copies, unions, records, sends; refuses none
 <!-- composed-lowering-rows: end -->
 
 The fixtures `static_composed_payload` and `static_composed_send`
