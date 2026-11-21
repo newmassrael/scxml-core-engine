@@ -380,8 +380,9 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
 
 /// Every file the generation of `seeds` reads, each once, the seeds first:
 /// every document reached from them by every kind of reference [`walk`]
-/// follows, transitively, and every fragment the load of each read (its
-/// `<xi:include>` targets and `<sce:use>` fragments).
+/// follows, transitively, every fragment the load of each read (its
+/// `<xi:include>` targets and `<sce:use>` fragments), and every shape file a
+/// statechart's `<sce:migration>` names ([`migration_shapes`]).
 ///
 /// The input closure a generated file's header digests (ADR 0094 section 1)
 /// is taken over this list. It is [`walk`] made total where that walk is
@@ -419,6 +420,11 @@ pub fn reads(seeds: &[PathBuf], options: WalkOptions<'_>) -> Vec<PathBuf> {
             }
         }
         let base = document.parent().map(Path::to_path_buf).unwrap_or_default();
+        for shape in migration_shapes(loaded.text(), &base, options.input_root) {
+            if listed.insert(stdlib::identity(&shape)) {
+                found.push(shape);
+            }
+        }
         for reference in statechart_references(loaded.text()) {
             if let Some(next) = read_of(&base, options.input_root, &reference) {
                 pending.push_back(next);
@@ -426,6 +432,51 @@ pub fn reads(seeds: &[PathBuf], options: WalkOptions<'_>) -> Vec<PathBuf> {
         }
     }
     found
+}
+
+/// The shape files the `<sce:migration>`s of a statechart's text name, its
+/// `from` and its `to` (docs/adr/0109, D11), canonical, as its parse records
+/// them read (`forge::saved_migration::read`). Each is read where the parse
+/// reads it: from the directory the document's imports are read from, its own,
+/// or `input_root` when the document is a staged copy whose imports lie there
+/// and not beside it (`SCXMLParser::import_dir`). A file that is not there
+/// reads nothing: the step that names it is refused where the machine is built.
+///
+/// Read from the root's own elements, as the parse reads a migration and an
+/// import; a text that is not well-formed names nothing.
+fn migration_shapes(text: &str, base: &Path, input_root: Option<&Path>) -> Vec<PathBuf> {
+    let Ok(document) = roxmltree::Document::parse(text) else {
+        return Vec::new();
+    };
+    let root = document.root_element();
+    let sce_children = |local: &'static str| {
+        root.children().filter(move |node| {
+            node.is_element()
+                && node.tag_name().namespace() == Some(crate::template::SCE_EXT_NS)
+                && node.tag_name().name() == local
+        })
+    };
+    let imports: Vec<&str> = sce_children("import")
+        .filter_map(|node| node.attribute("src"))
+        .collect();
+    let holds_every_import = |dir: &Path| {
+        imports.iter().all(|src| {
+            let path = stdlib::resolve(dir, src);
+            stdlib::names_standard(&path) || crate::confine::exists(&path)
+        })
+    };
+    let dir = if holds_every_import(base) {
+        base
+    } else {
+        input_root
+            .filter(|root| holds_every_import(root))
+            .unwrap_or(base)
+    };
+    sce_children("migration")
+        .flat_map(|node| [node.attribute("from"), node.attribute("to")])
+        .flatten()
+        .filter_map(|shape| crate::confine::canonicalize(&dir.join(shape)).ok())
+        .collect()
 }
 
 /// The document `reference`, written in a document whose directory is `base`,
@@ -695,6 +746,89 @@ mod tests {
     fn walked(named: &[String]) -> Vec<Unit> {
         walk(named, WalkOptions::default())
             .unwrap_or_else(|refusal| panic!("the walk was refused: {}", refusal.error))
+    }
+
+    /// A statechart that declares `<sce:migration from to>`, with its shape files
+    /// under `shapes/`.
+    fn migrating(name: &str, steps: &[(&str, &str)], imports: &str) -> String {
+        let steps: String = steps
+            .iter()
+            .map(|(from, to)| {
+                format!("  <sce:migration from=\"shapes/{from}\" to=\"shapes/{to}\"/>\n")
+            })
+            .collect();
+        statechart(name, &format!("{imports}{steps}"))
+    }
+
+    fn shape_file(dir: &Path, file: &str) -> PathBuf {
+        let shapes = dir.join("shapes");
+        fs::create_dir_all(&shapes).expect("a shapes directory");
+        let path = shapes.join(file);
+        fs::write(&path, "sce-saved-state-shape 1\n").expect("write a shape file");
+        fs::canonicalize(&path).expect("a shape file resolves")
+    }
+
+    /// docs/adr/0109, D11: the parse of a statechart that declares a migration
+    /// reads the shape files its steps name, beside it, so they are read here
+    /// once each; one not written reads nothing.
+    #[test]
+    fn the_shape_files_a_migration_names_are_read_beside_the_statechart() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let first = shape_file(dir.path(), "1.shape");
+        let second = shape_file(dir.path(), "2.shape");
+        let machine = write(
+            dir.path(),
+            "machine.scxml",
+            &migrating(
+                "machine",
+                &[("1.shape", "2.shape"), ("2.shape", "3.shape")],
+                "",
+            ),
+        );
+
+        let read = reads(&[PathBuf::from(&machine)], WalkOptions::default());
+        assert_eq!(read, [PathBuf::from(&machine), first, second]);
+    }
+
+    /// A staged copy whose imports are not beside it reads its shape files from
+    /// the input root, where its imports are, as `SCXMLParser::import_dir` does.
+    #[test]
+    fn a_staged_copy_reads_its_shape_files_where_its_imports_are() {
+        let original = tempfile::tempdir().expect("temp dir");
+        let staged = tempfile::tempdir().expect("temp dir");
+        write(
+            original.path(),
+            "inner.scxml",
+            &algorithm("inner_even", &[]),
+        );
+        let shape = shape_file(original.path(), "1.shape");
+        // Beside the copy, a shape file the parse does not read.
+        shape_file(staged.path(), "1.shape");
+        let text = migrating(
+            "machine",
+            &[("1.shape", "2.shape")],
+            "  <sce:import kind=\"algorithm\" src=\"inner.scxml\" as=\"Inner\"/>\n",
+        );
+        write(original.path(), "machine.scxml", &text);
+        let machine = write(staged.path(), "machine.scxml", &text);
+
+        let read = reads(
+            &[PathBuf::from(&machine)],
+            WalkOptions {
+                include_dirs: &[],
+                input_root: Some(original.path()),
+            },
+        );
+        assert!(
+            read.contains(&shape),
+            "the shape file under the input root is read: {read:?}"
+        );
+        assert!(
+            !read.contains(
+                &fs::canonicalize(staged.path().join("shapes/1.shape")).expect("resolves")
+            ),
+            "the shape file beside the copy is not read: {read:?}"
+        );
     }
 
     #[test]
