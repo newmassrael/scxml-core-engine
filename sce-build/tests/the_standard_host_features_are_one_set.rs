@@ -1585,6 +1585,32 @@ fn the_build_encodes_the_record_where_a_signing_starts_and_reads_it_where_a_veri
     }
 }
 
+/// The record a verification reads is the completion's `payload`, an
+/// `optional<record:Note>`, a field of the completion's record, and `got` is an
+/// `optional<record:Note>` too: the assignment takes it whole as the optional record
+/// it is, absent where the object did not verify, and never lifts it into a present
+/// value a second time (`Some(Some(...))`, which no `Option<Note>` holds).
+#[test]
+fn the_record_a_verification_reads_is_taken_whole_as_the_optional_record_it_is() {
+    let doc = note_probe();
+    let (ok, text, written) = generate_beside("rust", &doc, &PAYLOAD_SIBLINGS);
+    assert!(ok, "rust did not generate: {text}");
+    assert!(
+        written.contains("ev.payload.clone()"),
+        "rust: `got` does not take the completion's record whole:\n{written}"
+    );
+    assert!(
+        !written.contains("Some(ev.payload"),
+        "rust: the completion's optional record is lifted into a present value:\n{written}"
+    );
+    let (ok, text, written) = generate_beside("cpp", &doc, &PAYLOAD_SIBLINGS);
+    assert!(ok, "cpp did not generate: {text}");
+    assert!(
+        written.contains("Payload_.payload"),
+        "cpp: `got` does not take the completion's record whole:\n{written}"
+    );
+}
+
 /// `sce:payload` names an imported record, on a COSE operation that carries one;
 /// a name of no import, an enum (which no record codec writes) and another
 /// operation are each `validation/payload-record-schema`.

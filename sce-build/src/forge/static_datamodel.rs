@@ -536,6 +536,49 @@ pub(crate) fn indexed_element(written: &str) -> Option<(&str, &str)> {
     None
 }
 
+/// The place `written` reads when it is a field of a record, at any depth, that
+/// holds a whole record or a whole optional record (`_event.data.payload`,
+/// `_event.data.kept`), with the path it is read at
+/// ([`crate::forge::expr::written_place`]): every place it is read through on the
+/// way is a record (the payload, a record variable, a field of one), so no element
+/// and no present value is read on the way, and the place holds `record:R` or
+/// `optional<record:R>`. Taken whole into a record variable or an optional record
+/// variable as a list a place holds is taken into a list variable (docs/adr/0086,
+/// section 6.1). `None` for anything else, `_event.data` itself among them, which
+/// is a record named whole.
+pub(crate) fn record_field_place(
+    ctx: &TypeCtx<'_>,
+    written: &str,
+) -> Option<(String, crate::forge::value_path::Place)> {
+    use crate::forge::value_type::ValueType;
+    let path = crate::forge::expr::written_place(written)?;
+    if path.contains(crate::forge::value_path::ELEMENT) {
+        return None;
+    }
+    // Each place on the way that holds a value is a record, from the first one
+    // (a variable, or `_event.data`, whose own name holds a dot) to the holder
+    // of the field.
+    let mut through_records = false;
+    for (at, _) in path.match_indices('.') {
+        match ctx.value_of(&path[..at]) {
+            Some(held) if matches!(held.ty, ValueType::Record { .. }) => through_records = true,
+            Some(_) => return None,
+            None if through_records => return None,
+            None => {}
+        }
+    }
+    if !through_records {
+        return None;
+    }
+    let place = ctx.value_of(&path)?;
+    let holds_a_record = match &place.ty {
+        ValueType::Record { .. } => true,
+        ValueType::Optional { elem } => matches!(**elem, ValueType::Record { .. }),
+        _ => false,
+    };
+    holds_a_record.then_some((path, place))
+}
+
 /// The conditions of `action`'s `<if>` chain in order — its own, then each
 /// `<elseif>`'s — as [`narrowing::Chain`] reads them; a native condition, which
 /// proves nothing, as empty text. Empty for any other action. The lowering reads
@@ -3843,8 +3886,10 @@ impl<'a> Judge<'a> {
     /// of a record variable or of an optional record of the same schema, a loop's
     /// record item, `_event.data` when the event's schema is the record's, the
     /// element of a list of its schema at an index, or what an imported algorithm
-    /// returns as a record or an optional record of it. Nothing in an expression
-    /// makes a record, so any other value is refused, naming what is taken.
+    /// returns as a record or an optional record of it, or a field of a record that
+    /// holds a record or an optional record of it ([`Self::record_field_copy`]).
+    /// Nothing in an expression makes a record, so any other value is refused,
+    /// naming what is taken.
     fn optional_record_assign(
         &self,
         ctx: &TypeCtx<'_>,
@@ -3890,6 +3935,9 @@ impl<'a> Judge<'a> {
                 written,
             ));
         }
+        if let Some(judged) = self.record_field_copy(ctx, action, alias, true, state) {
+            return judged;
+        }
         self.record_of(
             "assign",
             &action.expr,
@@ -3897,6 +3945,84 @@ impl<'a> Judge<'a> {
             alias,
             state,
         )
+    }
+
+    /// `<assign location="note" expr="_event.data.payload"/>`: the record variable,
+    /// or the optional record variable (`optional`), of the schema `alias` at the
+    /// action's location takes whole what a field of a record holds
+    /// ([`record_field_place`]), copied as a list a place holds is taken whole
+    /// (docs/adr/0086, section 6.1): the completion of a verification or an opening
+    /// that names a record among them, whose `payload` (`plaintext`) is an
+    /// `optional<record:R>` of the record `sce:payload` names (docs/adr/0109, D9).
+    /// The field holds a record of the variable's schema, the same record document
+    /// whichever alias names it where the field is declared; a field that may be
+    /// absent goes only into an optional record, since a record variable always
+    /// holds one. `None` for a value that is no such field, which the rule of a
+    /// record named whole judges ([`Self::record_of`]).
+    fn record_field_copy(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        alias: &str,
+        optional: bool,
+        state: &str,
+    ) -> Option<Result<(), Located<ForgeError>>> {
+        use crate::forge::value_type::ValueType;
+        let written = action.expr.trim();
+        let (_, held) = record_field_place(ctx, written)?;
+        let spelling = action.spellings.get("expr");
+        // Its names are judged as any expression's are.
+        if let Err(refusal) = self.expr(
+            ctx,
+            written,
+            spelling,
+            Expected::Hint(InferredType::Unknown),
+        ) {
+            return Some(Err(refusal));
+        }
+        let location = action.location.trim();
+        let refused = |rule: String| {
+            self.rule_at(
+                "<assign>".to_string(),
+                &rule,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                written,
+            )
+        };
+        let (ty, may_be_absent) = match held.ty {
+            ValueType::Optional { elem } => (*elem, true),
+            present => (present, false),
+        };
+        let record = crate::forge::value_path::Place {
+            ty,
+            scope: held.scope,
+        };
+        let base = &self.scope.type_scope;
+        let same_record = crate::forge::value_path::record_identity(Some(base), &record)
+            .is_some_and(|identity| {
+                base.records
+                    .get(alias)
+                    .is_some_and(|wanted| wanted.identity == identity)
+            });
+        if !same_record {
+            let named = self
+                .statechart_record_alias(&record)
+                .unwrap_or_else(|| record.ty.to_string());
+            return Some(Err(refused(format!(
+                "`{written}` holds a record of the schema {named}, and `{location}` holds one \
+                 of the schema {alias}"
+            ))));
+        }
+        if may_be_absent && !optional {
+            return Some(Err(refused(format!(
+                "`{written}` holds optional<record:{alias}>, which may be absent, and \
+                 `{location}` holds record:{alias}, which always holds one: declare \
+                 `{location}` optional<record:{alias}> to take it"
+            ))));
+        }
+        Some(Ok(()))
     }
 
     /// A record of `schema` — a variable, or the element of a list — holds each enum
@@ -5700,6 +5826,11 @@ impl<'a> Judge<'a> {
                     // the element is copied field by field, as a field of it is read.
                     if let Some((list, index)) = indexed_element(&action.expr) {
                         return self.element_copy(ctx, action, alias, list, index, state);
+                    }
+                    // ... or from a field of a record that holds a record of its
+                    // schema, copied whole.
+                    if let Some(judged) = self.record_field_copy(ctx, action, alias, false, state) {
+                        return judged;
                     }
                     return self.record_of(
                         "assign",
