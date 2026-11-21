@@ -169,7 +169,12 @@ fn the_report_shows_what_each_requirement_rests_on() {
         &dir,
     ));
     assert!(page.contains("kind: transform"), "{page}");
-    assert!(page.contains("transform 'volts'"), "the root's row: {page}");
+    // The root's row names the document as a transform is named, by its file
+    // (`volts_claimed`), not by the `name` the copy kept from `volts.scxml`.
+    assert!(
+        page.contains("transform 'volts_claimed'"),
+        "the root's row: {page}"
+    );
     assert!(page.contains("missing        REQ-1"), "{page}");
     assert!(!page.contains("missing        REQ-3"), "{page}");
     assert!(
