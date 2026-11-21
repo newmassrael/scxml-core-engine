@@ -571,6 +571,29 @@ PEAK_MEASURED: dict[str, str] = {
                        "killed at 5.2 and 7.8 GB in a landing (2026-11-20)",
 }
 
+# `cores` is how many cores one run of the gate's OWN script can keep busy; a
+# unit asks bx for the largest figure among the gates it runs (`cores`, bx RFC
+# 0004, section 6). bx gives a unit of a check set that many job slots and no
+# more: its own jobserver and `BX_GRANT_CORES` (bx RFC 0062, 4.5), which
+# `scripts/lib/sce_build_jobs.sh` hands to the builds. A batch is given its
+# largest unit's figure even on a busy machine, capped at the machine's cores
+# (bx RFC 0042, 4); bx does not learn a unit's cores (bx RFC 0062, 7), so the
+# figure here is the whole of what the unit is given. A unit that named none
+# was given one slot. MEASURED 2026-11-21: in a landing whose units named
+# none, a unit's run was given one core and used 1.3 on average, one unit was
+# still running after 7547s, and the landing's judge reached its four-hour
+# deadline three times without a verdict.
+#
+# Every figure is the one of its class, as `peak_gb`'s are until a run is
+# read: `CORES_COMPILE` for a gate that compiles, `CORES_SCRIPT` for a script
+# that runs built tools over the tree. Eight is the core count of the smallest
+# build machines the fleet has: a compiling unit is given all of one of those
+# and a share of a larger one. A tree build parallelises past eight, but a
+# floor above a machine's cores is capped there, and on a busy machine the
+# floor is a weight the kernel shares, not cores taken from another run.
+CORES_COMPILE = 8
+CORES_SCRIPT = 1
+
 # Every unit names this, so a machine runs one gate of a set at a time. The
 # gates were written for a runner that ran them one after another in one
 # checkout, and several share what that checkout holds: the CMake tree under
@@ -728,6 +751,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The NL→IR closure ledger, measured against the tree it describes.
     #
@@ -776,6 +800,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # Guards the clang degraded-AST regression in the manifest emitter.
     # Its own lane in the embed workflow rather than a step in the smoke
@@ -799,6 +824,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # Whether embed/MANIFEST.json was emitted from the inputs it is committed
     # with, against its stamp embed/MANIFEST.inputs (scripts/embed_manifest.py).
@@ -822,6 +848,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": ["HEAD"],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # `roadmap_marker_gate` reads every tracked file and
     # `workflow_trigger_coverage` reads every workflow, so tree-hygiene.yml
@@ -864,6 +891,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": ["HEAD"],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # Rides the same unfiltered workflow, for the same reason in a different
     # alphabet: what this gate reads is the union of every `mutation_targets`
@@ -888,6 +916,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # The other half of the same corpus: whether a case still turns its suite
     # red, which only a build can answer.
@@ -972,6 +1001,7 @@ GATES: dict[str, dict] = {
         # upstream says nothing about the push (see `commits` above).
         "commits": ["CHANGES"],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "clippy": {
         "workflows": ["clippy-check.yml"],
@@ -996,6 +1026,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # Shares clippy's workflow because it shares clippy's inputs: the
     # declarations clippy measures its lints against are the ones this keeps
@@ -1015,6 +1046,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "nostd-mcu": {
         "workflows": ["sce-rust-runtime-no-std.yml"],
@@ -1032,6 +1064,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
     # sce-rust-runtime-no-std.yml while the gate's own comment named
@@ -1047,6 +1080,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "embed-vendor": {
         "workflows": ["embed-vendor-smoke.yml"],
@@ -1078,6 +1112,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # Mirrors the Rust workspace suite only. `w3c-tests.yml` is deliberately
     # NOT listed: it has no `paths:` filter (it runs on every CI push) and
@@ -1321,6 +1356,7 @@ GATES: dict[str, dict] = {
         # The highest figure a run has reached (PEAK_MEASURED); the one run
         # that reached it was killed there, so the true peak may lie above.
         "peak_gb": 16,
+        "cores": CORES_COMPILE,
     },
     # The one reader of the content axis. The header's `source-hash` covers
     # the INPUT documents, so an edit to the templates or to the emit code
@@ -1349,6 +1385,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": ["HEAD"],
         "peak_gb": 6.5,
+        "cores": CORES_COMPILE,
     },
     # What replaces `regen-reproduces` once nothing generated is committed
     # (ADR 0097, section 5): every action of every declared tree run here
@@ -1376,6 +1413,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "drift-suites": {
         "workflows": ["drift-verify.yml"],
@@ -1388,6 +1426,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # forge-conformance.yml verifies the language arms in parallel jobs, and
     # its path filter is workflow-wide: a change under
@@ -1418,6 +1457,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "forge-rust": {
         "workflows": ["forge-conformance.yml"],
@@ -1441,6 +1481,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "forge-python": {
         "workflows": ["forge-conformance.yml"],
@@ -1461,6 +1502,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     "forge-cpp": {
         "workflows": ["forge-conformance.yml"],
@@ -1488,6 +1530,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # ⚠ The C11 arm existed as a complete standalone CMake project, a harness
     # template and ten per-kind fragments, and NOTHING RAN ANY OF IT —
@@ -1530,6 +1573,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # ⚠ The SIXTH arm, and it was the one the set was missing. Measured
     # 2026-09-18: `forge-conformance.yml` has six jobs — rust, python, go,
@@ -1562,6 +1606,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # ⚠ The Swift backend's own lane, and the one the family tables could not
     # hold. `<family>-<canonical name>` slugs name a backend's arm of a lane the
@@ -1626,6 +1671,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The Swift W3C arm, the twin of `w3c-go`: `sce-codegen generate-w3c -l swift` writes the
     # suite and the engine runs it. It rides the workflow of `swift-backend` as a second step of
@@ -1656,6 +1702,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The Swift twin of `ecma262-lowered-kotlin`: one machine that asks every case of the shared
     # ECMA-262 table, generated with the build-time lowering (the only route Swift has), compiled
@@ -1684,6 +1731,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The Swift twin of `forge-kotlin`: the forge runtime's own tests and every unit the generator
     # writes for a forge document, held to the numerical oracle. A fourth step of the same job as
@@ -1714,6 +1762,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs
@@ -1761,6 +1810,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # A C11 machine's core links with no C library, is weighed against a budget
     # and runs its replay scenario on a Cortex-M4 under QEMU (docs/adr/0110, D3):
@@ -1805,6 +1855,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # Catches codegen breakage in the example documents (the namespace
     # migration that broke them shipped green otherwise) and lints every
@@ -1836,6 +1887,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # The lane that starts on a compiled-in INPUT rather than on Rust.
     #
@@ -1863,6 +1915,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "ledger-citations": {
         "workflows": ["spec-citations.yml"],
@@ -1893,6 +1946,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # The authoring core's claim is that it knows no subject matter. A claim
     # like that decays silently -- one helpful special case at a time -- so it
@@ -1920,6 +1974,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # The logical interface every target shares, and the library built from it. The generator and
     # a compiler are needed (the parity cases build and run C++), so unlike authoring-core's
@@ -1936,6 +1991,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
     # `ledger-citations` runs mnemosyne-cli, this workflow runs a separate
@@ -1960,6 +2016,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # A compliance verdict — an AGPL-3.0 section 4 / MIT section 1 violation in a
     # release tarball — that was reachable only after a push, on a check that
@@ -1975,6 +2032,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # The same compliance verdict for the browser visualizer, which
     # `license-ssot` cannot reach: it reads `third_party/`, and the
@@ -2006,6 +2064,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # Where the W3C BasicHTTP fixture listener answers had come to be spelled in
     # five places at once — twelve C11 runners, two gate helpers, a CI job, the
@@ -2044,6 +2103,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # The generated codecs are committed goldens, not workspace members:
     # `cargo metadata` lists eight packages and none of them is a codec, so
@@ -2061,6 +2121,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "codec-no-alloc": {
         "workflows": ["sce-forge-codec-no-alloc.yml"],
@@ -2076,6 +2137,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The two conformance surfaces nothing local ran. Both narrow their
     # workflow's catch-all (see `narrows` in `gate_triggers`) and state their
@@ -2117,6 +2179,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # A deploy workflow whose three build steps are verdicts. Its trigger
     # already includes `sce-build/**`, so a Rust change every other gate passes
@@ -2173,6 +2236,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     "visualizer-wasm": {
         "workflows": ["deploy-visualizer.yml"],
@@ -2195,6 +2259,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The Rust engine as the module a browser loads, run under Node and in
     # headless Chrome on the scenarios every backend replays. No other lane can
@@ -2242,6 +2307,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The other half of the main tree's ctest partition, and the half nothing
     # ran. Measured 2026-08-12 with a logging shim in place of `ctest` during a
@@ -2301,6 +2367,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # ADR 0059, section 7: the C++ interface compiled at the standard a
     # consumer compiles it at. Every public header, every Forge C++ golden and
@@ -2359,6 +2426,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # An installed SCE builds what its own generator writes. The install
     # exports `sce-codegen`, its templates and `SCECodegen.cmake`, and the C++
@@ -2400,6 +2468,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The C++ client parts built with MSVC on Windows (docs/adr/0107, D11): the
     # reference host, its COSE operations on vcpkg's libsodium and the generated
@@ -2442,6 +2511,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The only gate that configures the OTHER value of SCE_SCRIPT_ENGINE.
     #
@@ -2490,6 +2560,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The Kotlin twin of the row above, and it exists because the argument that
     # row makes applies unchanged to a second backend that had crossed the same
@@ -2549,6 +2620,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "w3c-c11": {
         "workflows": ["w3c-tests.yml"],
@@ -2624,6 +2696,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "w3c-go": {
         "workflows": ["w3c-tests.yml"],
@@ -2663,6 +2736,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The Rust arm, and the last W3C lane to get a gate: `test-rust` in
     # w3c-tests.yml carried its generation, fixture server and `cargo test`
@@ -2708,6 +2782,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "w3c-kotlin": {
         "workflows": ["w3c-tests.yml"],
@@ -2768,6 +2843,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     "w3c-python": {
         "workflows": ["w3c-tests.yml"],
@@ -2821,6 +2897,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
+        "cores": CORES_SCRIPT,
     },
     # The wrapper layer, not the engine under it: the trigger is the binding
     # sources, because `w3c-cpp` already judges the same interpreter 404 cases
@@ -2850,6 +2927,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
     # The W3C runner built with emscripten and run under Node, and the
     # interactive suite beside it. Nothing ran that route from 2025-11-16 until
@@ -2907,6 +2985,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5.3,
+        "cores": CORES_COMPILE,
     },
     # The emscripten tree, all of it: every target built, every registered
     # ctest case run under Node. Measured 2026-11-05: the tree declared 388
@@ -2951,6 +3030,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+        "cores": CORES_COMPILE,
     },
 }
 
@@ -4255,10 +4335,11 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
 
     `exclusive` is `UNIT_EXCLUSIVE` for every unit. `secs` is the declared
     cost of everything the unit runs, a first estimate that bx replaces with
-    its own timings, and `mem_gb` the largest `peak_gb` among them. `needs`
-    and `packages` are the union of the `unit_requires` of what it runs, and
-    the packages its gates name in `packages` (`gate_packages`), sorted, and
-    absent when there is none, as bx reads an absent key.
+    its own timings, `mem_gb` the largest `peak_gb` among them, and `cores`
+    the largest `cores`. `needs` and `packages` are the union of the
+    `unit_requires` of what it runs, and the packages its gates name in
+    `packages` (`gate_packages`), sorted, and absent when there is none, as bx
+    reads an absent key.
     """
     table = GATES if table is None else table
     chosen = set(selected)
@@ -4303,6 +4384,7 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
         if cost > 0:
             unit["secs"] = float(cost)
         unit["mem_gb"] = float(max(table[s]["peak_gb"] for s in closure))
+        unit["cores"] = float(max(table[s]["cores"] for s in closure))
         for key in UNIT_REQUIRES_KEYS:
             wanted = {item for s in closure
                       for item in (table[s].get("unit_requires") or {})
@@ -6992,6 +7074,11 @@ def self_test(repo_root: Path) -> int:
             failures.append(
                 f"verdict: {slug} declares peak_gb={peak!r}; it is the memory "
                 f"its own script peaks at, in GiB, a number above 0")
+        cores = spec.get("cores")
+        if isinstance(cores, bool) or not isinstance(cores, int) or cores < 1:
+            failures.append(
+                f"verdict: {slug} declares cores={cores!r}; it is how many "
+                f"cores its own script can keep busy, a whole number above 0")
         if "inputs" not in spec:
             failures.append(
                 f"verdict: {slug} does not declare `inputs` (`None` for the "
@@ -7360,6 +7447,12 @@ def self_test(repo_root: Path) -> int:
                     f"plan[{label}]: unit {unit['name']} asks for "
                     f"{unit.get('mem_gb')} GiB, and the largest peak of what "
                     f"it runs is {peak}")
+            cores = max(GATES[s]["cores"] for s in closure)
+            if unit.get("cores") != float(cores):
+                failures.append(
+                    f"plan[{label}]: unit {unit['name']} asks for "
+                    f"{unit.get('cores')} core(s), and the most of what it "
+                    f"runs is {cores}")
             if unit["exclusive"] != [UNIT_EXCLUSIVE]:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} may share a checkout "
@@ -7390,24 +7483,26 @@ def self_test(repo_root: Path) -> int:
     cases += 1
     fixture = {
         "parent": {"cost_s": 2, "cache": False, "inputs": None,
-                   "no_cache_reason": "x" * 40, "commits": [], "peak_gb": 5},
+                   "no_cache_reason": "x" * 40, "commits": [], "peak_gb": 5,
+                   "cores": 1},
         "child": {"cost_s": 3, "deps": ["parent"], "cache": True,
-                  "inputs": None, "commits": [], "peak_gb": 1},
+                  "inputs": None, "commits": [], "peak_gb": 1, "cores": 1},
         "alone": {"cost_s": 1, "cache": True, "inputs": ["docs/**"],
-                  "commits": [], "peak_gb": 1},
+                  "commits": [], "peak_gb": 1, "cores": 1},
         "at-head": {"cost_s": 1, "cache": True, "inputs": None,
-                    "commits": ["HEAD"], "peak_gb": 1},
+                    "commits": ["HEAD"], "peak_gb": 1, "cores": 1},
         "emulated": {"cost_s": 1, "cache": True, "inputs": None,
-                     "commits": [], "peak_gb": 1,
+                     "commits": [], "peak_gb": 1, "cores": 1,
                      "packages": ["qemu-system-arm"]},
         "over-emulated": {"cost_s": 1, "deps": ["emulated"], "cache": True,
                           "inputs": None, "commits": [], "peak_gb": 1,
+                          "cores": 1,
                           "packages": ["binutils", "qemu-system-arm"]},
         "on-changes": {"cost_s": 1, "cache": True, "inputs": None,
-                       "commits": ["CHANGES"], "peak_gb": 1},
+                       "commits": ["CHANGES"], "peak_gb": 1, "cores": 1},
         "after-changes": {"cost_s": 1, "deps": ["on-changes"],
                           "cache": True, "inputs": None, "commits": [],
-                          "peak_gb": 1},
+                          "peak_gb": 1, "cores": 1},
     }
     by_name = {u["name"]: u for u in plan_units(
         {"parent", "child", "alone"}, rust="1.0.0", table=fixture)}
@@ -7506,13 +7601,15 @@ def self_test(repo_root: Path) -> int:
     # a-pass-that-could-be-a-skip-is-kept-only-from-a-landing. A gate that
     # skips where a tool is missing keeps its pass only from a unit that runs
     # with `--landing`, where the skip ends 3; and a unit asks bx for what the
-    # gates it runs require, through what they depend on.
+    # gates it runs require, and for the most cores among them, through what
+    # they depend on.
     cases += 1
     skip_fixture = {
         "prereq": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
-                   "peak_gb": 1, "unit_requires": {"packages": ["pkg-b"]}},
+                   "peak_gb": 1, "cores": 4,
+                   "unit_requires": {"packages": ["pkg-b"]}},
         "skipper": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
-                    "peak_gb": 1, "deps": ["prereq"],
+                    "peak_gb": 1, "cores": 1, "deps": ["prereq"],
                     "kept_only_from_a_landing": "x" * 40,
                     "unit_requires": {"needs": ["tool-a"],
                                       "packages": ["pkg-a"]}},
@@ -7536,6 +7633,10 @@ def self_test(repo_root: Path) -> int:
             f"plan-fixture: a unit asks bx for needs={landing_unit.get('needs')} "
             f"packages={landing_unit.get('packages')}, not the union of what "
             f"it runs requires")
+    if landing_unit.get("cores") != 4.0:
+        failures.append(
+            f"plan-fixture: a unit asks bx for {landing_unit.get('cores')} "
+            f"core(s), not the most among what it runs (4, a dependency's)")
 
     # every-skip-and-requirement-is-declared-in-its-shape. A gate that can skip
     # names what it skips without, and claims `cache: True` (its pass is kept
