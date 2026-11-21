@@ -6,3 +6,9 @@ commit = "4b0c61a2fa141f68fa49ba739ad5cf82d6bc3e32"
 base = "40eaf13f03b299eaa408891482f59ec2735d0409"
 machine = "mf977c53d872e"
 at = 1795197226
+
+[return]
+reason = "unmeasured"
+detail = "the judge ended with status 124"
+report = "m6a944ec3ba29:0000000340-42d5e9ad9dbc/attempt-3.log"
+at = 1795264066
