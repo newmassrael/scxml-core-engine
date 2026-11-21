@@ -623,6 +623,118 @@ fn only_a_record_of_its_schema_is_put_into_it() {
     );
 }
 
+// ── A record a field holds ───────────────────────────────────────────────
+
+/// The payload of `holder.sent`: a record that holds an `Item`, named `Picked` by
+/// this document's own import, an `Item` that may be absent, and a `Day`. The shape
+/// of the completion of a verification that names a record by `sce:payload`
+/// (`static_host_cose.scxml`), whose `payload` is an `optional<record:Note>`.
+const SCHEMA_HOLDER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_holder" sce:event-name="holder.sent">
+  <sce:import kind="event-schema" src="schema_item_pick.scxml" as="Picked"/>
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="kept" sce:type="record:Picked" sce:direction="in"/>
+    <data id="maybe" sce:type="optional&lt;record:Picked&gt;" sce:direction="in"/>
+    <data id="day" sce:type="record:Day" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// [`statechart`] importing [`SCHEMA_HOLDER`] as `Holder`, with `body` the content of
+/// its transition on `holder.sent`.
+fn on_holder(body: &str) -> String {
+    statechart(
+        "",
+        &format!(r#"<transition event="holder.sent">{body}</transition>"#),
+    )
+    .replace(
+        "  <datamodel>",
+        "  <sce:import kind=\"event-schema\" src=\"schema_holder.scxml\" as=\"Holder\"/>\n  <datamodel>",
+    )
+}
+
+/// `sce-codegen <args…>` of [`on_holder`]'s `body`, beside [`SCHEMA_HOLDER`].
+fn run_holding(args: &[&str], body: &str) -> (bool, String, String) {
+    run(
+        args,
+        &[
+            ("probe.scxml", &on_holder(body)),
+            ("schema_holder.scxml", SCHEMA_HOLDER),
+        ],
+        "probe.scxml",
+    )
+}
+
+/// A field of a record that holds a record of its schema is taken whole, as a list
+/// a place holds is: an optional record into an optional record variable, as it is,
+/// and a present record into a record variable and into an optional one, lifted.
+/// The field's own document names the record `Picked`, the statechart `Item`: one
+/// record document is one record whichever alias names it. Pinned by
+/// `Judge::record_field_copy` (`sce-build/src/forge/static_datamodel.rs`) and the
+/// lowering's `record_field_copy` (`sce-build/src/forge/static_lowering.rs`).
+#[test]
+fn a_record_a_field_holds_is_taken_whole() {
+    let body = r#"<assign location="pick" expr="_event.data.maybe"/>
+           <assign location="other" expr="_event.data.kept"/>
+           <assign location="draft" expr="_event.data.kept"/>"#;
+    for args in [
+        &["lower"][..],
+        &["generate", "-l", "rust"],
+        &["generate", "-l", "cpp"],
+    ] {
+        let (ok, out, _) = run_holding(args, body);
+        assert!(ok, "{args:?} takes a record a field holds whole:\n{out}");
+    }
+    // Rust copies the optional record as it is and lifts the present one; no
+    // optional record is lifted a second time.
+    let (_, out, written) = run_holding(&["generate", "-l", "rust"], body);
+    for needle in ["ev.maybe.clone()", "Some(ev.kept.clone())"] {
+        assert!(
+            written.contains(needle),
+            "expected `{needle}` in the Rust machine:\n{out}\n{written}"
+        );
+    }
+    assert!(
+        !written.contains("Some(ev.maybe"),
+        "the optional record is lifted into a present value:\n{written}"
+    );
+}
+
+/// A field that holds a record of another schema is refused naming both schemas,
+/// and a field that holds an optional record goes only into an optional record: a
+/// record variable always holds one.
+#[test]
+fn a_record_a_field_holds_goes_only_where_its_schema_and_its_absence_fit() {
+    for (body, needle) in [
+        (
+            r#"<assign location="draft" expr="_event.data.maybe"/>"#,
+            "which may be absent",
+        ),
+        (
+            r#"<assign location="pick" expr="_event.data.day"/>"#,
+            "holds a record of the schema Day, and `pick` holds one of the schema Item",
+        ),
+        (
+            r#"<assign location="draft" expr="_event.data.day"/>"#,
+            "holds a record of the schema Day, and `draft` holds one of the schema Item",
+        ),
+        (
+            r#"<assign location="day" expr="_event.data.kept"/>"#,
+            "holds a record of the schema Item, and `day` holds one of the schema Day",
+        ),
+    ] {
+        let (ok, out, _) = run_holding(&["check", "-l", "rust"], body);
+        assert!(!ok, "expected a refusal of {body}:\n{out}");
+        assert!(
+            out.contains("scxml/static-datamodel-rule"),
+            "expected the code scxml/static-datamodel-rule in:\n{out}"
+        );
+        assert!(out.contains(needle), "expected `{needle}` in:\n{out}");
+    }
+}
+
 /// It starts absent: a record is built whole from `<sce:set>` children, which a
 /// variable that may hold none has no use for.
 #[test]

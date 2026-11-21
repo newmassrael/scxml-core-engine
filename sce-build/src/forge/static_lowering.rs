@@ -29,7 +29,9 @@ use crate::forge::expr::{
 };
 use crate::forge::model::{EntryField, EntrySchema, EntryType, EnumModel, SceType};
 use crate::forge::narrowing::{Chain, Facts, Writes};
-use crate::forge::static_datamodel::{indexed_element, is_null_literal, proving};
+use crate::forge::static_datamodel::{
+    indexed_element, is_null_literal, proving, record_field_place,
+};
 use crate::forge::text_bound::{TextBound, Unbounded};
 use crate::forge::type_ctx::{
     CalleeKind, StateArg, StateCallRefusal, StateContext, StateRewrite, StaticCallee, StaticEnum,
@@ -24393,6 +24395,27 @@ fn lower_action(
                         }
                     }
                 }
+                // A record a field of a record holds, copied whole into the
+                // variable's own type, as the judge admitted it
+                // ([`record_field_place`]).
+                Some((alias, _)) if record_field_place(ctx, &action.expr).is_some() => {
+                    let to = crate::forge::value_type::ValueType::Record {
+                        alias: alias.clone(),
+                    };
+                    let copy = record_field_copy(
+                        &action.expr,
+                        &to,
+                        &format!("<assign location='{location}'>"),
+                        ctx,
+                        renames,
+                        rewrites,
+                    )?
+                    .expect("guarded by the match above");
+                    Receiving {
+                        text: copy,
+                        can_fail: false,
+                    }
+                }
                 // A record taken from another by name is a copy of it.
                 Some((_, schema)) => {
                     let value = lower(&action.expr, slot)?;
@@ -26196,6 +26219,60 @@ fn whole_list_copy(
     Ok(Some(copy))
 }
 
+/// The copy of what a field of a record holds, a whole record or a whole optional
+/// record (`_event.data.payload`, [`record_field_place`]), into a place of `to`, the
+/// type of the record variable or the optional record variable an `<assign>` writes:
+/// the walk's copy of the value in the variable's own type, as a list a place holds
+/// is copied ([`whole_list_copy`]), a present record lifted where the variable may
+/// be absent. The judge proved the field holds a record of the variable's schema and,
+/// into a record variable, one that is never absent
+/// ([`crate::forge::static_datamodel`]), so the copy cannot fail. `None` for a value
+/// that is no such field. Refused by name, `construct` naming the statement, for a
+/// target that spells no composed value.
+fn record_field_copy(
+    written: &str,
+    to: &crate::forge::value_type::ValueType,
+    construct: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<Option<String>, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    let Some((path, from)) = record_field_place(ctx, written) else {
+        return Ok(None);
+    };
+    let target = rewrites.target;
+    let refused = |why: String| {
+        GenerateError::unsupported(format!("{construct} of `{}`: {why}", written.trim()))
+    };
+    let (Some(names), Some(spelling)) = (
+        rewrites.composed.as_ref(),
+        target.composed_spelling(rewrites.machine),
+    ) else {
+        return Err(refused(format!(
+            "a record a field holds, taken whole, has no {} lowering of the copy yet \
+             (docs/adr/0086, section 7.3)",
+            target.name()
+        )));
+    };
+    let held = place_text(&path, ctx, renames, target, &*spelling).map_err(refused)?;
+    composed::within_of(&from.scope, &names.records)
+        .and_then(|from_within| {
+            composed::copier(
+                &from.ty,
+                from_within.as_deref(),
+                to,
+                None,
+                &names.records,
+                &names.enums,
+                &*spelling,
+                &composed::Held::place(held),
+            )
+        })
+        .map(Some)
+        .map_err(refused)
+}
+
 /// The value a union variable takes whole ([`whole_union_copy`]).
 struct UnionCopy {
     /// The copy, an expression of the variable's own type.
@@ -26754,6 +26831,26 @@ fn lower_optional_record_assign(
         Receiving {
             text: target.record_copy(&value.text, &place.schema),
             can_fail: value.can_fail,
+        }
+    } else if let Some(copy) = record_field_copy(
+        &written,
+        &crate::forge::value_type::ValueType::Optional {
+            elem: Box::new(crate::forge::value_type::ValueType::Record {
+                alias: place.alias.clone(),
+            }),
+        },
+        &construct,
+        ctx,
+        renames,
+        rewrites,
+    )? {
+        // A record or an optional record a field of a record holds, copied into
+        // the variable's own type, a present one lifted by the copy itself: the
+        // completion's `_event.data.payload` of a verification that names a
+        // record among them (docs/adr/0109, D9).
+        Receiving {
+            text: copy,
+            can_fail: false,
         }
     } else {
         let value = lower(&written, InferredType::Unknown)?;
