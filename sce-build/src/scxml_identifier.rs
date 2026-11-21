@@ -622,11 +622,15 @@ fn spellings_of(
         &[Verbatim],
     ];
     const CONTEXT_ID: Spellings = [&[], &[Verbatim], &[Camel], &[], &[], &[], &[Camel]];
+    // Go names a codec member's method Pascal and, where the value is printed
+    // from its plan, holds the member in an unexported field of the Pascal
+    // name with its first letter lowered (`go_source::member`), where a
+    // keyword is no field name: `map`, `Map` and `map_` are all `map` there.
     const CODEC_FIELD: Spellings = [
         &[Snake],
         &[Verbatim],
         &[Verbatim, Camel],
-        &[Pascal],
+        &[Pascal, LowerPascal],
         &[Snake],
         &[Snake],
         &[Verbatim, Camel],

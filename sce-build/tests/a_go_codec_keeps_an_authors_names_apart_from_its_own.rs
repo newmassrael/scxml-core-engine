@@ -31,7 +31,8 @@
 //! set is every identifier that appears in at least three committed Go outputs
 //! (a name only one document uses is that document's own), each in the spelling
 //! it has there and in the snake_case an author would write for it, joined with
-//! Go's universe scope and its keywords, which the language fixes.
+//! Go's universe scope and its keywords, which the language fixes, each as
+//! written and capitalized.
 //!
 //! A name the parser refuses (`validation/reserved-code-identifier`, or one that
 //! folds into another name the shape declares) is an answer, not a failure: the
@@ -379,6 +380,15 @@ fn identifiers_of(source: &str) -> BTreeSet<String> {
     found
 }
 
+/// `word` with its first letter in capitals: `map` as `Map`.
+fn capitalized(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 /// `EncodeToBytes` as an author would write it: `encode_to_bytes`.
 fn snake(token: &str) -> String {
     let chars: Vec<char> = token.chars().collect();
@@ -426,6 +436,11 @@ fn candidate_names() -> Vec<String> {
     }
     names.extend(UNIVERSE.iter().map(|s| s.to_string()));
     names.extend(KEYWORDS.iter().map(|s| s.to_string()));
+    // Each also capitalized: a printed value holds a member in an unexported
+    // field, its Go name with the first letter lowered, so `Map` is held in
+    // `map` as `map` is, and a refusal that asks only the spelling as
+    // written lets it through.
+    names.extend(UNIVERSE.iter().chain(KEYWORDS).copied().map(capitalized));
     // A shape's own fixed ids are not candidates: a field cannot be declared
     // twice, and that is a different refusal.
     let ids_the_shapes_use: BTreeSet<&str> = ["n", "b", "z", "x", "h", "data", "items"]
