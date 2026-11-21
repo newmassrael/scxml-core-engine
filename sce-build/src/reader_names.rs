@@ -855,6 +855,10 @@ pub enum Case {
     Camel,
     /// [`filters::to_upper_snake_case`].
     UpperSnake,
+    /// [`filters::to_lower_pascal_case`]: unlike [`Case::Camel`], which keeps
+    /// the first word as written, it lowers the first letter of the Pascal
+    /// fold, so `Map` and `map_` come out `map`.
+    LowerPascal,
 }
 
 impl Case {
@@ -866,6 +870,7 @@ impl Case {
             Case::Pascal => filters::to_pascal_case(name.to_string()),
             Case::Camel => filters::to_camel_case(name.to_string()),
             Case::UpperSnake => filters::to_upper_snake_case(name.to_string()),
+            Case::LowerPascal => filters::to_lower_pascal_case(name.to_string()),
         }
     }
 }

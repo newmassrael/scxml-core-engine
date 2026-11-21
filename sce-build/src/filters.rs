@@ -247,6 +247,19 @@ pub fn to_pascal_case(name: String) -> String {
         .collect()
 }
 
+/// [`to_pascal_case`] with its first letter lowered: the unexported field a
+/// Go value printed from its plan holds an element in, behind the exported
+/// method of the Pascal name. Lowering the first letter of distinct Pascal
+/// names keeps them distinct.
+pub fn to_lower_pascal_case(name: String) -> String {
+    let pascal = to_pascal_case(name);
+    let mut chars = pascal.chars();
+    match chars.next() {
+        Some(first) => first.to_lowercase().chain(chars).collect(),
+        None => pascal,
+    }
+}
+
 /// Convert all-uppercase identifiers to PascalCase for Rust enum variants.
 /// "STOP" -> "Stop", "RUNNING" -> "Running", "ENGINE_START" -> "EngineStart".
 /// Mixed-case input is delegated to to_pascal_case.
