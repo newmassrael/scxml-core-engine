@@ -27,7 +27,11 @@
 //     says how it ended, the reading the cargo runner gives a binary that dies,
 //     because both go through one reader (`mutation_cargo_judge_output`);
 //   - the two declarations that make the runner mean anything are refused where
-//     the casefile is read, in every mode: another runner, and no nightly.
+//     the casefile is read, in every mode: another runner, and no nightly;
+//   - a suite run under several seeds is counted over every seed, in the baseline
+//     and in each case alike. Miri ends a run at its first failing seed unless it
+//     is told to keep going, so a mutant it caught reported fewer tests than the
+//     baseline and read INCONCLUSIVE (CI run 44107166637: 12 against 24).
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -89,19 +93,60 @@ fn declared_toolchain() -> Option<String> {
 /// when asked for `cargo miri`. It records every call (`<args>` as cargo passed
 /// them, the first being `miri`) in `$PROBE_MIRI_LOG`, answers `--version`, and
 /// hands `test` to `cargo test` with the arguments that follow.
+///
+/// It reads `MIRIFLAGS` for the two flags of Miri's seeds and keeps their
+/// meaning: under `-Zmiri-many-seeds=<from>..<to>` the test binary is run once a
+/// seed, each run printing its own libtest output, and the first seed that fails
+/// ends the whole run with that seed's status unless
+/// `-Zmiri-many-seeds-keep-going` is given, when every seed runs, the failing
+/// ones are counted, and the status is the worst. Miri runs the seeds in
+/// parallel and this runs them one after another; what a round reads is the
+/// same in both: the seeds after a failing one never report, unless kept going.
 fn stand_in_for_cargo_miri() -> TempDir {
     let dir = tempdir().expect("temp dir for the stand-in");
     let script = dir.path().join("cargo-miri");
     fs::write(
         &script,
-        "#!/bin/sh\n\
-         echo \"$@\" >> \"$PROBE_MIRI_LOG\"\n\
-         shift\n\
-         case \"$1\" in\n\
-         --version) echo 'cargo-miri 0.0.0 (a stand-in for the probe)'; exit 0 ;;\n\
-         test) shift; exec cargo test \"$@\" ;;\n\
-         esac\n\
-         exit 64\n",
+        r#"#!/bin/sh
+echo "$@" >> "$PROBE_MIRI_LOG"
+shift
+case "$1" in
+--version) echo 'cargo-miri 0.0.0 (a stand-in for the probe)'; exit 0 ;;
+test) shift ;;
+*) exit 64 ;;
+esac
+from=
+to=
+keep_going=
+for flag in $MIRIFLAGS; do
+    case "$flag" in
+    -Zmiri-many-seeds=*)
+        range=${flag#-Zmiri-many-seeds=}
+        from=${range%%..*}
+        to=${range#*..}
+        ;;
+    -Zmiri-many-seeds-keep-going) keep_going=1 ;;
+    esac
+done
+[ -n "$to" ] || exec cargo test "$@"
+seed=${from:-0}
+failed=0
+worst=0
+while [ "$seed" -lt "$to" ]; do
+    echo "Trying seed: $seed" >&2
+    status=0
+    cargo test "$@" || status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "FAILING SEED: $seed" >&2
+        [ -n "$keep_going" ] || exit "$status"
+        failed=$((failed + 1))
+        [ "$status" -le "$worst" ] || worst=$status
+    fi
+    seed=$((seed + 1))
+done
+[ "$failed" -eq 0 ] || echo "$failed/$((to - ${from:-0})) SEEDS FAILED" >&2
+exit "$worst"
+"#,
     )
     .expect("write the stand-in");
     let mut mode = fs::metadata(&script)
@@ -300,6 +345,43 @@ fn a_round_under_miri_runs_the_baseline_and_every_case_through_cargo_miri() {
         account_after(&round, aborts)
             .contains("cargo miri test (exited with status 101 before it reported a result)"),
         "the verdict did not say how the Miri run ended:\n{round}"
+    );
+}
+
+/// The seeds a casefile declares for Miri, as the broadcast log's casefiles do
+/// with eight: three here, so the probe's two tests are six runs of a test.
+const THREE_SEEDS: &str = "mutation_env MIRIFLAGS=-Zmiri-many-seeds=0..3\n";
+
+#[test]
+fn a_mutant_that_fails_its_first_seed_is_counted_over_every_seed_the_baseline_ran() {
+    let Some(toolchain) = declared_toolchain() else {
+        eprintln!("SKIP: no rustup that can run the toolchain the probe declares");
+        return;
+    };
+    let changes = "the value is changed";
+
+    let p = probe("seeds");
+    p.write_cases(
+        &format!("{}{THREE_SEEDS}", miri_header(&toolchain)),
+        &[(changes, "    2")],
+    );
+
+    let round = p.round();
+    assert!(
+        round.contains("baseline: 6 tests, 0 failing"),
+        "the baseline is two tests under each of three seeds, and did not read so, so the \
+         seeds the casefile declares did not reach the run:\n{round}"
+    );
+
+    // The mutant fails on the first seed. Were the run to end there, it would
+    // report two tests against the baseline's six and read INCONCLUSIVE; run to
+    // the end, every seed reports, and each fails the one test that reads the
+    // value.
+    let line = verdict_of(&round, changes);
+    assert!(
+        line.starts_with("CAUGHT") && line.contains("(3/6 red)"),
+        "a mutant that fails under every seed must be counted over the seeds the baseline \
+         ran, and was read as {line:?}:\n{round}"
     );
 }
 
