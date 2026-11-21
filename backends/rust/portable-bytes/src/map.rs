@@ -27,6 +27,17 @@
 //! Where an allocator is available the slots and the index grow as the map is
 //! filled, up to what the bound needs and never past it; where none is, the map
 //! holds them inline, the bound reserved (D4, "Storage").
+//!
+//! A link between slots and a cell of the index name a slot by its number and
+//! one, so the link to no slot and the cell of no key are both 0. A map built
+//! in a const context ([`BoundedMap::with_seed`] is a `const fn`) with
+//! `MapSeed::from_halves(0, 0)` is then all zero bytes where no allocator is,
+//! the inline slots left uninitialised, and a `static` holding it is placed in
+//! `.bss`, not `.data`. Such a map hashes under a key anyone knows until
+//! [`BoundedMap::reseed`] gives it a drawn one; because the map is bounded, the
+//! worst a chosen set of keys does to it until then is make each lookup a scan
+//! of its `N` entries. Where an allocator is available the empty map is not all
+//! zero: a `Vec` that holds nothing holds a dangling pointer, which is not zero.
 
 use crate::{BoundedList, SceString};
 
@@ -394,18 +405,31 @@ fn home(hash: u64, len: usize) -> usize {
 
 // ── the map ─────────────────────────────────────────────────────────────────
 
-/// The end of a list of slots: no slot.
-const NIL: u32 = u32::MAX;
+/// The end of a list of slots: the link to no slot ([`link_to`]).
+const NIL: u32 = 0;
 /// An index cell no key ever took.
-const EMPTY: u32 = u32::MAX;
+const EMPTY: u32 = 0;
 /// An index cell whose key was removed: a probe goes on past it, and a put
-/// may take it.
-const TOMBSTONE: u32 = u32::MAX - 1;
+/// may take it. No slot's link is this, which the bound of a map keeps apart
+/// (`BoundedMap::NUMBERED`).
+const TOMBSTONE: u32 = u32::MAX;
+
+/// The link to the slot numbered `slot`, as a list of slots and a cell of the
+/// index hold it: its number and one, so that [`NIL`] and [`EMPTY`] are 0 and
+/// an empty map is all zero bytes.
+fn link_to(slot: usize) -> u32 {
+    slot as u32 + 1
+}
+
+/// The number of the slot `link` names, which is not [`NIL`] ([`link_to`]).
+fn slot_number(link: u32) -> usize {
+    (link - 1) as usize
+}
 
 /// One slot of a map: its entry, or none for a slot on the free list; the hash
 /// of its key, which a rebuild of the index reads instead of hashing again; and
-/// its neighbours, in the map's order for a slot in use and on the free list
-/// (`next` alone) for one that is not.
+/// the links to its neighbours, in the map's order for a slot in use and on
+/// the free list (`next` alone) for one that is not.
 #[derive(Clone)]
 struct Slot<K, V> {
     entry: Option<(K, V)>,
@@ -421,10 +445,11 @@ type Slots<K, V, const N: usize> = alloc::vec::Vec<Slot<K, V>>;
 #[cfg(not(feature = "alloc"))]
 type Slots<K, V, const N: usize> = heapless::Vec<Slot<K, V>, N>;
 
-/// A map's index: cells that each hold the slot of a key, [`EMPTY`] or
-/// [`TOMBSTONE`]. Twice the bound at most, so a full map leaves it half
-/// empty; grown to that as the map fills where an allocator is available, and
-/// that long inline, two rows of `N`, where none is.
+/// A map's index: cells that each hold the link to the slot of a key
+/// ([`link_to`]), [`EMPTY`] or [`TOMBSTONE`]. Twice the bound at most, so a
+/// full map leaves it half empty; grown to that as the map fills where an
+/// allocator is available, and that long inline, two rows of `N`, where none
+/// is.
 #[derive(Clone)]
 struct Index<const N: usize> {
     #[cfg(feature = "alloc")]
@@ -438,14 +463,15 @@ impl<const N: usize> Index<N> {
     const MOST: usize = 2 * N;
 
     #[cfg(feature = "alloc")]
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             cells: alloc::vec::Vec::new(),
         }
     }
 
+    /// Every cell [`EMPTY`], which is 0.
     #[cfg(not(feature = "alloc"))]
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             cells: [[EMPTY; N]; 2],
         }
@@ -549,7 +575,10 @@ pub enum RemoveOutcome {
 /// written; a generated machine walks a copy of a map its loop writes
 /// (docs/adr/0108, D6 item 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MapCursor(u32);
+pub struct MapCursor(
+    /// The link to the slot of the entry (`link_to`), never `NIL`.
+    u32,
+);
 
 /// A map of at most `N` entries, each a key of `K` and a value of `V`, no two
 /// keys alike, in the order each key was first put (docs/adr/0108): the value
@@ -570,12 +599,23 @@ impl<K, V, const N: usize> BoundedMap<K, V, N> {
     /// The bound the type declares.
     pub const CAPACITY: usize = N;
 
-    /// A bound a slot's number holds, with [`NIL`] and [`TOMBSTONE`] apart:
-    /// named where a map is built, so a bound past it does not compile.
+    /// A bound the link to each slot holds ([`link_to`]), with [`NIL`] and
+    /// [`TOMBSTONE`] apart: named where a map is built, so a bound past it does
+    /// not compile.
     const NUMBERED: () = assert!(N < (u32::MAX - 1) as usize, "a map's bound is a uint32");
 
     /// The empty map, its keys hashed under `seed`.
-    pub fn with_seed(seed: MapSeed) -> Self {
+    ///
+    /// A `const fn`, so a `static` can hold a map. Built with
+    /// `MapSeed::from_halves(0, 0)` where no allocator is, the map is all zero
+    /// bytes, its inline slots uninitialised, and the `static` is placed in
+    /// `.bss`, not `.data` (see the [module](self)). Its keys then hash under a
+    /// key anyone knows until [`Self::reseed`] gives it a drawn one, and a peer
+    /// that chooses them can make each lookup a scan of the `N` entries, no
+    /// worse, the map being bounded (docs/adr/0108, D8). Where an allocator is
+    /// available the empty map is not all zero: its `Vec`s hold a dangling
+    /// pointer, which is not zero.
+    pub const fn with_seed(seed: MapSeed) -> Self {
         let () = Self::NUMBERED;
         Self {
             seed,
@@ -642,7 +682,7 @@ impl<K, V, const N: usize> BoundedMap<K, V, N> {
 
     /// The position of the entry after `at`, or `None` after the last.
     pub fn next_after(&self, at: MapCursor) -> Option<MapCursor> {
-        let next = self.slots.get(at.0 as usize)?.next;
+        let next = self.slots.get(slot_number(at.0))?.next;
         (next != NIL).then_some(MapCursor(next))
     }
 
@@ -668,7 +708,7 @@ impl<K, V, const N: usize> BoundedMap<K, V, N> {
     fn entry_at(&self, at: MapCursor) -> &(K, V) {
         match self
             .slots
-            .get(at.0 as usize)
+            .get(slot_number(at.0))
             .and_then(|slot| slot.entry.as_ref())
         {
             Some(entry) => entry,
@@ -676,17 +716,19 @@ impl<K, V, const N: usize> BoundedMap<K, V, N> {
         }
     }
 
+    /// The slot `at` links to, which is not [`NIL`].
     fn slot(&self, at: u32) -> &Slot<K, V> {
-        &self.slots[at as usize]
+        &self.slots[slot_number(at)]
     }
 
+    /// The slot `at` links to, to write.
     fn slot_mut(&mut self, at: u32) -> &mut Slot<K, V> {
-        &mut self.slots[at as usize]
+        &mut self.slots[slot_number(at)]
     }
 
     /// Take a slot for an entry, from the free list or past the slots taken so
-    /// far, and link it last. `None` when no slot is left, which a map that
-    /// holds fewer than `N` entries always has.
+    /// far, link it last, and give the link to it. `None` when no slot is
+    /// left, which a map that holds fewer than `N` entries always has.
     fn store(&mut self, key: K, value: V, hash: u64) -> Option<u32> {
         let slot = Slot {
             entry: Some((key, value)),
@@ -714,7 +756,7 @@ impl<K, V, const N: usize> BoundedMap<K, V, N> {
                     return None;
                 }
             }
-            at as u32
+            link_to(at)
         };
         if self.tail == NIL {
             self.head = at;
@@ -861,6 +903,25 @@ impl<K: MapKey, V, const N: usize> BoundedMap<K, V, N> {
         RemoveOutcome::Removed
     }
 
+    /// Key the map by `seed` from now on, its entries and their order as they
+    /// were: each entry's hash is taken again under `seed` and the index is
+    /// built again at its length, no tombstone left. What a map built in a
+    /// const context under a known seed (`with_seed`) is given a drawn seed
+    /// by, once the program has one (docs/adr/0108, D8).
+    pub fn reseed(&mut self, seed: MapSeed) {
+        self.seed = seed;
+        let mut at = self.head;
+        while at != NIL {
+            let slot = self.slot_mut(at);
+            if let Some((key, _)) = &slot.entry {
+                slot.hash = hash_of(&seed, key);
+            }
+            at = slot.next;
+        }
+        let len = self.index.len();
+        self.rebuild(len);
+    }
+
     /// Where `key`, of hash `hash`, is in the index, or the cell a put of it
     /// takes: the first tombstone the probe passed, or the empty cell it ended
     /// at.
@@ -975,8 +1036,10 @@ impl<K, const N: usize> BoundedSet<K, N> {
     /// The bound the type declares.
     pub const CAPACITY: usize = N;
 
-    /// The empty set, its keys hashed under `seed`.
-    pub fn with_seed(seed: MapSeed) -> Self {
+    /// The empty set, its keys hashed under `seed`: a `const fn`, all zero
+    /// bytes under `MapSeed::from_halves(0, 0)` where no allocator is, as
+    /// [`BoundedMap::with_seed`] says.
+    pub const fn with_seed(seed: MapSeed) -> Self {
         Self(BoundedMap::with_seed(seed))
     }
 
@@ -1047,6 +1110,12 @@ impl<K: MapKey, const N: usize> BoundedSet<K, N> {
     /// Take `key` out of the set, the others keeping their order.
     pub fn remove<Q: MapKey + ?Sized>(&mut self, key: &Q) -> RemoveOutcome {
         self.0.remove(key)
+    }
+
+    /// Key the set by `seed` from now on, its keys and their order as they
+    /// were ([`BoundedMap::reseed`]).
+    pub fn reseed(&mut self, seed: MapSeed) {
+        self.0.reseed(seed);
     }
 
     /// The keys of a set of at most `M`, in its order, each made by `key` of
@@ -1599,5 +1668,136 @@ mod tests {
     fn a_proven_read_of_an_absent_key_panics() {
         let map = BoundedMap::<u32, u64, 4>::with_seed(SEED);
         let _ = held(&map, &7u32);
+    }
+
+    /// An empty map built in a const context under the zero seed, as a
+    /// firmware `static` is built.
+    const ZEROED: BoundedMap<u32, u32, 4> = BoundedMap::with_seed(MapSeed::from_halves(0, 0));
+
+    /// A `static` holding the map built in a const context.
+    static HELD: BoundedMap<u32, u32, 4> = ZEROED;
+
+    /// A `static` holding a set built in a const context.
+    static HELD_SET: BoundedSet<u8, 4> = BoundedSet::with_seed(MapSeed::from_halves(0, 0));
+
+    /// The empty map a const context builds under the zero seed is zero in
+    /// every field: no slot linked, none free, no entry or tombstone counted,
+    /// and every cell of its index empty, the link to no slot and the empty
+    /// cell both being 0. Where no allocator is, its index is held whole and
+    /// zero, so a `static` holding the map is all zero bytes, its inline slots
+    /// uninitialised.
+    #[test]
+    fn an_empty_map_built_in_a_const_context_is_zero() {
+        let map = &HELD;
+        assert_eq!((map.head, map.tail, map.free), (0, 0, 0));
+        assert_eq!((map.live, map.tombstones), (0, 0));
+        assert_eq!(map.seed, MapSeed::from_halves(0, 0));
+        assert!(map.slots.is_empty());
+        assert!((0..map.index.len()).all(|cell| map.index.get(cell) == 0));
+        #[cfg(not(feature = "alloc"))]
+        {
+            assert_eq!(map.index.len(), 8);
+            assert_eq!(map.index.cells, [[0u32; 4]; 2]);
+            assert_eq!(HELD_SET.0.index.cells, [[0u32; 4]; 2]);
+        }
+        let set = &HELD_SET.0;
+        assert_eq!((set.head, set.tail, set.free), (0, 0, 0));
+        assert_eq!((set.live, set.tombstones), (0, 0));
+        assert!(map.first().is_none() && map.iter().next().is_none());
+    }
+
+    /// docs/adr/0108, D8: a map given another seed holds what it held. After
+    /// `reseed` every key it held is found with its value and every other is
+    /// absent, its order is the one before, each entry's hash is its key's
+    /// under the new seed, and the tombstone a remove left is gone; puts and
+    /// removes go on as before. A full map likewise, which still refuses one
+    /// more key and still replaces one it holds; and a set.
+    #[test]
+    fn a_reseeded_map_holds_what_it_held_in_its_order() {
+        let mut map = BoundedMap::<u32, u32, 8>::with_seed(SEED);
+        for key in 0..6u32 {
+            assert_eq!(map.put(key * 7, key), PutOutcome::Inserted);
+        }
+        assert_eq!(map.remove(&14), RemoveOutcome::Removed);
+        assert_eq!(map.tombstones, 1);
+        let before: heapless::Vec<(u32, u32), 8> = map.iter().map(|(k, v)| (*k, *v)).collect();
+        map.reseed(OTHER_SEED);
+        assert_eq!(map.seed, OTHER_SEED);
+        assert_eq!(map.tombstones, 0);
+        assert!(map.iter().map(|(k, v)| (*k, *v)).eq(before.iter().copied()));
+        for (key, value) in &before {
+            assert_eq!(map.get(key), Some(value), "key {key}");
+        }
+        for absent in [14u32, 1, 100] {
+            assert!(!map.contains_key(&absent), "key {absent}");
+        }
+        let mut at = map.head;
+        while at != NIL {
+            let slot = map.slot(at);
+            let (key, _) = slot.entry.as_ref().expect("a linked slot holds an entry");
+            assert_eq!(slot.hash, hash_of(&OTHER_SEED, key));
+            at = slot.next;
+        }
+        assert_eq!(map.put(14, 9), PutOutcome::Inserted);
+        assert_eq!(map.remove(&0), RemoveOutcome::Removed);
+        assert!(map
+            .iter()
+            .map(|(k, v)| (*k, *v))
+            .eq([(7, 1), (21, 3), (28, 4), (35, 5), (14, 9)]));
+
+        let mut full = BoundedMap::<u32, u32, 4>::with_seed(SEED);
+        for key in 0..4u32 {
+            assert_eq!(full.put(key, key), PutOutcome::Inserted);
+        }
+        full.reseed(OTHER_SEED);
+        for key in 0..4u32 {
+            assert_eq!(full.get(&key), Some(&key), "key {key}");
+        }
+        assert_eq!(full.put(9, 9), PutOutcome::Full);
+        assert_eq!(full.put(2, 20), PutOutcome::Replaced);
+        assert!(full
+            .iter()
+            .map(|(k, v)| (*k, *v))
+            .eq([(0, 0), (1, 1), (2, 20), (3, 3)]));
+
+        let mut tags = BoundedSet::<u8, 4>::with_seed(SEED);
+        assert_eq!(tags.put(3), PutOutcome::Inserted);
+        assert_eq!(tags.put(1), PutOutcome::Inserted);
+        tags.reseed(OTHER_SEED);
+        assert!(tags.contains_key(&3u8) && tags.contains_key(&1u8));
+        assert!(!tags.contains_key(&2u8));
+        assert!(tags.iter().copied().eq([3, 1]));
+    }
+
+    /// A map built in a const context under the zero seed and given `SEED`
+    /// before its first put is the map built under `SEED`: each operation
+    /// answers alike, the two hold the same entries in the same order, each key
+    /// sits at the same cell of the index, and the seeds drawn from them are
+    /// the same. A set likewise.
+    #[test]
+    fn an_empty_map_reseeded_is_the_map_built_under_that_seed() {
+        let mut reseeded = ZEROED;
+        reseeded.reseed(SEED);
+        let mut built = BoundedMap::<u32, u32, 4>::with_seed(SEED);
+        for key in [5u32, 9, 2] {
+            assert_eq!(reseeded.put(key, key + 1), built.put(key, key + 1));
+        }
+        assert_eq!(reseeded.remove(&9), built.remove(&9));
+        assert_eq!(reseeded.put(11, 0), built.put(11, 0));
+        assert_eq!(reseeded, built);
+        assert_eq!(reseeded.derived_seed(0), built.derived_seed(0));
+        assert_eq!(reseeded.index.len(), built.index.len());
+        assert!(
+            (0..built.index.len()).all(|cell| reseeded.index.get(cell) == built.index.get(cell))
+        );
+        for key in [5u32, 9, 2, 11, 0] {
+            assert_eq!(reseeded.get(&key), built.get(&key), "key {key}");
+        }
+
+        let mut tags = HELD_SET.clone();
+        tags.reseed(SEED);
+        assert_eq!(tags.put(4), PutOutcome::Inserted);
+        assert!(tags.contains_key(&4u8));
+        assert_eq!(tags.derived_seed(0), SEED.derive(0));
     }
 }
