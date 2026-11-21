@@ -1347,7 +1347,9 @@ lacks a field's key:
   that never had the field write the same map, and a default the field
   declares is not read here: reading it would read the first writer's absence
   as a value. The lift, whose wire spells absence `null`, reads that default
-  where a delivery lacks the key; this is the one place the two readers part;
+  where a delivery lacks the key; this is the one place the lift and a CBOR
+  decode part, and every reader of a CBOR map, the record codec below among
+  them, reads an absent optional field as absent;
 - a field of the first revision that is not optional is refused as
   `CborRequiredKeyMissing`: every writer of every revision writes it.
 
@@ -1355,7 +1357,21 @@ The generator spells each default once, as its deterministic CBOR, in the
 codec's plan (`CborField::default`), and every backend's decode reads those
 bytes with the reader of the field's own value, so a default is held to every
 rule a written value is held to and there is no second reader of it, as the
-lift reads its defaults with the reader of a delivery. Every backend that
+lift reads its defaults with the reader of a delivery. A record a COSE
+operation of the standard host signs, verifies, seals or opens by name
+(`sce:payload`, docs/adr/0109, D9) is read by the runtimes' record codec
+(`sce_rust_runtime::record_cbor`, `common/RecordCbor.h`) from the description
+the build hands it (`payload_record::describe`), and that description carries,
+for each field, the same bytes, made by the same function
+(`encode_plan::lacked_value`) the plan's are: the hexadecimal text of them for
+a field a later revision added, `null` for every other field. The record
+codec reads them with the reader of the field's own value and refuses a
+description whose default is no value of its field or is followed by a byte,
+so a record the machine of an earlier revision signed verifies, at the later
+revision, to the record the printed codec of the same schema reads from the
+same bytes, and one that lacks a field of the first revision is no record
+(`not_a_record`). The record codec is no second reader: it reads one set of
+bytes by one rule. Every backend that
 lowers the record applies the rule: Rust and C++ for a record at any depth,
 and Go, Kotlin, Python, C11 and Swift for a record a list holds (docs/adr/0085,
 Landing order step 3a). The encode writes every field of the reader's

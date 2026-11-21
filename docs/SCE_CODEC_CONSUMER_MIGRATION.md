@@ -3547,3 +3547,15 @@ names none generates the bytes it generated before.
   `ValidationPayloadRecordSchema`, and one over `ValidationError` names `PayloadRecordSchema`.
   `UnsupportedInvokeInfo` has `payload_schema`, `payload_schema_at`, `payload_result`, `payload_param` and
   `payload_cbor`, which `..Default::default()` fills.
+- A record signed by name reads an earlier revision of its schema as a CBOR decode does (ADR 0101 §3.6, ADR
+  0044): where the map lacks the key of a field a later revision added, the field reads its `sce:default`, or the
+  empty list for a list; an optional field reads absent; a map that lacks a field of the first revision is
+  `not_a_record`. A machine built at a later revision verifies or opens what an earlier one signed or sealed and
+  receives the record with those values, where a refusal would have stood had the codec read no revisions.
+- The description the build writes of a record (`payload_record::describe`, the `payload_cbor` a generated
+  machine hands the record codec) gives each field four members, `[id, optional, type, default]`: `default` is the
+  lowercase hexadecimal text of the deterministic CBOR a map that lacks the key reads, the bytes the printed
+  codec's plan holds (`CborField::default`), or `null`. The record codec reads that one form and refuses a field
+  of three members, a default that is no value of its field or is followed by a byte, and a default on an optional
+  field, as a description it cannot read. A machine generated before this form is regenerated with the runtime
+  that reads it; a host that writes a description by hand writes the fourth member.
