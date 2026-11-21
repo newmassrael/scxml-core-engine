@@ -741,6 +741,7 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     status=0
     mapfile -t row_tasks < <(suite_tasks test)
     ./gradlew --console=plain "${row_tasks[@]}" "-Psce.script.engine=$engine" \
+        "-Psce.script.language=$language" \
         "-Psce.lua.loweringCensus=$CENSUS" \
         "${HEAP_OBSERVED[@]}" \
         "${overlay[@]}" \

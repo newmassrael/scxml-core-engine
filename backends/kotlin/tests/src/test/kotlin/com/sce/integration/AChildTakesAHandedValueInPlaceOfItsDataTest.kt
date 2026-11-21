@@ -11,9 +11,12 @@
 // through the parent's typed readers. The fixture's own comment says what each
 // `<data>` of each child is for.
 //
-// The fixture is run on every engine whatever the suite selected: QuickJS
-// hands back a handle to an object it keeps, and Rhino the object itself, so
-// both are always among the engines that hand a child an object.
+// The fixture is run on every engine that reads the language its machines
+// were generated in, whatever engine the suite selected: QuickJS hands back a
+// handle to an object it keeps, and Rhino the object itself, so on machines in
+// ECMAScript both are among the engines that hand a child an object. Machines
+// lowered to Lua are read by the Lua engine only; Rhino and QuickJS refuse
+// every expression they hold.
 //
 // One case runs the same machines over an engine that refuses to hold one
 // handed value: the session that cannot hold it raises error.execution for
@@ -46,6 +49,7 @@ import com.sce.w3c.W3CTestBase
 import com.sce.w3c.driveOnVirtualTime
 import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
@@ -169,7 +173,19 @@ class AChildTakesAHandedValueInPlaceOfItsDataTest {
         // the parent hands it, so it arrives whole and as the child's own: the
         // fixture lands in `failObjectNotWhole` or
         // `failChildSharedTheParentsObject` otherwise.
-        for (name in W3CTestBase.KNOWN_ENGINES) {
+        //
+        // The engines are those that accept the language this run's machines
+        // hold. An engine that does not refuses the parent's own expressions
+        // and lands it in `failParentRaised`, which says nothing about handing.
+        val machines = W3CTestBase.machineLanguage()
+        val engines = W3CTestBase.enginesAccepting(machines)
+        assertTrue(
+            W3CTestBase.requestedEngine() in engines,
+            "the engine this run selected, ${W3CTestBase.requestedEngine()}, does not accept " +
+                "${machines.wireName}, the language this run says its machines hold " +
+                "(engines that do: $engines)",
+        )
+        for (name in engines) {
             ended(W3CTestBase.engineFor(name)) { sm ->
                 assertEquals(
                     AChildTakesAHandedValueInPlaceOfItsDataState.Pass,
