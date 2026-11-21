@@ -5,7 +5,9 @@
 // slot, the return and the field of a record are `T?` over the type of the present
 // value, absent is `nil`, a test of presence is `== nil` and `!= nil`, a read with a
 // default is `??`, and a read of a value proven present is `SceOptional.proven`, which
-// fails loudly where the proof was wrong.
+// fails loudly where the proof was wrong. A function that may fail throws its typed
+// failure where it happens, and a record is built whole by its initializer with no
+// member initializer (docs/adr/0099, sections 3 and 4).
 
 use std::path::{Path, PathBuf};
 
@@ -44,7 +46,7 @@ fn a_parameter_and_a_return_that_may_be_absent_are_the_optional_of_the_type() {
     let code = swift_of(&format!("{FIXTURES}/algorithm_goal_until.scxml"))
         .expect("an optional slot is written");
     assert!(
-        code.contains("_ day: Int64?) throws -> Int64?"),
+        code.contains("_ day: Int64?) throws(AlgorithmError) -> Int64?"),
         "the parameter and the return are `T?`: {code}"
     );
 }
@@ -53,12 +55,17 @@ fn a_parameter_and_a_return_that_may_be_absent_are_the_optional_of_the_type() {
 fn a_test_of_presence_a_proven_read_and_absence_are_spelled_over_nil() {
     let code = swift_of(&format!("{FIXTURES}/algorithm_goal_until.scxml"))
         .expect("an optional slot is written");
-    assert!(code.contains("let sceCond2 = day == nil"), "{code}");
-    assert!(code.contains("let sceReturned: Int64? = nil"), "{code}");
+    // A condition decides its branch where it is written and a value is returned as
+    // it is computed: no local stands between them (docs/adr/0099, section 3).
+    assert!(code.contains("if day == nil {\n"), "{code}");
+    assert!(code.contains("return nil\n"), "{code}");
     assert!(
-        code.contains("SceOptional.proven(day)"),
+        code.contains("(try Checked.sub(SceOptional.proven(day), today))"),
         "a read proven present is by the runtime's function: {code}"
     );
+    for gone in ["sceCond", "sceReturned"] {
+        assert!(!code.contains(gone), "`{gone}` in:\n{code}");
+    }
 }
 
 #[test]
@@ -82,11 +89,15 @@ fn a_local_that_may_be_absent_starts_at_nil_and_takes_a_whole_record() {
     assert!(!code.contains("found = it;"), "{code}");
 }
 
+/// A payload is built whole by its initializer, every field written: a member has no
+/// initializer of its own, so an absent field is the `nil` its builder hands it
+/// (docs/adr/0099, section 4).
 #[test]
-fn a_field_that_may_be_absent_is_at_nil_until_written() {
+fn a_field_that_may_be_absent_is_written_whole_by_the_initializer() {
     let code = swift_of(&format!("{FIXTURES}/schema_goal.scxml"))
         .expect("a schema with a field that may be absent is written");
-    assert!(code.contains("public var day: Int64? = nil"), "{code}");
+    assert!(code.contains("    public var day: Int64?\n"), "{code}");
+    assert!(!code.contains("public var day: Int64? = nil"), "{code}");
     assert!(
         code.contains("public init(id: UInt32, day: Int64?, weight: Int32)"),
         "{code}"
