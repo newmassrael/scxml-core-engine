@@ -8226,6 +8226,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             value,
             language,
             spelled: _,
+            reason: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::ValidationReservedCodeIdentifier,
             stage: Stage::Validation,
@@ -14427,6 +14428,7 @@ mod tests {
                     value: "override".into(),
                     spelled: "override".into(),
                     language: "rust",
+                    reason: None,
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:cfa1042251265097","code":"validation/reserved-code-identifier","stage":"validation","spec":"SCE Accepted Subset §2.14","message":"<data id=\"override\">: 'override' is a reserved word in rust, so the generated rust code cannot declare it — rename it","expected":["a name rust can declare"],"actual":"override"}"#,
