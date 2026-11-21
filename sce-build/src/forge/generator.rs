@@ -30357,16 +30357,18 @@ fn broadcast_log_template_label(language: crate::generator::Language) -> &'stati
 /// writes a line, in the one order every language gives it: the declared
 /// progress the language cannot keep
 /// ([`judge_broadcast_log_progress_on_backend`]), a build that resolved no
-/// numbers for the log, an element the language's template cannot hold
-/// ([`crate::BroadcastLogElementFacts::refusal_for`]), a retention that is a
-/// deploy key nothing resolved, and a retention that resolves to nothing. Each
-/// refusal after the first is [`GenerateError::InvalidConfig`], placed on the
-/// row that wrote the thing refused where there is one, and names the log.
+/// numbers for the log, an element whose codec the language's emitter does not
+/// write ([`crate::BroadcastLogElementFacts::refusal_for`]), a retention that is
+/// a deploy key nothing resolved, and a retention that resolves to nothing. The
+/// element's refusal is an unsupported feature, as the emitter's own refusal of
+/// the codec is, and every other refusal after the first is
+/// [`GenerateError::InvalidConfig`]; each is placed on the row that wrote the
+/// thing refused where there is one, and names the log.
 ///
 /// This is the one place those refusals are written, so a language's renderer
 /// cannot answer a document differently from another's: what differs per language
-/// is the verdict on the element's shape, which `refusal_for` states in an arm of
-/// its own, and the template that writes the module.
+/// is whether its emitter writes the element's codec, which `refusal_for` states,
+/// and the template that writes the module.
 ///
 /// A resolution that is missing is refused, never guessed: only the
 /// document-set compile has the element document and the deploy, so a
@@ -30399,24 +30401,12 @@ fn resolve_broadcast_log_render_inputs(
         .into());
     };
     if let Some(why) = resolution.element.refusal_for(language) {
-        // Swift's reason is the construct its codec emitter does not lower yet, which is no
-        // question of what a decoded form borrows: it is refused as that emitter refuses the
-        // codec itself, as an unsupported feature that names the codec and the construct.
-        if language == crate::generator::Language::Swift {
-            return Err(ForgeError::from(GenerateError::unsupported(format!(
-                "broadcast-log '{name}': the element '{element}' cannot be stored by the Swift \
-                 template: {why}",
-                name = m.name,
-                element = m.element_type,
-            )))
-            .at_line(m.element_type_line));
-        }
-        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+        // Every reason is a construct the language's codec emitter does not lower yet, so the
+        // element is refused as that emitter refuses the codec itself: an unsupported feature
+        // that names the codec and the construct.
+        return Err(ForgeError::from(GenerateError::unsupported(format!(
             "broadcast-log '{name}': the element '{element}' cannot be stored by the {template} \
-             template: {why}. ADR 0062 section 4: a log stores the bytes of the element's wire \
-             form, and a reader decodes them after the buffer they were written from is gone, so \
-             a decoded form that borrows its input cannot be handed back. This document is valid \
-             and is refused rather than lowered to a log that could not read back what it stores.",
+             template: {why}",
             name = m.name,
             element = m.element_type,
             template = broadcast_log_template_label(language),
