@@ -6,6 +6,7 @@
 package com.sce.w3c
 
 import com.sce.runtime.Event
+import com.sce.runtime.ScriptLanguage
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
@@ -60,6 +61,47 @@ abstract class W3CTestBase<S : State, E : Event> {
             System.getProperty("sce.script.engine", DEFAULT_ENGINE).lowercase()
 
         fun createEngine(): ScxmlScriptEngine = engineFor(requestedEngine())
+
+        /**
+         * The language the machines this run compiled hold, as the caller that
+         * chose them names it: `-Psce.script.language`, which
+         * `gradle/sce-kotlin-suite.gradle.kts` forwards as this property.
+         *
+         * The committed machines are emitted for one language and a row of
+         * `scripts/gates/w3c-kotlin.sh` may overlay the other's, so which one a
+         * run holds is the caller's fact, not this harness's. A test that runs the
+         * machines on an engine other than [createEngine]'s needs it, because an
+         * engine that does not accept the machines' language refuses every
+         * expression they hand it ([ScxmlScriptEngine.acceptsLanguage]).
+         *
+         * Absent or unknown, it is refused rather than guessed, for the reason
+         * [engineFor] refuses a name it does not know: a guess that named the
+         * other language would hand a test engines that refuse the machines, or
+         * withhold engines that read them, and report either as the machines'
+         * own result.
+         */
+        fun machineLanguage(): ScriptLanguage {
+            val named = System.getProperty("sce.script.language")
+                ?: throw IllegalStateException(
+                    "this run did not say which language its machines hold. Run it " +
+                        "with -Psce.script.language=<" +
+                        ScriptLanguage.entries.joinToString("|") { it.wireName } +
+                        ">, the language the compiled machines were generated in " +
+                        "(scripts/gates/w3c-kotlin.sh passes each row's)."
+                )
+            return ScriptLanguage.entries.firstOrNull { it.wireName == named.lowercase() }
+                ?: throw IllegalArgumentException(
+                    "sce.script.language=\"$named\" names no language. Known: " +
+                        ScriptLanguage.entries.joinToString(", ") { it.wireName } + "."
+                )
+        }
+
+        /**
+         * The engines of [KNOWN_ENGINES] that accept [language], in that list's
+         * order: the engines a machine generated in [language] can run on.
+         */
+        fun enginesAccepting(language: ScriptLanguage): List<String> =
+            KNOWN_ENGINES.filter { engineFor(it).acceptsLanguage(language) }
 
         /**
          * The engine a name selects.
