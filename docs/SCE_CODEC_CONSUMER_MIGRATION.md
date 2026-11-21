@@ -3550,3 +3550,28 @@ consumer regenerates its C11 machines and codecs at the new pin.
   (`scripts/gates/c11-mcu.sh`) against `backends/c/mcu/footprint.budget`, and reported in
   `target/c11-mcu/report.md`; `docs/SCE_ACCEPTED_SUBSET.md` §2.15, "What a C11 machine's core links", lists what
   a core may include and what each hosted unit is.
+
+## A codec member name the generated code already holds is refused where it holds it
+
+Landing: the commit that adds this section.
+
+- The build now refuses, with `validation/reserved-code-identifier` and a reason naming the member, a name that
+  shadowed a member of the generated code. Each was accepted before and produced code that did not compile or ran the
+  wrong method:
+  - Python: a CBOR or content-line entry, or a positional codec's `<data sce:byte>` field, named `decode`, `encode`,
+    `encode_to_bytes`, `_decode_at`, `classmethod`, `field`, `property` or a `__x__` name. Before, only a
+    positional `<sce:field>` was checked, and it was not checked against `property` or `_decode_at`.
+  - Go: a codec field, flag, repeat, chain or embed whose unexported field spelling (the Pascal name with its first
+    letter lowered) is a Go keyword: `chan`, `go`, `map`, `range`, `select`, as written or capitalized (`Map`).
+  - Every backend: a field, flag, repeat, chain or embed named `body` beside a `<sce:variant>` (the member that holds
+    the arm), and one named `tag` beside a variant whose tag the caller gives (the member that answers it on C++,
+    Kotlin, Go, Python and Swift).
+  - Every backend: a content-line parameter of a repeated property named `value`, or `values` where the property has
+    a separator: the line record's own member.
+- A Python positional field named `list` is accepted now; nothing in a positional class body reads `list` any more.
+- The generated Python makes a default that names another module's class or enum at call time
+  (`field(default_factory=lambda: X())`, `lambda: sce_m.Enum.V`), and a content-line list default is
+  `lambda: []`. A CBOR record reader is a module function `_decode_record_<x>` beside `_encode_record_<x>`, no
+  longer a static method of the codec class. The values a constructor gives are the same; only private names moved.
+- How to write it now: run `sce-codegen --error-format=json check <document> -l <language>` over each document, and
+  rename each field the refusal names in the document. The other backends' code for the renamed field changes with it.
