@@ -483,31 +483,16 @@ fn int_max(ty: &SceType) -> Option<u64> {
     })
 }
 
-/// Whether a string or byte-string entry of the CBOR codec `m` has neither a
-/// bound nor a capacity, so no container of a fixed size holds it
-/// (docs/adr/0077 §7). The parser refuses a CBOR text or byte string that
-/// states no bound (docs/adr/0101, section 1.3), so a codec read from a
-/// document answers `false`.
-///
-/// What the broadcast-log fact
-/// [`crate::BroadcastLogElementFacts::cbor_entry_unbounded`] is read from: a
-/// log's Rust slot holds its element at `Inline`.
-pub fn has_unbounded_text_or_bytes(m: &CodecModel) -> bool {
-    m.cbor_entries.iter().any(|e| {
-        matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes))
-            && e.storage_bytes().is_none()
-    })
-}
-
 /// Whether the Rust form of the CBOR codec `m` has an owned mirror,
 /// `{Name}Owned<S>` (SCE_FORGE.md §4.6.1): it decodes a string or a byte string to
 /// a view of the buffer, so the map borrows, and a mirror is what a consumer that
-/// keeps a decoded value past its buffer copies it into. The mirror holds each
-/// such entry in the profile's container for its tag, so a map whose entry has
-/// no bound has one as every other map does, and `Inline` alone does not answer
-/// for that entry (docs/adr/0077 §7). A map of scalars borrows nothing and is its
-/// own owned form; so does a list of records, which the map holds by value in
-/// the language's bounded types, so the mirror moves it whole.
+/// keeps a decoded value past its buffer copies it into. A CBOR text or byte
+/// string carries its bound in its type or is refused at it (docs/adr/0101,
+/// section 1.3), so every such entry has a size, the deployment's capacity or
+/// that bound, and the mirror holds it in the profile's container for its tag,
+/// which `Inline` answers for at that size. A map of scalars borrows nothing and
+/// is its own owned form; so does a list of records, which the map holds by
+/// value in the language's bounded types, so the mirror moves it whole.
 pub fn rust_owned_mirror(m: &CodecModel) -> bool {
     m.cbor_entries
         .iter()
@@ -661,7 +646,8 @@ pub(crate) fn rust_owned_value_type(
 /// The string and byte string entries of the map `m` as the storage macro takes
 /// them ([`rust_storage_field`]): each one a profile answers for, held by
 /// `Inline` at what a storing form holds of it ([`CborEntry::storage_bytes`]),
-/// and by no `Inline` impl where that is nothing. A map with no owned mirror
+/// which every such entry has, since each carries its bound in its type
+/// (docs/adr/0101, section 1.3). A map with no owned mirror
 /// ([`rust_owned_mirror`]) declares none.
 pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
     if !rust_owned_mirror(m) {
