@@ -39366,15 +39366,7 @@ impl LangCtx {
     }
 
     fn expr_target(&self) -> ExprTarget {
-        match self.lang {
-            crate::generator::Language::Cpp => ExprTarget::Cpp,
-            crate::generator::Language::Kotlin => ExprTarget::Kotlin,
-            crate::generator::Language::Rust => ExprTarget::Rust,
-            crate::generator::Language::Go => ExprTarget::Go,
-            crate::generator::Language::Python => ExprTarget::Python,
-            crate::generator::Language::C11 => ExprTarget::C,
-            crate::generator::Language::Swift => ExprTarget::Swift,
-        }
+        ExprTarget::of(self.lang)
     }
 
     /// Base context fields common to all kinds (guard, namespace, package).

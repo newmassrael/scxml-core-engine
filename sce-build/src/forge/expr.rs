@@ -129,6 +129,22 @@ impl ExprTarget {
         }
     }
 
+    /// The target `language` lowers an expression for: the inverse of
+    /// [`Self::language`], decided here once for every caller that holds a
+    /// backend and asks for its target.
+    pub(crate) fn of(language: crate::generator::Language) -> Self {
+        use crate::generator::Language;
+        match language {
+            Language::Cpp => ExprTarget::Cpp,
+            Language::Kotlin => ExprTarget::Kotlin,
+            Language::Rust => ExprTarget::Rust,
+            Language::Go => ExprTarget::Go,
+            Language::Python => ExprTarget::Python,
+            Language::C11 => ExprTarget::C,
+            Language::Swift => ExprTarget::Swift,
+        }
+    }
+
     /// Whether this target's emitter spells an optional value (docs/adr/0055):
     /// `null`, a value of `T` lifted into `optional<T>`, a test of presence, a
     /// proven `x.value`, `x ?? d` and equality between optional values
@@ -14661,6 +14677,15 @@ mod tests {
     /// `contains` check additionally proves the array is not missing any
     /// existing variant — and that the one target that is not a
     /// code-generation backend, [`ExprTarget::Js`], is not in it.
+    /// [`ExprTarget::of`] is the inverse of [`ExprTarget::language`] on every
+    /// backend.
+    #[test]
+    fn the_target_of_a_backend_names_that_backend() {
+        for &language in crate::generator::Language::ALL {
+            assert_eq!(ExprTarget::of(language).language(), Some(language));
+        }
+    }
+
     #[test]
     fn expr_target_all_contains_every_variant() {
         fn is_backend(t: ExprTarget) -> bool {
