@@ -37,7 +37,7 @@ class CodecZenohPushDefault:
     names, which it keeps, and its body."""
 
     tag: CodecZenohPushUnknownTag = CodecZenohPushUnknownTag(0)
-    body: sce_codec_zenoh_push_body.CodecZenohPushBody = field(default_factory=sce_codec_zenoh_push_body.CodecZenohPushBody)
+    body: sce_codec_zenoh_push_body.CodecZenohPushBody = field(default_factory=lambda: sce_codec_zenoh_push_body.CodecZenohPushBody())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -89,7 +89,7 @@ def encode_source(src: CodecZenohPushSource, w: SceSink) -> None:
 @dataclass
 class CodecZenohPush:
     header: CodecZenohPushHeaderInt = 0x1d
-    body: CodecZenohPushVariant = field(default_factory=sce_codec_zenoh_push_body.CodecZenohPushBody)
+    body: CodecZenohPushVariant = field(default_factory=lambda: sce_codec_zenoh_push_body.CodecZenohPushBody())
 
     def __setattr__(self, name: str, value: object) -> None:
         # Each integer, byte string and text is held to its bound

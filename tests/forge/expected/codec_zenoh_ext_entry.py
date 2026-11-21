@@ -41,7 +41,7 @@ class CodecZenohExtEntryDefault:
     names, which it keeps, and its body."""
 
     tag: CodecZenohExtEntryUnknownTag = CodecZenohExtEntryUnknownTag(3)
-    body: sce_codec_zenoh_ext_unit.CodecZenohExtUnit = field(default_factory=sce_codec_zenoh_ext_unit.CodecZenohExtUnit)
+    body: sce_codec_zenoh_ext_unit.CodecZenohExtUnit = field(default_factory=lambda: sce_codec_zenoh_ext_unit.CodecZenohExtUnit())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -102,7 +102,7 @@ def encode_source(src: CodecZenohExtEntrySource, w: SceSink, *, override_header_
 @dataclass
 class CodecZenohExtEntry:
     header: CodecZenohExtEntryHeaderInt = 0
-    body: CodecZenohExtEntryVariant = field(default_factory=sce_codec_zenoh_ext_unit.CodecZenohExtUnit)
+    body: CodecZenohExtEntryVariant = field(default_factory=lambda: sce_codec_zenoh_ext_unit.CodecZenohExtUnit())
 
     def __setattr__(self, name: str, value: object) -> None:
         # Each integer, byte string and text is held to its bound

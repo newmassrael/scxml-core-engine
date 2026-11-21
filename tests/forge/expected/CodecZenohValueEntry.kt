@@ -208,9 +208,9 @@ data class CodecZenohValueEntry(
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
         /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
-        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
-        /// L494-519), which the caller resumes after appending bytes, and
-        /// another kind for a frame no more bytes make whole.
+        /// the cursor's tail is shorter than the frame (RFC
+        /// §synth-5-B L494-519), which the caller resumes after appending
+        /// bytes, and another kind for a frame no more bytes make whole.
         @Suppress("UNUSED_PARAMETER")
         fun decode(cursor: SceCursor, afterShm: UByte): Decoded<CodecZenohValueEntry> {
             // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).

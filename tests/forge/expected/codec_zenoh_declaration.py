@@ -53,7 +53,7 @@ class CodecZenohDeclarationDefault:
     names, which it keeps, and its body."""
 
     tag: CodecZenohDeclarationUnknownTag = CodecZenohDeclarationUnknownTag(8)
-    body: sce_codec_zenoh_decl_final.CodecZenohDeclFinal = field(default_factory=sce_codec_zenoh_decl_final.CodecZenohDeclFinal)
+    body: sce_codec_zenoh_decl_final.CodecZenohDeclFinal = field(default_factory=lambda: sce_codec_zenoh_decl_final.CodecZenohDeclFinal())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -128,7 +128,7 @@ def encode_source(src: CodecZenohDeclarationSource, w: SceSink, *, override_head
 @dataclass
 class CodecZenohDeclaration:
     header: CodecZenohDeclarationHeaderInt = 0
-    body: CodecZenohDeclarationVariant = field(default_factory=sce_codec_zenoh_decl_final.CodecZenohDeclFinal)
+    body: CodecZenohDeclarationVariant = field(default_factory=lambda: sce_codec_zenoh_decl_final.CodecZenohDeclFinal())
 
     def __setattr__(self, name: str, value: object) -> None:
         # Each integer, byte string and text is held to its bound
