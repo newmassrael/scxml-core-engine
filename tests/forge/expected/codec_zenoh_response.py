@@ -73,7 +73,7 @@ class CodecZenohResponseDefault:
     names, which it keeps, and its body."""
 
     tag: CodecZenohResponseUnknownTag = CodecZenohResponseUnknownTag(0)
-    body: sce_codec_zenoh_reply.CodecZenohReply = field(default_factory=sce_codec_zenoh_reply.CodecZenohReply)
+    body: sce_codec_zenoh_reply.CodecZenohReply = field(default_factory=lambda: sce_codec_zenoh_reply.CodecZenohReply())
 
     def __setattr__(self, name: str, value: object) -> None:
         # The tag is held to the tags no arm names wherever it is set,
@@ -159,7 +159,7 @@ class CodecZenohResponse:
     key_id: CodecZenohResponseKeyIdInt = 0
     suffix: Optional[CodecZenohResponseSuffixText] = None
     extensions: Optional[CodecZenohResponseExtensionsList] = None
-    body: CodecZenohResponseVariant = field(default_factory=sce_codec_zenoh_reply.CodecZenohReply)
+    body: CodecZenohResponseVariant = field(default_factory=lambda: sce_codec_zenoh_reply.CodecZenohReply())
 
     def __setattr__(self, name: str, value: object) -> None:
         # Each integer, byte string and text is held to its bound
