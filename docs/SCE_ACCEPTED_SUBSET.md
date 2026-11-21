@@ -4052,7 +4052,7 @@ the `expr` on the `<log>`'s own row, naming the expression and its type as a
 
 | Value | Why it is refused |
 |---|---|
-| a byte string (`bytes`, a `bytes` field of a record or of the payload), and `optional<bytes>` | The C++ log writes each value through its `operator<<` (docs/adr/0060), and a `std::vector<uint8_t>` has none; the C11 log writes through a `printf` conversion, which takes no buffer. The other backends print it each their own way: Rust and Go as a list of byte numbers, Python as a `b'…'` literal, Kotlin as the array's identity |
+| a byte string (`bytes`, a `bytes` field of a record or of the payload), and `optional<bytes>` | The C++ log writes each value through its `operator<<` (docs/adr/0060), and a `std::vector<uint8_t>` has none; the C11 log hands its seam a text the runtime's own routines build (docs/adr/0110), and they have none for a byte string. The other backends print it each their own way: Rust and Go as a list of byte numbers, Python as a `b'…'` literal, Kotlin as the array's identity |
 | a record (a record variable, a `<foreach>`'s record item, `_event.data` taken whole), and `optional<record:…>` | Neither C++ nor C11 has a text for a struct; Rust, Go, Kotlin and Python print each their own rendering of its fields |
 | a value the data model gives no type, and `null` | No backend has a type to write it by |
 
@@ -7435,6 +7435,59 @@ expression or a host action names — the machine's `_in_state` and
 `_raise_platform_error` and their enumerators — while the payload channel's own
 tag constants stay `<MACHINE>_PAYLOAD_<EVENT>`.
 
+**What a C11 machine's core links** (docs/adr/0110).
+
+- Amended by: ADR 0110 (D1, D2): the core is freestanding, and what is hosted is
+  a seam or a unit of its own.
+
+A C11 machine's core (its `<machine>_sm.c`, the units of what it imports, and
+the runtime headers they include) includes only the headers C11 requires of a
+freestanding implementation (`<stdint.h>`, `<stddef.h>`, `<stdbool.h>`,
+`<limits.h>`, `<float.h>`, `<stdarg.h>`, `<stdalign.h>`, `<stdnoreturn.h>`,
+`<iso646.h>`) and calls no library function but `memcpy`, `memset`, `memmove`
+and `memcmp`. Every other text routine is the runtime's own (`sce/text.h`).
+`round(x)` and `floor(x)` are the forge runtime's (`sce_forge_real_round` and
+`sce_forge_real_floor` in `sce/forge/algorithm.h`, in a forge kind as in a
+statechart): they answer as C99's `llround` and `floor` for every value an
+`int64_t` holds, and past it as a saturating conversion does, NaN as 0.
+`a_c11_machines_core_reaches_only_freestanding_headers` walks the includes of
+every `sce-static` fixture and of the gate's set below.
+
+What the core does not do itself, a deployment supplies in one of two ways:
+
+- **Seams**, functions the core declares and the deployment defines, each
+  declared in the generated header of a machine that calls it:
+  `_sce_clock_now_ms`; `_sce_log_write(level, label, label_len, text, text_len)`,
+  which a `<log>` and the runtime's own diagnostics write through;
+  `_sce_log_real(level, label, label_len, value)`, a `<log>` of a real number,
+  which the seam formats; and `_sce_real_text` and `_sce_real_read`
+  (`sce/real_text.h`), a real number written into an event's data and read back
+  from it. The hosted definitions are `backends/c/runtime/posix/clock.c`,
+  `backends/c/runtime/posix/log.c` (to `stderr`) and the library `sce_c_text`
+  (`backends/c/runtime/text/real_text.c`).
+- **Units of their own**, which a deployment compiles beside the core only when
+  it uses them, and which may use the hosted library: a machine's saved state
+  (`<machine>_saved.c` and `<machine>_saved.h`, over the `saved_*.h` headers),
+  which a deployment that does not persist leaves out; and the request reader of
+  a typed host-run invocation (`sce/request_field.h`) with the HTTP client. A
+  machine that runs a typed host-run `<invoke>` includes the request reader in
+  its `.c`, so that machine is hosted.
+
+An event's data still crosses the core as JSON text (a `<send>`'s params, done
+data, a child's events), written and read by `wire.h` and `event_payload.h` over
+the freestanding headers: an integer digit by digit, a real number only through
+the two real-number seams.
+
+The gate `c11-mcu` (`scripts/gates/c11-mcu.sh`) holds this on a target. For each
+machine of its set it compiles what the generator wrote for a Cortex-M4 with
+`-ffreestanding -nostdlib` and links it with `-lgcc` and only the gate's memory
+functions, seams and startup, so an undefined symbol names a hosted call; it
+weighs `.text`, `.rodata`, `.data` and `.bss` of the machine's own objects
+against `backends/c/mcu/footprint.budget`, failing a figure outside its band in
+either direction; and it runs the machine's replay scenario under QEMU's
+`mps2-an386`. What it measured, with the toolchain, the flags and the board, is
+written to `target/c11-mcu/report.md`, which a consumer cites for its own image.
+
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active
 configuration (every active state, each `<parallel>` region included), the
@@ -7790,6 +7843,10 @@ state or its API meets:
   request was interrupted. A machine with a scheduler answers `0` until then, as the others do.
 - **Documents that do not save.** A C11 document that needs the script engine has no saved
   state, as a document under another data model has none on any backend.
+- **A unit of its own.** `<machine>_save` and the restore are defined in
+  `<machine>_saved.c` (docs/adr/0110, D2), which a host that saves compiles beside the
+  machine; a deployment that does not persist leaves it out ("What a C11 machine's core
+  links", above).
 
 A restore does not call the host. A Rust host registers its invokers on the
 engine the restore returns, so at that moment nobody could run one, and Kotlin

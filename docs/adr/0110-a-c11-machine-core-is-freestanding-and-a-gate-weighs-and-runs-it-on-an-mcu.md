@@ -6,8 +6,8 @@
   image costs and that it runs.
 - Date: 2026-11-20
 - Amends, once landed (each amended document gains an "Amended by: ADR 0110" line in the landing that moves it):
-  - `docs/SCE_ACCEPTED_SUBSET.md`, the C11 lane's section: what a machine's core may include and what each hosted
-    unit is (D1, D2);
+  - `docs/SCE_ACCEPTED_SUBSET.md` §2.15, a paragraph "What a C11 machine's core links" (the document had no C11
+    section of its own): what a machine's core may include and what each hosted unit is (D1, D2);
   - the C templates (`tools/codegen/templates/c/`) and the runtime headers (`backends/c/runtime/include/sce/`,
     `backends/c/forge-runtime/include/sce/forge/`), by the split of D2.
 - Scope: the C11 lane: its runtime, its machine templates, a new gate (`scripts/gates/c11-mcu.sh`), its fixtures and
@@ -53,6 +53,12 @@ Every other string or number routine the core needs (a length, a comparison, a d
 runtime's own, in one header (`sce/text.h`), written once and used by every unit that needs it, the hosted ones
 included. The core never parses or formats a real number. Where a value of a real type must become text, it is
 handed whole to a seam (D2).
+
+(Amended 2026-11-21.) A real made an integer by the expression language's `round(x)` and `floor(x)` is no text
+routine: it is lowered with the other operations of SCE_FORGE.md §3.4.1, into the forge runtime's integer header
+(`sce_forge_real_round`, `sce_forge_real_floor` in `sce/forge/algorithm.h`), which the generator includes in any
+kind whose body names it and which every `sce-static` machine includes. They had been C99's `llround` and `floor`,
+which a core with no `<math.h>` does not declare and a freestanding image has no library for.
 
 ### D2. Everything hosted is a seam or a separate unit, chosen by what a deployment links
 
