@@ -949,6 +949,14 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // (docs/adr/0108, D5), which keeps what it held where the call fails.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_map_returned"), replayed.end())
         << "static_map_returned was not replayed: a map an algorithm returns has no lowering for the Interpreter";
+    // ... and a map whose value is a map, a list or a record that holds a list (docs/adr/0108, D12),
+    // each written through the place held at a key, the path to it copied, and a key that is absent
+    // failing the write before anything is written.
+    for (const char *nested : {"static_map_nested", "static_map_list", "static_map_record_list"}) {
+        EXPECT_NE(std::find(replayed.begin(), replayed.end(), nested), replayed.end())
+            << nested << " was not replayed: a write through a place held at a key has no lowering for the "
+            << "Interpreter";
+    }
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }

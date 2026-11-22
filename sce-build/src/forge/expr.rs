@@ -7599,15 +7599,33 @@ fn keyed_builtin(
 /// lattice type. Run after the reads are judged and before any rename, while
 /// each map is the place the author named; a scope that holds no map holds no
 /// such read.
+///
+/// Which read a node is, and of which map, is asked of the node before its
+/// children are lowered: a map held at a key of another (`m[k][k2]`,
+/// `has(m[k], k2)`, `len(m[k])`, docs/adr/0108, D12) is known by the place
+/// the author wrote, which the lowering of the child that reads it turns into
+/// a call of `mapGet`, a value no place names. Asked after, the outer read
+/// would be left an index of the array of entries by a key, which reads no
+/// entry.
 fn lower_keyed_reads_for_js(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
-    for child in expr.children_mut() {
-        lower_keyed_reads_for_js(child, ctx)?;
-    }
     let measures_a_map = matches!(
         &expr.kind,
         ExprKind::Call { callee, args, .. }
             if matches!(keyed_builtin(callee, args, ctx), Some((KeyedBuiltin::Len, _)))
     );
+    let keyed = match &expr.kind {
+        ExprKind::Index { object, .. } => {
+            keyed_place(object, ctx).map(|held| ("mapGet", held, true))
+        }
+        ExprKind::Call { callee, args, .. } => match keyed_builtin(callee, args, ctx) {
+            Some((KeyedBuiltin::Has, held)) => Some(("mapHas", held, false)),
+            _ => None,
+        },
+        _ => None,
+    };
+    for child in expr.children_mut() {
+        lower_keyed_reads_for_js(child, ctx)?;
+    }
     if measures_a_map {
         if let ExprKind::Call { mut args, .. } =
             std::mem::replace(&mut expr.kind, ExprKind::NullLit)
@@ -7621,16 +7639,8 @@ fn lower_keyed_reads_for_js(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(
         }
         return Ok(());
     }
-    let (helper, held, fails) = match &expr.kind {
-        ExprKind::Index { object, .. } => match keyed_place(object, ctx) {
-            Some(held) => ("mapGet", held, true),
-            None => return Ok(()),
-        },
-        ExprKind::Call { callee, args, .. } => match keyed_builtin(callee, args, ctx) {
-            Some((KeyedBuiltin::Has, held)) => ("mapHas", held, false),
-            _ => return Ok(()),
-        },
-        _ => return Ok(()),
+    let Some((helper, held, fails)) = keyed else {
+        return Ok(());
     };
     let unspelled = || {
         ExprError::UnsupportedConstruct {

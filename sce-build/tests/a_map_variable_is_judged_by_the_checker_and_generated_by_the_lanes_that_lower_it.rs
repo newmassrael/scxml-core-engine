@@ -1774,6 +1774,101 @@ fn a_write_through_a_nested_place_is_judged_and_refused_naming_what_it_takes() {
     }
 }
 
+/// The static fixture directory's statechart `name`, as committed.
+fn static_fixture(name: &str) -> PathBuf {
+    static_fixtures().join(format!("{name}.scxml"))
+}
+
+/// docs/adr/0108, D10 and D12: the machines of a map whose value is a map, a
+/// list and a record that holds a list are judged by `check`, lowered by the
+/// Interpreter, every write through a place held at a key a `<script>` that writes
+/// the variable again through the library's `mapUpdate` and every read of a place
+/// held at a key read through the map that holds it, and refused by Rust and
+/// C11 by name, naming the section that lands a nested value on each lane.
+#[test]
+fn a_map_of_a_nested_value_is_lowered_by_the_interpreter_and_refused_by_rust_and_c11() {
+    for (machine, held) in [
+        (
+            "static_map_nested",
+            &[
+                "SceStatic.mapUpdate(slots, ",
+                "function (sceAt0) { return SceStatic.mapPutOrFail(sceAt0, ",
+                "})(SceStatic.mapPut(sceAt0, ",
+                "var sceOutcome;",
+                "SceStatic.mapHas(SceStatic.mapGet(slots, ",
+                "SceStatic.mapGet(SceStatic.mapGet(slots, ",
+                "array=\"SceStatic.mapGet(slots, ",
+                ", [])",
+            ][..],
+        ),
+        (
+            "static_map_list",
+            &[
+                "SceStatic.mapUpdate(samples, ",
+                "function (sceAt0) { return SceStatic.append(sceAt0, 3, ",
+                "function (sceAt0) { return []; }",
+                "array=\"SceStatic.mapGet(samples, ",
+            ][..],
+        ),
+        (
+            "static_map_record_list",
+            &[
+                "SceStatic.mapUpdate(rows, ",
+                "SceStatic.set(sceAt0, &apos;tags&apos;, SceStatic.append(sceAt0.tags, 2, ",
+                "SceStatic.set(sceAt0, &apos;tags&apos;, [])",
+                "array=\"SceStatic.mapGet(rows, ",
+            ][..],
+        ),
+    ] {
+        let path = static_fixture(machine);
+        let (ok, out) = run(&["check"], &path);
+        assert!(ok, "{machine}: check judges it:\n{out}");
+
+        let lowered = sce_build::forge::static_js::lower_file(
+            path.to_str().expect("a utf-8 path"),
+            Vec::new(),
+        )
+        .unwrap_or_else(|refusal| panic!("{machine}: the Interpreter lowers it: {refusal:?}"));
+        for part in held {
+            assert!(
+                lowered.contains(part),
+                "{machine}: no `{part}` in:\n{lowered}"
+            );
+        }
+        // A key read through a place held at a key is no index of the array of
+        // entries the inner map is.
+        assert!(
+            !lowered.contains(")[20]"),
+            "{machine}: a read through a nested place indexes the array of entries:\n{lowered}"
+        );
+        let document = roxmltree::Document::parse(&lowered).expect("the lowered document is XML");
+        for element in document.descendants().filter(|node| node.is_element()) {
+            let name = element.tag_name();
+            assert!(
+                !(name.namespace() == Some("http://sce.dev/ext")
+                    && ["put", "remove", "clear", "append"].contains(&name.name())),
+                "{machine}: <sce:{}> is left in the document the Interpreter runs:\n{lowered}",
+                name.name()
+            );
+        }
+
+        for lane in ["rust", "c11"] {
+            let out_dir = tempfile::tempdir().expect("an output directory");
+            let out_dir = out_dir.path().to_str().expect("a utf-8 path").to_string();
+            let (ok, out) = run(&["generate", "-l", lane, "-o", out_dir.as_str()], &path);
+            assert!(!ok, "{machine}: {lane} lowers no nested value yet:\n{out}");
+            assert!(
+                out.contains("\"code\":\"generate/unsupported-feature\"")
+                    && out.contains(&format!(
+                        "has no {lane} lowering of a map whose value is a map, a set, a list or a \
+                         record that holds one yet (docs/adr/0108, D12)"
+                    )),
+                "{machine}, {lane}:\n{out}"
+            );
+        }
+    }
+}
+
 /// The fixture directory the algorithm that keeps each peer's latest
 /// generation stands in, beside the schemas, the enum and the union it imports.
 fn static_fixtures() -> PathBuf {

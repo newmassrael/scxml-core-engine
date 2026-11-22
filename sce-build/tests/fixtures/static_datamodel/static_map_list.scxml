@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A map of a map, a
+  list or a record that holds a list"; docs/adr/0108, D12): a ring of samples
+  for each sensor, a map whose value is a list, appended to through the place
+  `samples[1]`.
+
+  `open` puts the empty list at sensor 1 (rule 4). `add` takes the next sample
+  and appends it through `samples[1]`: a fourth finds the list of three full,
+  which raises error.execution and ends the block, the sample taken all the
+  same. `sum` walks the list held at the key. `stray` appends at sensor 2,
+  which is absent: the append fails before anything is written (rule 3).
+  `clear` empties the list where it stands.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="sampling" datamodel="sce-static" name="static_map_list">
+  <datamodel>
+    <data id="samples" sce:type="map&lt;uint32, list&lt;uint16&gt;[3]&gt;[2]" sce:direction="out"/>
+    <data id="next" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="held" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="sampling">
+    <transition event="open" type="internal">
+      <sce:put target="samples" key="1"/>
+    </transition>
+    <transition event="add" type="internal">
+      <assign location="next" expr="next + 10"/>
+      <sce:append target="samples[1]" expr="next"/>
+      <assign location="held" expr="len(samples[1])"/>
+    </transition>
+    <transition event="sum" type="internal">
+      <assign location="total" expr="0"/>
+      <foreach array="samples[1]" item="x">
+        <assign location="total" expr="total + x"/>
+      </foreach>
+    </transition>
+    <transition event="stray" type="internal">
+      <sce:append target="samples[2]" expr="1"/>
+    </transition>
+    <transition event="clear" type="internal">
+      <sce:clear target="samples[1]"/>
+      <assign location="held" expr="len(samples[1])"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

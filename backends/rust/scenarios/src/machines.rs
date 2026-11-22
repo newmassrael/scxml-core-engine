@@ -178,7 +178,21 @@ macro_rules! scenarios {
 /// (`generate/unsupported-feature`), so there is no module a row could build it
 /// from. The step that lowers the construct on Rust generates the machine, takes
 /// the entry off and adds the row.
-pub const NOT_YET_LOWERED: &[(&str, &str)] = &[];
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[
+    (
+        "static_map_list",
+        "a map whose value is a list, written through `samples[1]` (docs/adr/0108, D12)",
+    ),
+    (
+        "static_map_nested",
+        "a map whose value is a map, written through `slots[1]` (docs/adr/0108, D12)",
+    ),
+    (
+        "static_map_record_list",
+        "a map whose value is a record that holds a list, written through `rows[1].tags` \
+         (docs/adr/0108, D12)",
+    ),
+];
 
 scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;

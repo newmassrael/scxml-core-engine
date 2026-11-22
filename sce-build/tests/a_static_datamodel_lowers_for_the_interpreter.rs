@@ -193,6 +193,11 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         // ... and the map an algorithm returns, taken whole by an `<assign>`
         // (D5).
         "static_map_returned",
+        // ... and a map whose value is a map, a list or a record that holds a
+        // list, each written through its place, the path to it copied (D12).
+        "static_map_nested",
+        "static_map_list",
+        "static_map_record_list",
     ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),

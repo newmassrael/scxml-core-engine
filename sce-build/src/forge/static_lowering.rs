@@ -1618,20 +1618,26 @@ pub enum Lifted<'a> {
 /// remove of an absent key does nothing. A key or a value that cannot be
 /// computed or held fails either statement.
 pub struct MapWrite<'a> {
-    /// The map or set variable the statement writes, as the target names it.
+    /// The map or set variable the statement writes, or writes through, as the
+    /// target names it.
     pub map: &'a str,
+    /// Each step from the variable to the map or set the statement writes
+    /// (docs/adr/0108, D12 rule 1): none where it writes the variable itself,
+    /// and `m[k]`'s key where it writes a map held at a key of it. A target
+    /// that lowers no nested place answers no statement of a path.
+    pub path: &'a [MapPathStep<'a>],
     /// The type the machine holds it in, for a target that types its maps
     /// ([`StaticTarget::types_maps`], [`StaticTarget::map_type`]); empty for
     /// one that does not.
     pub ty: &'a str,
-    /// Its type, where the statement stands
-    /// ([`crate::forge::types::TypeCtx::value_of`]).
+    /// The type of the map or set written, at the end of [`Self::path`],
+    /// where the statement stands ([`crate::forge::types::TypeCtx::value_of`]).
     pub place: &'a crate::forge::value_path::Place,
     /// The scope the statechart names its types in, in which a record key's
     /// fields are read.
     pub types: Option<&'a crate::forge::value_type::TypeScope>,
-    /// The most entries the map holds: its declared bound, as the build
-    /// resolved it (`[name=N]` under `--limit name=N`, docs/adr/0050).
+    /// The most entries the map written holds: its declared bound, as the
+    /// build resolved it (`[name=N]` under `--limit name=N`, docs/adr/0050).
     pub capacity: u32,
     /// The key, lowered as the place of the key's type takes it.
     pub key: &'a str,
@@ -1750,6 +1756,39 @@ pub enum MapOp<'a> {
     Put { value: Option<&'a str> },
     /// `<sce:remove>`.
     Remove,
+}
+
+/// One step from a map or set variable to the place a statement writes
+/// through it (docs/adr/0108, D12 rule 1), as the walk lowered it, for a
+/// target to spell ([`MapWrite::path`], [`NestedWrite`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapPathStep<'a> {
+    /// The value at a key of the map `map`, its place where the statement
+    /// stands; the key lowered as the place of the key's type takes it, read
+    /// once before anything is written.
+    Key {
+        map: &'a crate::forge::value_path::Place,
+        key: &'a str,
+    },
+    /// A field of a record value, by the name its schema declares.
+    Field(&'a str),
+}
+
+/// A statement that writes through a place held at a key of a map
+/// (docs/adr/0108, D12), an `<sce:append>` to a list held there or an
+/// `<sce:clear>` of a list, a map or a set held there, as the walk lowered
+/// it, for a target to spell ([`StaticTarget::nested_append`],
+/// [`StaticTarget::nested_clear`]). Every level is written whole or not at
+/// all: a key that is absent fails the statement (rule 3), and nothing is
+/// written.
+pub struct NestedWrite<'a> {
+    /// The map or set variable the place starts at, as the target names it.
+    pub root: &'a str,
+    /// Each step from it to the place written, at least one.
+    pub path: &'a [MapPathStep<'a>],
+    /// The scope the statechart names its types in, in which a record key's
+    /// fields are read.
+    pub types: Option<&'a crate::forge::value_type::TypeScope>,
 }
 
 /// How the body of a `<foreach>` over a map or a set reads what the loop binds
@@ -3085,6 +3124,40 @@ pub trait StaticTarget {
     /// The statement an `<sce:put>` or an `<sce:remove>` lowers to
     /// ([`MapWrite`]). `None` for a target whose machine holds no map yet.
     fn map_write(&self, _write: &MapWrite<'_>) -> Option<String> {
+        None
+    }
+    /// The statement an `<sce:append>` of `value` to the list at the end of
+    /// `at`'s path lowers to (docs/adr/0108, D12): a list held at a key of a
+    /// map, or in a field of a record held there, written while it holds fewer
+    /// than `capacity` elements, every level written whole or not at all, a
+    /// full list and a key that is absent each failing the statement. `None`
+    /// for a target that lowers no nested place yet, which its row of
+    /// [`crate::forge::event_schema_check::ComposedLowering::map_values`]
+    /// refuses before the walk.
+    fn nested_append(&self, _at: &NestedWrite<'_>, _capacity: u32, _value: &str) -> Option<String> {
+        None
+    }
+    /// The statement an `<sce:clear>` of the list, the map or the set at the
+    /// end of `at`'s path lowers to (docs/adr/0108, D12): the value held there
+    /// emptied, a key that is absent failing the statement. `None` for a target
+    /// that lowers no nested place yet.
+    fn nested_clear(&self, _at: &NestedWrite<'_>) -> Option<String> {
+        None
+    }
+    /// What a `<foreach>` over a list, a map or a set held at a key of a map
+    /// walks (docs/adr/0108, D12 rule 8), given `read`, the place read as an
+    /// expression lowers it, which fails for a key that is absent. `None` for a
+    /// target that lowers no nested place yet.
+    fn nested_walk(&self, _read: &str) -> Option<String> {
+        None
+    }
+    /// The value a `<sce:put>` puts at a key of a map whose value only a
+    /// lowering of a nested value holds (docs/adr/0108, D12): of a map, a set or
+    /// a list, the empty one where `named` is `None` (rule 4), and of those and
+    /// of a record that holds a composition, the variable or the record
+    /// `named` names, as the target spells it, copied whole. `None` for a
+    /// target that lowers no nested value yet.
+    fn nested_value(&self, _named: Option<&str>) -> Option<String> {
         None
     }
     /// How the body of a `<foreach>` over a map (`set` false) or a set reads
@@ -6523,6 +6596,12 @@ impl StaticTarget for RustTarget {
     // as the variant of the same name of its standard enum; a put that names
     // none fails into a full map.
     fn map_write(&self, write: &MapWrite<'_>) -> Option<String> {
+        // A write through a map held at a key of another is lowered by D12's
+        // own step on this lane (docs/adr/0108, D12), which the lane's row
+        // refuses before the walk.
+        if !write.path.is_empty() {
+            return None;
+        }
         let (map, key) = (write.map, write.key);
         let call = match write.op {
             MapOp::Put { value: Some(value) } => format!("{map}.put({key}, {value})"),
@@ -7441,13 +7520,179 @@ fn map_not_lowered(element: &str, lang: &str) -> GenerateError {
     ))
 }
 
+/// The keys of the place a statement writes through a map (docs/adr/0108,
+/// D12 rule 1), each lowered as the place of the key's type takes it
+/// ([`map_part`]), beside the steps they were lowered for ([`lowered_path`]).
+struct LoweredPath<'p> {
+    steps: &'p [crate::forge::type_ctx::PlaceStep],
+    keys: Vec<Receiving>,
+}
+
+impl LoweredPath<'_> {
+    /// The steps as a target spells them ([`MapPathStep`]), each key lowered.
+    fn path(&self) -> Vec<MapPathStep<'_>> {
+        use crate::forge::type_ctx::PlaceStep;
+        let mut keys = self.keys.iter();
+        self.steps
+            .iter()
+            .filter_map(|step| match step {
+                PlaceStep::Key { map, .. } => keys.next().map(|key| MapPathStep::Key {
+                    map,
+                    key: key.text.as_str(),
+                }),
+                PlaceStep::Field(field) => Some(MapPathStep::Field(field.as_str())),
+            })
+            .collect()
+    }
+}
+
+/// Each key of `written`, the place a statement writes through a map, lowered
+/// as the place of the key of the map it keys takes it ([`map_part`]), in the
+/// order the steps take them.
+fn lowered_path<'p>(
+    written: &'p crate::forge::type_ctx::MapPlace<'_>,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+    lower: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+    lower_bounded: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+) -> Result<LoweredPath<'p>, GenerateError> {
+    let mut keys = Vec::new();
+    for step in &written.steps {
+        if let crate::forge::type_ctx::PlaceStep::Key { key, map } = step {
+            let key_place = map.map_key().ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "`{key}`: a key of `{}`, which holds no key",
+                    map.ty
+                ))
+            })?;
+            keys.push(map_part(
+                key,
+                &key_place.ty,
+                ctx,
+                renames,
+                rewrites,
+                lower,
+                lower_bounded,
+            )?);
+        }
+    }
+    Ok(LoweredPath {
+        steps: &written.steps,
+        keys,
+    })
+}
+
+/// An `<sce:append>` to a list held at a key of a map, or in a field of a
+/// record held there (docs/adr/0108, D12 rule 1): the value lowered as an
+/// element of the list takes it ([`map_part`]), each key on the way lowered
+/// ([`lowered_path`]), and the statement spelled by the target
+/// ([`StaticTarget::nested_append`]). A full list fails the statement as a
+/// list variable's append does, and a key that is absent fails it before
+/// anything is written (rule 3).
+fn nested_append(
+    action: &Action,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+    lower: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+    lower_bounded: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+) -> Result<String, GenerateError> {
+    use crate::forge::value_type::ValueType;
+    let target = rewrites.target;
+    let list = action.location.trim();
+    let element = format!("<sce:append target=\"{list}\">");
+    let unlowered = |why: &str| GenerateError::unsupported(format!("{element}: {why}"));
+    let written = match rewrites.scope.map_place(list) {
+        Some(Ok(written)) if !written.steps.is_empty() => written,
+        Some(Err(why)) => return Err(unlowered(&why)),
+        _ => return Err(unlowered("names no list variable")),
+    };
+    let ValueType::List { elem, max } = &written.place.ty else {
+        return Err(unlowered("names no list"));
+    };
+    let value = map_part(
+        &action.expr,
+        elem,
+        ctx,
+        renames,
+        rewrites,
+        lower,
+        lower_bounded,
+    )?;
+    let steps = lowered_path(&written, ctx, renames, rewrites, lower, lower_bounded)?;
+    let path = steps.path();
+    let root = written.variable.id.as_str();
+    target
+        .nested_append(
+            &NestedWrite {
+                root: renames.get(root).copied().unwrap_or(root),
+                path: &path,
+                types: ctx.value_scope,
+            },
+            max.max,
+            &value.text,
+        )
+        .ok_or_else(|| nested_place_not_lowered(&element, target.name()))
+}
+
+/// An `<sce:clear>` of a list, a map or a set held at a key of a map
+/// (docs/adr/0108, D12 rule 1): each key on the way lowered
+/// ([`lowered_path`]), and the statement spelled by the target
+/// ([`StaticTarget::nested_clear`]). A key that is absent fails it before
+/// anything is written (rule 3).
+fn nested_clear(
+    action: &Action,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+    lower: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+    lower_bounded: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+) -> Result<String, GenerateError> {
+    let target = rewrites.target;
+    let held = action.location.trim();
+    let element = format!("<sce:clear target=\"{held}\">");
+    let unlowered = |why: &str| GenerateError::unsupported(format!("{element}: {why}"));
+    let written = match rewrites.scope.map_place(held) {
+        Some(Ok(written)) if !written.steps.is_empty() && written.place.ty.is_container() => {
+            written
+        }
+        Some(Err(why)) => return Err(unlowered(&why)),
+        _ => return Err(unlowered("names no list, map or set")),
+    };
+    let steps = lowered_path(&written, ctx, renames, rewrites, lower, lower_bounded)?;
+    let path = steps.path();
+    let root = written.variable.id.as_str();
+    target
+        .nested_clear(&NestedWrite {
+            root: renames.get(root).copied().unwrap_or(root),
+            path: &path,
+            types: ctx.value_scope,
+        })
+        .ok_or_else(|| nested_place_not_lowered(&element, target.name()))
+}
+
+/// The refusal of a statement that writes through a place held at a key of a
+/// map, on a target that lowers no nested place yet (docs/adr/0108, D12).
+fn nested_place_not_lowered(element: &str, lang: &str) -> GenerateError {
+    GenerateError::unsupported(format!(
+        "{element}: a write through a place held at a key of a map has no {lang} lowering yet \
+         ({})",
+        crate::forge::value_type::MAP_VALUE_LANDING
+    ))
+}
+
 /// The key or the value of an entry an `<sce:put>` or an `<sce:remove>` writes
 /// (docs/adr/0108, D3), `written` for a place of `ty`, lowered as that place
 /// takes it: a record by the name of a record of its schema (a record variable,
 /// the item or key of a `<foreach>`, which a target reaches by its local
 /// spelling) or the payload taken whole, copied as a record variable takes one;
 /// a text and a byte string held to the bound of `ty`, which fails past it; and
-/// every other value as an assignment to a place of its type is lowered.
+/// every other value as an assignment to a place of its type is lowered. A
+/// value only a lowering of a nested value holds (D12), a map, a set or a list
+/// (the empty one where `written` is empty, rule 4) and a record that holds a
+/// composition, is the variable or the record `written` names, taken whole as
+/// the target spells it ([`StaticTarget::nested_value`]).
 fn map_part(
     written: &str,
     ty: &crate::forge::value_type::ValueType,
@@ -7470,7 +7715,36 @@ fn map_part(
         },
         None => value,
     };
+    let named = || match renames.get(written) {
+        Some(held) => held.to_string(),
+        None => target.expr_target().local_spelling(written),
+    };
+    let nested = |named: Option<String>| {
+        target
+            .nested_value(named.as_deref())
+            .map(|text| Receiving {
+                text,
+                can_fail: false,
+            })
+            .ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "`{written}`: a value of `{ty}` at a key of a map has no {} lowering yet \
+                     ({})",
+                    target.name(),
+                    crate::forge::value_type::MAP_VALUE_LANDING
+                ))
+            })
+    };
     match ty {
+        // A record that holds a composition is held whole, where the lowering
+        // holds a nested value (docs/adr/0108, D12 rule 9).
+        ValueType::Record { alias }
+            if !rewrites.schemas.contains_key(alias)
+                && rewrites.type_scope.records.contains_key(alias)
+                && written != crate::forge::event_schema_check::EVENT_DATA_PATH =>
+        {
+            nested(Some(named()))
+        }
         ValueType::Record { alias } => {
             let schema = rewrites.schemas.get(alias).ok_or_else(|| {
                 GenerateError::unsupported(format!(
@@ -7487,12 +7761,8 @@ fn map_part(
                 )
                 .map(into_unit);
             }
-            let named = match renames.get(written) {
-                Some(held) => held.to_string(),
-                None => target.expr_target().local_spelling(written),
-            };
             let copy = Receiving {
-                text: target.record_copy(&named, schema),
+                text: target.record_copy(&named(), schema),
                 can_fail: false,
             };
             // The item or the key of a walk of a map is held in its unit's type
@@ -7520,14 +7790,16 @@ fn map_part(
         ValueType::Scalar(scalar) => {
             lower(written, InferredType::from_sce_type(scalar)).map(into_unit)
         }
-        ValueType::Optional { .. }
-        | ValueType::Union { .. }
-        | ValueType::List { .. }
-        | ValueType::Map { .. }
-        | ValueType::Set { .. } => Err(GenerateError::unsupported(format!(
-            "`{written}`: {}",
-            crate::forge::value_type::map_unlowered(&ty.to_string())
-        ))),
+        // A map, a set or a list put whole (docs/adr/0108, D12 rule 4).
+        ValueType::List { .. } | ValueType::Map { .. } | ValueType::Set { .. } => {
+            nested((!written.is_empty()).then(named))
+        }
+        ValueType::Optional { .. } | ValueType::Union { .. } => {
+            Err(GenerateError::unsupported(format!(
+                "`{written}`: {}",
+                crate::forge::value_type::map_unlowered(&ty.to_string())
+            )))
+        }
     }
 }
 
@@ -20414,7 +20686,10 @@ impl StaticTarget for CTarget {
     // the type its unit declares (docs/adr/0108, D6 item 4) is handed already
     // built in it ([`map_part`]).
     fn map_write(&self, write: &MapWrite<'_>) -> Option<String> {
-        if write.ty.is_empty() {
+        // A write through a map held at a key of another is lowered by D12's
+        // own step on this lane (docs/adr/0108, D12), which the lane's row
+        // refuses before the walk.
+        if write.ty.is_empty() || !write.path.is_empty() {
             return None;
         }
         let prefix = write.ty.trim_end_matches("_t");
@@ -24260,10 +24535,17 @@ fn lower_action(
                         .ok_or_else(|| map_not_lowered(&element, lang))?;
                     return Ok(reads_payload);
                 }
-                let (_, from) = rewrites
-                    .scope
-                    .map_variable(&action.expr)
-                    .ok_or_else(|| map_not_lowered(&element, lang))?;
+                // ... or a map or a set held at a key, or bound by a loop over a
+                // map of them, which the judge held to exactly the variable's
+                // type (docs/adr/0108, D12 rule 6).
+                let from = match rewrites.scope.map_variable(&action.expr) {
+                    Some((_, from)) => from,
+                    None => crate::forge::expr::written_place(&action.expr)
+                        .and_then(|path| ctx.value_of(&path))
+                        .filter(crate::forge::value_path::Place::is_keyed)
+                        .map(|_| to)
+                        .ok_or_else(|| map_not_lowered(&element, lang))?,
+                };
                 let value = lower(&action.expr, InferredType::Unknown)?;
                 let copy = target
                     .map_copy(&value.text, from, to)
@@ -24773,6 +25055,16 @@ fn lower_action(
         "sce_append" => {
             reads_payload = reads(&action.expr);
             let list = action.location.trim();
+            // A list held at a key of a map, or in a field of a record held
+            // there, is appended to through its place (docs/adr/0108, D12).
+            if !rewrites.lists.contains_key(list) {
+                reads_payload |= reads(&action.location);
+                action.native_code =
+                    nested_append(action, ctx, renames, rewrites, &lower, &lower_bounded)?;
+                action.native_fails = true;
+                rewrites.note_element(action.spellings.get("target"), &action.native_code);
+                return Ok(reads_payload);
+            }
             let (elem, capacity) = rewrites.lists.get(list).ok_or_else(|| {
                 GenerateError::unsupported(format!(
                     "<sce:append target=\"{list}\"> names no list variable"
@@ -24970,6 +25262,16 @@ fn lower_action(
         }
         "sce_clear" => {
             let list = action.location.trim();
+            // A list, a map or a set held at a key of a map is emptied through
+            // its place (docs/adr/0108, D12).
+            if !rewrites.lists.contains_key(list) && rewrites.scope.map_variable(list).is_none() {
+                reads_payload = reads(&action.location);
+                action.native_code =
+                    nested_clear(action, ctx, renames, rewrites, &lower, &lower_bounded)?;
+                action.native_fails = true;
+                rewrites.note_element(action.spellings.get("target"), &action.native_code);
+                return Ok(reads_payload);
+            }
             let name = renames.get(list).copied().unwrap_or(list);
             // A map or a set is emptied as the target empties one, which may
             // not be as it empties a list (docs/adr/0108, D3).
@@ -25136,8 +25438,10 @@ fn lower_action(
         // put that names no outcome into a full map, and a key or a value that
         // cannot be computed or held, fails, and so ends the block (§scxml-4.9)
         // as a full list's append does: either statement can always fail.
+        // A map held at a key of another is written through its place, each key
+        // on the way read once before anything is written (docs/adr/0108, D12).
         "sce_put" | "sce_remove" => {
-            reads_payload = reads(&action.key) || reads(&action.expr);
+            reads_payload = reads(&action.key) || reads(&action.expr) || reads(&action.location);
             let map = action.location.trim().to_string();
             let put = action.action_type == "sce_put";
             let element = format!(
@@ -25145,18 +25449,26 @@ fn lower_action(
                 if put { "put" } else { "remove" }
             );
             let unlowered = |why: &str| GenerateError::unsupported(format!("{element}: {why}"));
-            let place = ctx
-                .value_of(&map)
+            let written = match rewrites.scope.map_place(&map) {
+                Some(Ok(written)) => written,
+                Some(Err(why)) => return Err(unlowered(&why)),
+                None => return Err(unlowered("its target names no map or set variable")),
+            };
+            let place = Some(written.place.clone())
                 .filter(crate::forge::value_path::Place::is_keyed)
-                .ok_or_else(|| unlowered("its target names no map or set variable"))?;
-            let capacity = rewrites
-                .scope
-                .map_variable(&map)
-                .and_then(|(var, _)| var.capacity())
-                .ok_or_else(|| unlowered("its target names no map or set of a stated bound"))?;
+                .ok_or_else(|| unlowered("its target names no map or set"))?;
+            let root = written.variable.id.as_str();
+            let capacity = match &place.ty {
+                crate::forge::value_type::ValueType::Map { max, .. }
+                | crate::forge::value_type::ValueType::Set { max, .. } => Some(max.max),
+                _ => None,
+            }
+            .ok_or_else(|| unlowered("its target names no map or set of a stated bound"))?;
             let key_place = place
                 .map_key()
                 .ok_or_else(|| unlowered("its target names no map or set variable"))?;
+            let steps = lowered_path(&written, ctx, renames, rewrites, &lower, &lower_bounded)?;
+            let path = steps.path();
             let key = map_part(
                 &action.key,
                 &key_place.ty,
@@ -25222,11 +25534,12 @@ fn lower_action(
             let held = rewrites
                 .map_types
                 .borrow()
-                .get(map.as_str())
+                .get(root)
                 .cloned()
                 .unwrap_or_default();
             let write = MapWrite {
-                map: renames.get(map.as_str()).copied().unwrap_or(map.as_str()),
+                map: renames.get(root).copied().unwrap_or(root),
+                path: &path,
                 ty: &held,
                 place: &place,
                 types: ctx.value_scope,
@@ -25369,8 +25682,32 @@ fn lower_action(
             let list = action.array.trim().to_string();
             // A map or a set is walked by its entries (docs/adr/0108, D5).
             if rewrites.scope.map_variable(&list).is_some() {
-                return lower_map_foreach(action, &list, ctx, renames, rewrites);
+                return lower_map_foreach(action, &list, None, ctx, renames, rewrites);
             }
+            // ... and so is one held at a key of a map, and a list held there is
+            // walked by its elements, each read through the place, which fails
+            // for a key that is absent (docs/adr/0108, D12 rule 8).
+            let nested = match rewrites.scope.map_place(&list) {
+                Some(Ok(written)) if !written.steps.is_empty() => {
+                    let read = lower(&list, InferredType::Unknown)?;
+                    let walked = target.nested_walk(&read.text).ok_or_else(|| {
+                        nested_place_not_lowered(&format!("<foreach array=\"{list}\">"), lang)
+                    })?;
+                    if written.place.is_keyed() {
+                        let root = written.variable.id.clone();
+                        return lower_map_foreach(
+                            action,
+                            &list,
+                            Some((root.as_str(), walked.as_str())),
+                            ctx,
+                            renames,
+                            rewrites,
+                        );
+                    }
+                    Some(walked)
+                }
+                _ => None,
+            };
             let walked = match rewrites.lists.get(list.as_str()) {
                 Some((elem, capacity)) => {
                     // What a target that has to name the item's type and the list
@@ -25408,8 +25745,8 @@ fn lower_action(
                 }
                 // A list no variable names is one a place holds, the payload's or
                 // an enclosing loop's item's, at any depth (docs/adr/0086, section
-                // 6.1).
-                None => walked_place(&list, ctx, renames, rewrites)?,
+                // 6.1), or a map's at a key (docs/adr/0108, D12 rule 8).
+                None => walked_place(&list, nested, ctx, renames, rewrites)?,
             };
             // Where the list is written, for a target that runs the document's
             // own `<foreach>` (the Interpreter): the list as the walk reads it,
@@ -25821,9 +26158,15 @@ fn lower_action(
 /// ([`StaticTarget::map_entry`]); a record item or key is a record the body may
 /// take whole by name, as a list's record item is. `true` when the body reads
 /// the payload of the event the transition is on.
+///
+/// A map or a set held at a key of another (`m[k]`, docs/adr/0108, D12 rule 8)
+/// is walked the same way: `nested` names the variable it is held in, which a
+/// body that writes it along any path writes, and what the loop walks, the
+/// place read as the target spells it ([`StaticTarget::nested_walk`]).
 fn lower_map_foreach(
     action: &mut Action,
     map: &str,
+    nested: Option<(&str, &str)>,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
@@ -25834,17 +26177,22 @@ fn lower_map_foreach(
     let target = rewrites.target;
     let lang = target.name();
     let construct = format!("<foreach array=\"{map}\">");
-    let place = ctx
-        .value_of(map)
+    let place = crate::forge::expr::written_place(map)
+        .and_then(|path| ctx.value_of(&path))
         .filter(Place::is_keyed)
         .ok_or_else(|| GenerateError::unsupported(format!("{construct} names no map variable")))?;
+    // The variable the map is held in, the map itself where it is one.
+    let root = nested.map_or(map, |(root, _)| root);
     let item = action.item.trim().to_string();
     let index = action.index.trim().to_string();
     let key = action.key.trim().to_string();
     let item_local = target.expr_target().local_spelling(&item);
     // The map as the loop's head reaches it, for a target that runs the
     // document's own `<foreach>` (the Interpreter).
-    let name = renames.get(map).copied().unwrap_or(map);
+    let name = match nested {
+        Some((_, walked)) => walked,
+        None => renames.get(map).copied().unwrap_or(map),
+    };
     rewrites.note(&action.array, action.spellings.get("array"), name);
     // A map's item is each value and its key each key; a set's item is each
     // key, and it binds no other.
@@ -25882,10 +26230,10 @@ fn lower_map_foreach(
     let held = rewrites
         .map_types
         .borrow()
-        .get(map)
+        .get(root)
         .cloned()
         .unwrap_or_default();
-    let copies = Writes::of_block(&action.actions).reaches(map);
+    let copies = Writes::of_block(&action.actions).reaches(root);
     // The copy a loop that writes its map walks is held where the copy of a
     // list a loop of the same depth walks is, for a target that holds those in
     // the machine (docs/adr/0082): of the map's own type, one per depth.
@@ -26148,6 +26496,7 @@ enum WalkedElement {
 /// say so.
 fn walked_place(
     list: &str,
+    nested: Option<String>,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
@@ -26173,7 +26522,7 @@ fn walked_place(
              (docs/adr/0086, section 7.3)"
         )));
     };
-    if path.contains(crate::forge::value_path::ELEMENT) {
+    if nested.is_none() && path.contains(crate::forge::value_path::ELEMENT) {
         return Err(refused(format!(
             ": a list read through an index has no {lang} lowering of a loop over it yet \
              (docs/adr/0086, section 7.3)"
@@ -26194,8 +26543,11 @@ fn walked_place(
     };
     let item_ty = typed(&element.ty).map_err(|why| refused(format!(": {why}")))?;
     let list_ty = typed(&place.ty).map_err(|why| refused(format!(": {why}")))?;
-    let name = place_text(&path, ctx, renames, target, &*spelling)
-        .map_err(|why| refused(format!(": {why}")))?;
+    let name = match nested {
+        Some(walked) => walked,
+        None => place_text(&path, ctx, renames, target, &*spelling)
+            .map_err(|why| refused(format!(": {why}")))?,
+    };
     Ok(WalkedList {
         name,
         element: WalkedElement::Place(element),
@@ -28125,6 +28477,7 @@ mod tests {
             target
                 .map_write(&MapWrite {
                     map: "sm->policy.v_counts",
+                    path: &[],
                     ty: "sce_static_map_uint32_int32_3_t",
                     place: &counts,
                     types: None,
@@ -28174,6 +28527,7 @@ mod tests {
         let text_key = target
             .map_write(&MapWrite {
                 map: "sm->policy.v_tags",
+                path: &[],
                 ty: "sce_static_set_sce_static_string_8_3_t",
                 place: &tags,
                 types: None,
@@ -28197,6 +28551,7 @@ mod tests {
         assert!(target
             .map_write(&MapWrite {
                 map: "m",
+                path: &[],
                 ty: "",
                 place: &counts,
                 types: None,
@@ -28256,6 +28611,7 @@ mod tests {
             target
                 .map_write(&MapWrite {
                     map: "sm->policy.v_faces",
+                    path: &[],
                     ty: "sce_static_map_MapPeerKeyPayload_MapFacePayload_2_t",
                     place: &faces,
                     types: None,

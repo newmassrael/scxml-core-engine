@@ -1097,6 +1097,30 @@
     return { map: map.slice(0, at).concat(map.slice(at + 1)), outcome: 'removed' };
   }
 
+  /* A write through the value at key of map, an array of entries of type
+     (docs/adr/0108, D12): the value is read as mapGet reads it, failing
+     out-of-range for a key that is absent (nothing is created at it, rule 3),
+     handed to change, and the map answered anew with what change answers at
+     the key's place, every other entry and the order as they were. No array
+     is changed in place, so a write through a nested place copies the path
+     to the root (rule 2); a change that throws leaves every level as it was.
+     The keys are unchanged, so the new array keeps the index of the old. A
+     set holds no value at a key to write through. */
+  function mapUpdate(map, type, key, change) {
+    if (type.set === true) {
+      fail('a set holds no value at a key to write through');
+    }
+    var index = indexOf(map, type);
+    var at = index.get(keyText(type.key, key));
+    if (at === undefined) {
+      fail('the key ' + String(key) + ' is not one the map holds', 'out-of-range');
+    }
+    var changed = map.slice();
+    changed[at] = [map[at][0], change(map[at][1])];
+    INDEXES.set(changed, index);
+    return changed;
+  }
+
   /* The fence of a text template's untrusted hole (docs/adr/0087, section 3.1,
      item 4): every occurrence of either marker removed from the value, the
      leftmost first (the longer where both start at one place), until neither
@@ -1205,6 +1229,7 @@
       return put.map;
     },
     mapRemove: mapRemove,
+    mapUpdate: mapUpdate,
     utf8Length: utf8Length,
     bounded: function (value, capacity) {
       var bytes = utf8Length(value);

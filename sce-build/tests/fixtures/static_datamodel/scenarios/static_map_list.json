@@ -1,0 +1,28 @@
+{
+  "machine": "static_map_list",
+  "about": "A map whose value is a list (docs/adr/0108, D12): the empty list put at a key with no value, appended to through the place `samples[1]` until it is full, which raises error.execution and ends the block; `len` and a walk of the list held at the key; an append through a key that is absent, which raises error.execution and creates nothing; and `<sce:clear>` of the list where it stands. A map is stated as the array of its entries, each [key, value], the list as its own array. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "sampling", "variables": { "samples": [], "next": 0, "held": 0, "total": 0, "errors": 0 } } },
+
+    { "event": "open",
+      "expect": { "variables": { "samples": [[1, []]] } } },
+    { "event": "add",
+      "expect": { "variables": { "samples": [[1, [10]]], "next": 10, "held": 1 } } },
+    { "event": "add",
+      "expect": { "variables": { "samples": [[1, [10, 20]]], "next": 20, "held": 2 } } },
+    { "event": "add",
+      "expect": { "variables": { "samples": [[1, [10, 20, 30]]], "next": 30, "held": 3 } } },
+    { "note": "the list holds its three: the append fails, error.execution is raised and the block ends before `held` is read again; the sample was taken before it",
+      "event": "add",
+      "expect": { "variables": { "samples": [[1, [10, 20, 30]]], "next": 40, "held": 3, "errors": 1 } } },
+    { "event": "sum",
+      "expect": { "variables": { "total": 60 } } },
+
+    { "note": "sensor 2 is absent: the append through it fails and creates nothing",
+      "event": "stray",
+      "expect": { "variables": { "samples": [[1, [10, 20, 30]]], "errors": 2 } } },
+
+    { "event": "clear",
+      "expect": { "variables": { "samples": [[1, []]], "held": 0, "errors": 2 } } }
+  ]
+}

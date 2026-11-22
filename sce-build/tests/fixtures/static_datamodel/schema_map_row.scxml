@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A record value of a map that holds a list (docs/adr/0108, D12): what
+  static_map_record_list keeps of each row by its key, the list of its tags
+  appended to through the place `rows[1].tags`. Its event is never raised; the
+  schema types the value.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_map_row"
+       sce:event-name="row.listed">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="tags" sce:type="list&lt;uint16&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -196,7 +196,7 @@ use crate::forge::model::{
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
     lower, Callee, CalleeImport, InPlaceCall, LiftStatement, Lifted, LoweredElement, LoweredSite,
-    MapEntry, MapOp, MapWrite, RenderCall, ReturnedMap, StaticTarget,
+    MapEntry, MapOp, MapPathStep, MapWrite, NestedWrite, RenderCall, ReturnedMap, StaticTarget,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
@@ -562,6 +562,47 @@ impl JsTarget {
     fn script_element(&self, code: &str) -> String {
         let script = self.elements.name("script");
         format!("<{script}>{}</{script}>", xml_attribute_value(code))
+    }
+
+    /// The value the variable `root` takes when the place at the end of
+    /// `path` takes what `change` makes of it (docs/adr/0108, D12 rule 2):
+    /// each key a call of the library's `mapUpdate`, which fails a key that is
+    /// absent (rule 3), and each field the record written again with that field
+    /// changed (`set`). No array is changed in place, so the path is copied to
+    /// the root, and a level that fails leaves every level as it was. `change`
+    /// is handed the place as the step before reaches it. `None` for a key whose
+    /// map the scope does not resolve.
+    fn written_through(
+        root: &str,
+        path: &[MapPathStep<'_>],
+        types: Option<&crate::forge::value_type::TypeScope>,
+        change: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        fn step(
+            at: &str,
+            path: &[MapPathStep<'_>],
+            depth: usize,
+            types: Option<&crate::forge::value_type::TypeScope>,
+            change: &dyn Fn(&str) -> String,
+        ) -> Option<String> {
+            match path.split_first() {
+                None => Some(change(at)),
+                Some((MapPathStep::Key { map, key }, rest)) => {
+                    let descriptor = map_descriptor(map, types)?;
+                    let inner = format!("sceAt{depth}");
+                    let body = step(&inner, rest, depth + 1, types, change)?;
+                    Some(format!(
+                        "{RUNTIME_GLOBAL}.mapUpdate({at}, {descriptor}, {key}, function ({inner}) \
+                         {{ return {body}; }})"
+                    ))
+                }
+                Some((MapPathStep::Field(field), rest)) => {
+                    let body = step(&format!("{at}.{field}"), rest, depth, types, change)?;
+                    Some(format!("{RUNTIME_GLOBAL}.set({at}, '{field}', {body})"))
+                }
+            }
+        }
+        step(root, path, 0, types, change)
     }
 }
 
@@ -1269,10 +1310,17 @@ impl StaticTarget for JsTarget {
     // that names an outcome is a `<script>` that writes the map and the outcome
     // together, from the one call that computed both: a key or a value that
     // throws writes neither, and the script's failure is the block's.
+    //
+    // A put or a remove through a map held at a key of another (docs/adr/0108,
+    // D12) is a `<script>` that writes the variable again, the path to the
+    // inner map copied ([`JsTarget::written_through`]): a key that is absent
+    // fails before anything is written, and so does a full inner map's put that
+    // names no outcome. One that names an outcome writes what the inner map did
+    // beside the variable, once every level is written.
     fn map_write(&self, write: &MapWrite<'_>) -> Option<String> {
         let descriptor = map_descriptor(write.place, write.types)?;
         let (map, key) = (write.map, write.key);
-        let call = match write.op {
+        let call_on = |map: &str| match write.op {
             MapOp::Put { value } => {
                 let helper = if write.outcome.is_some() {
                     "mapPut"
@@ -1287,6 +1335,38 @@ impl StaticTarget for JsTarget {
             }
             MapOp::Remove => format!("{RUNTIME_GLOBAL}.mapRemove({map}, {descriptor}, {key})"),
         };
+        if !write.path.is_empty() {
+            let script = match write.outcome {
+                Some(outcome) => {
+                    let changed = Self::written_through(map, write.path, write.types, &|at| {
+                        format!(
+                            "(function (sceWrote) {{ sceOutcome = sceWrote.outcome; return \
+                             sceWrote.map; }})({})",
+                            call_on(at)
+                        )
+                    })?;
+                    format!(
+                        "(function () {{ var sceOutcome; {map} = {changed}; {outcome} = \
+                         sceOutcome; }})();"
+                    )
+                }
+                None => {
+                    let changed =
+                        Self::written_through(
+                            map,
+                            write.path,
+                            write.types,
+                            &|at| match write.op {
+                                MapOp::Put { .. } => call_on(at),
+                                MapOp::Remove => format!("{}.map", call_on(at)),
+                            },
+                        )?;
+                    format!("{map} = {changed};")
+                }
+            };
+            return Some(self.script_element(&script));
+        }
+        let call = call_on(map);
         Some(match (write.outcome, &write.op) {
             (Some(outcome), _) => self.script_element(&format!(
                 "(function (sceWrote) {{ {map} = sceWrote.map; {outcome} = sceWrote.outcome; \
@@ -1295,6 +1375,34 @@ impl StaticTarget for JsTarget {
             (None, MapOp::Put { .. }) => self.assign_element(map, &call),
             (None, MapOp::Remove) => self.assign_element(map, &format!("{call}.map")),
         })
+    }
+    // A list held at a key of a map, or in a field of a record held there, and
+    // a list, a map or a set held at a key, are written by a `<script>` that
+    // writes the variable again, the path to them copied
+    // ([`JsTarget::written_through`], docs/adr/0108, D12): the library's
+    // `append` fails a full list as it fails a list variable's, and a key that
+    // is absent fails before anything is written.
+    fn nested_append(&self, at: &NestedWrite<'_>, capacity: u32, value: &str) -> Option<String> {
+        let changed = Self::written_through(at.root, at.path, at.types, &|list| {
+            format!("{RUNTIME_GLOBAL}.append({list}, {capacity}, {value})")
+        })?;
+        Some(self.script_element(&format!("{} = {changed};", at.root)))
+    }
+    fn nested_clear(&self, at: &NestedWrite<'_>) -> Option<String> {
+        let changed = Self::written_through(at.root, at.path, at.types, &|_| "[]".to_string())?;
+        Some(self.script_element(&format!("{} = {changed};", at.root)))
+    }
+    // The document's own `<foreach>` walks the array the place read gives,
+    // which fails for a key that is absent as the read does.
+    fn nested_walk(&self, read: &str) -> Option<String> {
+        Some(read.to_string())
+    }
+    // A map, a set and a list are each the array of their entries or
+    // elements, and a record the plain object it is everywhere: never changed
+    // in place, so the value named is its own copy, and the empty value is the
+    // empty array.
+    fn nested_value(&self, named: Option<&str>) -> Option<String> {
+        Some(named.map_or_else(|| "[]".to_string(), str::to_string))
     }
     // The loop binds each entry of the array: a map's `[key, value]`, read in the
     // body as its value and its key, and a set's key, read as it is
@@ -3589,6 +3697,7 @@ mod tests {
             target
                 .map_write(&MapWrite {
                     map,
+                    path: &[],
                     ty: "",
                     place,
                     types: None,
@@ -3639,6 +3748,7 @@ mod tests {
         assert!(target
             .map_write(&MapWrite {
                 map: "faces",
+                path: &[],
                 ty: "",
                 place: &place_of("map<record:Peer, uint8>[2]"),
                 types: None,
@@ -3651,6 +3761,120 @@ mod tests {
                 failed: "",
             })
             .is_none());
+    }
+
+    /// docs/adr/0108, D12 rules 1 to 5: a put, a remove, an append and a clear
+    /// through a map held at a key of another are each a `<script>` that writes
+    /// the variable again, the path to the place copied by the library's
+    /// `mapUpdate` (which fails a key that is absent before anything is written)
+    /// and a record's field by `set`, a deeper key bound to a name of its own;
+    /// a nested put or remove that names an outcome writes what the inner map
+    /// did once every level is written. A container value is put as the array
+    /// it is named by, or the empty one, and a walk of a nested place walks the
+    /// place as it is read.
+    #[test]
+    fn a_write_through_a_nested_place_copies_the_path_to_the_variable() {
+        let target = JsTarget::new(BTreeMap::new());
+        let outer = place_of("map<uint32, map<uint32, uint64>[2]>[3]");
+        let inner = place_of("map<uint32, uint64>[2]");
+        let path = [MapPathStep::Key {
+            map: &outer,
+            key: "k",
+        }];
+        let written = |op: MapOp<'_>, outcome: Option<&str>| {
+            target
+                .map_write(&MapWrite {
+                    map: "m",
+                    path: &path,
+                    ty: "",
+                    place: &inner,
+                    types: None,
+                    capacity: 2,
+                    key: "j",
+                    op,
+                    outcome,
+                    outcome_enum: None,
+                    full: "",
+                    failed: "",
+                })
+                .expect("the Interpreter writes through a nested place")
+        };
+        assert_eq!(
+            written(MapOp::Put { value: Some("v") }, None),
+            "<script>m = SceStatic.mapUpdate(m, {key: &apos;integer&apos;}, k, function (sceAt0) \
+             { return SceStatic.mapPutOrFail(sceAt0, {key: &apos;integer&apos;}, 2, j, v); });\
+             </script>"
+        );
+        assert_eq!(
+            written(MapOp::Remove, None),
+            "<script>m = SceStatic.mapUpdate(m, {key: &apos;integer&apos;}, k, function (sceAt0) \
+             { return SceStatic.mapRemove(sceAt0, {key: &apos;integer&apos;}, j).map; });</script>"
+        );
+        assert_eq!(
+            written(MapOp::Put { value: Some("v") }, Some("putResult")),
+            "<script>(function () { var sceOutcome; m = SceStatic.mapUpdate(m, \
+             {key: &apos;integer&apos;}, k, function (sceAt0) { return (function (sceWrote) { \
+             sceOutcome = sceWrote.outcome; return sceWrote.map; })(SceStatic.mapPut(sceAt0, \
+             {key: &apos;integer&apos;}, 2, j, v)); }); putResult = sceOutcome; })();</script>"
+        );
+
+        // A list in a field of a record held at a key, appended to.
+        let rows = place_of("map<uint32, record:Row>[2]");
+        let row_path = [
+            MapPathStep::Key {
+                map: &rows,
+                key: "k",
+            },
+            MapPathStep::Field("tags"),
+        ];
+        let at = NestedWrite {
+            root: "rows",
+            path: &row_path,
+            types: None,
+        };
+        assert_eq!(
+            target.nested_append(&at, 3, "e").as_deref(),
+            Some(
+                "<script>rows = SceStatic.mapUpdate(rows, {key: &apos;integer&apos;}, k, function \
+                 (sceAt0) { return SceStatic.set(sceAt0, &apos;tags&apos;, \
+                 SceStatic.append(sceAt0.tags, 3, e)); });</script>"
+            )
+        );
+        // A set two keys deep, emptied: each key binds a name of its own.
+        let deep = place_of("map<uint8, map<uint8, set<uint8>[2]>[2]>[2]");
+        let mid = place_of("map<uint8, set<uint8>[2]>[2]");
+        let deep_path = [
+            MapPathStep::Key {
+                map: &deep,
+                key: "a",
+            },
+            MapPathStep::Key {
+                map: &mid,
+                key: "b",
+            },
+        ];
+        assert_eq!(
+            target
+                .nested_clear(&NestedWrite {
+                    root: "d",
+                    path: &deep_path,
+                    types: None,
+                })
+                .as_deref(),
+            Some(
+                "<script>d = SceStatic.mapUpdate(d, {key: &apos;integer&apos;}, a, function \
+                 (sceAt0) { return SceStatic.mapUpdate(sceAt0, {key: &apos;integer&apos;}, b, \
+                 function (sceAt1) { return []; }); });</script>"
+            )
+        );
+        assert_eq!(target.nested_value(None).as_deref(), Some("[]"));
+        assert_eq!(target.nested_value(Some("peers")).as_deref(), Some("peers"));
+        assert_eq!(
+            target
+                .nested_walk("SceStatic.mapGet(m, {key: 'integer'}, k)")
+                .as_deref(),
+            Some("SceStatic.mapGet(m, {key: 'integer'}, k)")
+        );
     }
 
     /// docs/adr/0108, D5: a loop over a map binds its item to each entry, the

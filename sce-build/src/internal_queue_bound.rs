@@ -478,8 +478,11 @@ impl<'m> Analysis<'m> {
             "send" => self.send(action),
             // A `<sce:render>` fails as an `<assign>` does, where a hole's value
             // fails (docs/adr/0087, section 3.1, item 6), and a put or a remove
-            // of a map as an append to a list does (docs/adr/0108, D4).
-            "assign" | "log" | "sce_append" | "sce_render" | "sce_put" | "sce_remove" => {
+            // of a map as an append to a list does (docs/adr/0108, D4), and a
+            // clear of a list, a map or a set held at a key of a map, whose key
+            // may be absent (D12 rule 3).
+            "assign" | "log" | "sce_append" | "sce_render" | "sce_put" | "sce_remove"
+            | "sce_clear" => {
                 if !action.native_code.is_empty() && action.native_fails {
                     Ok(Cost::ending(self.execution_error()))
                 } else {
@@ -493,7 +496,6 @@ impl<'m> Analysis<'m> {
                     Ok(Cost::NONE)
                 }
             }
-            "sce_clear" => Ok(Cost::NONE),
             // A lift writes a record or a refusal and raises nothing
             // (docs/adr/0087, section 2.1): `actions/sce_lift.rs.jinja2`.
             "sce_lift" => Ok(Cost::NONE),

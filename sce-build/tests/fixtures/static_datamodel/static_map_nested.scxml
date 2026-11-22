@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A map of a map, a
+  list or a record that holds a list"; docs/adr/0108, D12): a map of regions,
+  each a map of amounts by slot, written through the place `slots[1]`.
+
+  `open` puts the empty inner map at region 1, a put that names no value of a
+  map whose value is a map (rule 4); `reset` puts it again, the inner map
+  replaced by the empty one where it stands. `fill` puts two amounts through
+  `slots[1]` and `overfill` a third, which the inner map of two refuses as
+  `full`, the outcome the inner map's (rule 5). `replace` puts at a slot it
+  holds, with no outcome. `read` asks `has(slots[1], 20)` and reads
+  `slots[1][20]`, which fails for a slot that is absent: error.execution,
+  counted in `errors`, and the block ends before `after` counts the read.
+  `sum` walks the inner map. `drop` removes through the place and says what
+  it did. `stray` puts at region 2, which is absent: the put fails before
+  anything is written, and nothing is created at the key (rule 3).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="holding" datamodel="sce-static" name="static_map_nested">
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <sce:import kind="enum" src="sce:std/collection/remove_outcome.scxml" as="RemoveOutcome"/>
+  <datamodel>
+    <data id="slots" sce:type="map&lt;uint32, map&lt;uint32, int32&gt;[2]&gt;[2]" sce:direction="out"/>
+    <data id="putResult" sce:type="enum:PutOutcome" expr="PutOutcome.inserted" sce:direction="out"/>
+    <data id="removeResult" sce:type="enum:RemoveOutcome" expr="RemoveOutcome.absent" sce:direction="out"/>
+    <data id="regions" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="held" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="found" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="amount" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="total" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="after" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="holding">
+    <transition event="open" type="internal">
+      <sce:put target="slots" key="1"/>
+      <assign location="regions" expr="len(slots)"/>
+    </transition>
+    <transition event="fill" type="internal">
+      <sce:put target="slots[1]" key="10" expr="5" outcome="putResult"/>
+      <sce:put target="slots[1]" key="20" expr="7" outcome="putResult"/>
+      <assign location="held" expr="len(slots[1])"/>
+    </transition>
+    <transition event="overfill" type="internal">
+      <sce:put target="slots[1]" key="30" expr="9" outcome="putResult"/>
+      <assign location="held" expr="len(slots[1])"/>
+    </transition>
+    <transition event="replace" type="internal">
+      <sce:put target="slots[1]" key="10" expr="6"/>
+    </transition>
+    <transition event="read" type="internal">
+      <assign location="found" expr="has(slots[1], 20)"/>
+      <assign location="amount" expr="slots[1][20]"/>
+      <assign location="after" expr="after + 1"/>
+    </transition>
+    <transition event="sum" type="internal">
+      <assign location="total" expr="0"/>
+      <foreach array="slots[1]" item="v" sce:key="s">
+        <assign location="total" expr="total + v"/>
+      </foreach>
+    </transition>
+    <transition event="drop" type="internal">
+      <sce:remove target="slots[1]" key="20" outcome="removeResult"/>
+      <assign location="held" expr="len(slots[1])"/>
+    </transition>
+    <transition event="stray" type="internal">
+      <sce:put target="slots[2]" key="10" expr="1"/>
+      <assign location="after" expr="after + 1"/>
+    </transition>
+    <transition event="reset" type="internal">
+      <sce:put target="slots" key="1"/>
+      <assign location="held" expr="len(slots[1])"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

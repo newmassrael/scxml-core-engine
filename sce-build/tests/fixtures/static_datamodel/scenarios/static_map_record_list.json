@@ -1,0 +1,29 @@
+{
+  "machine": "static_map_record_list",
+  "about": "A map whose value is a record that holds a list (docs/adr/0108, D12): a record variable put at a key, a copy the map holds; the record's list appended to through the place `rows[1].tags` until it is full, which raises error.execution and ends the block, the record variable left as it was; a field of the record and `len` of its list read through the place, and a walk of the list; an append through a key that is absent, which raises error.execution and creates nothing; and `<sce:clear>` of the list where it stands. A map is stated as the array of its entries, each [key, value], a record as its object. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "tagging", "variables": { "rows": [], "row": { "id": 7, "tags": [] }, "next": 0, "held": 0, "rowId": 0, "total": 0, "errors": 0 } } },
+
+    { "note": "row 2 is absent: the append through it fails and creates nothing",
+      "event": "stray",
+      "expect": { "variables": { "rows": [], "errors": 1 } } },
+
+    { "event": "open",
+      "expect": { "variables": { "rows": [[1, { "id": 7, "tags": [] }]] } } },
+    { "note": "the map holds a copy: the record variable keeps no tag",
+      "event": "tag",
+      "expect": { "variables": { "rows": [[1, { "id": 7, "tags": [1] }]], "row": { "id": 7, "tags": [] }, "next": 1, "held": 1 } } },
+    { "event": "tag",
+      "expect": { "variables": { "rows": [[1, { "id": 7, "tags": [1, 2] }]], "next": 2, "held": 2 } } },
+    { "note": "the row holds its two tags: the append fails, error.execution is raised and the block ends",
+      "event": "tag",
+      "expect": { "variables": { "rows": [[1, { "id": 7, "tags": [1, 2] }]], "next": 3, "held": 2, "errors": 2 } } },
+    { "event": "look",
+      "expect": { "variables": { "rowId": 7 } } },
+    { "event": "sum",
+      "expect": { "variables": { "total": 3 } } },
+
+    { "event": "clear",
+      "expect": { "variables": { "rows": [[1, { "id": 7, "tags": [] }]], "held": 0, "errors": 2 } } }
+  ]
+}

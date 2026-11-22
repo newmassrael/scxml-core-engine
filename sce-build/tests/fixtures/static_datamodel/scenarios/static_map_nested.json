@@ -1,0 +1,40 @@
+{
+  "machine": "static_map_nested",
+  "about": "A map whose value is a map (docs/adr/0108, D12): the empty inner map put at a key with no value, then written through the place `slots[1]`; a put, a remove, `len`, `has` and a read through that place; the inner map full, answered as its own outcome; a walk of the inner map; and a write through a key that is absent, which raises error.execution, ends its block and creates nothing. A map is stated as the array of its entries, each [key, value], the inner map as its own array. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "holding", "variables": { "slots": [], "putResult": "inserted", "removeResult": "absent", "regions": 0, "held": 0, "found": false, "amount": 0, "total": 0, "after": 0, "errors": 0 } } },
+
+    { "note": "region 2 is absent: the put through it fails before anything is written, and the block ends before `after` counts it",
+      "event": "stray",
+      "expect": { "variables": { "slots": [], "after": 0, "errors": 1 } } },
+
+    { "note": "a put that names no value of a map whose value is a map puts the empty one",
+      "event": "open",
+      "expect": { "variables": { "slots": [[1, []]], "regions": 1 } } },
+    { "event": "fill",
+      "expect": { "variables": { "slots": [[1, [[10, 5], [20, 7]]]], "putResult": "inserted", "held": 2 } } },
+    { "note": "the inner map holds its two: the third slot is refused as its outcome, and nothing is raised",
+      "event": "overfill",
+      "expect": { "variables": { "slots": [[1, [[10, 5], [20, 7]]]], "putResult": "full", "held": 2, "errors": 1 } } },
+    { "note": "a slot the inner map holds takes the new amount where it stands",
+      "event": "replace",
+      "expect": { "variables": { "slots": [[1, [[10, 6], [20, 7]]]], "errors": 1 } } },
+    { "event": "read",
+      "expect": { "variables": { "found": true, "amount": 7, "after": 1, "errors": 1 } } },
+    { "event": "sum",
+      "expect": { "variables": { "total": 13 } } },
+
+    { "event": "drop",
+      "expect": { "variables": { "slots": [[1, [[10, 6]]]], "removeResult": "removed", "held": 1 } } },
+    { "note": "slot 20 is gone: the read of it fails, error.execution is raised and the block ends before `after` counts it",
+      "event": "read",
+      "expect": { "variables": { "found": false, "amount": 7, "after": 1, "errors": 2 } } },
+    { "note": "region 2 is still absent, and the put through it creates nothing",
+      "event": "stray",
+      "expect": { "variables": { "slots": [[1, [[10, 6]]]], "regions": 1, "after": 1, "errors": 3 } } },
+
+    { "note": "a put that names no value at a key the map holds replaces its value with the empty one where it stands",
+      "event": "reset",
+      "expect": { "variables": { "slots": [[1, []]], "held": 0, "errors": 3 } } }
+  ]
+}
