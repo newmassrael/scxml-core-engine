@@ -8,6 +8,9 @@
 (* entry is in it twice, and a session's entries are in the order the      *)
 (* session made them. A reader takes the entries in order, each once, and  *)
 (* passes none.                                                            *)
+(*                                                                         *)
+(* Taken as given:                                                         *)
+(*   Nothing: it is what a user may rely on, and names no mechanism.       *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences
 
