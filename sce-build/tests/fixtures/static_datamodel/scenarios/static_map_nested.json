@@ -25,7 +25,7 @@
       "expect": { "variables": { "total": 13 } } },
 
     { "note": "the inner map at region 1 is taken whole into a variable of exactly its type",
-      "event": "take",
+      "event": "take.present",
       "expect": { "variables": { "region": [[10, 6], [20, 7]], "taken": 1, "errors": 1 } } },
     { "note": "a walk of the outer map binds each inner map where it is held, and asks has and len of it",
       "event": "scan",

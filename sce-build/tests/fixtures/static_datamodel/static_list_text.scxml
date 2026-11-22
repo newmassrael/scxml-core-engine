@@ -13,7 +13,7 @@
   and ends its block, as an append to a full list does. A read of an index not
   below the length raises error.execution and ends its block too.
 
-  `word` is the text `add` appends, set by the word.* events; `cursor` is the
+  `word` is the text `add.word` appends, set by the word.* events; `cursor` is the
   index `read` reads, moved by `next`; `measure` sums the UTF-8 bytes of
   every element into `total`.
 -->
@@ -35,7 +35,7 @@
     <transition event="word.long" type="internal">
       <assign location="word" expr="'hello'"/>
     </transition>
-    <transition event="add" type="internal">
+    <transition event="add.word" type="internal">
       <sce:append target="names" expr="word"/>
       <assign location="count" expr="len(names)"/>
     </transition>

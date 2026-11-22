@@ -8,23 +8,23 @@
       "event": "read",
       "expect": { "variables": { "first": "-", "refusals": 1 } } },
 
-    { "event": "add",
+    { "event": "add.word",
       "expect": { "variables": { "names": ["ab"], "count": 1, "refusals": 1 } } },
 
     { "event": "word.long", "expect": { "variables": { "refusals": 1 } } },
     { "note": "`hello` is five bytes and an element holds four: nothing is appended, the block ends before `count` is written",
-      "event": "add",
+      "event": "add.word",
       "expect": { "variables": { "names": ["ab"], "count": 1, "refusals": 2 } } },
 
     { "event": "word.exact", "expect": { "variables": { "refusals": 2 } } },
     { "note": "four bytes is the bound, and fits",
-      "event": "add",
+      "event": "add.word",
       "expect": { "variables": { "names": ["ab", "abcd"], "count": 2, "refusals": 2 } } },
     { "event": "add.literal",
       "expect": { "variables": { "names": ["ab", "abcd", "xy"], "count": 3, "refusals": 2 } } },
 
     { "note": "the list holds its three: nothing is appended and error.execution says so",
-      "event": "add",
+      "event": "add.word",
       "expect": { "variables": { "names": ["ab", "abcd", "xy"], "count": 3, "refusals": 3 } } },
 
     { "note": "the walk reads each element as a text: 2 + 4 + 2 bytes",

@@ -18,8 +18,8 @@
   it did. `stray` puts at region 2, which is absent: the put fails before
   anything is written, and nothing is created at the key (rule 3).
 
-  `take` takes the inner map at region 1 whole into `region`, a variable of
-  exactly its type (rule 6); `take.absent` takes the one at region 2, which is
+  `take.present` takes the inner map at region 1 whole into `region`, a
+  variable of exactly its type (rule 6); `take.absent` takes the one at region 2, which is
   absent: error.execution, and the block ends before `region` or `taken` is
   written. `scan` walks the outer map, each item an inner map the walk binds
   where the outer map holds it (rule 8), and asks `has` and `len` of it.
@@ -84,7 +84,7 @@
       <sce:put target="slots" key="1"/>
       <assign location="held" expr="len(slots[1])"/>
     </transition>
-    <transition event="take" type="internal">
+    <transition event="take.present" type="internal">
       <assign location="region" expr="slots[1]"/>
       <assign location="taken" expr="taken + 1"/>
     </transition>
