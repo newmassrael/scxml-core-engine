@@ -17,6 +17,10 @@ use crate::batch::{Batched, Committed, Decided};
 use crate::credentials::{
     CredentialStore, Digest, PinRow, PinStore, Revoked, TokenRow, TokenStore, DIGEST_BYTES,
 };
+use crate::journal::{
+    holds_from, recorded, AsOf, AsOfCursor, AsOfError, Fact, Journal, JournalEntry, JournalPage,
+    JournalStore, Observation, ObservedStream, SessionsStream, Stream, StreamName,
+};
 use crate::keys::{KeyRow, KeyState, KeyStore, KeyUse};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::outbox::{
@@ -30,7 +34,7 @@ use crate::{
 /// The layout this store writes, kept in the database's `user_version`; a database of a layout a
 /// later build wrote is refused rather than read as this one, and one of an earlier layout is
 /// brought to this one when it is opened, in one transaction.
-const LAYOUT_VERSION: i64 = 7;
+const LAYOUT_VERSION: i64 = 8;
 
 /// The tables of layout 1. A session's state, version and earliest due are one row, so
 /// that the index of dues, which SQLite keeps in the transaction that writes the row, cannot
@@ -198,6 +202,40 @@ const LAYOUT_7: &str = "
     );
 ";
 
+/// What layout 8 adds to layout 7: the journal (ADR 0114). The one row of its head is the last
+/// position given and the last moment recorded, which the write that gives the next moves, so a
+/// position is never given twice and a moment never goes back, after a restart either. An entry
+/// is of a session's stream (the machine and the key) or of an observed stream's (its name, with
+/// the id the other system gave), never of both; `holds_ms` is its valid time, or its recorded
+/// moment where it has none, which an answer as of a moment is ordered by. Every index ends with
+/// the position, which is the table's row id.
+const LAYOUT_8: &str = "
+    CREATE TABLE journal_head (
+        id INTEGER PRIMARY KEY CHECK (id = 0),
+        issued INTEGER NOT NULL,
+        recorded_ms INTEGER NOT NULL
+    );
+    INSERT INTO journal_head (id, issued, recorded_ms) VALUES (0, 0, 0);
+    CREATE TABLE journal_entries (
+        position INTEGER PRIMARY KEY NOT NULL,
+        recorded_ms INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        key TEXT,
+        origin TEXT,
+        schema TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        valid_ms INTEGER,
+        holds_ms INTEGER NOT NULL,
+        data BLOB NOT NULL,
+        CHECK ((key IS NULL) <> (origin IS NULL))
+    );
+    CREATE INDEX journal_by_stream ON journal_entries (name, key);
+    CREATE INDEX journal_by_valid ON journal_entries (name, key, holds_ms);
+    CREATE INDEX journal_by_moment ON journal_entries (recorded_ms);
+    CREATE UNIQUE INDEX journal_by_origin ON journal_entries (name, origin)
+        WHERE origin IS NOT NULL;
+";
+
 /// A session store in one SQLite database file.
 ///
 /// The database is in WAL mode, so that reads go on while a write is made, with
@@ -281,8 +319,8 @@ impl SqliteStore {
 /// transaction, so a failed upgrade leaves it at the layout it had.
 fn lay_out(connection: &mut Connection) -> Result<(), Failure> {
     // Each layout's additions, in order: layout `n` is the first `n` of them.
-    const ADDITIONS: [&str; 7] = [
-        LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7,
+    const ADDITIONS: [&str; 8] = [
+        LAYOUT_1, LAYOUT_2, LAYOUT_3, LAYOUT_4, LAYOUT_5, LAYOUT_6, LAYOUT_7, LAYOUT_8,
     ];
     let transaction = begin(connection)?;
     let layout: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -734,6 +772,9 @@ fn write_in(connection: &Connection, key: &str, write: &Write<'_>) -> Result<Wri
         }
     };
     let appended = append_in(connection, write.outbox, write.now_ms)?;
+    if let Some(journal) = &write.journal {
+        journal_in(connection, key, journal, write.now_ms)?;
+    }
     Ok(Written { version, appended })
 }
 
@@ -1723,6 +1764,275 @@ impl AuditStore for SqliteStore {
     }
 }
 
+/// Append the facts of `journal` to the stream of the session `key` at `now_ms`, in the transaction
+/// (or the savepoint of one) `connection` holds.
+fn journal_in(
+    connection: &Connection,
+    key: &str,
+    journal: &Journal<'_>,
+    now_ms: u64,
+) -> Result<(), Failure> {
+    if journal.facts.is_empty() {
+        return Ok(());
+    }
+    let observed: bool = connection
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1 FROM journal_entries WHERE name = ?1 AND key IS NULL)",
+        )?
+        .query_row((journal.machine,), |row| row.get(0))?;
+    if observed {
+        return Err(Failure::new(ObservedStream {
+            name: journal.machine.to_string(),
+        }));
+    }
+    let stream = Stream::Session {
+        machine: journal.machine,
+        key,
+    };
+    for fact in journal.facts {
+        fact_in(connection, stream, None, fact, now_ms)?;
+    }
+    Ok(())
+}
+
+/// Append `fact` to `stream`, observed under `origin` when it is an observed one, at `now_ms`, in
+/// the transaction `connection` holds; the position it was given.
+///
+/// The position is given inside that transaction, which holds the database's one write lock from
+/// its start to its end ([`begin`]): no other transaction gives one until this one has committed
+/// or rolled back, and one that rolls back gives back what it took, which no reader saw. So
+/// positions are committed in their own order and become visible in it, which is why the horizon
+/// is the last one committed ([`journal_horizon_of`]).
+fn fact_in(
+    connection: &Connection,
+    stream: Stream<'_>,
+    origin: Option<&str>,
+    fact: &Fact<'_>,
+    now_ms: u64,
+) -> Result<u64, Failure> {
+    let (issued, last_ms): (u64, u64) = connection
+        .prepare_cached("SELECT issued, recorded_ms FROM journal_head WHERE id = 0")?
+        .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let position = issued + 1;
+    let recorded_ms = recorded(last_ms, now_ms);
+    connection
+        .prepare_cached("UPDATE journal_head SET issued = ?1, recorded_ms = ?2 WHERE id = 0")?
+        .execute((position, recorded_ms))?;
+    let data = fact.data.at(position)?;
+    let (name, key) = stream_columns(stream);
+    connection
+        .prepare_cached(
+            "INSERT INTO journal_entries (position, recorded_ms, name, key, origin, schema, \
+             revision, valid_ms, holds_ms, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        )?
+        .execute((
+            position,
+            recorded_ms,
+            name,
+            key,
+            origin,
+            fact.schema,
+            fact.revision,
+            fact.valid_ms,
+            holds_from(fact.valid_ms, recorded_ms),
+            &*data,
+        ))?;
+    Ok(position)
+}
+
+/// The journal's horizon in `connection`: the last position a committed transaction gave, since
+/// this store writes one transaction at a time and gives a position inside it ([`fact_in`]), so
+/// nothing can still appear at or below it. A read asks for it before it reads entries, and reads
+/// none above it, so that one committed in between, by another connection, is left to the next.
+fn journal_horizon_of(connection: &Connection) -> rusqlite::Result<u64> {
+    connection
+        .prepare_cached("SELECT issued FROM journal_head WHERE id = 0")?
+        .query_row([], |row| row.get(0))
+}
+
+/// The columns `name` and `key` of the entries of `stream`.
+fn stream_columns(stream: Stream<'_>) -> (&str, Option<&str>) {
+    match stream {
+        Stream::Session { machine, key } => (machine, Some(key)),
+        Stream::Observed { name } => (name, None),
+    }
+}
+
+/// An entry of the journal from its columns, read in the order `position, recorded_ms, name, key,
+/// origin, schema, revision, valid_ms, data`.
+fn journal_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<JournalEntry> {
+    let name: String = row.get(2)?;
+    let key: Option<String> = row.get(3)?;
+    Ok(JournalEntry {
+        position: row.get(0)?,
+        recorded_ms: row.get(1)?,
+        stream: match key {
+            Some(key) => StreamName::Session { machine: name, key },
+            None => StreamName::Observed { name },
+        },
+        origin: row.get(4)?,
+        schema: row.get(5)?,
+        revision: row.get(6)?,
+        valid_ms: row.get(7)?,
+        data: row.get(8)?,
+    })
+}
+
+impl JournalStore for SqliteStore {
+    fn after(&self, position: u64, limit: usize) -> Result<JournalPage, Failure> {
+        let connection = self.connection();
+        let horizon = journal_horizon_of(&connection)?;
+        // A position past the horizon has nothing after it to read, and one past the largest
+        // signed 64-bit number is none SQLite holds.
+        if position >= horizon {
+            return Ok(JournalPage {
+                entries: Vec::new(),
+                horizon,
+            });
+        }
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut statement = connection.prepare_cached(
+            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data \
+             FROM journal_entries WHERE position > ?1 AND position <= ?2 \
+             ORDER BY position LIMIT ?3",
+        )?;
+        let entries = statement
+            .query_map((position, horizon, limit), journal_row)?
+            .collect::<rusqlite::Result<Vec<JournalEntry>>>()?;
+        Ok(JournalPage { entries, horizon })
+    }
+
+    fn stream(&self, stream: Stream<'_>, after: u64, limit: usize) -> Result<JournalPage, Failure> {
+        let connection = self.connection();
+        let horizon = journal_horizon_of(&connection)?;
+        if after >= horizon {
+            return Ok(JournalPage {
+                entries: Vec::new(),
+                horizon,
+            });
+        }
+        let (name, key) = stream_columns(stream);
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut statement = connection.prepare_cached(
+            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data \
+             FROM journal_entries \
+             WHERE name = ?1 AND key IS ?2 AND position > ?3 AND position <= ?4 \
+             ORDER BY position LIMIT ?5",
+        )?;
+        let entries = statement
+            .query_map((name, key, after, horizon, limit), journal_row)?
+            .collect::<rusqlite::Result<Vec<JournalEntry>>>()?;
+        Ok(JournalPage { entries, horizon })
+    }
+
+    fn position_at(&self, ms: u64) -> Result<u64, Failure> {
+        let connection = self.connection();
+        let horizon = journal_horizon_of(&connection)?;
+        // The moments rise with the positions, since both are given in the order of the commits:
+        // the latest moment's largest position is the largest of all.
+        let position = connection
+            .prepare_cached(
+                "SELECT position FROM journal_entries \
+                 WHERE recorded_ms <= ?1 AND position <= ?2 \
+                 ORDER BY recorded_ms DESC, position DESC LIMIT 1",
+            )?
+            .query_row((moment(ms), horizon), |row| row.get(0))
+            .optional()?;
+        Ok(position.unwrap_or(0))
+    }
+
+    fn as_of(
+        &self,
+        stream: Stream<'_>,
+        as_of: &AsOf,
+        after: AsOfCursor,
+        limit: usize,
+    ) -> Result<JournalPage, AsOfError> {
+        let connection = self.connection();
+        let horizon = journal_horizon_of(&connection)?;
+        as_of.admitted(horizon)?;
+        let (name, key) = stream_columns(stream);
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut statement = connection.prepare_cached(
+            "SELECT position, recorded_ms, name, key, origin, schema, revision, valid_ms, data \
+             FROM journal_entries \
+             WHERE name = ?1 AND key IS ?2 AND position <= ?3 \
+             AND holds_ms >= ?5 AND holds_ms <= ?4 AND (holds_ms > ?5 OR position > ?6) \
+             ORDER BY holds_ms, position LIMIT ?7",
+        )?;
+        let entries = statement
+            .query_map(
+                (
+                    name,
+                    key,
+                    as_of.position,
+                    as_of.valid_ms,
+                    after.valid_ms,
+                    // Past the largest signed 64-bit number there is no position to come after.
+                    i64::try_from(after.position).unwrap_or(i64::MAX),
+                    limit,
+                ),
+                journal_row,
+            )?
+            .collect::<rusqlite::Result<Vec<JournalEntry>>>()?;
+        Ok(JournalPage { entries, horizon })
+    }
+
+    fn observe(
+        &self,
+        name: &str,
+        origin: &str,
+        fact: &Fact<'_>,
+        now_ms: u64,
+    ) -> Result<Observation, Failure> {
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let held: Option<u64> = transaction
+            .prepare_cached("SELECT position FROM journal_entries WHERE name = ?1 AND origin = ?2")?
+            .query_row((name, origin), |row| row.get(0))
+            .optional()?;
+        if let Some(position) = held {
+            return Ok(Observation::Repeated { position });
+        }
+        let sessions: bool = transaction
+            .prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM journal_entries \
+                 WHERE name = ?1 AND key IS NOT NULL)",
+            )?
+            .query_row((name,), |row| row.get(0))?;
+        if sessions {
+            return Err(Failure::new(SessionsStream {
+                name: name.to_string(),
+            }));
+        }
+        let position = fact_in(
+            &transaction,
+            Stream::Observed { name },
+            Some(origin),
+            fact,
+            now_ms,
+        )?;
+        transaction.commit()?;
+        Ok(Observation::Kept { position })
+    }
+
+    fn reseal_journaled(&self, position: u64, held: &[u8], data: &[u8]) -> Result<bool, Failure> {
+        // A position past the largest signed 64-bit number is none SQLite holds.
+        let Ok(position) = i64::try_from(position) else {
+            return Ok(false);
+        };
+        let mut connection = self.connection();
+        let transaction = begin(&mut connection)?;
+        let changed = transaction
+            .prepare_cached(
+                "UPDATE journal_entries SET data = ?3 WHERE position = ?1 AND data = ?2",
+            )?
+            .execute((position, held, data))?;
+        transaction.commit()?;
+        Ok(changed == 1)
+    }
+}
+
 impl From<rusqlite::Error> for Failure {
     fn from(error: rusqlite::Error) -> Self {
         Self::new(error)
@@ -1742,6 +2052,12 @@ impl From<rusqlite::Error> for AcquireError {
 }
 
 impl From<rusqlite::Error> for LeaseError {
+    fn from(error: rusqlite::Error) -> Self {
+        Self::Failed(error.into())
+    }
+}
+
+impl From<rusqlite::Error> for AsOfError {
     fn from(error: rusqlite::Error) -> Self {
         Self::Failed(error.into())
     }

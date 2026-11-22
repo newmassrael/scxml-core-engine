@@ -3,7 +3,7 @@
 
 //! A session store that keeps nothing past the process.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -12,6 +12,10 @@ use crate::audit::{
     NoCheckpointAt,
 };
 use crate::batch::{Batched, Committed, Decided};
+use crate::journal::{
+    recorded, AsOf, AsOfCursor, AsOfError, Fact, Journal, JournalEntry, JournalPage, JournalStore,
+    Observation, ObservedStream, SessionsStream, Stream, StreamName,
+};
 use crate::kv::{rules as kv_rules, Identity, KvEntry, KvStore, Put, PutIf};
 use crate::outbox::{
     Append, Appended, Change, Expired, Expiry, Note, Outbox, OutboxEntry, Write, Written,
@@ -74,6 +78,14 @@ struct Records {
     audit_rows: BTreeMap<(String, u64), AuditRow>,
     audit_checkpoints: BTreeMap<(String, u64), AuditCheckpoint>,
     audit_identities: BTreeMap<(String, String, u64), u64>,
+    /// The journal (module [`crate::journal`]): each entry by its position, the positions of each
+    /// stream, the position each origin id of an observed stream is kept at, and the last position
+    /// and recorded moment given.
+    journal: BTreeMap<u64, JournalEntry>,
+    journal_streams: BTreeSet<(StreamName, u64)>,
+    journal_origins: BTreeMap<(String, String), u64>,
+    journal_last: u64,
+    journal_recorded_ms: u64,
 }
 
 impl Records {
@@ -140,7 +152,8 @@ impl Records {
         self.entries.range(from..=to).map(|(_, entry)| entry)
     }
 
-    /// What [`SessionStore::write`] does, on these records: nothing unless the rules admit it.
+    /// What [`SessionStore::write`] does, on these records: nothing unless the rules admit it and
+    /// the bytes of each of its facts could be made.
     fn write(&mut self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
         rules::admit_write(
             self.leases.get(key),
@@ -148,6 +161,11 @@ impl Records {
             self.version_of(key),
             write.expected_version,
         )?;
+        // Before anything is changed, since a fact's bytes may fail to be made.
+        let journaled = match &write.journal {
+            Some(journal) => self.journaled(key, journal, write.now_ms)?,
+            None => Vec::new(),
+        };
         let version = match write.change {
             Change::Keep {
                 state,
@@ -176,7 +194,117 @@ impl Records {
             }
         };
         let appended = self.append(write.outbox, write.now_ms);
+        for entry in journaled {
+            self.keep_journaled(entry);
+        }
         Ok(Written { version, appended })
+    }
+
+    /// The journal's horizon. A position is given, and its entry kept, under the one lock that is
+    /// the write's transaction, which a read takes too: a read never runs between the two, however
+    /// many threads write, so every position given is visible and nothing can still appear at or
+    /// below the last one.
+    fn journal_horizon(&self) -> u64 {
+        self.journal_last
+    }
+
+    /// The entries the facts of `journal` are, as a write of the session `key` at `now_ms` appends
+    /// them; nothing is kept, and no position given, until each is kept
+    /// ([`Self::keep_journaled`]).
+    fn journaled(
+        &self,
+        key: &str,
+        journal: &Journal<'_>,
+        now_ms: u64,
+    ) -> Result<Vec<JournalEntry>, Failure> {
+        if journal.facts.is_empty() {
+            return Ok(Vec::new());
+        }
+        if self.holds_observed(journal.machine) {
+            return Err(Failure::new(ObservedStream {
+                name: journal.machine.to_string(),
+            }));
+        }
+        let stream = Stream::Session {
+            machine: journal.machine,
+            key,
+        };
+        let mut position = self.journal_last;
+        journal
+            .facts
+            .iter()
+            .map(|fact| {
+                position += 1;
+                self.entry_at(position, stream, None, fact, now_ms)
+            })
+            .collect()
+    }
+
+    /// The entry `fact` is in `stream` at `position`, recorded at `now_ms`.
+    fn entry_at(
+        &self,
+        position: u64,
+        stream: Stream<'_>,
+        origin: Option<&str>,
+        fact: &Fact<'_>,
+        now_ms: u64,
+    ) -> Result<JournalEntry, Failure> {
+        Ok(JournalEntry {
+            position,
+            recorded_ms: recorded(self.journal_recorded_ms, now_ms),
+            stream: stream.to_name(),
+            origin: origin.map(str::to_string),
+            schema: fact.schema.to_string(),
+            revision: fact.revision,
+            valid_ms: fact.valid_ms,
+            data: fact.data.at(position)?.into_owned(),
+        })
+    }
+
+    /// Keep `entry`, whose position is then the last one given.
+    fn keep_journaled(&mut self, entry: JournalEntry) {
+        self.journal_last = entry.position;
+        self.journal_recorded_ms = entry.recorded_ms;
+        self.journal_streams
+            .insert((entry.stream.clone(), entry.position));
+        if let (StreamName::Observed { name }, Some(origin)) = (&entry.stream, &entry.origin) {
+            self.journal_origins
+                .insert((name.clone(), origin.clone()), entry.position);
+        }
+        self.journal.insert(entry.position, entry);
+    }
+
+    /// Whether the journal holds an observed stream named `name`.
+    fn holds_observed(&self, name: &str) -> bool {
+        let observed = Stream::Observed { name }.to_name();
+        self.journal_of(&observed, 0).next().is_some()
+    }
+
+    /// Whether the journal holds entries the sessions of the machine `machine` made.
+    fn holds_sessions_of(&self, machine: &str) -> bool {
+        // The streams of a machine's sessions are next to each other, the one of the empty key
+        // first.
+        let first = Stream::Session { machine, key: "" }.to_name();
+        self.journal_streams
+            .range((first, 0_u64)..)
+            .next()
+            .is_some_and(|(stream, _)| match stream {
+                StreamName::Session { machine: held, .. } => held == machine,
+                StreamName::Observed { .. } => false,
+            })
+    }
+
+    /// The entries of `stream` past the position `after`, in the order of their positions.
+    fn journal_of<'a>(
+        &'a self,
+        stream: &StreamName,
+        after: u64,
+    ) -> impl Iterator<Item = &'a JournalEntry> + 'a {
+        let from = (stream.clone(), after.saturating_add(1));
+        let to = (stream.clone(), u64::MAX);
+        self.journal_streams
+            .range(from..=to)
+            .filter_map(move |(_, position)| self.journal.get(position))
     }
 
     /// What [`SessionStore::acknowledge`] does, on these records: how many entries it deleted.
@@ -803,5 +931,109 @@ impl AuditStore for MemoryStore {
                 _ => false,
             },
         )
+    }
+}
+
+/// The journal, kept beside the sessions so that a write keeps its state and its entries under the
+/// one lock that is its transaction.
+impl JournalStore for MemoryStore {
+    fn after(&self, position: u64, limit: usize) -> Result<JournalPage, Failure> {
+        let records = self.records();
+        Ok(JournalPage {
+            entries: records
+                .journal
+                .range((Bound::Excluded(position), Bound::Unbounded))
+                .take(limit)
+                .map(|(_, entry)| entry.clone())
+                .collect(),
+            horizon: records.journal_horizon(),
+        })
+    }
+
+    fn stream(&self, stream: Stream<'_>, after: u64, limit: usize) -> Result<JournalPage, Failure> {
+        let records = self.records();
+        Ok(JournalPage {
+            entries: records
+                .journal_of(&stream.to_name(), after)
+                .take(limit)
+                .cloned()
+                .collect(),
+            horizon: records.journal_horizon(),
+        })
+    }
+
+    fn position_at(&self, ms: u64) -> Result<u64, Failure> {
+        let records = self.records();
+        // The moments of a store that gives its positions in the order of its commits rise with
+        // the positions, so the first entry found from the end is the one.
+        Ok(records
+            .journal
+            .values()
+            .rev()
+            .find(|entry| entry.recorded_ms <= ms)
+            .map_or(0, |entry| entry.position))
+    }
+
+    fn as_of(
+        &self,
+        stream: Stream<'_>,
+        as_of: &AsOf,
+        after: AsOfCursor,
+        limit: usize,
+    ) -> Result<JournalPage, AsOfError> {
+        let records = self.records();
+        let horizon = records.journal_horizon();
+        as_of.admitted(horizon)?;
+        let mut held: Vec<&JournalEntry> = records
+            .journal_of(&stream.to_name(), 0)
+            .filter(|entry| as_of.includes(entry) && entry.cursor() > after)
+            .collect();
+        held.sort_by_key(|entry| entry.cursor());
+        Ok(JournalPage {
+            entries: held.into_iter().take(limit).cloned().collect(),
+            horizon,
+        })
+    }
+
+    fn observe(
+        &self,
+        name: &str,
+        origin: &str,
+        fact: &Fact<'_>,
+        now_ms: u64,
+    ) -> Result<Observation, Failure> {
+        let mut records = self.records();
+        let kept = (name.to_string(), origin.to_string());
+        if let Some(position) = records.journal_origins.get(&kept) {
+            return Ok(Observation::Repeated {
+                position: *position,
+            });
+        }
+        if records.holds_sessions_of(name) {
+            return Err(Failure::new(SessionsStream {
+                name: name.to_string(),
+            }));
+        }
+        let position = records.journal_last + 1;
+        let entry = records.entry_at(
+            position,
+            Stream::Observed { name },
+            Some(origin),
+            fact,
+            now_ms,
+        )?;
+        records.keep_journaled(entry);
+        Ok(Observation::Kept { position })
+    }
+
+    fn reseal_journaled(&self, position: u64, held: &[u8], data: &[u8]) -> Result<bool, Failure> {
+        let mut records = self.records();
+        Ok(match records.journal.get_mut(&position) {
+            Some(entry) if entry.data == held => {
+                entry.data = data.to_vec();
+                true
+            }
+            _ => false,
+        })
     }
 }
