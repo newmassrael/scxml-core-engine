@@ -18373,14 +18373,6 @@ fn compile_generated_set_c11(
     let proj_dir = std::env::temp_dir().join(format!("sce_c11_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
 
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let runtime_include = std::path::Path::new(manifest_dir)
-        .join("..")
-        .join("backends/c/forge-runtime")
-        .join("include")
-        .canonicalize()
-        .map_err(|e| format!("canonicalize backends/c/forge-runtime/include: {e}"))?;
-
     let mut seen: HashSet<String> = HashSet::new();
     let mut header_includes: Vec<String> = Vec::new();
     for (filename, content) in &all_files {
@@ -18419,13 +18411,7 @@ fn compile_generated_set_c11(
         .arg("-Werror")
         .arg("-Wunused")
         .arg("-Wuninitialized")
-        .arg(format!("-I{}", runtime_include.display()))
-        .arg(format!(
-            "-I{}",
-            std::path::Path::new(manifest_dir)
-                .join("../backends/c/runtime/include")
-                .display()
-        ))
+        .args(c11_include_args()?)
         .arg(format!("-I{}", proj_dir.display()))
         .arg("-o")
         .arg(&object_out)
@@ -22320,6 +22306,23 @@ fn backend_runtime_dir(rel: &str) -> Result<std::path::PathBuf, String> {
         .map_err(|e| format!("canonicalize {rel}: {e}"))
 }
 
+/// The include flags every generated C11 forge unit is compiled with: the forge
+/// runtime's headers, and the C11 runtime's, whose `sce/text.h` a generated
+/// header includes for its text routines in place of `<string.h>`
+/// (docs/adr/0110 D1). One list, so a driver build cannot fall behind it.
+fn c11_include_args() -> Result<[String; 2], String> {
+    Ok([
+        format!(
+            "-I{}",
+            backend_runtime_dir("backends/c/forge-runtime/include")?.display()
+        ),
+        format!(
+            "-I{}",
+            backend_runtime_dir("backends/c/runtime/include")?.display()
+        ),
+    ])
+}
+
 /// C++ COBS run gate, at the `-std=c++17` a consumer builds the generated code
 /// at (docs/adr/0059). An algorithm's `bytes` parameter is the runtime's
 /// `SCE::Forge::Span`, so the driver hands it the case's `std::vector`.
@@ -22460,7 +22463,6 @@ fn run_cobs_vectors_c11(dir: &std::path::Path, test_id: &str) -> Result<(), Stri
     std::fs::write(proj_dir.join("driver.c"), driver)
         .map_err(|e| format!("write driver.c: {e}"))?;
 
-    let runtime_include = backend_runtime_dir("backends/c/forge-runtime")?.join("include");
     let exe = proj_dir.join("driver");
     let mut build = std::process::Command::new("gcc");
     build
@@ -22468,7 +22470,7 @@ fn run_cobs_vectors_c11(dir: &std::path::Path, test_id: &str) -> Result<(), Stri
         .arg("-Wall")
         .arg("-Wextra")
         .arg("-Werror")
-        .arg(format!("-I{}", runtime_include.display()))
+        .args(c11_include_args()?)
         .arg(format!("-I{}", proj_dir.display()))
         .arg("-o")
         .arg(&exe)
@@ -23057,6 +23059,7 @@ fn forge_c11_enum_record_layer_runtime() {
         .arg("-Wextra")
         .arg("-pedantic")
         .arg("-Werror")
+        .args(c11_include_args().expect("the C11 runtime include directories"))
         .arg(format!("-I{}", proj_dir.display()))
         .arg("-o")
         .arg(&exe)
@@ -23565,6 +23568,7 @@ fn forge_c11_enum_validator_runtime() {
         .arg("-Wextra")
         .arg("-pedantic")
         .arg("-Werror")
+        .args(c11_include_args().expect("the C11 runtime include directories"))
         .arg(format!("-I{}", proj_dir.display()))
         .arg("-o")
         .arg(&exe)
@@ -26992,7 +26996,6 @@ fn run_procedure_address_forms_c11(test_id: &str) -> Result<(), String> {
     std::fs::write(proj_dir.join("driver.c"), driver)
         .map_err(|e| format!("write driver.c: {e}"))?;
 
-    let runtime_include = backend_runtime_dir("backends/c/forge-runtime")?.join("include");
     let exe = proj_dir.join("driver");
     let mut build = std::process::Command::new("gcc");
     build
@@ -27000,7 +27003,7 @@ fn run_procedure_address_forms_c11(test_id: &str) -> Result<(), String> {
         .arg("-Wall")
         .arg("-Wextra")
         .arg("-Werror")
-        .arg(format!("-I{}", runtime_include.display()))
+        .args(c11_include_args()?)
         .arg(format!("-I{}", proj_dir.display()))
         .arg("-o")
         .arg(&exe)
@@ -27237,7 +27240,6 @@ fn run_codec_enum_fields_c11(test_id: &str) -> Result<(), String> {
     std::fs::write(proj_dir.join("driver.c"), driver)
         .map_err(|e| format!("write driver.c: {e}"))?;
 
-    let runtime_include = backend_runtime_dir("backends/c/forge-runtime")?.join("include");
     let exe = proj_dir.join("driver");
     let mut build = std::process::Command::new("gcc");
     build
@@ -27245,7 +27247,7 @@ fn run_codec_enum_fields_c11(test_id: &str) -> Result<(), String> {
         .arg("-Wall")
         .arg("-Wextra")
         .arg("-Werror")
-        .arg(format!("-I{}", runtime_include.display()))
+        .args(c11_include_args()?)
         .arg(format!("-I{}", proj_dir.display()))
         .arg("-o")
         .arg(&exe)
