@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a75be659ab92abd1ba0e92fccd48a8e5a877548f5d15264555f23cf2a66450d0
+// source-hash: 8c9ef524fe073aa8c760ddf6921e6cc28695ea616c9bd68228e4cfc8c0f5c268
 // source: signed_reading_sent.scxml
 // SCE-MAP: signed_reading_sent.scxml:5 :: _forge_body
 
@@ -21,7 +21,7 @@ type Value = sce_signed_reading.SignedReadingPayload
 // Matches reports whether value matches the template `signed_reading_sent` (ES 201 873-1 Annex B.1,
 // docs/SCE_TEST_PROFILE.md §6.1).
 func Matches(value Value) bool {
-	return value.Delta == -7 && value.Offset == -300 && value.Level == -70000 && value.Stamp == -5000000000 && value.Total == 10000000000000000000
+	return value.Change == -7 && value.Offset == -300 && value.Level == -70000 && value.Stamp == -5000000000 && value.Total == 10000000000000000000
 }
 
 // Specific is the value the specific template `signed_reading_sent` sends (docs/SCE_TEST_PROFILE.md
@@ -29,7 +29,7 @@ func Matches(value Value) bool {
 // Matches, given the same parameters. It is not named Value, as the other backends name it, since Go
 // keeps the type Value and the package's functions in one namespace.
 func Specific() Value {
-	return sce_signed_reading.SignedReadingPayload{Delta: -7, Offset: -300, Level: -70000, Stamp: -5000000000, Total: 10000000000000000000}
+	return sce_signed_reading.SignedReadingPayload{Change: -7, Offset: -300, Level: -70000, Stamp: -5000000000, Total: 10000000000000000000}
 }
 
 // TYPE is the name of the record Value is, as the types module of the suite's TTCN-3 export names it
@@ -41,5 +41,5 @@ const TYPE = "signed_reading"
 // an absent field omitted. A send of this template carries it beside the value it sends
 // (`testprofile.MessageValue`).
 func Canonical(value Value) any {
-	return canonical.Record(canonical.Field("delta", canonical.Integer(value.Delta)), canonical.Field("offset", canonical.Integer(value.Offset)), canonical.Field("level", canonical.Integer(value.Level)), canonical.Field("stamp", canonical.Integer(value.Stamp)), canonical.Field("total", canonical.Integer(value.Total)))
+	return canonical.Record(canonical.Field("change", canonical.Integer(value.Change)), canonical.Field("offset", canonical.Integer(value.Offset)), canonical.Field("level", canonical.Integer(value.Level)), canonical.Field("stamp", canonical.Integer(value.Stamp)), canonical.Field("total", canonical.Integer(value.Total)))
 }

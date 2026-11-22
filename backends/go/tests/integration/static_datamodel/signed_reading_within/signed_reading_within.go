@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c31794321c13b21ef2b620f7ccbeb9f40af783b7909594b3c0b15b0dd6bee19c
+// source-hash: 056ba478acaec2dba3afcba13f0ee122040198ad365fae886d7806d48d923263
 // source: signed_reading_within.scxml
 // SCE-MAP: signed_reading_within.scxml:5 :: _forge_body
 
@@ -21,7 +21,7 @@ type Value = sce_signed_reading.SignedReadingPayload
 // Matches reports whether value matches the template `signed_reading_within` (ES 201 873-1 Annex B.1,
 // docs/SCE_TEST_PROFILE.md §6.1).
 func Matches(value Value) bool {
-	return value.Delta <= -1 && value.Level <= -1 && value.Stamp <= -4294967296 && value.Total >= 9223372036854775808
+	return value.Change <= -1 && value.Level <= -1 && value.Stamp <= -4294967296 && value.Total >= 9223372036854775808
 }
 
 // TYPE is the name of the record Value is, as the types module of the suite's TTCN-3 export names it
@@ -33,5 +33,5 @@ const TYPE = "signed_reading"
 // an absent field omitted. A send of this template carries it beside the value it sends
 // (`testprofile.MessageValue`).
 func Canonical(value Value) any {
-	return canonical.Record(canonical.Field("delta", canonical.Integer(value.Delta)), canonical.Field("offset", canonical.Integer(value.Offset)), canonical.Field("level", canonical.Integer(value.Level)), canonical.Field("stamp", canonical.Integer(value.Stamp)), canonical.Field("total", canonical.Integer(value.Total)))
+	return canonical.Record(canonical.Field("change", canonical.Integer(value.Change)), canonical.Field("offset", canonical.Integer(value.Offset)), canonical.Field("level", canonical.Integer(value.Level)), canonical.Field("stamp", canonical.Integer(value.Stamp)), canonical.Field("total", canonical.Integer(value.Total)))
 }

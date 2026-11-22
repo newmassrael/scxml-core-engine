@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c31794321c13b21ef2b620f7ccbeb9f40af783b7909594b3c0b15b0dd6bee19c
+// source-hash: 056ba478acaec2dba3afcba13f0ee122040198ad365fae886d7806d48d923263
 // source: signed_reading_within.scxml
 // SCE-MAP: signed_reading_within.scxml:5 :: _forge_body
 
@@ -18,7 +18,7 @@ typealias Value = com.sce.generated.signed_reading.SignedReadingPayload
  */
 @Suppress("UNUSED_PARAMETER", "SENSELESS_COMPARISON", "USELESS_IS_CHECK")
 fun matches(value: Value): Boolean =
-    value.delta <= (-1).toByte() && value.level <= -1 && value.stamp <= -4294967296L && value.total >= 9223372036854775808uL
+    value.change <= (-1).toByte() && value.level <= -1 && value.stamp <= -4294967296L && value.total >= 9223372036854775808uL
 
 /**
  * The name of the record [Value] is, as the types module of the suite's TTCN-3 export names it
@@ -33,4 +33,4 @@ const val TYPE: String = "signed_reading"
  * carries it beside the value it sends (`com.sce.runtime.test.messageValue`).
  */
 fun canonical(value: Value): Any =
-    com.sce.runtime.test.Canonical.record("delta" to com.sce.runtime.test.Canonical.integer(value.delta), "offset" to com.sce.runtime.test.Canonical.integer(value.offset), "level" to com.sce.runtime.test.Canonical.integer(value.level), "stamp" to com.sce.runtime.test.Canonical.integer(value.stamp), "total" to com.sce.runtime.test.Canonical.integer(value.total))
+    com.sce.runtime.test.Canonical.record("change" to com.sce.runtime.test.Canonical.integer(value.change), "offset" to com.sce.runtime.test.Canonical.integer(value.offset), "level" to com.sce.runtime.test.Canonical.integer(value.level), "stamp" to com.sce.runtime.test.Canonical.integer(value.stamp), "total" to com.sce.runtime.test.Canonical.integer(value.total))
