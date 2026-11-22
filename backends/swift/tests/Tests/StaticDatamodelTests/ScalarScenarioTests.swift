@@ -538,6 +538,7 @@ private func recordCall() -> Machine {
             "large": { integer(policy.large) },
             "debts": { integer(policy.debts) },
             "peaks": { integer(policy.peaks) },
+            "settled": { integer(policy.settled) },
         ]
     )
 }
