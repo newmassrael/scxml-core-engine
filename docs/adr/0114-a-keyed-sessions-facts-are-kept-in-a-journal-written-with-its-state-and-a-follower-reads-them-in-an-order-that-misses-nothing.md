@@ -1,7 +1,6 @@
 # ADR 0114 — A keyed session's facts are kept in a journal written with its state, and a follower reads them in an order that misses nothing
 
-- Status: Proposed (2026-11-22). Not accepted: no part of it is to be built until the owner accepts it. Its model (D7)
-  was written and checked before any code.
+- Status: Accepted (2026-11-22, by the owner). Its model (D7) was written and checked before any code.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is
@@ -32,7 +31,7 @@ record kept beside it, by the same transaction.
 - **A log is the order in which facts became true; state and views are folds of it** (Kreps 2013; Helland 2015). A view
   keeps its position beside what it computed.
 - **A write to two places is one transaction or is wrong** (the transactional outbox).
-- **Two times** (Snodgrass 1999; Jensen and Snodgrass): *valid time*, when a fact holds in the world, and *transaction
+- **Two times** (Snodgrass 1999; Jensen and Snodgrass 1999): *valid time*, when a fact holds in the world, and *transaction
   time*, when the record of it was made. A correction is a new record; none is ever changed.
 - **Transaction time is an order, not a clock.** A clock can lag, and an answer "as of 14:00" given at 14:01 can be
   changed by a record another process stamps 13:59. Position is the order and the store's own.
@@ -162,7 +161,7 @@ retention, a journal several stores share, and any one application's streams.
 
 Each step lands with a test that fails without it.
 
-1. This record and its model, accepted.
+1. (2026-11-22) This record and its model, accepted.
 2. The store contract, its memory and SQLite implementations (layout 8) and the conformance kit: the horizon with two
    transactions committed out of order, concurrent writers, a crash at every write, positions that rise, a read as of a
    position that later writes do not change, an origin id given twice. `Sealed` and its re-seal pass.
@@ -174,6 +173,8 @@ Each step lands with a test that fails without it.
 
 ## Open questions
 
+Decided with the acceptance as recommended, each with its reason.
+
 1. Whether a document may read another machine's journal by page (D5), or only its own and those it follows.
-   Recommended: only those; a read of any other is a subscription's question.
-2. Whether `position_at` is needed at first. Recommended: yes, since a person asks by date; it is the store's to answer.
+   Only those; a read of any other is a subscription's question.
+2. Whether `position_at` is needed at first. Yes, since a person asks by date; it is the store's to answer.
