@@ -4383,6 +4383,22 @@ fn render_text_template(
     l.render(env, "text_template", ctx)
 }
 
+/// Whether the Rust unit of an event schema feeds the field `f` into the canonical
+/// bytes its payload is a key of a map by (docs/adr/0108, D1 and D6 item 4): a
+/// fixed-width integer, a truth value, a value of an enum and a text the schema
+/// bounds, each held in a type the runtime's map takes as a key. A float is no key
+/// (D1), nor is a value that may be absent, and a byte string is none on Rust: the
+/// unit holds it in a `Vec<u8>` ([`rust_type`]), which is no key of the map. A
+/// payload with a field that is no key is no key itself.
+pub(crate) fn rust_unit_field_is_key(f: &EntryField) -> bool {
+    match &f.sce_type {
+        EntryType::Scalar(SceType::Float32 | SceType::Float64 | SceType::Bytes)
+        | EntryType::Optional { .. } => false,
+        EntryType::Scalar(SceType::String) => f.max_size.is_some(),
+        EntryType::Scalar(_) => true,
+    }
+}
+
 fn render_event_schema(
     env: &minijinja::Environment,
     m: &EventSchemaModel,
@@ -4758,13 +4774,8 @@ fn render_event_schema(
         .iter()
         .map(|entry| {
             let f = entry.as_ref()?;
-            let keyed = match &f.sce_type {
-                EntryType::Scalar(SceType::Float32 | SceType::Float64 | SceType::Bytes)
-                | EntryType::Optional { .. } => false,
-                EntryType::Scalar(SceType::String) => f.max_size.is_some(),
-                EntryType::Scalar(_) => true,
-            };
-            keyed.then(|| event_schema_field_ident(&f.id, crate::generator::Language::Rust))
+            rust_unit_field_is_key(f)
+                .then(|| event_schema_field_ident(&f.id, crate::generator::Language::Rust))
         })
         .collect::<Option<Vec<String>>>()
         .unwrap_or_default();
