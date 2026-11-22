@@ -92,7 +92,7 @@ fn payments() -> [Payment; 3] {
         }),
         Payment::Cash,
         Payment::Voucher(Voucher {
-            voucher_code: vec![0x00, 0xab, 0xff],
+            voucher_code: list(&[0x00, 0xab, 0xff]),
         }),
     ]
 }
