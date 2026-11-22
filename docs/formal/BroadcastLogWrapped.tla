@@ -56,6 +56,13 @@
 (* it proves the arithmetic of the wrap, and the memory ordering is the    *)
 (* business of loom (tests/loom_broadcast_log_narrow.rs). No liveness is   *)
 (* claimed (ADR 0002).                                                     *)
+(*                                                                         *)
+(* Taken as given:                                                         *)
+(*   One producer, and steps in the order written, as BroadcastLog has     *)
+(*     them.                                                               *)
+(*   EnforceBound: no producer gets more than K ahead of a reader inside a *)
+(*     read.                                                               *)
+(*   LiveSpec: a reader that has begun takes its steps.                    *)
 (***************************************************************************)
 EXTENDS Integers, TLC
 
@@ -326,6 +333,16 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
+(* A reader that has begun an opening or a read takes its steps; nothing is asked of the producer. *)
+Reading(r) ==
+    \/ ROpenHead(r) \/ RDHead(r) \/ RHead(r) \/ RStamp1(r)
+    \/ RCopy(r, 0, "c0", "c1") \/ RCopy(r, 1, "c1", "v2")
+    \/ RValidate(r) \/ RReload(r)
+
+Fair == \A r \in Readers : WF_vars(Reading(r))
+
+LiveSpec == Spec /\ Fair
+
 (* What the specification requires of an answer, given the head it was decided at, *)
 (* in the true counts: the reader's own count `ab` is the one its cursor stands for. *)
 
@@ -365,6 +382,9 @@ OpenRefines ==
 DeferredStart ==
     \A r \in Readers :
         opened[r] => (ab[r] >= oab[r] /\ lost[r] <= ab[r] - oab[r])
+
+(* An opening and a read that were begun end, however the producer goes on. *)
+ReadEnds == \A r \in Readers : rpc[r] # "idle" ~> rpc[r] = "idle"
 
 (* A deferred reader's first read answers Lagged only if a publish had completed since the *)
 (* first load of that read: the cursor it was given is at most R behind the head, which the *)

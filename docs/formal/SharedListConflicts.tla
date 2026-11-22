@@ -24,6 +24,13 @@
 (* and that, under the new rule, a host holds exactly the operations it    *)
 (* was given that hold under its log (HoldsWhatHolds), which is what makes *)
 (* the set, and so the view, independent of order.                         *)
+(*                                                                         *)
+(* Taken as given:                                                         *)
+(*   An operation is its device's: a signature is not forged, so no one    *)
+(*     else makes one.                                                     *)
+(*   Entries reach a host in order, and an operation after the entry it    *)
+(*     names.                                                              *)
+(*   LiveSpec: the network delivers in the end what is there.              *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 
@@ -146,6 +153,17 @@ Next ==
     \/ \E h \in Hosts, d \in Devices, s \in Seqs, v \in Versions : Deliver(h, d, s, v)
 
 Spec == Init /\ [][Next]_vars
+
+\* The network is fair: an entry and an operation that are there reach each host in the end.
+Fair ==
+    /\ \A h \in Hosts : WF_vars(GiveEntry(h))
+    /\ \A h \in Hosts, d \in Devices, s \in Seqs, v \in Versions : WF_vars(Deliver(h, d, s, v))
+
+LiveSpec == Spec /\ Fair
+
+\* Once nothing more is made, every host's machine is told the same, and goes on being told it.
+Converges ==
+    <>[](\A h1, h2 \in Hosts, d \in Devices : View(d, store[h1][d]) = View(d, store[h2][d]))
 
 -----------------------------------------------------------------------------
 

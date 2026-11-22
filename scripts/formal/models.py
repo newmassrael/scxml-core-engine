@@ -22,6 +22,12 @@
 #     out says whether the promise is broken without it: where it is, TLC must find a
 #     violation of it too, and where it is not, the run says why the part is there.
 #
+#   * A module states its PROGRESS, the temporal properties that hold under its
+#     fairness, or says why it has none, and each has a run that fails without what
+#     it stands on. What must stay POSSIBLE is a state predicate p with `AG EF p`:
+#     from every reachable state a state where p holds can be reached (docs/adr/0115,
+#     D9). TLA+ cannot say it, so the gate decides it over the whole graph TLC writes.
+#
 # The manifest is complete in both directions: every configuration and module
 # under docs/formal is declared, and every PART of a model (a constant whose
 # value switches a piece of the protocol) has a run that takes it out. Exit 1 is a
@@ -55,8 +61,8 @@ TLC_HOLDS = 0
 TLC_SAFETY = 12
 TLC_LIVENESS = 13
 
-RUN_KEYS = {"config", "expect", "invariant", "property", "without", "against", "states", "promise", "why"}
-MODULE_KEYS = {"module", "decision", "parts", "runs", "promise", "refines", "abstract", "progress"}
+RUN_KEYS = {"config", "expect", "invariant", "property", "possible", "without", "against", "states", "promise", "why"}
+MODULE_KEYS = {"module", "decision", "parts", "runs", "promise", "refines", "abstract", "progress", "no_progress", "possible"}
 
 # The sections of a .cfg, and the ones that take states away from what TLC explores.
 SECTION = r"^(CONSTANTS?|INVARIANTS?|PROPERT(?:Y|IES)|SPECIFICATION|CHECK_DEADLOCK|SYMMETRY|VIEW|(?:ACTION_)?CONSTRAINTS?)\b"
@@ -123,6 +129,65 @@ def promise_only(config_text: str, promise: str) -> str:
     return "\n".join([*kept, "PROPERTIES", f"    {promise}", ""])
 
 
+def possible_module(module: str, predicate: str) -> str:
+    """A module whose states carry, as one more variable, whether `predicate` holds.
+
+    The variable is a function of the state, so the graph is the module's own. A module
+    whose specification is `Init`, `Next` and `vars` is what this reads.
+    """
+    return (
+        f"---- MODULE {module}Possible ----\nEXTENDS {module}\nVARIABLE sce_holds\n"
+        f"PossibleInit == Init /\\ sce_holds = ({predicate})\n"
+        f"PossibleNext == Next /\\ sce_holds' = ({predicate})'\n"
+        f"PossibleSpec == PossibleInit /\\ [][PossibleNext]_<<vars, sce_holds>>\n====\n"
+    )
+
+
+def possible_config(config_text: str) -> str:
+    """`config_text` with the specification that carries a predicate, and nothing to check."""
+    kept: list[str] = []
+    skipping = False
+    for line in config_text.splitlines():
+        if re.match(SECTION, line):
+            skipping = not line.startswith(("CONSTANT", "CHECK_DEADLOCK"))
+        if not skipping:
+            kept.append(line)
+    return "\n".join(["SPECIFICATION PossibleSpec", *kept, ""])
+
+
+def graph_of(dot: str) -> tuple[dict[str, bool], list[tuple[str, str]]]:
+    """The states of a graph TLC wrote, each with whether its predicate holds, and its steps."""
+    holds: dict[str, bool] = {}
+    steps: list[tuple[str, str]] = []
+    for line in dot.splitlines():
+        step = re.match(r"^(-?\d+) -> (-?\d+)", line)
+        if step:
+            steps.append((step.group(1), step.group(2)))
+            continue
+        state = re.match(r'^(-?\d+) \[label="(.*)"', line)
+        if state:
+            value = re.search(r"sce_holds = (TRUE|FALSE)", state.group(2))
+            if not value:
+                raise Problem(f"a state that does not say whether its predicate holds: {line[:120]}")
+            holds[state.group(1)] = value.group(1) == "TRUE"
+    return holds, steps
+
+
+def always_possible(holds: dict[str, bool], steps: list[tuple[str, str]]) -> bool:
+    """`AG EF` of the predicate: every state is in the backward closure of those that hold it."""
+    before: dict[str, list[str]] = {}
+    for origin, target in steps:
+        before.setdefault(target, []).append(origin)
+    reach = [state for state, held in holds.items() if held]
+    seen = set(reach)
+    while reach:
+        for origin in before.get(reach.pop(), ()):
+            if origin not in seen:
+                seen.add(origin)
+                reach.append(origin)
+    return bool(holds) and seen >= set(holds)
+
+
 def declared(manifest: dict, formal: Path) -> list[str]:
     """What is wrong with the declaration itself, each as one line."""
     problems: list[str] = []
@@ -169,8 +234,8 @@ def declared(manifest: dict, formal: Path) -> list[str]:
                 if "promise" in model and model["promise"] not in properties_of(formal / name):
                     problems.append(f"{name}: holds, and does not check {model['promise']}")
             elif run["expect"] == "violates":
-                if ("invariant" in run) == ("property" in run):
-                    problems.append(f"{name}: a violation names its invariant or its property")
+                if sum(key in run for key in ("invariant", "property", "possible")) != 1:
+                    problems.append(f"{name}: a violation names its invariant, its property or what is not possible")
                 # TLC does not name the temporal property it found violated, so it is the only one.
                 if "property" in run and properties_of(formal / name) != {run["property"]}:
                     problems.append(f"{name}: violates {run['property']}, and checks {sorted(properties_of(formal / name))}")
@@ -192,6 +257,15 @@ def declared(manifest: dict, formal: Path) -> list[str]:
             else:
                 problems.append(f"{name}: expect is 'holds' or 'violates', not {run['expect']!r}")
         present = [run for run in model["runs"] if (formal / run["config"]).is_file()]
+        if not model.get("abstract") and bool(model.get("progress")) == bool(model.get("no_progress")):
+            problems.append(f"{model['module']}: states its progress, or says why it has none")
+        for possible in model.get("possible", []):
+            for expect in ("holds", "violates"):
+                if not any(r["expect"] == expect and r.get("possible") == possible for r in present):
+                    problems.append(f"{model['module']}: no run {'says' if expect == 'holds' else 'shows'} "
+                                    f"{possible} {'always possible' if expect == 'holds' else 'lost'}")
+        for stray in {r.get("possible") for r in present} - {None} - set(model.get("possible", [])):
+            problems.append(f"{model['module']}: {stray} is checked and not declared possible")
         for progress in model.get("progress", []):
             if not any(r["expect"] == "holds" and progress in properties_of(formal / r["config"]) for r in present):
                 problems.append(f"{model['module']}: no run says {progress} holds")
@@ -282,6 +356,38 @@ def run_tlc(jar: Path, module: str, config: str, workers: str, promise: str | No
     return done.returncode, done.stdout + done.stderr
 
 
+def run_possible(jar: Path, module: str, config: str, predicate: str, workers: str) -> bool:
+    """Whether `AG EF predicate` holds of `module` in `config`."""
+    if not shutil.which("java"):
+        raise CannotRun("no java on PATH (Java 11 or later)")
+    with tempfile.TemporaryDirectory() as work:
+        for source in FORMAL.glob("*.tla"):
+            shutil.copy(source, work)
+        carried = f"{module}Possible"
+        (Path(work) / f"{carried}.tla").write_text(possible_module(module, predicate), encoding="utf-8")
+        text = (FORMAL / config).read_text(encoding="utf-8")
+        (Path(work) / f"{carried}.cfg").write_text(possible_config(text), encoding="utf-8")
+        done = subprocess.run(
+            ["java", "-XX:+UseParallelGC", "-cp", str(jar), "tlc2.TLC", "-workers", workers,
+             "-dump", "dot", "graph.dot", "-config", f"{carried}.cfg", f"{carried}.tla"],
+            cwd=work, capture_output=True, text=True, check=False,
+        )
+        if done.returncode != TLC_HOLDS:
+            raise Problem(f"TLC answered {done.returncode} where it was to write the graph:\n{done.stdout[-1500:]}")
+        holds, steps = graph_of((Path(work) / "graph.dot").read_text(encoding="utf-8"))
+    counts = re.findall(r"(\d+) distinct states found", done.stdout)
+    if not counts or int(counts[-1]) != len(holds):
+        raise Problem(f"TLC found {counts[-1:] or 'no'} states and wrote {len(holds)}")
+    return always_possible(holds, steps)
+
+
+def possible_judged(run: dict, possible: bool) -> str | None:
+    """What is wrong with whether the predicate of `run` is always possible."""
+    if possible == (run["expect"] == "holds"):
+        return None
+    return f"{run['possible']} is {'always' if possible else 'not always'} possible"
+
+
 def check(only: str | None, workers: str, record: bool) -> int:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     problems = declared(manifest, FORMAL)
@@ -300,7 +406,12 @@ def check(only: str | None, workers: str, record: bool) -> int:
                 counts = re.findall(r"(\d+) distinct states found", output)
                 if status == TLC_HOLDS and counts:
                     run["states"] = int(counts[-1])
-            wrong = judged(run, status, output)
+            wrong = None if run["expect"] == "violates" and "possible" in run else judged(run, status, output)
+            if wrong is None and "possible" in run:
+                try:
+                    wrong = possible_judged(run, run_possible(jar, model["module"], run["config"], run["possible"], workers))
+                except Problem as problem:
+                    wrong = str(problem)
             if wrong is None and "promise" in run:
                 promised, output = run_tlc(jar, model["module"], run["config"], workers, model["promise"])
                 wrong = promise_judged(run, promised)
@@ -336,7 +447,7 @@ class SelfTest(unittest.TestCase):
 
     def manifest(self) -> dict:
         return {"models": [{
-            "module": "M", "parts": {"Part": "TRUE"},
+            "module": "M", "parts": {"Part": "TRUE"}, "no_progress": "a model of one step",
             "runs": [
                 {"config": "M.cfg", "expect": "holds", "states": 7},
                 {"config": "M_without_part.cfg", "expect": "violates", "invariant": "Safe", "without": "Part"},
@@ -425,6 +536,7 @@ class SelfTest(unittest.TestCase):
     def progressing(self) -> dict:
         manifest = self.manifest()
         manifest["models"][0]["progress"] = ["Ends"]
+        del manifest["models"][0]["no_progress"]
         (self.formal / "M.cfg").write_text((self.formal / "M.cfg").read_text() + "PROPERTIES\n    Ends\n")
         (self.formal / "M_unfair.cfg").write_text("SPECIFICATION Spec\nCONSTANTS\n    Part = TRUE\nPROPERTIES\n    Ends\n")
         manifest["models"][0]["runs"].append(
@@ -456,6 +568,48 @@ class SelfTest(unittest.TestCase):
         manifest = self.progressing()
         (self.formal / "M_unfair.cfg").write_text((self.formal / "M_unfair.cfg").read_text() + "    Other\n")
         self.assertTrue(any("and checks" in p for p in declared(manifest, self.formal)))
+
+    def test_a_model_that_states_no_progress_and_gives_no_reason_is_found(self) -> None:
+        manifest = self.manifest()
+        del manifest["models"][0]["no_progress"]
+        self.assertTrue(any("why it has none" in p for p in declared(manifest, self.formal)))
+
+    def test_what_is_possible_is_shown_and_can_be_lost(self) -> None:
+        manifest = self.manifest()
+        manifest["models"][0]["possible"] = ["Reset"]
+        found = declared(manifest, self.formal)
+        self.assertTrue(any("always possible" in p for p in found) and any("lost" in p for p in found))
+        holds, lost = manifest["models"][0]["runs"]
+        holds["possible"] = "Reset"
+        lost["possible"] = "Reset"
+        del lost["invariant"]
+        self.assertEqual(declared(manifest, self.formal), [])
+        holds["possible"] = "Other"
+        self.assertTrue(any("not declared possible" in p for p in declared(manifest, self.formal)))
+
+    def test_a_graph_is_read_and_its_possibility_decided(self) -> None:
+        dot = ('strict digraph {\n1 [label="/\\\\ x = 1\\n/\\\\ sce_holds = FALSE",style = filled]\n'
+               '1 -> 2 [label="",color="black"];\n-2 [label="sce_holds = FALSE"];\n2 [label="sce_holds = TRUE"];\n'
+               '1 -> -2 [label=""];\n')
+        holds, steps = graph_of(dot)
+        self.assertEqual(holds, {"1": False, "-2": False, "2": True})
+        self.assertEqual(steps, [("1", "2"), ("1", "-2")])
+        self.assertFalse(always_possible(holds, steps))
+        self.assertTrue(always_possible(holds, [*steps, ("-2", "1")]))
+        self.assertFalse(always_possible({"1": False}, [("1", "1")]))
+        self.assertFalse(always_possible({}, []))
+        with self.assertRaises(Problem):
+            graph_of('1 [label="x = 1"];')
+
+    def test_a_possibility_judged_against_what_it_says(self) -> None:
+        self.assertIsNone(possible_judged({"expect": "holds", "possible": "P"}, True))
+        self.assertIsNotNone(possible_judged({"expect": "holds", "possible": "P"}, False))
+        self.assertIsNone(possible_judged({"expect": "violates", "possible": "P"}, False))
+        self.assertIsNotNone(possible_judged({"expect": "violates", "possible": "P"}, True))
+
+    def test_a_possible_configuration_keeps_its_constants_alone(self) -> None:
+        text = "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n    A = 1\nINVARIANTS\n    Safe\nPROPERTIES\n    Ends\n"
+        self.assertEqual(possible_config(text), "SPECIFICATION PossibleSpec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n    A = 1\n")
 
     def test_a_property_judged_by_its_own_status(self) -> None:
         run = {"expect": "violates", "property": "Ends"}
