@@ -44,7 +44,7 @@ use sce_rust_mesh::endpoint::{
     self, CausalVerdict, Endpoint, Environment, SharedEndpoint, Transport,
 };
 use sce_rust_mesh::inbound::Delivery;
-use sce_rust_mesh::router::{PeerConfig, Router};
+use sce_rust_mesh::router::{PeerConfig, Responders, Router};
 use sce_rust_mesh::wss::{self, LinkEvent, WssTransport, DEFAULT_KEEPALIVE};
 use sce_rust_runtime::Engine;
 use serde_json::Value;
@@ -152,7 +152,7 @@ fn people() -> PeerConfig {
             dedup: false,
             ordered: false,
         },
-        responders: &[PEOPLE],
+        responders: Responders::Named(&[PEOPLE]),
         deadline_ms: None,
         reply_events: &[],
         causal: Some(TRIO),

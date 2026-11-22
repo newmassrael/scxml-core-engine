@@ -39,10 +39,10 @@ use sce_rust_mesh::endpoint::{
 };
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::peers::{
-    EdgeRates, HttpsAuthenticator, KeyFrom, Machine, Peer, PeerLink, Receipt, Sessions,
+    EdgeRates, HttpsAuthenticator, Instances, KeyFrom, Machine, Peer, PeerLink, Receipt, Sessions,
 };
 use sce_rust_mesh::pool::{SessionEndpoint, SessionFactory, SessionMachine};
-use sce_rust_mesh::router::PeerConfig;
+use sce_rust_mesh::router::{PeerConfig, Responders};
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::saved_state::{SavedAct, SavedHostSend, SavedInvokes, SavedSend, SavedState};
 use sce_rust_runtime::HostSendRequest;
@@ -199,7 +199,7 @@ pub fn pooled(
                 dedup: true,
                 ordered: false,
             },
-            responders: &[CLIENT],
+            responders: Responders::Named(&[CLIENT]),
             deadline_ms: None,
             reply_events: replies,
             causal: None,
@@ -211,6 +211,8 @@ pub fn pooled(
         dedup_window: DEDUP_WINDOW,
         gap_timeout_ms: 50,
         peers,
+        open_peers: &[],
+        instances: Instances::One,
         sessions: Some(Sessions {
             key_from: KeyFrom::Field("key"),
             max_key_bytes: 32,

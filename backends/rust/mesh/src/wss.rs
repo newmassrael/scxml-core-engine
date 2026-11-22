@@ -401,7 +401,7 @@ mod tests {
     use super::*;
     use crate::endpoint::{Endpoint, Environment};
     use crate::inbound::Delivery;
-    use crate::router::{PeerConfig, Router};
+    use crate::router::{PeerConfig, Responders, Router};
     use sce_rust_runtime::HostSendRequest;
     use tokio::net::TcpListener;
 
@@ -465,7 +465,7 @@ mod tests {
                 },
                 // A generated peer table holds this as a `const`; a test
                 // names its peer at run time, so the one-element set is leaked.
-                responders: Box::leak(Box::new([peer])),
+                responders: Responders::Named(Box::leak(Box::new([peer]))),
                 deadline_ms: None,
                 reply_events: &[],
                 causal: None,
