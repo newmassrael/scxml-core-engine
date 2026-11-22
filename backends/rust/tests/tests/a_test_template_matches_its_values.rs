@@ -285,10 +285,11 @@ fn a_length_on_a_text_counts_a_multi_byte_character_as_one() {
 #[test]
 fn a_byte_string_literal_is_its_octets() {
     let voucher = voucher_is::value();
-    assert_eq!(voucher.voucher_code, [0x00, 0xff, 0x10, 0xa0]);
+    assert_eq!(voucher.voucher_code, &[0x00, 0xff, 0x10, 0xa0]);
     assert!(voucher_is::matches(&voucher));
     let mut other = voucher.clone();
-    other.voucher_code[3] = 0xa1;
+    other.voucher_code =
+        BoundedList::from_slice(&[0x00, 0xff, 0x10, 0xa1]).expect("four octets fit the code");
     assert!(!voucher_is::matches(&other));
 }
 
