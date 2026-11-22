@@ -256,3 +256,138 @@ fn a_step_that_does_not_hold_is_the_documents_refusal_on_every_route() {
         "{diagnostics}"
     );
 }
+
+/// The fixtures of the record grown at any depth (docs/adr/0112, D5).
+fn grown_fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/static_datamodel")
+}
+
+/// A directory holding both versions of `static_grow` and every document they import, and
+/// `declared.scxml`, the next version declaring the step from the first version's shape.
+fn grown_scratch() -> PathBuf {
+    let id = SCRATCH_ID.fetch_add(1, Ordering::SeqCst);
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("grown-record-{}-{id}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("shapes")).expect("create scratch dir");
+    for entry in std::fs::read_dir(grown_fixtures()).expect("the fixtures") {
+        let path = entry.expect("an entry").path();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+        if name.starts_with("grow_") || name.starts_with("static_grow_") {
+            std::fs::copy(&path, dir.join(&name)).expect("copy a fixture");
+        }
+    }
+    // The next version with its state renamed, so a step is needed, and declared: it accounts
+    // for the state by a rename and for every record grown by a revision by nothing.
+    let next = std::fs::read_to_string(dir.join("static_grow_2.scxml")).expect("the next version");
+    let declared = next
+        .replace(r#"initial="holding""#, r#"initial="keeping""#)
+        .replace(r#"<state id="holding">"#, r#"<state id="keeping">"#)
+        .replace(
+            r#"name="static_grow_2">"#,
+            r#"name="static_grow_2">
+  <sce:migration from="shapes/1.shape" to="shapes/3.shape">
+    <sce:rename kind="state" from="holding" to="keeping"/>
+  </sce:migration>"#,
+        );
+    assert_ne!(declared, next, "the step is written into the next version");
+    std::fs::write(dir.join("declared.scxml"), declared).expect("write the declared version");
+    dir
+}
+
+/// The shape `document` in `dir` is saved under, written to `shapes/<n>.shape`.
+fn shape_of(dir: &Path, document: &str, n: u32) -> String {
+    let path = format!("shapes/{n}.shape");
+    let run = codegen(
+        dir,
+        &["shape", document, "-o", &path, "--error-format=json"],
+    );
+    assert!(
+        run.status.success(),
+        "shape of {document}: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    std::fs::read_to_string(dir.join(path)).expect("the shape written")
+}
+
+/// docs/adr/0112, D5, and docs/adr/0044: a record is named in a shape by its schema's event and
+/// its FIRST revision's fields, at every depth it is held at, so a document whose records grew by
+/// a revision (a number with a default, a list, an optional record, an optional text, at the top
+/// level and nested) holds the shape it held, and a step from the earlier version's shape needs no
+/// element for any of them: the build plans it for Rust and C++, whose restores grow a record
+/// held below a variable's value, and every other lane refuses the document by name
+/// (docs/adr/0109, D0). Red if a record that holds a composition is named by every field it
+/// has, or by its document's file, as it was, which made the next revision a change of type the
+/// step refused.
+#[test]
+fn a_record_grown_at_any_depth_is_carried_with_no_element() {
+    let dir = grown_scratch();
+    let first = shape_of(&dir, "static_grow_1.scxml", 1);
+    let next = shape_of(&dir, "static_grow_2.scxml", 2);
+    assert_eq!(
+        first, next,
+        "a record grown by a revision moved the shape of the document that holds it"
+    );
+    for named in ["grow.outer", "grow.inner"] {
+        assert!(
+            first.contains(named),
+            "a record is named by its schema's event, {named}: {first}"
+        );
+    }
+    for file_name in ["grow_outer_1", "grow_inner_1", "grow_outer_2"] {
+        assert!(
+            !first.contains(file_name),
+            "a record is not named by its document's file, {file_name}: {first}"
+        );
+    }
+    for added in ["rank", "tags", "leaf", "memo"] {
+        assert!(
+            !first.contains(added),
+            "a field a later revision added is no part of the shape: {first}"
+        );
+    }
+    shape_of(&dir, "declared.scxml", 3);
+    for language in ["rust", "cpp"] {
+        let (status, _, diagnostics) = generate_named(&dir, "declared.scxml", language);
+        assert_eq!(status, Some(0), "{language}: {diagnostics}");
+    }
+    for language in ["kotlin", "go"] {
+        let (status, _, diagnostics) = generate_named(&dir, "static_grow_2.scxml", language);
+        assert_eq!(
+            status,
+            Some(7),
+            "{language} refuses it by name: {diagnostics}"
+        );
+        assert!(
+            diagnostics.contains("docs/adr/0112"),
+            "{language} names why: {diagnostics}"
+        );
+    }
+}
+
+/// `generate -l <language>` of `document` in `dir`: its exit status, what it wrote and its
+/// diagnostics.
+fn generate_named(dir: &Path, document: &str, language: &str) -> (Option<i32>, String, String) {
+    let out = dir.join(format!("out-{language}"));
+    let run = codegen(
+        dir,
+        &[
+            "generate",
+            document,
+            "-l",
+            language,
+            "-o",
+            out.to_str().unwrap(),
+            "--error-format=json",
+        ],
+    );
+    (
+        run.status.code(),
+        String::from_utf8_lossy(&run.stdout).into_owned(),
+        String::from_utf8_lossy(&run.stderr).into_owned(),
+    )
+}

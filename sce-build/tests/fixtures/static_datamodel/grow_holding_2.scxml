@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The event that hands static_grow_2.scxml an outer record, which a variable holds as optional.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="event-schema" name="grow_holding_2" sce:event-name="grow.holding">
+  <sce:import kind="event-schema" src="grow_outer_2.scxml" as="Outer"/>
+  <datamodel>
+    <data id="outer" sce:type="optional&lt;record:Outer&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

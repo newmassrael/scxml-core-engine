@@ -521,6 +521,10 @@ inline const ::SCE::Saved::SavedShape &savedShape() {
         built.revised = "{{ static_saved_shape.revised | escape_cpp }}";
         built.format2First = "{{ static_saved_shape.format2_first | escape_cpp }}";
         built.format2Revised = "{{ static_saved_shape.format2_revised | escape_cpp }}";
+{# docs/adr/0112, D5: the shapes a build before it named a state of this document by. #}
+{% for digest in static_saved_shape.legacy %}
+        built.legacy.push_back("{{ digest | escape_cpp }}");
+{% endfor %}
 {# The configuration of a product line this machine was built for (docs/adr/0057, section 7),
     one feature to a statement, so the machine generated for every build of the line holds each
     feature under its own condition (section 10). Absent for a machine of no product line. #}
@@ -542,8 +546,24 @@ inline const ::SCE::Saved::SavedShape &savedShape() {
 {% for field in record.widened %}
             record.widened.push_back(::SCE::Saved::WidenedField{"{{ field.id | escape_cpp }}", {{ field.since }}, {{ field.optional_since }}});
 {% endfor %}
+            record.trackedBefore = {{ "true" if record.tracked_before else "false" }};
 {% for holder in record.holders %}
-            record.holders.push_back(::SCE::Saved::RecordHolder{"{{ holder.variable | escape_cpp }}", {{ "true" if holder.list else "false" }}});
+            {
+                ::SCE::Saved::RecordHolder holder{"{{ holder.variable | escape_cpp }}", {{ "true" if holder.list else "false" }}, {% if holder.part is not none %}std::optional<std::size_t>({{ holder.part }}){% else %}std::nullopt{% endif %}, {}};
+{# docs/adr/0112, D5: the steps from the variable's value to a record held below it. #}
+{% for step in holder.path %}
+{% if step.kind == "field" %}
+                holder.path.push_back(::SCE::Saved::HeldStep{::SCE::Saved::HeldStep::Kind::Field, "{{ step.id | escape_cpp }}", 0, {}, {}});
+{% elif step.kind == "items" %}
+                holder.path.push_back(::SCE::Saved::HeldStep{::SCE::Saved::HeldStep::Kind::Items, {}, 0, {}, {}});
+{% elif step.kind == "part" %}
+                holder.path.push_back(::SCE::Saved::HeldStep{::SCE::Saved::HeldStep::Kind::Part, {}, {{ step.index }}, {}, {}});
+{% else %}
+                holder.path.push_back(::SCE::Saved::HeldStep{::SCE::Saved::HeldStep::Kind::Case, {}, 0, "{{ step.tag | escape_cpp }}", "{{ step.variant | escape_cpp }}"});
+{% endif %}
+{% endfor %}
+                record.holders.push_back(std::move(holder));
+            }
 {% endfor %}
             built.records.push_back(std::move(record));
         }

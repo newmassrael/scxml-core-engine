@@ -2361,6 +2361,7 @@ mod tests {
                 .collect(),
             scope,
             added: Default::default(),
+            lineage: Default::default(),
         }
     }
 

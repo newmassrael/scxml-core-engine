@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A union whose `single` case holds the inner record at its first revision
+  (grow_inner_1.scxml): a case's record grows at its revisions' defaults as every record does
+  (docs/adr/0112, D5).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="union" name="grow_shape_1">
+  <sce:import kind="enum" src="grow_kind.scxml" as="Kind"/>
+  <sce:import kind="event-schema" src="grow_inner_1.scxml" as="Inner"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:Kind">
+      <sce:case variant="single" record="Inner"/>
+      <sce:case variant="none"/>
+    </data>
+  </datamodel>
+</scxml>

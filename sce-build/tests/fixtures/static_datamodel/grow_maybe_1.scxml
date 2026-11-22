@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The event that hands static_grow_1.scxml an inner record that may be absent.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="event-schema" name="grow_maybe_1" sce:event-name="grow.maybe">
+  <sce:import kind="event-schema" src="grow_inner_1.scxml" as="Inner"/>
+  <datamodel>
+    <data id="inner" sce:type="optional&lt;record:Inner&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

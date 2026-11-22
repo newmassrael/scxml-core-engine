@@ -248,6 +248,50 @@ fn scoped_record_at(
             .collect(),
         scope: type_scope_at(imports, base_dir, walk),
         added: added_fields(&schema.fields),
+        lineage: scoped_lineage(schema, |alias| enum_model_in(imports, base_dir, alias)),
+    }
+}
+
+/// The identity and revisions a saved state names a record of `schema` by
+/// (docs/adr/0112, D5), the enum each field is of read by `enum_of` from the
+/// schema's own imports.
+pub fn scoped_lineage(
+    schema: &crate::forge::model::EventSchemaModel,
+    enum_of: impl Fn(&str) -> Option<crate::forge::model::EnumModel>,
+) -> crate::forge::value_type::ScopedLineage {
+    use crate::forge::model::SceType;
+    use crate::forge::value_type::ValueType;
+    let enum_alias = |ty: &ValueType| match ty {
+        ValueType::Scalar(SceType::Enum(reference)) => Some(reference.alias.clone()),
+        ValueType::Optional { elem } => match &**elem {
+            ValueType::Scalar(SceType::Enum(reference)) => Some(reference.alias.clone()),
+            _ => None,
+        },
+        _ => None,
+    };
+    crate::forge::value_type::ScopedLineage {
+        event: schema.event_name.clone(),
+        revision: schema.revision(),
+        optional_since: schema
+            .fields
+            .iter()
+            .filter_map(|f| Some((f.id.clone(), f.optional_since?)))
+            .collect(),
+        first_variants: schema
+            .fields
+            .iter()
+            .filter_map(|f| {
+                let model = enum_of(&enum_alias(&f.sce_type)?)?;
+                let mut names: Vec<String> = model
+                    .variants
+                    .iter()
+                    .filter(|v| v.since.is_none())
+                    .map(|v| v.name.clone())
+                    .collect();
+                names.sort_unstable();
+                Some((f.id.clone(), names))
+            })
+            .collect(),
     }
 }
 

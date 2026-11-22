@@ -137,6 +137,7 @@ mod tests {
                 .collect(),
             scope: TypeScope::default(),
             added: Default::default(),
+            lineage: Default::default(),
         }
     }
 

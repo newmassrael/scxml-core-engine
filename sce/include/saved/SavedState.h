@@ -342,10 +342,41 @@ struct WidenedField {
     int optionalSince = 0;
 };
 
-/// A variable that holds a record of a RecordLineage.
+/// One step of a RecordHolder's path, from a saved value to a value it holds (docs/adr/0112,
+/// D5). An absent optional value (`null`) holds nothing, and a present one is the value it
+/// holds, so it takes no step.
+struct HeldStep {
+    enum class Kind {
+        /// The member `id` of a saved record.
+        Field,
+        /// Each element of a saved list, or each key of a saved set.
+        Items,
+        /// The part `index` of a saved map entry `[key, value]`.
+        Part,
+        /// A saved union in the case `variant`, the text under its tag's key `tag`: the case's
+        /// record is the same object, beside the tag.
+        Case,
+    };
+    Kind kind = Kind::Items;
+    std::string id;
+    std::size_t index = 0;
+    std::string tag;
+    std::string variant;
+};
+
+/// Where a record of a RecordLineage is held: by a variable, an element of it, or below either.
 struct RecordHolder {
     std::string variable;
+    /// Whether the variable holds a list of records rather than one: a list's elements, a set's
+    /// keys and a map's entries alike, each an item of an array.
     bool list = false;
+    /// For a map variable, the part of each saved entry `[key, value]` the record is
+    /// (docs/adr/0108, D8): 0 its key and 1 its value; none for any other variable.
+    std::optional<std::size_t> part;
+    /// The steps from that value to the record, for a record held below it (docs/adr/0112, D5): a
+    /// field of a record, the elements of a list, a part of a map's entry, the case of a union.
+    /// Empty for the value itself.
+    std::vector<HeldStep> path;
 };
 
 /// A record schema a machine's variables are of, as a saved state names it.
@@ -360,7 +391,11 @@ struct RecordLineage {
     std::vector<AddedField> added;
     /// Each field a revision widened from `T` to `optional<T>`, in the schema's order.
     std::vector<WidenedField> widened;
-    /// The variables that hold a record of it, or a list of them.
+    /// Whether a build before docs/adr/0112 named this record in a state's `revisions`: a record
+    /// of entries a variable or its elements hold. A state of a SavedShape::legacy shape that
+    /// names none of a record it did not name holds it at this machine's revision.
+    bool trackedBefore = false;
+    /// Where a record of it is held.
     std::vector<RecordHolder> holders;
 };
 
@@ -439,6 +474,11 @@ struct SavedShape {
     std::string format2First;
     /// `revised` as a tree names it.
     std::string format2Revised;
+    /// The shapes a build before docs/adr/0112 named a state of this document by, where it
+    /// spelled the document otherwise (a record that holds a composition, a union's case): a
+    /// state it saved holds the same values and is restored as one of this shape, each record that
+    /// build did not name in `revisions` (RecordLineage::trackedBefore) at this machine's revision.
+    std::vector<std::string> legacy;
     /// Each record schema a variable is of, by the event it declares, ordered by it.
     std::vector<RecordLineage> records;
     /// Each enum a value of the state is of, by its key, ordered by it.
@@ -1622,27 +1662,95 @@ inline void checkWidenedRecord(const JsonValue &value, const std::string &what, 
     }
 }
 
-/// Refuses a `null` the record, or each record of the list, `holder` holds in `saved` has in a
-/// field of `widened`, the fields of `record` that a revision after `at`, the one it was saved
-/// at, widened to optional: at `at` each was a value of `T`. What is not a record where one is
-/// held, and a member the record lacks, is left for the variable's own read to refuse.
+/// The steps from a variable's saved value to each record `holder` holds: the elements of the
+/// array the variable is, the part of each map entry, and the holder's own path.
+inline std::vector<HeldStep> heldSteps(const RecordHolder &holder) {
+    std::vector<HeldStep> steps;
+    if (holder.list) {
+        steps.push_back(HeldStep{HeldStep::Kind::Items, {}, 0, {}, {}});
+        if (holder.part.has_value()) {
+            steps.push_back(HeldStep{HeldStep::Kind::Part, {}, *holder.part, {}, {}});
+        }
+    }
+    steps.insert(steps.end(), holder.path.begin(), holder.path.end());
+    return steps;
+}
+
+/// `value` with `rebuild` applied to every record `steps`, from `at` on, reach in it, each named
+/// by its path from `what` (docs/adr/0112, D5). A value of another kind where a step expects one is
+/// left for the variable's own read to refuse, and an absent optional value holds nothing.
+inline JsonValue rebuiltAt(const JsonValue &value, const std::vector<HeldStep> &steps, std::size_t at,
+                           const std::string &what,
+                           const std::function<JsonValue(const JsonValue &, const std::string &)> &rebuild) {
+    if (value.isNull()) {
+        return value;
+    }
+    if (at == steps.size()) {
+        return rebuild(value, what);
+    }
+    const HeldStep &step = steps[at];
+    switch (step.kind) {
+    case HeldStep::Kind::Field: {
+        if (!value.isObject()) {
+            return value;
+        }
+        const JsonValue *member = value.asObject().get(step.id);
+        if (member == nullptr) {
+            return value;
+        }
+        JsonObject rebuilt = value.asObject();
+        rebuilt.set(step.id, rebuiltAt(*member, steps, at + 1, what + "." + step.id, rebuild));
+        return JsonValue(std::move(rebuilt));
+    }
+    case HeldStep::Kind::Items: {
+        if (!value.isArray()) {
+            return value;
+        }
+        JsonArray rebuilt;
+        const JsonArray &items = value.asArray();
+        for (std::size_t index = 0; index < items.size(); ++index) {
+            rebuilt.push_back(
+                rebuiltAt(items[index], steps, at + 1, what + "[" + std::to_string(index) + "]", rebuild));
+        }
+        return JsonValue(std::move(rebuilt));
+    }
+    case HeldStep::Kind::Part: {
+        if (!value.isArray() || step.index >= value.asArray().size()) {
+            return value;
+        }
+        JsonArray rebuilt = value.asArray();
+        rebuilt[step.index] =
+            rebuiltAt(rebuilt[step.index], steps, at + 1, what + "[" + std::to_string(step.index) + "]", rebuild);
+        return JsonValue(std::move(rebuilt));
+    }
+    case HeldStep::Kind::Case: {
+        if (!value.isObject()) {
+            return value;
+        }
+        const JsonValue *tag = value.asObject().get(step.tag);
+        if (tag == nullptr || !tag->isString() || tag->asString() != step.variant) {
+            return value;
+        }
+        return rebuiltAt(value, steps, at + 1, what, rebuild);
+    }
+    }
+    return value;
+}
+
+/// Refuses a `null` any record `holder` holds in `saved` has in a field of `widened`, the fields
+/// of `record` that a revision after `at`, the one it was saved at, widened to optional: at `at`
+/// each was a value of `T`. What is not a record where one is held, and a member the record lacks,
+/// is left for the variable's own read to refuse.
 inline void checkWidenedHolder(const SavedState &saved, const RecordLineage &record, const RecordHolder &holder, int at,
                                const std::vector<const WidenedField *> &widened) {
     const JsonValue *value = saved.variables.get(holder.variable);
     if (value == nullptr) {
         return;
     }
-    if (!holder.list) {
-        checkWidenedRecord(*value, holder.variable, record, at, widened);
-        return;
-    }
-    if (!value->isArray()) {
-        return;
-    }
-    const JsonArray &items = value->asArray();
-    for (std::size_t index = 0; index < items.size(); ++index) {
-        checkWidenedRecord(items[index], holder.variable + "[" + std::to_string(index) + "]", record, at, widened);
-    }
+    rebuiltAt(*value, heldSteps(holder), 0, holder.variable, [&](const JsonValue &held, const std::string &what) {
+        checkWidenedRecord(held, what, record, at, widened);
+        return held;
+    });
 }
 
 /// The name `table` carries `id` to, or nullptr when it carries it nowhere.
@@ -1883,7 +1991,11 @@ inline SavedState upgradeSavedState(const SavedState &given, const SavedShape &s
     const bool tree = saved.format() != kSavedFormat1;
     const std::string &first = tree ? shape.format2First : shape.first;
     const std::string &revised = tree ? shape.format2Revised : shape.revised;
-    if (saved.revisions.empty()) {
+    // docs/adr/0112, D5: a state a build before it saved, under the spelling it gave the
+    // document, holds the same values as one of this shape.
+    const bool legacy = std::find(shape.legacy.begin(), shape.legacy.end(), saved.shape) != shape.legacy.end();
+    if (legacy) {
+    } else if (saved.revisions.empty()) {
         checkSavedShape(saved, first);
     } else if (saved.shape == first) {
         throw StateRefusal(
@@ -1957,8 +2069,19 @@ inline SavedState upgradeSavedState(const SavedState &given, const SavedShape &s
     // `null` there is no absence and the state is not one any build wrote. Judged on the values
     // as saved, before a record is grown by defaults, which are this machine's and may be `null`
     // for a field added absent.
+    // The revision of a record's schema the state was saved at: the one its `revisions` names,
+    // the first where it names none, or, for a state of a legacy shape that names none of a
+    // record its build did not name, this machine's (docs/adr/0112, D5).
+    const auto recordAt = [&](const RecordLineage &record) {
+        for (const SavedRevision &named : saved.revisions) {
+            if (named.key == record.event) {
+                return named.revision;
+            }
+        }
+        return legacy && !record.trackedBefore ? record.revision : 1;
+    };
     for (const RecordLineage &record : shape.records) {
-        const int at = revisionOf(record.event);
+        const int at = recordAt(record);
         std::vector<const WidenedField *> held;
         for (const WidenedField &field : record.widened) {
             if (field.since <= at && at < field.optionalSince) {
@@ -1974,7 +2097,7 @@ inline SavedState upgradeSavedState(const SavedState &given, const SavedShape &s
     }
     SavedState upgraded = saved;
     for (const RecordLineage &record : shape.records) {
-        const int at = revisionOf(record.event);
+        const int at = recordAt(record);
         std::vector<const AddedField *> added;
         for (const AddedField &field : record.added) {
             if (field.since > at) {
@@ -1984,26 +2107,18 @@ inline SavedState upgradeSavedState(const SavedState &given, const SavedShape &s
         if (added.empty()) {
             continue;
         }
+        // Every record of the schema the state holds, at any depth (docs/adr/0112, D5), grown at
+        // the defaults of the revisions after `at`.
         for (const RecordHolder &holder : record.holders) {
             const JsonValue *value = upgraded.variables.get(holder.variable);
             if (value == nullptr) {
                 continue;
             }
-            if (!holder.list) {
-                upgraded.variables.set(holder.variable,
-                                       detail::grownRecord(*value, holder.variable, record, at, added));
-                continue;
-            }
-            if (!value->isArray()) {
-                continue;
-            }
-            JsonArray grownItems;
-            const JsonArray &items = value->asArray();
-            for (std::size_t index = 0; index < items.size(); ++index) {
-                grownItems.push_back(detail::grownRecord(
-                    items[index], holder.variable + "[" + std::to_string(index) + "]", record, at, added));
-            }
-            upgraded.variables.set(holder.variable, JsonValue(std::move(grownItems)));
+            upgraded.variables.set(holder.variable,
+                                   detail::rebuiltAt(*value, detail::heldSteps(holder), 0, holder.variable,
+                                                     [&](const JsonValue &held, const std::string &what) {
+                                                         return detail::grownRecord(held, what, record, at, added);
+                                                     }));
         }
     }
     return upgraded;

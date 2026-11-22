@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The event that hands static_grow_2.scxml a union whose case holds an inner record.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="event-schema" name="grow_shaped_2" sce:event-name="grow.shaped">
+  <sce:import kind="union" src="grow_shape_2.scxml" as="Shape"/>
+  <datamodel>
+    <data id="shape" sce:type="union:Shape" sce:direction="in"/>
+  </datamodel>
+</scxml>
