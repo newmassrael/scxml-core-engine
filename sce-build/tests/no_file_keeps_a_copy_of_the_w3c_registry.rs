@@ -110,12 +110,30 @@ struct Coincidence {
     why: &'static str,
 }
 
-const COINCIDENCES: &[Coincidence] = &[Coincidence {
-    path: "tools/reference-oracles/davx5_sync.py",
-    line_contains: "statuses = [",
-    why: "the HTTP status codes a CalDAV client is answered with; several of them are \
-          also W3C test numbers",
-}];
+const COINCIDENCES: &[Coincidence] = &[
+    Coincidence {
+        path: "tools/reference-oracles/davx5_sync.py",
+        line_contains: "statuses = [",
+        why: "the HTTP status codes a CalDAV client is answered with; several of them are \
+              also W3C test numbers",
+    },
+    // The Swift numerical tests are generated from tests/forge/conformance/
+    // numerical_reference.json, whose byte-string cases fill a field of 200 bytes
+    // with the counting sequence 0 to 199 so that its length takes two bytes; the
+    // sequence passes through runs of registry ids.
+    Coincidence {
+        path: "backends/swift/tests/Tests/StaticDatamodelTests/NumericalConformanceTests.swift",
+        line_contains: "try #require(BoundedBytes<",
+        why: "the bytes a generated case hands a codec's byte-string field, counting from \
+              0 to 199",
+    },
+    Coincidence {
+        path: "backends/swift/tests/Tests/StaticDatamodelTests/NumericalConformanceTests.swift",
+        line_contains: "let expected: [UInt8] = [",
+        why: "the frame a generated case expects a codec to write, whose byte-string field \
+              counts from 0 to 199",
+    },
+];
 
 /// One run of registry ids: where it starts and the ids it names.
 #[derive(Debug)]
