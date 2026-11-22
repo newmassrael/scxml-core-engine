@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
+#include "sce/text.h"
 
 typedef struct {
     bool        valid;
@@ -28,7 +28,7 @@ static inline validator_rpm_check_result_t validator_rpm_check_validate(validato
         if (sce_delta > 500)
             return (validator_rpm_check_result_t){false, "rpm_rate_of_change_exceeded"};
     }
-    if (!(rpm == 0 || strcmp(engine_state, "STOP") != 0))
+    if (!(rpm == 0 || sce_text_compare(engine_state, "STOP") != 0))
         return (validator_rpm_check_result_t){false, "plausibility_failed"};
     _st->prev_rpm_ = rpm;
     return (validator_rpm_check_result_t){true, ""};

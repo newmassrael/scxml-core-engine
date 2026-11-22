@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <string.h>
+#include "sce/text.h"
 
 #include <sce/portability.h>
 #include "sce/forge/codec.h"

@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <string.h>
+#include "sce/text.h"
 #include "sce/forge/limits.h"
 #include "sce/forge/procedure.h"
 #include "filter_low_pass.h"

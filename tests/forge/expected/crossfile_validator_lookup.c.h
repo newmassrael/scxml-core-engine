@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
+#include "sce/text.h"
 #include "lookup_severity_default.h"
 
 typedef struct {

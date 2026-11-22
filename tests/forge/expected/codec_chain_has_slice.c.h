@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <string.h>
+#include "sce/text.h"
 
 #include "sce/forge/codec.h"
 #include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
