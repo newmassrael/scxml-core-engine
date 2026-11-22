@@ -13,6 +13,7 @@ use std::process::Command;
 mod common;
 
 use common::composed_lowering::{lowering, refusing_or_skip};
+use sce_build::forge::event_schema_check::ComposedLowering;
 use sce_build::generator::Language;
 use tempfile::tempdir;
 
@@ -222,7 +223,8 @@ const LIFT_LISTED: &str =
 /// A schema whose field holds a list is lifted as any other is (docs/adr/0087,
 /// "Landing order" item 8): the judge takes it, and each backend whose row of the
 /// one table holds a variable of such a record (`ComposedLowering::records`) lowers
-/// the lift into it.
+/// the lift into it, and so does the Interpreter's lowering where its own row
+/// (`ComposedLowering::ECMASCRIPT`) holds one.
 #[test]
 fn a_schema_that_holds_a_list_is_lifted_into_a_variable_of_its_record() {
     let siblings = siblings();
@@ -243,12 +245,19 @@ fn a_schema_that_holds_a_list_is_lifted_into_a_variable_of_its_record() {
         let (ok, out) = run(&["check", "-l", language], &doc, &borrowed);
         assert!(ok, "{language} lifts a record that holds a list:\n{out}");
     }
+    if ComposedLowering::ECMASCRIPT.records {
+        let (ok, out) = run(&["lower"], &doc, &borrowed);
+        assert!(
+            ok,
+            "the Interpreter lifts a record that holds a list:\n{out}"
+        );
+    }
 }
 
 /// Pinned by `ComposedLowering::of` (`sce-build/src/forge/event_schema_check.rs`):
 /// each backend whose row holds no variable of a record that holds a list refuses
 /// that variable by its own name where it is declared, and with it the lift that
-/// writes it; so does the Interpreter's lowering, whose row holds none either.
+/// writes it; so does the Interpreter's lowering where its row holds none either.
 #[test]
 fn a_schema_that_holds_a_list_is_refused_by_name_where_its_variable_is_not_held() {
     let siblings = siblings();
@@ -273,6 +282,14 @@ fn a_schema_that_holds_a_list_is_refused_by_name_where_its_variable_is_not_held(
             out.contains(&format!("has no {language} lowering")),
             "the refusal names the backend:\n{out}"
         );
+    }
+    if ComposedLowering::ECMASCRIPT.records {
+        eprintln!(
+            "skipped: the Interpreter half of \
+             a_schema_that_holds_a_list_is_refused_by_name_where_its_variable_is_not_held: \
+             its row holds a variable of such a record (ComposedLowering::ECMASCRIPT)"
+        );
+        return;
     }
     let (ok, out) = run(&["lower"], &doc, &borrowed);
     assert!(!ok, "the Interpreter holds no such variable yet:\n{out}");
