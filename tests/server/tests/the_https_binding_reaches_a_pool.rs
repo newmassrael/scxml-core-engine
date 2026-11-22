@@ -39,7 +39,7 @@ use sce_rust_mesh::outbound::RetryPolicy;
 use sce_rust_mesh::peers::EdgeRates;
 use sce_rust_mesh::pool::{Fate, Pool, PoolConfig};
 use sce_rust_mesh::reconnect::Backoff;
-use sce_rust_mesh::router::{PeerConfig, Router};
+use sce_rust_mesh::router::{PeerConfig, Responders, Router};
 use sce_rust_mesh::rpc::MESH_EVENT_PARAM;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::HostInvokeRequest;
@@ -409,7 +409,7 @@ impl Client {
                     dedup: true,
                     ordered: false,
                 },
-                responders: &[ledger::MACHINE_NAME],
+                responders: Responders::Named(&[ledger::MACHINE_NAME]),
                 deadline_ms: None,
                 reply_events: &[],
                 causal: None,

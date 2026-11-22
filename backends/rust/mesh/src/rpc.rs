@@ -19,6 +19,7 @@ use alloc::vec::Vec;
 use sce_rust_runtime::ErrorReason;
 
 use crate::generated::rpc_status::RpcStatus;
+use crate::router::Responders;
 use crate::signal::Json;
 
 /// The `<param>` a lowered Mesh request carries its event name in.
@@ -36,8 +37,8 @@ pub(crate) struct Pending {
     pub token: u64,
     /// The peer it was sent to, whose link carries its reply.
     pub target: String,
-    /// The machines whose reply may answer it (§mesh-14.6).
-    pub responders: &'static [&'static str],
+    /// Whose reply may answer it.
+    pub responders: Responders,
     /// The monotonic time it stops waiting, if it has a deadline.
     pub expires_ms: Option<i64>,
     /// The request envelope as it was written, what is sent again when the
@@ -77,7 +78,7 @@ impl Correlation {
     pub fn check(&self, wire_id: &[u8; 16], peer: &str) -> Answer {
         match self.pending.get(wire_id) {
             None => Answer::Unknown,
-            Some(pending) if pending.responders.contains(&peer) => Answer::Admitted,
+            Some(pending) if pending.responders.admits(peer) => Answer::Admitted,
             Some(_) => Answer::Undeclared,
         }
     }
@@ -259,7 +260,7 @@ mod tests {
             invoke_id: invoke_id.into(),
             token,
             target: "cloud".into(),
-            responders: &["cloud"],
+            responders: Responders::Named(&["cloud"]),
             expires_ms,
             request: invoke_id.as_bytes().to_vec(),
         }
@@ -320,6 +321,23 @@ mod tests {
         assert!(matches!(table.check(&WIRE, "cloud"), Answer::Admitted));
         assert!(table.retire(&WIRE).is_some());
         assert!(matches!(table.check(&WIRE, "cloud"), Answer::Unknown));
+    }
+
+    /// docs/adr/0113, D3: a request to an instance is answered by the instance
+    /// it was sent to, so a machine's bare name answers none. Red if an empty
+    /// list, or the machine's name, is read for it.
+    #[test]
+    fn no_machine_name_answers_a_request_to_an_instance() {
+        let mut table = Correlation::default();
+        table.register(
+            WIRE,
+            Pending {
+                responders: Responders::Instance,
+                ..pending("ask", 1, None)
+            },
+        );
+        assert!(matches!(table.check(&WIRE, "cloud"), Answer::Undeclared));
+        assert!(table.is_waiting(&WIRE), "the request stays answerable");
     }
 
     /// A cancel forgets only the start it names: a state entered again

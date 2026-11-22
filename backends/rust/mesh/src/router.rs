@@ -69,10 +69,8 @@ pub struct PeerConfig {
     pub stamp_sequence: bool,
     /// How envelopes FROM this peer are delivered (§mesh-10.5, §mesh-10.6).
     pub delivery: Delivery,
-    /// The machines whose reply may answer a request sent to this peer —
-    /// the binding's `reply_from:`, or the peer alone (§mesh-14.6). Never
-    /// empty.
-    pub responders: &'static [&'static str],
+    /// Whose reply may answer a request sent to this peer.
+    pub responders: Responders,
     /// deploy.yaml's binding-level request deadline, which a request to this
     /// peer takes when it carries no `_mesh_deadline_ms`; `None` lets it wait
     /// for its reply indefinitely (§mesh-9.5).
@@ -87,6 +85,31 @@ pub struct PeerConfig {
     /// through its causal layer ([`Router::start_causal`]), which then
     /// replaces the duplicate window and the sequence buffer for it.
     pub causal: Option<CausalGroup>,
+}
+
+/// Whose reply may answer a request sent to a peer
+/// ([`PeerConfig::responders`], §mesh-14.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Responders {
+    /// The machines named: the binding's `reply_from:`, or the peer alone.
+    /// Never empty in a table the build writes.
+    Named(&'static [&'static str]),
+    /// The instance the request was sent to, and no other: the peer is an
+    /// instance of an open machine (docs/adr/0113, D3), and the list of its
+    /// names is one no deployment can write.
+    Instance,
+}
+
+impl Responders {
+    /// Whether a reply that arrived on the link of `peer` may answer the
+    /// request. A machine's name is no instance's, so no name answers under
+    /// [`Self::Instance`].
+    pub(crate) fn admits(self, peer: &str) -> bool {
+        match self {
+            Self::Named(names) => names.contains(&peer),
+            Self::Instance => false,
+        }
+    }
 }
 
 impl PeerConfig {
@@ -2094,7 +2117,7 @@ mod tests {
             ordered: true,
         },
         // The peer these tests bind is `hmi`; `pair` gives each side its own.
-        responders: &["hmi"],
+        responders: Responders::Named(&["hmi"]),
         deadline_ms: None,
         reply_events: &[],
         causal: None,
@@ -2137,14 +2160,14 @@ mod tests {
         ecu.add_peer(
             "hmi",
             PeerConfig {
-                responders: &["hmi"],
+                responders: Responders::Named(&["hmi"]),
                 ..config
             },
         );
         hmi.add_peer(
             "ecu",
             PeerConfig {
-                responders: &["ecu"],
+                responders: Responders::Named(&["ecu"]),
                 ..config
             },
         );
@@ -2435,7 +2458,7 @@ mod tests {
         let mut ecu = Router::new("ecu", 8, 50).unwrap();
         let config = PeerConfig {
             buffer: None,
-            responders: &["hmi"],
+            responders: Responders::Named(&["hmi"]),
             deadline_ms,
             ..UNORDERED
         };
@@ -2443,7 +2466,7 @@ mod tests {
         ecu.add_peer(
             "mallory",
             PeerConfig {
-                responders: &["mallory"],
+                responders: Responders::Named(&["mallory"]),
                 ..config
             },
         );
@@ -2749,7 +2772,7 @@ mod tests {
             "ecu",
             PeerConfig {
                 buffer: None,
-                responders: &["ecu"],
+                responders: Responders::Named(&["ecu"]),
                 reply_events: &["service.response.force"],
                 ..UNORDERED
             },
@@ -2922,14 +2945,14 @@ mod tests {
         cloud.add_peer(
             "alice",
             PeerConfig {
-                responders: &["alice"],
+                responders: Responders::Named(&["alice"]),
                 ..accepting
             },
         );
         cloud.add_peer(
             "bob",
             PeerConfig {
-                responders: &["bob"],
+                responders: Responders::Named(&["bob"]),
                 ..accepting
             },
         );
@@ -3193,7 +3216,7 @@ mod tests {
             "ecu",
             PeerConfig {
                 buffer: None,
-                responders: &["ecu"],
+                responders: Responders::Named(&["ecu"]),
                 reply_events: &["service.response.force"],
                 ..ORDERED
             },
@@ -3444,7 +3467,7 @@ mod tests {
             dedup: false,
             ordered: false,
         },
-        responders: &["people"],
+        responders: Responders::Named(&["people"]),
         deadline_ms: None,
         reply_events: &[],
         causal: Some(CausalGroup {

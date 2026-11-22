@@ -1022,7 +1022,7 @@ mod tests {
     use crate::generated::envelope::Envelope;
     use crate::generated::pattern_kind::PatternKind;
     use crate::inbound::Delivery;
-    use crate::router::{DurableSend, PeerConfig, Router};
+    use crate::router::{DurableSend, PeerConfig, Responders, Router};
     use crate::rpc::MESH_EVENT_PARAM;
     use crate::testing::{Fixed, Recorder};
     use alloc::vec;
@@ -1047,7 +1047,7 @@ mod tests {
             },
             // A generated peer table holds this as a `const`; a test names
             // its peer at run time, so the one-element set is leaked.
-            responders: Box::leak(Box::new([peer])),
+            responders: Responders::Named(Box::leak(Box::new([peer]))),
             deadline_ms: None,
             reply_events: replies,
             causal: None,

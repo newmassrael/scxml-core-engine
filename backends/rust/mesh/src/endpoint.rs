@@ -970,7 +970,7 @@ mod tests {
     use super::*;
     use crate::inbound::Delivery;
     use crate::outbound::RetryPolicy;
-    use crate::router::PeerConfig;
+    use crate::router::{PeerConfig, Responders};
     use crate::testing::{Fixed, Recorder};
     use alloc::vec;
     use sce_rust_runtime::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE;
@@ -1003,7 +1003,7 @@ mod tests {
             },
             // A generated peer table holds this as a `const`; a test names
             // its peer at run time, so the one-element set is leaked.
-            responders: Box::leak(Box::new([peer])),
+            responders: Responders::Named(Box::leak(Box::new([peer]))),
             deadline_ms: None,
             reply_events: &[],
             causal: None,

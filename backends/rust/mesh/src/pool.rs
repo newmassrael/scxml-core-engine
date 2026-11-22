@@ -2448,8 +2448,8 @@ mod tests {
     use super::*;
     use crate::endpoint::{MESH_PROCESSOR_TYPE, MESH_RPC_INVOKE_TYPE};
     use crate::inbound::Delivery;
-    use crate::peers::{Peer, PeerLink};
-    use crate::router::PeerConfig;
+    use crate::peers::{Instances, Peer, PeerLink};
+    use crate::router::{PeerConfig, Responders};
     use crate::rpc::MESH_EVENT_PARAM;
     use alloc::vec;
     use sce_rust_metrics::recording::Recording;
@@ -2862,7 +2862,7 @@ mod tests {
             dedup: true,
             ordered: false,
         },
-        responders: &["client"],
+        responders: Responders::Named(&["client"]),
         deadline_ms: None,
         reply_events: &["service.response.join", "service.response.meet"],
         causal: None,
@@ -2883,7 +2883,7 @@ mod tests {
             Peer {
                 name: "other",
                 config: PeerConfig {
-                    responders: &["other"],
+                    responders: Responders::Named(&["other"]),
                     reply_events: &[],
                     ..CLIENT
                 },
@@ -2893,6 +2893,8 @@ mod tests {
                 },
             },
         ],
+        open_peers: &[],
+        instances: Instances::One,
         sessions: Some(ROOMS_SESSIONS),
     };
 

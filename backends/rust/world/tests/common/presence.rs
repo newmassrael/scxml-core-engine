@@ -11,7 +11,7 @@ use sce_forge_runtime::codec::SceCursor;
 use sce_rust_mesh::generated::envelope::Envelope;
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::outbound::OutboundBuffer;
-use sce_rust_mesh::router::{PeerConfig, Router};
+use sce_rust_mesh::router::{PeerConfig, Responders, Router};
 use sce_rust_world::{Fate, World};
 use serde_json::Value;
 
@@ -39,7 +39,7 @@ pub fn soft_peer() -> PeerConfig {
             dedup: true,
             ordered: false,
         },
-        responders: &[],
+        responders: Responders::Named(&[]),
         deadline_ms: None,
         reply_events: &[],
         causal: None,

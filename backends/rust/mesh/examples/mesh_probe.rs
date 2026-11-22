@@ -36,7 +36,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sce_rust_mesh::endpoint::{Endpoint, EngineCall, Environment, MESH_PROCESSOR_TYPE};
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::outbound::OutboundBuffer;
-use sce_rust_mesh::router::{PeerConfig, Router};
+use sce_rust_mesh::router::{PeerConfig, Responders, Router};
 use sce_rust_mesh::wss::{
     accept_authenticated_with, connect, deliver, LinkConfig, LinkEvent, WssTransport,
     DEFAULT_KEEPALIVE,
@@ -97,7 +97,7 @@ fn config(responder: &'static str, buffer: Option<OutboundBuffer>) -> PeerConfig
             dedup: true,
             ordered: false,
         },
-        responders: Box::leak(Box::new([responder])),
+        responders: Responders::Named(Box::leak(Box::new([responder]))),
         deadline_ms: None,
         reply_events: &[],
         causal: None,

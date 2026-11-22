@@ -2177,7 +2177,7 @@ mod tests {
                     dedup: true,
                     ordered: false,
                 },
-                responders: &[],
+                responders: crate::router::Responders::Named(&[]),
                 deadline_ms: None,
                 reply_events: &[],
                 causal: None,
@@ -2216,6 +2216,8 @@ mod tests {
             dedup_window: 8,
             gap_timeout_ms: 50,
             peers,
+            open_peers: &[],
+            instances: crate::peers::Instances::One,
             sessions: None,
         };
         let listening = Listening::on(&machine, "0.0.0.0:8443").expect("two peers there");
@@ -2274,6 +2276,8 @@ mod tests {
             dedup_window: 8,
             gap_timeout_ms: 50,
             peers,
+            open_peers: &[],
+            instances: crate::peers::Instances::One,
             sessions: None,
         };
         let listening = Listening::on(&machine, "0.0.0.0:9443").expect("two peers there");
