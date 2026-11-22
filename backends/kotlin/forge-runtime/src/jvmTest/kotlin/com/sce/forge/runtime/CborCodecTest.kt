@@ -204,7 +204,7 @@ class CborCodecTest {
             datacontenttype = PayloadCodec.NONE,
             data = EnvelopeDataBytes.of(ByteArray(0))!!,
         )
-        val plain = closed.encodeToByteArray()
+        val plain = assertNotNull(closed.encodeToByteArray())
         assertEquals(0xA6.toByte(), plain[0])
         assertNull(Envelope.decode(SceCursor(plain)).valueOr { fail("the envelope is refused as ${it.error}") }.instance)
 
