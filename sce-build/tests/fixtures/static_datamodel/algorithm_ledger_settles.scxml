@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether a line of an amount settles an item at a status: a value of an enum and a
+  number in, a truth value out. The statechart that calls it names the status by its
+  variant and holds no value of the enum.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_settles"
+       version="1.0">
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:signature>
+    <sce:param name="status" type="enum:Status"/>
+    <sce:param name="amount" type="int32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="status === Status.done &amp;&amp; amount &gt; 0"/>
+  </sce:body>
+</scxml>

@@ -9,7 +9,9 @@
   the larger amount (two records in, a record out), which `best` takes whole. `AmountOf`
   is asked of the line an event brought, and of the line `best` holds (a record in, a
   number out), in guards. `LineOf` takes two numbers and answers a line, which `made`
-  takes whole: the call hands no record and takes one back.
+  takes whole: the call hands no record and takes one back. `Settles` takes a value of
+  an enum, which the statechart names by its variant and holds in no variable, record or
+  payload, so the machine's own type for the enum is declared for the call alone.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="open" datamodel="sce-static" name="static_record_call">
@@ -17,6 +19,8 @@
   <sce:import kind="algorithm" src="algorithm_ledger_larger.scxml" as="Larger"/>
   <sce:import kind="algorithm" src="algorithm_ledger_amount.scxml" as="AmountOf"/>
   <sce:import kind="algorithm" src="algorithm_ledger_line.scxml" as="LineOf"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_settles.scxml" as="Settles"/>
   <datamodel>
     <data id="best" sce:type="record:Entry" sce:direction="out">
       <sce:set name="id" expr="0"/>
@@ -29,6 +33,7 @@
     <data id="large" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="debts" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="peaks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="settled" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="open">
     <transition event="ledger.entry" type="internal">
@@ -43,6 +48,9 @@
         <assign location="peaks" expr="peaks + 1"/>
       </if>
       <assign location="made" expr="LineOf(debts, _event.data.amount)"/>
+      <if cond="Settles(Status.done, _event.data.amount) &amp;&amp; !Settles(Status.open, _event.data.amount)">
+        <assign location="settled" expr="settled + 1"/>
+      </if>
     </transition>
   </state>
 </scxml>
