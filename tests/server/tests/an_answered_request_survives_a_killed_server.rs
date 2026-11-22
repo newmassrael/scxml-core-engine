@@ -23,7 +23,7 @@ use sce_rust_session_store::SqliteStore;
 use sce_server_suite::campaign::{Campaign, Plan};
 use sce_server_suite::draw::seed_for;
 use sce_server_suite::ledger::{take_data, taken_by_key};
-use sce_server_suite::protocol::ServerOptions;
+use sce_server_suite::protocol::{Build, ServerOptions};
 use sce_server_suite::scratch::Scratch;
 use sce_server_suite::{count_from, KILLS_VARIABLE};
 
@@ -62,6 +62,7 @@ fn an_answered_request_keeps_its_effect_and_its_first_reply_across_kills() {
         renew_every_ms: 300_000,
         halt: None,
         durable: None,
+        build: Build::Ledger,
     };
     let mut campaign = Campaign::new(server(), options, seed);
     // The requests of all sessions interleaved, in an order drawn for the run.

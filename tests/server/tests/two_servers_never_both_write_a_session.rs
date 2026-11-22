@@ -27,7 +27,7 @@ use sce_rust_session_store::SqliteStore;
 use sce_server_suite::draw::{seed_for, Draw};
 use sce_server_suite::ledger::{take_data, taken_by_key, TAKE};
 use sce_server_suite::process::{Reported, ServerProcess};
-use sce_server_suite::protocol::{Command, Refusal, Report, ServerOptions};
+use sce_server_suite::protocol::{Build, Command, Refusal, Report, ServerOptions};
 use sce_server_suite::scratch::Scratch;
 use sce_server_suite::wire::{self, Ids, Request, Seen};
 
@@ -110,6 +110,7 @@ impl Pair {
                 renew_every_ms: 500,
                 halt: None,
                 durable: None,
+                build: Build::Ledger,
             };
             let server = ServerProcess::start(server(), &options)
                 .unwrap_or_else(|error| panic!("the server {owner} could not be started: {error}"));

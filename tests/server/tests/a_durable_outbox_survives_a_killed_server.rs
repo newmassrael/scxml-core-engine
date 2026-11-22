@@ -22,7 +22,7 @@ use sce_rust_session_store::{SessionStore, SqliteStore};
 use sce_server_suite::campaign::{Campaign, Plan};
 use sce_server_suite::draw::seed_for;
 use sce_server_suite::ledger::{take_data, taken_by_key, CLIENT};
-use sce_server_suite::protocol::{Durable, ServerOptions, Stage};
+use sce_server_suite::protocol::{Build, Durable, ServerOptions, Stage};
 use sce_server_suite::scratch::Scratch;
 use sce_server_suite::{count_from, KILLS_VARIABLE};
 
@@ -59,6 +59,7 @@ fn every_reply_a_durable_client_was_sent_is_taken_in_once_across_kills() {
             mailbox: 4_096,
             retain_ms: 600_000,
         }),
+        build: Build::Ledger,
     };
     let mut campaign = Campaign::new(server(), options, seed);
     campaign.durable(3, (150, 900), 15);

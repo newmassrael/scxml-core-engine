@@ -33,17 +33,30 @@ sce-rust-mesh = { path = "../../backends/rust/mesh" }
 # The reference store, SQLite in WAL mode, which every scenario keeps its sessions in.
 sce-rust-session-store = { path = "../../backends/rust/session-store" }
 # The saved state a session is kept as, and the host-processor shapes a machine sends with.
-sce-rust-runtime = { path = "../../backends/rust/runtime", default-features = false, features = ["std"] }
+# `record-cbor`: the generated machines verify and open a note by name, which they read with the
+# runtime's record codec (docs/adr/0109, D9).
+sce-rust-runtime = { path = "../../backends/rust/runtime", default-features = false, features = ["std", "record-cbor"] }
 # The reference host whose key-value store guards the value the sessions share
 # (`sce-host-kv-put-if`).
 sce-rust-host-features = { path = "../../backends/rust/host-features" }
-# The bounded fields an envelope the client sends is built from, and the cursor a reply is read with.
-sce-forge-runtime = { path = "../../backends/rust/forge-runtime", default-features = false, features = ["alloc"] }
+# The bounded fields an envelope the client sends is built from, and the cursor a reply is read with;
+# a `datamodel="sce-static"` machine checks its integer operations with its helpers too.
+sce-forge-runtime = { path = "../../backends/rust/forge-runtime" }
+# An algorithm that returns a list answers in the owned list this leaf crate holds, which a
+# generated machine names by path.
+sce-portable-bytes = { path = "../../backends/rust/portable-bytes" }
+
+# The generator, with its commands (`cli`): the build script writes the machines the server
+# process serves, the tree `rust-server-suite`, into OUT_DIR as their generator (docs/adr/0097).
+[build-dependencies]
+sce-build = { path = "../../sce-build", features = ["cli"] }
 
 [dev-dependencies]
 # The HTTPS binding's server, client and reference adapter, and the conformance kit's test
 # authority and proxies, for the scenario that reaches a pool over HTTPS.
-sce-rust-mesh = { path = "../../backends/rust/mesh", features = ["https-conformance"] }
+# `conformance`: the kit of the session machine's contract (docs/adr/0112), which the ledger and
+# the generated machines' adapter are each run through.
+sce-rust-mesh = { path = "../../backends/rust/mesh", features = ["https-conformance", "conformance"] }
 # The runtime the HTTPS server and the kit's proxies run on.
 tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "time"] }
 

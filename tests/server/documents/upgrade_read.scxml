@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The answer to service.request.read: where the session stands and what it
+  holds. `state` is the state that answered; `serial`, `owner`, `rank` and
+  `label` are the note the last verification read, and `sealed_serial` and
+  `sealed_label` the one the last opening read. A first version, whose note
+  has no `rank` and no `label`, answers 0 and the empty text for them, and
+  0 for `ceiling`, a variable only the next version holds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="upgrade_read"
+       sce:event-name="service.response.read">
+  <datamodel>
+    <data id="state" sce:type="string[16]" sce:direction="in"/>
+    <data id="taken" sce:type="uint32" sce:direction="in"/>
+    <data id="last_tag" sce:type="string[32]" sce:direction="in"/>
+    <data id="verified" sce:type="bool" sce:direction="in"/>
+    <data id="serial" sce:type="uint32" sce:direction="in"/>
+    <data id="owner" sce:type="string[24]" sce:direction="in"/>
+    <data id="rank" sce:type="int8" sce:direction="in"/>
+    <data id="label" sce:type="string[8]" sce:direction="in"/>
+    <data id="opened" sce:type="bool" sce:direction="in"/>
+    <data id="sealed_serial" sce:type="uint32" sce:direction="in"/>
+    <data id="sealed_label" sce:type="string[8]" sce:direction="in"/>
+    <data id="ceiling" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

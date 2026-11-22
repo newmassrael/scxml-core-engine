@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The note the upgraded document's first version verifies and opens by name
+  (sce:payload, docs/adr/0109, D9): the fields of
+  sce-build/tests/fixtures/static_datamodel/schema_cose_note.scxml, so the
+  objects of tests/host_features/payload_record_cross_language.json, which the
+  Rust and C++ lanes write byte for byte, are notes of it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="upgrade_note_1"
+       sce:event-name="upgrade.note">
+  <datamodel>
+    <data id="serial" sce:type="uint32" sce:direction="in"/>
+    <data id="owner" sce:type="string[24]" sce:direction="in"/>
+    <data id="blob" sce:type="bytes[8]" sce:direction="in"/>
+    <data id="active" sce:type="bool" sce:direction="in"/>
+    <data id="offset" sce:type="int16" sce:direction="in"/>
+  </datamodel>
+</scxml>
