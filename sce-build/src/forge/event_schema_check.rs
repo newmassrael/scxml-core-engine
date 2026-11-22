@@ -3031,12 +3031,11 @@ mod tests {
         let holding: Vec<&str> = Language::ALL
             .iter()
             .map(|language| ComposedLowering::of(*language))
+            .chain([ComposedLowering::ECMASCRIPT, ComposedLowering::ANY_BACKEND])
             .filter(|lowering| lowering.text_lists)
             .map(|lowering| lowering.name)
             .collect();
-        assert_eq!(holding, ["rust", "c11"]);
-        assert!(ComposedLowering::ECMASCRIPT.text_lists);
-        assert!(ComposedLowering::ANY_BACKEND.text_lists);
+        assert_eq!(holding, ["rust", "c11", "ecmascript", "backend"]);
     }
 
     /// Each backend's row says what its machine spells, no more and no less:
