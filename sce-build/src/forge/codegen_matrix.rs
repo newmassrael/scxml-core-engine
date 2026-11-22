@@ -486,6 +486,24 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
 /// "Storage"), so no frame holds more than one entry.
 pub const ALGORITHM_MAP_BACKENDS: &[Language] = &[Language::Rust, Language::C11];
 
+/// The backends that lower an algorithm over a list of the values of an enum,
+/// `list<enum:E>` (SCE_FORGE.md §4.12): a read-only parameter, a buffer local
+/// and a return, each element in the type the enum's own document declares,
+/// read by `len`, an index and `<sce:foreach>`, and appended to. A backend joins
+/// this list in the change that gives it those spellings; a backend not listed
+/// refuses such an algorithm by name (`generate/unsupported-feature`) where it
+/// renders it, before any statement of its body is lowered, and the algorithm
+/// is judged alike on every backend before that
+/// ([`crate::forge::static_enum`]).
+///
+/// The Interpreter's ECMAScript lowering holds such a list as the array of its
+/// elements' declared names, as it holds one of them, and is no [`Language`]:
+/// its target answers for itself. A statechart's variable is no list of enum
+/// values on any backend
+/// ([`crate::forge::value_type::WrittenType::slot_view`]), so no call of a
+/// statechart hands an algorithm one or takes one from it.
+pub const ALGORITHM_ENUM_LIST_BACKENDS: &[Language] = &[Language::Rust];
+
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
 /// §11.9, §12.6): a unit that declares the template's `match` and, for a
 /// specific template, its `value`, over the record types the backend's event
