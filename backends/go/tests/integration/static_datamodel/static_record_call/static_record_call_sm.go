@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 755ec532fd2d5e3fc0e52d3c4cce81bb0ba91bab8dfc46ac168de8f610f03a6e
+// source-hash: 1c4345fd879065241c0c00b76f8e6b6a7a7f3f3f200f379431412a268aff8b25
 // source: static_record_call.scxml
 
 
@@ -21,7 +21,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_record_call.scxml:13 :: _machine
+// SCE-MAP: static_record_call.scxml:14 :: _machine
 
 package static_record_call
 
@@ -36,6 +36,7 @@ import (
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	sce_ledger_amount "github.com/newmassrael/sce-go-tests/integration/static_datamodel/ledger_amount"
 	sce_ledger_larger "github.com/newmassrael/sce-go-tests/integration/static_datamodel/ledger_larger"
+	sce_ledger_line "github.com/newmassrael/sce-go-tests/integration/static_datamodel/ledger_line"
 	sce_schema_entry "github.com/newmassrael/sce-go-tests/integration/static_datamodel/schema_entry"
 )
 
@@ -256,12 +257,12 @@ func StaticRecordCallEntryRecordFromSaved(value any, what string) (StaticRecordC
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticRecordCallSavedShapeFormat2 = "dc127a7411589216f56f7e89ef942578e92878ca89a119099a7221bc3092f957"
+const StaticRecordCallSavedShapeFormat2 = "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34"
 
 // StaticRecordCallSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticRecordCallSavedShapeFormat2Revised = "8e7f755283cf3e3a2dc6d431941d678b939e964d88fffdd9bd9b317c46ed2832"
+const StaticRecordCallSavedShapeFormat2Revised = "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9"
 
 // StaticRecordCallSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -276,10 +277,10 @@ var StaticRecordCallSavedEnumKeys = [...]string{}
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticRecordCallSavedShape = sce.SavedShape{
-	First:          "dc127a7411589216f56f7e89ef942578e92878ca89a119099a7221bc3092f957",
-	Revised:        "8e7f755283cf3e3a2dc6d431941d678b939e964d88fffdd9bd9b317c46ed2832",
-	Format2First:   "dc127a7411589216f56f7e89ef942578e92878ca89a119099a7221bc3092f957",
-	Format2Revised: "8e7f755283cf3e3a2dc6d431941d678b939e964d88fffdd9bd9b317c46ed2832",
+	First:          "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
+	Revised:        "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
+	Format2First:   "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
+	Format2Revised: "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "ledger.entry",
@@ -291,6 +292,7 @@ var StaticRecordCallSavedShape = sce.SavedShape{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "best", List: false},
+				{Variable: "made", List: false},
 			},
 		},
 	},
@@ -321,6 +323,7 @@ func StaticRecordCallSaveAt(engine *sce.Engine[StaticRecordCallState, StaticReco
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("best", p.vBest.ToSaved())
+	variables.Set("made", p.vMade.ToSaved())
 	variables.Set("large", sce.SavedWriteUint32(p.vLarge))
 	variables.Set("debts", sce.SavedWriteUint32(p.vDebts))
 	variables.Set("peaks", sce.SavedWriteUint32(p.vPeaks))
@@ -350,6 +353,11 @@ func StaticRecordCallJudge(saved *sce.SavedState) error {
 	if raw, err := grown.Variable("best"); err != nil {
 		return err
 	} else if _, err := StaticRecordCallEntryRecordFromSaved(raw, "best"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("made"); err != nil {
+		return err
+	} else if _, err := StaticRecordCallEntryRecordFromSaved(raw, "made"); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("large"); err != nil {
@@ -402,27 +410,35 @@ func StaticRecordCallRestoreAt(policy *StaticRecordCallPolicy, saved *sce.SavedS
 	if err != nil {
 		return nil, err
 	}
-	raw2, err := grown.Variable("large")
+	raw2, err := grown.Variable("made")
 	if err != nil {
 		return nil, err
 	}
-	read2, err := sce.SavedReadUint32(raw2, "large")
+	read2, err := StaticRecordCallEntryRecordFromSaved(raw2, "made")
 	if err != nil {
 		return nil, err
 	}
-	raw3, err := grown.Variable("debts")
+	raw3, err := grown.Variable("large")
 	if err != nil {
 		return nil, err
 	}
-	read3, err := sce.SavedReadUint32(raw3, "debts")
+	read3, err := sce.SavedReadUint32(raw3, "large")
 	if err != nil {
 		return nil, err
 	}
-	raw4, err := grown.Variable("peaks")
+	raw4, err := grown.Variable("debts")
 	if err != nil {
 		return nil, err
 	}
-	read4, err := sce.SavedReadUint32(raw4, "peaks")
+	read4, err := sce.SavedReadUint32(raw4, "debts")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("peaks")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint32(raw5, "peaks")
 	if err != nil {
 		return nil, err
 	}
@@ -430,9 +446,10 @@ func StaticRecordCallRestoreAt(policy *StaticRecordCallPolicy, saved *sce.SavedS
 		return nil, err
 	}
 	policy.vBest = read1
-	policy.vLarge = read2
-	policy.vDebts = read3
-	policy.vPeaks = read4
+	policy.vMade = read2
+	policy.vLarge = read3
+	policy.vDebts = read4
+	policy.vPeaks = read5
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -514,6 +531,12 @@ func sceAdapt_StaticRecordCall_Larger__vp(p0 StaticRecordCallEntryRecord, p1 Sta
 	return out
 }
 
+func sceAdapt_StaticRecordCall_LineOf__(p0 uint32, p1 int32) StaticRecordCallEntryRecord {
+	r := sce_ledger_line.LedgerLine(p0, p1)
+	out := StaticRecordCallEntryRecord{id: r.Id, amount: r.Amount}
+	return out
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -532,6 +555,8 @@ type StaticRecordCallPolicy struct {
 	// ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
 	// W3C SCXML 5.2: the `best` datamodel variable, published (`sce:direction="out"`).
 	vBest StaticRecordCallEntryRecord
+	// W3C SCXML 5.2: the `made` datamodel variable, published (`sce:direction="out"`).
+	vMade StaticRecordCallEntryRecord
 	// W3C SCXML 5.2: the `large` datamodel variable, published (`sce:direction="out"`).
 	vLarge uint32
 	// W3C SCXML 5.2: the `debts` datamodel variable, published (`sce:direction="out"`).
@@ -555,6 +580,7 @@ type StaticRecordCallPolicy struct {
 // NewStaticRecordCallPolicy creates a new policy with default values.
 func NewStaticRecordCallPolicy() StaticRecordCallPolicy {
 	var vBest StaticRecordCallEntryRecord = StaticRecordCallEntryRecord{id: 0, amount: 0}
+	var vMade StaticRecordCallEntryRecord = StaticRecordCallEntryRecord{id: 0, amount: 0}
 	var vLarge uint32 = 0
 	var vDebts uint32 = 0
 	var vPeaks uint32 = 0
@@ -565,6 +591,7 @@ func NewStaticRecordCallPolicy() StaticRecordCallPolicy {
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
 		vBest: vBest,
+		vMade: vMade,
 		vLarge: vLarge,
 		vDebts: vDebts,
 		vPeaks: vPeaks,
@@ -590,6 +617,12 @@ func (p *StaticRecordCallPolicy) SetSessionID(id string) error {
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *StaticRecordCallPolicy) Best() StaticRecordCallEntryRecord {
 	return p.vBest
+}
+
+// Made reports what the published `made` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticRecordCallPolicy) Made() StaticRecordCallEntryRecord {
+	return p.vMade
 }
 
 // Large reports what the published `large` datamodel
@@ -626,6 +659,7 @@ type StaticRecordCallInvokeParams struct {
 // handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
 func (p *StaticRecordCallPolicy) AcceptParams(handed StaticRecordCallInvokeParams) {
 	var vBest StaticRecordCallEntryRecord = StaticRecordCallEntryRecord{id: 0, amount: 0}
+	var vMade StaticRecordCallEntryRecord = StaticRecordCallEntryRecord{id: 0, amount: 0}
 	var vLarge uint32
 	if handed.VLarge != nil {
 		vLarge = *handed.VLarge
@@ -645,6 +679,7 @@ func (p *StaticRecordCallPolicy) AcceptParams(handed StaticRecordCallInvokeParam
 		vPeaks = 0
 	}
 	p.vBest = vBest
+	p.vMade = vMade
 	p.vLarge = vLarge
 	p.vDebts = vDebts
 	p.vPeaks = vPeaks
@@ -915,7 +950,7 @@ func (p *StaticRecordCallPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_record_call.scxml:13
+//line static_record_call.scxml:14
 func (p *StaticRecordCallPolicy) ExecuteEntryActions(state StaticRecordCallState, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -928,7 +963,7 @@ func (p *StaticRecordCallPolicy) ExecuteEntryActions(state StaticRecordCallState
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_record_call.scxml:13
+//line static_record_call.scxml:14
 func (p *StaticRecordCallPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -936,7 +971,7 @@ func (p *StaticRecordCallPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_record_call.scxml:13
+//line static_record_call.scxml:14
 func (p *StaticRecordCallPolicy) ExecuteExitActions(state StaticRecordCallState, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent], configurationBeforeExit []StaticRecordCallState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -953,7 +988,7 @@ func (p *StaticRecordCallPolicy) ExecuteExitActions(state StaticRecordCallState,
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_record_call.scxml:13
+//line static_record_call.scxml:14
 func (p *StaticRecordCallPolicy) BindCurrentEvent(event StaticRecordCallEvent, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -963,7 +998,7 @@ func (p *StaticRecordCallPolicy) BindCurrentEvent(event StaticRecordCallEvent, e
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_record_call.scxml:13
+//line static_record_call.scxml:14
 func (p *StaticRecordCallPolicy) FirstEnabledTransition(state StaticRecordCallState, event StaticRecordCallEvent, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent]) (sce.EnabledTransition[StaticRecordCallState, sce.HistoryID], bool) {
 	switch state {
 	case StaticRecordCallStateOpen:
@@ -983,13 +1018,13 @@ func (p *StaticRecordCallPolicy) FirstEnabledTransition(state StaticRecordCallSt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_record_call.scxml:13
+//line static_record_call.scxml:14
 func (p *StaticRecordCallPolicy) ExecuteTransitionContent(source StaticRecordCallState, transitionIndex int, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent]) {
 	switch source {
 	case StaticRecordCallStateOpen:
 		switch transitionIndex {
 		case 0:
-//line static_record_call.scxml:28
+//line static_record_call.scxml:34
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordCallPayloadTagLedgerEntry {
@@ -1028,6 +1063,10 @@ func (p *StaticRecordCallPolicy) ExecuteTransitionContent(source StaticRecordCal
 	}
 
 	}
+
+
+
+	p.vMade = sceAdapt_StaticRecordCall_LineOf__(p.vDebts, p.pendingLedgerEntryPayload.amount)
 
 			}()
 		}

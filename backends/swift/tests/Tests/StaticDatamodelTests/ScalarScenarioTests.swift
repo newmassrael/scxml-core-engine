@@ -534,6 +534,7 @@ private func recordCall() -> Machine {
         policy,
         variables: [
             "best": { entry(policy.best.id, policy.best.amount) },
+            "made": { entry(policy.made.id, policy.made.amount) },
             "large": { integer(policy.large) },
             "debts": { integer(policy.debts) },
             "peaks": { integer(policy.peaks) },
