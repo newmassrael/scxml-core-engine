@@ -3104,6 +3104,16 @@ pub struct MachineConfig {
     /// [`crate::mesh::topology::resolve_keyed_pool`].
     #[serde(default)]
     pub sessions: Option<SessionsConfig>,
+    /// Whether the machine runs as an open set of instances
+    /// (docs/adr/0113, D1): any number of copies of it run, each an instance,
+    /// and a sender of the machine is the pair (machine, instance). Written
+    /// once, on the machine that is many, so the two sides of a binding cannot
+    /// disagree. Checked against the deployment at parse time by
+    /// [`validate_instances`].
+    ///
+    /// Private, so that every reader asks [`Self::is_open`].
+    #[serde(default)]
+    instances: Option<Instances>,
     /// The values the machine's deployment supplies (docs/adr/0109, D12), by
     /// the id of the `<data sce:from="deployment">` that declares each in the
     /// machine's document. Checked against the document's declarations when
@@ -3353,6 +3363,21 @@ impl MachineConfig {
     pub fn source_path(&self) -> Option<&str> {
         self.source.as_deref()
     }
+
+    /// Whether the machine runs as an open set of instances
+    /// (`instances: open`, docs/adr/0113, D1), each a sender of its own.
+    pub fn is_open(&self) -> bool {
+        matches!(self.instances, Some(Instances::Open))
+    }
+}
+
+/// A machine's `instances:` (docs/adr/0113, D1). Absent, the machine is one,
+/// as every machine is; `open` is the only value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Instances {
+    /// `instances: open`.
+    Open,
 }
 
 /// `invoked_by:` of a machine entry: the site that starts the machine as a
@@ -4089,6 +4114,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_stage_pool_transport(&cfg)?;
     validate_outbound_buffer(&cfg)?;
     validate_sessions(&cfg)?;
+    validate_instances(&cfg)?;
     validate_machine_config_sources(&cfg)?;
     validate_receipt(&cfg)?;
     validate_retry_policy(&cfg)?;
@@ -7463,6 +7489,139 @@ fn validate_sessions(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
+/// Walk every machine that declares `instances: open` (docs/adr/0113, D1 and
+/// D7) and refuse, as [`DeployError::InvalidInstances`], one whose instances
+/// could not be told apart or served:
+///
+/// * beside `sessions:`, which would be several masters of one key, where the
+///   lease and fence of a keyed pool (SCE_MESH.md section 14.4) choose one;
+/// * beside `server:`, which serves the machine on the C++ router as the
+///   instances it declares;
+/// * beside `invoked_by:`, and where another machine is `invoked_by:` it: a
+///   child session is one endpoint under one name, and its envelopes carry no
+///   instance (SCE_MESH.md section 21.1);
+/// * in a `partitions:` entry, which splits one copy of the machine over
+///   processes;
+/// * with a binding, its own or one to it, that declares `delivery: causal`,
+///   whose identity is the replica's (SCE_MESH.md section 10.9, invariant 9);
+/// * with a binding, its own or one to it, on a transport without the row
+///   `serves_open_instances` of the registry
+///   ([`crate::mesh::transport::TransportDescriptor`]);
+/// * with a binding the machine accepts (`listen:`), or one another machine
+///   dials it by (`url:`): the link that names a sender is the one the
+///   instance dials, and the mailbox kept per sender is the other side's.
+///
+/// Walks machines in name order, and a machine's bindings in target order, so
+/// the refusal reported first is the same on every run.
+fn validate_instances(cfg: &DeployConfig) -> Result<(), DeployError> {
+    let machines: BTreeMap<&str, &MachineConfig> = cfg
+        .topology
+        .values()
+        .flat_map(|device| {
+            device
+                .machines
+                .iter()
+                .map(|(name, machine)| (name.as_str(), machine))
+        })
+        .collect();
+    for (&open, machine) in &machines {
+        if !machine.is_open() {
+            continue;
+        }
+        let refuse = |reason: String| {
+            Err(DeployError::InvalidInstances {
+                machine: open.to_string(),
+                reason,
+            })
+        };
+        let beside = [
+            (
+                "sessions",
+                machine.sessions.is_some(),
+                "a pool of open machines would be several masters of one key, which the lease \
+                 and fence of a keyed pool choose one of",
+            ),
+            (
+                "server",
+                machine.server.is_some(),
+                "it serves the machine on the C++ router as the instances it declares, which is \
+                 not an open set",
+            ),
+            (
+                "invoked_by",
+                machine.invoked_by.is_some(),
+                "a child session is one endpoint under one name",
+            ),
+        ];
+        if let Some((section, _, why)) = beside.into_iter().find(|(_, declared, _)| *declared) {
+            return refuse(format!("the machine also declares `{section}:`, and {why}"));
+        }
+        if let Some((child, _)) = cfg.children_of(open).first() {
+            return refuse(format!(
+                "machine '{child}' is a child session of it (`invoked_by:`), and every instance \
+                 would start one under that one name, whose envelopes carry no instance"
+            ));
+        }
+        if let Some(partitions) = &cfg.partitions {
+            let places = |decl: &PartitionDecl| {
+                let contains = &decl.contains;
+                decl.machines.iter().any(|listed| listed == open)
+                    || contains
+                        .parallel_regions
+                        .iter()
+                        .any(|unit| unit.machine == open)
+                    || contains.invokes.iter().any(|unit| unit.machine == open)
+            };
+            if let Some((partition, _)) = partitions.iter().find(|(_, decl)| places(decl)) {
+                return refuse(format!(
+                    "partition '{partition}' places the machine, and a partition splits one copy \
+                     of a machine over processes"
+                ));
+            }
+        }
+        for (&name, other) in &machines {
+            let own = name == open;
+            let mut joined: Vec<(&TargetId, &BindingConfig)> = other
+                .bindings
+                .iter()
+                .filter(|(target, _)| own || target.name() == open)
+                .collect();
+            joined.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+            for (target, binding) in joined {
+                let at = format!("binding '{}' of machine '{name}'", target.as_str());
+                if binding.delivery == Some(DeliveryMode::Causal) {
+                    return refuse(format!(
+                        "{at} declares `delivery: causal`, whose identity is the replica's and \
+                         not the instance's"
+                    ));
+                }
+                let transport = binding.transport.as_str();
+                if !crate::mesh::transport::lookup(transport)
+                    .is_some_and(|descriptor| descriptor.serves_open_instances)
+                {
+                    return refuse(format!(
+                        "{at} is on transport '{transport}', whose links do not name the \
+                         instance that sends and keep a mailbox for it; the transports that do: {}",
+                        crate::mesh::transport::open_instance_alternatives()
+                    ));
+                }
+                let (accepting, why) = if own {
+                    ("listen", "the machine accepts")
+                } else {
+                    ("url", "another machine dials it")
+                };
+                if binding.extra.contains_key(accepting) {
+                    return refuse(format!(
+                        "{at} declares `{accepting}:`, so {why}, and an instance is named by \
+                         the link it dials itself"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Refuse what SCE_MESH.md section 10.11 refuses of `persistence:` and
 /// `receipt:` when the deployment is read (docs/adr/0109, D10), each by a code
 /// of its own:
@@ -8198,6 +8357,26 @@ impl DeployConfig {
             .collect();
         children.sort_unstable();
         children
+    }
+
+    /// Whether `machine_name` is a machine of this deployment that runs as an
+    /// open set of instances ([`MachineConfig::is_open`]).
+    pub fn is_open_machine(&self, machine_name: &str) -> bool {
+        self.device_for_machine(machine_name)
+            .and_then(|device| device.machines.get(machine_name))
+            .is_some_and(MachineConfig::is_open)
+    }
+
+    /// The first machine, in name order, this deployment runs as an open set
+    /// of instances, which a backend that serves none names when it refuses
+    /// the deployment (docs/adr/0113, D7).
+    pub fn first_open_machine(&self) -> Option<&str> {
+        self.topology
+            .values()
+            .flat_map(|device| device.machines.iter())
+            .filter(|(_, machine)| machine.is_open())
+            .map(|(name, _)| name.as_str())
+            .min()
     }
 
     /// One predicate for "which device owns this machine", so the name
@@ -9449,6 +9628,245 @@ topology:
             ),
             "both fields are required"
         );
+    }
+
+    /// docs/adr/0113, D1: a machine is open by the one value of `instances:`,
+    /// and every other machine is one. Red if the key is not read, or another
+    /// value is taken for it.
+    #[test]
+    fn an_open_machine_is_declared_by_its_one_value() {
+        let open = "        instances: open\n";
+        let cfg = parse_deploy_str(&joined("", "", open, "")).expect("an open client of a server");
+        assert!(cfg.topology["handset"].machines["phone"].is_open());
+        assert!(cfg.is_open_machine("phone"));
+        assert!(!cfg.is_open_machine("rooms"));
+        assert!(!cfg.is_open_machine("elsewhere"), "no machine of it");
+        assert_eq!(cfg.first_open_machine(), Some("phone"));
+
+        let closed = parse_deploy_str(&joined("", "", "", "")).expect("a closed pair");
+        assert!(!closed.is_open_machine("phone"));
+        assert_eq!(closed.first_open_machine(), None);
+
+        for value in ["closed", "many", "3", "[open]"] {
+            let written = format!("        instances: {value}\n");
+            assert!(
+                matches!(
+                    parse_deploy_str(&joined("", "", &written, "")),
+                    Err(DeployError::Yaml { .. })
+                ),
+                "`instances: {value}`"
+            );
+        }
+    }
+
+    /// The reason `yaml` is refused for what its open machine `phone` cannot
+    /// stand beside ([`DeployError::InvalidInstances`]).
+    fn open_refusal(yaml: &str) -> String {
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidInstances { machine, reason }) => {
+                assert_eq!(machine, "phone");
+                reason
+            }
+            other => panic!("{yaml}: expected InvalidInstances, got {other:?}"),
+        }
+    }
+
+    /// [`joined`] whose `phone` is open, with `lines` beside it.
+    fn open_phone(lines: &str) -> String {
+        joined("", "", &format!("        instances: open\n{lines}"), "")
+    }
+
+    /// docs/adr/0113, D7: a pool of open machines is several masters of one key.
+    #[test]
+    fn an_open_machine_is_no_keyed_pool() {
+        let reason = open_refusal(&open_phone(
+            "        sessions: { key_from: client, idle_ms: 1000 }\n",
+        ));
+        assert!(reason.contains("`sessions:`"), "{reason}");
+    }
+
+    /// docs/adr/0113, D7: a `server:` block's instances are the ones it lists.
+    #[test]
+    fn an_open_machine_has_no_server_block() {
+        let reason = open_refusal(&open_phone(
+            "        server: { transport: zenoh_keyexpr, key: \"phone\" }\n",
+        ));
+        assert!(reason.contains("`server:`"), "{reason}");
+    }
+
+    /// docs/adr/0113, D7: a child session is one endpoint under one name.
+    #[test]
+    fn an_open_machine_is_no_child_session() {
+        let reason = open_refusal(
+            r#"
+version: "1.0"
+topology:
+  handset:
+    machines:
+      planner: { source: planner.scxml }
+      phone:
+        invoked_by: { machine: planner, invoke: list }
+        instances: open
+"#,
+        );
+        assert!(reason.contains("`invoked_by:`"), "{reason}");
+    }
+
+    /// A child of an open machine would be many under its one name, with no
+    /// instance on what it sends. Red if only the open machine's own entry is
+    /// read.
+    #[test]
+    fn an_open_machine_has_no_child_session() {
+        let reason = open_refusal(
+            r#"
+version: "1.0"
+topology:
+  handset:
+    machines:
+      phone: { source: phone.scxml, instances: open }
+      list:
+        invoked_by: { machine: phone, invoke: list }
+"#,
+        );
+        assert!(
+            reason.contains("machine 'list' is a child session"),
+            "{reason}"
+        );
+    }
+
+    /// docs/adr/0113, D7: a partition splits one copy of a machine, whether it
+    /// lists the machine or holds a unit of it.
+    #[test]
+    fn a_partition_places_no_open_machine() {
+        for partition in [
+            "machines: [phone]\n    contains:\n      invokes:\n        - { machine: phone, invoke: list }\n",
+            "machines: [rooms]\n    contains:\n      invokes:\n        - { machine: phone, invoke: list }\n",
+            "machines: [rooms]\n    contains:\n      parallel_regions:\n        - { machine: phone, region: left }\n",
+        ] {
+            let yaml = format!(
+                "{}partitions:\n  worker:\n    {partition}",
+                open_phone("")
+            );
+            let reason = open_refusal(&yaml);
+            assert!(reason.contains("partition 'worker'"), "{reason}");
+        }
+    }
+
+    /// docs/adr/0113, D7: a causal binding's identity is the replica's,
+    /// whichever side of the link declares it.
+    #[test]
+    fn an_open_machine_has_no_causal_binding() {
+        let open = "        instances: open\n";
+        let causal =
+            ", delivery: causal, group: { name: people, view: [cloud/rooms, handset/phone] }";
+        for yaml in [joined("", causal, open, ""), joined("", "", open, causal)] {
+            let reason = open_refusal(&yaml);
+            assert!(reason.contains("`delivery: causal`"), "{reason}");
+        }
+    }
+
+    /// docs/adr/0113, D7: a binding of an open machine, or to one, is on a
+    /// transport that serves it, and the refusal names the binding, the
+    /// transport and the ones that do. Red if one side of the link is not
+    /// read, or a transport is named here and not asked of the registry.
+    #[test]
+    fn an_open_machine_is_bound_only_over_a_transport_that_serves_it() {
+        for transport in crate::mesh::transport::known_names() {
+            let served = crate::mesh::transport::lookup(transport)
+                .expect("known")
+                .serves_open_instances;
+            if served {
+                continue;
+            }
+            let own = format!(
+                r##"
+version: "1.0"
+topology:
+  handset:
+    machines:
+      phone:
+        source: phone.scxml
+        instances: open
+        bindings:
+          "#rooms": {{ transport: {transport} }}
+      rooms: {{ source: rooms.scxml }}
+"##
+            );
+            let to_it = format!(
+                r##"
+version: "1.0"
+topology:
+  handset:
+    machines:
+      phone: {{ source: phone.scxml, instances: open }}
+      rooms:
+        source: rooms.scxml
+        bindings:
+          "#phone": {{ transport: {transport} }}
+"##
+            );
+            for (yaml, binding) in [
+                (own, "binding '#rooms' of machine 'phone'"),
+                (to_it, "binding '#phone' of machine 'rooms'"),
+            ] {
+                let reason = open_refusal(&yaml);
+                assert!(
+                    reason.contains(binding)
+                        && reason.contains(&format!("transport '{transport}'"))
+                        && reason.contains("the transports that do: 'https'"),
+                    "{reason}"
+                );
+            }
+        }
+    }
+
+    /// docs/adr/0113, D7: an instance is named by the link it dials, so an open
+    /// machine accepts no binding and no machine dials one.
+    #[test]
+    fn an_open_machine_dials_every_binding_of_it() {
+        let accepts = r##"
+version: "1.0"
+topology:
+  handset:
+    machines:
+      phone:
+        source: phone.scxml
+        instances: open
+        bindings:
+          "#rooms": { transport: https, listen: "127.0.0.1:9443", authenticator: install }
+      rooms: { source: rooms.scxml }
+"##;
+        let dialed = r##"
+version: "1.0"
+topology:
+  handset:
+    machines:
+      phone: { source: phone.scxml, instances: open }
+      rooms:
+        source: rooms.scxml
+        bindings:
+          "#phone": { transport: https, url: "https://phone.example", authenticator: install }
+"##;
+        for (yaml, said) in [
+            (accepts, "declares `listen:`, so the machine accepts"),
+            (dialed, "declares `url:`, so another machine dials it"),
+        ] {
+            let reason = open_refusal(yaml);
+            assert!(reason.contains(said), "{reason}");
+        }
+    }
+
+    /// A refusal of an open machine stands on its `instances:` key.
+    #[test]
+    fn a_refusal_of_an_open_machine_is_placed_at_its_key() {
+        let yaml = open_phone("        sessions: { key_from: client, idle_ms: 1000 }\n");
+        let refusal = parse_deploy_str(&yaml).expect_err("refused");
+        let mark = refusal.mark_in(&yaml).expect("a key of the deployment");
+        let line = yaml
+            .lines()
+            .position(|line| line.trim_start().starts_with("instances:"))
+            .expect("written");
+        assert_eq!(usize::try_from(mark.line).expect("a line"), line + 1);
     }
 
     #[test]

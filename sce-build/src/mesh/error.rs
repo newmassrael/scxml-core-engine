@@ -1130,6 +1130,15 @@ pub enum DeployError {
     #[error("machine '{machine}': invalid `sessions:` section in deploy.yaml — {reason}.")]
     InvalidSessions { machine: String, reason: String },
 
+    /// A machine declared to run as an open set of instances
+    /// (`instances: open`, docs/adr/0113, D1) in a deployment that could not
+    /// tell its instances apart or serve them (D7): beside `sessions:`,
+    /// `server:` or `invoked_by:`, in a partition, with a causal binding, or
+    /// with a binding on a transport that serves no open machine. Read off the
+    /// deployment alone, at parse time.
+    #[error("machine '{machine}': `instances: open` in deploy.yaml cannot be kept — {reason}.")]
+    InvalidInstances { machine: String, reason: String },
+
     /// A machine's `receipt: { window, retry_ms }` block cannot be kept (SCE_MESH.md section
     /// 10.11; docs/adr/0109, D10): a field below 1, or a machine none of whose bindings is
     /// durable, which leaves the block reading nothing. Read off the deployment alone.
@@ -3055,6 +3064,7 @@ impl DeployError {
                 P::machine(machine).key("outbound_buffer")
             }
             Self::InvalidSessions { machine, .. } => P::machine(machine).key("sessions"),
+            Self::InvalidInstances { machine, .. } => P::machine(machine).key("instances"),
             Self::InvalidReceipt { machine, .. } => P::machine(machine).key("receipt"),
             Self::ReceiptWithoutPersistence {
                 machine, target, ..
@@ -3724,6 +3734,27 @@ pub enum TopologyError {
         missing: Vec<String>,
     },
 
+    /// A document names an open machine (`instances: open`, docs/adr/0113,
+    /// D1) by a literal address, `<send target="#m">` or `<invoke
+    /// type="sce:mesh-rpc" src="#m">`: the name is every instance's, so the
+    /// literal names none of them (D2). An instance is addressed by the origin
+    /// its event carried.
+    #[error(
+        "state '{state}' of machine '{machine}': `{written}` names machine '{open}', which runs \
+         as an open set of instances (`instances: open`), so the literal names none of them. \
+         Address an instance by the origin its event carried: `<send \
+         targetexpr=\"_event.origin\">`, or a data item that kept that origin \
+         (docs/adr/0113, D2)",
+        open = .target.name()
+    )]
+    OpenMachineNamedLiterally {
+        machine: String,
+        state: String,
+        target: super::target::TargetId,
+        /// The element as the author wrote its address.
+        written: String,
+    },
+
     /// A deploy.yaml `machines.<name>.subscriptions:` entry names a
     /// `source:` that has no matching binding in the machine's
     /// `bindings:` map. Without the binding, transport synthesis has
@@ -3924,6 +3955,18 @@ pub enum CodegenError {
          from deploy.yaml."
     )]
     DurableReceiptUnsupported { machine: String, backend: String },
+
+    /// A machine of a deployment that declares an open machine (`instances: open`,
+    /// docs/adr/0113, D1) generated for a backend whose Mesh core tells no instance of one
+    /// machine from another: every backend but Rust's host core (D7). Refused by name rather
+    /// than emitted as a machine that reads every instance as one sender.
+    #[error(
+        "machine '{machine}' declares `instances: open`, an open set of instances, which the \
+         {backend} Mesh core does not serve (docs/adr/0113, D7). Generate this deployment's \
+         machines with `--lang rust`, whose host core serves it, or remove `instances:` from \
+         deploy.yaml."
+    )]
+    OpenInstancesUnsupported { machine: String, backend: String },
 
     /// A machine the deployment checkpoints (`persistence: checkpoint`, SCE_MESH.md section
     /// 10.11) whose document has no saved state for a checkpoint to hold: one not under the
@@ -4374,6 +4417,16 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // The repair is a value of the section, or the section or what
             // sits beside it removed, and which depends on what the machine
             // is for: nothing is offered.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::InvalidInstances { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidInstances,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // `instances:` removed, or what it cannot stand beside: which
+            // depends on what the machine is for, so nothing is offered.
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
@@ -6257,6 +6310,27 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 k
             },
         },
+        TopologyError::OpenMachineNamedLiterally {
+            machine,
+            state,
+            target,
+            written,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshTopologyOpenMachineNamedLiterally,
+            stage: Stage::MeshTopology,
+            actual: Some(target.as_str().to_string()),
+            // The repair is a `targetexpr` whose value is an origin the
+            // document received or kept, and which of the two it is, the
+            // document's author knows.
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                state.clone(),
+                target.as_str().to_string(),
+                written.clone(),
+            ],
+        },
         TopologyError::SubscriptionSourceUnbound {
             machine,
             source_target,
@@ -6427,6 +6501,16 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             stage: Stage::MeshCodegen,
             actual: Some(machine.clone()),
             // Another backend, or a deployment that keeps nothing durable: neither is
+            // offered as the fix.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), backend.clone()],
+        },
+        CodegenError::OpenInstancesUnsupported { machine, backend } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenOpenInstancesUnsupported,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // Another backend, or a deployment whose machines each run once: neither is
             // offered as the fix.
             expected: None,
             fix: None,
