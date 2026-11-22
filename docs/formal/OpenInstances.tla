@@ -18,6 +18,15 @@
 (* once sent can arrive at any later moment, any number of times, or never.*)
 (* Each constant that is a part of the protocol can be switched off, and   *)
 (* TLC must then find a violation.                                         *)
+(*                                                                         *)
+(* Taken as given:                                                         *)
+(*   Authentication proves which instance speaks (a token of the server's  *)
+(*     issuer).                                                            *)
+(*   An incarnation number is drawn once and never given twice, across a   *)
+(*     restart.                                                            *)
+(*   A record, a membership and the mark of a commit are durable once      *)
+(*     written.                                                            *)
+(*   LiveSpec: a message arrives, and what can be done is done.            *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets
 
