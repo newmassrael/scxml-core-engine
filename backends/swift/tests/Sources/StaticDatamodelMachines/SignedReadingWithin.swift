@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c31794321c13b21ef2b620f7ccbeb9f40af783b7909594b3c0b15b0dd6bee19c
+// source-hash: 056ba478acaec2dba3afcba13f0ee122040198ad365fae886d7806d48d923263
 // source: signed_reading_within.scxml
 // SCE-MAP: signed_reading_within.scxml:5 :: _forge_body
 
@@ -20,7 +20,7 @@ public enum SignedReadingWithin {
     /// Whether `value` matches the template (ES 201 873-1 Annex B.1,
     /// docs/SCE_TEST_PROFILE.md §6.1).
     public static func matches(_ value: Value) -> Bool {
-        return value.delta <= -1 && value.level <= -1 && value.stamp <= -4294967296 && value.total >= 9223372036854775808
+        return value.change <= -1 && value.level <= -1 && value.stamp <= -4294967296 && value.total >= 9223372036854775808
     }
 
     /// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
@@ -32,6 +32,6 @@ public enum SignedReadingWithin {
     /// their declared names, an absent field omitted. A send of this template carries it beside the
     /// value it sends (`SceTestProfile.messageValue`).
     public static func canonical(_ value: Value) -> SceRuntime.JSONValue {
-        return SceTestProfile.Canonical.record(("delta", SceTestProfile.Canonical.integer(value.delta)), ("offset", SceTestProfile.Canonical.integer(value.offset)), ("level", SceTestProfile.Canonical.integer(value.level)), ("stamp", SceTestProfile.Canonical.integer(value.stamp)), ("total", SceTestProfile.Canonical.integer(value.total)))
+        return SceTestProfile.Canonical.record(("change", SceTestProfile.Canonical.integer(value.change)), ("offset", SceTestProfile.Canonical.integer(value.offset)), ("level", SceTestProfile.Canonical.integer(value.level)), ("stamp", SceTestProfile.Canonical.integer(value.stamp)), ("total", SceTestProfile.Canonical.integer(value.total)))
     }
 }

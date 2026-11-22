@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 66f50d90ba3e43e6157086c9298ee14315ec2833ae37d9af260b6384fbec5227
+// source-hash: 2b1a01faa0f39a78981b432fbb0fd087ee06ecdcae837825ff5c891fee416aff
 // source: signed_configuration.scxml
 // SCE-MAP: signed_configuration.scxml:4 :: _forge_body
 
@@ -59,13 +59,13 @@ public enum SignedConfiguration {
     public static func read_signed_reading(_ value: SceRuntime.JSONValue) throws(SceTestProfile.TraceRefusal)
         -> SignedReadingPayload
     {
-        try SceTestProfile.FromCanonical.record(value, ["delta", "offset", "level", "stamp", "total"], "signed_reading") { (record_0: SceRuntime.JSONValue) throws(SceTestProfile.TraceRefusal) -> SignedReadingPayload in try SignedReadingPayload(delta: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "delta", "signed_reading.delta"), Int8.self, "signed_reading.delta"), offset: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "offset", "signed_reading.offset"), Int16.self, "signed_reading.offset"), level: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "level", "signed_reading.level"), Int32.self, "signed_reading.level"), stamp: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "stamp", "signed_reading.stamp"), Int64.self, "signed_reading.stamp"), total: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "total", "signed_reading.total"), UInt64.self, "signed_reading.total")) }
+        try SceTestProfile.FromCanonical.record(value, ["change", "offset", "level", "stamp", "total"], "signed_reading") { (record_0: SceRuntime.JSONValue) throws(SceTestProfile.TraceRefusal) -> SignedReadingPayload in try SignedReadingPayload(change: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "change", "signed_reading.change"), Int8.self, "signed_reading.change"), offset: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "offset", "signed_reading.offset"), Int16.self, "signed_reading.offset"), level: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "level", "signed_reading.level"), Int32.self, "signed_reading.level"), stamp: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "stamp", "signed_reading.stamp"), Int64.self, "signed_reading.stamp"), total: SceTestProfile.FromCanonical.integer(SceTestProfile.FromCanonical.field(record_0, "total", "signed_reading.total"), UInt64.self, "signed_reading.total")) }
     }
 
     /// The record `signed_reading` in the canonical form of the test log
     /// (docs/SCE_TEST_PROFILE.md §12.5), which a message of it a trace hands the run carries.
     public static func canonical_signed_reading(_ value: SignedReadingPayload) -> SceRuntime.JSONValue {
-        SceTestProfile.Canonical.record(("delta", SceTestProfile.Canonical.integer(value.delta)), ("offset", SceTestProfile.Canonical.integer(value.offset)), ("level", SceTestProfile.Canonical.integer(value.level)), ("stamp", SceTestProfile.Canonical.integer(value.stamp)), ("total", SceTestProfile.Canonical.integer(value.total)))
+        SceTestProfile.Canonical.record(("change", SceTestProfile.Canonical.integer(value.change)), ("offset", SceTestProfile.Canonical.integer(value.offset)), ("level", SceTestProfile.Canonical.integer(value.level)), ("stamp", SceTestProfile.Canonical.integer(value.stamp)), ("total", SceTestProfile.Canonical.integer(value.total)))
     }
 
     /// The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2,

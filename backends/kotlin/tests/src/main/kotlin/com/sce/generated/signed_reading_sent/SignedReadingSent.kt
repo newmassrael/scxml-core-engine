@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a75be659ab92abd1ba0e92fccd48a8e5a877548f5d15264555f23cf2a66450d0
+// source-hash: 8c9ef524fe073aa8c760ddf6921e6cc28695ea616c9bd68228e4cfc8c0f5c268
 // source: signed_reading_sent.scxml
 // SCE-MAP: signed_reading_sent.scxml:5 :: _forge_body
 
@@ -18,7 +18,7 @@ typealias Value = com.sce.generated.signed_reading.SignedReadingPayload
  */
 @Suppress("UNUSED_PARAMETER", "SENSELESS_COMPARISON", "USELESS_IS_CHECK")
 fun matches(value: Value): Boolean =
-    value.delta == (-7).toByte() && value.offset == (-300).toShort() && value.level == -70000 && value.stamp == -5000000000L && value.total == 10000000000000000000uL
+    value.change == (-7).toByte() && value.offset == (-300).toShort() && value.level == -70000 && value.stamp == -5000000000L && value.total == 10000000000000000000uL
 
 /**
  * The value the specific template `signed_reading_sent` sends (docs/SCE_TEST_PROFILE.md
@@ -27,7 +27,7 @@ fun matches(value: Value): Boolean =
  */
 @Suppress("UNUSED_PARAMETER")
 fun value(): Value =
-    com.sce.generated.signed_reading.SignedReadingPayload(delta = (-7).toByte(), offset = (-300).toShort(), level = -70000, stamp = -5000000000L, total = 10000000000000000000uL)
+    com.sce.generated.signed_reading.SignedReadingPayload(change = (-7).toByte(), offset = (-300).toShort(), level = -70000, stamp = -5000000000L, total = 10000000000000000000uL)
 
 /**
  * The name of the record [Value] is, as the types module of the suite's TTCN-3 export names it
@@ -42,4 +42,4 @@ const val TYPE: String = "signed_reading"
  * carries it beside the value it sends (`com.sce.runtime.test.messageValue`).
  */
 fun canonical(value: Value): Any =
-    com.sce.runtime.test.Canonical.record("delta" to com.sce.runtime.test.Canonical.integer(value.delta), "offset" to com.sce.runtime.test.Canonical.integer(value.offset), "level" to com.sce.runtime.test.Canonical.integer(value.level), "stamp" to com.sce.runtime.test.Canonical.integer(value.stamp), "total" to com.sce.runtime.test.Canonical.integer(value.total))
+    com.sce.runtime.test.Canonical.record("change" to com.sce.runtime.test.Canonical.integer(value.change), "offset" to com.sce.runtime.test.Canonical.integer(value.offset), "level" to com.sce.runtime.test.Canonical.integer(value.level), "stamp" to com.sce.runtime.test.Canonical.integer(value.stamp), "total" to com.sce.runtime.test.Canonical.integer(value.total))

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a75be659ab92abd1ba0e92fccd48a8e5a877548f5d15264555f23cf2a66450d0
+// source-hash: 8c9ef524fe073aa8c760ddf6921e6cc28695ea616c9bd68228e4cfc8c0f5c268
 // source: signed_reading_sent.scxml
 // SCE-MAP: signed_reading_sent.scxml:5 :: _forge_body
 
@@ -20,14 +20,14 @@ public enum SignedReadingSent {
     /// Whether `value` matches the template (ES 201 873-1 Annex B.1,
     /// docs/SCE_TEST_PROFILE.md §6.1).
     public static func matches(_ value: Value) -> Bool {
-        return value.delta == -7 && value.offset == -300 && value.level == -70000 && value.stamp == -5000000000 && value.total == 10000000000000000000
+        return value.change == -7 && value.offset == -300 && value.level == -70000 && value.stamp == -5000000000 && value.total == 10000000000000000000
     }
 
     /// The value the specific template sends (docs/SCE_TEST_PROFILE.md §6.2): every field it
     /// names at its value, every field it omits absent. It matches the template by `matches`,
     /// given the same parameters.
     public static func value() -> Value {
-        return SignedReadingPayload(delta: -7, offset: -300, level: -70000, stamp: -5000000000, total: 10000000000000000000)
+        return SignedReadingPayload(change: -7, offset: -300, level: -70000, stamp: -5000000000, total: 10000000000000000000)
     }
 
     /// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
@@ -39,6 +39,6 @@ public enum SignedReadingSent {
     /// their declared names, an absent field omitted. A send of this template carries it beside the
     /// value it sends (`SceTestProfile.messageValue`).
     public static func canonical(_ value: Value) -> SceRuntime.JSONValue {
-        return SceTestProfile.Canonical.record(("delta", SceTestProfile.Canonical.integer(value.delta)), ("offset", SceTestProfile.Canonical.integer(value.offset)), ("level", SceTestProfile.Canonical.integer(value.level)), ("stamp", SceTestProfile.Canonical.integer(value.stamp)), ("total", SceTestProfile.Canonical.integer(value.total)))
+        return SceTestProfile.Canonical.record(("change", SceTestProfile.Canonical.integer(value.change)), ("offset", SceTestProfile.Canonical.integer(value.offset)), ("level", SceTestProfile.Canonical.integer(value.level)), ("stamp", SceTestProfile.Canonical.integer(value.stamp)), ("total", SceTestProfile.Canonical.integer(value.total)))
     }
 }

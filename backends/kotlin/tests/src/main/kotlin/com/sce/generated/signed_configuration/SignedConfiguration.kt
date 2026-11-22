@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 66f50d90ba3e43e6157086c9298ee14315ec2833ae37d9af260b6384fbec5227
+// source-hash: 2b1a01faa0f39a78981b432fbb0fd087ee06ecdcae837825ff5c891fee416aff
 // source: signed_configuration.scxml
 // SCE-MAP: signed_configuration.scxml:4 :: _forge_body
 
@@ -54,14 +54,14 @@ fun moduleParameters(): List<String> = emptyList()
  * @throws com.sce.runtime.test.TraceRefusal naming where its value does not belong to its type.
  */
 fun read_signed_reading(value: Any?): com.sce.generated.signed_reading.SignedReadingPayload =
-    com.sce.runtime.test.FromCanonical.record(value, listOf("delta", "offset", "level", "stamp", "total"), "signed_reading").let { record_0 -> com.sce.generated.signed_reading.SignedReadingPayload(delta = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "delta", "signed_reading.delta"), com.sce.runtime.test.FromCanonical.INT8, "signed_reading.delta"), offset = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "offset", "signed_reading.offset"), com.sce.runtime.test.FromCanonical.INT16, "signed_reading.offset"), level = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "level", "signed_reading.level"), com.sce.runtime.test.FromCanonical.INT32, "signed_reading.level"), stamp = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "stamp", "signed_reading.stamp"), com.sce.runtime.test.FromCanonical.INT64, "signed_reading.stamp"), total = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "total", "signed_reading.total"), com.sce.runtime.test.FromCanonical.UINT64, "signed_reading.total")) }
+    com.sce.runtime.test.FromCanonical.record(value, listOf("change", "offset", "level", "stamp", "total"), "signed_reading").let { record_0 -> com.sce.generated.signed_reading.SignedReadingPayload(change = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "change", "signed_reading.change"), com.sce.runtime.test.FromCanonical.INT8, "signed_reading.change"), offset = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "offset", "signed_reading.offset"), com.sce.runtime.test.FromCanonical.INT16, "signed_reading.offset"), level = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "level", "signed_reading.level"), com.sce.runtime.test.FromCanonical.INT32, "signed_reading.level"), stamp = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "stamp", "signed_reading.stamp"), com.sce.runtime.test.FromCanonical.INT64, "signed_reading.stamp"), total = com.sce.runtime.test.FromCanonical.integer(com.sce.runtime.test.FromCanonical.field(record_0, "total", "signed_reading.total"), com.sce.runtime.test.FromCanonical.UINT64, "signed_reading.total")) }
 
 /**
  * The record `signed_reading` in the canonical form of the test log
  * (docs/SCE_TEST_PROFILE.md §12.5), which a message of it a trace hands the run carries.
  */
 fun canonical_signed_reading(value: com.sce.generated.signed_reading.SignedReadingPayload): Any =
-    com.sce.runtime.test.Canonical.record("delta" to com.sce.runtime.test.Canonical.integer(value.delta), "offset" to com.sce.runtime.test.Canonical.integer(value.offset), "level" to com.sce.runtime.test.Canonical.integer(value.level), "stamp" to com.sce.runtime.test.Canonical.integer(value.stamp), "total" to com.sce.runtime.test.Canonical.integer(value.total))
+    com.sce.runtime.test.Canonical.record("change" to com.sce.runtime.test.Canonical.integer(value.change), "offset" to com.sce.runtime.test.Canonical.integer(value.offset), "level" to com.sce.runtime.test.Canonical.integer(value.level), "stamp" to com.sce.runtime.test.Canonical.integer(value.stamp), "total" to com.sce.runtime.test.Canonical.integer(value.total))
 
 /**
  * The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2,
