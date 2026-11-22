@@ -15,7 +15,7 @@
 
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::outbound::RetryPolicy;
-use sce_rust_mesh::router::{PeerConfig, Router};
+use sce_rust_mesh::router::{PeerConfig, Responders, Router};
 use sce_rust_world::{Outcome, World};
 
 include!(concat!(env!("OUT_DIR"), "/machines.rs"));
@@ -41,7 +41,7 @@ fn peer(responders: &'static [&'static str]) -> PeerConfig {
             dedup: true,
             ordered: false,
         },
-        responders,
+        responders: Responders::Named(responders),
         deadline_ms: None,
         reply_events: &[],
         causal: None,

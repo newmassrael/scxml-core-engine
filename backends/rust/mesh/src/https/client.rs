@@ -1073,7 +1073,7 @@ mod tests {
                     dedup: true,
                     ordered: false,
                 },
-                responders: &["cloud"],
+                responders: crate::router::Responders::Named(&["cloud"]),
                 deadline_ms: None,
                 reply_events: &[],
                 causal: None,

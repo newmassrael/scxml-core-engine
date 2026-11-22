@@ -163,7 +163,7 @@ mod through_the_host_core {
     use sce_rust_mesh::generated::payload_codec::PayloadCodec;
     use sce_rust_mesh::generated::rpc_status::RpcStatus;
     use sce_rust_mesh::inbound::Delivery;
-    use sce_rust_mesh::router::{PeerConfig, Router};
+    use sce_rust_mesh::router::{PeerConfig, Responders, Router};
 
     /// What a transport was handed: each peer it named and the bytes.
     type Sent = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
@@ -220,7 +220,7 @@ mod through_the_host_core {
                     dedup: true,
                     ordered: false,
                 },
-                responders: &["motor"],
+                responders: Responders::Named(&["motor"]),
                 deadline_ms: None,
                 reply_events: &[],
                 causal: None,

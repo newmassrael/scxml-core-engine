@@ -231,6 +231,33 @@ pub struct Sessions {
     pub commit_delay_us: u64,
 }
 
+/// How many copies of a machine the deployment runs (deploy.yaml's
+/// `instances:`; docs/adr/0113, D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Instances {
+    /// The machine is one: its name is its identity.
+    One,
+    /// `instances: open`: any number of copies run, each an instance, and a
+    /// sender of the machine is the pair (machine, instance), the instance
+    /// being the id its host gives it ([`is_instance_id`]).
+    Open,
+}
+
+/// The most characters an instance id holds (docs/adr/0113, D1).
+pub const MAX_INSTANCE_ID_CHARS: usize = 64;
+
+/// Whether `id` is an instance id (docs/adr/0113, D1): 1 to
+/// [`MAX_INSTANCE_ID_CHARS`] characters, each a letter or digit of ASCII,
+/// `.`, `_` or `-`. Every one is a character a path segment carries as it
+/// stands, so no encoding can make two ids one. The id is opaque: not a key,
+/// and not a person.
+pub fn is_instance_id(id: &str) -> bool {
+    (1..=MAX_INSTANCE_ID_CHARS).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
 /// One machine's side of a deployment.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Machine {
@@ -242,13 +269,24 @@ pub struct Machine {
     pub gap_timeout_ms: i64,
     /// Every peer the machine is bound to, by name.
     pub peers: &'static [Peer],
+    /// Every open machine the machine is bound to, by name (docs/adr/0113,
+    /// D3): not one peer but any number of them, each an instance under the
+    /// one [`PeerConfig`] here, whose responder is the instance itself
+    /// ([`Responders::Instance`]).
+    ///
+    /// [`Responders::Instance`]: crate::router::Responders::Instance
+    pub open_peers: &'static [Peer],
+    /// Whether this machine is one or an open set of instances.
+    pub instances: Instances,
     /// The machine's keyed pool, when the deployment serves it as one; `None`
     /// for a machine that is one session.
     pub sessions: Option<Sessions>,
 }
 
 impl Machine {
-    /// A router holding every peer this machine is bound to.
+    /// A router holding every peer this machine is bound to by name. An open
+    /// machine's name is no peer's ([`Self::open_peers`]), so a router refuses
+    /// it as one it does not hold.
     ///
     /// A dialing `https` binding under `receipt: durable` (docs/adr/0109, D10) makes the router
     /// checkpoint and hold what it sends the peer until a `200` carried it, the binding's
@@ -284,12 +322,19 @@ impl Machine {
     pub fn peer(&self, name: &str) -> Option<&'static Peer> {
         self.peers.iter().find(|peer| peer.name == name)
     }
+
+    /// The open machine named `name`, if the machine is bound to one: what
+    /// each of its instances is a peer under.
+    pub fn open_peer(&self, name: &str) -> Option<&'static Peer> {
+        self.open_peers.iter().find(|peer| peer.name == name)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::inbound::Delivery;
+    use crate::router::Responders;
 
     const MACHINE: Machine = Machine {
         name: "phone",
@@ -306,7 +351,7 @@ mod tests {
                     dedup: true,
                     ordered: false,
                 },
-                responders: &["cloud"],
+                responders: Responders::Named(&["cloud"]),
                 deadline_ms: None,
                 reply_events: &[],
                 causal: None,
@@ -316,6 +361,8 @@ mod tests {
                 keepalive_ms: None,
             },
         }],
+        open_peers: &[],
+        instances: Instances::One,
         sessions: None,
     };
 
@@ -345,13 +392,15 @@ mod tests {
                     dedup: true,
                     ordered: false,
                 },
-                responders: &["phone"],
+                responders: Responders::Named(&["phone"]),
                 deadline_ms: None,
                 reply_events: &[],
                 causal: None,
             },
             link: PeerLink::ZenohInbox,
         }],
+        open_peers: &[],
+        instances: Instances::One,
         sessions: None,
     };
 
@@ -383,7 +432,7 @@ mod tests {
                     dedup: true,
                     ordered: false,
                 },
-                responders: &["phone"],
+                responders: Responders::Named(&["phone"]),
                 deadline_ms: None,
                 reply_events: &[],
                 causal: None,
@@ -405,6 +454,8 @@ mod tests {
                 retain_ms: 2_592_000_000,
             },
         }],
+        open_peers: &[],
+        instances: Instances::One,
         sessions: None,
     };
 
@@ -435,6 +486,49 @@ mod tests {
             ..MACHINE
         };
         assert!(empty_window.router().is_err());
+    }
+
+    /// docs/adr/0113, D1: an instance id is 1 to 64 characters of a closed set, every one of
+    /// which a path segment carries as it stands. Red if the length is not held, or a character
+    /// outside the set is taken.
+    #[test]
+    fn an_instance_id_is_one_to_sixty_four_characters_of_a_path_segment() {
+        let longest = "a".repeat(MAX_INSTANCE_ID_CHARS);
+        for id in ["0", "A-z_9.b", longest.as_str()] {
+            assert!(is_instance_id(id), "{id}");
+            assert!(crate::link::is_path_segment(id), "{id}");
+        }
+        let long = "a".repeat(MAX_INSTANCE_ID_CHARS + 1);
+        for id in ["", "a b", "a/b", "a~b", "a%2Fb", "é", long.as_str()] {
+            assert!(!is_instance_id(id), "{id}");
+        }
+    }
+
+    /// docs/adr/0113, D3: an open machine is held beside the peers and not among them, under its
+    /// one configuration, whose responder is the instance itself; the machine's name binds no
+    /// peer of the router. Red if `Machine::router` binds an open machine by its name.
+    #[test]
+    fn an_open_machine_is_no_peer_by_its_name() {
+        const SERVER: Machine = Machine {
+            peers: &[],
+            open_peers: &[Peer {
+                config: PeerConfig {
+                    responders: Responders::Instance,
+                    ..HTTPS_SERVER.peers[0].config
+                },
+                ..HTTPS_SERVER.peers[0]
+            }],
+            ..HTTPS_SERVER
+        };
+        let mut router = SERVER.router().expect("a valid configuration");
+        assert!(router.peer_ready("phone", 0).is_err());
+        assert!(SERVER.peer("phone").is_none());
+        assert_eq!(
+            SERVER.open_peer("phone").map(|p| p.config.responders),
+            Some(Responders::Instance)
+        );
+        assert!(SERVER.open_peer("elsewhere").is_none());
+        assert_eq!(SERVER.instances, Instances::One, "the server is one");
     }
 
     /// A client of an `https` server whose binding declares `receipt: durable`.

@@ -26,7 +26,7 @@ use sce_rust_mesh::endpoint::{
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::link::{deliver, LinkEvent};
 use sce_rust_mesh::outbound::OutboundBuffer;
-use sce_rust_mesh::router::{PeerConfig, Router};
+use sce_rust_mesh::router::{PeerConfig, Responders, Router};
 use sce_rust_mesh::zenoh::{client_config, open, ZenohBinding, ZenohEvents, ZenohTransport};
 use sce_rust_runtime::HostSendRequest;
 
@@ -91,7 +91,7 @@ fn peer_config(peer: &str) -> PeerConfig {
             dedup: true,
             ordered: false,
         },
-        responders: Box::leak(Box::new([name])),
+        responders: Responders::Named(Box::leak(Box::new([name]))),
         deadline_ms: None,
         reply_events: &[],
         causal: None,

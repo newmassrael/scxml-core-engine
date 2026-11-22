@@ -15,7 +15,7 @@ use sce_rust_mesh::generated::envelope::Envelope;
 use sce_rust_mesh::generated::pattern_kind::PatternKind;
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::outbound::{OutboundBuffer, RetryPolicy};
-use sce_rust_mesh::router::{PeerConfig, Router};
+use sce_rust_mesh::router::{PeerConfig, Responders, Router};
 use sce_rust_world::{Fate, Outcome, Rng, World};
 use serde_json::Value;
 
@@ -61,7 +61,7 @@ pub fn peer(responders: &'static [&'static str], ordered: bool) -> PeerConfig {
             dedup: true,
             ordered,
         },
-        responders,
+        responders: Responders::Named(responders),
         deadline_ms: None,
         reply_events: &[],
         causal: None,
@@ -889,7 +889,7 @@ pub fn causal_peer(group: CausalGroup) -> PeerConfig {
             dedup: false,
             ordered: false,
         },
-        responders: &[PEOPLE],
+        responders: Responders::Named(&[PEOPLE]),
         deadline_ms: None,
         reply_events: &[],
         causal: Some(group),
