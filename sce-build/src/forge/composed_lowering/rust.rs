@@ -311,16 +311,6 @@ pub(crate) fn rust_bytes_type(max: u32) -> String {
     format!("{RUST_PORTABLE}::SceBytes<{max}>")
 }
 
-/// The byte string `bytes` (a `&[u8]`, or a reference that derefs to one) of a
-/// unit's record, which holds one in a `Vec<u8>` (`forge::generator::rust_type`)
-/// that holds no bound, as the `SceBytes<max>` a machine holds it in
-/// ([`rust_bytes_type`]). `held` is the sentence the copy asserts: why the bytes
-/// are within the bound where the copy is written, so a value past it is a defect
-/// that stops the program and not a refusal of the run.
-pub(crate) fn rust_unit_bytes_within(max: u32, bytes: &str, held: &str) -> String {
-    format!("{RUST_PORTABLE}::SceBytes::<{max}>::from_slice({bytes}).expect(\"{held}\")")
-}
-
 /// The empty list a Rust machine starts a list variable at, its element and
 /// bound taken from the place ([`rust_bounded_list`]).
 pub(crate) const RUST_EMPTY_LIST: &str = "::sce_rust_runtime::portable::BoundedList::new()";
@@ -686,8 +676,9 @@ impl ComposedSpelling for RustComposed<'_> {
     // number, a `bool`, a text, a byte string, and a list or an optional value
     // of them, in the machine's own types: the portable crate's bounded
     // storage, which the unit names as `::sce_portable_bytes` and the machine
-    // through [`RUST_PORTABLE`], one type. A byte string that is one entry of
-    // the record is the exception (`unit_entry_bytes`).
+    // through [`RUST_PORTABLE`], one type, a byte string that is one entry of
+    // the record among them, which [`ComposedSpelling::unit_entry_bytes`]
+    // therefore copies whole.
     fn unit_field(&self, held: &Held, field: &str) -> Option<String> {
         Some(format!(
             "{}.{}",
@@ -697,23 +688,6 @@ impl ComposedSpelling for RustComposed<'_> {
                 crate::generator::Language::Rust
             )
         ))
-    }
-    // A unit holds a byte string that is one entry of its record in a
-    // `Vec<u8>` (`forge::generator::rust_type`), which holds no bound, and the
-    // machine in the portable `SceBytes<N>` of the field's bound (docs/adr/0086,
-    // section 7.4). A message holds a value of its type, its bytes within the
-    // bound: a trace's input is held to its type before the run, and a
-    // template's literal where the template is read (docs/SCE_TEST_PROFILE.md
-    // §12.4). So the copy into the bound is not refused, and a value past it,
-    // which only a host's own adapter could hand the run, is a defect that
-    // stops the program, as a message of another type than the one the guard
-    // matched does.
-    fn unit_entry_bytes(&self, max: u32, held: &Held) -> String {
-        rust_unit_bytes_within(
-            max,
-            &held.borrowed(),
-            "a message holds its byte string within the bound its type declares",
-        )
     }
     // A `match` over every variant of the unit's enum, each arm the machine's
     // variant of the same declared name, as a value of an enum crosses a call
@@ -1547,9 +1521,9 @@ mod tests {
     /// element by element into the machine's records, an enum by a `match`
     /// into the machine's variant of the same declared name, and every value
     /// that names no record, enum or union is the machine's own type in the
-    /// unit too, copied whole: a number as it is, a text and a list cloned. A
-    /// byte string that is one entry of its record is the unit's `Vec<u8>`,
-    /// copied into the machine's `SceBytes` of its bound.
+    /// unit too, copied whole: a number as it is, a text, a byte string and a
+    /// list cloned, a byte string that is one entry of its record included,
+    /// which the unit holds in the machine's `SceBytes` of its bound.
     #[test]
     fn a_message_is_made_from_its_units_value_field_by_field() {
         let held = held();
@@ -1567,9 +1541,7 @@ mod tests {
         .expect("every field is made");
         let item = "MItemRecord { id: v.id, level: match v.level { level::Level::Low => \
                     MLevelEnum::Low, level::Level::High => MLevelEnum::High }, due: v.due, \
-                    blob: ::sce_rust_runtime::portable::SceBytes::<4>::from_slice(&v.blob)\
-                    .expect(\"a message holds its byte string within the bound its type \
-                    declares\"), tags: v.tags.clone() }";
+                    blob: v.blob.clone(), tags: v.tags.clone() }";
         assert_eq!(
             fields,
             vec![

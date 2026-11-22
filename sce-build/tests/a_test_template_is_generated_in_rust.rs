@@ -189,7 +189,8 @@ fn a_specific_templates_value_is_its_record() {
 /// An enum literal is the variant of the enum the record's document imports,
 /// named through that enum's own module; a reference to a specific template
 /// builds with its `value` and matches with its `matches`; a byte string is
-/// compared as its octets and built as the `Vec<u8>` its record holds.
+/// compared as its octets and built as the `SceBytes` of the bound its record
+/// holds it in.
 #[test]
 fn an_enum_a_reference_and_bytes_are_spelled_by_their_units() {
     let exact = unit_of(&imports_dir(), "order_line_exact");
@@ -209,7 +210,7 @@ fn an_enum_a_reference_and_bytes_are_spelled_by_their_units() {
         &voucher,
         &[
             r#"value.voucher_code[..] == b"\x00\xff\x10\xa0"[..]"#,
-            r#"voucher_code: b"\x00\xff\x10\xa0".to_vec()"#,
+            r#"voucher_code: ::sce_portable_bytes::sce_bytes!(4, b"\x00\xff\x10\xa0")"#,
         ],
     );
 }

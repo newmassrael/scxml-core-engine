@@ -701,11 +701,6 @@ struct RustAt {
     by_ref: bool,
     /// How many bindings the position stands inside: the next one's number.
     depth: usize,
-    /// Whether the position is a field its record's unit holds as one entry
-    /// (a number, a `bool`, an enum, a text or a byte string, or an optional
-    /// one), where a byte string is the language's `Vec<u8>` rather than the
-    /// bounded byte string of a composition.
-    entry: bool,
 }
 
 impl RustAt {
@@ -726,7 +721,6 @@ impl RustAt {
             base: name,
             by_ref: true,
             depth: depth + 1,
-            entry: false,
         }
     }
 }
@@ -840,7 +834,6 @@ impl TemplateSpelling for RustSpelling {
             base: "value".to_string(),
             by_ref: true,
             depth: 0,
-            entry: false,
         }
     }
 
@@ -855,11 +848,10 @@ impl TemplateSpelling for RustSpelling {
             place,
             by_ref: false,
             depth: at.depth,
-            entry: false,
         }
     }
 
-    fn field(&self, at: &RustAt, _record: &ScopedRecord, id: &str, ty: &ValueType) -> RustAt {
+    fn field(&self, at: &RustAt, _record: &ScopedRecord, id: &str, _ty: &ValueType) -> RustAt {
         let place = format!(
             "{}.{}",
             at.base,
@@ -870,7 +862,6 @@ impl TemplateSpelling for RustSpelling {
             place,
             by_ref: false,
             depth: at.depth,
-            entry: ty.entry().is_ok(),
         }
     }
 
@@ -882,7 +873,7 @@ impl TemplateSpelling for RustSpelling {
         &self,
         name: &str,
         ty: &ValueType,
-        at: &Position<'_, RustAt>,
+        _at: &Position<'_, RustAt>,
         purpose: Use,
     ) -> String {
         let param = rust_parameter(name);
@@ -892,7 +883,6 @@ impl TemplateSpelling for RustSpelling {
             Use::Compare if passed_by_value(ty) => param,
             Use::Compare => format!("*{param}"),
             Use::Build if passed_by_value(ty) => param,
-            Use::Build if bytes && at.at.entry => format!("{param}.to_vec()"),
             Use::Build => format!("{param}.clone()"),
         }
     }
@@ -902,8 +892,7 @@ impl TemplateSpelling for RustSpelling {
     /// the octets a text and a byte string are read as, and built as the
     /// bounded text or byte string the position holds, whose bound the
     /// literal is judged against where it is written (`sce_text!`,
-    /// `sce_bytes!`), or as the `Vec<u8>` of a byte string a record holds as
-    /// one entry.
+    /// `sce_bytes!`), a byte string a record holds as one entry among them.
     fn literal(
         &self,
         text: &str,
@@ -947,7 +936,6 @@ impl TemplateSpelling for RustSpelling {
                 let literal = format!("b\"{octets}\"");
                 Ok(match purpose {
                     Use::Compare => format!("{literal}[..]"),
-                    Use::Build if at.at.entry => format!("{literal}.to_vec()"),
                     Use::Build => format!("{PORTABLE}::sce_bytes!({}, {literal})", max.max),
                 })
             }

@@ -4969,10 +4969,13 @@ field, and a record whose schema no import resolves are refused before any langu
 renders as `generate/unsupported-feature`, naming the entry and the field. A record
 is the payload type of its schema's own unit, which the codec names and does not
 declare again. A lower count is a refusal of the encode (a value of fewer records),
-and so is a byte string of a record, which the schema's Rust unit holds without its
-bound; each is held to `sce:encode-may-fail` as every other refusal is. C11's unit
-holds a record's byte string in the buffer of its bound beside its length, which
-the read fills and the write holds to the bound. The backends
+and so is a byte string of a record, which the schema's unit holds without its
+bound on the languages whose own vector holds it (C++, Kotlin, Go, Python); each is
+held to `sce:encode-may-fail` as every other refusal is, on every lane, since the
+codec is one document. The Rust unit holds a record's byte string in the
+`SceBytes<N>` of its bound, which the read builds and whose check never refuses,
+and C11's unit in the buffer of its bound beside its length, which the read fills
+and the write holds to the bound. The backends
 `cbor_codec::lowers_record_list` names generate such a codec, one whose list type
 carries no bound refusing on encode a list past its bound and a text or byte string
 of a record past its bound as `CborOutOfRange`; every other backend refuses it by
@@ -6405,13 +6408,11 @@ from `sce-portable-bytes`), each key and value in the type a variable of its
 type is held in, but a record and an enum, which are held in the type their
 unit declares (docs/adr/0108, D6 item 4), a put crossing the machine's value
 into it through `<Type>ToDocument` and a read of an entry crossing back through
-`<Type>FromDocument`, field by field as a call's adapter crosses one. A byte
-string field, which the unit holds in a `Vec<u8>` and the machine in the
-`SceBytes<N>` of its bound, is copied whole into the unit and held to the bound
-again on the way back, which never refuses: only the machine's own put writes an
-entry of such a record, since an algorithm holds none. No map is keyed by such a
-record on Rust, whose unit holds the bytes in a type that is no key of the
-runtime's map: `generate` refuses it naming the field. The map is
+`<Type>FromDocument`, field by field as a call's adapter crosses one. The unit
+holds a text and a byte string the schema bounds in the types the machine holds
+them in, `SceString<N>` and `SceBytes<N>` of the field's bound, so each crosses
+as it is, and a record whose fields are keys, a byte string among them, is a key
+of the map in its unit's type. The map is
 (docs/adr/0108, D8) an array of `N` entry slots with a free
 list, a doubly linked order through them, which is the order a walk, the saved
 form and the snapshot follow, and an open-addressing index of twice the bound
