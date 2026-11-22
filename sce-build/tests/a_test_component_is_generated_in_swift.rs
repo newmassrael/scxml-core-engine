@@ -829,11 +829,16 @@ fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
         component[read..built].contains("return"),
         "a refused read leaves the engine unbuilt"
     );
-    // The variable that is no module parameter starts at its `expr`.
+    // The variable that is no module parameter is declared without a value and
+    // starts at its `expr`, which every initializer of the policy gives it.
     assert!(
         code.contains(
-            "    /// W3C SCXML 5.2: the `answered` datamodel variable.\n    var vAnswered: UInt32 = 0\n"
+            "    /// W3C SCXML 5.2: the `answered` datamodel variable.\n    var vAnswered: UInt32\n"
         ),
+        "{code}"
+    );
+    assert!(
+        code.contains("        let vAnswered: UInt32 = 0\n        self.vAnswered = vAnswered\n"),
         "{code}"
     );
     assert!(
