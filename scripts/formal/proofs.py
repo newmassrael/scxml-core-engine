@@ -16,7 +16,7 @@
 # The manifest is complete: every file that carries a contract is declared. Exit 1 is a
 # verdict about the code, exit 3 is "could not run" (no Verus, or not its toolchain).
 #
-# Usage: proofs.py [--self-test]
+# Usage: proofs.py [--self-test | --install [<directory>]]
 
 from __future__ import annotations
 
@@ -124,36 +124,66 @@ def contracted_files() -> list[str]:
     return found.stdout.split()
 
 
+def place_of(pin: dict) -> Path:
+    """Where the pinned Verus is, on a build machine (bx.toml) and anywhere else."""
+    return Path.home() / ".local" / "verus" / pin["version"]
+
+
+def toolchain_of(pin: dict) -> Path:
+    """The Rust release Verus runs on, where every declared one is (scripts/lib/rust_toolchains.sh)."""
+    return Path.home() / ".local" / "rust" / pin["toolchain"]
+
+
+# Verus asks rustup for its Rust release unless it is told not to; then it is the one
+# whose libraries it finds. No gate here reads an account's rustup home.
+WRAPPER = """#!/bin/sh
+# Written by scripts/formal/proofs.py --install: Verus {version} on Rust {toolchain}, with no rustup.
+if [ "$1" = --version ]; then
+    echo "verus {version}"
+    exit 0
+fi
+rust="$HOME/.local/rust/{toolchain}"
+VERUS_USE_RUSTUP=0 LD_LIBRARY_PATH="$rust/lib" exec "$(dirname "$(readlink -f "$0")")/../verus" --sysroot "$rust" "$@"
+"""
+
+
+def install(pin: dict, place: Path) -> None:
+    """Fetch the pinned Verus, check it against its digest, and unpack it into `place`."""
+    with tempfile.TemporaryDirectory() as scratch:
+        archive = Path(scratch) / "verus.zip"
+        try:
+            urllib.request.urlretrieve(pin["url"], archive)
+        except OSError as error:
+            raise CannotRun(f"cannot fetch {pin['url']}: {error}") from error
+        actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if actual != pin["sha256"]:
+            raise CannotRun(f"{pin['url']} is not the Verus this manifest pins ({actual})")
+        unpacked = Path(scratch) / "unpacked"
+        with zipfile.ZipFile(archive) as opened:
+            opened.extractall(unpacked)
+            for entry in opened.infolist():
+                mode = entry.external_attr >> 16
+                if mode:
+                    os.chmod(unpacked / entry.filename, mode & 0o755)
+        tree = unpacked / "verus-x86-linux"
+        if not (tree / "verus").is_file():
+            raise CannotRun(f"{pin['url']} holds no verus-x86-linux/verus")
+        place.mkdir(parents=True, exist_ok=True)
+        for entry in tree.iterdir():
+            shutil.move(str(entry), str(place / entry.name))
+    wrapper = place / "bin" / "verus"
+    wrapper.parent.mkdir(exist_ok=True)
+    wrapper.write_text(WRAPPER.format(version=pin["version"], toolchain=pin["toolchain"]), encoding="utf-8")
+    wrapper.chmod(0o755)
+
+
 def verus(pin: dict) -> Path:
-    """The pinned Verus, fetched once and checked against its digest."""
-    home = Path.home() / ".cache" / "sce-formal"
-    place = home / f"verus-{pin['version']}"
-    tool = place / "verus-x86-linux" / "verus"
+    """The pinned Verus, which this never fetches: a gate installs no tool."""
+    tool = place_of(pin) / "bin" / "verus"
     if not tool.is_file():
-        home.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=home) as scratch:
-            archive = Path(scratch) / "verus.zip"
-            try:
-                urllib.request.urlretrieve(pin["url"], archive)
-            except OSError as error:
-                raise CannotRun(f"cannot fetch {pin['url']}: {error}") from error
-            actual = hashlib.sha256(archive.read_bytes()).hexdigest()
-            if actual != pin["sha256"]:
-                raise CannotRun(f"{pin['url']} is not the Verus this manifest pins ({actual})")
-            unpacked = Path(scratch) / "unpacked"
-            with zipfile.ZipFile(archive) as opened:
-                opened.extractall(unpacked)
-                for entry in opened.infolist():
-                    mode = entry.external_attr >> 16
-                    if mode:
-                        os.chmod(unpacked / entry.filename, mode & 0o755)
-            shutil.rmtree(place, ignore_errors=True)
-            unpacked.replace(place)
-    if shutil.which("rustup") is None:
-        raise CannotRun("no rustup, which Verus runs its toolchain by")
-    have = subprocess.run(["rustup", "toolchain", "list"], capture_output=True, text=True, check=False).stdout
-    if not any(line.startswith(f"{pin['toolchain']}-") for line in have.splitlines()):
-        raise CannotRun(f"no Rust {pin['toolchain']}: rustup toolchain install {pin['toolchain']} --profile minimal --no-self-update")
+        raise CannotRun(f"no Verus at {tool}: scripts/formal/proofs.py --install")
+    if not (toolchain_of(pin) / "lib").is_dir():
+        raise CannotRun(f"no Rust at {toolchain_of(pin)}: scripts/install_rust.sh --declared {pin['toolchain']}")
     return tool
 
 
@@ -267,10 +297,18 @@ class SelfTest(unittest.TestCase):
 def main() -> int:
     if sys.argv[1:] == ["--self-test"]:
         return 0 if unittest.main(argv=[sys.argv[0]], exit=False).result.wasSuccessful() else 1
-    if sys.argv[1:]:
-        print("usage: proofs.py [--self-test]", file=sys.stderr)
-        return 2
     try:
+        if sys.argv[1:2] == ["--install"] and len(sys.argv) <= 3:
+            pin = json.loads(MANIFEST.read_text(encoding="utf-8"))["verus"]
+            place = Path(sys.argv[2]) if len(sys.argv) == 3 else place_of(pin)
+            if (place / "bin" / "verus").is_file():
+                print(f"proofs.py: Verus {pin['version']} is at {place}")
+                return 0
+            install(pin, place)
+            return 0
+        if sys.argv[1:]:
+            print("usage: proofs.py [--self-test | --install [<directory>]]", file=sys.stderr)
+            return 2
         return check()
     except CannotRun as reason:
         print(f"proofs.py: could not run: {reason}", file=sys.stderr)

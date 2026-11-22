@@ -11,8 +11,7 @@ name: Formal Proofs
 #
 # ## Why `ci_only` in the registry
 #
-# The build machines carry neither, and no gate installs any part of a toolchain.
-
+# A developer's machine need not carry either tool, and the push set runs there.
 on:
   push:
     branches: [ main, develop ]
@@ -50,16 +49,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - name: Restore Verus
+      - name: Restore Verus and its Rust release
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          path: ~/.cache/sce-formal
-          key: verus-${{ hashFiles('docs/formal/proofs.json') }}
+          path: |
+            ~/.local/verus
+            ~/.local/rust
+          key: verus-${{ hashFiles('docs/formal/proofs.json', 'scripts/formal/proofs.py', 'scripts/install_rust.sh') }}
 
-      - name: Install the Rust release Verus runs on
+      - name: Install Verus and the Rust release it runs on
         run: |
           release="$(python3 -c 'import json; print(json.load(open("docs/formal/proofs.json"))["verus"]["toolchain"])')"
-          rustup toolchain install "$release" --profile minimal --no-self-update
+          python3 scripts/formal/proofs.py --install
+          bash scripts/install_rust.sh --declared "$release"
 
       - name: Formal proofs gate
         run: scripts/gate formal-proofs
