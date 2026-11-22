@@ -281,3 +281,47 @@ fn a_cycle_holds_only_its_documents_whatever_spelling_reached_them() {
         other => panic!("expected Validation, got {other:?}"),
     }
 }
+
+/// The document compiled is on the walk when a run holds it in memory rather
+/// than on disk, as a plan or a child generation does
+/// (`sce_build::confine::with_documents`): an import that comes back to it
+/// reads the held text, so the cycle runs from it as it does for a file. It
+/// read `held_b -> held_a -> held_b` while the entry was looked for on disk
+/// alone and was read again as an import.
+#[test]
+fn a_cycle_through_a_document_held_in_memory_runs_from_it() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "held_b.scxml",
+        &codec_importing("held_b", &[("held_a.scxml", "a")]),
+    );
+    let entry = codec_importing("held_a", &[("held_b.scxml", "b")]);
+    let held = vec![(dir.path().join("held_a.scxml"), entry.clone())];
+    let refused = sce_build::confine::with_documents(held, || {
+        compile_forge_with_imports(
+            &entry,
+            DocumentLabel::symmetric("held_a.scxml"),
+            Language::Rust,
+            dir.path(),
+            &ForgeCompileOptions::default(),
+        )
+        .err()
+    });
+    let Some(err) = refused else {
+        panic!("held_a.scxml imports itself through held_b.scxml and was generated");
+    };
+    match err.error {
+        sce_build::forge::error::ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindCircularDependency { cycle } => {
+                assert_eq!(
+                    cycle,
+                    vec!["held_a.scxml", "held_b.scxml", "held_a.scxml"],
+                    "the cycle runs from the document compiled"
+                );
+            }
+            other => panic!("expected CrossKindCircularDependency, got {other:?}"),
+        },
+        other => panic!("expected Validation, got {other:?}"),
+    }
+}
