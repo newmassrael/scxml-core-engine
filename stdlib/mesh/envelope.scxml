@@ -57,5 +57,10 @@
          delivered vector. Present together, on a causal route only. -->
     <data id="causal_epoch" sce:type="optional&lt;uint64&gt;" sce:key="19" sce:direction="out"/>
     <data id="causal_vector" sce:type="optional&lt;list&lt;record:CausalEntry&gt;[64]&gt;" sce:key="20" sce:direction="out"/>
+    <!-- Which instance of the sending machine sends (docs/adr/0113, D1): 1 to
+         64 characters, each an ASCII letter or digit, '.', '_' or '-'. Absent
+         when the machine does not run as an open set of instances, so the
+         envelope of every other machine is written as it was. -->
+    <data id="instance" sce:type="optional&lt;string[64]&gt;" sce:key="21" sce:direction="out"/>
   </datamodel>
 </scxml>

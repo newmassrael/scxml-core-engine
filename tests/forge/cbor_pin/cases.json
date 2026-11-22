@@ -173,7 +173,7 @@
         },
         {
           "name": "largest",
-          "note": "every entry present at its longest: each text and byte string at its bound, each number at the 8-byte head, the causal vector full",
+          "note": "every entry but `instance` present at its longest: each text and byte string at its bound, each number at the 8-byte head, the causal vector full",
           "with": {
             "id": { "fill": "ff", "count": 16 },
             "source": { "fill": "a", "count": 262144 },
@@ -214,6 +214,13 @@
         { "name": "child_session_id-present", "base": "smallest", "with": { "child_session_id": "" } },
         { "name": "causal_epoch-present", "base": "smallest", "with": { "causal_epoch": 0 } },
         { "name": "causal_vector-present", "base": "smallest", "with": { "causal_vector": [] } },
+        { "name": "instance-present", "base": "smallest", "with": { "instance": "" } },
+        {
+          "name": "largest-of-an-instance",
+          "base": "largest",
+          "with": { "instance": { "fill": "a", "count": 64 } },
+          "note": "the largest envelope, of an open machine's instance at its bound (docs/adr/0113, D1)"
+        },
         {
           "name": "causal-route",
           "base": "smallest",

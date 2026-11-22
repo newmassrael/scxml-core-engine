@@ -107,6 +107,28 @@ final class CodecCborEnumUnitTests: XCTestCase {
         XCTAssertEqual(sink.bytes, map(required(pattern: 14, codec: 2)))
     }
 
+    /// docs/adr/0113, D1: an instance of the sending machine is key 21, a text of at most 64 bytes after
+    /// every other entry, and absent from the envelope of a machine that is one. Red if the key or its
+    /// bound moves, or an absent instance is written.
+    func testAnInstanceIsKey21AndAbsentFromEveryOtherEnvelope() throws {
+        var value = sample()
+        var plain = BytesSink()
+        try value.encode(into: &plain)
+        XCTAssertEqual(plain.bytes, map(required()))
+
+        value.instance = "Z-9_.b"
+        var open = BytesSink()
+        try value.encode(into: &open)
+        XCTAssertEqual(open.bytes, map(required() + [(21, text("Z-9_.b"))]))
+        var cursor = SceCursor(open.bytes)
+        XCTAssertEqual(try Envelope.decode(&cursor), value)
+
+        var longest = SceCursor(map(required() + [(21, text(String(repeating: "x", count: 64)))]))
+        XCTAssertEqual(try Envelope.decode(&longest).instance?.count, 64)
+        var past = SceCursor(map(required() + [(21, text(String(repeating: "x", count: 65)))]))
+        XCTAssertThrowsError(try Envelope.decode(&past))
+    }
+
     func testADecodeTakesWhatAnEncodeWrote() throws {
         var value = sample()
         value.rpc_status = .unavailable

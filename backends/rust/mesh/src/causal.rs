@@ -901,10 +901,11 @@ mod tests {
         }
     }
 
-    /// The wire. A tag is written as keys 19 and 20, the highest keys, so it
-    /// ends the map: the epoch, then an array of one map per entry, its keys
-    /// as text in RFC 8949 order (`hi`, `lo`, `seq`). Red if a core numbers
-    /// either key otherwise, or writes an entry's fields in another order.
+    /// The wire. A tag is written as keys 19 and 20, the highest keys of an
+    /// envelope with no instance, so it ends the map: the epoch, then an array
+    /// of one map per entry, its keys as text in RFC 8949 order (`hi`, `lo`,
+    /// `seq`). Red if a core numbers either key otherwise, or writes an
+    /// entry's fields in another order.
     #[test]
     fn a_tag_is_written_as_keys_19_and_20_and_read_back() {
         let tag = Tag {
