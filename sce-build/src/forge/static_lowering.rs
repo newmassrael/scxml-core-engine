@@ -20869,6 +20869,9 @@ impl StaticTarget for CTarget {
                             held_scalar(ty) || matches!(ty, SceType::Float32 | SceType::Float64)
                         }
                         crate::forge::model::AlgorithmValueType::Record { .. } => true,
+                        // A text of a bound is the buffer a `string[N]` variable is
+                        // held in (docs/adr/0086, section 7.3).
+                        crate::forge::model::AlgorithmValueType::Text { max: Some(_) } => true,
                         _ => false,
                     });
             }
