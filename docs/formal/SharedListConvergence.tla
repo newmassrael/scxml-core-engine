@@ -20,6 +20,13 @@
 (* that number. With `Evict = FALSE` the model is what the code was before *)
 (* the property was checked against it, and TLC finds the divergence       *)
 (* (SharedListConvergence_without_eviction.cfg).                           *)
+(*                                                                         *)
+(* Taken as given:                                                         *)
+(*   An operation is its device's: a signature is not forged, so no one    *)
+(*     else makes one.                                                     *)
+(*   Entries reach a host in order, and an operation after the entry it    *)
+(*     names.                                                              *)
+(*   LiveSpec: the network delivers in the end what is there.              *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 
@@ -127,6 +134,13 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
+\* The network is fair: an entry and an operation that are there reach each host in the end.
+Fair ==
+    /\ \A h \in Hosts : WF_vars(GiveEntry(h))
+    /\ \A h \in Hosts, d \in Devices, s \in Seqs, v \in Versions : WF_vars(Deliver(h, d, s, v))
+
+LiveSpec == Spec /\ Fair
+
 -----------------------------------------------------------------------------
 
 AllOps ==
@@ -146,5 +160,8 @@ HeldValid ==
 Convergence ==
     \A h1, h2 \in Hosts :
         (Saturated(h1) /\ Saturated(h2)) => held[h1] = held[h2]
+
+\* Once nothing more is made, every host holds the same, and goes on holding it.
+Converges == <>[](\A h1, h2 \in Hosts : held[h1] = held[h2])
 
 =============================================================================
