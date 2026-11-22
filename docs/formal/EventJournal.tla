@@ -13,6 +13,13 @@
 (* nothing can still appear. A follower keeps its cursor in the write of    *)
 (* what it did. Each part can be switched off, and TLC must then find a     *)
 (* violation.                                                               *)
+(*                                                                         *)
+(* Taken as given:                                                         *)
+(*   A write is atomic and durable, and its fence is judged inside it.     *)
+(*   A position is given once, above every one before, inside the write.   *)
+(*   Release: a process that stops ends the transactions it had under way. *)
+(*   A clock may lag and does not run back for one process.                *)
+(*   LiveSpec: a transaction under way ends, and a follower goes on.       *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets, Sequences
 
@@ -21,9 +28,11 @@ CONSTANTS NProc, NSess, MaxInput, MaxOpen, MaxCrash,
           Atomic,       \* the entry is written with the state
           Horizon,      \* a reader reads up to the horizon
           CursorAtomic, \* a cursor is written with what its follower did
-          ByPosition    \* an earlier moment is a position, not a clock's time
+          ByPosition,   \* an earlier moment is a position, not a clock's time
+          Release       \* a process that stops ends the transactions it had under way
 
 Procs == 1..NProc
+Nobody == 0             \* whose a transaction is that a stopped process left under way
 Sess  == 1..NSess
 MaxPos == NSess * MaxInput * 2
 
@@ -69,7 +78,7 @@ Entry(t) == [pos |-> t.pos, s |-> t.s, n |-> t.n, at |-> t.at]
 
 \* It commits or, its fence being another's now, writes nothing.
 Commit(t) ==
-    /\ t \in open /\ open' = open \ {t}
+    /\ t \in open /\ t.p # Nobody /\ open' = open \ {t}
     /\ IF Fence /\ t.f # fence[t.s]
        THEN /\ hold' = [hold EXCEPT ![t.p][t.s] = 0]
             /\ UNCHANGED <<st, log, mem, pend>>
@@ -90,6 +99,7 @@ Crash(p) ==
     /\ crashes < MaxCrash /\ crashes' = crashes + 1
     /\ hold' = [hold EXCEPT ![p] = [s \in Sess |-> 0]]
     /\ open' = {t \in open : t.p # p}
+               \cup (IF Release THEN {} ELSE {[t EXCEPT !.p = Nobody] : t \in {u \in open : u.p = p}})
     /\ pend' = {} /\ staged' = 0
     /\ UNCHANGED <<fence, mem, st, log, nextpos, clock, cursor, applied, asked>>
 
@@ -135,6 +145,13 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
+\* A transaction under way ends, and a follower goes on: what a follower's progress stands on.
+Fair ==
+    /\ WF_vars(\E t \in open : Commit(t))
+    /\ WF_vars(Follow) /\ WF_vars(KeepCursor)
+
+LiveSpec == Spec /\ Fair
+
 -----------------------------------------------------------------------------
 \* An input makes one entry.
 AppendOnce == \A e, f \in log : (e.s = f.s /\ e.n = f.n) => e = f
@@ -146,6 +163,13 @@ NothingLost == \A s \in Sess : \A n \in 1..st[s] :
 \* A follower did each entry once, and passed none.
 FollowedOnce == \A k \in DOMAIN applied : applied[k] <= 1
 NonePassed == \A e \in log : e.pos <= cursor => applied[<<e.s, e.n>>] >= 1
+
+\* Every entry the journal holds is followed in the end.
+Followed == \A k \in Sess \X (1..MaxInput) : (\E e \in log : <<e.s, e.n>> = k) ~> (applied[k] >= 1)
+
+\* A follower has taken in all there is. From every state it can come to this (`AG EF`): nothing
+\* that happens freezes the horizon for good.
+CaughtUp == open = {} /\ Readable = {} /\ staged = 0
 
 \* An answer as of a moment does not change after it was given.
 Stable == \A a \in asked : AsOf(a.r) = a.held

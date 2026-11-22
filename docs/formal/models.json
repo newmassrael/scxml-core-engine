@@ -28,11 +28,25 @@
           "states": 6383
         },
         {
+          "config": "SharedListConvergence_live.cfg",
+          "expect": "holds",
+          "states": 6383
+        },
+        {
+          "config": "SharedListConvergence_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Converges",
+          "against": "the fairness of LiveSpec"
+        },
+        {
           "config": "SharedListConvergence_without_eviction.cfg",
           "expect": "violates",
           "invariant": "Convergence",
           "without": "Evict"
         }
+      ],
+      "progress": [
+        "Converges"
       ]
     },
     {
@@ -48,11 +62,25 @@
           "states": 554585
         },
         {
+          "config": "SharedListConflicts_live.cfg",
+          "expect": "holds",
+          "states": 10585
+        },
+        {
+          "config": "SharedListConflicts_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Converges",
+          "against": "the fairness of LiveSpec"
+        },
+        {
           "config": "SharedListConflicts_arrival.cfg",
           "expect": "violates",
           "invariant": "Convergence",
           "without": "Arrival"
         }
+      ],
+      "progress": [
+        "Converges"
       ]
     },
     {
@@ -79,6 +107,23 @@
           "states": 13658347
         },
         {
+          "config": "BroadcastLog_live.cfg",
+          "expect": "holds",
+          "states": 444
+        },
+        {
+          "config": "BroadcastLog_read_without_fairness.cfg",
+          "expect": "violates",
+          "property": "ReadEnds",
+          "against": "the fairness of LiveSpec"
+        },
+        {
+          "config": "BroadcastLog_catch_without_fairness.cfg",
+          "expect": "violates",
+          "property": "CatchesUp",
+          "against": "the fairness of LiveSpec"
+        },
+        {
           "config": "BroadcastLog_without_extra_slot.cfg",
           "expect": "violates",
           "invariant": "AnswerRefines",
@@ -96,6 +141,10 @@
           "invariant": "FirstLagIsOvertaken",
           "without": "Extra"
         }
+      ],
+      "progress": [
+        "ReadEnds",
+        "CatchesUp"
       ]
     },
     {
@@ -126,6 +175,17 @@
           "states": 528936
         },
         {
+          "config": "BroadcastLogWrapped_live.cfg",
+          "expect": "holds",
+          "states": 23052
+        },
+        {
+          "config": "BroadcastLogWrapped_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "ReadEnds",
+          "against": "the fairness of LiveSpec"
+        },
+        {
           "config": "BroadcastLogWrapped_without_bound.cfg",
           "expect": "violates",
           "invariant": "AnswerRefines",
@@ -143,6 +203,9 @@
           "invariant": "SlotIndexContinuous",
           "against": "a slot count that does not divide the stamp space"
         }
+      ],
+      "progress": [
+        "ReadEnds"
       ]
     },
     {
@@ -253,7 +316,8 @@
         "Atomic": "TRUE",
         "Horizon": "TRUE",
         "CursorAtomic": "TRUE",
-        "ByPosition": "TRUE"
+        "ByPosition": "TRUE",
+        "Release": "TRUE"
       },
       "runs": [
         {
@@ -265,6 +329,36 @@
           "config": "EventJournal_two_inputs.cfg",
           "expect": "holds",
           "states": 18088
+        },
+        {
+          "config": "EventJournal_live.cfg",
+          "expect": "holds",
+          "states": 18088,
+          "possible": "CaughtUp"
+        },
+        {
+          "config": "EventJournal_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Followed",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what makes an entry be followed; the promise of the journal is safety and needs none"
+        },
+        {
+          "config": "EventJournal_live_without_release.cfg",
+          "expect": "violates",
+          "property": "Followed",
+          "without": "Release",
+          "promise": "kept",
+          "why": "a horizon that stops gives a reader nothing false, and no more"
+        },
+        {
+          "config": "EventJournal_possible_without_release.cfg",
+          "expect": "violates",
+          "possible": "CaughtUp",
+          "without": "Release",
+          "promise": "kept",
+          "why": "a horizon that stops gives a reader nothing false, and no more"
         },
         {
           "config": "EventJournal_without_fence.cfg",
@@ -311,7 +405,13 @@
         }
       ],
       "promise": "Refines",
-      "refines": "JournalService"
+      "refines": "JournalService",
+      "possible": [
+        "CaughtUp"
+      ],
+      "progress": [
+        "Followed"
+      ]
     },
     {
       "module": "AtMostOnceService",
