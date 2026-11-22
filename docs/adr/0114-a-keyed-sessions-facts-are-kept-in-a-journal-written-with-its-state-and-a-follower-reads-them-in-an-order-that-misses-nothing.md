@@ -31,8 +31,9 @@ record kept beside it, by the same transaction.
 - **A log is the order in which facts became true; state and views are folds of it** (Kreps 2013; Helland 2015). A view
   keeps its position beside what it computed.
 - **A write to two places is one transaction or is wrong** (the transactional outbox).
-- **Two times** (Snodgrass 1999; Jensen and Snodgrass 1999): *valid time*, when a fact holds in the world, and *transaction
-  time*, when the record of it was made. A correction is a new record; none is ever changed.
+- **Two times** (Snodgrass 1999; Jensen and Snodgrass 1999): *valid time*, when a fact holds in the world, and
+  *transaction time*, when it is current in the record: from the entry that states it to the entry that corrects it. A
+  correction is a new record; none is ever changed.
 - **Transaction time is an order, not a clock.** A clock can lag, and an answer "as of 14:00" given at 14:01 can be
   changed by a record another process stamps 13:59. Position is the order and the store's own.
 - **A position may be taken before it is visible**: two transactions numbered 7 and 8 may commit 8 first. A reader that
