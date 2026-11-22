@@ -346,6 +346,9 @@ COST_MEASURED: dict[str, str] = {
     # 72s, `scripts/gate genmc-queue` on pc2 with two harnesses and ten mutants
     # each, the first run that read GenMC's reports rather than its exit codes.
     "genmc-queue": "2026-10-10",
+    # 208s, the gate's script through bx on hkl002 with three cores, the first run
+    # that judged every model and its refinement.
+    "formal-models": "2026-11-22",
     # 451s, the gate's script through bx on hkl002, cold (its entry says why
     # that and not a warm reading).
     "rust-version": "2026-10-20",
@@ -1570,6 +1573,29 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
+    },
+    # The TLA+ models of docs/formal under TLC, as docs/formal/models.json declares
+    # them (docs/adr/0115, D5). Nothing ran them before this gate.
+    #
+    # `ci_only`: the largest configuration is explored whole, which is minutes, and
+    # a push has five for everything. TLC is fetched by the runner that needs it and
+    # checked against the manifest's digest; Java is what every runner here has, and
+    # the gate answers "could not run" (exit 3) where it has not.
+    "formal-models": {
+        "workflows": ["formal-models.yml"],
+        "runner_workflow": True,
+        "extra": ["docs/formal/**", "scripts/formal/**"],
+        "ci_only": "The largest model is explored whole (OpenInstances, 1.4 million "
+                   "states), which takes minutes of a push that has five for everything. "
+                   "formal-models.yml runs it on every change to a model or its judge.",
+        "cost_s": 210,
+        "summary": "TLA+ models under TLC, with every protocol part taken out in turn",
+        # TLC explores every reachable state of a configuration, and the manifest
+        # records the count, so one input gives one answer.
+        "cache": True,
+        "inputs": None,
+        "commits": [],
+        "peak_gb": 8,
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs

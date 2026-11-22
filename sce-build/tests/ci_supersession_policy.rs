@@ -365,6 +365,10 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // Re-measure it once it has a window; the classification is not close
     // (3.6 against a 17.6 gap), but the number is not yet what the column says
     // it is.
+    // ⚠ STAND-IN, borrowed 2026-11-22 for a lane of no history: the gate takes about five minutes on
+    // a build machine and a hosted runner has four cores, so the median may sit at 10 to 20. The lane
+    // declares `false` like every other. Replace it after 25 runs of its own and delete this paragraph.
+    ("formal-models.yml", 13.9, 0, 0, 0),
     ("genmc-queue.yml", 3.6, 0, 1, 0),
     ("http-endpoint-ssot.yml", 6.0, 7, 17, 1),
     // ⚠ STAND-IN, borrowed 2026-10-27 for a lane of no history: it configures and builds a scratch tree

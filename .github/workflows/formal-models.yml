@@ -1,0 +1,66 @@
+name: Formal Models
+
+# The TLA+ models of docs/formal under TLC (docs/adr/0115, D5). Until this lane,
+# nothing ran them: `scripts/formal/check.sh` was a script a person called, so a
+# model could go stale, or lose a configuration, with no verdict.
+#
+# ## Why a lane of its own
+#
+# It needs Java and the pinned TLC and no other lane does. The jar is small (4 MB)
+# and checked against the digest `docs/formal/models.json` pins, so it is cached
+# under a key made of that file.
+#
+# ## Why `ci_only` in the registry
+#
+# Exploring the largest configuration whole takes minutes, and a push set has five
+# for everything.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'docs/formal/**'
+      - 'scripts/formal/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/formal-models.sh'
+      - '.github/workflows/formal-models.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/formal/**'
+      - 'scripts/formal/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/formal-models.sh'
+      - '.github/workflows/formal-models.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  formal-models:
+    name: Formal Models
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Restore TLC
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/sce-formal
+          key: tlc-${{ hashFiles('docs/formal/models.json') }}
+
+      - name: Formal models gate
+        run: scripts/gate formal-models
