@@ -67,6 +67,13 @@
 //! `SqliteStore` in the same file (layout 7), held to [`audit_conformance`]. A removal of a
 //! session deletes the identities its sessions appended under, never a row.
 //!
+//! The facts the sessions made are kept in the **journal**, behind [`JournalStore`] (ADR 0114;
+//! module [`journal`]): appended by the write that keeps the checkpoint that holds them
+//! ([`Write::journal`]), in one order of positions a reader reads up to the horizon, and read as of
+//! an earlier position and a valid time; beside them, what another system's adapter observed, once
+//! for each id the other system gave. [`MemoryStore`] in memory, and `SqliteStore` in the same file
+//! (layout 8), held to [`journal_conformance`]. A removal of a session removes none of it.
+//!
 //! # Building the SQLite store
 //!
 //! The reference store links the system's SQLite (3.14 or later), found through `pkg-config`, or
@@ -97,6 +104,8 @@ pub mod batch;
 pub mod conformance;
 pub mod credential_conformance;
 pub mod credentials;
+pub mod journal;
+pub mod journal_conformance;
 pub mod key_conformance;
 pub mod keys;
 pub mod kv;
@@ -114,6 +123,11 @@ pub use audit::{
 pub use batch::{Batched, Committed, Decided};
 pub use credentials::{
     CredentialStore, Digest, MemoryCredentials, PinRow, PinStore, Revoked, TokenRow, TokenStore,
+};
+pub use journal::{
+    AsOf, AsOfCursor, AsOfError, AtPosition, Fact, FactData, Journal, JournalEntry, JournalPage,
+    JournalStore, NoJournal, Observation, ObservedStream, PastHorizon, SessionsStream, Stream,
+    StreamName,
 };
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use kv::{Identity, KvEntry, KvStore, Put, PutIf};
@@ -148,8 +162,10 @@ pub trait SessionStore: Send + Sync {
 
     /// The contract's one write of a session, in one transaction: keep or remove the session
     /// `key` names ([`Write::change`]), append each of [`Write::outbox`] to its client's outbox
-    /// (module [`outbox`]), and take the session's notes through [`Write::notes_through`]; answer
-    /// the session's new version (`0` once removed) and where each append was kept.
+    /// (module [`outbox`]), append each fact of [`Write::journal`] to the session's stream of the
+    /// journal (module [`journal`]), and take the session's notes through
+    /// [`Write::notes_through`]; answer the session's new version (`0` once removed) and where each
+    /// append was kept.
     ///
     /// Refused, writing nothing of any of it, unless [`Write::fence`] is the fence of the lease
     /// currently held on `key` ([`Conflict::Fence`], checked first: a fenced-out writer's view of
@@ -164,6 +180,11 @@ pub trait SessionStore: Send + Sync {
     /// An append to a client whose outbox the store holds none of opens one in the append's
     /// incarnation; an outbox it holds keeps its own. Each append takes the next number of its
     /// outbox, in the order given, and is kept at [`Write::now_ms`].
+    ///
+    /// Each fact takes a position above every one the journal gave before, in the order given. A
+    /// store that keeps no journal fails a write that gives facts with [`NoJournal`], writing
+    /// nothing, rather than lose them; every store of this crate keeps one ([`JournalStore`]), held
+    /// to [`journal_conformance`].
     fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError>;
 
     /// Write `batch` in one transaction, durable as a whole when this returns, and decided item by
@@ -178,9 +199,9 @@ pub trait SessionStore: Send + Sync {
     /// it can leave that item out and still keep the others.
     ///
     /// The name is the contract's word for a change of the store: a batch keeps and removes
-    /// sessions, appends to outboxes and takes notes, as [`SessionStore::write`] does, and deletes
-    /// what acknowledgements cover; [`SessionStore::put`] is the narrower word for a write that
-    /// only keeps a state.
+    /// sessions, appends to outboxes and the journal and takes notes, as [`SessionStore::write`]
+    /// does, and deletes what acknowledgements cover; [`SessionStore::put`] is the narrower word
+    /// for a write that only keeps a state.
     ///
     /// As it stands, each item is its own transaction: correct, durable on return, and no cheaper
     /// than the items written one by one. A store that can share one transaction among them
