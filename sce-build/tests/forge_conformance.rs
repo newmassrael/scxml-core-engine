@@ -27766,14 +27766,12 @@ const UNREAD_DOCS: &[(&str, &str)] = &[
 fn a_name_an_algorithm_binds_and_does_not_read_compiles_on_every_backend() {
     use sce_build::generator::Language;
     let mut failures: Vec<String> = Vec::new();
-    for lang in [
-        Language::Rust,
-        Language::Cpp,
-        Language::C11,
-        Language::Go,
-        Language::Kotlin,
-        Language::Python,
-    ] {
+    // Swift's text is read below: this harness has no Swift compiler.
+    for lang in Language::ALL
+        .iter()
+        .copied()
+        .filter(|lang| *lang != Language::Swift)
+    {
         let id = format!("unread_{lang:?}").to_lowercase();
         let compiled = generate_temp_docs(lang, &id, UNREAD_DOCS).and_then(|files| match lang {
             Language::Rust => rustc_run_generated_set(files, &id, "build", RustcProfile::Alloc),
