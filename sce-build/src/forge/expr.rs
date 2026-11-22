@@ -6441,8 +6441,10 @@ fn read_composed_texts_through_buffers(
 /// which no rename spells, or a place below a variable of a union, whose case's
 /// record the walks declare, or below a variable of a record that holds a
 /// composition, or of one that may be absent, which the walks declare as they
-/// declare a union's (docs/adr/0087, "Landing order" item 8). No other variable
-/// holds one: a record of entries' texts are spelled by the renames.
+/// declare a union's (docs/adr/0087, "Landing order" item 8), or an element of
+/// a list of texts, each held in the buffer of its bound (docs/adr/0086,
+/// section 7.3). No other variable holds one: a record of entries' texts are
+/// spelled by the renames.
 fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, renames: &HashMap<&str, &str>) -> bool {
     if renames.contains_key(path) {
         return false;
@@ -6482,6 +6484,9 @@ fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, renames: &HashMap<&st
                     };
                     match held {
                         crate::forge::value_type::ValueType::Union { .. } => true,
+                        crate::forge::value_type::ValueType::List { elem, .. } => {
+                            matches!(*elem, crate::forge::value_type::ValueType::Text { .. })
+                        }
                         record @ crate::forge::value_type::ValueType::Record { .. } => {
                             crate::forge::value_path::holds_composition(
                                 ctx.value_scope,

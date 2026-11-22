@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/adr/0086, section 7.3; docs/SCE_ACCEPTED_SUBSET.md
+  section 2.15): a list variable whose element is a text of a bound,
+  list<string[4]>[3], the names a screen has picked. It starts empty, is
+  appended to from a text variable and from a literal, measured by len(), read
+  by an index, walked by a <foreach> and emptied by <sce:clear>.
+
+  Each element holds at most four UTF-8 bytes, as a string[4] variable does:
+  an append of a text past that bound appends nothing, raises error.execution
+  and ends its block, as an append to a full list does. A read of an index not
+  below the length raises error.execution and ends its block too.
+
+  `word` is the text `add` appends, set by the word.* events; `cursor` is the
+  index `read` reads, moved by `next`; `measure` sums the UTF-8 bytes of
+  every element into `total`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="naming" datamodel="sce-static" name="static_list_text">
+  <datamodel>
+    <data id="names" sce:type="list&lt;string[4]&gt;[3]" sce:direction="out"/>
+    <data id="word" sce:type="string[8]" expr="'ab'"/>
+    <data id="first" sce:type="string[4]" expr="'-'" sce:direction="out"/>
+    <data id="cursor" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="naming">
+    <transition event="word.exact" type="internal">
+      <assign location="word" expr="'abcd'"/>
+    </transition>
+    <transition event="word.long" type="internal">
+      <assign location="word" expr="'hello'"/>
+    </transition>
+    <transition event="add" type="internal">
+      <sce:append target="names" expr="word"/>
+      <assign location="count" expr="len(names)"/>
+    </transition>
+    <transition event="add.literal" type="internal">
+      <sce:append target="names" expr="'xy'"/>
+      <assign location="count" expr="len(names)"/>
+    </transition>
+    <transition event="read" type="internal">
+      <assign location="first" expr="names[cursor]"/>
+    </transition>
+    <transition event="next" type="internal">
+      <assign location="cursor" expr="cursor + 1"/>
+    </transition>
+    <transition event="measure" type="internal">
+      <assign location="total" expr="0"/>
+      <foreach array="names" item="each">
+        <assign location="total" expr="total + len(each)"/>
+      </foreach>
+    </transition>
+    <transition event="reset" type="internal">
+      <sce:clear target="names"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

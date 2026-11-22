@@ -198,6 +198,11 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         "static_map_nested",
         "static_map_list",
         "static_map_record_list",
+        // ... and a list of texts, an array of strings each held to its
+        // element's bound (docs/adr/0086, section 7.3), alone and beside the
+        // table a router keeps by key expression and by peer.
+        "static_list_text",
+        "linkstate_interest",
     ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),

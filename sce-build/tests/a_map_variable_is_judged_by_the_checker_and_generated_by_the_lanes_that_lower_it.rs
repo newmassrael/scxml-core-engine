@@ -2131,20 +2131,49 @@ fn a_nested_walk_copies_its_place_only_where_the_loop_holds_it_lent() {
     );
 }
 
-/// docs/adr/0108, D12: the table a router keeps by key expression and by peer
-/// (`linkstate_interest`, a map whose value is a map, the inner map taken out,
-/// written and put back whole) holds the keys it empties in a list of texts,
-/// which no lane holds in a statechart's variable yet, so `check` refuses it by
-/// name at that variable and at nothing D12 admits.
+/// docs/adr/0108, D12, and docs/adr/0086, section 7.3: the table a router
+/// keeps by key expression and by peer (`linkstate_interest`, a map whose value
+/// is a map, the inner map taken out, written and put back whole) holds the keys
+/// it empties in a list of texts, which the lanes that hold a map of a nested
+/// value hold too: `check` judges it, the Interpreter lowers it, and C11 and
+/// Rust generate it, each holding the list of texts in its own type for one.
 #[test]
-fn the_linkstate_interest_table_is_refused_only_for_its_list_of_texts() {
-    let (ok, out) = run(&["check"], &static_fixture("linkstate_interest"));
-    assert!(!ok, "a list of texts is held by no lane:\n{out}");
+fn the_linkstate_interest_table_is_judged_lowered_and_generated() {
+    use quote::ToTokens;
+    let path = static_fixture("linkstate_interest");
+    let (ok, out) = run(&["check"], &path);
+    assert!(ok, "check judges the table and its list of texts:\n{out}");
+
+    let lowered =
+        sce_build::forge::static_js::lower_file(path.to_str().expect("a utf-8 path"), Vec::new())
+            .unwrap_or_else(|refusal| panic!("the Interpreter lowers the table: {refusal:?}"));
     assert!(
-        out.contains("\"code\":\"generate/unsupported-feature\"")
-            && out.contains("emptied")
-            && out.contains("string[64]"),
-        "the refusal names the list of texts:\n{out}"
+        lowered.contains("SceStatic.append(emptied, 4, SceStatic.bounded("),
+        "a key appended to the list of texts is held to its element's bound:\n{lowered}"
+    );
+
+    let (ok, printed, code) = generate_c11_at(&path);
+    assert!(ok, "C11 generates the table:\n{printed}");
+    assert!(
+        code.contains("sce_static_string_64_list_4_t")
+            && code.contains("sce_static_string_64_t data[4];"),
+        "C11 holds the list of texts in its list layout over the buffer of its bound:\n{code}"
+    );
+
+    let out_dir = tempfile::tempdir().expect("an output directory");
+    let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
+    let (ok, printed) = run(&["generate", "-l", "rust", "-o", out.as_str()], &path);
+    assert!(ok, "Rust generates the table:\n{printed}");
+    let files = rust_files_in(out_dir.path());
+    let (declared, _, text) = declared_machine(&files);
+    assert_eq!(
+        declared
+            .field("emptied", &text)
+            .to_token_stream()
+            .to_string(),
+        ":: sce_rust_runtime :: portable :: BoundedList < :: sce_rust_runtime :: portable :: \
+         SceString < 64 > , 4 >",
+        "Rust holds the list of texts in the portable list of its bounded text"
     );
 }
 

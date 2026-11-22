@@ -957,6 +957,13 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
             << nested << " was not replayed: a write through a place held at a key has no lowering for the "
             << "Interpreter";
     }
+    // ... and a list of texts (docs/adr/0086, section 7.3), an array of strings each held to its
+    // element's bound, alone and beside the table a router keeps by key expression and by peer
+    // (docs/adr/0108, D12), whose purge keeps the key expressions it empties in one.
+    for (const char *texts : {"static_list_text", "linkstate_interest"}) {
+        EXPECT_NE(std::find(replayed.begin(), replayed.end(), texts), replayed.end())
+            << texts << " was not replayed: a list of texts has no lowering for the Interpreter";
+    }
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }

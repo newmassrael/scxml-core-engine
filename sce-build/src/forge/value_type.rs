@@ -1851,13 +1851,28 @@ impl WrittenType {
     /// (`unions`, [`crate::forge::event_schema_check::ComposedLowering::unions`]),
     /// `union:U` and `optional<union:U>` too (docs/adr/0092, section 6.1 item 5
     /// and its amendment of 2026-11-07). A lowering that holds none refuses a
-    /// union by name, as every slot does.
-    pub fn variable_view(&self, unions: bool) -> Result<&Self, Composition> {
+    /// union by name, as every slot does. Where the lowering holds a list of
+    /// texts (`texts`,
+    /// [`crate::forge::event_schema_check::ComposedLowering::text_lists`]),
+    /// `list<string[N]>[M]` is held too (docs/adr/0086, section 7.3): each
+    /// element a text of the bound its element type states, as a `string[N]`
+    /// variable is ([`Self::is_list_of_texts`]).
+    pub fn variable_view(&self, unions: bool, texts: bool) -> Result<&Self, Composition> {
         match self {
             Self::Union { .. } if unions => Ok(self),
             Self::Optional { elem } if unions && matches!(**elem, Self::Union { .. }) => Ok(self),
+            Self::List { .. } if texts && self.is_list_of_texts() => Ok(self),
             _ => self.slot_view(),
         }
+    }
+
+    /// Whether the type is a list whose element is a text of a stated bound,
+    /// `list<string[N]>`: the one list a statechart's variable holds beside a
+    /// list of numbers, `bool`s or records where its lowering holds one
+    /// ([`Self::variable_view`]). A text element with no bound is no type of
+    /// the language, and is not one.
+    pub fn is_list_of_texts(&self) -> bool {
+        matches!(self.list_elem(), Some(Self::Text { max: Some(_) }))
     }
 
     /// The type as an algorithm's parameter, return or local holds it: what
@@ -7321,18 +7336,55 @@ mod tests {
         let union = WrittenType::read("union:Shape").unwrap();
         let optional = WrittenType::read("optional<union:Shape>").unwrap();
         let listed = WrittenType::read("list<union:Shape>[2]").unwrap();
-        assert!(union.variable_view(true).is_ok());
-        assert!(optional.variable_view(true).is_ok());
-        assert_eq!(union.variable_view(false).unwrap_err().constructor, "union");
+        assert!(union.variable_view(true, false).is_ok());
+        assert!(optional.variable_view(true, false).is_ok());
         assert_eq!(
-            optional.variable_view(false).unwrap_err().constructor,
+            union.variable_view(false, true).unwrap_err().constructor,
             "union"
         );
-        assert_eq!(listed.variable_view(true).unwrap_err().place, "union:Shape");
+        assert_eq!(
+            optional.variable_view(false, true).unwrap_err().constructor,
+            "union"
+        );
+        assert_eq!(
+            listed.variable_view(true, true).unwrap_err().place,
+            "union:Shape"
+        );
         assert!(WrittenType::read("uint8")
             .unwrap()
-            .variable_view(false)
+            .variable_view(false, false)
             .is_ok());
+    }
+
+    /// docs/adr/0086, section 7.3: a statechart's variable holds
+    /// `list<string[N]>[M]` on a lowering that holds a list of texts, and
+    /// nothing more than a slot does on one that holds none, which refuses it
+    /// by its element. An algorithm's slot holds no list of texts yet, and no
+    /// list of byte strings is held by either.
+    #[test]
+    fn a_variable_holds_a_list_of_texts_only_where_its_lowering_holds_one() {
+        let texts = WrittenType::read("list<string[8]>[4]").unwrap();
+        assert!(texts.is_list_of_texts());
+        assert_eq!(texts.variable_view(false, true), Ok(&texts));
+        assert_eq!(texts.variable_view(true, true), Ok(&texts));
+        assert_eq!(
+            texts.variable_view(true, false).unwrap_err().place,
+            "string[8]"
+        );
+        assert_eq!(texts.slot_view().unwrap_err().place, "string[8]");
+        assert_eq!(texts.algorithm_view().unwrap_err().place, "string[8]");
+        let bytes = WrittenType::read("list<bytes[8]>[4]").unwrap();
+        assert!(!bytes.is_list_of_texts());
+        assert_eq!(
+            bytes.variable_view(true, true).unwrap_err().place,
+            "bytes[8]"
+        );
+        for held in ["list<uint8>[4]", "string[8]", "optional<string[8]>"] {
+            assert!(
+                !WrittenType::read(held).unwrap().is_list_of_texts(),
+                "{held}"
+            );
+        }
     }
 
     /// An algorithm's slot holds `union:U` whole (docs/adr/0092, Landing order
@@ -8285,7 +8337,11 @@ mod tests {
                 constructor: constructor.into(),
             };
             assert_eq!(written.slot_view(), Err(refused.clone()), "{text}");
-            assert_eq!(written.variable_view(true), Err(refused.clone()), "{text}");
+            assert_eq!(
+                written.variable_view(true, true),
+                Err(refused.clone()),
+                "{text}"
+            );
             assert_eq!(WrittenType::from_attr(text), None, "{text}");
             // An algorithm's slot holds a map or a set whole (docs/adr/0108,
             // D5), and none inside another type.

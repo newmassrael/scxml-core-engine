@@ -277,6 +277,14 @@ pub struct ComposedLowering {
     /// [`Self::maps`], the checker judges one before every lowering holds one,
     /// so the gate every route asks lets one through ([`Self::ANY_BACKEND`]).
     pub map_values: bool,
+    /// Whether it holds a statechart's variable of `list<string[N]>[M]`
+    /// (docs/adr/0086, section 7.3): a list of texts, each element held to the
+    /// bound its element type states as a `string[N]` variable is, read by
+    /// `len`, an index and a `<foreach>` as a list of numbers is, appended to,
+    /// emptied and saved as one is. A lowering that holds none refuses such a
+    /// variable by name, by its element, as every slot refuses a list of texts
+    /// ([`crate::forge::value_type::WrittenType::variable_view`]).
+    pub text_lists: bool,
 }
 
 impl ComposedLowering {
@@ -293,7 +301,9 @@ impl ComposedLowering {
     /// and written through the canonical text of each key (docs/adr/0108, D10
     /// and "Order of work", step 4), and a map of a nested value as the nested
     /// array, each write through a nested place copying the path to the root
-    /// (D12). Pinned beside that spelling (`composed_lowering/ecmascript.rs`).
+    /// (D12), and a list of texts as an array of strings, each appended held to
+    /// its element's bound by the library's `bounded`. Pinned beside that
+    /// spelling (`composed_lowering/ecmascript.rs`).
     pub const ECMASCRIPT: Self = Self {
         name: "ecmascript",
         reads: true,
@@ -303,6 +313,7 @@ impl ComposedLowering {
         sends: true,
         maps: true,
         map_values: true,
+        text_lists: true,
     };
 
     /// What some generated backend lowers: the gate every route asks before a
@@ -322,6 +333,7 @@ impl ComposedLowering {
         sends: true,
         maps: true,
         map_values: true,
+        text_lists: true,
     };
 
     /// What the backend `language` lowers: the one table of what each
@@ -352,6 +364,7 @@ impl ComposedLowering {
             sends: false,
             maps: false,
             map_values: false,
+            text_lists: false,
         };
         let walks = Self {
             reads: true,
@@ -363,12 +376,15 @@ impl ComposedLowering {
             // A map or a set variable is held in the runtime's `BoundedMap` and
             // `BoundedSet` (docs/adr/0108, "Order of work", step 5), and a map
             // whose value is a map, a set, a list or a record that holds a list,
-            // each written in place where its map holds it (D12).
+            // each written in place where its map holds it (D12); a list of
+            // texts in `BoundedList<SceString<N>, M>` (docs/adr/0086, section
+            // 7.3).
             Language::Rust => Self {
                 unions: true,
                 records: true,
                 maps: true,
                 map_values: true,
+                text_lists: true,
                 ..walks
             },
 
@@ -399,12 +415,15 @@ impl ComposedLowering {
             // ... and in the type `sce/forge/map.h` declares for its parts and
             // its bound, reserved in the machine (step 6), a map of a map, a
             // list or a record that holds a composition among them, each
-            // written in place (docs/adr/0108, D12).
+            // written in place (docs/adr/0108, D12); a list of texts in the
+            // machine's list layout over the buffer of its element's bound
+            // (docs/adr/0086, section 7.3).
             Language::C11 => Self {
                 unions: true,
                 records: true,
                 maps: true,
                 map_values: true,
+                text_lists: true,
                 ..walks
             },
 
@@ -501,6 +520,7 @@ fn first_unlowered_composed_use(
         sends: lowers_sends,
         maps: lowers_maps,
         map_values: lowers_map_values,
+        text_lists: lowers_text_lists,
     } = lowering;
     // Each refusal names the construct and the lowering that has none of it,
     // as every backend's refusal of what it does not lower yet does.
@@ -565,7 +585,7 @@ fn first_unlowered_composed_use(
         let view = if lowers_maps && ty.map_key().is_some() {
             Ok(ty)
         } else {
-            ty.variable_view(lowers_unions)
+            ty.variable_view(lowers_unions, lowers_text_lists)
         };
         if let Err(composition) = view {
             // A map's or a set's lowering lands lane by lane (docs/adr/0108,
@@ -2867,6 +2887,10 @@ mod tests {
             ComposedLowering::ANY_BACKEND.sends,
             some_backend(|lowering| lowering.sends)
         );
+        assert_eq!(
+            ComposedLowering::ANY_BACKEND.text_lists,
+            some_backend(|lowering| lowering.text_lists)
+        );
         // A map is the checker's before it is any lowering's (docs/adr/0108,
         // "Order of work", step 3): the gate lets a map variable through
         // whatever the rows say, which the gate's own walk is held to
@@ -2969,14 +2993,50 @@ mod tests {
                 lowering.name
             );
         }
-        // The machine's own variable of the same type is a slot, refused by name.
+        // The machine's own variable of the same type is held where the
+        // lowering holds a list of texts (docs/adr/0086, section 7.3), and
+        // refused by name, by its element, everywhere else.
         model.variables[0].from_deployment = false;
-        let (refusal, _) = first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND)
-            .expect("a list of texts is no variable a lowering holds yet");
-        assert!(
-            refusal.contains("<data id=\"hosts\">") && refusal.contains("`string[32]`"),
-            "{refusal}"
-        );
+        assert!(first_unlowered_composed_use(&model, ComposedLowering::ANY_BACKEND).is_none());
+        assert!(first_unlowered_composed_use(&model, ComposedLowering::ECMASCRIPT).is_none());
+        for language in Language::ALL {
+            let lowering = ComposedLowering::of(*language);
+            let refusal = first_unlowered_composed_use(&model, lowering);
+            if lowering.text_lists {
+                assert!(
+                    refusal.is_none(),
+                    "{} holds a list of texts: {refusal:?}",
+                    lowering.name
+                );
+                continue;
+            }
+            let (refusal, _) =
+                refusal.unwrap_or_else(|| panic!("{} holds no list of texts", lowering.name));
+            assert!(
+                refusal.contains("<data id=\"hosts\">")
+                    && refusal.contains("`string[32]`")
+                    && refusal.contains(lowering.name),
+                "{refusal}"
+            );
+        }
+    }
+
+    /// docs/adr/0086, section 7.3: a list of texts is held by the lowerings
+    /// whose row says so, Rust's, C11's and the Interpreter's, and by no other
+    /// generated backend yet; the gate every route asks lets it through, as
+    /// some backend holds one.
+    #[test]
+    fn a_list_of_texts_is_held_where_the_row_says_and_nowhere_else() {
+        use crate::generator::Language;
+        let holding: Vec<&str> = Language::ALL
+            .iter()
+            .map(|language| ComposedLowering::of(*language))
+            .filter(|lowering| lowering.text_lists)
+            .map(|lowering| lowering.name)
+            .collect();
+        assert_eq!(holding, ["rust", "c11"]);
+        assert!(ComposedLowering::ECMASCRIPT.text_lists);
+        assert!(ComposedLowering::ANY_BACKEND.text_lists);
     }
 
     /// Each backend's row says what its machine spells, no more and no less:

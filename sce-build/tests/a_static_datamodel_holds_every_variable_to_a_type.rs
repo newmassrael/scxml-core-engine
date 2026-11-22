@@ -5644,6 +5644,137 @@ fn a_list_of_an_element_with_a_length_is_refused() {
     assert_refused_at(&out, "validation/attribute-rule-violated", 5);
 }
 
+// ── A list of texts (docs/adr/0086, section 7.3) ─────────────────────────
+
+/// The machine of `static_list_text.json`: a `list<string[4]>[3]` appended to
+/// from a text variable and a literal, read by `len`, an index and a
+/// `<foreach>`, and emptied.
+fn list_of_texts() -> String {
+    std::fs::read_to_string(
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/static_list_text.scxml"),
+    )
+    .expect("the fixture")
+}
+
+/// Every file `generate` wrote into `dir` whose extension is one of
+/// `extensions`, joined in the order of their names.
+fn generated_files(dir: &Path, extensions: &[&str]) -> String {
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| {
+            path.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| extensions.contains(&e))
+        })
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .map(|path| std::fs::read_to_string(path).expect("a generated file"))
+        .collect()
+}
+
+/// docs/adr/0086, section 7.3: a statechart's variable of `list<string[N]>[M]`
+/// is judged by `check` (an append of a text, `len`, an index, a `<foreach>`
+/// whose item is a text, a clear), held by the lanes whose row of the composed
+/// lowering holds a list of texts, Rust and C11, and refused by every other
+/// generated lane by name, at the variable and by its element.
+#[test]
+fn a_list_of_texts_is_judged_and_held_where_its_lane_holds_one() {
+    let document = list_of_texts();
+    let (ok, out) = run(&["check"], &document);
+    assert!(ok, "check judges a list of texts:\n{out}");
+    for language in Language::ALL {
+        let lang = language.canonical_name();
+        let (ok, out) = check_in(lang, &document, &[]);
+        if matches!(language, Language::Rust | Language::C11) {
+            assert!(ok, "{lang} holds a list of texts:\n{out}");
+            continue;
+        }
+        assert!(!ok, "{lang} holds no list of texts yet:\n{out}");
+        assert!(
+            out.contains("\"code\":\"generate/unsupported-feature\"")
+                && out.contains("names")
+                && out.contains("string[4]"),
+            "{lang} refuses the list of texts by name, at its element:\n{out}"
+        );
+    }
+}
+
+/// An element of a list of texts is a text: a number appended to one is refused
+/// as a number assigned to a `string[4]` is.
+#[test]
+fn an_element_of_a_list_of_texts_is_a_text() {
+    let document = list_of_texts().replacen(
+        r#"<sce:append target="names" expr="'xy'"/>"#,
+        r#"<sce:append target="names" expr="7"/>"#,
+        1,
+    );
+    assert!(document.contains(r#"expr="7""#), "the append was edited");
+    let (ok, out) = run(&["check"], &document);
+    assert!(!ok, "a number is no element of a list of texts:\n{out}");
+    assert!(
+        out.contains("\"code\":\"expression/type-mismatch\""),
+        "the append is refused as a mismatch:\n{out}"
+    );
+}
+
+/// docs/adr/0086, section 7.3: what holds a list of texts on each lane that
+/// holds one. Rust holds it in the portable list of its bounded text, and an
+/// append builds the element by the text's checked constructor; C11 in the
+/// machine's list layout over the buffer of the element's bound, an append
+/// filling the buffer from the text held to that bound, and a restore reading
+/// each element held to it; the Interpreter in an array, empty where it is
+/// declared, an append held to the element's bound by the library.
+#[test]
+fn each_lane_holds_a_list_of_texts_in_its_own_type() {
+    let document = list_of_texts();
+
+    let dir = tempdir().expect("an output directory");
+    let out = dir.path().to_str().expect("a utf-8 path").to_string();
+    let (ok, printed) = run(&["generate", "-l", "rust", "-o", out.as_str()], &document);
+    assert!(ok, "Rust generates the list of texts:\n{printed}");
+    let rust = generated_files(dir.path(), &["rs"]);
+    assert!(
+        rust.contains(
+            "::sce_rust_runtime::portable::BoundedList<::sce_rust_runtime::portable::SceString<4>, 3>"
+        ),
+        "Rust holds the list in the portable list of its bounded text:\n{rust}"
+    );
+    assert!(
+        rust.contains("::sce_rust_runtime::portable::SceString::<4>::from_text("),
+        "an appended text is built by the element's checked constructor:\n{rust}"
+    );
+
+    let dir = tempdir().expect("an output directory");
+    let out = dir.path().to_str().expect("a utf-8 path").to_string();
+    let (ok, printed) = run(&["generate", "-l", "c11", "-o", out.as_str()], &document);
+    assert!(ok, "C11 generates the list of texts:\n{printed}");
+    let c = generated_files(dir.path(), &["h", "c"]);
+    for held in [
+        "sce_static_string_4_list_3_t",
+        "sce_static_string_4_t data[3];",
+        "sce_static_string_4_of(sce_forge_bounded_string(&sce_failure_, ",
+        "sce_saved_read_string_bounded(item, element_what, (element).data, 4u, err)",
+    ] {
+        assert!(c.contains(held), "C11 holds `{held}`:\n{c}");
+    }
+
+    let (ok, lowered) = run(&["lower"], &document);
+    assert!(ok, "the Interpreter lowers the list of texts:\n{lowered}");
+    for held in [
+        r#"<data id="names" expr="[]"/>"#,
+        "SceStatic.append(names, 3, SceStatic.bounded(",
+        "SceStatic.bounded(&apos;xy&apos;, 4))",
+    ] {
+        assert!(
+            lowered.contains(held),
+            "the Interpreter holds `{held}`:\n{lowered}"
+        );
+    }
+}
+
 #[test]
 fn an_append_to_a_variable_that_is_not_a_list_is_refused_at_its_target() {
     let (ok, out) = run(
@@ -6154,22 +6285,10 @@ const INTERPRETER: &str = "interpreter";
 /// into a record that holds a list (docs/adr/0087, Landing order item 8) on every engine
 /// since the Interpreter's slice of that item, which emptied it a third time.
 /// The table a router keeps by key expression and peer (`linkstate_interest`,
-/// docs/adr/0108, D12) is lowered by no engine: beside its map of maps it holds a
-/// list of texts, which no lane holds in a statechart's variable yet.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
-    ("linkstate_interest", "rust", LIST_OF_TEXTS),
-    ("linkstate_interest", "kotlin", LIST_OF_TEXTS),
-    ("linkstate_interest", "cpp", LIST_OF_TEXTS),
-    ("linkstate_interest", "go", LIST_OF_TEXTS),
-    ("linkstate_interest", "python", LIST_OF_TEXTS),
-    ("linkstate_interest", "c11", LIST_OF_TEXTS),
-    ("linkstate_interest", "swift", LIST_OF_TEXTS),
-    ("linkstate_interest", INTERPRETER, LIST_OF_TEXTS),
-];
-
-/// Why no engine lowers `linkstate_interest` yet.
-const LIST_OF_TEXTS: &str = "a list of texts (`list<string[64]>[4]`) in a statechart's \
-     variable, which no lane holds yet, beside a map whose value is a map (docs/adr/0108, D12)";
+/// docs/adr/0108, D12), lowered by no engine while no lane held its list of
+/// texts, is replayed on the Interpreter, Rust and C11 since they hold one
+/// (docs/adr/0086, section 7.3), which emptied it a fourth time.
+const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[];
 
 /// Where each backend's static datamodel tree places a machine: the file that
 /// exists only if it did. A tree the checkout commits is read in the
