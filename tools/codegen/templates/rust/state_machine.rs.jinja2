@@ -745,6 +745,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
         revised: "{{ static_saved_shape.revised }}",
         format2_first: "{{ static_saved_shape.format2_first }}",
         format2_revised: "{{ static_saved_shape.format2_revised }}",
+        legacy: &[{% for digest in static_saved_shape.legacy %}"{{ digest }}"{% if not loop.last %}, {% endif %}{% endfor %}],
         records: &[
 {% for record in static_saved_shape.records %}
             ::sce_rust_runtime::saved_state::RecordLineage {
@@ -773,12 +774,14 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
                     },
 {% endfor %}
                 ],
+                tracked_before: {{ "true" if record.tracked_before else "false" }},
                 holders: &[
 {% for holder in record.holders %}
                     ::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "{{ holder.variable | escape_rust }}",
                         list: {{ "true" if holder.list else "false" }},
                         part: {% if holder.part is not none %}Some({{ holder.part }}){% else %}None{% endif %},
+                        path: &[{% for step in holder.path %}{% if step.kind == "field" %}::sce_rust_runtime::saved_state::HeldStep::Field("{{ step.id | escape_rust }}"){% elif step.kind == "items" %}::sce_rust_runtime::saved_state::HeldStep::Items{% elif step.kind == "part" %}::sce_rust_runtime::saved_state::HeldStep::Part({{ step.index }}){% else %}::sce_rust_runtime::saved_state::HeldStep::Case { tag: "{{ step.tag | escape_rust }}", variant: "{{ step.variant | escape_rust }}" }{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}],
                     },
 {% endfor %}
                 ],
@@ -941,6 +944,34 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% else %}
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
 {% endif %}
+    }
+}
+
+{# docs/adr/0112: the same save and restore, reached by a host that is generic
+   over the document (the keyed session pool's adapter, sce_rust_mesh::served). #}
+impl{{ policy_generics_decl }} ::sce_rust_runtime::saved_state::PersistentPolicy for {{ machine_name }}Policy{{ policy_generics_use }} {
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape = <Engine<Self> as {{ machine_name }}Persist>::SHAPE;
+
+    fn save_at(
+        engine: &Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal> {
+        <Engine<Self> as {{ machine_name }}Persist>::save_at(engine, wall_now_ms)
+    }
+
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        <Engine<Self> as {{ machine_name }}Persist>::judge(saved)
+    }
+
+    fn restore_with(
+        policy: Self,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Engine<Self>, ::sce_rust_runtime::saved_state::StateRefusal> {
+        <Engine<Self> as {{ machine_name }}Persist>::restore_with(policy, saved, clock, wall_now_ms)
     }
 }
 

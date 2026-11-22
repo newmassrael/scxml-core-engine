@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The record a list variable of static_grow_2.scxml holds, at its second revision: a number with a
+  default and an optional text, what the element of a list variable holds (a list or a record a
+  revision added would make a list of records a statechart variable does not hold, docs/adr/0086,
+  section 7.3).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="event-schema" name="grow_item_2" sce:event-name="grow.item" sce:revision="2">
+  <datamodel>
+    <data id="n" sce:type="uint16" sce:direction="in"/>
+    <data id="rank" sce:type="int8" sce:direction="in" sce:since="2" sce:default="-2"/>
+    <data id="memo" sce:type="optional&lt;string[8]&gt;" sce:direction="in" sce:since="2"/>
+  </datamodel>
+</scxml>

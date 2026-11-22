@@ -3613,6 +3613,7 @@ mod tests {
             ],
             scope: TypeScope::default(),
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut tagged_scope = TypeScope::default();
         tagged_scope.records.insert("Id".into(), peer.clone());
@@ -3625,6 +3626,7 @@ mod tests {
             ],
             scope: tagged_scope,
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut scope = TypeScope::default();
         scope.records.insert("Peer".into(), peer);

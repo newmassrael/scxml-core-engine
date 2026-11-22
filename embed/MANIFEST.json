@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "6db9236",
+  "embed_version": "c08a6d5",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 799,
+  "symbol_count": 802,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3039,6 +3039,12 @@
     {
       "header": "saved/SavedState.h",
       "kind": "function",
+      "name": "SCE::Saved::detail::heldSteps",
+      "signature": "std::vector<HeldStep> SCE::Saved::detail::heldSteps(const RecordHolder &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
       "name": "SCE::Saved::detail::hostInvokeToJson",
       "signature": "JsonValue SCE::Saved::detail::hostInvokeToJson(const SavedHostInvoke &, bool)"
     },
@@ -3137,6 +3143,12 @@
       "kind": "function",
       "name": "SCE::Saved::detail::readSavedToken",
       "signature": "std::int64_t SCE::Saved::detail::readSavedToken(const std::string &, const std::string &)"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "function",
+      "name": "SCE::Saved::detail::rebuiltAt",
+      "signature": "JsonValue SCE::Saved::detail::rebuiltAt(const JsonValue &, const std::vector<HeldStep> &, std::size_t, const std::string &, const std::function<JsonValue (const JsonValue &, const std::string &)> &)"
     },
     {
       "header": "saved/SavedState.h",
@@ -3262,6 +3274,19 @@
       "header": "saved/SavedState.h",
       "kind": "struct",
       "members": [
+        "enum Kind",
+        "field Kind kind",
+        "field std::size_t index",
+        "field std::string id",
+        "field std::string tag",
+        "field std::string variant"
+      ],
+      "name": "SCE::Saved::HeldStep"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
         "field JsonObject variables",
         "field SavedInvokes invokes",
         "field std::int64_t autoSendSeq",
@@ -3336,19 +3361,21 @@
       "kind": "struct",
       "members": [
         "field bool list",
-        "field std::optional<std::string> field",
-        "field std::string variable"
+        "field std::optional<std::size_t> part",
+        "field std::string variable",
+        "field std::vector<HeldStep> path"
       ],
-      "name": "SCE::Saved::EnumHolder"
+      "name": "SCE::Saved::RecordHolder"
     },
     {
       "header": "saved/SavedState.h",
       "kind": "struct",
       "members": [
         "field bool list",
+        "field std::optional<std::string> field",
         "field std::string variable"
       ],
-      "name": "SCE::Saved::RecordHolder"
+      "name": "SCE::Saved::EnumHolder"
     },
     {
       "header": "saved/SavedState.h",
@@ -3365,16 +3392,7 @@
       "header": "saved/SavedState.h",
       "kind": "struct",
       "members": [
-        "field int optionalSince",
-        "field int since",
-        "field std::string id"
-      ],
-      "name": "SCE::Saved::WidenedField"
-    },
-    {
-      "header": "saved/SavedState.h",
-      "kind": "struct",
-      "members": [
+        "field bool trackedBefore",
         "field int revision",
         "field std::string event",
         "field std::vector<AddedField> added",
@@ -3383,6 +3401,16 @@
         "field std::vector<std::string> revisions"
       ],
       "name": "SCE::Saved::RecordLineage"
+    },
+    {
+      "header": "saved/SavedState.h",
+      "kind": "struct",
+      "members": [
+        "field int optionalSince",
+        "field int since",
+        "field std::string id"
+      ],
+      "name": "SCE::Saved::WidenedField"
     },
     {
       "header": "saved/SavedState.h",
@@ -3482,7 +3510,8 @@
         "field std::string revised",
         "field std::vector<EnumLineage> enums",
         "field std::vector<MigrationStep> migrations",
-        "field std::vector<RecordLineage> records"
+        "field std::vector<RecordLineage> records",
+        "field std::vector<std::string> legacy"
       ],
       "name": "SCE::Saved::SavedShape"
     },

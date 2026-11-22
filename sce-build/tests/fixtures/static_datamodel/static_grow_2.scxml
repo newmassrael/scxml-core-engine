@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/adr/0112, D5; docs/adr/0044): the next version of static_grow_1.scxml, whose records are at their second
+  revision. Its shape is the first version's, since a shape names each record by its first
+  revision, so it restores a state the first version saved with no migration, every record at
+  every depth read at the defaults of the fields the second revision added. Generated for Rust
+  and C++, whose restores walk a record held below a variable's value; every other lane refuses
+  it by name (docs/adr/0109, D0).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="holding" datamodel="sce-static" name="static_grow_2">
+  <sce:import kind="event-schema" src="grow_outer_2.scxml" as="Outer"/>
+  <sce:import kind="event-schema" src="grow_inner_2.scxml" as="Inner"/>
+  <sce:import kind="event-schema" src="grow_item_2.scxml" as="Item"/>
+  <sce:import kind="event-schema" src="grow_leaf.scxml" as="Leaf"/>
+  <sce:import kind="event-schema" src="grow_maybe_2.scxml" as="Maybe"/>
+  <sce:import kind="event-schema" src="grow_holding_2.scxml" as="Holding"/>
+  <sce:import kind="event-schema" src="grow_shaped_2.scxml" as="Shaped"/>
+  <sce:import kind="union" src="grow_shape_2.scxml" as="Shape"/>
+  <sce:import kind="enum" src="grow_kind.scxml" as="Kind"/>
+  <datamodel>
+    <data id="outer" sce:type="optional&lt;record:Outer&gt;" expr="null" sce:direction="out"/>
+    <!-- The first version holds a record of the inner schema's first revision
+         whole; this one holds it optional, since a variable of a record that
+         holds a list is lowered optional (docs/adr/0086, section 7.3): `T` to
+         `optional<T>` leaves the shape as it was (docs/adr/0055, section 6). -->
+    <data id="kept" sce:type="optional&lt;record:Inner&gt;" expr="null" sce:direction="out"/>
+    <data id="many" sce:type="list&lt;record:Item&gt;[2]" sce:direction="out"/>
+    <data id="maybe" sce:type="optional&lt;record:Inner&gt;" expr="null" sce:direction="out"/>
+    <data id="shape" sce:type="union:Shape" sce:direction="out">
+      <sce:set name="kind" expr="Kind.none"/>
+    </data>
+  </datamodel>
+  <state id="holding">
+    <transition event="grow.holding" type="internal">
+      <assign location="outer" expr="_event.data.outer"/>
+    </transition>
+    <transition event="grow.maybe" type="internal">
+      <assign location="maybe" expr="_event.data.inner"/>
+    </transition>
+    <transition event="grow.shaped" type="internal">
+      <assign location="shape" expr="_event.data.shape"/>
+    </transition>
+  </state>
+</scxml>
