@@ -18,13 +18,16 @@ import com.sce.generated.envelope.Envelope
 import com.sce.generated.envelope.EnvelopeDataBytes
 import com.sce.generated.envelope.EnvelopeEventTypeText
 import com.sce.generated.envelope.EnvelopeIdBytes
+import com.sce.generated.envelope.EnvelopeInstanceText
 import com.sce.generated.envelope.EnvelopeSourceText
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.test.fail
 
 class CborCodecTest {
@@ -183,6 +186,40 @@ class CborCodecTest {
         val at = (0 until reserved.size - 1).first { reserved[it] == 0x03.toByte() && reserved[it + 1] == 0x01.toByte() }
         reserved[at + 1] = 0x0b
         assertEquals(Decoded.Refused(CodecError.UndeclaredEnumValue), Envelope.decode(SceCursor(reserved)))
+    }
+
+    /**
+     * docs/adr/0113, D1: an instance of the sending machine is key 21, a text
+     * of at most 64 bytes after every other entry, and absent from the envelope
+     * of a machine that is one. Red if the key or its bound moves, or an absent
+     * instance is written.
+     */
+    @Test
+    fun anInstanceIsKey21OfTheMeshEnvelopeAndAbsentFromEveryOther() {
+        val closed = Envelope(
+            id = EnvelopeIdBytes.of(ByteArray(16))!!,
+            source = EnvelopeSourceText.of("phone")!!,
+            event_type = EnvelopeEventTypeText.of("evt")!!,
+            pattern = PatternKind.FIRE_FORGET,
+            datacontenttype = PayloadCodec.NONE,
+            data = EnvelopeDataBytes.of(ByteArray(0))!!,
+        )
+        val plain = closed.encodeToByteArray()
+        assertEquals(0xA6.toByte(), plain[0])
+        assertNull(Envelope.decode(SceCursor(plain)).valueOr { fail("the envelope is refused as ${it.error}") }.instance)
+
+        val open = closed.copy(instance = EnvelopeInstanceText.of("Z-9_.b")!!)
+        val golden = bytes(0xA7) + plain.copyOfRange(1, plain.size) +
+            bytes(0x15, 0x66, 'Z'.code, '-'.code, '9'.code, '_'.code, '.'.code, 'b'.code)
+        assertContentEquals(golden, open.encodeToByteArray())
+        val decoded = Envelope.decode(SceCursor(golden)).valueOr { fail("the envelope is refused as ${it.error}") }
+        assertEquals("Z-9_.b", decoded.instance?.text)
+
+        assertNotNull(EnvelopeInstanceText.of("x".repeat(64)))
+        assertNull(EnvelopeInstanceText.of("x".repeat(65)))
+        val past = bytes(0xA7) + plain.copyOfRange(1, plain.size) + bytes(0x15, 0x78, 65) +
+            ByteArray(65) { 'x'.code.toByte() }
+        assertTrue(Envelope.decode(SceCursor(past)) is Decoded.Refused)
     }
 
     /**

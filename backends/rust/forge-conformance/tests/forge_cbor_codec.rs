@@ -222,6 +222,54 @@ fn the_mesh_envelope_writes_the_bytes_the_cpp_codec_writes() {
     );
 }
 
+/// docs/adr/0113, D1: an instance of the sending machine is key 21, a text of at most 64 bytes
+/// after every other entry; an envelope of a machine that is one writes the bytes it wrote before
+/// the key was. Red if the key or its bound moves, or an absent instance is written.
+#[test]
+fn an_instance_is_key_21_of_the_mesh_envelope_and_absent_from_every_other() {
+    use mesh::envelope::Envelope;
+
+    let closed = Envelope {
+        id: (&ID).into(),
+        source: Bounded::new("phone").expect("within the source's bound"),
+        event_type: Bounded::new("evt").expect("within the event type's bound"),
+        ..Envelope::default()
+    };
+    let plain = closed.encode_to_vec();
+    assert_eq!(plain[0], 0xA6, "the six required entries alone");
+
+    for instance in ["a", "Z-9_.b", "x".repeat(64).as_str()] {
+        let open = Envelope {
+            instance: Some(Bounded::new(instance).expect("within the instance's bound")),
+            ..closed.clone()
+        };
+        let mut golden = plain.clone();
+        golden[0] = 0xA7;
+        golden.push(0x15);
+        match instance.len() {
+            short @ 0..=23 => golden.push(0x60 | short as u8),
+            long => golden.extend_from_slice(&[0x78, long as u8]),
+        }
+        golden.extend_from_slice(instance.as_bytes());
+        assert_eq!(open.encode_to_vec(), golden);
+        assert_eq!(Envelope::decode(&mut SceCursor::new(&golden)), Ok(open));
+    }
+
+    // A text past the bound is no instance, and no envelope.
+    let mut past = plain.clone();
+    past[0] = 0xA7;
+    past.extend_from_slice(&[0x15, 0x78, 65]);
+    past.extend_from_slice(&[b'x'; 65]);
+    assert!(Envelope::decode(&mut SceCursor::new(&past)).is_err());
+
+    // Every other envelope is what it was.
+    assert_eq!(
+        Envelope::decode(&mut SceCursor::new(&plain)),
+        Ok(closed),
+        "no instance"
+    );
+}
+
 /// A value that breaks its bound has no frame, so its type cannot hold it and
 /// no map of it can be made (docs/adr/0077 §3). At the bound it is one.
 #[test]
