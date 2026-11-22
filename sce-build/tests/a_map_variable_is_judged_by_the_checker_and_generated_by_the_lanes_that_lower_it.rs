@@ -1880,15 +1880,18 @@ fn a_map_of_a_nested_value_is_lowered_by_the_interpreter_c11_and_rust() {
 }
 
 /// The C11 lowering of the static fixture `name`, beside the documents it
+/// imports there ([`generate_c11_at`]).
+fn generate_c11_fixture(name: &str) -> (bool, String, String) {
+    generate_c11_at(&static_fixture(name))
+}
+
+/// The C11 lowering of the statechart at `path`, beside the documents it
 /// imports there: whether `generate` passed, what it printed, and every header
 /// and source it wrote, in the order of their names.
-fn generate_c11_fixture(name: &str) -> (bool, String, String) {
+fn generate_c11_at(path: &Path) -> (bool, String, String) {
     let out_dir = tempfile::tempdir().expect("an output directory");
     let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
-    let (ok, printed) = run(
-        &["generate", "-l", "c11", "-o", out.as_str()],
-        &static_fixture(name),
-    );
+    let (ok, printed) = run(&["generate", "-l", "c11", "-o", out.as_str()], path);
     let mut files: Vec<PathBuf> = std::fs::read_dir(out_dir.path())
         .expect("read the output")
         .map(|entry| entry.expect("an output file").path())
@@ -2089,6 +2092,43 @@ fn rust_writes_a_nested_map_in_place() {
             "{machine}: no loop binds the place it walks:\n{text}"
         );
     }
+}
+
+/// docs/adr/0108, D12 rule 8: a walk of a map held at a key whose body takes the
+/// machine whole (a `<send>`) walks a copy of the place on Rust, whose loop holds
+/// the place lent by the statement that binds it, and walks the place itself on
+/// C11, which reads it through its address before the loop's head: the copy one
+/// lane's borrow needs is no other lane's.
+#[test]
+fn a_nested_walk_copies_its_place_only_where_the_loop_holds_it_lent() {
+    let document = edited(
+        &std::fs::read_to_string(static_fixture("static_map_nested")).expect("the statechart"),
+        "<assign location=\"total\" expr=\"total + v\"/>",
+        "<assign location=\"total\" expr=\"total + v\"/>\n        <send event=\"read\"/>",
+    );
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let path = dir.path().join("static_map_nested.scxml");
+    std::fs::write(&path, document).expect("write the statechart");
+
+    let out_dir = tempfile::tempdir().expect("an output directory");
+    let out = out_dir.path().to_str().expect("a utf-8 path").to_string();
+    let (ok, printed) = run(&["generate", "-l", "rust", "-o", out.as_str()], &path);
+    assert!(ok, "Rust generates a walk whose body sends:\n{printed}");
+    let (tree, text) = machine_tree(&rust_files_in(out_dir.path()));
+    let mut methods = MethodCalls::default();
+    syn::visit::Visit::visit_file(&mut methods, &tree);
+    assert!(
+        methods.cloned().contains(&"sce_place_0"),
+        "Rust walks the place a body that sends holds lent, not a copy of it:\n{text}"
+    );
+
+    let (ok, printed, code) = generate_c11_at(&path);
+    assert!(ok, "C11 generates a walk whose body sends:\n{printed}");
+    assert!(
+        code.contains("for (sce_forge_algorithm_failure_t sce_walk_failure_")
+            && !code.contains("sce_map_copy_for_walk("),
+        "C11 copies the place a body that sends walks:\n{code}"
+    );
 }
 
 /// docs/adr/0108, D12: the table a router keeps by key expression and by peer
