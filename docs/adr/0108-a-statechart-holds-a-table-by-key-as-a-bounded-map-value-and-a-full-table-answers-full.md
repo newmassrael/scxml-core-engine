@@ -382,8 +382,9 @@ lowers a map:
    step and a loop, and is taken whole only into a variable of exactly the same type. Widening a nested value between
    two bounds is not decided here.
 7. **Inner seeds.** Each inner map's hash seed (D8) is derived from the outer map's seed with a fixed ordinal per
-   depth (Rust `derived_seed`, C11 `sce_map_seed_derive`), and a restore reseeds them the same way, so a restored
-   machine needs no seed of its own per inner map. The Interpreter has no seed.
+   depth (Rust `derived_seed`, C11 `sce_map_seed_derive`), and a restore seeds each inner map as the lane seeds every map it
+   restores (Rust draws a seed of its own; C11 derives it again), which no reading can tell apart, since a seed is
+   never observable. The Interpreter has no seed.
 8. **Loops.** `<foreach array="m[k]">` walks the inner value. D6 item 3's copy rule applies to the root variable: a
    body that writes `m` along any path walks a copy. Rust and C11 bind a container item by reference, never by copy.
 9. **A record that holds a list is held in the machine's own record type** (amends D6 item 4). D6 item 4 held a map's
