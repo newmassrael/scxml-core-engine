@@ -19123,7 +19123,7 @@ mod tests {
                     reason: "the machine also declares `sessions:`, and a pool of open machines would be several masters of one key, which the lease and fence of a keyed pool choose one of".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c0d6f7f257a9845b","code":"mesh/deploy-invalid-instances","stage":"mesh-deploy","spec":"ADR 0113 D7","message":"machine 'phone': `instances: open` in deploy.yaml cannot be kept — the machine also declares `sessions:`, and a pool of open machines would be several masters of one key, which the lease and fence of a keyed pool choose one of.","actual":"phone"}"#,
+                r#"{"v":1,"id":"fnv1a:c0d6f7f257a9845b","code":"mesh/deploy-invalid-instances","stage":"mesh-deploy","spec":"ADR 0113 D7","message":"machine 'phone': `instances: open` in deploy.yaml cannot be kept — the machine also declares `sessions:`, and a pool of open machines would be several masters of one key, which the lease and fence of a keyed pool choose one of.","actual":"open"}"#,
             ),
             (
                 "mesh/deploy-invalid-receipt",
