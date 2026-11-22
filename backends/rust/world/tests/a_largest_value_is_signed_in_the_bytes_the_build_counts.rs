@@ -190,6 +190,7 @@ fn scope() -> TypeScope {
             fields: fields(&ITEM_FIELDS),
             scope: item_scope,
             added: Default::default(),
+            lineage: Default::default(),
         },
     );
     let mut outer = batch_scope.clone();
@@ -201,6 +202,7 @@ fn scope() -> TypeScope {
             fields: fields(&BATCH_FIELDS),
             scope: batch_scope,
             added: Default::default(),
+            lineage: Default::default(),
         },
     );
     outer
