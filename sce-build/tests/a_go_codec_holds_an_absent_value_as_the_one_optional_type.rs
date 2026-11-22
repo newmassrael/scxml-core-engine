@@ -274,9 +274,10 @@ fn a_codec_with_no_value_that_may_be_absent_imports_no_optional_package() {
 /// A codec the Go printer prints (docs/adr/0081 step 4) holds a gated element
 /// in an unexported field of the optional type of what it presents, a byte
 /// string or a text its bounded value, made of what the decode read by
-/// `codec.MakeOptionalBytes` or `MakeOptionalText`; its encode writes the
-/// element where the source presents it, and holds no length the encode
-/// derives.
+/// `codec.MakeOptionalBytes` or `MakeOptionalText`, a list or a chain the
+/// runtime's `codec.List` of its entries' source interface, and an embedded
+/// body its codec's source interface; its encode writes the element where the
+/// source presents it, and holds no length the encode derives.
 #[test]
 fn a_gated_field_is_the_one_optional_type_in_every_layout() {
     // (document, the declarations its gated fields make, a line its decode
@@ -308,24 +309,36 @@ fn a_gated_field_is_the_one_optional_type_in_every_layout() {
         ),
         (
             "codec_repeat_present_if_basic",
-            &["Elems optional.Of[[]codec_repeat_elem.CodecRepeatElem]"],
+            &[
+                "elems optional.Of[codec.List[CodecRepeatPresentIfBasicElemsBound, \
+               codec_repeat_elem.CodecRepeatElemSource]]",
+            ],
             "Elems = optional.Some(_list)",
-            "_list := s.Elems.Proven()",
+            "\tif src.Elems().IsPresent() {\n\
+             \t\tfor _e := range src.Elems().Proven().All() {\n\
+             \t\t\tif err := codec_repeat_elem.EncodeSource(_e, w); err != nil {\n",
         ),
         (
             "codec_tlv_chain_present_if_basic",
-            &["Entries optional.Of[[]codec_tlv_entry.CodecTlvEntry]"],
+            &[
+                "entries optional.Of[codec.List[CodecTlvChainPresentIfBasicEntriesBound, \
+               codec_tlv_entry.CodecTlvEntrySource]]",
+            ],
             "Entries = optional.Some(_list)",
-            "_list := s.Entries.Proven()",
+            "\tif src.Entries().IsPresent() {\n\
+             \t\tfor _e := range src.Entries().Proven().All() {\n\
+             \t\t\tif err := codec_tlv_entry.EncodeSource(_e, w); err != nil {\n",
         ),
         (
             "codec_zenoh_msg_put",
             &[
-                "Timestamp optional.Of[codec_zenoh_timestamp.CodecZenohTimestamp]",
-                "Encoding optional.Of[codec_zenoh_encoding.CodecZenohEncoding]",
+                "timestamp optional.Of[codec_zenoh_timestamp.CodecZenohTimestampSource]",
+                "encoding optional.Of[codec_zenoh_encoding.CodecZenohEncodingSource]",
             ],
             "Timestamp = optional.Some(*_emb)",
-            "_body := s.Timestamp.Proven()",
+            "\tif src.Timestamp().IsPresent() {\n\
+             \t\tif err := codec_zenoh_timestamp.EncodeSource(src.Timestamp().Proven(), w); \
+             err != nil {\n",
         ),
     ];
     for (document, declarations, decoded, encoded) in cases {
