@@ -2270,6 +2270,17 @@ const ENVIRONMENT_NO_PLAN_DEPENDS_ON: &[(&str, &str)] = &[
         "SCE_REQUIRE_ALL_COMPILERS",
         "a test's demand that every compiler it runs is present; a plan compiles nothing",
     ),
+    (
+        "SCE_FLEET_CACHE",
+        "the server of the fleet's action cache a materialized tree's actions are fetched \
+         from and stored in (`action::store::remote`); a plan names what a generation \
+         reads and writes, and asks no cache",
+    ),
+    (
+        "SCE_FLEET_INSTANCE",
+        "the instance of that server the project's actions are kept under; a plan asks \
+         no cache",
+    ),
 ];
 
 /// Every `SCE_` environment variable the generator's sources read: a name
