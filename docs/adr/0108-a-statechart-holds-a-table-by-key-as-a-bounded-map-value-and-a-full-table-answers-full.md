@@ -8,7 +8,9 @@
   (D6), and keyed a 128-bit identifier as two integers (D1). It accepted the record so amended. Amended the same day
   (D6, item 2): an algorithm with an `inout` slot may return a value, taken by the call's `location`, because the
   consumer's first rule over a table (a peer's latest generation, its duplicates refused) answers what it did.
-  "Order of work" marks the steps that have landed.
+  "Order of work" marks the steps that have landed. Amended 2026-11-22 (D12, which amends D6 item 4): a map's value may
+  be a map, a list or a record that holds a list, written in place through a nested place, on the consumer's probes
+  of the three shapes.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0108" line in the landing that moves it):
   - `sce-build/src/forge/value_type.rs`'s grammar (docs/adr/0086, section 1): two constructors, `map<K, V>[B]` and
@@ -347,6 +349,55 @@ the type and this record, as ADR 0092's union did on the Swift lane (ADR 0099).
   from anything other than a map variable of a type it fits or an algorithm's map return.
 
 Each new code lands in the acceptance-doc appendix with its first emitter (`acceptance_doc_covers_every_code`).
+
+### D12. A map may hold a map, a list or a record that holds a list, and a nested place is written in place
+
+(Amended 2026-11-22.) D1 and D7 admit a map whose value is a map, a list, or a record whose field is a list, but
+the first landings lowered only a value that is a number, a bool, an enum, a text, a byte string or a record of
+those (D10). A consumer's tables need all three shapes: a region's table keyed again by a face, a ring of samples
+per key, and a peer's row that holds its list of locators. The rules that make them lower, on every lane that
+lowers a map:
+
+1. **A nested place.** A statement's `target` is a map variable followed by `[key]` steps, and, where a step reaches
+   a record, `.field` steps: `<sce:put target="m[k]" key="k2" expr="v"/>`, `<sce:remove target="m[k]" key="k2"/>`,
+   `<sce:append target="m[k]" expr="e"/>` for a list value, `<sce:append target="m[k].tags" expr="e"/>` and
+   `<sce:clear target="m[k]"/>`. Each key is evaluated once, before anything is written, and a key may not read the
+   place being written (the rule `last = days[last.n]` already follows). A list has no index step in a target: a
+   map held inside a list stays refused (D7 admits it as an element, which no lane lowers yet). Reads compose as the
+   type already says: `m[k][k2]`, `has(m[k], k2)`, `len(m[k])`, `m[k].tags[i]`, and `<foreach array="m[k]">`.
+2. **In place, with value semantics.** A nested write changes the value inside the outer entry where it is, on Rust
+   and C11 (a mutable lookup that never touches the outer index), and copies the path to the root on the
+   Interpreter, whose arrays are never changed in place. What D2 says of a value holds of every level: a write is
+   whole or does nothing, so no outer map is ever left changed by a nested write that failed. Taking the inner value
+   out and putting it back would copy a value of the inner bound onto a C11 stack, which the C11 lane's frame rule refuses (no frame
+   grows with a bound, `a_limit_moves_every_bound_that_names_it.rs`).
+3. **An absent outer key.** A nested write whose outer key is absent raises `error.execution` (`out-of-range`) and
+   ends its block, as reading `m[k]` does (D3). Nothing is created by it: a write that created the outer entry would
+   need a second outcome for the outer map being full. A document puts the entry first, guarded by `has(m, k)`.
+4. **An entry whose value is a container.** `<sce:put target="m" key="k"/>` with no `expr`, where `V` is a map, a
+   set or a list, puts the empty value; on a present key it replaces the value with the empty one, as D2's replace
+   rule gives. `expr` may name a variable of exactly `V`'s type, copied whole.
+5. **The outcome of a nested put** is the inner map's: `full` says the inner map is full.
+6. **A container value is no operand.** `m[k]` of a map, set or list type is read through `has`, `len`, a further
+   step and a loop, and is taken whole only into a variable of exactly the same type. Widening a nested value between
+   two bounds is not decided here.
+7. **Inner seeds.** Each inner map's hash seed (D8) is derived from the outer map's seed with a fixed ordinal per
+   depth (Rust `derived_seed`, C11 `sce_map_seed_derive`), and a restore reseeds them the same way, so a restored
+   machine needs no seed of its own per inner map. The Interpreter has no seed.
+8. **Loops.** `<foreach array="m[k]">` walks the inner value. D6 item 3's copy rule applies to the root variable: a
+   body that writes `m` along any path walks a copy. Rust and C11 bind a container item by reference, never by copy.
+9. **A record that holds a list is held in the machine's own record type** (amends D6 item 4). D6 item 4 held a map's
+   record in the type its unit declares, so a map could be lent to an algorithm without a copy. A C11 expression
+   reads every list as `.len` and `.data`, which the unit's `{ uint32_t len; T items[N]; }` does not have, so a
+   record that holds a list is held in the machine's record (`{ size_t len; T data[N]; }`, ADR 0086 section 7). A
+   map of such records lent to an algorithm is refused by name until the algorithm's slot holds the machine's record
+   too.
+
+The saved form nests as D8 states, each value in the form its type has: `[[k,[[k2,v],...]],...]`,
+`[[k,[e1,e2]],...]`, `[[k,{...,"tags":[...]}],...]`. A host is lent the nested value as it is lent a map (Rust
+`&BoundedMap<K, BoundedMap<...>, B>`, C11's view whose slot value is the inner map type, the Interpreter's nested
+array). Each lane lifts its refusal when it lowers all three shapes; until then it refuses by name, naming this
+section.
 
 ### Not in scope
 
