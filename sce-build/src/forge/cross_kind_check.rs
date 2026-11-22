@@ -158,14 +158,18 @@ pub(crate) fn check_imports_acyclic(
 }
 
 /// The entry document's place on the import graph: its canonical path and
-/// its file name, when its label names a file in the directory its imports
-/// resolve against — which is where an import that comes back to it
-/// resolves. `None` for a document given as text with no such file (an
-/// in-memory label), which no import can reach again.
+/// its file name, when its label names a document in the directory its
+/// imports resolve against — which is where an import that comes back to it
+/// resolves. The document is looked for as an import looks for one
+/// (`confine::exists`, which `ImportSource::read` asks): a document a run
+/// holds in memory is there as a file on disk is, and one outside the folder
+/// a caller confined the generator to is not. `None` for a document given as
+/// text with no such document (an in-memory label), which no import can reach
+/// again.
 fn entry_identity(entry_label: &str, base_dir: &Path) -> Option<(PathBuf, String)> {
     let name = Path::new(entry_label).file_name()?;
     let file = base_dir.join(name);
-    if !file.is_file() {
+    if !crate::confine::exists(&file) {
         return None;
     }
     let canonical = crate::confine::canonicalize(&file).ok()?;
