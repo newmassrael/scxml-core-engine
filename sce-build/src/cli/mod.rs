@@ -1147,6 +1147,24 @@ fn cli_exit(err: CliError) -> ! {
     current_error_format().emit_and_exit(&err, "")
 }
 
+/// The template tree, or `generate/template-load` and the end of the run: an
+/// installation without its templates is refused as a diagnostic, as a document
+/// is, and not by a panic.
+fn template_base() -> PathBuf {
+    crate::locate_template_base().unwrap_or_else(|missing| exit_without_templates(missing))
+}
+
+/// [`template_base`], scoped to `language`.
+fn template_dir_for(language: Language) -> PathBuf {
+    crate::locate_template_dir_for(language)
+        .unwrap_or_else(|missing| exit_without_templates(missing))
+}
+
+fn exit_without_templates(missing: crate::TemplatesNotFound) -> ! {
+    let refusal = ForgeError::from(crate::forge::error::GenerateError::from(missing));
+    current_error_format().emit_and_exit(&refusal, "")
+}
+
 /// Read a `--language` value for `route`: a name no backend answers to is
 /// `UnknownLanguage`, and a backend that exists but that the route does not
 /// serve — one that emits nothing yet, for a route that writes files — is
@@ -5119,7 +5137,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     let scxml_refs: Vec<&Path> = scxml_path_bufs.iter().map(|p| p.as_path()).collect();
     let forge_refs: Vec<&Path> = forge_path_bufs.iter().map(|p| p.as_path()).collect();
 
-    let template_dir = crate::find_template_dir_for(lang);
+    let template_dir = template_dir_for(lang);
 
     // C13 orchestrator wiring (`b501b18c`): parse the optional
     // deploy.yaml into a `DeployConfig` so the multi-doc compile path
@@ -5340,7 +5358,7 @@ fn document_set_depfile_entry(reads: DocumentSetReads<'_>) -> DepfileEntry {
             ..DepfileEntry::default()
         };
     };
-    let template_base = crate::find_template_base();
+    let template_base = template_base();
     depfile_entry(DepfileInputs {
         output_paths: artifacts,
         template_dir: &template_base,
@@ -6435,7 +6453,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
 
     let mut verdicts: Vec<LanguageVerdict> = Vec::new();
     for lang in &langs {
-        let template_dir = crate::find_template_dir_for(*lang);
+        let template_dir = template_dir_for(*lang);
         let outcome = crate::compile_scxml_with_imports(
             &scxml_refs,
             &forge_refs,
@@ -6875,7 +6893,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                         Ok(selected) => selected,
                         Err(refusal) => error_format.emit_and_exit(&refusal, ""),
                     };
-                let template_dir = crate::find_template_dir_for(*lang);
+                let template_dir = template_dir_for(*lang);
                 let forge_options = crate::ForgeCompileOptions {
                     go_module_prefix: go_module_prefix.clone(),
                     const_fold_budget,
@@ -7707,7 +7725,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                         // The forge scope, not the statechart one:
                         // `forge::generator::generate_*` loads
                         // `templates/forge/<lang>`.
-                        let forge_template_dir = crate::find_template_base()
+                        let forge_template_dir = template_base()
                             .join("forge")
                             .join(lang.forge_template_subdir());
                         report.depfile = Some(depfile_entry(DepfileInputs {
@@ -7734,7 +7752,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         crate::Pipeline::Scxml => {}
     }
 
-    let template_dir = crate::find_template_dir_for(lang);
+    let template_dir = template_dir_for(lang);
 
     // The `--include-dir` search path lets `<xi:include>` / `<sce:use>`
     // resolve fragments by name; empty in the common case, so the
@@ -9180,10 +9198,7 @@ fn w3c_reads(lang: Language, registry: &Path, resources: &Path) -> DepfileEntry 
     }
     found.sort();
     prerequisites.extend(found);
-    prerequisites.extend(language_template_files(
-        &crate::find_template_dir_for(lang),
-        lang,
-    ));
+    prerequisites.extend(language_template_files(&template_dir_for(lang), lang));
     prerequisites.extend(this_program());
     DepfileEntry {
         outputs: Vec::new(),
@@ -9876,7 +9891,7 @@ trait W3cBackend {
         input_stem: &str,
     ) -> Result<Vec<(String, String)>, ForgeError> {
         let language = self.language();
-        let template_dir = crate::find_template_dir_for(language);
+        let template_dir = template_dir_for(language);
         let files = crate::generator::transition_function_files(
             model,
             crate::generator::TemplateSource::Directory(&template_dir),
@@ -10886,7 +10901,7 @@ impl RustBackend {
         Self {
             sm_base: tests_crate.join("src/generated"),
             test_dir: tests_crate.join("tests"),
-            tmpl_dir: crate::find_template_dir_for(Language::Rust),
+            tmpl_dir: template_dir_for(Language::Rust),
             suite: packaging.identity().clone(),
             standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
         }
@@ -11291,7 +11306,7 @@ impl GoBackend {
         let tests_module = output_root.join(Self::RELATIVE_ROOT);
         Self {
             sm_base: tests_module.join("generated"),
-            tmpl_dir: crate::find_template_dir_for(Language::Go),
+            tmpl_dir: template_dir_for(Language::Go),
             suite: packaging.identity().clone(),
             standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
         }
@@ -11538,7 +11553,7 @@ impl SwiftBackend {
         Self {
             sm_base: package.join("Sources/W3cMachines"),
             test_dir: package.join("Tests/W3cMachinesTests"),
-            tmpl_dir: crate::find_template_dir_for(Language::Swift),
+            tmpl_dir: template_dir_for(Language::Swift),
         }
     }
 }
@@ -11726,7 +11741,7 @@ impl KotlinBackend {
         Self {
             sm_base: tests_module.join(format!("src/main/kotlin/{package_dir}/generated")),
             test_dir: tests_module.join(format!("src/test/kotlin/{package_dir}/w3c")),
-            tmpl_dir: crate::find_template_dir_for(Language::Kotlin),
+            tmpl_dir: template_dir_for(Language::Kotlin),
             suite,
             standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
             script_engine,
@@ -12065,7 +12080,7 @@ impl CppBackend {
     fn new(output_root: &Path, script_engine: crate::generator::ScriptEngineTarget) -> Self {
         Self {
             output_dir: output_root.join("build/tests/w3c_static_generated"),
-            tmpl_dir: crate::find_template_dir_for(Language::Cpp),
+            tmpl_dir: template_dir_for(Language::Cpp),
             script_engine,
         }
     }
@@ -12157,7 +12172,7 @@ impl PythonBackend {
     fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
         Self {
             sm_base: output_root.join(Self::RELATIVE_ROOT).join("generated"),
-            tmpl_dir: crate::find_template_dir_for(Language::Python),
+            tmpl_dir: template_dir_for(Language::Python),
             standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
         }
     }
@@ -14190,6 +14205,8 @@ fn cmd_generate_conformance(
 ) {
     let lang = parse_served_language(LanguageRoute::GenerateConformance, language);
 
+    // Before the manifest, whose reading asks the template tree which kinds have a fragment.
+    let template_base = template_base();
     let manifest =
         crate::conformance::Manifest::load(Path::new(manifest_path)).unwrap_or_else(|e| {
             cli_exit(CliError::ReadInput {
@@ -14198,7 +14215,6 @@ fn cmd_generate_conformance(
             })
         });
 
-    let template_base = crate::find_template_base();
     let resource_dir = sibling_of_containing_dir(Path::new(manifest_path), "resources");
     let rendered =
         crate::conformance::render_harness(&manifest, lang, &template_base, &resource_dir)

@@ -2949,17 +2949,25 @@ pub fn compile_scxml_lang(
 }
 
 /// Locate template directory for a specific language.
-pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBuf {
+pub fn locate_template_dir_for(
+    language: generator::Language,
+) -> Result<std::path::PathBuf, TemplatesNotFound> {
     // Scoping is owned by `Language::template_subdir` so the filesystem
     // source and the embedded registry cannot disagree about where a
     // language's templates live.
     let subdir = language.template_subdir();
-    let base = find_template_base();
-    if subdir.is_empty() {
+    let base = locate_template_base()?;
+    Ok(if subdir.is_empty() {
         base
     } else {
         base.join(subdir)
-    }
+    })
+}
+
+/// [`locate_template_dir_for`] for a caller with no error to return; see
+/// [`find_template_base`].
+pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBuf {
+    locate_template_dir_for(language).unwrap_or_else(|missing| panic!("{missing}"))
 }
 
 /// A forge source file after preprocessor expansion.
@@ -3652,7 +3660,12 @@ pub fn compile_forge_from_string(
     // emission would otherwise lose its SCE-MAP marker.
     forge::provenance::validate_forge_emission_provenance(&doc, label.diagnostic_label)?;
 
-    let template_base = find_template_base();
+    let template_base = locate_template_base().map_err(|missing| {
+        Located::in_file(
+            forge::error::ForgeError::from(forge::error::GenerateError::from(missing)),
+            label.diagnostic_label,
+        )
+    })?;
 
     let output = match language {
         generator::Language::Cpp => forge::generator::generate_cpp(&doc, &template_base),
@@ -4222,7 +4235,12 @@ pub fn compile_forge_with_deploy(
         return Ok(generator::GeneratedOutput::default());
     }
 
-    let template_base = find_template_base();
+    let template_base = locate_template_base().map_err(|missing| {
+        Located::in_file(
+            forge::error::ForgeError::from(forge::error::GenerateError::from(missing)),
+            label.diagnostic_label,
+        )
+    })?;
 
     // RFC §synth-5-I — `<sce:extern>` rejected on
     // non-MCU backends. Mirrors the gate in
@@ -5146,7 +5164,13 @@ pub fn compile_rust_deployment(
     options: &ForgeCompileOptions,
 ) -> Result<generator::GeneratedOutput, forge::deployment::RustDeploymentError> {
     let (ctx, deps) = forge::deployment::context(documents, &options.include_dirs, deployment)?;
-    let text = forge::generator::render_rust_deployment(&find_template_base(), options, ctx)
+    let template_base = locate_template_base().map_err(|missing| {
+        forge::error::Located::in_file(
+            forge::error::ForgeError::from(forge::error::GenerateError::from(missing)),
+            deployment.source.clone(),
+        )
+    })?;
+    let text = forge::generator::render_rust_deployment(&template_base, options, ctx)
         .map_err(|e| forge::error::Located::in_file(e, deployment.source.clone()))?;
     Ok(generator::GeneratedOutput {
         files: vec![(forge::deployment::file_name(&deployment.name), text)],
@@ -5223,7 +5247,12 @@ pub fn compile_forge_from_parsed(
     // were misnamed.
     forge::namespace::check(parsed, label.diagnostic_label)?;
 
-    let template_base = find_template_base();
+    let template_base = locate_template_base().map_err(|missing| {
+        Located::in_file(
+            forge::error::ForgeError::from(forge::error::GenerateError::from(missing)),
+            label.diagnostic_label,
+        )
+    })?;
     let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
         .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
 
@@ -6786,7 +6815,13 @@ fn compile_document_set(
     // shared template root (matching the existing
     // `compile_forge_with_imports` helper-discovery pattern at lib.rs:1338).
     if let Some(deploy_cfg) = deploy {
-        let template_base = find_template_base();
+        let template_base = locate_template_base().map_err(|missing| {
+            let first = scxml_files.iter().chain(forge_files).next();
+            Located::in_file(
+                forge::error::ForgeError::from(forge::error::GenerateError::from(missing)),
+                first.map_or_else(String::new, |path| path.display().to_string()),
+            )
+        })?;
         for device in deploy_cfg.topology.values() {
             for (machine_name, machine) in device.machines.iter() {
                 let link_names: Vec<String> = machine
@@ -11964,7 +11999,11 @@ pub fn compile_mesh_transport(
     let machine_outbound_buffer = device
         .and_then(|d| d.machines.get(&effective_machine_name))
         .and_then(|m| m.outbound_buffer);
-    let template_base = find_template_base();
+    let template_base =
+        locate_template_base().map_err(|missing| mesh::error::CodegenError::TemplateRead {
+            path: "tools/codegen/templates".to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, missing.to_string()),
+        })?;
     // SCE_MESH.md §16.5 wire-21 partition routes — threaded through to
     // codegen so the per-partition shm channel constants and members
     // can be emitted alongside the conventional per-`<send>` transport
@@ -12451,38 +12490,84 @@ pub fn classify_document(content: &str) -> Pipeline {
     }
 }
 
+/// The template tree is not where this binary looks for it.
+///
+/// A generator installed on a machine that does not carry the source tree it
+/// was built from has no templates until `SCE_TEMPLATE_DIR` names them. That is
+/// a fault of the installation and no fault of a document, and it is reported
+/// as one: `generate/template-load`, whose message names where it looked.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{detail}. Set SCE_TEMPLATE_DIR to the installed templates directory (e.g. /usr/local/share/sce/codegen/templates)")]
+pub struct TemplatesNotFound {
+    detail: String,
+}
+
+impl From<TemplatesNotFound> for forge::error::GenerateError {
+    fn from(missing: TemplatesNotFound) -> Self {
+        Self::TemplateLoad(missing.to_string())
+    }
+}
+
 /// Locate the base template directory (contains rust/, kotlin/, actions/).
-pub fn find_template_base() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("SCE_TEMPLATE_DIR") {
+///
+/// The one search: `SCE_TEMPLATE_DIR`, then the source tree this binary was
+/// built from, then `tools/codegen/templates` under the working directory.
+pub fn locate_template_base() -> Result<std::path::PathBuf, TemplatesNotFound> {
+    // `CARGO_MANIFEST_DIR` is baked at compile time and may point at a stale
+    // source tree on install targets. Silent-wrong output is only possible if
+    // the exact source-tree path happens to exist on the install target, an
+    // edge case the `SCE_TEMPLATE_DIR` override remains the authoritative
+    // escape hatch for.
+    let candidates = [
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates"),
+        std::path::PathBuf::from("tools/codegen/templates"),
+    ];
+    search_template_base(std::env::var_os("SCE_TEMPLATE_DIR").as_deref(), &candidates)
+}
+
+/// [`locate_template_base`] over what it reads from its environment.
+fn search_template_base(
+    named: Option<&std::ffi::OsStr>,
+    candidates: &[std::path::PathBuf],
+) -> Result<std::path::PathBuf, TemplatesNotFound> {
+    if let Some(dir) = named {
+        let p = Path::new(dir);
+        // Named, so the only place looked: a directory the operator meant and
+        // that is not there is not answered by another tree.
+        if !p.is_dir() {
+            return Err(TemplatesNotFound {
+                detail: format!(
+                    "SCE_TEMPLATE_DIR names '{}', which is no directory",
+                    p.display()
+                ),
+            });
+        }
         // If pointing to a language subdir, go up one level
-        let p = Path::new(&dir);
         if p.join("state_machine.rs.jinja2").exists() || p.join("state_machine.kt.jinja2").exists()
         {
-            return p.parent().unwrap_or(p).to_path_buf();
+            return Ok(p.parent().unwrap_or(p).to_path_buf());
         }
-        return p.to_path_buf();
+        return Ok(p.to_path_buf());
     }
-    // `CARGO_MANIFEST_DIR` is baked at compile time and may point at a
-    // stale source tree on install targets. The `.exists()` check is
-    // the guard: when the installed binary runs on a machine that does
-    // not carry the original source tree, the candidate path is absent
-    // and we fall through to the panic below. Silent-wrong output is
-    // only possible if the exact source-tree path happens to exist on
-    // the install target — an edge case the `SCE_TEMPLATE_DIR` override
-    // above remains the authoritative escape hatch for.
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let candidate = crate_dir.join("../tools/codegen/templates");
-    if candidate.exists() {
-        return candidate;
+    if let Some(found) = candidates.iter().find(|candidate| candidate.exists()) {
+        return Ok(found.clone());
     }
-    let candidate = Path::new("tools/codegen/templates");
-    if candidate.exists() {
-        return candidate.to_path_buf();
-    }
-    panic!(
-        "Cannot find Jinja2 templates. Set SCE_TEMPLATE_DIR to the installed \
-         templates directory (e.g. /usr/local/share/sce/codegen/templates)."
-    );
+    let looked: Vec<String> = candidates
+        .iter()
+        .map(|candidate| format!("'{}'", candidate.display()))
+        .collect();
+    Err(TemplatesNotFound {
+        detail: format!(
+            "Cannot find the Jinja2 templates (looked in {})",
+            looked.join(", ")
+        ),
+    })
+}
+
+/// [`locate_template_base`] for a caller with no error to return, a build
+/// script or a test: panics where it would report.
+pub fn find_template_base() -> std::path::PathBuf {
+    locate_template_base().unwrap_or_else(|missing| panic!("{missing}"))
 }
 
 /// Locate the Rust Jinja2 template directory.
@@ -12495,6 +12580,27 @@ pub fn find_template_dir() -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The one search: the named directory alone when one is named, then the
+    /// first candidate there is, else where it looked.
+    #[test]
+    fn the_template_search_names_where_it_looked() {
+        let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let absent = PathBuf::from("/nonexistent/sce-templates");
+        let found = search_template_base(None, &[absent.clone(), here.clone()]);
+        assert_eq!(found, Ok(here.clone()));
+        let none = search_template_base(None, std::slice::from_ref(&absent)).expect_err("no tree");
+        assert!(
+            none.to_string().contains("/nonexistent/sce-templates"),
+            "{none}"
+        );
+        let named = search_template_base(Some(absent.as_os_str()), &[here])
+            .expect_err("a named directory is the only place looked");
+        assert!(
+            named.to_string().contains("SCE_TEMPLATE_DIR names"),
+            "{named}"
+        );
+    }
 
     /// A statechart declaring its transition function: a nested state, an
     /// event two states take, and a top-level `<final>`.

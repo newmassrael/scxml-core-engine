@@ -247,6 +247,13 @@ name = "error_format_json"
 path = "tests/error_format_json.rs"
 required-features = ["cli"]
 
+# Spawns sce-codegen with no template tree to read, so it is held to the same
+# declaration as the target above.
+[[test]]
+name = "a_generator_without_its_templates_is_refused_by_a_diagnostic"
+path = "tests/a_generator_without_its_templates_is_refused_by_a_diagnostic.rs"
+required-features = ["cli"]
+
 # Requirement-closure RFC Atomic A. Spawns sce-codegen to prove the
 # four-way classification reaches the COMMAND, not only the library —
 # so the same reason as the target above applies, and so does the same
