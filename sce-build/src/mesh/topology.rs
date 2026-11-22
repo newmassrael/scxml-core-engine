@@ -775,8 +775,9 @@ pub enum PoolPlan {
         /// view member the pool reaches with the instance it is
         /// ([`crate::mesh::deploy::causal_pool_members`]): the route's
         /// vector and its repairs go to every one of them, while a change
-        /// goes to the instance its `<param>` names. Empty otherwise.
-        #[serde(skip_serializing_if = "Vec::is_empty")]
+        /// goes to the instance its `<param>` names. Empty otherwise, which
+        /// is written as empty: the review surface says it
+        /// ([`crate::mesh::review`]).
         causal_members: Vec<crate::mesh::deploy::CausalPoolMember>,
     },
 }
