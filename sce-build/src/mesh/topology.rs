@@ -2148,8 +2148,9 @@ pub(crate) struct PartialTarget {
 /// surfaces to the operator, not part of the resolved-target shape.
 ///
 /// Returns `TopologyError::UnresolvedTargets` when an SCXML target has no
-/// binding, `MissingBindingField` / `OrderingCannotBeGuaranteed` / shm-extras
-/// validation errors when a binding is malformed.
+/// binding, and `OrderingCannotBeGuaranteed` when one asks for an order its
+/// transport cannot carry. A malformed binding is [`validate_binding_extras`]'s to
+/// refuse, over the targets every contributor brought in.
 pub(crate) fn contribute_send_partials(
     summary: &SendActionSummary,
     bindings: &std::collections::HashMap<TargetId, BindingConfig>,
@@ -2250,10 +2251,42 @@ pub(crate) fn contribute_send_partials(
         });
     }
 
-    // Validate: each binding provides all fields required by its transport.
-    // Without this, missing fields would only surface as C++ #error directives
-    // in the generated template — a two-stage failure.
     for pt in &partials {
+        // SCE_MESH.md §mesh-10.6.2: `ordering: required` on a transport whose
+        // broadcast semantics leave no per-(sender, receiver) sequence
+        // domain is structurally unrepairable by a runtime buffer.
+        // Reject at topology time with an actionable diagnostic rather
+        // than deferring to a silently-incorrect OrderingBuffer that
+        // cannot distinguish "skipped for me" from "not destined for me".
+        if pt.ordering == crate::mesh::deploy::OrderingRequirement::Required {
+            if let Some(desc) = super::transport::lookup(&pt.transport) {
+                if !desc.ordering_representable {
+                    return Err(TopologyError::OrderingCannotBeGuaranteed {
+                        machine: machine_name.to_string(),
+                        target: pt.target.clone(),
+                        transport: pt.transport.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok((partials, deadline_overrides))
+}
+
+/// Each binding of `partials` provides what its transport requires, and what
+/// it declares beyond that is well formed. Without this, a missing field would
+/// only surface as a C++ `#error` in the generated template, or as the panic of
+/// an arm of [`build_transport_state`] that reads what it proved.
+///
+/// Asked of the merged list, whichever contributor brought a binding in: one
+/// reached only by a `targetexpr`, an `srcexpr` or a subscription is the same
+/// binding, read by the same arms.
+fn validate_binding_extras(
+    machine_name: &str,
+    partials: &[PartialTarget],
+) -> Result<(), TopologyError> {
+    for pt in partials {
         if let Some(desc) = super::transport::lookup(&pt.transport) {
             for &field in desc.required_binding_fields {
                 if !pt.extra.contains_key(field) {
@@ -2280,29 +2313,10 @@ pub(crate) fn contribute_send_partials(
             validate_https_extras_partial(machine_name, pt)?;
         }
 
-        // SCE_MESH.md §mesh-10.6.2: `ordering: required` on a transport whose
-        // broadcast semantics leave no per-(sender, receiver) sequence
-        // domain is structurally unrepairable by a runtime buffer.
-        // Reject at topology time with an actionable diagnostic rather
-        // than deferring to a silently-incorrect OrderingBuffer that
-        // cannot distinguish "skipped for me" from "not destined for me".
-        if pt.ordering == crate::mesh::deploy::OrderingRequirement::Required {
-            if let Some(desc) = super::transport::lookup(&pt.transport) {
-                if !desc.ordering_representable {
-                    return Err(TopologyError::OrderingCannotBeGuaranteed {
-                        machine: machine_name.to_string(),
-                        target: pt.target.clone(),
-                        transport: pt.transport.clone(),
-                    });
-                }
-            }
-        }
-
         // SOME/IP per-event ID validation runs after `finalize_targets`
         // has fanned the per-binding resolution out into per-event entries.
     }
-
-    Ok((partials, deadline_overrides))
+    Ok(())
 }
 
 /// Public pipeline entry: resolve, attach, validate in a single step so
@@ -2399,6 +2413,7 @@ pub fn build_resolved_targets(
         merge_partial_into(&mut partials, p);
     }
 
+    validate_binding_extras(machine_name, &partials)?;
     let mut resolved = finalize_targets(partials, machine_name, external)?;
     // docs/adr/0085, sections 3.2 and 3.3: a causal SOME/IP pool binding
     // sends its vector and its repairs to every view member it reaches, so
@@ -5622,6 +5637,40 @@ topology:
             .map(DynamicTargetSend::is_warning)
             .collect();
         assert_eq!(warned, vec![false, true, true]);
+    }
+
+    /// A binding the document reaches only by a `targetexpr` is held to its
+    /// transport's fields as one a written target reaches is. Red if only
+    /// written targets are judged: the arm that reads the binding then panics
+    /// on what nothing proved.
+    #[test]
+    fn a_binding_reached_only_at_run_time_is_held_to_its_fields() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  cloud:
+    machines:
+      sender: { source: sender.scxml, bindings: { "#phone": { transport: https, listen: "127.0.0.1:9443" } } }
+      phone: { source: phone.scxml }
+"##,
+        )
+        .unwrap();
+        let refused = build_resolved_targets(
+            &TargetContributions {
+                send_summary: &summary_for(&parse_model(TARGETEXPR_SHAPES_SCXML, "sender")),
+                subscriptions: &[],
+            },
+            &deploy,
+            "sender",
+            &super::super::external::ExternalResolution::default(),
+        );
+        assert!(
+            matches!(
+                refused,
+                Err(TopologyError::BindingWithoutAuthenticator { .. })
+            ),
+            "{refused:?}"
+        );
     }
 
     /// Two contributors that disagree about one event on one binding resolve
