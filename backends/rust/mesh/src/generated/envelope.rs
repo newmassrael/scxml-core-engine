@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fc87f60788825a2accbefbd7d310802e57bdcedce19d2a650856b2530bfaac44
+// source-hash: 4fc317b4522e580f8825a5d34a4f1315da7d1588177dece7741ca5a9c810603a
 // source: envelope.scxml
 #![doc = "SCE-MAP: envelope.scxml:22 :: _forge_body"]
 // SCE-MAP: envelope.scxml:22 :: _forge_body
@@ -135,6 +135,8 @@ pub struct Envelope<'a> {
     /// Map key 20.
     pub causal_vector:
         Option<::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>,
+    /// Map key 21.
+    pub instance: Option<::sce_forge_runtime::codec::Text<'a, 64>>,
 }
 
 /// What the codec's wire is written through, as every codec has: a map's value
@@ -178,6 +180,7 @@ impl<'a> Envelope<'a> {
         let mut causal_vector: Option<
             ::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>,
         > = None;
+        let mut instance: Option<::sce_forge_runtime::codec::Text<'a, 64>> = None;
         for _ in 0..count {
             match cbor::read_uint(&mut c)? {
                 0 => {
@@ -429,6 +432,19 @@ impl<'a> Envelope<'a> {
                         list
                     });
                 }
+                21 => {
+                    // A key given twice is not one map entry.
+                    if instance.is_some() {
+                        return Err(CodecError::CborDuplicateKey);
+                    }
+                    instance = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(64),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
+                }
                 _ => cbor::skip(&mut c)?,
             }
         }
@@ -453,6 +469,7 @@ impl<'a> Envelope<'a> {
             child_session_id,
             causal_epoch,
             causal_vector,
+            instance,
         };
         // Only a map that decoded whole moves the cursor.
         *cursor = c;
@@ -652,6 +669,17 @@ impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>
     type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
 }
 
+/// The field `instance` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeInstanceField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeInstanceField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<64>;
+}
+
 /// What `EnvelopeIn` and the codecs it holds ask of a storage profile.
 #[allow(dead_code)]
 pub trait EnvelopeStorage:
@@ -671,6 +699,7 @@ pub trait EnvelopeStorage:
     + ::sce_forge_runtime::codec::HoldsStr<EnvelopeParallelIdField>
     + ::sce_forge_runtime::codec::HoldsStr<EnvelopeRegionIdField>
     + ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeInstanceField>
 {
 }
 
@@ -690,7 +719,8 @@ impl<
             + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeRoutingIdField>
             + ::sce_forge_runtime::codec::HoldsStr<EnvelopeParallelIdField>
             + ::sce_forge_runtime::codec::HoldsStr<EnvelopeRegionIdField>
-            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>,
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeInstanceField>,
     > EnvelopeStorage for S
 {
 }
@@ -721,6 +751,7 @@ pub trait EnvelopeFrom<'f>:
     + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeParallelIdField>
     + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeRegionIdField>
     + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeChildSessionIdField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeInstanceField>
 {
 }
 
@@ -739,7 +770,8 @@ impl<
             + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeRoutingIdField>
             + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeParallelIdField>
             + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeRegionIdField>
-            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeChildSessionIdField>,
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeChildSessionIdField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeInstanceField>,
     > EnvelopeFrom<'f> for S
 {
 }
@@ -852,6 +884,13 @@ pub struct EnvelopeOwned<S: EnvelopeStorage = ::sce_forge_runtime::codec::Defaul
     /// Map key 20.
     pub causal_vector:
         Option<::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>,
+    /// Map key 21.
+    pub instance: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeInstanceField>>::Str,
+            64,
+        >,
+    >,
 }
 
 #[allow(dead_code)]
@@ -914,6 +953,10 @@ impl<'a> Envelope<'a> {
                 .transpose()?,
             causal_epoch: self.causal_epoch,
             causal_vector: self.causal_vector,
+            instance: self
+                .instance
+                .map(|held| held.store::<S, EnvelopeInstanceField>())
+                .transpose()?,
         })
     }
 
@@ -954,6 +997,7 @@ impl<S: EnvelopeStorage> EnvelopeOwned<S> {
             // A list, a record and a union are held by value in both forms, so
             // the view takes a copy of it.
             causal_vector: self.causal_vector.clone(),
+            instance: <Self as EnvelopeSource>::instance(self),
         }
     }
 
@@ -1038,6 +1082,8 @@ pub trait EnvelopeSource {
     fn causal_vector(
         &self,
     ) -> Option<&::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>;
+    /// The entry with key 21.
+    fn instance(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 64>>;
 }
 
 impl<T: EnvelopeSource + ?Sized> EnvelopeSource for &T {
@@ -1104,6 +1150,9 @@ impl<T: EnvelopeSource + ?Sized> EnvelopeSource for &T {
     {
         (**self).causal_vector()
     }
+    fn instance(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 64>> {
+        (**self).instance()
+    }
 }
 
 impl<'a> EnvelopeSource for Envelope<'a> {
@@ -1169,6 +1218,9 @@ impl<'a> EnvelopeSource for Envelope<'a> {
     ) -> Option<&::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>
     {
         self.causal_vector.as_ref()
+    }
+    fn instance(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 64>> {
+        self.instance
     }
 }
 
@@ -1254,6 +1306,11 @@ impl<S: EnvelopeStorage> EnvelopeSource for EnvelopeOwned<S> {
     {
         self.causal_vector.as_ref()
     }
+    fn instance(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 64>> {
+        self.instance
+            .as_ref()
+            .map(::sce_forge_runtime::codec::Bounded::as_text)
+    }
 }
 
 #[allow(dead_code)]
@@ -1316,6 +1373,9 @@ impl<'a> Envelope<'a> {
             count += 1;
         }
         if src.causal_vector().is_some() {
+            count += 1;
+        }
+        if src.instance().is_some() {
             count += 1;
         }
         cbor::write_map_head(w, count)?;
@@ -1398,6 +1458,10 @@ impl<'a> Envelope<'a> {
             for item in v.as_slice() {
                 encode_record_causal_entry(w, item)?;
             }
+        }
+        if let Some(v) = src.instance() {
+            cbor::write_uint(w, 21)?;
+            cbor::write_text(w, v.into_inner())?;
         }
         Ok(())
     }
