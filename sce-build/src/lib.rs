@@ -4469,7 +4469,9 @@ fn load_target_plugin_for_compile(
 /// declaration order. Each entry is `(field_id, SceType, length_field)`,
 /// where `length_field` is the codec's explicit `sce:length-field` — the
 /// C11 borrowed-byte-view length sibling SSOT — or `None` for a tail/fixed
-/// `bytes` field (auto `<field>_len`) or a procedure field.
+/// `bytes` field (auto `<field>_len`) or a procedure field. A field of an enum
+/// names it by the identity of the enum's document, which no alias of a document
+/// equals: the element's own alias means nothing to what reads the schema.
 pub type ElementFieldSchema = Vec<(String, forge::model::SceType, Option<String>)>;
 
 /// Options that steer forge cross-file codegen beyond the plain
@@ -6532,10 +6534,20 @@ fn compile_document_set(
             .iter()
             .filter_map(|(_label, bc)| {
                 let element_doc = element_type_candidates.get(&bc.element_type)?;
-                Some((
-                    filters::to_snake_case(bc.element_type.clone()),
-                    extract_bounded_collection_element_field_sce_types(element_doc),
-                ))
+                let mut fields = extract_bounded_collection_element_field_sce_types(element_doc);
+                // The element names its enums by its own aliases; a field is told
+                // to be of one by the enum's document, which each algorithm that
+                // walks the collection names by the alias it imports it under.
+                let sources = element_import_sources.get(&bc.element_type);
+                for (_, ty, _) in &mut fields {
+                    *ty = ty.naming_enum(&|alias| match sources {
+                        Some((imports, base)) => {
+                            enum_identity_or_words(imports, base, alias, &bc.element_type)
+                        }
+                        None => format!("the enum `{alias}` of `{}`", bc.element_type),
+                    });
+                }
+                Some((filters::to_snake_case(bc.element_type.clone()), fields))
             })
             .collect();
     // Thread the orchestrator-resolved listener-link set into
@@ -8070,6 +8082,7 @@ fn validate_and_enrich_imports(
                 // The enum as the one type grammar reads it, which a type that
                 // holds it is sized by (docs/adr/0086).
                 ctx.enum_type = Some(forge::import_source::scoped_enum(em));
+                ctx.enum_identity = Some(forge::stdlib::identity(&source.path));
                 // A union whose tag is a value of the enum takes its revision
                 // (docs/adr/0092, section 8.1).
                 ctx.enum_revision = Some(em.revision());
@@ -8155,7 +8168,20 @@ fn validate_and_enrich_imports(
                         .iter()
                         .map(|f| forge::generator::RecordField {
                             id: f.id.clone(),
-                            ty: f.sce_type.clone(),
+                            // The schema names its enum by its own alias, which
+                            // another document's alias may equal and mean
+                            // another enum by.
+                            ty: f.sce_type.naming_enums(&|alias| {
+                                enum_named_for(
+                                    &enum_identity_or_words(
+                                        &parsed.imports,
+                                        schema_base,
+                                        alias,
+                                        &sm.name,
+                                    ),
+                                    &own_enums,
+                                )
+                            }),
                             max_size: f.max_size,
                             limit: f.limit.clone(),
                             // The schema's own enum imports are written relative to it.
@@ -9934,6 +9960,30 @@ fn algorithm_record_slots(
     Ok(Some(AlgorithmSlots { params, ret }))
 }
 
+/// The identity of the enum document the document `owner` names `alias`, read from
+/// its own imports (`imports`, written relative to `base`). A document that cannot be
+/// read has no identity to compare: it is named for its owner, in words no alias of
+/// another document can equal.
+fn enum_identity_or_words(
+    imports: &[forge::model::ForgeImport],
+    base: &Path,
+    alias: &str,
+    owner: &str,
+) -> String {
+    forge::static_imports::enum_identity(imports, base, alias)
+        .unwrap_or_else(|| format!("the enum `{alias}` of `{owner}`"))
+}
+
+/// The name the importing document, which imports each enum document of `own_enums`
+/// by alias and identity, has for the enum document of `identity`: its alias, or the
+/// identity where it imports none of it, which no alias equals.
+fn enum_named_for(identity: &str, own_enums: &[(String, String)]) -> String {
+    own_enums
+        .iter()
+        .find(|(_, own)| own == identity)
+        .map_or_else(|| identity.to_string(), |(alias, _)| alias.clone())
+}
+
 /// The enum each slot of the imported algorithm `am` holds, named as the importing
 /// document names it ([`forge::generator::CalleeEnumSlots`]): `own_enums` is each
 /// enum document the importer imports, by alias and identity, and the callee's own
@@ -9954,16 +10004,10 @@ fn algorithm_enum_slots(
         let forge::model::SceType::Enum(reference) = scalar else {
             return None;
         };
-        // An enum document the callee cannot read has no identity to compare: it
-        // is named for the callee, in words no alias of the importer can equal.
         let identity =
-            forge::static_imports::enum_identity(callee_imports, callee_base, &reference.alias)
-                .unwrap_or_else(|| format!("the enum `{}` of `{}`", reference.alias, am.name));
+            enum_identity_or_words(callee_imports, callee_base, &reference.alias, &am.name);
         Some(forge::generator::CalleeEnum {
-            alias: own_enums
-                .iter()
-                .find(|(_, own)| *own == identity)
-                .map_or(identity, |(alias, _)| alias.clone()),
+            alias: enum_named_for(&identity, own_enums),
             optional,
         })
     };
