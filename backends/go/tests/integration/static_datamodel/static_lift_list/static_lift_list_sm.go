@@ -499,12 +499,12 @@ const StaticLiftListLimitLiftPath uint32 = 256
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticLiftListSavedShapeFormat2 = "faf8c7daee60057fdde6766390a6d6359101f01bd1dc0ea21592ae102e644ef8"
+const StaticLiftListSavedShapeFormat2 = "ccb8089299bd7473d0e488117b85eb5c71a10427254730848e66a2e937aea0db"
 
 // StaticLiftListSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticLiftListSavedShapeFormat2Revised = "072c13694c3eff7feee42b34c9812ee7a849c165765afc3e99f61d3cf5cea42e"
+const StaticLiftListSavedShapeFormat2Revised = "d3a9dc73c5e2a8b93edfcfc1d2648d3be77f26eabd3691b5e590787a43292603"
 
 // StaticLiftListSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -521,11 +521,24 @@ var StaticLiftListSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticLiftListSavedShape = sce.SavedShape{
-	First:          "1badb4b2ea4309b9fe4d2047edb7ee38bbf70284e0a5c161f4c36f65ce8e5007",
-	Revised:        "2bda32d52e03119ef6769780bb6f8a23892e7d4b9f2dd15da0e8255d4b74d8cb",
-	Format2First:   "faf8c7daee60057fdde6766390a6d6359101f01bd1dc0ea21592ae102e644ef8",
-	Format2Revised: "072c13694c3eff7feee42b34c9812ee7a849c165765afc3e99f61d3cf5cea42e",
+	First:          "0fd2223388f9b520a9640acdaf519ae8c5083fd258a5dcfb36e2ae5e61f0faf4",
+	Revised:        "75929cce183f22226dd0e497277cd04e734005bc4eee1daa29163d00a53a6e13",
+	Format2First:   "ccb8089299bd7473d0e488117b85eb5c71a10427254730848e66a2e937aea0db",
+	Format2Revised: "d3a9dc73c5e2a8b93edfcfc1d2648d3be77f26eabd3691b5e590787a43292603",
 	Records: []sce.RecordLineage{
+		{
+			Event:     "lift.list",
+			Revision:  2,
+			Revisions: []string{"413d209d6122b420ee5e57d9d8aec007e58c8f0af8e81fb6325b6ce2481dab74"},
+			Added: []sce.AddedField{
+				{ID: "priority", Since: 2, Default: "3"},
+			},
+			Widened: []sce.WidenedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "answer", List: false},
+			},
+		},
 		{
 			Event:     "lift.refusal",
 			Revision:  1,
