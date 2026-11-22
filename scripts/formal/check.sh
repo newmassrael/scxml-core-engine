@@ -44,6 +44,11 @@
 #     BroadcastLogWrapped_non_divisor.cfg: a slot count (3) that does not divide the stamp space (8). TLC
 #     must find a reader whose cursor, known only modulo the stamp space, names another slot than the
 #     publisher's. Together they are the check that the bound and the divisor are needed.
+#   * OpenInstances.cfg, _bound.cfg, _live.cfg (docs/formal/OpenInstances.tla, ADR 0113): a server that binds
+#     instances nobody listed and forgets them, whole; two instances with room for one; and liveness. TLC must
+#     find no violation.
+#     OpenInstances_without_*.cfg and _with_eviction.cfg: the same with one part of the protocol taken out. TLC must
+#     find the violation each names. Together they are the check that every part is needed.
 #
 # Needs Java 11 or later. TLC is fetched once into ~/.cache/sce-formal and checked against a pinned
 # SHA-256, or taken from $TLA2TOOLS.
@@ -141,6 +146,28 @@ for config in BroadcastLogWrapped_without_bound BroadcastLogWrapped_non_divisor 
     echo "== $config: a narrow log the ADR refuses, a violation expected"
     set +e
     tlc "$config.cfg" BroadcastLogWrapped > "$config.log" 2>&1
+    status=$?
+    set -e
+    tail -n 25 "$config.log"
+    if [[ "$status" -ne 12 ]]; then
+        echo "check.sh: expected TLC to report an invariant violation (exit 12) for $config, got $status" >&2
+        exit 1
+    fi
+done
+for config in OpenInstances OpenInstances_bound OpenInstances_live; do
+    echo "== $config: the open instances of ADR 0113, no violation expected"
+    if ! tlc "$config.cfg" OpenInstances; then
+        echo "check.sh: TLC found a violation of the open instances' protocol ($config)" >&2
+        exit 1
+    fi
+done
+
+for config in OpenInstances_without_handshake OpenInstances_without_same_offer OpenInstances_without_match \
+    OpenInstances_without_fence OpenInstances_without_records OpenInstances_without_recheck \
+    OpenInstances_without_durable_mark OpenInstances_with_eviction; do
+    echo "== $config: one part of the protocol taken out, a violation expected"
+    set +e
+    tlc "$config.cfg" OpenInstances > "$config.log" 2>&1
     status=$?
     set -e
     tail -n 25 "$config.log"
