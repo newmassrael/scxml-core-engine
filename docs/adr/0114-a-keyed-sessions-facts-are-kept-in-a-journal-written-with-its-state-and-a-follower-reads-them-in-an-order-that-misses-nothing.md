@@ -73,7 +73,9 @@ gap is allowed and means nothing. A store states a **horizon** with every read: 
 can still become visible. `JournalStore::after(position, limit)` answers entries above a position and at or below the
 horizon, in order. SQLite writes one transaction at a time, so its horizon is its head. A store whose transactions
 commit out of the order of their numbers reports a lower one, and a store that cannot tell is no store of this contract.
-The conformance kit forces the two-transaction case; a store whose horizon is wrong fails it.
+A store ends the transaction of a writer that is gone, as a database does the one of a connection that closed: one left
+open keeps the horizon below it, and nothing past it is ever read (`Release`, D7). The conformance kit forces the
+two-transaction case and the writer that is gone; a store whose horizon is wrong fails it.
 
 ### D4. A follower's position is part of its state
 
@@ -119,10 +121,11 @@ credentials and its retries are not SCE's.
 
 `docs/formal/EventJournal.tla`, checked by `scripts/formal/check.sh`: two processes that take over each other's
 sessions, crashes, transactions numbered in one order and committed in another, a follower and questions as of a moment.
-It checks `AppendOnce` (an input makes one entry), `NothingLost` (a state that was written has its entries),
-`FollowedOnce` and `NonePassed` (each entry takes effect once and no follower passes one) and `Stable` (an answer does
-not change). On 2026-11-22, two sessions, one input each: 706,504 states; one session, two inputs: 18,088; no violation.
-Each part is shown to be needed:
+It states what it takes as given. It checks `AppendOnce` (an input makes one entry), `NothingLost` (a state that was
+written has its entries), `FollowedOnce` and `NonePassed` (each entry takes effect once and no follower passes one) and
+`Stable` (an answer does not change), that every entry is followed in the end (`Followed`, under fairness), and that a
+follower can always come to have taken in all there is (`CaughtUp`, `AG EF`). On 2026-11-22, two sessions, one input
+each: 706,504 states; one session, two inputs: 18,088; no violation. Each part is shown to be needed:
 
 | Taken out | What TLC finds |
 |---|---|
@@ -131,6 +134,7 @@ Each part is shown to be needed:
 | the horizon | a follower that passes an entry; an answer that changes |
 | the position written with the effect | an entry that takes effect twice |
 | a position as the moment (a clock instead) | an answer that changes |
+| the end of a stopped process's transactions | an entry that is never followed, and a state from which no follower can come to have taken in all there is |
 
 The model is bounded and small. It does not cover the dispatch of one journal to many sessions by `key_from` (D4 states
 its rule, and it is tested), the valid-time order, the observed stream or the seal.

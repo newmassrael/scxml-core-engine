@@ -83,7 +83,9 @@ pub trait JournalHarness {
 
     /// Begin the transaction of `write` to the session `key` names, up to where its facts have
     /// taken their positions, and answer what commits it: between the two, other writes of the
-    /// store are made and commit, with higher positions.
+    /// store are made and commit, with higher positions. What is answered and dropped without
+    /// being called is a writer that is gone: the store ends its transaction, as a database ends
+    /// the one of a connection that closed.
     ///
     /// A store that gives positions as a transaction begins, as a sequence of a database server
     /// does, answers it, so that the kit commits two transactions out of the order of their
@@ -625,7 +627,8 @@ fn take_inputs(store: &impl JournalStore, key: &str, fence: u64, inputs: u64) {
 /// neither is a moment turned into it, nor an answer given as of it. Once the lower commits, both
 /// are read, in the order of their positions, by a reader that went on from its cursor; and an
 /// answer given before does not change. A transaction that took a position and is refused leaves a
-/// gap the horizon passes. [`Forced::NotApplicable`] for a store that writes one transaction at a
+/// gap the horizon passes, and so does one whose writer is gone before it commits: a store ends the
+/// transactions of a writer that is gone. [`Forced::NotApplicable`] for a store that writes one transaction at a
 /// time, which is held to [`an_input_makes_one_entry_and_a_reader_misses_none`].
 pub fn a_reader_waits_for_a_lower_number_still_open(harness: &impl JournalHarness) -> Forced {
     const NOW: u64 = 5_000;
@@ -721,6 +724,24 @@ pub fn a_reader_waits_for_a_lower_number_still_open(harness: &impl JournalHarnes
         texts(&page(&reader, begin_at, usize::MAX).entries),
         ["low", "high", "next"],
         "the horizon passes the position a refused transaction took"
+    );
+
+    // A transaction whose writer is gone before it commits (EventJournal.tla, `Release`).
+    let of_gone = [fact(b"gone")];
+    drop(
+        harness
+            .begin("low", keeps(b"gone", 0, low.fence, &of_gone, NOW))
+            .expect("a harness that began one transaction begins another"),
+    );
+    let version = read(&store, "high").map_or(0, |stored| stored.version);
+    let of_last = [fact(b"last")];
+    store
+        .write("high", &keeps(b"last", version, high.fence, &of_last, NOW))
+        .expect("a write committed after the writer of another is gone");
+    assert_eq!(
+        texts(&page(&reader, begin_at, usize::MAX).entries),
+        ["low", "high", "next", "last"],
+        "the horizon passes the position of a transaction whose writer is gone"
     );
     Forced::Yes
 }
@@ -1343,6 +1364,8 @@ mod tests {
         WritesItsEntriesApart,
         /// The recorded moment is the clock's, wherever it went.
         GoesBackWithTheClock,
+        /// The transaction of a writer that is gone stays open.
+        LeavesAnAbandonedTransactionOpen,
     }
 
     /// A store that numbers the entries of a transaction as it begins and makes them visible as it
@@ -1673,6 +1696,24 @@ mod tests {
         }
     }
 
+    /// A transaction that began, ended when its writer is gone.
+    struct Began<'a> {
+        store: &'a NumbersAtBegin,
+        positions: Vec<u64>,
+    }
+
+    impl Drop for Began<'_> {
+        fn drop(&mut self) {
+            if self.store.breach == Breach::LeavesAnAbandonedTransactionOpen {
+                return;
+            }
+            let mut numbers = self.store.numbers();
+            for position in &self.positions {
+                numbers.open.remove(position);
+            }
+        }
+    }
+
     struct OutOfOrder(NumbersAtBegin);
 
     impl JournalHarness for OutOfOrder {
@@ -1683,8 +1724,13 @@ mod tests {
         }
 
         fn begin<'a>(&'a self, key: &'a str, write: Write<'a>) -> Option<Commit<'a>> {
-            let positions = self.0.begin(&write);
-            Some(Box::new(move || self.0.commit(key, &write, &positions)))
+            let began = Began {
+                store: &self.0,
+                positions: self.0.begin(&write),
+            };
+            Some(Box::new(move || {
+                began.store.commit(key, &write, &began.positions)
+            }))
         }
     }
 
@@ -1744,6 +1790,16 @@ mod tests {
     #[should_panic(expected = "an answer was given above the horizon")]
     fn a_store_that_answers_above_its_horizon_is_refused() {
         a_reader_waits_for_a_lower_number_still_open(&broken(Breach::AnswersAboveItsHorizon));
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "the horizon passes the position of a transaction whose writer is gone"
+    )]
+    fn a_store_that_leaves_an_abandoned_transaction_open_is_refused() {
+        a_reader_waits_for_a_lower_number_still_open(&broken(
+            Breach::LeavesAnAbandonedTransactionOpen,
+        ));
     }
 
     #[test]
