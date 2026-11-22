@@ -15,9 +15,11 @@
 # landed item (cdba8e0eb0) was judged on 7 gates while 34 `ci_only` gates it
 # reached ran only after it landed, and main went red. So a push that updates
 # main asks for the landing selection (`--landing`): every gate the change
-# reaches, `ci_only` included, less the gates whose platform the fleet does not
-# have. A push of any other ref keeps the selection it had, and the refs of the
-# queue itself keep bx-land-refs.sh's rules (a genuine item is not gated at all).
+# reaches, `ci_only` included, less the gates hosted CI audits in its place:
+# those whose platform the fleet does not have, and those whose cost the change
+# sets without a bound (`audited_after_landing`). A push of any other ref keeps
+# the selection it had, and the refs of the queue itself keep bx-land-refs.sh's
+# rules (a genuine item is not gated at all).
 #
 # The flag is all this file decides. WHICH gates it selects is the registry's
 # (`push_keeps` in gate_registry.py), so the hook, the runner and the plan
