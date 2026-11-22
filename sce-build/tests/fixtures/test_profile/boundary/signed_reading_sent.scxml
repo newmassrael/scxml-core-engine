@@ -8,7 +8,7 @@
        sce:type="record:SignedReading">
   <sce:import kind="event-schema" src="signed_reading.scxml" as="SignedReading"/>
   <sce:record-match>
-    <sce:specific field="delta" value="-7"/>
+    <sce:specific field="change" value="-7"/>
     <sce:specific field="offset" value="-300"/>
     <sce:specific field="level" value="-70000"/>
     <sce:specific field="stamp" value="-5000000000"/>

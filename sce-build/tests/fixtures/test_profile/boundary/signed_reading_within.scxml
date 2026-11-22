@@ -8,7 +8,7 @@
        sce:type="record:SignedReading">
   <sce:import kind="event-schema" src="signed_reading.scxml" as="SignedReading"/>
   <sce:record-match>
-    <sce:value-range field="delta">
+    <sce:value-range field="change">
       <sce:lower value="-128"/>
       <sce:upper value="-1"/>
     </sce:value-range>
