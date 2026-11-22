@@ -6153,7 +6153,23 @@ const INTERPRETER: &str = "interpreter";
 /// a union (docs/adr/0092, step 4) is replayed on every engine, and the scenario of a lift
 /// into a record that holds a list (docs/adr/0087, Landing order item 8) on every engine
 /// since the Interpreter's slice of that item, which emptied it a third time.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[];
+/// The table a router keeps by key expression and peer (`linkstate_interest`,
+/// docs/adr/0108, D12) is lowered by no engine: beside its map of maps it holds a
+/// list of texts, which no lane holds in a statechart's variable yet.
+const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
+    ("linkstate_interest", "rust", LIST_OF_TEXTS),
+    ("linkstate_interest", "kotlin", LIST_OF_TEXTS),
+    ("linkstate_interest", "cpp", LIST_OF_TEXTS),
+    ("linkstate_interest", "go", LIST_OF_TEXTS),
+    ("linkstate_interest", "python", LIST_OF_TEXTS),
+    ("linkstate_interest", "c11", LIST_OF_TEXTS),
+    ("linkstate_interest", "swift", LIST_OF_TEXTS),
+    ("linkstate_interest", INTERPRETER, LIST_OF_TEXTS),
+];
+
+/// Why no engine lowers `linkstate_interest` yet.
+const LIST_OF_TEXTS: &str = "a list of texts (`list<string[64]>[4]`) in a statechart's \
+     variable, which no lane holds yet, beside a map whose value is a map (docs/adr/0108, D12)";
 
 /// Where each backend's static datamodel tree places a machine: the file that
 /// exists only if it did. A tree the checkout commits is read in the

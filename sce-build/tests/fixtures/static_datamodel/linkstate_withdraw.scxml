@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A sourced UndeclareQueryable from the mesh while the peer's face stays up.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="linkstate_withdraw"
+       sce:event-name="interest.withdraw">
+  <datamodel>
+    <data id="keyexpr" sce:type="string[64]" sce:direction="in"/>
+    <data id="low" sce:type="uint64" sce:direction="in"/>
+    <data id="high" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

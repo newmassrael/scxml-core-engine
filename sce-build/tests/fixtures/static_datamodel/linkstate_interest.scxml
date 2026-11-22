@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/adr/0108, D1, D2, D6 and D7): a map whose value is
+  a map. The shape of a zenoh router's linkstate-peer interest table, the
+  queryable plane: key expression -> peer zid -> what the peer declared.
+
+  interest.register puts the peer's value under the key expression and counts a
+  change when the peer is new or its value differs (zenoh's gate
+  "current.is_none() || current != qabl_info"); the same value again changes
+  nothing. The inner map is taken out, written and put back, since a map is a
+  value. A full inner map refuses the peer (refused_peers), a full outer map
+  refuses a new key expression (refused_keys); neither evicts.
+  interest.withdraw removes one peer from one key expression and the key
+  expression with its last peer. peer.removed removes the peer from every key
+  expression: the walk over by_key writes by_key at the key it stands on (a put
+  at a held key), and the key expressions it empties are removed after the walk.
+  count sums the peers of every key expression. version moves on every event
+  that may change the table, whether or not it did.
+
+  Bounds are small so the scenario reaches both refusals: 4 key expressions, 2
+  peers each.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="routing" datamodel="sce-static" name="linkstate_interest">
+  <sce:import kind="event-schema" src="linkstate_zid.scxml" as="Zid"/>
+  <sce:import kind="event-schema" src="linkstate_qinfo.scxml" as="QInfo"/>
+  <sce:import kind="event-schema" src="linkstate_register.scxml" as="Register"/>
+  <sce:import kind="event-schema" src="linkstate_withdraw.scxml" as="Withdraw"/>
+  <sce:import kind="enum" src="sce:std/collection/put_outcome.scxml" as="PutOutcome"/>
+  <sce:import kind="enum" src="sce:std/collection/remove_outcome.scxml" as="RemoveOutcome"/>
+  <datamodel>
+    <data id="by_key" sce:type="map&lt;string[64], map&lt;record:Zid, record:QInfo&gt;[2]&gt;[4]" sce:direction="out"/>
+    <data id="peers" sce:type="map&lt;record:Zid, record:QInfo&gt;[2]"/>
+    <data id="emptied" sce:type="list&lt;string[64]&gt;[4]"/>
+    <data id="zid" sce:type="record:Zid">
+      <sce:set name="low" expr="0"/>
+      <sce:set name="high" expr="0"/>
+    </data>
+    <data id="info" sce:type="record:QInfo">
+      <sce:set name="complete" expr="false"/>
+      <sce:set name="distance" expr="0"/>
+    </data>
+    <data id="put" sce:type="enum:PutOutcome" expr="PutOutcome.inserted"/>
+    <data id="removed" sce:type="enum:RemoveOutcome" expr="RemoveOutcome.absent"/>
+    <data id="changed" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="was" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="changes" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refused_peers" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refused_keys" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="dropped" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="version" sce:type="uint64" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="routing">
+    <transition event="interest.register" type="internal">
+      <assign location="version" expr="version + 1"/>
+      <assign location="changed" expr="false"/>
+      <assign location="zid.low" expr="_event.data.low"/>
+      <assign location="zid.high" expr="_event.data.high"/>
+      <assign location="info.complete" expr="_event.data.complete"/>
+      <assign location="info.distance" expr="_event.data.distance"/>
+      <if cond="has(by_key, _event.data.keyexpr)">
+        <assign location="peers" expr="by_key[_event.data.keyexpr]"/>
+      <else/>
+        <sce:clear target="peers"/>
+      </if>
+      <if cond="!(has(peers, zid) &amp;&amp; peers[zid].complete === info.complete &amp;&amp; peers[zid].distance === info.distance)">
+        <sce:put target="peers" key="zid" expr="info" outcome="put"/>
+        <if cond="put === PutOutcome.full">
+          <assign location="refused_peers" expr="refused_peers + 1"/>
+        <else/>
+          <sce:put target="by_key" key="_event.data.keyexpr" expr="peers" outcome="put"/>
+          <if cond="put === PutOutcome.full">
+            <assign location="refused_keys" expr="refused_keys + 1"/>
+          <else/>
+            <assign location="changed" expr="true"/>
+            <assign location="changes" expr="changes + 1"/>
+          </if>
+        </if>
+      </if>
+    </transition>
+    <transition event="interest.withdraw" type="internal">
+      <assign location="version" expr="version + 1"/>
+      <assign location="was" expr="false"/>
+      <assign location="zid.low" expr="_event.data.low"/>
+      <assign location="zid.high" expr="_event.data.high"/>
+      <if cond="has(by_key, _event.data.keyexpr)">
+        <assign location="peers" expr="by_key[_event.data.keyexpr]"/>
+        <sce:remove target="peers" key="zid" outcome="removed"/>
+        <if cond="removed === RemoveOutcome.removed">
+          <assign location="was" expr="true"/>
+        </if>
+        <if cond="len(peers) === 0">
+          <sce:remove target="by_key" key="_event.data.keyexpr"/>
+        <else/>
+          <sce:put target="by_key" key="_event.data.keyexpr" expr="peers"/>
+        </if>
+      </if>
+    </transition>
+    <transition event="peer.removed" type="internal">
+      <assign location="version" expr="version + 1"/>
+      <assign location="dropped" expr="0"/>
+      <assign location="zid" expr="_event.data"/>
+      <foreach array="by_key" item="held" sce:key="k">
+        <if cond="has(held, zid)">
+          <assign location="peers" expr="held"/>
+          <sce:remove target="peers" key="zid"/>
+          <assign location="dropped" expr="dropped + 1"/>
+          <if cond="len(peers) === 0">
+            <sce:append target="emptied" expr="k"/>
+          <else/>
+            <sce:put target="by_key" key="k" expr="peers"/>
+          </if>
+        </if>
+      </foreach>
+      <foreach array="emptied" item="e">
+        <sce:remove target="by_key" key="e"/>
+      </foreach>
+      <sce:clear target="emptied"/>
+    </transition>
+    <transition event="count" type="internal">
+      <assign location="count" expr="0"/>
+      <foreach array="by_key" item="held">
+        <assign location="count" expr="count + len(held)"/>
+      </foreach>
+    </transition>
+  </state>
+</scxml>

@@ -180,6 +180,11 @@ macro_rules! scenarios {
 /// the entry off and adds the row.
 pub const NOT_YET_LOWERED: &[(&str, &str)] = &[
     (
+        "linkstate_interest",
+        "a map whose value is a map (docs/adr/0108, D12), beside a list of texts, which no \
+         lane holds in a statechart's variable yet",
+    ),
+    (
         "static_map_list",
         "a map whose value is a list, written through `samples[1]` (docs/adr/0108, D12)",
     ),

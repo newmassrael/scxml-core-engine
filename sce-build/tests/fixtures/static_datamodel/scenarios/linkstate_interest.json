@@ -1,0 +1,488 @@
+{
+  "machine": "linkstate_interest",
+  "about": "A map whose value is a map (docs/adr/0108, D7): register with the value-diff gate, withdraw, the purge of one peer across every key expression, and both refusals. Expected values are derived from the document by hand, not observed from a backend.",
+  "steps": [
+    {
+      "expect": {
+        "state": "routing",
+        "variables": {
+          "by_key": [],
+          "version": 0,
+          "changes": 0,
+          "refused_peers": 0,
+          "refused_keys": 0,
+          "dropped": 0,
+          "count": 0
+        }
+      }
+    },
+    {
+      "note": "a new peer under a new key expression is a change",
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "demo/q",
+        "low": 1,
+        "high": 0,
+        "complete": false,
+        "distance": 0
+      },
+      "expect": {
+        "variables": {
+          "by_key": [
+            [
+              "demo/q",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ]
+          ],
+          "changed": true,
+          "changes": 1,
+          "version": 1
+        }
+      }
+    },
+    {
+      "note": "the same value again changes nothing, and the version still moves",
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "demo/q",
+        "low": 1,
+        "high": 0,
+        "complete": false,
+        "distance": 0
+      },
+      "expect": {
+        "variables": {
+          "changed": false,
+          "changes": 1,
+          "version": 2,
+          "by_key": [
+            [
+              "demo/q",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "note": "a changed value is a change, replaced where it stands",
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "demo/q",
+        "low": 1,
+        "high": 0,
+        "complete": true,
+        "distance": 0
+      },
+      "expect": {
+        "variables": {
+          "changed": true,
+          "changes": 2,
+          "version": 3,
+          "by_key": [
+            [
+              "demo/q",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": true,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "demo/q",
+        "low": 2,
+        "high": 0,
+        "complete": false,
+        "distance": 1
+      },
+      "expect": {
+        "variables": {
+          "changed": true,
+          "changes": 3,
+          "version": 4,
+          "by_key": [
+            [
+              "demo/q",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": true,
+                    "distance": 0
+                  }
+                ],
+                [
+                  {
+                    "low": 2,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 1
+                  }
+                ]
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "note": "the inner map is full: the third peer is refused and nothing is evicted",
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "demo/q",
+        "low": 3,
+        "high": 0,
+        "complete": false,
+        "distance": 0
+      },
+      "expect": {
+        "variables": {
+          "changed": false,
+          "refused_peers": 1,
+          "changes": 3,
+          "version": 5,
+          "by_key": [
+            [
+              "demo/q",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": true,
+                    "distance": 0
+                  }
+                ],
+                [
+                  {
+                    "low": 2,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 1
+                  }
+                ]
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "demo/**",
+        "low": 1,
+        "high": 0,
+        "complete": false,
+        "distance": 0
+      },
+      "expect": {
+        "variables": {
+          "changed": true,
+          "changes": 4,
+          "version": 6
+        }
+      }
+    },
+    {
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "a",
+        "low": 2,
+        "high": 0,
+        "complete": false,
+        "distance": 0
+      },
+      "expect": {
+        "variables": {
+          "changes": 5,
+          "version": 7
+        }
+      }
+    },
+    {
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "b",
+        "low": 2,
+        "high": 0,
+        "complete": false,
+        "distance": 0
+      },
+      "expect": {
+        "variables": {
+          "changes": 6,
+          "version": 8,
+          "by_key": [
+            [
+              "demo/q",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": true,
+                    "distance": 0
+                  }
+                ],
+                [
+                  {
+                    "low": 2,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 1
+                  }
+                ]
+              ]
+            ],
+            [
+              "demo/**",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ],
+            [
+              "a",
+              [
+                [
+                  {
+                    "low": 2,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ],
+            [
+              "b",
+              [
+                [
+                  {
+                    "low": 2,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "note": "the outer map is full: a new key expression is refused",
+      "event": "interest.register",
+      "data": {
+        "keyexpr": "c",
+        "low": 1,
+        "high": 0,
+        "complete": false,
+        "distance": 0
+      },
+      "expect": {
+        "variables": {
+          "changed": false,
+          "refused_keys": 1,
+          "changes": 6,
+          "version": 9
+        }
+      }
+    },
+    {
+      "event": "count",
+      "expect": {
+        "variables": {
+          "count": 5
+        }
+      }
+    },
+    {
+      "note": "the last peer of a key expression leaves: the key expression goes, the others keep their order",
+      "event": "interest.withdraw",
+      "data": {
+        "keyexpr": "demo/**",
+        "low": 1,
+        "high": 0
+      },
+      "expect": {
+        "variables": {
+          "was": true,
+          "version": 10,
+          "by_key": [
+            [
+              "demo/q",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": true,
+                    "distance": 0
+                  }
+                ],
+                [
+                  {
+                    "low": 2,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 1
+                  }
+                ]
+              ]
+            ],
+            [
+              "a",
+              [
+                [
+                  {
+                    "low": 2,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ],
+            [
+              "b",
+              [
+                [
+                  {
+                    "low": 2,
+                    "high": 0
+                  },
+                  {
+                    "complete": false,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "event": "interest.withdraw",
+      "data": {
+        "keyexpr": "demo/**",
+        "low": 1,
+        "high": 0
+      },
+      "expect": {
+        "variables": {
+          "was": false,
+          "version": 11
+        }
+      }
+    },
+    {
+      "note": "peer 2 leaves three key expressions; two are emptied and removed after the walk",
+      "event": "peer.removed",
+      "data": {
+        "low": 2,
+        "high": 0
+      },
+      "expect": {
+        "variables": {
+          "dropped": 3,
+          "version": 12,
+          "by_key": [
+            [
+              "demo/q",
+              [
+                [
+                  {
+                    "low": 1,
+                    "high": 0
+                  },
+                  {
+                    "complete": true,
+                    "distance": 0
+                  }
+                ]
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "event": "count",
+      "expect": {
+        "variables": {
+          "count": 1
+        }
+      }
+    }
+  ]
+}

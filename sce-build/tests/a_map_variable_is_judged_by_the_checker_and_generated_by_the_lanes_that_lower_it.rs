@@ -1869,6 +1869,23 @@ fn a_map_of_a_nested_value_is_lowered_by_the_interpreter_and_refused_by_rust_and
     }
 }
 
+/// docs/adr/0108, D12: the table a router keeps by key expression and by peer
+/// (`linkstate_interest`, a map whose value is a map, the inner map taken out,
+/// written and put back whole) holds the keys it empties in a list of texts,
+/// which no lane holds in a statechart's variable yet, so `check` refuses it by
+/// name at that variable and at nothing D12 admits.
+#[test]
+fn the_linkstate_interest_table_is_refused_only_for_its_list_of_texts() {
+    let (ok, out) = run(&["check"], &static_fixture("linkstate_interest"));
+    assert!(!ok, "a list of texts is held by no lane:\n{out}");
+    assert!(
+        out.contains("\"code\":\"generate/unsupported-feature\"")
+            && out.contains("emptied")
+            && out.contains("string[64]"),
+        "the refusal names the list of texts:\n{out}"
+    );
+}
+
 /// The fixture directory the algorithm that keeps each peer's latest
 /// generation stands in, beside the schemas, the enum and the union it imports.
 fn static_fixtures() -> PathBuf {

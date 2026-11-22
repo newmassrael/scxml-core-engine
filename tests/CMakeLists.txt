@@ -645,14 +645,16 @@ apply_sce_test_policies(static_datamodel_generated_cpp_test)
 # The machines of a map and a set (docs/adr/0108): the Interpreter holds one first
 # ("Order of work", step 4), and the generator refuses them for C++ by name until its
 # own step (D10), a map whose value is a map, a list or a record that holds a list
-# among them (D12).
+# among them (D12). The table a router keeps by key expression and peer
+# (linkstate_interest) holds a list of texts besides, which no lane holds in a
+# statechart's variable yet.
 sce_add_static_scenario_suite(
     TARGET static_datamodel_generated_cpp_test
     SCENARIOS ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios
     FIXTURES ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel
     NOT_YET_LOWERED static_map static_map_full static_map_record static_map_composite_key static_set
                     static_map_order static_map_take static_map_returned static_map_nested
-                    static_map_list static_map_record_list
+                    static_map_list static_map_record_list linkstate_interest
 )
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which
