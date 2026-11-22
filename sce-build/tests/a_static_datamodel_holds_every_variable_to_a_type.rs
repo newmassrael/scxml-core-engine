@@ -941,6 +941,13 @@ fn a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_l
             .expect("the output directory")
             .map(|entry| entry.expect("an entry").path())
             .filter(|path| path.extension().is_some_and(|e| e == extension))
+            // A C11 machine's saved state is a unit of its own beside it
+            // (docs/adr/0110, D2), not a second machine.
+            .filter(|path| {
+                !path
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().ends_with("_saved"))
+            })
             .collect();
         assert_eq!(generated.len(), 1, "{language}: one machine: {generated:?}");
         let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
@@ -4208,6 +4215,13 @@ fn a_donedata_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
             .expect("the output directory")
             .map(|entry| entry.expect("an entry").path())
             .filter(|path| path.extension().is_some_and(|e| e == extension))
+            // A C11 machine's saved state is a unit of its own beside it
+            // (docs/adr/0110, D2), not a second machine.
+            .filter(|path| {
+                !path
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().ends_with("_saved"))
+            })
             .collect();
         assert_eq!(generated.len(), 1, "{language}: one machine: {generated:?}");
         let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
@@ -4816,6 +4830,13 @@ fn a_send_content_is_the_text_it_spells_and_no_engine_reads_it() {
             .expect("the output directory")
             .map(|entry| entry.expect("an entry").path())
             .filter(|path| path.extension().is_some_and(|e| e == extension))
+            // A C11 machine's saved state is a unit of its own beside it
+            // (docs/adr/0110, D2), not a second machine.
+            .filter(|path| {
+                !path
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().ends_with("_saved"))
+            })
             .collect();
         assert_eq!(generated.len(), 1, "{language}: one machine: {generated:?}");
         let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
@@ -4906,6 +4927,13 @@ fn a_donedata_content_is_the_text_it_spells_and_no_engine_reads_it() {
             .expect("the output directory")
             .map(|entry| entry.expect("an entry").path())
             .filter(|path| path.extension().is_some_and(|e| e == extension))
+            // A C11 machine's saved state is a unit of its own beside it
+            // (docs/adr/0110, D2), not a second machine.
+            .filter(|path| {
+                !path
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().ends_with("_saved"))
+            })
             .collect();
         assert_eq!(generated.len(), 1, "{language}: one machine: {generated:?}");
         let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
