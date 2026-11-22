@@ -497,10 +497,15 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
             .collect::<Vec<_>>()
     );
     let mut unbuildable: Vec<String> = Vec::new();
+    // The packages of those controls stay in the module, and the build of the
+    // cases below compiles them again: they are the oracle's own, asked and
+    // set aside, and no sibling's.
+    let mut unbuildable_packages: BTreeSet<String> = BTreeSet::new();
     baseline.retain(|(stem, package)| {
         let keep = !control_broken.contains_key(package);
         if !keep {
             unbuildable.push(stem.clone());
+            unbuildable_packages.insert(package.clone());
         }
         keep
     });
@@ -611,10 +616,12 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
         "packages the build did not include, so they were never compiled: {left_out:?}"
     );
     // A broken package that is neither a control nor a case is a sibling, and
-    // its importers were not compiled (see the control build above).
+    // its importers were not compiled (see the control build above). A control
+    // that did not build is still a control: it was set aside, and named, above.
     let asked: BTreeSet<&String> = baseline
         .iter()
         .map(|(_, package)| package)
+        .chain(unbuildable_packages.iter())
         .chain(cases.iter().map(|case| &case.package))
         .collect();
     let stray: Vec<(&String, &String)> = broken
