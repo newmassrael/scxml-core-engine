@@ -276,4 +276,16 @@ Bounded == Cardinality(Members) <= MaxMembers
 \* Every request an instance made ends, answered or known to be of unknown outcome.
 Ends == \A i \in Inst, k \in Ks : <>(status[i][k] \in {"done", "unknown"})
 
+-----------------------------------------------------------------------------
+\* What the protocol implements (docs/adr/0115, D2): the service a client may rely on, its requests
+\* the instances' own and its status and effect the ones above.
+Requests == Inst \X Ks
+Service == INSTANCE AtMostOnceService WITH
+    Requests <- Requests,
+    status <- [r \in Requests |-> status[r[1]][r[2]]],
+    effect <- [r \in Requests |-> effects[r[1]][r[2]]],
+    faulted <- nCli + nExp > 0
+
+Refines == Service!Spec
+
 =============================================================================

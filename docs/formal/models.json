@@ -1,0 +1,329 @@
+{
+  "tlc": {
+    "version": "1.7.4",
+    "url": "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar",
+    "sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
+  },
+  "models": [
+    {
+      "module": "SharedListConvergence",
+      "decision": "docs/adr/0034",
+      "parts": {
+        "Evict": "TRUE"
+      },
+      "runs": [
+        {
+          "config": "SharedListConvergence.cfg",
+          "expect": "holds",
+          "states": 18641
+        },
+        {
+          "config": "SharedListConvergence_fork.cfg",
+          "expect": "holds",
+          "states": 5257
+        },
+        {
+          "config": "SharedListConvergence_both.cfg",
+          "expect": "holds",
+          "states": 6383
+        },
+        {
+          "config": "SharedListConvergence_without_eviction.cfg",
+          "expect": "violates",
+          "invariant": "Convergence",
+          "without": "Evict"
+        }
+      ]
+    },
+    {
+      "module": "SharedListConflicts",
+      "decision": "docs/adr/0034",
+      "parts": {
+        "Arrival": "FALSE"
+      },
+      "runs": [
+        {
+          "config": "SharedListConflicts.cfg",
+          "expect": "holds",
+          "states": 554585
+        },
+        {
+          "config": "SharedListConflicts_arrival.cfg",
+          "expect": "violates",
+          "invariant": "Convergence",
+          "without": "Arrival"
+        }
+      ]
+    },
+    {
+      "module": "BroadcastLog",
+      "decision": "docs/adr/0062",
+      "parts": {
+        "Extra": "1",
+        "Revalidate": "TRUE"
+      },
+      "runs": [
+        {
+          "config": "BroadcastLog.cfg",
+          "expect": "holds",
+          "states": 3573068
+        },
+        {
+          "config": "BroadcastLog_r1.cfg",
+          "expect": "holds",
+          "states": 15412000
+        },
+        {
+          "config": "BroadcastLog_deferred.cfg",
+          "expect": "holds",
+          "states": 13658347
+        },
+        {
+          "config": "BroadcastLog_without_extra_slot.cfg",
+          "expect": "violates",
+          "invariant": "AnswerRefines",
+          "without": "Extra"
+        },
+        {
+          "config": "BroadcastLog_without_revalidation.cfg",
+          "expect": "violates",
+          "invariant": "AnswerRefines",
+          "without": "Revalidate"
+        },
+        {
+          "config": "BroadcastLog_deferred_without_extra_slot.cfg",
+          "expect": "violates",
+          "invariant": "FirstLagIsOvertaken",
+          "without": "Extra"
+        }
+      ]
+    },
+    {
+      "module": "BroadcastLogWrapped",
+      "decision": "docs/adr/0062",
+      "parts": {
+        "EnforceBound": "TRUE"
+      },
+      "runs": [
+        {
+          "config": "BroadcastLogWrapped.cfg",
+          "expect": "holds",
+          "states": 301380
+        },
+        {
+          "config": "BroadcastLogWrapped_r3.cfg",
+          "expect": "holds",
+          "states": 28722
+        },
+        {
+          "config": "BroadcastLogWrapped_oldest.cfg",
+          "expect": "holds",
+          "states": 331408
+        },
+        {
+          "config": "BroadcastLogWrapped_deferred.cfg",
+          "expect": "holds",
+          "states": 528936
+        },
+        {
+          "config": "BroadcastLogWrapped_without_bound.cfg",
+          "expect": "violates",
+          "invariant": "AnswerRefines",
+          "without": "EnforceBound"
+        },
+        {
+          "config": "BroadcastLogWrapped_deferred_without_bound.cfg",
+          "expect": "violates",
+          "invariant": "AnswerRefines",
+          "without": "EnforceBound"
+        },
+        {
+          "config": "BroadcastLogWrapped_non_divisor.cfg",
+          "expect": "violates",
+          "invariant": "SlotIndexContinuous",
+          "against": "a slot count that does not divide the stamp space"
+        }
+      ]
+    },
+    {
+      "module": "OpenInstances",
+      "decision": "docs/adr/0113",
+      "parts": {
+        "Handshake": "TRUE",
+        "Match": "TRUE",
+        "Fence": "TRUE",
+        "Records": "TRUE",
+        "Recheck": "TRUE",
+        "GcDurable": "TRUE",
+        "Evict": "FALSE",
+        "SameOffer": "TRUE"
+      },
+      "runs": [
+        {
+          "config": "OpenInstances.cfg",
+          "expect": "holds",
+          "states": 1423556
+        },
+        {
+          "config": "OpenInstances_bound.cfg",
+          "expect": "holds",
+          "states": 35999
+        },
+        {
+          "config": "OpenInstances_live.cfg",
+          "expect": "holds",
+          "states": 2162
+        },
+        {
+          "config": "OpenInstances_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Ends",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what makes a request end; the promise of the service is safety and needs none"
+        },
+        {
+          "config": "OpenInstances_without_handshake.cfg",
+          "expect": "violates",
+          "invariant": "Undisturbed",
+          "without": "Handshake",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_same_offer.cfg",
+          "expect": "violates",
+          "invariant": "Undisturbed",
+          "without": "SameOffer",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_match.cfg",
+          "expect": "violates",
+          "invariant": "Answered",
+          "without": "Match",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_fence.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "Fence",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_records.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "Records",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_recheck.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "Recheck",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_durable_mark.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "GcDurable",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_with_eviction.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "Evict",
+          "promise": "broken"
+        }
+      ],
+      "promise": "Refines",
+      "refines": "AtMostOnceService",
+      "progress": [
+        "Ends"
+      ]
+    },
+    {
+      "module": "EventJournal",
+      "decision": "docs/adr/0114",
+      "parts": {
+        "Fence": "TRUE",
+        "Atomic": "TRUE",
+        "Horizon": "TRUE",
+        "CursorAtomic": "TRUE",
+        "ByPosition": "TRUE"
+      },
+      "runs": [
+        {
+          "config": "EventJournal.cfg",
+          "expect": "holds",
+          "states": 706504
+        },
+        {
+          "config": "EventJournal_two_inputs.cfg",
+          "expect": "holds",
+          "states": 18088
+        },
+        {
+          "config": "EventJournal_without_fence.cfg",
+          "expect": "violates",
+          "invariant": "AppendOnce",
+          "without": "Fence",
+          "promise": "broken"
+        },
+        {
+          "config": "EventJournal_without_atomic.cfg",
+          "expect": "violates",
+          "invariant": "NothingLost",
+          "without": "Atomic",
+          "promise": "broken"
+        },
+        {
+          "config": "EventJournal_without_horizon.cfg",
+          "expect": "violates",
+          "invariant": "NonePassed",
+          "without": "Horizon",
+          "promise": "broken"
+        },
+        {
+          "config": "EventJournal_without_horizon_stable.cfg",
+          "expect": "violates",
+          "invariant": "Stable",
+          "without": "Horizon",
+          "promise": "broken"
+        },
+        {
+          "config": "EventJournal_without_cursor_atomic.cfg",
+          "expect": "violates",
+          "invariant": "FollowedOnce",
+          "without": "CursorAtomic",
+          "promise": "broken"
+        },
+        {
+          "config": "EventJournal_by_clock.cfg",
+          "expect": "violates",
+          "invariant": "Stable",
+          "without": "ByPosition",
+          "promise": "kept",
+          "why": "A question as of a moment is not in the service: the service says the journal only grows, so what is at or below a position does not change. A clock in its place breaks the answer (Stable), not the journal."
+        }
+      ],
+      "promise": "Refines",
+      "refines": "JournalService"
+    },
+    {
+      "module": "AtMostOnceService",
+      "decision": "docs/adr/0115",
+      "runs": [],
+      "abstract": true
+    },
+    {
+      "module": "JournalService",
+      "decision": "docs/adr/0115",
+      "runs": [],
+      "abstract": true
+    }
+  ]
+}
