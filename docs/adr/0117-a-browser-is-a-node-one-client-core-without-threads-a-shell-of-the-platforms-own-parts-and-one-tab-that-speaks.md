@@ -1,7 +1,9 @@
 # ADR 0117 — A browser is a node: one client core without threads, a shell of the platform's own parts, and one tab that speaks
 
-- Status: Proposed (2026-11-22). The owner accepted the scope (a browser as a Mesh node) and ordered this draft; nothing
-  is built until the owner accepts the record.
+- Status: Accepted (2026-11-22, by the owner), as amended before it was accepted: the freshness step is a row of ADR
+  0113 D4's table (D4), and a change of person is a change of incarnation whose store is not carried over (D6). Its
+  model (D10) was written and checked before any code it is of, and amended D5; the separation of the core (step 1)
+  needs none.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: the wasm32 target is the Rust lane, not another backend; the
@@ -63,21 +65,27 @@ to it can no longer be taken back; the node never shares one.
 ### D4. A request cannot be prepared long before it is sent
 
 A response carries `Sce-Mesh-Fresh`, a value the server makes from a key of its own and a step of time, for this machine
-and instance; a request under `key` from a machine whose deployment names `fresh_ms` signs the last one it was given,
-and the server takes the present step and the one before. It holds no state for it. A request under an older step, or
-none, is refused before anything of it is taken in, the refusal carries the present value, and the client signs again;
-the value is one more field §22.9 fixes the place of, so it can be neither changed nor taken off. A request signed with
-the page's key while an attacker was inside is of no use after two steps, and, under ADR 0113 D4, none under an
-incarnation offered later. What this gives is told in that form and no larger: an attacker who runs in the page acts as
-the page while it runs.
+and instance; a request under `key` to an open machine signs the last one it was given (`fresh_ms`, the step, has no
+default), and the server takes the present step and the one before. It holds no state for it. A request under an older
+step, or none, is refused before anything of it is taken in, the refusal carries the present value, and the client signs
+again; the value is one more row of the table of what is signed (ADR 0113 D4), so it can be neither changed nor taken
+off, and the refusal is signed as every answer that changes what the client holds. A request signed with the page's key
+while an attacker was inside is of no use after two steps, and, under ADR 0113 D4, none under an incarnation offered
+later. What this gives is told in that form and no larger: an attacker who runs in the page acts as the page while it
+runs.
 
 ### D5. One tab speaks
 
 Several pages of one origin share its storage and its key; two that each join would fence each other (ADR 0113 D4). The
 page that holds the exclusive Web Lock of the node's name is the node; the others are given what it publishes and hand
 it their events, over a message channel of the origin. A page that ends releases the lock and another takes it, restores
-from the store and joins if it must. The lock is a convenience of one storage bucket and no fence: the incarnation is
-the fence, and two pages that both believe they hold it lose nothing but time.
+from the store and joins if it must. The lock is a convenience of one storage bucket and no fence, and a page may not
+have noticed that it lost it. So what must be one is in the store, and each is changed in one transaction of it, which
+the store orders across pages: the nonce a join is made with, drawn by whichever page writes it first, so that two that
+join are offered the same incarnation; the incarnation, written only where the store holds none and waits on the join
+the offer answers, so that a page that did not notice does not bring back one that ended; the number of a request; and
+the request, before its page is told. Then two pages that both believe they are the node lose nothing but time, and the
+incarnation is the fence.
 
 ### D6. What was accepted is kept, as far as the browser keeps it
 
@@ -89,6 +97,13 @@ made *persistent*, after which it is not cleared without the person's consent. S
 - **the promise** is that a reload, a closed page or a crashed one loses no accepted event while the bucket stands;
 - a bucket that was cleared is found by the absence of the key and the incarnation: the node joins as a new instance,
   and the document is told that the outcome of what it had waited for is unknown, as after a fence.
+
+**One incarnation, one store.** What the node keeps is kept under the incarnation it was made in. A change of person
+(ADR 0116 D1) is a new incarnation: when it is confirmed, the events, answers and published state kept under the one
+before are deleted, in the transaction that records the new one, before anything of the new one is shown. The other
+pages are told, and drop what they were shown. The offer that waits for a proof, and the challenge computed from it,
+survive the redirect to an identity provider and back, since they are in the store. A browser gives no promise that what
+was deleted is gone from its medium, and the record says no more than that a page is not shown it.
 
 A page that is frozen is a process that stopped. Its timers are due when it runs again, as after a restore.
 
@@ -113,11 +128,30 @@ each signed exchange, who may read), and is refused where the deployment is buil
 
 ### D10. The protocol is a model before it is code
 
-`OpenInstances.tla` gains a client that is several pages of one store: each may hold the key, one or none holds the
-lock, the store may be cleared, a page may stop between any two effects. The promises of ADR 0113 hold of it, and one
-more: an accepted event is sent until it is answered or the node has told that its outcome is unknown. The parts, each
-with a run that fails without it: the incarnation as the fence (the lock alone is not enough), the store before the
-answer, the clearing told, and the freshness step (with a thief who signs ahead).
+`docs/formal/BrowserNode.tla` is the client that is several pages of one store: a lock that moves while its holder goes
+on, a page that stops between any two steps, a store that is cleared, a person who changes, a server that forgets. It
+refines `AtMostOnceService`, so a page that stops and a lock that moves end no request unanswered, and `Ends` says that
+every request a document was told is accepted ends. `docs/formal/Freshness.tla` is D4, with a thief who signs ahead.
+Checked by TLC on 2026-11-23, before any code of the browser shell: one request, 268,075 states; two requests, 216,143;
+`Ends`, 66,226; the freshness step, 3,482; no violation.
+
+| Taken out | What TLC finds |
+|---|---|
+| the nonce of a join in the store | a lock that moved, and an outcome lost |
+| an offer taken only for the join the store waits on | an answer to another request |
+| the number of a request in the store | an answer to another request |
+| the store before the page is told | a request accepted and kept nowhere |
+| the fence | a request that takes effect twice |
+| a cleared store told | a request that never ends |
+| the deletion with a change of person | what was one person's shown to another |
+| the freshness step | a thief served long after they left |
+| the present value in a refusal | a page whose request is never taken |
+
+**What TLC found** that this record did not have: the second row. With two requests, a page that had not noticed held an
+offer of an incarnation that was confirmed, and then fenced, by another page; it wrote that incarnation again and
+numbered from one, and a late answer to the first request was taken for the second's. **What was seen while writing the
+model**, and is shown necessary by taking it out: the first and third rows, where the record said that two pages that
+both believe they hold the lock lose nothing but time, which holds only with both.
 
 ## Not in scope
 
@@ -147,7 +181,7 @@ Each step lands with a test that fails without it.
 
 1. The core separated from the native shell, with no change of behaviour; its trace and its first Verus contracts (ADR
    0115 D4, D13). Needs nothing of ADR 0116.
-2. This record's model (D10), accepted.
+2. (2026-11-23) This record's model (D10), checked, with its failing configurations.
 3. The freshness step (D4), server and native client.
 4. The browser shell: `fetch`, the key, the store, the lock; the kit in Node and two engines.
 5. The generated surface, with the test that must not compile.
@@ -156,10 +190,11 @@ Steps 3 and 4 need ADR 0113 step 4.
 
 ## Open questions
 
-1. Whether `fresh_ms` is required of every `key` binding or of those a browser dials. Recommended: every one of an open
-   machine, since a native client is as able to be read.
-2. Whether the surface carries its run-time checks always. Recommended: yes; they are the schema's and small.
-3. The engines of the kit. Recommended: Chromium and Firefox; WebKit when a host can run it.
+Decided with the acceptance, each as recommended and with its reason.
+
+1. `fresh_ms` is required of every `key` binding of an open machine, since a native client is as able to be read.
+2. The surface carries its run-time checks always; they are the schema's and small.
+3. The engines of the kit are Chromium and Firefox; WebKit when a host can run it.
 
 ## Sources
 
