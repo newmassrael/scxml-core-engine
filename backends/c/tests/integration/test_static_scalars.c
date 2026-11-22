@@ -56,6 +56,11 @@
 //   * `static_list_index`: an element is read by its index in an assignment, an
 //     operand and a guard; an index below zero or not below the length reads
 //     nothing and raises `error.execution`, as a checked integer operation does.
+//   * `static_list_text`: a list of texts (docs/adr/0086, section 7.3) holds each
+//     element in the buffer of its bound, so an append of a longer text appends
+//     nothing and raises `error.execution`, as an append to a full list does; an
+//     element is read by its index and walked as a text, and the list is read out
+//     of the machine's saved state.
 //   * `static_foreach`: a loop walks a copy of the list as it began, so a body
 //     that appends to the list it walks neither lengthens the walk nor reads what
 //     it has just written; the item, its position and a loop in a loop are native.
@@ -145,6 +150,8 @@
 #include <string.h>
 
 #include "../require_started.h"
+#include "linkstate_interest_saved.h"
+#include "linkstate_interest_sm.h"
 #include "presence_peer_sm.h"
 #include "record_list_parent_sm.h"
 #include "record_list_sm.h"
@@ -184,6 +191,8 @@
 #include "static_list_call_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
+#include "static_list_text_saved.h"
+#include "static_list_text_sm.h"
 #include "static_map_composite_key_saved.h"
 #include "static_map_composite_key_sm.h"
 #include "static_map_full_saved.h"
@@ -3112,6 +3121,40 @@ STATIC_SCENARIO_CORE_SAVED(static_lift_list, lift_list_states, lift_list_variabl
                            NULL, NULL, NULL, REQUIRE_STARTED(static_lift_list_init(&sm), STATIC_LIFT_LIST_START_OK),
                            NULL, NULL, NULL, NULL, NULL, NULL, NULL, static_lift_list_saved)
 
+// static_list_text: a list of texts (docs/adr/0086, section 7.3), each element the buffer of its
+// bound, which no reader of this file walks, so each variable a step states is read out of the
+// machine's saved state, the text every backend writes it by its type in.
+VARIABLE_READER(static_list_text, count)
+VARIABLE_READER(static_list_text, refusals)
+
+// Saved with no delayed send to carry, so the wall clock it is saved at changes nothing it holds.
+#define LIST_TEXT_SAVED_AT_MS INT64_C(1700000000000)
+
+// The machine's saved text, ended by its terminator, or NULL for one it could not save.
+static const char *static_list_text_saved(void *sm) {
+    static char text[16384];
+    size_t len = 0u;
+    sce_saved_error_t err;
+    if (!static_list_text_save((const static_list_text_t *)sm, LIST_TEXT_SAVED_AT_MS, text, sizeof(text) - 1u, &len,
+                               &err)) {
+        (void)fprintf(stderr, "static_list_text: the machine was not saved: %s\n", err.message);
+        return NULL;
+    }
+    text[len] = '\0';
+    return text;
+}
+
+static const name_value_t list_text_states[] = {
+    {"naming", STATIC_LIST_TEXT_STATE_NAMING},
+};
+static const variable_t list_text_variables[] = {
+    {"count", static_list_text_read_count},
+    {"refusals", static_list_text_read_refusals},
+};
+STATIC_SCENARIO_CORE_SAVED(static_list_text, list_text_states, list_text_variables, NULL, no_lists, no_records, NULL,
+                           NULL, NULL, NULL, REQUIRE_STARTED(static_list_text_init(&sm), STATIC_LIST_TEXT_START_OK),
+                           NULL, NULL, NULL, NULL, NULL, NULL, NULL, static_list_text_saved)
+
 // static_union: a payload that holds a union, read by testing its tag (docs/adr/0092, sections 4
 // and 6.1), a union variable built where it is declared and one put in whole, a text lifted into a
 // union or why it is none, and the machine saved and restored, every union read back by its tag. A
@@ -3702,6 +3745,10 @@ static int a_payload_enum_field_is_written_as_the_name_its_enum_declares(void) {
 //     and written, read and walked through the place `m[k]` or `m[k].field` where the map holds
 //     it; a full inner map answers its own outcome, a full list raises error.execution, and a write
 //     through a key that is absent raises error.execution and creates nothing.
+//   * `linkstate_interest` (docs/adr/0108, D12): the table a router keeps by key expression and by
+//     peer, a map whose value is a map, the inner map taken out, written and put back whole, and the
+//     key expressions a purge empties kept in a list of texts (docs/adr/0086, section 7.3) and
+//     removed after the walk.
 //
 // Every machine is started under one fixed seed, which nothing a scenario observes depends on.
 #define MAP_SCENARIO_SEED sce_map_seed_from_halves(UINT64_C(0x0123456789abcdef), UINT64_C(0xfedcba9876543210))
@@ -3831,6 +3878,15 @@ static const variable_t map_record_list_variables[] = {
 };
 MAP_SCENARIO(static_map_record_list, map_record_list_states, map_record_list_variables, STATIC_MAP_RECORD_LIST_START_OK)
 
+VARIABLE_READER(linkstate_interest, changes)
+static const name_value_t linkstate_interest_states[] = {
+    {"routing", LINKSTATE_INTEREST_STATE_ROUTING},
+};
+static const variable_t linkstate_interest_variables[] = {
+    {"changes", linkstate_interest_read_changes},
+};
+MAP_SCENARIO(linkstate_interest, linkstate_interest_states, linkstate_interest_variables, LINKSTATE_INTEREST_START_OK)
+
 int main(void) {
     int bad = 0;
     // Each scenario file by its name, and the steps it has at the least.
@@ -3861,6 +3917,7 @@ int main(void) {
     bad |= static_text_record_scenario("static_text_record", 12);
     bad |= static_lift_scenario("static_lift", 37);
     bad |= static_lift_list_scenario("static_lift_list", 25);
+    bad |= static_list_text_scenario("static_list_text", 19);
     bad |= static_union_scenario("static_union", 47);
     bad |= static_map_scenario("static_map", 14);
     bad |= static_map_full_scenario("static_map_full", 9);
@@ -3873,6 +3930,7 @@ int main(void) {
     bad |= static_map_nested_scenario("static_map_nested", 12);
     bad |= static_map_list_scenario("static_map_list", 9);
     bad |= static_map_record_list_scenario("static_map_record_list", 9);
+    bad |= linkstate_interest_scenario("linkstate_interest", 15);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);

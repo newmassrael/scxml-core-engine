@@ -293,7 +293,7 @@ SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const cha
         memset(&element, 0, sizeof(element));
         sce_saved_path_index(element_what, sizeof(element_what), what, i);
 {% if field.saved_kind == "list" %}
-        if (!{{ get_scalar(false, field.saved_type, none, "item", "element_what", "element") }}) {
+        if (!{{ get_scalar(false, field.saved_type, field.elem_bound, "item", "element_what", "element") }}) {
             return false;
         }
 {% else %}

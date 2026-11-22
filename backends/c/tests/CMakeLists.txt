@@ -2643,6 +2643,11 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_index.scxml"
         STAGE_ALSO schema_day.scxml
     )
+    # A list of texts (docs/adr/0086, section 7.3), each element the buffer of its bound.
+    sce_generate_static_integration_c_test(static_list_text
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_text.scxml"
+    )
     # A list variable takes whole what an algorithm returns as a list, whose
     # header is generated once beside the machine that includes it.
     #
@@ -3052,6 +3057,15 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_map_record_list.scxml"
         STAGE_ALSO schema_map_row.scxml
     )
+    # The table a router keeps by key expression and by peer (docs/adr/0108, D12): a map whose
+    # value is a map, beside a list of texts (docs/adr/0086, section 7.3); the staging carries the
+    # schemas of its key, its value and its events beside the machine.
+    sce_generate_static_integration_c_test(linkstate_interest
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/linkstate_interest.scxml"
+        STAGE_ALSO linkstate_zid.scxml linkstate_qinfo.scxml linkstate_register.scxml
+                   linkstate_withdraw.scxml
+    )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
@@ -3286,6 +3300,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_invoke_optional_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_list_index_SOURCES}
+        ${INTEGRATION_C_TEST_static_list_text_SOURCES}
         ${INTEGRATION_C_TEST_static_list_assign_SOURCES}
         ${_DAY_RUN_HEADERS}
         ${_DAY_REPEAT_HEADERS}
@@ -3350,6 +3365,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_map_nested_SOURCES}
         ${INTEGRATION_C_TEST_static_map_list_SOURCES}
         ${INTEGRATION_C_TEST_static_map_record_list_SOURCES}
+        ${INTEGRATION_C_TEST_linkstate_interest_SOURCES}
     )
     sce_c_link_runtime(sce_c_integration_static_scalars EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_scalars PRIVATE

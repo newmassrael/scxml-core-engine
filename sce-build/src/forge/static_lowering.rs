@@ -95,6 +95,11 @@ pub struct StaticField {
     /// an element at a time for a backend whose list holds its whole bound
     /// (docs/adr/0082). `None` for every other kind.
     pub elem_ty: Option<String>,
+    /// For a list of texts, the most UTF-8 bytes each element holds
+    /// (`list<string[N]>`, docs/adr/0086, section 7.3): what a restored
+    /// element is held to, as a restored `string[N]` variable is. `None` for
+    /// every other kind.
+    pub elem_bound: Option<u32>,
     /// The name a host reads this field through when the field's own name is
     /// not it ([`StaticTarget::reader_name`]) — `None` for a name the backend
     /// cannot give a reader.
@@ -710,6 +715,29 @@ pub struct BoundedList {
     pub def: Option<String>,
     /// The empty list, as an initial value of [`Self::ty`].
     pub empty: String,
+}
+
+/// How a list variable of a machine is held, what a host reads it through and
+/// what its saved form is written and read by: the parts of the
+/// [`StaticField`] of a list, one for each element a list variable holds (a
+/// number or a `bool`, a text of a bound, a record).
+struct HeldList {
+    /// The list's own type ([`BoundedList::ty`]).
+    ty: String,
+    /// [`StaticField::view`].
+    view: Option<String>,
+    /// [`StaticField::saved_kind`].
+    saved_kind: &'static str,
+    /// [`StaticField::saved_type`].
+    saved_type: String,
+    /// The empty list ([`BoundedList::empty`]).
+    empty: String,
+    /// [`StaticField::holds_bytes`].
+    holds_bytes: bool,
+    /// [`StaticField::elem_ty`].
+    elem_ty: String,
+    /// [`StaticField::elem_bound`].
+    elem_bound: Option<u32>,
 }
 
 /// How a string variable is held by a target whose own string type has no room
@@ -2813,6 +2841,13 @@ pub trait StaticTarget {
     /// The type a host reads a published list of `record` through, when it is
     /// not the list's own type (see [`StaticField::view`]).
     fn record_list_view(&self, record: &str) -> Option<String>;
+    /// The type a host reads a published list of texts through, `text` the
+    /// type one element is held in, when it is not the list's own type (see
+    /// [`StaticField::view`]; docs/adr/0086, section 7.3): by default what a
+    /// list of records of that type is read through.
+    fn text_list_view(&self, text: &str) -> Option<String> {
+        self.record_list_view(text)
+    }
     /// The type a host reads a published record variable of the record type `ty`
     /// through, when it is not the record's own type (see [`StaticField::view`]):
     /// a record that owns text is lent, not moved out of the machine, as a string
@@ -8667,6 +8702,7 @@ fn union_variable_field(
         },
         saved_map: None,
         elem_ty: None,
+        elem_bound: None,
         reader: None,
         holds_bytes: false,
         seeded: false,
@@ -8908,6 +8944,7 @@ fn composed_record_variable_field(
         },
         saved_map: None,
         elem_ty: None,
+        elem_bound: None,
         reader: None,
         holds_bytes: false,
         seeded: false,
@@ -9940,6 +9977,7 @@ pub fn lower(
                     saved_elem: None,
                     saved_map: None,
                     elem_ty: None,
+                    elem_bound: None,
                     reader: None,
                     holds_bytes: holds_bytes(schema),
                     seeded: false,
@@ -10034,6 +10072,7 @@ pub fn lower(
                     saved_elem: None,
                     saved_map: Some(saved_map_parts(ty, &map_units)),
                     elem_ty: None,
+                    elem_bound: None,
                     reader: None,
                     holds_bytes: false,
                     seeded: false,
@@ -10042,20 +10081,46 @@ pub fn lower(
                 continue;
             }
             // A list starts empty. Its elements are numbers and bools, or
-            // records, which are declared as a record variable's are.
+            // records, which are declared as a record variable's are, or texts,
+            // each held as a text variable of its bound is (docs/adr/0086,
+            // section 7.3).
             if let Some(elem) = var.value_type.as_ref().and_then(|t| t.list_elem()) {
                 use crate::forge::model::AlgorithmValueType;
-                let (ty, view, saved_kind, saved_type, empty, holds) = match elem {
+                // Each element is a number's own type, the type a text of its
+                // bound is held in, or the record type the list holds: what its
+                // saved form is read into. A text is held to its bound where it
+                // is read back, as a text variable is.
+                let held = match elem {
                     AlgorithmValueType::Scalar(elem) => {
                         let list = declarations.scalar_list(elem, var.capacity());
-                        (
-                            list.ty,
-                            target.list_view(elem),
-                            "list",
-                            elem.as_attr(),
-                            list.empty,
-                            false,
-                        )
+                        HeldList {
+                            ty: list.ty,
+                            view: target.list_view(elem),
+                            saved_kind: "list",
+                            saved_type: elem.as_attr(),
+                            empty: list.empty,
+                            holds_bytes: false,
+                            elem_ty: target.scalar_type(elem),
+                            elem_bound: None,
+                        }
+                    }
+                    // A text is saved as a text variable is, from the type its
+                    // element is held in, which the list holds as a list of
+                    // records holds the record's type (docs/adr/0086, section
+                    // 7.3).
+                    AlgorithmValueType::Text { max: Some(bound) } => {
+                        let text_ty = declarations.text(bound.max);
+                        let list = declarations.record_list(&text_ty, var.capacity());
+                        HeldList {
+                            ty: list.ty,
+                            view: target.text_list_view(&text_ty),
+                            saved_kind: "list",
+                            saved_type: SceType::String.as_attr(),
+                            empty: list.empty,
+                            holds_bytes: false,
+                            elem_ty: text_ty,
+                            elem_bound: Some(bound.max),
+                        }
                     }
                     AlgorithmValueType::Record { alias } => {
                         let schema = records.get(alias).ok_or_else(|| {
@@ -10067,14 +10132,16 @@ pub fn lower(
                         })?;
                         let record_ty = declarations.record(alias, schema)?;
                         let list = declarations.record_list(&record_ty, var.capacity());
-                        (
-                            list.ty,
-                            target.record_list_view(&record_ty),
-                            "record_list",
-                            record_ty,
-                            list.empty,
-                            holds_bytes(schema),
-                        )
+                        HeldList {
+                            ty: list.ty,
+                            view: target.record_list_view(&record_ty),
+                            saved_kind: "record_list",
+                            saved_type: record_ty.clone(),
+                            empty: list.empty,
+                            holds_bytes: holds_bytes(schema),
+                            elem_ty: record_ty,
+                            elem_bound: None,
+                        }
                     }
                     other => {
                         return Err(composition_not_lowered(
@@ -10084,31 +10151,26 @@ pub fn lower(
                         ))
                     }
                 };
-                if let Some(element) = target.data_element(&var.id, &empty) {
+                if let Some(element) = target.data_element(&var.id, &held.empty) {
                     rewrites.note_element(var.value_type_spelling.as_ref(), &element);
                 }
-                // An element is a number's own type, or the record type the list
-                // holds, which is what its saved form is read by.
-                let elem_ty = match elem {
-                    AlgorithmValueType::Scalar(elem) => target.scalar_type(elem),
-                    _ => saved_type.clone(),
-                };
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
-                    ty,
-                    init: empty,
+                    ty: held.ty,
+                    init: held.empty,
                     published,
-                    view,
+                    view: held.view,
                     read: None,
                     bound: var.capacity(),
-                    saved_kind,
-                    saved_type,
+                    saved_kind: held.saved_kind,
+                    saved_type: held.saved_type,
                     saved_elem: None,
                     saved_map: None,
-                    elem_ty: Some(elem_ty),
+                    elem_ty: Some(held.elem_ty),
+                    elem_bound: held.elem_bound,
                     reader: None,
-                    holds_bytes: holds,
+                    holds_bytes: held.holds_bytes,
                     seeded: false,
                     module_parameter: false,
                 });
@@ -10153,6 +10215,7 @@ pub fn lower(
                     saved_elem: Some("record"),
                     saved_map: None,
                     elem_ty: None,
+                    elem_bound: None,
                     reader: None,
                     holds_bytes: holds_bytes(&place.schema),
                     seeded: false,
@@ -10219,6 +10282,7 @@ pub fn lower(
                     }),
                     saved_map: None,
                     elem_ty: None,
+                    elem_bound: None,
                     reader: None,
                     holds_bytes: false,
                     seeded: crate::forge::static_datamodel::seed_slot(var).is_some(),
@@ -10271,6 +10335,7 @@ pub fn lower(
                     saved_elem: None,
                     saved_map: None,
                     elem_ty: None,
+                    elem_bound: None,
                     reader: None,
                     holds_bytes: false,
                     seeded: false,
@@ -10337,6 +10402,7 @@ pub fn lower(
                 saved_elem: None,
                 saved_map: None,
                 elem_ty: None,
+                elem_bound: None,
                 reader: None,
                 holds_bytes: false,
                 // A module parameter's value is the suite's, and never a parent's.
@@ -11330,7 +11396,23 @@ impl<'t> TypeDeclarations<'t> {
         list
     }
 
-    /// [`Self::scalar_list`] for a list of the record type `record`.
+    /// The type one element of a list of texts of at most `bound` UTF-8 bytes
+    /// is held in (docs/adr/0086, section 7.3): the type a `string[bound]`
+    /// variable is held in ([`StaticTarget::string_storage`]), declared the
+    /// first time any place names it, or the target's own text where its text
+    /// owns its storage.
+    fn text(&mut self, bound: u32) -> String {
+        match self.target.string_storage(bound, "\"\"") {
+            Some(storage) => {
+                self.string_storage(&storage);
+                storage.ty
+            }
+            None => self.target.scalar_type(&SceType::String),
+        }
+    }
+
+    /// [`Self::scalar_list`] for a list of the record type `record`, and of a
+    /// text's type ([`Self::text`]).
     fn record_list(&mut self, record: &str, capacity: Option<u32>) -> BoundedList {
         let list = self.target.bounded_record_list(record, capacity);
         if let Some(def) = &list.def {
@@ -21239,6 +21321,12 @@ impl StaticTarget for CTarget {
     fn record_list_view(&self, record: &str) -> Option<String> {
         Some(format!("{}_view_t", record.trim_end_matches("_t")))
     }
+    // A list of texts holds the buffer of each element inline: plain data,
+    // which its reader answers by value as it answers a record of plain data,
+    // since the library declares no view over a list of buffers.
+    fn text_list_view(&self, _text: &str) -> Option<String> {
+        None
+    }
     fn list_empty(&self) -> String {
         unreachable!("a C11 list is declared through `bounded_list` or `bounded_record_list`")
     }
@@ -26500,6 +26588,21 @@ fn lower_action(
                 crate::forge::model::AlgorithmValueType::Scalar(elem) => {
                     lower(&action.expr, InferredType::from_sce_type(elem))?
                 }
+                // A text is held to the bound of the list's element, as an
+                // `<assign>` to a text variable of that bound holds it, and is
+                // made the element in the type the list holds a text in
+                // (docs/adr/0086, section 7.3). A text past the bound fails the
+                // append before anything is appended, as a full list does.
+                crate::forge::model::AlgorithmValueType::Text { max: Some(bound) } => {
+                    let value = lower_bounded(&action.expr, InferredType::Str)?;
+                    Receiving {
+                        text: target.record_string_runtime(
+                            bound.max,
+                            &target.bounded_string(&value.text, bound.max),
+                        ),
+                        can_fail: true,
+                    }
+                }
                 // The payload of the event the transition is on is a record of
                 // its schema too, taken whole as `_event.data`.
                 crate::forge::model::AlgorithmValueType::Record { alias }
@@ -27159,6 +27262,13 @@ fn lower_action(
                 _ => None,
             };
             let walked = match rewrites.lists.get(list.as_str()) {
+                // A list of texts is walked as the place it is, its item a text
+                // read where the list holds it, as a loop over a list of texts a
+                // payload or the deployment holds walks it (docs/adr/0086,
+                // section 7.3).
+                Some((crate::forge::model::AlgorithmValueType::Text { .. }, _)) => {
+                    walked_place(&list, None, ctx, renames, rewrites)?
+                }
                 Some((elem, capacity)) => {
                     // What a target that has to name the item's type and the list
                     // it copies is told: the element's type and the list's own.

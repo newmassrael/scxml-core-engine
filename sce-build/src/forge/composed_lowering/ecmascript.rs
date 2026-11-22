@@ -513,6 +513,7 @@ mod tests {
                 sends: true,
                 maps: true,
                 map_values: true,
+                text_lists: true,
             }
         );
     }

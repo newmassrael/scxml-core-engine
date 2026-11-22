@@ -177,14 +177,13 @@ macro_rules! scenarios {
 /// the generator refuses their machine for Rust by name
 /// (`generate/unsupported-feature`), so there is no module a row could build it
 /// from. The step that lowers the construct on Rust generates the machine, takes
-/// the entry off and adds the row.
-pub const NOT_YET_LOWERED: &[(&str, &str)] = &[(
-    "linkstate_interest",
-    "a map whose value is a map (docs/adr/0108, D12), beside a list of texts, which no \
-         lane holds in a statechart's variable yet",
-)];
+/// the entry off and adds the row. Emptied when Rust came to hold a list of
+/// texts (docs/adr/0086, section 7.3), the last that held `linkstate_interest`
+/// back.
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[];
 
 scenarios! {
+    "linkstate_interest" => linkstate_interest_sm::{LinkstateInterestPolicy, LinkstateInterestPersist};
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
     "presence_peer_bob" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
     "presence_peer_server" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
@@ -253,6 +252,7 @@ scenarios! {
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_call" => static_list_call_sm::{StaticListCallPolicy, StaticListCallPersist};
     "static_list_index" => static_list_index_sm::{StaticListIndexPolicy, StaticListIndexPersist};
+    "static_list_text" => static_list_text_sm::{StaticListTextPolicy, StaticListTextPersist};
     "static_optional" => static_optional_sm::{StaticOptionalPolicy, StaticOptionalPersist};
     "static_optional_record" => static_optional_record_sm::{StaticOptionalRecordPolicy, StaticOptionalRecordPersist};
     "static_optional_widened" => static_optional_widened_sm::{StaticOptionalWidenedPolicy, StaticOptionalWidenedPersist};

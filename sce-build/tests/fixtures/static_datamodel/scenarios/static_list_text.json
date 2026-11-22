@@ -1,0 +1,53 @@
+{
+  "machine": "static_list_text",
+  "about": "A list variable of texts, list<string[4]>[3] (docs/adr/0086, section 7.3): appended to from a text variable and from a literal, each element held to four UTF-8 bytes as a string[4] variable is, so a longer text appends nothing and raises error.execution, as an append to a full list does; measured by len(), read by an index that is checked against the length, walked by a <foreach> and emptied by <sce:clear>. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "naming", "variables": { "names": [], "first": "-", "cursor": 0, "count": 0, "total": 0, "refusals": 0 } } },
+
+    { "note": "an empty list holds no element at index 0: nothing is read and error.execution says so",
+      "event": "read",
+      "expect": { "variables": { "first": "-", "refusals": 1 } } },
+
+    { "event": "add",
+      "expect": { "variables": { "names": ["ab"], "count": 1, "refusals": 1 } } },
+
+    { "event": "word.long", "expect": { "variables": { "refusals": 1 } } },
+    { "note": "`hello` is five bytes and an element holds four: nothing is appended, the block ends before `count` is written",
+      "event": "add",
+      "expect": { "variables": { "names": ["ab"], "count": 1, "refusals": 2 } } },
+
+    { "event": "word.exact", "expect": { "variables": { "refusals": 2 } } },
+    { "note": "four bytes is the bound, and fits",
+      "event": "add",
+      "expect": { "variables": { "names": ["ab", "abcd"], "count": 2, "refusals": 2 } } },
+    { "event": "add.literal",
+      "expect": { "variables": { "names": ["ab", "abcd", "xy"], "count": 3, "refusals": 2 } } },
+
+    { "note": "the list holds its three: nothing is appended and error.execution says so",
+      "event": "add",
+      "expect": { "variables": { "names": ["ab", "abcd", "xy"], "count": 3, "refusals": 3 } } },
+
+    { "note": "the walk reads each element as a text: 2 + 4 + 2 bytes",
+      "event": "measure",
+      "expect": { "variables": { "total": 8, "refusals": 3 } } },
+
+    { "event": "read",
+      "expect": { "variables": { "first": "ab", "refusals": 3 } } },
+    { "event": "next", "expect": { "variables": { "cursor": 1 } } },
+    { "event": "read",
+      "expect": { "variables": { "first": "abcd", "refusals": 3 } } },
+    { "event": "next", "expect": { "variables": { "cursor": 2 } } },
+    { "event": "next", "expect": { "variables": { "cursor": 3 } } },
+    { "note": "index 3 is not below the length 3: nothing is read and `first` keeps what it held",
+      "event": "read",
+      "expect": { "variables": { "first": "abcd", "refusals": 4 } } },
+
+    { "note": "<sce:clear> empties the list; `count` is only written by the next append",
+      "event": "reset",
+      "expect": { "variables": { "names": [], "count": 3, "refusals": 4 } } },
+    { "event": "measure",
+      "expect": { "variables": { "total": 0, "refusals": 4 } } },
+    { "event": "add.literal",
+      "expect": { "variables": { "names": ["xy"], "count": 1, "refusals": 4 } } }
+  ]
+}

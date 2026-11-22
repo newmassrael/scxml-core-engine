@@ -20,6 +20,9 @@
 
 use sce_rust_runtime::{Engine, SceClock};
 use sce_rust_scenarios::{hosts, replay, replay_with_host, replay_with_hosts, Hosts};
+use sce_rust_tests::integration::static_datamodel::linkstate_interest_sm::{
+    LinkstateInterestPersist, LinkstateInterestPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::record_list_parent_sm::{
     RecordListParentPersist, RecordListParentPolicy,
 };
@@ -106,6 +109,9 @@ use sce_rust_tests::integration::static_datamodel::static_list_index_sm::{
 };
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPersist, StaticListPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_list_text_sm::{
+    StaticListTextPersist, StaticListTextPolicy,
 };
 use sce_rust_tests::integration::static_datamodel::static_map_composite_key_sm::{
     StaticMapCompositeKeyPersist, StaticMapCompositeKeyPolicy,
@@ -500,6 +506,20 @@ fn static_list_index_reads_an_element_and_refuses_one_that_is_not_there() {
     );
 }
 
+// A list of texts (docs/adr/0086, section 7.3): each element held to the bound
+// of its element type, a longer text appended to it refused as a full list's
+// append is, read by an index, walked and emptied.
+#[test]
+fn static_list_text_holds_each_text_to_its_elements_bound() {
+    replay(
+        Engine::new(StaticListTextPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_list_text.json"
+        ),
+    );
+}
+
 #[test]
 fn static_record_steps_no_further_than_the_month_allows() {
     replay(
@@ -768,6 +788,21 @@ fn static_map_returned_takes_the_map_an_algorithm_returns_whole() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_returned.json"
+        ),
+    );
+}
+
+// The table a router keeps by key expression and by peer (docs/adr/0108, D12):
+// a map whose value is a map, the inner map taken out, written and put back
+// whole, and the key expressions a purge empties kept in a list of texts
+// (docs/adr/0086, section 7.3) and removed after the walk.
+#[test]
+fn linkstate_interest_keeps_each_peer_under_each_key_expression() {
+    replay(
+        Engine::new(LinkstateInterestPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/linkstate_interest.json"
         ),
     );
 }
