@@ -6497,9 +6497,13 @@ with tombstones, so no put or remove moves an entry. A machine's map is kept in
 the runtime's default storage: with `std` the slots and the index grow as the map
 fills, up to the bound; without it they are inline, the bound reserved. The
 storage is a parameter of the type, not a feature of the build
-(`BoundedMap<K, V, N, S>`, `S` the runtime's `Inline` or `Heap`, docs/adr/0108,
-D4 "Storage"), so a host keeps a map of its own inline, never allocating, beside a
-machine's map that grows. The index hashes a key's canonical bytes (the runtime's
+(`BoundedMap<K, V, N, S>`, `S` the runtime's `Inline`, `Heap` or `Linear`,
+docs/adr/0108, D4 "Storage"), so a host keeps a map of its own inline, never
+allocating, beside a machine's map that grows; a host's map of a small bound in
+`Linear` storage keeps its slots inline and no index, a lookup comparing the key
+with each key the map holds, at most `N` of them, so it hashes no key and reads
+no seed to find one, and answers, orders, saves and compares as an `Inline` map
+does. The index hashes a key's canonical bytes (the runtime's
 `MapKey`: an integer as the 16 bytes of its value whatever its width, a `bool`
 as one, an enum by its declared number, a text and a byte string by their length
 and their bytes, a record by its fields in order) with SipHash-1-3 under a

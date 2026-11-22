@@ -10,7 +10,8 @@
   consumer's first rule over a table (a peer's latest generation, its duplicates refused) answers what it did.
   "Order of work" marks the steps that have landed. Amended 2026-11-22 (D12, which amends D6 item 4): a map's value may
   be a map, a list or a record that holds a list, written in place through a nested place, on the consumer's probes
-  of the three shapes.
+  of the three shapes. Amended 2026-11-22 (D4 "Storage", D8): Rust has a third storage, `Linear`, with no index, on
+  the consumer's measurement of what the hash costs a small map on a microcontroller.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0108" line in the landing that moves it):
   - `sce-build/src/forge/value_type.rs`'s grammar (docs/adr/0086, section 1): two constructors, `map<K, V>[B]` and
@@ -186,6 +187,21 @@ generated algorithm is generic over the storage of each map it is lent or writes
 a map it builds for itself takes the storage of the map its seed is drawn from (D8), so an algorithm lent an inline
 map allocates nothing. C11 and the heap lanes are unchanged.
 
+(Amended 2026-11-22.) Rust has a third storage, `Linear`, for a map of a small bound: its slots reserved in the
+value as `Inline`'s are, and no index. A lookup compares the key with each key the map holds, in D2's order and by
+D1's canonical bytes, so it makes at most the bound's comparisons; the map hashes no key, and no lookup reads its
+seed. It is chosen by type as `Inline` and `Heap` are, `BoundedMap<K, V, N, Linear>`, and
+`BoundedMap::<K, V, N, Linear>::new()` builds it empty with no seed, all zero bytes. The reason is code size on a
+microcontroller: the consumer measured a map of bound 2 in `Inline` storage on a Cortex-M at 1,480 bytes more text
+than the linear search it replaced (the key's hash, the probe of the index, SipHash-1-3 and the key's byte feeds),
+where at so small a bound an index buys nothing a scan does not. D8's reason for keying the hash, a peer that floods
+one chain of the index, does not arise: with no index the worst a peer's keys do is the scan of at most the bound's
+keys that every lookup already is. What a document or a host sees is unchanged: the order, the outcomes, the saved
+form, the snapshot, and equality with a map of another storage. The map keeps the seed it is built with only to
+hand it on to the maps drawn from it. A generated machine's own map variables keep `DefaultMapStorage`; a generated
+algorithm, generic over the storage of each map it is lent, takes a `Linear` map unchanged, and a map it builds
+from one is `Linear` too. C11 and the heap lanes are unchanged.
+
 ### D5. A statechart walks a map with `<foreach>`, and an algorithm takes one by name
 
 `<foreach array="m" item="v" sce:key="k" index="i">` walks a map in its order: `item` is the value, `sce:key` the
@@ -280,10 +296,11 @@ size of the table. Each type is therefore:
   choose the cell, but a lane without a heap holds the index inline, and its size must then be a constant expression
   of the bound, which twice the bound is and the next power of two at or above it is not on every lane's compiler.
 
-Lookup, put and remove take expected constant time, and no operation moves an entry. Iteration follows the links,
-so the observable order, the saved form and the snapshot are D2's whatever slots the entries sit in. A table of
-thousands of faces cannot be scanned linearly on every packet, which rules out the `bounded-collection` kind's
-`find_by_index`.
+Lookup, put and remove take expected constant time, and no operation moves an entry. (Amended 2026-11-22.) A Rust map
+in `Linear` storage (D4, "Storage") keeps the slots and the order and no index, its lookup a scan of at most the
+bound's keys. Iteration follows the links, so the observable order, the saved form and the snapshot are D2's whatever
+slots the entries sit in. A table of thousands of faces cannot be scanned linearly on every packet, which rules out
+the `bounded-collection` kind's `find_by_index`.
 
 **The hash is keyed per map, because a peer chooses the keys.** A zid or a wire id is chosen by the other end of a
 connection. With a fixed unkeyed hash, a peer can send keys that all land in one chain of the index and turn every
