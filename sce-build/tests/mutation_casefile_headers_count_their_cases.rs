@@ -147,6 +147,16 @@ fn case_count(body: &str) -> usize {
         .count()
 }
 
+/// Whether a bare word is the noun every pattern below counts: "case" or
+/// "cases", and nothing that merely begins with it. A prefix test read "the one
+/// casefile they then were", in the header of
+/// `a_broadcast_log_publisher_orders_are_seen_weakened_by_miri`, as a claim
+/// that its file holds one case, in a file of three: a casefile is not a case,
+/// and a header that names casefiles is not counting its own.
+fn is_case(word: &str) -> bool {
+    word == "case" || word == "cases"
+}
+
 /// Positions, for the headers that point at a case by its place in the file.
 const ORDINALS: [(&str, usize); 10] = [
     ("first", 1),
@@ -212,7 +222,7 @@ fn claims(
 
     for i in 0..words.len() {
         // "<n> of the <m> cases"  — the second number is the total.
-        if bare(i) == "of" && bare(i + 1) == "the" && bare(i + 3).starts_with("case") {
+        if bare(i) == "of" && bare(i + 1) == "the" && is_case(&bare(i + 3)) {
             if let Some(n) = count_at(&words, i + 2) {
                 push(n, Claim::Total(n), i, &words, cases, file, out, skipped);
                 take(i, i + 3, &mut claimed);
@@ -222,7 +232,7 @@ fn claims(
         // "<n> of <m> cases", no article — the same claim, and the phrasing a
         // header reaches for when it reports a past round: "SURVIVED two of
         // three cases".
-        if bare(i + 1) == "of" && bare(i + 3).starts_with("case") && bare(i + 2) != "the" {
+        if bare(i + 1) == "of" && is_case(&bare(i + 3)) && bare(i + 2) != "the" {
             if let (Some(_), Some(m)) = (count_at(&words, i), count_at(&words, i + 2)) {
                 push(m, Claim::Total(m), i, &words, cases, file, out, skipped);
                 take(i, i + 3, &mut claimed);
@@ -230,7 +240,7 @@ fn claims(
             }
         }
         // "all <n> cases" / "the <n> cases" / "across the <n> cases"
-        if (bare(i) == "all" || bare(i) == "the") && bare(i + 2).starts_with("case") {
+        if (bare(i) == "all" || bare(i) == "the") && is_case(&bare(i + 2)) {
             if let Some(n) = count_at(&words, i + 1) {
                 push(n, Claim::Total(n), i, &words, cases, file, out, skipped);
                 take(i, i + 2, &mut claimed);
@@ -253,7 +263,7 @@ fn claims(
         // then "Both cases still applied", in a file of SIX. Reading that as a
         // total made this gate report a defect that was not there.
         if bare(i) == "both"
-            && bare(i + 1).starts_with("case")
+            && is_case(&bare(i + 1))
             && (bare(i + 2) == "below" || bare(i + 2) == "here")
         {
             push(2, Claim::Total(2), i, &words, cases, file, out, skipped);
@@ -261,7 +271,7 @@ fn claims(
             continue;
         }
         // "the last <n> cases" — a run, so only bounded.
-        if bare(i) == "last" && bare(i + 2).starts_with("case") {
+        if bare(i) == "last" && is_case(&bare(i + 2)) {
             if let Some(n) = count_at(&words, i + 1) {
                 push(n, Claim::Bound(n), i, &words, cases, file, out, skipped);
                 take(i, i + 2, &mut claimed);
@@ -277,7 +287,7 @@ fn claims(
             }
         }
         // "<n> cases here" — a subset of this file's cases, so bounded.
-        if bare(i + 1).starts_with("case") && bare(i + 2) == "here" {
+        if is_case(&bare(i + 1)) && bare(i + 2) == "here" {
             if let Some(n) = count_at(&words, i) {
                 push(n, Claim::Bound(n), i, &words, cases, file, out, skipped);
                 take(i, i + 2, &mut claimed);
@@ -285,7 +295,7 @@ fn claims(
             }
         }
         // "<n> of the cases" — a subset, so only bounded.
-        if bare(i + 1) == "of" && bare(i + 2) == "the" && bare(i + 3).starts_with("case") {
+        if bare(i + 1) == "of" && bare(i + 2) == "the" && is_case(&bare(i + 3)) {
             if let Some(n) = count_at(&words, i) {
                 push(n, Claim::Bound(n), i, &words, cases, file, out, skipped);
                 take(i, i + 3, &mut claimed);
@@ -313,8 +323,8 @@ fn claims(
         if !numberish {
             continue;
         }
-        let near = (i + 1..(i + 7).min(words.len()))
-            .any(|j| bare(j).starts_with("case") || bare(j) == "below");
+        let near =
+            (i + 1..(i + 7).min(words.len())).any(|j| is_case(&bare(j)) || bare(j) == "below");
         if near {
             residue += 1;
         }
