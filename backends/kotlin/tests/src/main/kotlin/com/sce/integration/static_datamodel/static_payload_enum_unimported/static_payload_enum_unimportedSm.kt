@@ -245,7 +245,7 @@ class StaticPayloadEnumUnimportedStateMachine(
             RecordLineage(
                 event = "record_list.refused",
                 revision = 2,
-                revisions = listOf("d5e8ad29ad99e6b7d154abc7c4b2bd2538450f9e595bf3ad77ede3779dfb771e"),
+                revisions = listOf("f29d8e07b964d6d28d70cd958cbd528832406e8a22f8f25b31d64f67466ee47b"),
                 added = listOf(
                     AddedField("command", 2, "\"0\""),
                     AddedField("withdrawn", 2, "false"),

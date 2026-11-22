@@ -496,7 +496,7 @@ var StaticPayloadEnumUnimportedSavedShape = sce.SavedShape{
 		{
 			Event:     "record_list.refused",
 			Revision:  2,
-			Revisions: []string{"d5e8ad29ad99e6b7d154abc7c4b2bd2538450f9e595bf3ad77ede3779dfb771e"},
+			Revisions: []string{"f29d8e07b964d6d28d70cd958cbd528832406e8a22f8f25b31d64f67466ee47b"},
 			Added: []sce.AddedField{
 				{ID: "command", Since: 2, Default: "\"0\""},
 				{ID: "withdrawn", Since: 2, Default: "false"},

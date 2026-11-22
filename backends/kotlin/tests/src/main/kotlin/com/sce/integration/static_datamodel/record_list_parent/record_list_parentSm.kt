@@ -428,7 +428,7 @@ class RecordListParentStateMachine(
             RecordLineage(
                 event = "record_list.refused",
                 revision = 2,
-                revisions = listOf("c23696beaa537fe1a7d5ee2981d42dfbb76f8ec4603c2b77a27c9872705e1f61"),
+                revisions = listOf("f29d8e07b964d6d28d70cd958cbd528832406e8a22f8f25b31d64f67466ee47b"),
                 added = listOf(
                     AddedField("command", 2, "\"0\""),
                     AddedField("withdrawn", 2, "false"),

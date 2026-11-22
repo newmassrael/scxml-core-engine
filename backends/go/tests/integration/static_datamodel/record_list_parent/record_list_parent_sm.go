@@ -1441,7 +1441,7 @@ var RecordListParentSavedShape = sce.SavedShape{
 		{
 			Event:     "record_list.refused",
 			Revision:  2,
-			Revisions: []string{"c23696beaa537fe1a7d5ee2981d42dfbb76f8ec4603c2b77a27c9872705e1f61"},
+			Revisions: []string{"f29d8e07b964d6d28d70cd958cbd528832406e8a22f8f25b31d64f67466ee47b"},
 			Added: []sce.AddedField{
 				{ID: "command", Since: 2, Default: "\"0\""},
 				{ID: "withdrawn", Since: 2, Default: "false"},
