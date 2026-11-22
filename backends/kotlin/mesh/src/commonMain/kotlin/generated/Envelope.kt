@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fc87f60788825a2accbefbd7d310802e57bdcedce19d2a650856b2530bfaac44
+// source-hash: 4fc317b4522e580f8825a5d34a4f1315da7d1588177dece7741ca5a9c810603a
 // source: envelope.scxml
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
@@ -359,6 +359,31 @@ value class EnvelopeCausalVectorList private constructor(val entries: List<Causa
     }
 }
 
+/// The `instance` element of [Envelope], 0 to 64 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeInstanceText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 64
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeInstanceText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeInstanceText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeInstanceText = EnvelopeInstanceText("\u0000".repeat(LEAST))
+    }
+}
+
 /// The entries a value of [Envelope] presents, which its encode reads
 /// (docs/adr/0081 §2): any object that presents them is a source of it, which
 /// [Envelope.encodeSource] writes.
@@ -383,6 +408,7 @@ interface EnvelopeSource {
     val child_session_id: EnvelopeChildSessionIdText?
     val causal_epoch: ULong?
     val causal_vector: EnvelopeCausalVectorList?
+    val instance: EnvelopeInstanceText?
 }
 
 /**
@@ -433,6 +459,8 @@ data class Envelope(
     override var causal_epoch: ULong? = null,
     /** Map key 20. */
     override var causal_vector: EnvelopeCausalVectorList? = null,
+    /** Map key 21. */
+    override var instance: EnvelopeInstanceText? = null,
 ) : EnvelopeSource {
     /**
      * Encode this map into [w]; `null` on success. The encode over any source
@@ -474,6 +502,7 @@ data class Envelope(
             val _e_child_session_id = src.child_session_id
             val _e_causal_epoch = src.causal_epoch
             val _e_causal_vector = src.causal_vector
+            val _e_instance = src.instance
             var count = 6UL
             if (_e_subject != null) count++
             if (_e_correlation_id != null) count++
@@ -489,6 +518,7 @@ data class Envelope(
             if (_e_child_session_id != null) count++
             if (_e_causal_epoch != null) count++
             if (_e_causal_vector != null) count++
+            if (_e_instance != null) count++
             Cbor.writeMapHead(w, count)?.let { return it }
             Cbor.writeUint(w, 0UL)?.let { return it }
             Cbor.writeBytes(w, _e_id.bytes)?.let { return it }
@@ -561,6 +591,10 @@ data class Envelope(
                     encodeRecordCausalEntry(w, _record)?.let { return it }
                 }
             }
+            if (_e_instance != null) {
+                Cbor.writeUint(w, 21UL)?.let { return it }
+                Cbor.writeText(w, _e_instance.text)?.let { return it }
+            }
             return null
         }
 
@@ -614,6 +648,7 @@ data class Envelope(
             var child_session_id: String? = null
             var causal_epoch: ULong? = null
             var causal_vector: List<CausalEntryPayload>? = null
+            var instance: String? = null
             var i = 0UL
             while (i < count) {
                 i++
@@ -730,6 +765,11 @@ data class Envelope(
                             list
                         }
                     }
+                    21UL -> {
+                        // A key given twice is not one map entry.
+                        if (instance != null) return Decoded.Refused(CodecError.CborDuplicateKey)
+                        instance = Cbor.readText(c, 64).valueOr { _refused -> return _refused }
+                    }
                     else -> Cbor.skip(c).valueOr { _refused -> return _refused }
                 }
             }
@@ -755,6 +795,7 @@ data class Envelope(
                     child_session_id = child_session_id?.let { EnvelopeChildSessionIdText.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
                     causal_epoch = causal_epoch,
                     causal_vector = causal_vector?.let { EnvelopeCausalVectorList.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
+                    instance = instance?.let { EnvelopeInstanceText.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
                 ),
             )
         }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fadc8f2474f56c68c09013497c83fde050057e30b8bc298a96cbda7647039526
+// source-hash: 1e25603104472cb78c4748675bc971493849a017eca2668a1680f836b7383d62
 // source: sce:std/mesh/envelope.scxml
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
@@ -74,9 +74,12 @@ public struct Envelope: Equatable, Sendable {
     /// Map key 20.
     public var causal_vector: [CausalEntryPayload]? = nil
 
+    /// Map key 21.
+    public var instance: String? = nil
+
     public init() {}
 
-    public init(id: [UInt8], source: String, event_type: String, pattern: PatternKind, datacontenttype: PayloadCodec, data: [UInt8], subject: String?, correlation_id: [UInt8]?, reply_to: String?, invoke_id: [UInt8]?, rpc_status: RpcStatus?, rpc_error_message: String?, deadline_unix_ms: UInt64?, sequence_no: UInt64?, routing_id: [UInt8]?, parallel_id: String?, region_id: String?, child_session_id: String?, causal_epoch: UInt64?, causal_vector: [CausalEntryPayload]?) {
+    public init(id: [UInt8], source: String, event_type: String, pattern: PatternKind, datacontenttype: PayloadCodec, data: [UInt8], subject: String?, correlation_id: [UInt8]?, reply_to: String?, invoke_id: [UInt8]?, rpc_status: RpcStatus?, rpc_error_message: String?, deadline_unix_ms: UInt64?, sequence_no: UInt64?, routing_id: [UInt8]?, parallel_id: String?, region_id: String?, child_session_id: String?, causal_epoch: UInt64?, causal_vector: [CausalEntryPayload]?, instance: String?) {
         self.id = id
         self.source = source
         self.event_type = event_type
@@ -97,6 +100,7 @@ public struct Envelope: Equatable, Sendable {
         self.child_session_id = child_session_id
         self.causal_epoch = causal_epoch
         self.causal_vector = causal_vector
+        self.instance = instance
     }
 
     /// Decodes one map at the cursor and moves the cursor past it. The map is read through a copy of
@@ -127,6 +131,7 @@ public struct Envelope: Equatable, Sendable {
         var child_session_id_held: String? = nil
         var causal_epoch_held: UInt64? = nil
         var causal_vector_held: [CausalEntryPayload]? = nil
+        var instance_held: String? = nil
         var index: UInt64 = 0
         while index < count {
             index += 1
@@ -233,6 +238,10 @@ public struct Envelope: Equatable, Sendable {
                     list.append(try Envelope.decodeRecordCausalEntry(&reader))
                 }
                 causal_vector_held = list
+            case 21:
+                // A key given twice is not one map entry.
+                if instance_held != nil { throw CodecError.cborDuplicateKey }
+                instance_held = try Cbor.readText(&reader, maxSize: 64)
             default:
                 try Cbor.skip(&reader)
             }
@@ -264,6 +273,7 @@ public struct Envelope: Equatable, Sendable {
         frame.child_session_id = child_session_id_held
         frame.causal_epoch = causal_epoch_held
         frame.causal_vector = causal_vector_held
+        frame.instance = instance_held
         cursor = reader
         return frame
     }
@@ -288,6 +298,7 @@ public struct Envelope: Equatable, Sendable {
         if self.child_session_id != nil { count += 1 }
         if self.causal_epoch != nil { count += 1 }
         if self.causal_vector != nil { count += 1 }
+        if self.instance != nil { count += 1 }
         Cbor.writeMapHead(count, to: &frame)
         do {
             let value = self.id
@@ -391,6 +402,11 @@ public struct Envelope: Equatable, Sendable {
             for record in value {
                 try Envelope.encodeRecordCausalEntry(record, to: &frame)
             }
+        }
+        if let value = self.instance {
+            Cbor.writeUint(21, to: &frame)
+            if value.utf8.count > 64 { throw CodecError.cborOutOfRange }
+            Cbor.writeText(value, to: &frame)
         }
         try sink.writeBytes(frame)
     }
