@@ -150,7 +150,7 @@ fn printed(record: &str, encoded: &[u8], payload: &Value) -> Vec<u8> {
             );
             assert_eq!(
                 read.note.blob,
-                latin1(payload["blob"].as_str().expect("blob"))
+                latin1(payload["blob"].as_str().expect("blob")).as_slice()
             );
             assert_eq!(
                 read.note.active,
