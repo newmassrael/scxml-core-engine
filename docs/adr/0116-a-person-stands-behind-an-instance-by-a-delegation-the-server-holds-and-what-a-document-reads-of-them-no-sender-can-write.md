@@ -1,7 +1,8 @@
 # ADR 0116 — A person stands behind an instance by a delegation the server holds, and what a document reads of them no sender can write
 
-- Status: Proposed (2026-11-22). The owner accepted the scope (an authenticated person as trusted context) and ordered
-  this draft; nothing is built until the owner accepts the record.
+- Status: Accepted (2026-11-22, by the owner), as amended before it was accepted: a person is bound where an instance
+  joins (D2), a revocation is held by the write (D6), and an event of an ended delegation is refused (D6). Its model
+  (D9) was written and checked before any code.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is
@@ -41,27 +42,39 @@ a host reads the token beside the machine and the decision is no longer the docu
 
 ### D1. Three principals, and their relation is told
 
-The key of a link speaks for the instance it is pinned to (§22.9). The instance acts for at most one person at a time,
-by a **delegation** the server holds. Every reader is given the compound: the instance and the person. An instance with
-no delegation acts for nobody, which is a value (`null`) and never a default person.
+The key of a link speaks for the instance it is pinned to (§22.9). An incarnation of the instance (ADR 0113 D4) acts for
+at most one person, from its confirmation to its end: that is the **delegation**, a part of the membership the server
+holds and not a record with a life of its own. Every reader is given the compound: the instance and the person. An
+incarnation with none acts for nobody, which is a value (`null`) and never a default person.
+
+Logging in, logging out and a change of person are each a new incarnation. What was sent to the last one, its answers
+and its outbox, ends with it and is never given to the next: two people at one device would otherwise read each other's
+mail. (OWASP's guidance, that a session's id is renewed when its privilege changes, is the same rule.)
 
 **Invariant 12 of §10.9**: what a machine reads of a person comes from the delegation its own server holds for the link
 the event came on, and from no field of an envelope.
 
-### D2. A delegation is made once, by a proof bound to the instance's key
+### D2. A person is bound where the instance joins, by a proof bound to its key
 
-- The instance asks for a challenge. The server draws it, single use, for one incarnation (ADR 0113 D4) and one key, and
-  forgets it after `challenge_ms`.
-- A proof carries the challenge: an OpenID Connect ID Token as its `nonce`, a WebAuthn assertion as its `challenge`. The
-  request that brings it is signed by the instance's key (§22.9). So a proof stolen without the key, replayed, or made
-  for another instance is refused.
+- A join says that a proof will follow. The server offers an incarnation as for any join (ADR 0113 D4), and the offer
+  waits `login_ms` for it, no default. The incarnation the instance has meanwhile goes on.
+- **The challenge is not drawn; it is computed**: a hash, under a name of its own, of the server machine, the instance,
+  the thumbprint of its key and the offered incarnation. The server keeps nothing for it, and what a challenge must be
+  (chosen by the server, for one instance and one key, of use once) is what an offered incarnation already is: an offer
+  is confirmed once. OpenID Connect Core 15.5.2 names the form, a `nonce` that is a hash of a value of the session.
+- A proof carries the challenge: an OpenID Connect ID Token as its `nonce`, a WebAuthn assertion as its `challenge`. It
+  travels in the body of the exchange that confirms the offer, which the instance's key signs with `if-match` (§22.9).
+  So a proof stolen without the key, replayed, or made for another instance or another incarnation is refused, and the
+  offer stands until `login_ms` for a good one.
 - The host's port judges it: `IdentityProof::verify(proof, challenge) -> Person`, the issuer and the subject, when and
   how they were proved, and what the document declares (D3). With OpenID Connect the server's program is the
   confidential client and exchanges the code: a browser holds no token of the identity provider, the pattern the OAuth
   working group's draft for browser applications ranks first.
-- The server writes the **delegation** in one write: the machine, the instance, its incarnation, the issuer and subject,
-  the moment and method of the proof, its expiry. It ends with the incarnation, with its expiry, with a revocation (D6),
-  or when the instance gives it up. No later exchange carries a proof or a token: the key's signature is enough.
+- The confirmation is one write, ADR 0113's: the member, its person (issuer, subject, the moment and method of the
+  proof), the moment it ends, and the end of the incarnation before it. No later exchange carries a proof or a token:
+  the key's signature is enough.
+- A client that changes its person first waits, for `drain_ms` and no longer, for the answers it has not, and gives up
+  as *outcome unknown* what is left (ADR 0113 D4).
 
 ### D3. A document declares what it reads, in a place no sender writes
 
@@ -97,14 +110,22 @@ enemy"). SCE gives the stream, its order and its horizon; what a group means is 
 
 ### D6. A revocation is a write, and its bound is promised
 
-- A delegation lives `person_ttl_ms`, which has no default, and is renewed by a proof or by the host's answer that the
-  identity provider's session stands.
-- A revocation names a person, an instance or one delegation, and is a write of the store. The edge judges the
-  delegation as it admits an event and the session judges it **again as it runs**, as ADR 0113 D5 does with the
-  incarnation, since it may have ended while the event waited.
-- **The promise**: a run that begins after a revocation is committed is under no delegation it ended; and what an
-  identity provider ended and did not tell ends within `person_ttl_ms`. A provider that tells (back-channel logout) is
-  an adapter that writes the revocation.
+- An incarnation with a person ends at `until`, `person_ttl_ms` after its proof or its last renewal; `person_ttl_ms` has
+  no default. A renewal is a proof of the same person, or the host's answer that the identity provider's session stands;
+  it moves `until` alone. `proved_ms` and `method` stay those of the last proof, so a document that asks for a person
+  proved lately is not answered by a renewal. A proof of another person renews nothing and is refused: it is a join.
+- A revocation names a person, an instance or one incarnation, and **ends the incarnations it names**, in one write of
+  the store. So does `until`, and so does the instance that gives it up. There is one way to end, and it is ADR 0113's:
+  the fence, with its reason.
+- **What is not yet done is not done.** An event that came under an incarnation that ended while it waited is fenced and
+  not run. It is never run as nobody's: an event that was said for a person and is run for none is another event.
+- **What is in hand is not kept.** The write that keeps a run names the incarnations it was made under and is refused
+  when the store no longer holds one, its `until` read against the write's own moment (ADR 0113 D5, `Write::under`).
+- **The promise**: a run whose write comes after the write that ended its incarnation keeps nothing and sends nothing
+  (what an earlier write kept stands, and what it sent to the instance ends with the instance's outbox); what an
+  identity provider ended and did not tell ends within `person_ttl_ms`. A call a host had already begun for the run is
+  not taken back, as no answer of the network is: it is what a host-run invocation's operation identity is for (ADR 0107
+  D4). A provider that tells (back-channel logout) is an adapter that writes the revocation.
 
 ### D7. Who did it is recorded by the platform
 
@@ -121,19 +142,34 @@ another challenge, key, audience, issuer, or time, each refused), and a proof fo
 
 ### D9. The protocol is a model before it is code
 
-`PrincipalService.tla`, the promise: a run is under a person only if a proof for that person was judged good, for the
-challenge of that incarnation and key, and no revocation of it was committed before the run began; a quoted person is
-never told as the one acting; what a run recorded is who it ran under. `Principals.tla` refines it, over the network and
-the crashes of `OpenInstances`, with a thief who sees every message and holds no key. The parts, each with the run that
-fails without it: the challenge's single use; its binding to the incarnation; its binding to the key; the end of a
-delegation with its incarnation; the second judgement as the session runs; the durability of a revocation; the
-difference of a quote.
+`PrincipalService.tla`, the promise: a run is kept for a person only if a proof of that person was judged good for that
+incarnation, and not after the incarnation ended; an incarnation acts for one person; what was made for one person is
+read by no other; a quoted person is never told as the one acting. `Principals.tla` refines it, over a network that
+repeats and delays and a server that crashes, with a thief who sees every message and every proof and holds no key but
+their own. Checked by TLC on 2026-11-23, before any code: two devices (one the thief's) and two people, 8,721,642
+distinct states; that whoever stays at a device is let in (`Enters`), one device, 18,622; no violation.
+
+| Taken out | What TLC finds |
+|---|---|
+| the challenge's binding to the instance and its key | a person told who never proved it there: a proof made for one device, given by another |
+| its binding to the incarnation | the same: a proof of who was there before |
+| one person per incarnation | one person reading what was made for another |
+| the condition of the write | a run kept after its incarnation ended |
+| the durability of an end | the same, which a crash took back |
+| the difference of a quote | a person told who was only quoted |
+| the fence told to a device that waits for its confirmation | a person who is never let in |
+
+**What was seen while writing the model**: the last row. TLC's first run of `Enters` failed, since an incarnation that
+ended before its device learned that it was confirmed was told to nobody; ADR 0113's fence answers that exchange too.
+The model takes the handshake as OpenInstances has it, is bounded to two requests, and says nothing of groups (D5) or of
+time but that an end can come at any moment.
 
 ### D10. Backends
 
 Rust, as a server and as the dialing side that asks for a challenge. An `authenticator` other than `key` proves no key
 and is refused with `sce:principal` where the deployment is built, and so is a machine that is not `instances: open` or
-whose transport does not name its sender. Every other backend refuses the document by name.
+whose transport does not name its sender, or whose binding names no `sign:` and `verify:` (ADR 0113 D4). Every other
+backend refuses the document by name.
 
 ## Not in scope
 
@@ -144,6 +180,7 @@ policy language, erasure, and several people behind one instance at a time.
 
 - A document decides on a person it can trust, and the decision stays the document's.
 - A leaked token is of no use: there is none after the proof.
+- A login costs an incarnation: what was waiting is drained or of unknown outcome, and an outbox is not carried over.
 - A machine between two others loses the power to act as whoever asked it last.
 - Groups cost a stream to follow. In return a removal has an order, and a decision can say what it knew.
 
@@ -157,14 +194,17 @@ policy language, erasure, and several people behind one instance at a time.
   windows and outboxes are one (ADR 0113, "Context").
 - **A delegated person passed on with every send.** The confused deputy.
 - **A policy language of SCE's.** The document is one.
+- **A delegation as a record of its own, with a challenge of its own** (the first draft). Two lives to keep in step, two
+  ways to end, and a person could change under an incarnation whose mail was another's.
+- **Judging as the run begins** (the first draft). A revocation between the beginning and the write is then not kept.
 
 ## Order of work
 
 Each step lands with a test that fails without it.
 
-1. This record and its model (D9), accepted.
-2. The delegation's store, its conformance kit, sealing and re-sealing.
-3. The challenge, the port and the edge; the second judgement in the session.
+1. (2026-11-23) This record, accepted, and its model (D9), checked, with its failing configurations.
+2. The person in the membership's store, its conformance kit, sealing and re-sealing.
+3. The offer that waits, the port and the edge; the condition of the write (ADR 0113 step 4 builds it).
 4. `sce:principal`, `_x.principal`, `_x.quoted` and `sce:on-behalf`, with each refusal's appendix row.
 5. What the journal and the audit log record (D7), and D5 over ADR 0114's followers.
 
@@ -172,12 +212,13 @@ Step 3 needs ADR 0113 step 4; step 5 needs ADR 0114 step 4.
 
 ## Open questions
 
-1. Whether a passkey (WebAuthn) verifier is SCE's reference adapter or the application's. Recommended: the
-   application's, with SCE's kit, since a relying party's policy is its own.
-2. Whether `_x.quoted` is in the first landing. Recommended: yes, as a refusal of every quote until a deployment lists
-   one; the syntax is then fixed once.
-3. Whether a delegation may be renewed by the host's word alone. Recommended: yes, and the method it records says so, so
-   a document can ask for a person proved again.
+Decided with the acceptance, each as recommended and with its reason.
+
+
+1. A passkey (WebAuthn) verifier is the application's, with SCE's kit, since a relying party's policy is its own.
+2. `_x.quoted` is in the first landing, as a refusal of every quote until a deployment lists one; the syntax is then
+   fixed once.
+3. The host's word alone renews, and moves `until` and nothing else (D6).
 
 ## Sources
 
@@ -185,7 +226,8 @@ Checked in the text on 2026-11-22: Lampson, Abadi, Burrows and Wobber 1992, the 
 quoting, limited lifetimes and the two sources); RFC 8693 (section 1.1); RFC 9449 (sections 2, 8, 11.2 and 11.4); RFC
 9700 (section 2.2); `draft-ietf-oauth-browser-based-apps-25` (sections 5, 6.1 and its abstracts); Pang et al. 2019 (the
 two examples of the new enemy); Saltzer and Schroeder 1975 (the principles named); OpenID Connect Core 1.0 (`sub`, a
-subject "locally unique and never reassigned" within its issuer; `aud`, `nonce`, `auth_time`); OpenID Connect
-Back-Channel Logout 1.0 (what it is for). WebAuthn Level 3 (the relying party verifies that the client data's
-`challenge` is the one it gave, and its `origin`). None was read through. **Not reached:** Hardy 1988, for the confused
-deputy, cited for what is generally reported of it.
+subject "locally unique and never reassigned" within its issuer; `aud`, `nonce`, `auth_time`; 15.5.2, a hash of a
+session's value as the `nonce`); OWASP's Session Management Cheat Sheet (the session id renewed after a change of
+privilege); OpenID Connect Back-Channel Logout 1.0 (what it is for). WebAuthn Level 3 (the relying party verifies that
+the client data's `challenge` is the one it gave, and its `origin`). None was read through. **Not reached:** Hardy 1988,
+for the confused deputy, cited for what is generally reported of it.

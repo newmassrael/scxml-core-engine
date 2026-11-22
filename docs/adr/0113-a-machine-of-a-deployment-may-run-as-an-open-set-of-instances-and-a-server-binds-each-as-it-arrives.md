@@ -2,7 +2,8 @@
 
 - Status: Accepted (2026-11-22, by the owner). Its model (D8) was written and checked the same day, before any code, and
   amended D4 and D5. What TLC found and what was seen while writing the model are told apart in D8. Amended 2026-11-22
-  by the owner: `if-match` in what a request signs (D4).
+  by the owner: what is signed (D4), the judgement as a condition of the write (D5), and an offer that waits for a proof
+  (D4, ADR 0116).
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,
@@ -99,20 +100,25 @@ stays refused.
   not be taken for a new one).
 - **A member is leased.** Each authenticated exchange renews its lease (`lease_ms`); an offer and a member whose
   messages no session kept live only `provisional_ms` (ADR 0109 D1, "a session is kept only once its document keeps
-  it"). A name that arrives once and goes away costs that, which the rate limits of §22.4 bound.
+  it"). An offer that waits for a person's proof (ADR 0116 D2) lives `login_ms` and is confirmed only by the exchange
+  that carries the proof. A name that arrives once and goes away costs that, which the rate limits of §22.4 bound.
 - **An incarnation the server does not hold is fenced.** The exchange is answered **`412`** (RFC 9110 §15.5.13: the
   condition of `If-Match` is false) and takes nothing in. The client's core ends each request still waiting as *outcome
   unknown* (a row of §16.7 of its own), reports every envelope it had not seen acknowledged, and joins anew; the
   document decides whether to ask again (the end-to-end argument). `410` says a resource is gone for good and is
   cacheable by default; the resource here is named again by the next join, and `412` is what a false precondition
   answers.
-- **The incarnation a request stands on is signed.** Under the `key` authenticator (SCE_MESH.md §22.9) a request's
-  signature covers, after `sce-mesh-epoch` and when the request carries one, `if-match`. §22.9 has a verifier build the
-  list it expects from what the message carries and refuse a signature that covers another, so an intermediary that
-  reads the exchange can neither change the incarnation, take it off nor add one. The incarnation is a value the server
-  drew, so a request signed ahead of the offer is of no use under it: what RFC 9449 section 8 has a server's nonce for,
-  once per incarnation and not once per request. (Added at the owner's order of 2026-11-22, before step 4 is built,
-  which lands §22.9's change.)
+- **Only what is signed changes what a party holds.** Under the `key` authenticator (SCE_MESH.md §22.9) every field the
+  binding defines and a party acts on is a row of one table: its name, its direction, when it is carried. The signer and
+  the verifier build what they cover from that table, and a field is read through it, so one that is not a row cannot be
+  read. A request thereby signs `if-match` and the low-water mark of D5, and a response `etag`. RFC 9421 section 7.2.1
+  says why: the verifier should trust only what was signed. The rule is of every answer and not of `200` alone: an
+  answer that changes what the client holds (`200`, the fence's `412`) is signed over its `@status` and the request it
+  answers, and one that is not signed, or is of any other status, is to a client that verifies no more than an exchange
+  that failed at the transport. A binding of an open machine under `key` names both `sign:` and `verify:`, and is
+  refused where the deployment is built without either. The incarnation is a value the server drew, so a request signed
+  ahead of the offer is of no use under it. (Amended by the owner, 2026-11-22, before step 4 is built, which lands
+  §22.4's and §22.9's change.)
 - **What is forgotten together is dropped together**: a member's records, window and outbox end with its lease, an
   outbox that still owes what `retain_ms` keeps ending first (ADR 0109 D10).
 
@@ -129,7 +135,11 @@ another and a single mark cannot tell a repeat (the second draft had one). The f
 - The session that runs a request writes a **completion record** (incarnation, number, the answer) in the write that
   keeps its effect; a repeat is answered from the record.
 - The edge admits a request only under the current incarnation and at or above the mark. The session judges both
-  **again as it runs**, since the mark may have moved while the request waited in its inbox.
+  **again as it runs**, since the mark may have moved while the request waited in its inbox. The last judgement of the
+  incarnation is the store's: the write that keeps a run names each incarnation the run was made under (`Write::under`),
+  and is refused whole, writing nothing, when the store no longer holds one (`Conflict::Incarnation`). The session is
+  then restored from what the store keeps and goes on with what is not fenced. So nothing is kept of a run after its
+  incarnation ended, whichever process ended it and whenever the run began.
 - A record is dropped below the mark **the store holds**, not below the one the process has seen: a crash takes the
   latter back, and a repeat admitted under the earlier mark would run again.
 - What a session holds for a member is therefore at most the requests the member has in flight (its `window`, §10.11).
@@ -176,6 +186,10 @@ Each part is shown to be needed: with one of them taken out, TLC must find a vio
 | the second judgement in the session | a request that takes effect twice |
 | the durable mark for dropping records | a request that takes effect twice |
 | keeping a live member's records (eviction) | a request that takes effect twice |
+| the signature over a request's incarnation | a request that takes effect twice: one of an ended incarnation, given the next one's |
+| the signature over a request's mark | a request that never ends: the mark is raised past it |
+| the signature over the incarnation an offer names | an undisturbed instance that loses an outcome |
+| the signature over the answer that fences | an undisturbed instance that loses an outcome |
 
 **What TLC found** that the second draft did not have: an empty poll under an offer was fenced, and the request after it
 ended unknown. TLC also answered a question the draft did not ask: the handshake is not needed for at-most-once (the
@@ -188,7 +202,7 @@ mark per member cannot serve several sessions was read from RIFL, not run: no co
 
 The model is bounded: it does not cover the outbox direction (ADR 0109 D10), more than two requests in flight, or the
 cryptography of an authenticator. Its messages are the parties' own: on a link an intermediary reads, that stands on
-what §22.9 signs (D4; open questions 3 and 4).
+what §22.9 signs (D4), and each of the four parts signed is taken out in a run of its own.
 
 ### Not in scope
 
@@ -231,11 +245,5 @@ Decided with the acceptance, each with its reason.
 1. The status of a fenced exchange: `412` with `If-Match` (D4).
 2. A host of one endpoint, not a pool, keeps the membership store too: the same contract, so one rule.
 
-Open to the owner, found while writing the signature of D4 (2026-11-22):
-
-3. Whether a request's signature covers D5's low-water mark too. Recommended: yes, where it is a header of its own. An
-   intermediary that raises an unsigned mark makes the server drop a completion record whose request may come again, and
-   it takes effect twice.
-4. Whether a response's signature, under `sign:`, covers `etag` when the response carries one. Recommended: yes. An
-   intermediary that changes it offers a client an incarnation the server never drew, whose first exchange is then
-   fenced.
+3. Which fields a signature covers: every one the binding acts on, by one table (D4), and not a list that grows as a
+   field is found missing. Decided by the owner, 2026-11-22.
