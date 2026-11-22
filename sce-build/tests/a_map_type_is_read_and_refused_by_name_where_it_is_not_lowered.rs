@@ -16,7 +16,7 @@ use std::process::Command;
 
 use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};
-use sce_build::forge::model::ForgeDocument;
+use sce_build::forge::model::{AlgorithmStmt, ForgeDocument};
 use sce_build::forge::parser::parse_forge;
 use sce_build::DocumentLabel;
 
@@ -79,8 +79,16 @@ fn cbor_codec(ty: &str) -> String {
     )
 }
 
-/// An algorithm that takes `param` and holds the local `local`.
+/// An algorithm that takes `param` and holds the local `local`. A scalar
+/// local starts at `0`; a map, a set or a list starts empty and takes no
+/// `init` (docs/adr/0108, D5), so the document is refused, where it is, for
+/// the types it holds alone.
 fn algorithm(param: &str, local: &str) -> String {
+    let init = if local.contains('<') {
+        ""
+    } else {
+        r#" init="0""#
+    };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe" version="1.0">
@@ -89,7 +97,7 @@ fn algorithm(param: &str, local: &str) -> String {
     <sce:return type="int64"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="held" type="{}"/>
+    <sce:var name="held" type="{}"{init}/>
     <sce:return expr="1"/>
   </sce:body>
 </scxml>
@@ -322,16 +330,37 @@ fn a_map_variable_is_checked_and_a_map_inside_another_type_is_refused_by_name() 
     );
 }
 
-/// docs/adr/0108, D10: no algorithm's slot holds a map yet, a parameter, a
-/// local or an element of a list, each refused by name with the record that
-/// lands it.
+/// docs/adr/0108, D5 and D10: an algorithm's slot holds a map or a set whole,
+/// a parameter as a local does, and is read with the type as written; one held
+/// inside another type, a list's element, is refused by name with the record
+/// that lands it.
 #[test]
-fn a_map_in_an_algorithm_slot_is_refused_by_name() {
+fn an_algorithm_slot_holds_a_map_whole_and_refuses_one_inside_another_type() {
     for (param, local) in [
         ("map<uint32, int64>", "int64"),
         ("set<uint32>", "int64"),
         ("int64", "map<uint32, int64>[4]"),
+    ] {
+        let held = match parse_forge(&algorithm(param, local), label()) {
+            Ok(Some(ForgeDocument::Algorithm(m))) => m,
+            other => panic!("{param} / {local}: not an algorithm: {other:?}"),
+        };
+        let local_type = held
+            .body
+            .iter()
+            .find_map(|stmt| match stmt {
+                AlgorithmStmt::Var { sce_type, .. } => Some(sce_type.to_string()),
+                _ => None,
+            })
+            .expect("the local");
+        assert_eq!(
+            (held.signature.params[0].sce_type.to_string(), local_type),
+            (param.to_string(), local.to_string()),
+        );
+    }
+    for (param, local) in [
         ("list<map<uint8, bool>[2]>", "int64"),
+        ("int64", "list<set<uint8>[2]>[3]"),
     ] {
         let refused = parse_forge(&algorithm(param, local), label()).expect_err(param);
         assert_eq!(
