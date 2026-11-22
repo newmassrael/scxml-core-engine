@@ -31,6 +31,10 @@ use serde_json::{json, Value};
 
 const MANIFEST: &str = env!("CARGO_MANIFEST_DIR");
 
+/// How a test finds the shared library of a package, shared with the other tests that load a C ABI.
+#[path = "../../test-support/shared_library.rs"]
+mod shared_library;
+
 fn scenario_path() -> PathBuf {
     Path::new(MANIFEST).join("tests/fixtures/two_devices_and_a_relay.json")
 }
@@ -1358,37 +1362,10 @@ fn have(tool: &str, version_flag: &str) -> bool {
 }
 
 /// The shared library this crate builds, which the lanes load. A test binary links the Rust library
-/// and does not build the shared one, so it is built here, into the same target directory.
+/// and does not build the shared one, so it is built here, into the same target directory, and
+/// found where cargo says it put it.
 fn library() -> PathBuf {
-    let exe = std::env::current_exe().unwrap();
-    let profile_dir = exe.parent().unwrap().parent().unwrap().to_path_buf();
-    let mut build = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()));
-    build
-        .args(["build", "--lib", "--locked", "--manifest-path"])
-        .arg(Path::new(MANIFEST).join("Cargo.toml"));
-    if profile_dir
-        .file_name()
-        .is_some_and(|name| name == "release")
-    {
-        build.arg("--release");
-    }
-    let output = build.output().expect("cargo runs");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    for name in [
-        "libsce_peer_capi.so",
-        "libsce_peer_capi.dylib",
-        "sce_peer_capi.dll",
-    ] {
-        let path = profile_dir.join(name);
-        if path.exists() {
-            return path;
-        }
-    }
-    panic!("the shared library is not in {}", profile_dir.display());
+    shared_library::shared_library(&Path::new(MANIFEST).join("Cargo.toml"), "sce_peer_capi")
 }
 
 fn replay_in(command: &mut Command, what: &str, steps: usize) {

@@ -34,7 +34,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path as FilePath, PathBuf};
-use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use sce_rust_mesh::endpoint::Sealer;
@@ -131,49 +130,22 @@ pub fn ample() -> Limits {
     }
 }
 
+/// How a test finds the shared library of a package, shared with the ABI's own lane tests.
+#[path = "../../../test-support/shared_library.rs"]
+mod shared_library;
+
 /// The peer core's shared library (`sce-rust-peer-capi`), which a Kotlin device loads. A test
 /// binary links Rust libraries and builds no shared one, so it is built here, once for the
-/// binary, into the target directory the test runs from, as the ABI's own lane tests build it.
+/// binary, into the target directory the test runs from, as the ABI's own lane tests build it,
+/// and found where cargo says it put it.
 pub fn peer_library() -> PathBuf {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT
         .get_or_init(|| {
-            let exe = std::env::current_exe().expect("the test knows where it runs from");
-            let profile = exe
-                .parent()
-                .and_then(FilePath::parent)
-                .expect("a test runs from deps/ of a profile's directory")
-                .to_path_buf();
-            let manifest =
-                FilePath::new(env!("CARGO_MANIFEST_DIR")).join("../peer-capi/Cargo.toml");
-            let mut build =
-                Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()));
-            build
-                .args(["build", "--lib", "--locked", "--manifest-path"])
-                .arg(&manifest);
-            if profile.file_name().is_some_and(|name| name == "release") {
-                build.arg("--release");
-            }
-            let output = build.output().expect("cargo runs");
-            assert!(
-                output.status.success(),
-                "the peer core's shared library did not build:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            [
-                "libsce_peer_capi.so",
-                "libsce_peer_capi.dylib",
-                "sce_peer_capi.dll",
-            ]
-            .iter()
-            .map(|name| profile.join(name))
-            .find(|path| path.exists())
-            .unwrap_or_else(|| {
-                panic!(
-                    "no shared library of the peer core in {}",
-                    profile.display()
-                )
-            })
+            shared_library::shared_library(
+                &FilePath::new(env!("CARGO_MANIFEST_DIR")).join("../peer-capi/Cargo.toml"),
+                "sce_peer_capi",
+            )
         })
         .clone()
 }
