@@ -22,10 +22,12 @@
   - the documents: `docs/SCE_SERVER_DEPLOY.md` and `docs/SCE_HOST_FEATURES.md` section 9 brought to all of it (step
     15).
   D8's re-seal passes of the outboxes and the audit log (`Sealed::reseal_outboxes`, `Sealed::reseal_audit`) landed
-  after step 15, so that every row a sealed store holds has one. Not landed: step 16 (D18, on measured need); D9's
-  record-level half (after ADR 0101's steps 4a and 4b); an in-place upgrade under load in the server suite
-  ("Conformance"); Open questions 5, 7, 8 and 9; and the later backend steps of D0. Where a landing differs from the
-  text of a decision, an "Amended on landing" note under it says what landed and why.
+  after step 15, so that every row a sealed store holds has one. D9's record-level half (`sce:payload` on the four
+  COSE operations, Rust and C++) landed after ADR 0101's steps 4a and 4b, as its "Landed" note under D9 says, and
+  Open question 9 (a `<log>` honours `sce:sensitivity`, on every lane) as its own note says. Not landed: step 16
+  (D18, on measured need); an in-place upgrade under load in the server suite ("Conformance"); Open questions 5, 7
+  and 8; and the later backend steps of D0. Where a landing differs from the text of a decision, an "Amended on
+  landing" note under it says what landed and why.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0109" line in the landing that moves it):
   - `SCE_MESH.md` §10.5 (the windows an endpoint keeps are bounded by its links, D1), §10.11 (`persistence:` and

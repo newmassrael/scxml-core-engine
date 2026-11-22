@@ -47,6 +47,7 @@ says of "the program" is what such a program must do.
 | The `https` client, Rust | `sce_rust_mesh::https::client::HttpsClient` over `HyperTransport` | SCE_MESH.md sections 22.6 and 22.8 |
 | The `https` client, C++ | the generated `TransportRouter`'s `https` arm over `SCE::Mesh::HttpsTransport`, with `CurlHttpsTransport` or `WinHttpHttpsTransport` | SCE_MESH.md sections 22.6 and 22.8 |
 | Message signatures: a `200` signed by the server's `sign` key and verified by a client under `verify:`, a request signed under the `key` authenticator | `sce_rust_mesh::https::signature` (server and Rust client); `SCE::Mesh::Https::Signatures` (C++ client), on libsodium | ADR 0109, D9; SCE_MESH.md section 22.9 |
+| A record signed and sealed by name and kept beyond the exchange: a machine's record signed, verified, sealed and opened as its deterministic CBOR, a record of an earlier revision read with the later revision's defaults | `sce:payload` on the four COSE operations; the record codecs `sce_rust_runtime::record_cbor` and `common/RecordCbor.h` | ADR 0109, D9; docs/SCE_HOST_FEATURES.md section 10 |
 | A durable client's outbox: what a session sends it kept in the store, appended by the write of the session's checkpoint, until the client acknowledges it; its window and its expiry | `SessionStore::write` and the outbox calls of `sce-rust-session-store` (`SqliteStore` from layout 5, sealed under `Sealed`); `sce_rust_mesh::outbox::Outboxes`, kept by the pool (`Pool::outboxes`, `Pool::expire`) and answered from by the server (`HttpsServer::keep_outboxes`) | ADR 0109, D10; SCE_MESH.md sections 10.11 and 22.3 |
 | The orderly stop: the server answers what it holds and takes nothing in, the pool saves every session as a clean checkpoint | `HttpsServer::stop`, `Pool::stop` | ADR 0109, D10; SCE_MESH.md sections 14.4 and 22.4 |
 | Group commit: the checkpoints of many sessions and the acknowledgements of durable clients written in one transaction, each answered once it is durable; the server tells its host per client | `sce_rust_mesh::commit::Committer` (`Pool::committer`) over `SessionStore::write_many` (`SqliteStore`: one savepoint per write, one sync; sealed under `Sealed`); `ServerHost::deliver` called at once for different clients | ADR 0109, D15; SCE_MESH.md sections 10.11, 14.4 and 22.8 |
@@ -85,11 +86,8 @@ Not built, and a server must not count on them:
 - A client of the `https` binding on the Kotlin and Swift host cores (SCE_MESH.md section 22.8).
 - The removal of expired and revoked tokens from the credential store: a revoked token is kept so that an issue
   repeated under its identity cannot make it live again, and no call of the store removes one (section 5).
-- A record signed by name and kept beyond the exchange (`sce:payload`, ADR 0107 Open question 1): ADR 0109 D9's
-  record-level half, a later step after ADR 0101's steps 4a and 4b. Message signatures cover one exchange.
-- What ADR 0109 leaves to records or steps of their own (its Open questions 5, 7, 8 and 9): a migration from a state
-  of another product-line configuration, a signed payload of megabytes, a trace context in an envelope, and a
-  `<log>` that honours `sce:sensitivity`, so a value the audit log redacts is written by `<log>` as it is.
+- What ADR 0109 leaves to records or steps of their own (its Open questions 5, 7 and 8): a migration from a state of
+  another product-line configuration, a signed payload of megabytes, and a trace context in an envelope.
 - The facilities of ADR 0109 on Kotlin, Go, Python, Swift and C11 (its D0): a build for one of them refuses a
   document that asks for one by name.
 
