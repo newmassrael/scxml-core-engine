@@ -2648,12 +2648,15 @@ CBOR map integer keys (wire-stable):
 | 18 | child_session_id | no | string — §9.6.2 wire-15/16/18 child session id `<parent machine>:<invoke id>`, an XML Nmtoken |
 | 19 | causal_epoch | no | uint64 — the view's epoch on a causal route; §10.12 |
 | 20 | causal_vector | no | array of at most 64 maps `{hi, lo, seq}` — the sender's own entry first, then its delivered vector; §10.12 |
+| 21 | instance | no | string of 1 to 64 characters of `A-Z a-z 0-9 . _ -` — which instance of an open machine sends (`instances: open`, docs/adr/0113, D1); absent when the sending machine is not open |
 
 Unknown integer keys MUST be skipped by readers. New fields use unused integers; never reuse.
 
 Pattern value 22 is assigned to `DurableReceipt`, the acknowledgement of §10.11's durable receipt (receiver to sender, `sequence_no` the acknowledged mark, no other key). It is `durableReceipt` in `sce:std/mesh/pattern_kind`, and only a core that carries durable receipt sends it (the Rust host core); the C++ `PatternKind.h` leaves it out, since its build refuses a durable binding. On a durable binding key 14 is stamped on every envelope, not only on an ordered route. No key is added for either.
 
 Pattern value 23 is `CausalVector`, the one control message of a causal route (§10.12): keys 19 and 20 carry its sender's epoch and delivered vector, `type` is the empty text, `datacontenttype` `None` and `data` empty. It never reaches an engine; a core that carries no causal route drops it.
+
+Key 21 is the second axis of a sender's identity on a binding to an open machine (docs/adr/0113, D1): `source` stays the machine's name and `instance` is the one of its copies that sends. `sce:std/mesh/envelope` declares it and every generated codec holds it to its bound; a core that serves no open machine, which is every one but the Rust host core, writes none and skips one it reads, and its build refuses a deployment that declares an open machine (`mesh/codegen-open-instances-unsupported`). The C++ `MeshEnvelope` leaves it out for that reason.
 
 **Low-overhead path (game/MMORPG)**: a deploy.yaml binding may declare `codec: typed` + `correlation: none` + omit `subject`/`reply_to`. The resulting envelope serializes to ~12-18 bytes (id + source + type + pattern + codec + data length + payload), comparable to bespoke binary protocols while remaining within CBOR.
 

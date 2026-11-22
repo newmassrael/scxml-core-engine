@@ -365,10 +365,10 @@ private final class LayerWorld {
         return envelope
     }
 
-    /// The wire. A tag is written as keys 19 and 20, the highest keys, so it ends the map: the epoch,
-    /// then an array of one map per entry, its keys as text in RFC 8949 order (`hi`, `lo`, `seq`), the
-    /// same bytes the Rust core's golden tail holds. Red if a core numbers either key otherwise, or
-    /// writes an entry's fields in another order.
+    /// The wire. A tag is written as keys 19 and 20, the highest keys of an envelope with no instance,
+    /// so it ends the map: the epoch, then an array of one map per entry, its keys as text in RFC 8949
+    /// order (`hi`, `lo`, `seq`), the same bytes the Rust core's golden tail holds. Red if a core
+    /// numbers either key otherwise, or writes an entry's fields in another order.
     @Test func aTagIsWrittenAsKeys19And20AndReadBack() throws {
         let tag = CausalTag(epoch: 0, vector: [CausalEntryPayload(hi: 1, lo: 2, seq: 3)])
         let bytes = try encodeEnvelope(stamped(plainEnvelope(), with: tag))

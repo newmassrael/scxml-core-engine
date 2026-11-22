@@ -175,7 +175,10 @@ std::optional<GenEnvelope> toGenerated(const MeshEnvelope &env) {
         return std::nullopt;
     }
     // qos (key 13) is reserved and never written: no transport consumes it,
-    // and the standard document does not declare it.
+    // and the standard document does not declare it. An instance (key 21) is a
+    // machine's that runs as an open set of them, and the build refuses this
+    // router one (docs/adr/0113, D7): MeshEnvelope holds none, so none is
+    // written here and one read is skipped, as a key no one knows is.
     return GenEnvelope{
         /*id=*/*id,
         /*source=*/*source,
@@ -197,6 +200,7 @@ std::optional<GenEnvelope> toGenerated(const MeshEnvelope &env) {
         /*child_session_id=*/childSessionId,
         /*causal_epoch=*/env.causal_epoch,
         /*causal_vector=*/causalVector,
+        /*instance=*/std::nullopt,
     };
 }
 

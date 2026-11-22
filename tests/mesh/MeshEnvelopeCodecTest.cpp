@@ -569,6 +569,42 @@ TEST(MeshEnvelopeCodecTest, InvokeErrorRoundTrip) {
     EXPECT_EQ(env, decoded);
 }
 
+// ── An instance of an open machine (docs/adr/0113) ───────────────────
+
+TEST(MeshEnvelopeCodecTest, AnInstanceIsSkippedAndHeldToItsBound) {
+    // Key 21 names an instance of a machine that runs as an open set of them,
+    // which this router serves none of: the entry is skipped and the rest of
+    // the envelope read, as with a key it does not know, and an envelope
+    // written here carries none. The bound is the wire's, so a longer one is
+    // no envelope. Red if the key is numbered otherwise, or its bound is not
+    // held.
+    const MeshEnvelope env = minimalEnvelope();
+    const auto plain = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(plain.empty());
+    ASSERT_EQ(plain[0], 0xA6);  // the six required entries alone
+
+    const auto withInstance = [&plain](std::size_t length) {
+        std::vector<uint8_t> wire = plain;
+        wire[0] = 0xA7;
+        // Key 21, then a text head of one length byte.
+        for (const uint8_t byte : {uint8_t{0x15}, uint8_t{0x78}, static_cast<uint8_t>(length)}) {
+            wire.push_back(byte);
+        }
+        wire.insert(wire.end(), length, 'a');
+        return wire;
+    };
+
+    const auto longest = withInstance(64);
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(longest.data(), longest.size(), decoded));
+    EXPECT_EQ(env, decoded);
+    EXPECT_EQ(SCE::Mesh::encodeEnvelope(decoded), plain);
+
+    const auto past = withInstance(65);
+    MeshEnvelope refused;
+    EXPECT_FALSE(SCE::Mesh::decodeEnvelope(past.data(), past.size(), refused));
+}
+
 // ── A causal route's tag (SCE_MESH.md, section 10.12) ─────────────────
 
 namespace {
@@ -596,12 +632,12 @@ MeshEnvelope causalVectorEnvelope() {
 }  // namespace
 
 TEST(MeshEnvelopeCodecTest, CausalTagIsWrittenAsKeys19And20AndReadBack) {
-    // The wire. A tag is keys 19 and 20, the highest keys, so it ends the
-    // map: the epoch, then an array of one map per entry, its keys as text in
-    // RFC 8949 order (`hi`, `lo`, `seq`). The same bytes as the Rust core's
-    // golden. Red if this core numbers either key otherwise, writes an
-    // entry's fields in another order, or drops the tag on either half of
-    // the codec.
+    // The wire. A tag is keys 19 and 20, the highest keys of an envelope with
+    // no instance, so it ends the map: the epoch, then an array of one map per
+    // entry, its keys as text in RFC 8949 order (`hi`, `lo`, `seq`). The same
+    // bytes as the Rust core's golden. Red if this core numbers either key
+    // otherwise, writes an entry's fields in another order, or drops the tag
+    // on either half of the codec.
     const MeshEnvelope env = causalVectorEnvelope();
     const auto bytes = SCE::Mesh::encodeEnvelope(env);
     ASSERT_FALSE(bytes.empty());
