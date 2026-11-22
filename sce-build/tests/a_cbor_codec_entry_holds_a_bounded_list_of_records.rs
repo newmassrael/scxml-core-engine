@@ -746,9 +746,12 @@ const DIGEST_ENTRY: &str = r#"    <data id="n" sce:type="list&lt;record:DigestEn
 
 #[test]
 fn a_record_byte_string_is_held_to_its_bound_by_the_encode() {
-    // The schema's Rust unit holds the byte string in `Vec<u8>`, which carries
-    // no bound, so a record past it has no encoding: the codec states its
-    // encode may fail or is refused at the entry.
+    // A unit that holds the byte string in its language's own vector (C++,
+    // Kotlin, Go, Python) holds a record past its bound, which has no encoding,
+    // and the plan is the document's on every lane: the codec states its encode
+    // may fail or is refused at the entry. The Rust unit holds the byte string
+    // in the `SceBytes<4>` of its bound, which the read builds and the check,
+    // the plan's one reading, measures.
     let why = generated(
         &document("", DIGEST_IMPORT, DIGEST_ENTRY),
         "probe_list",
@@ -777,7 +780,7 @@ fn a_record_byte_string_is_held_to_its_bound_by_the_encode() {
         "fn check_record_cbor_digest_entry(record: &cbor_digest_entry::CborDigestEntryPayload) -> Result<(), CodecError> {",
         "if record.digest.len() > 4 {",
         "check_record_cbor_digest_entry(item)?;",
-        "cbor::read_bytes(c, Some(4))?.to_vec()",
+        "::sce_forge_runtime::codec::SceBytes::<4>::from_slice(cbor::read_bytes(c, Some(4))?)?",
         "cbor::write_bytes(w, record.digest.as_slice())?;",
     ] {
         assert!(rust.contains(expected), "missing `{expected}`:\n{rust}");

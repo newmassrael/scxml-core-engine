@@ -3621,3 +3621,27 @@ names none generates the bytes it generated before.
   of three members, a default that is no value of its field or is followed by a byte, and a default on an optional
   field, as a description it cannot read. A machine generated before this form is regenerated with the runtime
   that reads it; a host that writes a description by hand writes the fourth member.
+
+## A Rust event-schema unit holds a bounded byte string in `SceBytes<N>` (ADR 0086 §7.4, ADR 0108 D6 item 4)
+
+Landing: the commits that add this section. Every Rust unit generated from an event schema with a `bytes[N]` field
+is regenerated; no committed generated tree holds one.
+
+- What changed: a `bytes[N]` field of an event schema's Rust unit (`<schema>::<Schema>Payload`) is
+  `::sce_portable_bytes::SceBytes<N>`, the one byte-string type of its bound, which a machine's record, a composed
+  value and a statechart's typed payload already hold it in. It was `Vec<u8>`; a bounded text was already
+  `SceString<N>`. A record therefore crosses between a machine and its unit as it is, a map holds a record with a
+  byte string in its unit's type and is keyed by one (a unit whose every field is a key, a byte string among them,
+  implements `MapKey`), a CBOR codec that holds such a record reads the field into the type of its bound, and a test
+  template builds it as `sce_bytes!`. A unit with a byte string now compiles on the profile without `alloc`.
+- What stops compiling: a consumer's code that builds the unit's struct with a `Vec<u8>` (`body: bytes.to_vec()`,
+  `body: vec![..]`), that moves the field into a `Vec<u8>` (`let held: Vec<u8> = payload.body;`), or that grows it
+  through a `Vec` method (`push` and `extend_from_slice` answer a `Result` now, refusing past `N`). A read of the
+  field as a slice keeps compiling: `SceBytes<N>` derefs to `[u8]`, so `&payload.body`, `payload.body.len()`,
+  `payload.body[..]` and `payload.body == b"ab"` mean what they meant. A crate that includes a unit holding a byte
+  string and no bounded text named no `sce-portable-bytes` before and must now depend on it directly, as "A Rust
+  record or enum unit is a key of a map" says of a unit that names the crate.
+- How to write it now: build the field from a slice that fits, `SceBytes::<N>::from_slice(&bytes)?`, which refuses
+  one past `N` with `CapacityExceeded`, or from a literal judged where it is written,
+  `sce_portable_bytes::sce_bytes!(N, b"ab")`, which does not compile when it does not fit. Take the bytes out as
+  `payload.body.as_slice().to_vec()`, or `payload.body.into_vec()` where `sce-portable-bytes/alloc` is on.
