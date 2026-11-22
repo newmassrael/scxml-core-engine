@@ -5905,7 +5905,7 @@ mod tests {
     /// docs/adr/0108, D12: a map whose value is a map is saved as its entries
     /// in order, each inner map as its own entries in its order, and read back
     /// whole, by the values' own readers or by readers handed to
-    /// `map_from_saved` and `map_to_saved`, in either storage. An inner map
+    /// `map_from_saved` and `map_to_saved`, in any storage. An inner map
     /// with a key twice, or past its bound, is refused naming its place, as an
     /// outer one is; one key under two outer keys is two entries. A map whose
     /// value is a list is saved and read back alike, each list held to its
@@ -5949,6 +5949,16 @@ mod tests {
             crate::BoundedMap<u32, crate::BoundedMap<u32, u8, 2, crate::Inline>, 2, crate::Inline>;
         let inline = InlineRegions::from_saved(&saved, "regions").expect("restores inline");
         assert_eq!(inline.to_saved(), saved);
+        type LinearRegions =
+            crate::BoundedMap<u32, crate::BoundedMap<u32, u8, 2, crate::Linear>, 2, crate::Linear>;
+        let linear = LinearRegions::from_saved(&saved, "regions").expect("restores with no index");
+        assert_eq!(linear.to_saved(), saved);
+        assert!(linear
+            .get(&5u32)
+            .expect("held")
+            .iter()
+            .map(|(face, weight)| (*face, *weight))
+            .eq([(9, 1), (3, 2)]));
 
         let twice = Regions::from_saved(&json_of("[[5,[[9,1],[9,2]]]]"), "regions")
             .expect_err("an inner key twice");

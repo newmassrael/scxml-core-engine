@@ -326,10 +326,11 @@ pub use sce_portable_bytes as portable;
 /// (`portable::map::value_mut`), are `portable::map`'s functions. A
 /// machine's map is kept in the default storage (`DefaultMapStorage`); a host
 /// names `MapStorage`'s `Inline` for a map of its own that must never
-/// allocate (`portable::Heap` under the leaf crate's `alloc` feature).
+/// allocate (`portable::Heap` under the leaf crate's `alloc` feature), and
+/// `Linear` for a small map that must never allocate and keeps no hash index.
 pub use sce_portable_bytes::{
-    BoundedMap, BoundedSet, DefaultMapStorage, FromSeed, Inline, KeyFeed, MapCursor, MapKey,
-    MapSeed, MapSeeds, MapStorage, PutOutcome, RemoveOutcome,
+    BoundedMap, BoundedSet, DefaultMapStorage, FromSeed, Inline, KeyFeed, Linear, MapCursor,
+    MapKey, MapSeed, MapSeeds, MapStorage, PutOutcome, RemoveOutcome,
 };
 
 /// A seed for the maps of one machine, drawn from the operating system's
