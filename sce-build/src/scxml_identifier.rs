@@ -156,6 +156,13 @@ pub enum Grammar {
     /// A reference to such a name through the records that hold it —
     /// `header.S`, `telemetry.reset`: code identifiers joined by `.`.
     CodePath,
+    /// A place a statechart's statement writes through a map
+    /// (docs/adr/0108, D12 rule 1): a code identifier followed by `.field`
+    /// steps, each a code identifier, and `[key]` steps, each an expression
+    /// the statement's judge reads as one: `slots[k]`, `rows[peer].tags`.
+    /// Only the names are this grammar's; a key is held to the expression
+    /// grammar where the statement is judged.
+    CodePlace,
 }
 
 /// Which pipeline reads the document, and so which grammar its `<data id>`
@@ -354,6 +361,7 @@ fn production(grammar: Grammar) -> &'static str {
         Grammar::EventName => "event name",
         Grammar::CodeIdentifier => "code identifier",
         Grammar::CodePath => "code identifier path",
+        Grammar::CodePlace => "code identifier place",
     }
 }
 
@@ -382,7 +390,83 @@ pub fn offending_token(grammar: Grammar, value: &str) -> Option<&str> {
         Grammar::CodePath => value
             .split('.')
             .find(|segment| !is_code_identifier(segment)),
+        Grammar::CodePlace => offending_place_token(value),
     }
+}
+
+/// The first part of the place `value` ([`Grammar::CodePlace`]) that is not
+/// one: a name, at the start or after a `.`, that is no code identifier (an
+/// empty one among them), a `[` whose key is empty or whose `]` never comes,
+/// or anything else where a step should begin. A key is read up to the `]`
+/// that closes it, past the brackets it holds and past a `]` inside a quoted
+/// text, and is left whole to the expression grammar.
+fn offending_place_token(value: &str) -> Option<&str> {
+    let name_end = |from: usize| {
+        value[from..]
+            .find(['.', '['])
+            .map_or(value.len(), |at| from + at)
+    };
+    let end = name_end(0);
+    if !is_code_identifier(&value[..end]) {
+        return Some(&value[..end]);
+    }
+    let mut at = end;
+    while at < value.len() {
+        let rest = &value[at..];
+        if let Some(after) = rest.strip_prefix('.') {
+            let from = value.len() - after.len();
+            let end = name_end(from);
+            if !is_code_identifier(&value[from..end]) {
+                return Some(&value[from..end]);
+            }
+            at = end;
+        } else if rest.starts_with('[') {
+            let Some(close) = closing_bracket(rest) else {
+                return Some(rest);
+            };
+            if rest[1..close].trim().is_empty() {
+                return Some(&rest[..=close]);
+            }
+            at += close + 1;
+        } else {
+            return Some(rest);
+        }
+    }
+    None
+}
+
+/// The position in `text`, which begins with `[`, of the `]` that closes
+/// it, counting the brackets nested inside and passing over a quoted text
+/// (`'…'` or `"…"`, a backslash escaping the character after it); `None`
+/// where none closes it.
+fn closing_bracket(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (at, c) in text.char_indices() {
+        if let Some(open) = quote {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == open {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '\'' | '"' => quote = Some(c),
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The grammar `dialect` holds `node`'s unqualified attribute `attr` to, or
@@ -404,7 +488,19 @@ fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Gr
             }
             IDENTIFIER_ATTRIBUTES
         }
-        Some(crate::forge::model::SCE_NAMESPACE) => SCE_IDENTIFIER_ATTRIBUTES,
+        Some(crate::forge::model::SCE_NAMESPACE) => {
+            // A statechart's statement of a list, a map or a set writes a
+            // place, which may be held at a key of a map (docs/adr/0108, D12
+            // rule 1): its names are code identifiers and its keys are
+            // expressions. An algorithm's statement names its own local.
+            if dialect == Dialect::Statechart
+                && attr == "target"
+                && matches!(element, "append" | "put" | "remove" | "clear")
+            {
+                return Some(Grammar::CodePlace);
+            }
+            SCE_IDENTIFIER_ATTRIBUTES
+        }
         _ => return None,
     };
     table
@@ -1083,7 +1179,7 @@ pub fn reject_malformed(
                     token,
                     expected,
                 },
-                Grammar::CodeIdentifier | Grammar::CodePath => {
+                Grammar::CodeIdentifier | Grammar::CodePath | Grammar::CodePlace => {
                     ValidationError::MalformedCodeIdentifier {
                         element,
                         attr,
@@ -1138,6 +1234,41 @@ mod tests {
             assert!(
                 offending_token(Grammar::EventName, hostile).is_some(),
                 "event name accepted {hostile:?}"
+            );
+        }
+    }
+
+    /// docs/adr/0108, D12 rule 1: a statement's place holds its names to the
+    /// code identifier, and leaves each key, up to the bracket that closes it,
+    /// to the expression grammar, brackets and quoted brackets inside it
+    /// included; the part that is no name or no step is the one reported.
+    #[test]
+    fn a_place_holds_its_names_to_the_code_identifier_and_leaves_its_keys_to_expressions() {
+        for place in [
+            "m",
+            "m[k]",
+            "m[k][j]",
+            "rows[peer].tags",
+            "m[len(xs) + 1]",
+            "m[xs[0]]",
+            "m['a]b']",
+            "m[_event.data.keyexpr]",
+        ] {
+            assert_eq!(offending_token(Grammar::CodePlace, place), None, "{place}");
+        }
+        for (place, token) in [
+            ("a-b[1]", "a-b"),
+            ("m[1].ta-gs", "ta-gs"),
+            ("m[1].", ""),
+            ("m[]", "[]"),
+            ("m[1", "[1"),
+            ("m[1]x", "x"),
+            ("", ""),
+        ] {
+            assert_eq!(
+                offending_token(Grammar::CodePlace, place),
+                Some(token),
+                "{place}"
             );
         }
     }

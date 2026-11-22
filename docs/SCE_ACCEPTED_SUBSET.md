@@ -3498,7 +3498,11 @@ C, C++, Kotlin, Rust, Go and Python, and forge expressions read them by
 name. Each is held to one grammar, the **code identifier**: an ASCII
 letter or `_`, then ASCII letters, digits or `_`. A reference through a
 record (`header.S`, `telemetry.reset`) is code identifiers joined by
-`.`. A violation is refused at parse, on the attribute's own line, as
+`.`. The `target` of a statechart's `<sce:append>`, `<sce:put>`, `<sce:remove>`
+and `<sce:clear>` is a place (docs/adr/0108, D12): a code identifier followed by
+`.field` steps, each a code identifier, and `[key]` steps, each an expression
+judged as one where the statement is judged (`slots[k]`, `rows[peer].tags`). A
+violation is refused at parse, on the attribute's own line, as
 `validation/malformed-code-identifier`.
 
 A code identifier of that shape is also refused when it is a word one of

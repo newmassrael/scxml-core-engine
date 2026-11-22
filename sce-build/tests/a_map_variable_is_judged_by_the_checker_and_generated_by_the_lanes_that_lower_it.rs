@@ -1744,6 +1744,20 @@ fn a_write_through_a_nested_place_is_judged_and_refused_naming_what_it_takes() {
             rule,
             "target names a list, a map or a set variable",
         ),
+        // A place's names are code identifiers (§2.14); its keys are
+        // expressions, judged as the cases above judge them.
+        (
+            "<sce:put target=\"nested[1]\" key=\"2\" expr=\"3\" outcome=\"putResult\"/>",
+            "<sce:put target=\"nest-ed[1]\" key=\"2\" expr=\"3\"/>",
+            "validation/malformed-code-identifier",
+            "'nest-ed' is not a valid code identifier place",
+        ),
+        (
+            "<sce:append target=\"lists[1]\" expr=\"4\"/>",
+            "<sce:append target=\"lists[1].ta-gs\" expr=\"4\"/>",
+            "validation/malformed-code-identifier",
+            "'ta-gs' is not a valid code identifier place",
+        ),
         (
             "<assign location=\"inner\" expr=\"nested[1]\"/>",
             "<assign location=\"spare\" expr=\"nested[1]\"/>",
