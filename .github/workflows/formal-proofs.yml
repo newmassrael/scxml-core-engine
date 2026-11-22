@@ -1,0 +1,65 @@
+name: Formal Proofs
+
+# The proofs of the host core under Verus (docs/adr/0115, D13), as
+# docs/formal/proofs.json declares them.
+#
+# ## Why a lane of its own
+#
+# It needs the pinned Verus and the Rust release Verus runs on, which is not the one
+# this repository builds with (rust-toolchain.toml) and which no other lane needs. Both
+# are named by the manifest, so the cache is under a key made of that file.
+#
+# ## Why `ci_only` in the registry
+#
+# The build machines carry neither, and no gate installs any part of a toolchain.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'docs/formal/proofs.json'
+      - 'scripts/formal/proofs.py'
+      - 'backends/rust/mesh/src/https/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/formal-proofs.sh'
+      - '.github/workflows/formal-proofs.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/formal/proofs.json'
+      - 'scripts/formal/proofs.py'
+      - 'backends/rust/mesh/src/https/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/formal-proofs.sh'
+      - '.github/workflows/formal-proofs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  formal-proofs:
+    name: Formal Proofs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Restore Verus
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/sce-formal
+          key: verus-${{ hashFiles('docs/formal/proofs.json') }}
+
+      - name: Install the Rust release Verus runs on
+        run: |
+          release="$(python3 -c 'import json; print(json.load(open("docs/formal/proofs.json"))["verus"]["toolchain"])')"
+          rustup toolchain install "$release" --profile minimal --no-self-update
+
+      - name: Formal proofs gate
+        run: scripts/gate formal-proofs

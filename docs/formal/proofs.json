@@ -1,0 +1,73 @@
+{
+  "verus": {
+    "version": "0.2026.11.02.8bf68ee",
+    "url": "https://github.com/verus-lang/verus/releases/download/release/0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip",
+    "sha256": "f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c",
+    "toolchain": "1.99.1"
+  },
+  "proofs": [
+    {
+      "file": "backends/rust/mesh/src/https/client_mailbox.rs",
+      "compiled_by": "backends/rust/mesh/src/https/mod.rs",
+      "decision": "docs/adr/0115",
+      "verified": 11,
+      "mutants": [
+        {
+          "breaks": "a request acknowledges what its host does not hold",
+          "from": "            Some(held) => held.min(self.ack),",
+          "to": "            Some(_) => self.ack,"
+        },
+        {
+          "breaks": "a request acknowledges past what was handed on",
+          "from": "            Some(held) => held.min(self.ack),",
+          "to": "            Some(held) => held,"
+        },
+        {
+          "breaks": "a new incarnation keeps the acknowledgement of the one before",
+          "from": "        self.ack = 0;\n",
+          "to": ""
+        },
+        {
+          "breaks": "a new incarnation keeps what was held in the one before",
+          "from": "            self.held = Some(0);",
+          "to": "            self.held = Some(1);"
+        },
+        {
+          "breaks": "a response of the incarnation its request was sent in is read as new",
+          "from": "        if sent.epoch == Some(epoch) {",
+          "to": "        if false {"
+        },
+        {
+          "breaks": "a report of an incarnation the client left is taken",
+          "from": "        if self.epoch != epoch {",
+          "to": "        if false {"
+        },
+        {
+          "breaks": "a number is passed over that was not handed on",
+          "from": "if taken < first {\n            0",
+          "to": "if taken < first {\n            1"
+        },
+        {
+          "breaks": "a number is handed on twice",
+          "from": "taken - first + 1\n        };",
+          "to": "taken - first\n        };"
+        },
+        {
+          "breaks": "a response of an incarnation the client left moves its acknowledgement",
+          "from": "if !left && self.ack < last {",
+          "to": "if self.ack < last {"
+        },
+        {
+          "breaks": "a response passes the last number there is",
+          "from": "count - 1 > u64::MAX - first",
+          "to": "count - 1 > u64::MAX"
+        },
+        {
+          "breaks": "the acknowledgement is not moved past what was handed on",
+          "from": "            self.ack = last;",
+          "to": "            self.ack = first;"
+        }
+      ]
+    }
+  ]
+}

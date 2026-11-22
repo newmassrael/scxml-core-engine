@@ -15,7 +15,7 @@ this file says what is here and how to read it.
 | 3. Theorem for every size (D3) | | no |
 | 4. A model generated from a document (D7, D8) | | no |
 | 5. A run read against a model (D4) | | no |
-| 6. A function's contract (D10, D13) | | no |
+| 6. A function's contract (D10, D13) | `proofs.json`: the numbers of the `https` client, by Verus | yes, for one module of the host core |
 
 ## The models
 
@@ -47,13 +47,18 @@ A configuration of its own is not enough: `models.json` must declare it, and the
 - a temporal property beside a constraint, a symmetry or a view, under which it may hold for nothing;
 - what must stay possible (`AG EF`, decided over the whole graph) and no run that loses it.
 
+The proofs are `proofs.json`'s, judged by `python3 scripts/formal/proofs.py` (the gate is `formal-proofs`): each file verified
+whole, nothing taken on trust, and each change that breaks what it promises refused.
+
 After a change that moves a count on purpose, `--record` writes the counts TLC found, and the diff is read.
 
 ## What all of this stands on
 
 - **TLC**, the pinned release, and the Java that runs it.
+- **Verus**, the pinned release, its Z3 and the Rust release it runs on; that its reading of Rust is the compiler's.
 - **The bounds** of a configuration: an error past them is not found. A theorem (level 3) is what would say so.
-- **That the model is of the code.** Nothing here reads the code; levels 4 to 6 are what will.
+- **That the model is of the code.** No model reads the code; levels 4 and 5 are what will. A proof (level 6) is of the
+  code it is written on, and the model its preconditions name is read by a person.
 - **That the promise is what was meant.** It is read by a person.
 - What is judged elsewhere and not here: the memory order (GenMC), the bytes of a wire (the conformance kits), and
   cryptography (assumed).
