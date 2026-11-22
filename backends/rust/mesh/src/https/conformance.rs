@@ -87,7 +87,7 @@ use crate::endpoint::{Endpoint, EngineCall, Environment, MESH_PROCESSOR_TYPE};
 use crate::inbound::Delivery;
 use crate::outbound::RetryPolicy;
 use crate::reconnect::Backoff;
-use crate::router::{PeerConfig, Router};
+use crate::router::{PeerConfig, Responders, Router};
 use sce_rust_crypto::cose::TrustedKey;
 use sce_rust_crypto::ed25519::KeyPair;
 use sce_rust_crypto::equal::same_secret;
@@ -195,7 +195,7 @@ fn peer_config(peer: &'static str, retry: Option<RetryPolicy>) -> PeerConfig {
             dedup: true,
             ordered: false,
         },
-        responders: Box::leak(Box::new([peer])),
+        responders: Responders::Named(Box::leak(Box::new([peer]))),
         deadline_ms: None,
         reply_events: &[],
         causal: None,

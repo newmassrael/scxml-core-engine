@@ -68,7 +68,7 @@ use crate::inbox::{
 use crate::link::{deliver, LinkEvent};
 use crate::outbound::OutboundBuffer;
 use crate::reconnect::{open_reconnecting, Backoff, ClientFactory, ReconnectingTransport};
-use crate::router::{PeerConfig, Router};
+use crate::router::{PeerConfig, Responders, Router};
 use sce_rust_runtime::HostSendRequest;
 
 /// What a client is run through: how to get one, for one machine, connected to the router the
@@ -157,7 +157,7 @@ fn peer_config(peer: &'static str) -> PeerConfig {
             dedup: true,
             ordered: false,
         },
-        responders: Box::leak(Box::new([peer])),
+        responders: Responders::Named(Box::leak(Box::new([peer]))),
         deadline_ms: None,
         reply_events: &[],
         causal: None,
