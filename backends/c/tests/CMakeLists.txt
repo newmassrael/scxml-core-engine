@@ -3038,6 +3038,20 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_map_returned.scxml"
         STAGE_ALSO schema_entry.scxml algorithm_amounts_above.scxml
     )
+    # A map whose value is a map or a list, and one whose value is a record that holds a list
+    # (docs/adr/0108, D12), each written through its place where the map holds the value; the
+    # staging carries the record's schema beside its machine.
+    foreach(_STATIC_MAP_NESTED static_map_nested static_map_list)
+        sce_generate_static_integration_c_test(${_STATIC_MAP_NESTED}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_MAP_NESTED}.scxml"
+        )
+    endforeach()
+    sce_generate_static_integration_c_test(static_map_record_list
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_map_record_list.scxml"
+        STAGE_ALSO schema_map_row.scxml
+    )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
@@ -3333,6 +3347,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_map_returned_SOURCES}
         ${INTEGRATION_C_TEST_static_map_composite_key_SOURCES}
         ${INTEGRATION_C_TEST_static_set_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_nested_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_list_SOURCES}
+        ${INTEGRATION_C_TEST_static_map_record_list_SOURCES}
     )
     sce_c_link_runtime(sce_c_integration_static_scalars EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_scalars PRIVATE

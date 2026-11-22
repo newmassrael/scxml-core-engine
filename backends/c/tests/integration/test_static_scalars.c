@@ -188,8 +188,14 @@
 #include "static_map_composite_key_sm.h"
 #include "static_map_full_saved.h"
 #include "static_map_full_sm.h"
+#include "static_map_list_saved.h"
+#include "static_map_list_sm.h"
+#include "static_map_nested_saved.h"
+#include "static_map_nested_sm.h"
 #include "static_map_order_saved.h"
 #include "static_map_order_sm.h"
+#include "static_map_record_list_saved.h"
+#include "static_map_record_list_sm.h"
 #include "static_map_record_saved.h"
 #include "static_map_record_sm.h"
 #include "static_map_returned_saved.h"
@@ -3691,6 +3697,11 @@ static int a_payload_enum_field_is_written_as_the_name_its_enum_declares(void) {
 //   * `static_map_returned`: a map an algorithm returns, built in the destination of the machine's
 //     storage for the call and taken whole into a map variable of a larger bound, which keeps what
 //     it held where the call fails.
+//   * `static_map_nested`, `static_map_list` and `static_map_record_list` (docs/adr/0108, D12): a
+//     map whose value is a map, a list, or a record that holds a list, the value put empty or whole
+//     and written, read and walked through the place `m[k]` or `m[k].field` where the map holds
+//     it; a full inner map answers its own outcome, a full list raises error.execution, and a write
+//     through a key that is absent raises error.execution and creates nothing.
 //
 // Every machine is started under one fixed seed, which nothing a scenario observes depends on.
 #define MAP_SCENARIO_SEED sce_map_seed_from_halves(UINT64_C(0x0123456789abcdef), UINT64_C(0xfedcba9876543210))
@@ -3793,6 +3804,33 @@ static const variable_t map_returned_variables[] = {
 };
 MAP_SCENARIO(static_map_returned, map_returned_states, map_returned_variables, STATIC_MAP_RETURNED_START_OK)
 
+VARIABLE_READER(static_map_nested, errors)
+static const name_value_t map_nested_states[] = {
+    {"holding", STATIC_MAP_NESTED_STATE_HOLDING},
+};
+static const variable_t map_nested_variables[] = {
+    {"errors", static_map_nested_read_errors},
+};
+MAP_SCENARIO(static_map_nested, map_nested_states, map_nested_variables, STATIC_MAP_NESTED_START_OK)
+
+VARIABLE_READER(static_map_list, errors)
+static const name_value_t map_list_states[] = {
+    {"sampling", STATIC_MAP_LIST_STATE_SAMPLING},
+};
+static const variable_t map_list_variables[] = {
+    {"errors", static_map_list_read_errors},
+};
+MAP_SCENARIO(static_map_list, map_list_states, map_list_variables, STATIC_MAP_LIST_START_OK)
+
+VARIABLE_READER(static_map_record_list, errors)
+static const name_value_t map_record_list_states[] = {
+    {"tagging", STATIC_MAP_RECORD_LIST_STATE_TAGGING},
+};
+static const variable_t map_record_list_variables[] = {
+    {"errors", static_map_record_list_read_errors},
+};
+MAP_SCENARIO(static_map_record_list, map_record_list_states, map_record_list_variables, STATIC_MAP_RECORD_LIST_START_OK)
+
 int main(void) {
     int bad = 0;
     // Each scenario file by its name, and the steps it has at the least.
@@ -3832,6 +3870,9 @@ int main(void) {
     bad |= static_set_scenario("static_set", 14);
     bad |= static_map_take_scenario("static_map_take", 12);
     bad |= static_map_returned_scenario("static_map_returned", 11);
+    bad |= static_map_nested_scenario("static_map_nested", 12);
+    bad |= static_map_list_scenario("static_map_list", 9);
+    bad |= static_map_record_list_scenario("static_map_record_list", 9);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
