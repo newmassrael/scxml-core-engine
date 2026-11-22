@@ -180,7 +180,8 @@ own record), several origins, a shared worker as the node, other wasm hosts, and
 Each step lands with a test that fails without it.
 
 1. The core separated from the native shell, with no change of behaviour; its trace and its first Verus contracts (ADR
-   0115 D4, D13). Needs nothing of ADR 0116.
+   0115 D4, D13). Landed 2026-11-23: the core (`https/client_core.rs`), whose inputs and effects are the trace, and the
+   proof of its numbers (`https/client_mailbox.rs`). Needs nothing of ADR 0116.
 2. (2026-11-23) This record's model (D10), checked, with its failing configurations.
 3. The freshness step (D4), server and native client.
 4. The browser shell: `fetch`, the key, the store, the lock; the kit in Node and two engines.

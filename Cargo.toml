@@ -69,7 +69,9 @@ warnings = "deny"
 # `cfg(loom)` is set only by the forge runtime's loom models (SCE
 # Protocol-Synthesis RFC §synth-5-P, verification layer 3); declaring it keeps
 # every other build from reading the cfg as a typo.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+# `cfg(verus_only)` is set only by Verus, which reads the contracts of the host
+# core's proved files (docs/adr/0115, D13).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(verus_only)'] }
 
 [workspace.dependencies]
 # Logging facade — matches C++ spdlog conditional logging pattern
