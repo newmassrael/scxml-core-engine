@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 1c4345fd879065241c0c00b76f8e6b6a7a7f3f3f200f379431412a268aff8b25
+// source-hash: cc3cf3e4da9e1c2e0e4db97442f49095c4e4773e22e51b8c4548ad0f3af2248f
 // source: static_record_call.scxml
 
 
@@ -20,7 +20,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: static_record_call.scxml:14 :: _machine
+// SCE-MAP: static_record_call.scxml:16 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -115,6 +115,47 @@ public struct StaticRecordCallEntryRecord: Equatable, Sendable {
     }
 }
 
+/// SCE Accepted Subset §2.15: an `enum:Status` datamodel value.
+public enum StaticRecordCallStatusEnum: UInt8, CaseIterable, Sendable {
+    case open = 2
+    case inProgress = 5
+    case done = 7
+
+    /// The name the enum document declares for the value.
+    public var declaredName: String {
+        switch self {
+        case .open: return "open"
+        case .inProgress: return "in_progress"
+        case .done: return "done"
+        }
+    }
+
+    /// The number the enum document declares for the value.
+    public static func toUnderlying(_ value: StaticRecordCallStatusEnum) -> UInt8 {
+        value.rawValue
+    }
+
+    /// The variant that declares `raw`, and nil for a number no variant declares.
+    public static func fromUnderlying(_ raw: UInt8) -> StaticRecordCallStatusEnum? {
+        StaticRecordCallStatusEnum(rawValue: raw)
+    }
+
+    /// The variant the enum document gives `name`, and nil for a name it does not
+    /// declare.
+    public init?(declaredName: String) {
+        switch declaredName {
+        case "open": self = .open
+        case "in_progress": self = .inProgress
+        case "done": self = .done
+        default: return nil
+        }
+    }
+}
+
+extension StaticRecordCallStatusEnum: SavedEnumeration {
+    public static var savedAlias: String { "Status" }
+}
+
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
 // events whose payload a natively lowered expression reads: a tag, and one
 // `pending<Event>Payload` view per event on the policy.
@@ -156,6 +197,11 @@ private func call_LineOf__(_ p0: UInt32, _ p1: Int32) -> StaticRecordCallEntryRe
     return StaticRecordCallEntryRecord(id: r.id, amount: r.amount)
 }
 
+private func call_Settles__(_ p0: StaticRecordCallStatusEnum, _ p1: Int32) -> Bool {
+    let r = LedgerSettles.ledgerSettles({ (sceValue: StaticRecordCallStatusEnum) -> EnumItemStatus in switch sceValue { case StaticRecordCallStatusEnum.open: return EnumItemStatus.open; case StaticRecordCallStatusEnum.inProgress: return EnumItemStatus.inProgress; case StaticRecordCallStatusEnum.done: return EnumItemStatus.done } }(p0), p1)
+    return r
+}
+
 // ======================================================================
 // Policy
 // ======================================================================
@@ -191,6 +237,8 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
     var vDebts: UInt32
     /// W3C SCXML 5.2: the `peaks` datamodel variable, published (`sce:direction="out"`).
     var vPeaks: UInt32
+    /// W3C SCXML 5.2: the `settled` datamodel variable, published (`sce:direction="out"`).
+    var vSettled: UInt32
 
     /// Reports what the published `best` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -212,6 +260,10 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var peaks: UInt32 { vPeaks }
 
+    /// Reports what the published `settled` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var settled: UInt32 { vSettled }
+
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
     /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
@@ -221,6 +273,7 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
         public var vLarge: UInt32? = nil
         public var vDebts: UInt32? = nil
         public var vPeaks: UInt32? = nil
+        public var vSettled: UInt32? = nil
     }
 
     /// Gives this machine the values `params` carries, each as the initial value of its
@@ -248,11 +301,18 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
         } else {
             vPeaks = 0
         }
+        let vSettled: UInt32
+        if let handed = params.vSettled {
+            vSettled = handed
+        } else {
+            vSettled = 0
+        }
         self.vBest = vBest
         self.vMade = vMade
         self.vLarge = vLarge
         self.vDebts = vDebts
         self.vPeaks = vPeaks
+        self.vSettled = vSettled
     }
 
     public init() {
@@ -261,11 +321,13 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
         let vLarge: UInt32 = 0
         let vDebts: UInt32 = 0
         let vPeaks: UInt32 = 0
+        let vSettled: UInt32 = 0
         self.vBest = vBest
         self.vMade = vMade
         self.vLarge = vLarge
         self.vDebts = vDebts
         self.vPeaks = vPeaks
+        self.vSettled = vSettled
 
         sessionID = drawSessionID()
     }
@@ -610,6 +672,16 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
 
                 self.vMade = call_LineOf__(self.vDebts, self.pendingLedgerEntryPayload.amount)
 
+
+                if (call_Settles__(StaticRecordCallStatusEnum.done, self.pendingLedgerEntryPayload.amount) && !call_Settles__(StaticRecordCallStatusEnum.open, self.pendingLedgerEntryPayload.amount)) {
+
+
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSettled, 1)); self.vSettled = sceValue } catch { return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
                 }
             default:
                 break
@@ -652,10 +724,10 @@ extension StaticRecordCallPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
-            revised: "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
-            format2First: "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
-            format2Revised: "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
+            first: "9ecb7e846af99a2a8fd9c089ae23029dc80fc023474d449392c8a5db0f673032",
+            revised: "0baf78f70ea4930ac1f5f6a390052b54e5c67b59732345bfab3e17c218be100f",
+            format2First: "9ecb7e846af99a2a8fd9c089ae23029dc80fc023474d449392c8a5db0f673032",
+            format2Revised: "0baf78f70ea4930ac1f5f6a390052b54e5c67b59732345bfab3e17c218be100f",
             records: [
                 SavedRecordLineage(
                     event: "ledger.entry", revision: 1,
@@ -680,6 +752,7 @@ extension StaticRecordCallPolicy: SavedPolicy {
             SavedEntry("large", SavedValues.of(vLarge)),
             SavedEntry("debts", SavedValues.of(vDebts)),
             SavedEntry("peaks", SavedValues.of(vPeaks)),
+            SavedEntry("settled", SavedValues.of(vSettled)),
         ]
     }
 
@@ -691,12 +764,14 @@ extension StaticRecordCallPolicy: SavedPolicy {
         let value2 = try SavedValues.uint32(try saved.variable("large"), "large")
         let value3 = try SavedValues.uint32(try saved.variable("debts"), "debts")
         let value4 = try SavedValues.uint32(try saved.variable("peaks"), "peaks")
+        let value5 = try SavedValues.uint32(try saved.variable("settled"), "settled")
         return { [self] in
             self.vBest = value0
             self.vMade = value1
             self.vLarge = value2
             self.vDebts = value3
             self.vPeaks = value4
+            self.vSettled = value5
         }
     }
 }
