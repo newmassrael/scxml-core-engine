@@ -6040,6 +6040,23 @@ impl AlgorithmModel {
     /// (docs/adr/0108, D5): what a backend that lowers no algorithm's map
     /// refuses it by. `None` for an algorithm that holds none.
     pub fn first_map(&self) -> Option<(&str, &AlgorithmValueType)> {
+        self.first_held(|ty| ty.map_key().is_some())
+    }
+
+    /// The first list of the values of an enum the algorithm holds, named as
+    /// [`Self::first_map`] names a map, with its type: what a backend that
+    /// lowers none refuses it by. `None` for an algorithm that holds none.
+    pub fn first_enum_list(&self) -> Option<(&str, &AlgorithmValueType)> {
+        self.first_held(|ty| ty.list_enum_alias().is_some())
+    }
+
+    /// The first type `sought` answers for among the algorithm's parameters,
+    /// its locals and its return, in that order, by the name of the parameter
+    /// or local, or `"return"` for the return.
+    fn first_held(
+        &self,
+        sought: impl Fn(&AlgorithmValueType) -> bool,
+    ) -> Option<(&str, &AlgorithmValueType)> {
         let params = self
             .signature
             .params
@@ -6059,7 +6076,7 @@ impl AlgorithmModel {
         params
             .chain(locals)
             .chain(returned)
-            .find(|(_, ty)| ty.map_key().is_some())
+            .find(|(_, ty)| sought(ty))
     }
 
     /// Whether a map the algorithm is lent or returns carries a seed its own
