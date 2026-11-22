@@ -44,22 +44,29 @@ const LAYOUT_1_WITH_A_SESSION: &str = "
 ";
 
 /// The layout this build writes, which a file of an earlier one is brought to when it is opened.
-const LAYOUT: i64 = 7;
+const LAYOUT: i64 = 8;
 
-/// The tables layout 7 added (ADR 0109, D14), dropped from a file this build made so that it is
-/// left as a build of layout 6 left it.
-const WITHOUT_LAYOUT_7: &str = "DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
+/// The tables layout 8 added (ADR 0114), dropped from a file this build made so that it is left as
+/// a build of layout 7 left it.
+const WITHOUT_LAYOUT_8: &str = "DROP TABLE journal_entries; DROP TABLE journal_head;";
+
+/// The tables layouts 7 (ADR 0109, D14) and 8 (ADR 0114) added, dropped from a file this build made
+/// so that it is left as a build of layout 6 left it: the later layout's first.
+const WITHOUT_LAYOUT_7: &str = "DROP TABLE journal_entries; DROP TABLE journal_head; \
+     DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads;";
 
-/// The tables layouts 6 (ADR 0109, D13) and 7 (D14) added, dropped from a file this build made so
-/// that it is left as a build of layout 5 left it: the later layout's first.
-const WITHOUT_LAYOUT_6: &str = "DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
+/// The tables layouts 6 (ADR 0109, D13) to 8 (ADR 0114) added, dropped from a file this build made
+/// so that it is left as a build of layout 5 left it: the later layouts' first.
+const WITHOUT_LAYOUT_6: &str = "DROP TABLE journal_entries; DROP TABLE journal_head; \
+     DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads; \
      DROP TABLE kv_first_results; DROP TABLE kv_numbers; DROP TABLE kv_values;";
 
-/// The tables layouts 5 (ADR 0109, D10) to 7 (D14) added, dropped from a file this build made so
-/// that it is left as a build of layout 4 or earlier left it: the later layouts' first.
-const WITHOUT_LAYOUT_5: &str = "DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
+/// The tables layouts 5 (ADR 0109, D10) to 8 (ADR 0114) added, dropped from a file this build made
+/// so that it is left as a build of layout 4 or earlier left it: the later layouts' first.
+const WITHOUT_LAYOUT_5: &str = "DROP TABLE journal_entries; DROP TABLE journal_head; \
+     DROP TABLE audit_identities; DROP TABLE audit_checkpoints; \
      DROP TABLE audit_rows; DROP TABLE audit_heads; \
      DROP TABLE kv_first_results; DROP TABLE kv_numbers; DROP TABLE kv_values; \
      DROP INDEX outbox_notes_by_session; DROP TABLE outbox_notes; \
@@ -1058,5 +1065,357 @@ mod audit {
                 .expect("the append made again"),
             AuditAppend::Appended
         );
+    }
+}
+
+/// The journal (ADR 0114).
+mod journal {
+    use std::process::Command;
+    use std::sync::{Mutex, PoisonError};
+    use std::time::Duration;
+
+    use rusqlite::Connection;
+    use sce_rust_session_store::{
+        AtPosition, Fact, FactData, Failure, Journal, JournalStore, Observation, SessionStore,
+        SqliteStore, Stream, Write, WriteError, LATEST_MOMENT,
+    };
+
+    use super::{LAYOUT, WITHOUT_LAYOUT_8};
+    use crate::common::Scratch;
+
+    fn fact(data: &[u8]) -> Fact<'_> {
+        Fact {
+            schema: "entry.recorded",
+            revision: 1,
+            data: FactData::Bytes(data),
+            valid_ms: None,
+        }
+    }
+
+    /// A write that keeps `state` from `version` and appends `facts` at `now_ms`.
+    fn keeps<'a>(
+        state: &'a [u8],
+        version: u64,
+        fence: u64,
+        facts: &'a [Fact<'a>],
+        now_ms: u64,
+    ) -> Write<'a> {
+        Write {
+            journal: Some(Journal {
+                machine: "ledger",
+                facts,
+            }),
+            now_ms,
+            ..Write::put(state, None, version, fence)
+        }
+    }
+
+    /// The position, the moment and the data of every entry `store` holds.
+    fn entries(store: &SqliteStore) -> Vec<(u64, u64, String)> {
+        store
+            .after(0, 100)
+            .expect("the journal")
+            .entries
+            .into_iter()
+            .map(|entry| {
+                (
+                    entry.position,
+                    entry.recorded_ms,
+                    String::from_utf8(entry.data).expect("a text"),
+                )
+            })
+            .collect()
+    }
+
+    /// The state of the session `k`, as text.
+    fn state(store: &SqliteStore) -> Option<String> {
+        store
+            .get("k")
+            .expect("a read")
+            .map(|stored| String::from_utf8(stored.state).expect("a text"))
+    }
+
+    /// ADR 0114: a file of layout 7 is brought to this build's layout when it is opened, in place,
+    /// its sessions kept, and a journal is then kept in it, from position 1.
+    #[test]
+    fn a_file_of_layout_7_is_brought_to_this_layout_and_keeps_a_journal() {
+        let scratch = Scratch::new("layout-7");
+        let (lease, version) = {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            let lease = store.acquire("k", "a", 1_000, 0).expect("a lease");
+            let version = store
+                .put("k", b"of layout 7", None, 0, lease.fence)
+                .expect("a session");
+            (lease, version)
+        };
+        {
+            let connection =
+                Connection::open(scratch.database()).expect("a connection of a build of layout 7");
+            connection
+                .execute_batch(WITHOUT_LAYOUT_8)
+                .expect("the file without layout 8's tables");
+            connection
+                .pragma_update(None, "user_version", 7)
+                .expect("the file as layout 7 left it");
+        }
+        let store = SqliteStore::open(scratch.database()).expect("opening a file of layout 7");
+        let layout: i64 = Connection::open(scratch.database())
+            .expect("a second connection")
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("its layout");
+        assert_eq!(
+            layout, LAYOUT,
+            "the file was brought to this build's layout"
+        );
+        assert_eq!(state(&store).as_deref(), Some("of layout 7"));
+        assert!(entries(&store).is_empty());
+        store
+            .write(
+                "k",
+                &keeps(b"after", version, lease.fence, &[fact(b"one")], 1_000),
+            )
+            .expect("a write that appends in the upgraded file");
+        assert_eq!(entries(&store), [(1, 1_000, "one".to_string())]);
+    }
+
+    /// ADR 0114, D3 and D5: what the store kept of the journal is there when its file is opened
+    /// again; its positions go on from where they stopped, its moments do not go back to a clock
+    /// that did, and an origin id it kept is a repeat.
+    #[test]
+    fn the_journal_is_there_when_the_file_is_opened_again() {
+        let scratch = Scratch::new("journal-reopen");
+        let (fence, version, observed) = {
+            let store = SqliteStore::open(scratch.database()).expect("making the store");
+            let lease = store.acquire("k", "a", LATEST_MOMENT, 0).expect("a lease");
+            let version = store
+                .write("k", &keeps(b"s", 0, lease.fence, &[fact(b"one")], 5_000))
+                .expect("a write that appends")
+                .version;
+            let observed = store
+                .observe("bank", "tx-1", &fact(b"two"), 6_000)
+                .expect("an observation");
+            (lease.fence, version, observed)
+        };
+        let store = SqliteStore::open(scratch.database()).expect("opening the store again");
+        assert_eq!(
+            entries(&store),
+            [(1, 5_000, "one".to_string()), (2, 6_000, "two".to_string())]
+        );
+        assert_eq!(store.after(0, 0).expect("the horizon").horizon, 2);
+        assert_eq!(
+            store
+                .observe("bank", "tx-1", &fact(b"again"), 7_000)
+                .expect("the observation repeated"),
+            Observation::Repeated {
+                position: observed.position()
+            }
+        );
+        store
+            .write("k", &keeps(b"s", version, fence, &[fact(b"three")], 1_000))
+            .expect("a write after the restart, by a clock that went back");
+        assert_eq!(
+            entries(&store)[2],
+            (3, 6_000, "three".to_string()),
+            "numbered on and recorded on from what the closed file kept"
+        );
+    }
+
+    /// What the maker of a fact's bytes sees from inside the transaction that gave the position.
+    struct FromInside {
+        /// Another connection, which waits for no lock.
+        other: SqliteStore,
+        fence: u64,
+        /// The position given, the horizon another connection is told, and how many entries it
+        /// reads.
+        seen: Mutex<Vec<(u64, u64, usize)>>,
+        /// Whether a write of the other connection, which would be given a position of its own, was
+        /// made.
+        wrote: Mutex<bool>,
+    }
+
+    impl AtPosition for FromInside {
+        fn bytes(&self, position: u64) -> Result<Vec<u8>, Failure> {
+            let page = self.other.after(0, 100)?;
+            self.seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push((position, page.horizon, page.entries.len()));
+            let facts = [fact(b"beside")];
+            let beside = self
+                .other
+                .write("other", &keeps(b"s", 0, self.fence, &facts, 1_000));
+            if !matches!(beside, Err(WriteError::Failed(_))) {
+                *self.wrote.lock().unwrap_or_else(PoisonError::into_inner) = true;
+            }
+            Ok(b"made".to_vec())
+        }
+    }
+
+    /// ADR 0114, D3: the store's horizon is its head because a position is given inside the one
+    /// transaction that writes: while it is open, no other transaction can begin, so none takes a
+    /// position, and a reader's horizon stands below the position given. Red if a position is
+    /// taken before the write lock is held, or the horizon is read from anything a transaction
+    /// that has not committed moves.
+    #[test]
+    fn a_position_is_given_inside_the_transaction_that_commits_it() {
+        let scratch = Scratch::new("journal-inside");
+        let store = SqliteStore::open(scratch.database()).expect("making the store");
+        let lease = store.acquire("k", "a", LATEST_MOMENT, 0).expect("a lease");
+        let other = store
+            .acquire("other", "a", LATEST_MOMENT, 0)
+            .expect("a lease on another key");
+        let version = store
+            .write("k", &keeps(b"s", 0, lease.fence, &[fact(b"first")], 1_000))
+            .expect("a first entry")
+            .version;
+        let inside = FromInside {
+            other: SqliteStore::open_with_busy_timeout(scratch.database(), Duration::ZERO)
+                .expect("another connection, opened before the write lock is taken"),
+            fence: other.fence,
+            seen: Mutex::new(Vec::new()),
+            wrote: Mutex::new(false),
+        };
+        let made = Fact {
+            data: FactData::AtPosition(&inside),
+            ..fact(b"")
+        };
+        store
+            .write(
+                "k",
+                &keeps(b"s", version, lease.fence, &[made, made], 1_000),
+            )
+            .expect("a write whose facts look from inside it");
+        assert_eq!(
+            *inside.seen.lock().unwrap_or_else(PoisonError::into_inner),
+            [(2, 1, 1), (3, 1, 1)],
+            "a reader saw a position of a transaction that has not committed"
+        );
+        assert!(
+            !*inside.wrote.lock().unwrap_or_else(PoisonError::into_inner),
+            "a second transaction wrote while one was open"
+        );
+        let page = store.after(0, 100).expect("the journal");
+        assert_eq!((page.horizon, page.entries.len()), (3, 3));
+        inside
+            .other
+            .write(
+                "other",
+                &keeps(b"s", 0, other.fence, &[fact(b"beside")], 1_000),
+            )
+            .expect("the other connection's write once the first committed");
+        assert_eq!(
+            entries(&store).last().map(|(position, _, _)| *position),
+            Some(4)
+        );
+    }
+
+    /// The file a child process of the test below writes, and the point it stops at.
+    const KILLED_FILE: &str = "SCE_SESSION_STORE_KILLED_FILE";
+    const KILLED_AT: &str = "SCE_SESSION_STORE_KILLED_AT";
+    /// The points: while the bytes of the first or the second fact of a write are made, inside its
+    /// transaction, and once the write answered.
+    const POINTS: [&str; 3] = ["first fact", "second fact", "answered"];
+    /// What the child's process exits with where it stops.
+    const KILLED: i32 = 86;
+
+    /// The bytes of a fact, made by a process that stops there: nothing is unwound, dropped or
+    /// rolled back.
+    struct Stops;
+
+    impl AtPosition for Stops {
+        fn bytes(&self, _: u64) -> Result<Vec<u8>, Failure> {
+            std::process::exit(KILLED)
+        }
+    }
+
+    /// The child: a first write that commits, and a second that stops at `point`.
+    fn write_and_stop(file: &str, point: &str) -> ! {
+        let store = SqliteStore::open(file).expect("the store of the process that stops");
+        let lease = store.acquire("k", "a", LATEST_MOMENT, 0).expect("a lease");
+        let version = store
+            .write("k", &keeps(b"one", 0, lease.fence, &[fact(b"1")], 1_000))
+            .expect("a first write")
+            .version;
+        let stops = Fact {
+            data: FactData::AtPosition(&Stops),
+            ..fact(b"")
+        };
+        let facts = match point {
+            "first fact" => [stops, fact(b"3")],
+            "second fact" => [fact(b"2"), stops],
+            _ => [fact(b"2"), fact(b"3")],
+        };
+        store
+            .write("k", &keeps(b"two", version, lease.fence, &facts, 2_000))
+            .expect("a second write");
+        std::process::exit(KILLED)
+    }
+
+    /// `NothingLost` of docs/formal/EventJournal.tla: a process stopped at any point of a write
+    /// left its state and its entries together or neither, whoever opens the file next; and the
+    /// positions go on above every one a reader saw.
+    #[test]
+    fn a_process_stopped_inside_a_write_left_its_state_and_its_entries_or_neither() {
+        if let (Ok(file), Ok(point)) = (std::env::var(KILLED_FILE), std::env::var(KILLED_AT)) {
+            write_and_stop(&file, &point);
+        }
+        for point in POINTS {
+            let scratch = Scratch::new("journal-killed");
+            let stopped = Command::new(std::env::current_exe().expect("this test's program"))
+                .args([
+                    "--exact",
+                    "journal::a_process_stopped_inside_a_write_left_its_state_and_its_entries_or_neither",
+                ])
+                .env(KILLED_FILE, scratch.database())
+                .env(KILLED_AT, point)
+                .output()
+                .expect("the process that stops");
+            assert_eq!(
+                stopped.status.code(),
+                Some(KILLED),
+                "the process did not stop at '{point}': {}",
+                String::from_utf8_lossy(&stopped.stdout)
+            );
+            let store = SqliteStore::open(scratch.database()).expect("the store after the stop");
+            let data: Vec<String> = entries(&store).into_iter().map(|entry| entry.2).collect();
+            let (expected_state, expected) = if point == "answered" {
+                ("two", vec!["1", "2", "3"])
+            } else {
+                ("one", vec!["1"])
+            };
+            assert_eq!(
+                (state(&store).as_deref(), data),
+                (
+                    Some(expected_state),
+                    expected.into_iter().map(str::to_string).collect()
+                ),
+                "a process stopped at '{point}' left one without the other"
+            );
+
+            let before = entries(&store).last().map_or(0, |entry| entry.0);
+            let version = store
+                .get("k")
+                .expect("a read")
+                .map_or(0, |stored| stored.version);
+            let lease = store
+                .acquire("k", "a", LATEST_MOMENT, 0)
+                .expect("the key taken over");
+            store
+                .write(
+                    "k",
+                    &keeps(b"three", version, lease.fence, &[fact(b"next")], 3_000),
+                )
+                .expect("a write after the stop");
+            let stream = Stream::Session {
+                machine: "ledger",
+                key: "k",
+            };
+            let last = store
+                .stream(stream, before, 10)
+                .expect("the entries after the stop")
+                .entries;
+            assert_eq!(last.len(), 1);
+            assert!(last[0].position > before);
+        }
     }
 }
