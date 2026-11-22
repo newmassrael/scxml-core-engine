@@ -1,10 +1,9 @@
 # ADR 0111 — A machine's bound events cross its boundary typed, through a link that lends its slots and a door that can be waited on
 
-- Status: Proposed (2026-11-22), revised the same day after the consumer's review
-  (one voice of two of its sessions), whose every request is taken below. Written under the owner's standing rule (the most long-term correct structure, textbook in its
+- Status: Accepted (2026-11-22). Revised twice the same day on the consumer's review (one voice of two of its
+  sessions), whose every request is taken below; the consumer has no objection to the second revision. Written under the owner's standing rule (the most long-term correct structure, textbook in its
   foundations, cost ignored; decided, not asked). It is item 4 of the order agreed with a downstream consumer on
   2026-11-19, which the owner confirmed: the boundary binding and the lend contract, before ADR 0100's landing.
-  Accepted once the consumer has read the revision.
 - Date: 2026-11-22
 - Amends, once landed (each amended document gains an "Amended by: ADR 0111" line in the landing that moves it):
   - ADR 0084 D1, by an owner that is whoever holds the drive (D5);
@@ -168,8 +167,8 @@ events its rows raise.
   thread, before the machine; the owner only ever takes a typed value.
 - **A received event holds its frame's slot, not a copy.** A link with an `<sce:rx-pool>` receives into a pool slot,
   and its events borrow from it: the inbox and the external queue hold the slot's index (D4) and the decoded view
-  over it, so an inbox entry is a handle and a header, not a frame. The slot is returned when the macrostep that took
-  the last event of its frame completes. What the machine keeps beyond that step it assigns to its own variables,
+  over it, so an inbox entry is a handle and a header, not a frame. The slot is returned when the last event of its
+  frame has been taken and every output borrowing from it has been released (D4). What the machine keeps beyond that step it assigns to its own variables,
   which copy (ADR 0108's value semantics). A link without an rx-pool copies each event's value into the inbox entry,
   whose size is then the largest payload of an event the machine receives.
 - **A refusal is a typed record, posted where it happened.** A frame or message its framer or its row's codec
@@ -236,6 +235,12 @@ on in the same transition, which is what a batch's sequence numbers need.
   answered `pool-exhausted`. No macrostep waits: a machine that blocks runs its own deadline timer and its own
   congestion close, as the protocol states them. The link's `<sce:backpressure>` governs its receive side only
   (D2), so ADR 0106's generation-time refusal of `block` on a coupled transmit side is not made.
+- **An idle link.** A link may declare `<sce:tx-idle event="E"/>`, posted once for an instance when the driver has
+  taken every slot it had armed and the instance holds an open batch. The machine arms the batch then, or, while its
+  producer is still appending, starts its batching time limit: a batch leaves at once when the link is idle and waits
+  for the limit only while it is being filled (zenoh's pipeline: a consumer with nothing to take takes the open batch).
+  Without it the only ground to arm is a timer, so a message sent alone waits the whole limit, or the limit is zero
+  and batching is lost.
 - **The take order.** The driver takes armed slots in strict priority of their stage (the lower stage number first)
   and in arming order within a stage, so a conduit's sequence numbers leave in order.
 - **The driver runs outside the macrostep.** Arming a slot wakes the host through the inbox's waker (ADR 0084 D2), and
@@ -250,7 +255,9 @@ on in the same transition, which is what a batch's sequence numbers need.
   (§scxml-6.2), with `_event.sendid` and `_event.data.reason` the outcome's value (ADR 0106 #111). `target` is an
   expression of the link's handle type; `targetexpr` is how a run-time instance is named.
 - **A machine closes a link.** `<sce:link-close link="peer_link"/>` asks the host to close the instance once what it
-  armed has been taken; a link may declare `<sce:closed event="E"/>`, posted when the instance is closed by either
+  armed has been taken; `<sce:link-close link="peer_link" armed="discard"/>` closes it at once, returning its armed
+  slots unsent, which is how a protocol drops a link on congestion or on a decode error without a Close, and how a
+  link whose peer stops reading is ever closed; a link may declare `<sce:closed event="E"/>`, posted when the instance is closed by either
   side, after which its handle is stale.
 - **A run-time frame limit.** An instance's slot length and its frame limit (the negotiated batch size, the path's
   MTU) are given when the host opens it, each at most the pool's build bounds (D4).
@@ -267,8 +274,10 @@ unchanged. The generated Rust and C11 pools gain:
   `false`). This is U16's rule, the rule ADR 0108 D3/D4 gave a map's run-time limit: the type holds the bound, the
   value holds the limit, and the storage never grows.
 - **Storage the caller holds.** A pool may own its storage, as today, or be made over storage the caller holds
-  (ADR 0082): `Pool::over(&'s mut PoolStorage<B, S>)` in Rust, `<pool>_init_over(storage, c)` in C11, so a
-  deployment places the bytes (a session arena, a linker section) and the book separately.
+  (ADR 0082) and sized at run time: `Pool::over(bytes, c, l)` takes a span of at least `c * l` bytes (aligned as the
+  pool declares) and the count and length it is cut into, each within the build bounds, and the book of `B` entries
+  stays the pool's own (C11: `<pool>_init_over(bytes, len, c, l)`). A deployment that sizes its arena by a negotiated
+  length lends exactly what it negotiated, and the span is refused at construction when it is short or misaligned.
 - **An empty pool is all zero.** The constructor is a `const fn` (C11: a static initializer), and a pool with no slot
   out is all zero bytes (state `free` is 0, generation 0), so a `static` pool lies in `.bss`, as ADR 0108 made an
   empty map.
@@ -292,8 +301,10 @@ unchanged. The generated Rust and C11 pools gain:
     compare-and-swap (ARMv6-M) it runs inside the deployment's critical section (`critical-section` in Rust, the
     seams `_sce_critical_enter` and `_sce_critical_exit` in C11, declared exactly when a pool is `shared`).
   The hardware-owned edges stay `unsafe` in Rust, since the caller asserts what the hardware did.
-- **A slot lent to an event.** A receive slot whose frame raised events is lent to them (D2) and returns when the last
-  of them has been taken and its macrostep has completed; the book counts the events that hold it.
+- **A slot lent to an event and its outputs.** A receive slot whose frame raised events is lent to them (D2). Its
+  hold count counts the events that hold it and the outputs that borrow from it (a subscriber's delivery handed out
+  after the step, D5), and the slot returns when the count falls to zero: when the last event's macrostep has
+  completed and every output that borrows it has been released by the host that ran it.
 
 The `queue` kind takes the run-time capacity by the same rule: `CAPACITY` is the bound, and a queue is constructed
 with `c <= CAPACITY`, refused otherwise. Its full policy is unchanged (U17 is a record of its own).
@@ -320,6 +331,9 @@ ADR 0084 D1 and D2 are amended.
   macrostep that took it has completed, with `processed`, `unseen` (the run had ended, §scxml-3.13) or `refused`
   (the token check refused an ending), and the outputs of that step. An input the inbox refuses is refused at the ask
   and has no completion.
+  - An asked input may borrow the asker's data until its completion, since the asker waits for it: the inbox entry
+    holds a reference to the caller's payload, not a copy, so a put of a large payload from another thread costs no
+    inbox entry of the largest payload's size. A plain post copies, since its poster does not wait.
   - If the drive is free, the asker takes it and the answer is there when the ask returns.
   - If another holds it, the asker waits (Rust `std`: `Completion::wait(deadline)`; `no_std` and C11: a slot of a
     table the deployment sizes, `SCE_MAX_ASKS`, polled or signalled by a callback). A wait takes a deadline and answers
@@ -417,12 +431,12 @@ The supported way for a build outside this repository to generate code is the `s
 
 ## Order of work
 
-1. This record, read by the consumer after the revision.
+1. This record.
 2. The pool (D4), Rust and C11: run-time count and length, `over`, the all-zero empty pool, the headroom,
    `SlotIndex` and `reclaim`, the `owner` and `shared` books, a slot lent to events, with the kind's conformance
    fixtures; the queue's run-time capacity.
 3. The link's transmit side (D3): stages, open, append and arm with their outcomes, the take order, the lending
-   `Link` operation, the prefix, `tx-room`, `link-close` and `closed`, on the loopback fixtures of
+   `Link` operation, the prefix, `tx-room`, `tx-idle`, `link-close` in both forms and `closed`, on the loopback fixtures of
    `tests/forge/conformance/link_events/`, which gain a lending driver and a batching link.
 4. A machine imports a link (D1): the grammar, link handles, record views as event types, `decode`, `each`, row
    inputs, and the refusals.
