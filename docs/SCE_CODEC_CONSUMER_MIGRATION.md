@@ -3636,7 +3636,8 @@ is regenerated; no committed generated tree holds one.
   template builds it as `sce_bytes!`. A unit with a byte string now compiles on the profile without `alloc`.
 - What stops compiling: a consumer's code that builds the unit's struct with a `Vec<u8>` (`body: bytes.to_vec()`,
   `body: vec![..]`), that moves the field into a `Vec<u8>` (`let held: Vec<u8> = payload.body;`), or that grows it
-  through a `Vec` method (`push` and `extend_from_slice` answer a `Result` now, refusing past `N`). A read of the
+  through a `Vec` method (`push` and `extend_from_slice` answer a `Result` now, refusing past `N`), or that compares
+  it with a `Vec<u8>` (`payload.body == expected` where `expected` is one: write `expected.as_slice()`). A read of the
   field as a slice keeps compiling: `SceBytes<N>` derefs to `[u8]`, so `&payload.body`, `payload.body.len()`,
   `payload.body[..]` and `payload.body == b"ab"` mean what they meant. A crate that includes a unit holding a byte
   string and no bounded text named no `sce-portable-bytes` before and must now depend on it directly, as "A Rust
@@ -3645,3 +3646,6 @@ is regenerated; no committed generated tree holds one.
   one past `N` with `CapacityExceeded`, or from a literal judged where it is written,
   `sce_portable_bytes::sce_bytes!(N, b"ab")`, which does not compile when it does not fit. Take the bytes out as
   `payload.body.as_slice().to_vec()`, or `payload.body.into_vec()` where `sce-portable-bytes/alloc` is on.
+- A byte string past `N` is no value of the unit any more, so a CBOR codec that holds the record no longer meets one:
+  a test that built such a record and expected its encode to refuse it with `CborOutOfRange` builds the field
+  instead and expects `CapacityExceeded` there.
