@@ -14,7 +14,7 @@
 (* what it did. Each part can be switched off, and TLC must then find a     *)
 (* violation.                                                               *)
 (***************************************************************************)
-EXTENDS Naturals, FiniteSets
+EXTENDS Naturals, FiniteSets, Sequences
 
 CONSTANTS NProc, NSess, MaxInput, MaxOpen, MaxCrash,
           Fence,        \* a write needs the lease's fence
@@ -81,7 +81,7 @@ Commit(t) ==
     /\ UNCHANGED <<fence, nextpos, clock, cursor, applied, staged, asked, crashes>>
 
 \* Not Atomic: the entry is appended by a write of its own.
-Append(e) ==
+AppendPending(e) ==
     /\ e \in pend /\ pend' = pend \ {e} /\ log' = log \cup {e}
     /\ UNCHANGED <<fence, hold, mem, st, open, nextpos, clock, cursor, applied, staged, asked, crashes>>
 
@@ -129,7 +129,7 @@ Next ==
     \/ \E p \in Procs, s \in Sess : Take(p, s) \/ Begin(p, s)
     \/ \E p \in Procs : Tick(p) \/ Crash(p)
     \/ \E t \in open : Commit(t)
-    \/ \E e \in pend : Append(e)
+    \/ \E e \in pend : AppendPending(e)
     \/ Follow \/ KeepCursor
     \/ \E r \in 1..MaxPos : Ask(r)
 
@@ -149,5 +149,25 @@ NonePassed == \A e \in log : e.pos <= cursor => applied[<<e.s, e.n>>] >= 1
 
 \* An answer as of a moment does not change after it was given.
 Stable == \A a \in asked : AsOf(a.r) = a.held
+
+-----------------------------------------------------------------------------
+\* What the protocol implements (docs/adr/0115, D2): the journal a reader may rely on is the entries at
+\* or below the horizon, by their position, and what the reader has taken is the ones at or below its
+\* cursor.
+Visible == {e \in log : e.pos <= Limit}
+
+\* The i-th entry by position is the one with i - 1 below it.
+ByPos(es) == [i \in 1..Cardinality(es) |->
+    LET e == CHOOSE x \in es : Cardinality({y \in es : y.pos < x.pos}) = i - 1
+    IN <<e.s, e.n>>]
+
+Service == INSTANCE JournalService WITH
+    Streams <- Sess,
+    MaxEntry <- MaxInput,
+    journal <- ByPos(Visible),
+    taken <- Cardinality({e \in log : e.pos <= cursor}),
+    did <- applied
+
+Refines == Service!Spec
 
 =============================================================================
