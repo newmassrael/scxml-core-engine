@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The answer to service.request.take (upgrade_take.scxml): the tag recorded,
+  how many the session has recorded with it, and the state that recorded it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="upgrade_taken"
+       sce:event-name="service.response.take">
+  <datamodel>
+    <data id="tag" sce:type="string[32]" sce:direction="in"/>
+    <data id="position" sce:type="uint32" sce:direction="in"/>
+    <data id="state" sce:type="string[16]" sce:direction="in"/>
+  </datamodel>
+</scxml>

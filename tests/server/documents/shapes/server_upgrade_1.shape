@@ -1,0 +1,28 @@
+sce-saved-state-shape 1
+state fresh atomic -
+state active atomic -
+state verifying atomic -
+state opening atomic -
+state closed atomic -
+state ended final -
+hostinvoke sce-host-cose-verify1 verify verifying
+hostinvoke sce-host-cose-decrypt0 open opening
+variable taken uint32 -
+variable last_tag string 32
+variable signed bytes 4352
+variable sealed bytes 4480
+variable verified bool -
+variable opened bool -
+variable failure string 24
+variable note record:Note -
+field note.serial uint32
+field note.owner string
+field note.blob bytes
+field note.active bool
+field note.offset int16
+variable sealed_note record:Note -
+field sealed_note.serial uint32
+field sealed_note.owner string
+field sealed_note.blob bytes
+field sealed_note.active bool
+field sealed_note.offset int16

@@ -30,10 +30,22 @@
 //!   response lost on purpose, and with the store refusing a checkpoint, which no `200`
 //!   acknowledges before a later one is durable.
 //!
+//! * `a_server_upgraded_in_place_under_load_loses_nothing` (docs/adr/0109, D11, and
+//!   "Conformance"): a server of the first version of a generated document, stopped in order under
+//!   load, and the next build started on its store: every session migrates or is refused as D11
+//!   says, nothing accepted or owed is lost, a repeated request is answered with its first answer,
+//!   and the notes the client signed and sealed under the first build open under the next; then a
+//!   kill in the middle of the upgrade, and a rollback the old build refuses.
+//! * `the_session_contract_holds` (docs/adr/0112): the ledger and the generated machines, served
+//!   by the library's adapter, each held to the kit of the session machine's contract
+//!   (`sce_rust_mesh::session_conformance`).
+//!
 //! This library is what they share:
 //!
-//! * [`ledger`]: the machine every session runs, written by hand in the shape a generated machine
-//!   has to the pool, as the pool's own tests write theirs.
+//! * [`ledger`]: the machine most scenarios' sessions run, written by hand in the shape a
+//!   generated machine has to the pool, as the pool's own tests write theirs.
+//! * [`upgrade`] and [`machines`]: the document a server is upgraded between, its two versions
+//!   generated (the tree `rust-server-suite`) and served by `sce_rust_mesh::served`.
 //! * [`protocol`]: the lines a server process (this crate's binary, `sce-suite-server`) reads and
 //!   writes, and [`process`], the parent's handle on one: start it, feed it, read it, kill it.
 //! * [`campaign`]: the driver of a server killed again and again while its client keeps asking.
@@ -46,9 +58,11 @@ pub mod campaign;
 pub mod clock;
 pub mod draw;
 pub mod ledger;
+pub mod machines;
 pub mod process;
 pub mod protocol;
 pub mod scratch;
+pub mod upgrade;
 pub mod wire;
 
 /// The environment variable a scenario reads its count of sessions from, when it is set: the

@@ -20,7 +20,7 @@ use sce_server_suite::campaign::{Campaign, Plan};
 use sce_server_suite::clock::wall_ms;
 use sce_server_suite::draw::seed_for;
 use sce_server_suite::ledger::{reminder_tag, take_data};
-use sce_server_suite::protocol::ServerOptions;
+use sce_server_suite::protocol::{Build, ServerOptions};
 use sce_server_suite::scratch::Scratch;
 use sce_server_suite::{count_from, KILLS_VARIABLE, SESSIONS_VARIABLE};
 
@@ -57,6 +57,7 @@ fn delayed_sends_survive_kills(name: &str, sessions: u64) {
         renew_every_ms: 300_000,
         halt: None,
         durable: None,
+        build: Build::Ledger,
     };
     let mut campaign = Campaign::new(server(), options, seed);
 

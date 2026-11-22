@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The suite's server process: the ledger machine served as a keyed pool on the Rust host core,
-//! its sessions kept in the reference store, its one client's envelopes carried over its standard
-//! streams (`sce_server_suite::protocol`).
+//! The suite's server process: a machine served as a keyed pool on the Rust host core, its
+//! sessions kept in the reference store, its one client's envelopes carried over its standard
+//! streams (`sce_server_suite::protocol`). The machine is the build `--build` names: the ledger,
+//! written by hand, or a version of the upgraded document, generated and served by the library's
+//! adapter (`sce_rust_mesh::served`, docs/adr/0112), so that a scenario upgrades a server in place
+//! by starting the next build on the store the last one kept (docs/adr/0109, D11).
 //!
 //! It is the host a deployment would write, in the smallest form: it hands the pool each envelope
 //! the client sends and runs the session it names, and between commands it wakes the sessions
@@ -23,7 +26,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sce_rust_mesh::endpoint::{Transport, TransportFailure};
-use sce_rust_mesh::pool::{Pool, PoolConfig};
+use sce_rust_mesh::peers::Machine;
+use sce_rust_mesh::pool::{Pool, PoolConfig, SessionFactory};
+use sce_rust_mesh::served::Served;
 use sce_rust_session_store::{
     AcquireError, Append, Appended, Batched, Change, Committed, Conflict, Decided, Due, Expiry,
     Failure, Lease, LeaseError, Note, Outbox, SessionStore, SqliteStore, Stored, Write, WriteError,
@@ -31,7 +36,10 @@ use sce_rust_session_store::{
 };
 use sce_server_suite::clock::{wall_ms, WallClock};
 use sce_server_suite::ledger::{self, Ledgers, CLIENT, PIPE};
-use sce_server_suite::protocol::{Command, Halt, Refusal, Report, ServerOptions, Stage};
+use sce_server_suite::machines::generated::server_upgrade_1_sm::ServerUpgrade1Policy;
+use sce_server_suite::machines::generated::server_upgrade_2_sm::ServerUpgrade2Policy;
+use sce_server_suite::protocol::{Build, Command, Halt, Refusal, Report, ServerOptions, Stage};
+use sce_server_suite::upgrade::{self, Notes, UpgradeHost};
 
 /// The longest the server waits for a command before it looks at what came due.
 const POLL: Duration = Duration::from_millis(20);
@@ -39,8 +47,8 @@ const POLL: Duration = Duration::from_millis(20);
 /// The most commands it takes between two looks at what came due.
 const BATCH: usize = 256;
 
-/// The pool this process serves.
-type Served = Pool<Ledgers, Lines, WallClock>;
+/// The pool this process serves, of the machine `F` builds.
+type Serving<F> = Pool<F, Lines, WallClock>;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -64,22 +72,52 @@ fn main() -> ExitCode {
         Some(durable) => ledger::durable_https(durable.mailbox, durable.retain_ms),
         None => PIPE,
     };
+    let store = Observed {
+        inner: store,
+        halt: options.halt,
+        loads: AtomicU64::new(0),
+        puts: AtomicU64::new(0),
+        acks: AtomicU64::new(0),
+        expiries: AtomicU64::new(0),
+    };
+    match options.build {
+        Build::Ledger => run(
+            ledger::machine(binding, options.idle_ms),
+            Ledgers::default(),
+            &options,
+            store,
+        ),
+        Build::Upgrade1 => run(
+            upgrade::machine(binding, options.idle_ms),
+            Served::<ServerUpgrade1Policy, _>::new(UpgradeHost::new(&Notes::read())),
+            &options,
+            store,
+        ),
+        Build::Upgrade2 => run(
+            upgrade::machine(binding, options.idle_ms),
+            Served::<ServerUpgrade2Policy, _>::new(UpgradeHost::new(&Notes::read())),
+            &options,
+            store,
+        ),
+    }
+}
+
+/// Serve `machine`, each session built by `factory`, from `store`, until the input ends.
+fn run<F: SessionFactory<Lines, WallClock>>(
+    machine: Machine,
+    factory: F,
+    options: &ServerOptions,
+    store: Observed,
+) -> ExitCode {
     let pool = Pool::new(
-        ledger::machine(binding, options.idle_ms),
+        machine,
         PoolConfig {
             owner: options.owner.clone(),
             lease_ttl_ms: options.lease_ttl_ms,
             renew_every_ms: options.renew_every_ms,
         },
-        Ledgers::default(),
-        Arc::new(Observed {
-            inner: store,
-            halt: options.halt,
-            loads: AtomicU64::new(0),
-            puts: AtomicU64::new(0),
-            acks: AtomicU64::new(0),
-            expiries: AtomicU64::new(0),
-        }),
+        factory,
+        Arc::new(store),
         Lines {
             halt: options.halt,
             sends: 0,
@@ -117,7 +155,7 @@ fn read_commands() -> Receiver<String> {
 }
 
 /// Serve until the input ends.
-fn serve(pool: &Served, commands: &Receiver<String>) {
+fn serve<F: SessionFactory<Lines, WallClock>>(pool: &Serving<F>, commands: &Receiver<String>) {
     loop {
         let wait = pool.next_wake_ms().map_or(POLL, |at| {
             Duration::from_millis(at.saturating_sub(wall_ms())).min(POLL)
@@ -183,7 +221,7 @@ fn serve(pool: &Served, commands: &Receiver<String>) {
 /// The durable client's exchange (docs/adr/0109, D10), as the HTTPS server makes it: its outbox
 /// opened (in an incarnation drawn now when the store holds none), what `ack` covers in `epoch`
 /// deleted in the store, and what the outbox holds reported.
-fn poll(pool: &Served, epoch: Option<String>, ack: u64) {
+fn poll<F: SessionFactory<Lines, WallClock>>(pool: &Serving<F>, epoch: Option<String>, ack: u64) {
     let Some(outboxes) = pool.outboxes() else {
         report(&Report::Error(
             "a poll reached a server that keeps no outbox".to_string(),
