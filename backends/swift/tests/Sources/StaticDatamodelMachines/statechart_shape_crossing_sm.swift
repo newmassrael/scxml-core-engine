@@ -610,10 +610,10 @@ extension StatechartShapeCrossingPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "73e2fff143120b0c436a0f6ef4d2cfa005d2a98425cb6520bc12cc7270f96f15",
-            revised: "384737b4245c08886d557bccfbcd0587bf7ff89d397c0b09a4e7a01716b4f1ae",
-            format2First: "73e2fff143120b0c436a0f6ef4d2cfa005d2a98425cb6520bc12cc7270f96f15",
-            format2Revised: "384737b4245c08886d557bccfbcd0587bf7ff89d397c0b09a4e7a01716b4f1ae")
+            first: "9d85bddf23418aa2db1bbf2ad5d8597652fbcea5c4c2764e08810cf03e933870",
+            revised: "394113b3f403b2e74a9b776d8e1731c078101bd53eaeead9dc50dda01ae269ac",
+            format2First: "9d85bddf23418aa2db1bbf2ad5d8597652fbcea5c4c2764e08810cf03e933870",
+            format2Revised: "394113b3f403b2e74a9b776d8e1731c078101bd53eaeead9dc50dda01ae269ac")
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the

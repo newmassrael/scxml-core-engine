@@ -1974,10 +1974,10 @@ extension StaticUnionPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "7982c5580d559185d63827afe854e85487260b61645982f72fa5ac5aae320867",
-            revised: "663f2be149abf12c16c9c25df9f95ddce34b70d2db9767bb3f429d8e9ee0ba44",
-            format2First: "4ba6f2eb8ee6d6095789d84c49a4b78f77fb1602d93c4f9fd1a0240163e39e91",
-            format2Revised: "63101a60e01aed30699cc5ebb968e01892e176b577db6041b3309cf0fba9a263",
+            first: "7a278aca0583cd3037e1eb943dc070f16f61a6400ae656b8c15f39282404e9f4",
+            revised: "012a67d4b44d36787feecabbdb78d015833a2c1599961cde8ae5a51c49b269d7",
+            format2First: "0fca4b9bcde072870d6868990919ce4107dff64b85dfa6c547656e2b31958eb3",
+            format2Revised: "ce176391db53aaa2d3f697da07677232fc647f2bc8c3bfc21607e7415f7f43d7",
             records: [
                 SavedRecordLineage(
                     event: "lift.refusal", revision: 1,
