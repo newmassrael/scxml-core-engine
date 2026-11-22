@@ -5617,7 +5617,9 @@ held to its bound where it is written (past it the assignment fails as any other
 nothing is written, `error.execution` is raised, the block ends), compared with `===`
 and `!==`, and measured by `len`. A string that is not such a literal — another
 variable, a concatenation — is refused where it would be held as bytes, since no
-backend takes a text for a byte string. A saved state writes it as its byte-exact
+backend takes a text for a byte string; so is one, a literal included, handed to a
+parameter of a called algorithm that is a byte string, except in an algorithm's body,
+which hands the text's UTF-8 bytes. A saved state writes it as its byte-exact
 Latin-1 text, each byte the character of that code point, and reads it back only as
 Latin-1 text of at most the bound: a character past U+00FF is no byte and is refused,
 not cut. **Rust** holds a `bytes` variable as a `SceBytes<N>`, its bound in its type
