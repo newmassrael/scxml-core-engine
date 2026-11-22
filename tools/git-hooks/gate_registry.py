@@ -5599,6 +5599,13 @@ def distribution_link_failures(tables: dict[str, dict]) -> list[str]:
             if re.search(r"\bln\s+-[a-zA-Z]*s[a-zA-Z]*\s+/usr/", spec.get("install", ""))]
 
 
+def print_self_test_failures(failures: list[str]) -> int:
+    """Print what the self-test found wrong, and the exit status it ends with."""
+    for f in failures:
+        print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
+    return 1
+
+
 def self_test(repo_root: Path) -> int:
     """Cases that pin the rules the registry must not break."""
     failures = []
@@ -7230,6 +7237,10 @@ def self_test(repo_root: Path) -> int:
                 failures.append(
                     f"verdict: {slug} declares the input {pattern!r}, which is "
                     f"not a pattern under the repository root")
+    # The cases below plan units, and a plan reads these fields of every gate:
+    # one that is missing is said here, not by a traceback of the planner.
+    if any(f.startswith("verdict: ") for f in failures):
+        return print_self_test_failures(failures)
 
     # every-tree-builder-names-what-it-builds. A gate whose script configures
     # the root CMake tree compiles the engine and, through it, the generator
@@ -8011,9 +8022,7 @@ def self_test(repo_root: Path) -> int:
                     for f in workspace_lint_failures(repo_root))
 
     if failures:
-        for f in failures:
-            print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
-        return 1
+        return print_self_test_failures(failures)
     print(f"gate_registry self-test: {cases} cases OK", file=sys.stderr)
     return 0
 
