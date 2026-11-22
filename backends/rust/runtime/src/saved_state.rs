@@ -2270,7 +2270,10 @@ pub fn map_to_saved<K, V, const N: usize, S: crate::MapStorage>(
 /// its values by `value` as [`map_to_saved`] wrote them (a byte string by
 /// [`bounded_bytes`]), held to its bound with no key twice
 /// (`keyed_entries`). What a generated machine reads a map variable back with,
-/// in the storage of the place it is read into.
+/// in the storage of the place it is read into. A value that is itself a map
+/// (docs/adr/0108, D12) is read by a `value` that reads it as a map is read
+/// here, so each inner map is held to its own bound with no key twice, its
+/// refusal naming its place (`what[i][1]`), and hashes under a seed of its own.
 pub fn map_from_saved<K: crate::MapKey, V, const N: usize, S: crate::MapStorage>(
     saved: &Value,
     what: &str,
@@ -5897,6 +5900,84 @@ mod tests {
         assert!(Tags::from_saved(&json_of(r#"["red","red"]"#), "tags").is_err());
         assert!(Tags::from_saved(&json_of(r#"["red","blue","green"]"#), "tags").is_err());
         assert!(Tags::from_saved(&json_of(r#"["red","blue"]"#), "tags").is_ok());
+    }
+
+    /// docs/adr/0108, D12: a map whose value is a map is saved as its entries
+    /// in order, each inner map as its own entries in its order, and read back
+    /// whole, by the values' own readers or by readers handed to
+    /// `map_from_saved` and `map_to_saved`, in either storage. An inner map
+    /// with a key twice, or past its bound, is refused naming its place, as an
+    /// outer one is; one key under two outer keys is two entries. A map whose
+    /// value is a list is saved and read back alike, each list held to its
+    /// bound.
+    #[test]
+    fn a_map_of_maps_is_saved_nested_and_an_inner_key_twice_is_refused() {
+        type Faces = crate::BoundedMap<u32, u8, 2>;
+        type Regions = crate::BoundedMap<u32, Faces, 2>;
+        let mut regions = Regions::with_seed(crate::map_seed());
+        let inner_seed = regions.derived_seed(1);
+        let mut north = Faces::with_seed(inner_seed);
+        assert_eq!(north.put(9, 1), crate::PutOutcome::Inserted);
+        assert_eq!(north.put(3, 2), crate::PutOutcome::Inserted);
+        assert_eq!(regions.put(5, north), crate::PutOutcome::Inserted);
+        assert_eq!(
+            regions.put(4, Faces::with_seed(inner_seed)),
+            crate::PutOutcome::Inserted
+        );
+        let saved = regions.to_saved();
+        assert_eq!(saved, json_of("[[5,[[9,1],[3,2]]],[4,[]]]"));
+        let restored = Regions::from_saved(&saved, "regions").expect("restores");
+        assert_eq!(restored, regions);
+        assert!(restored
+            .get(&5u32)
+            .expect("held")
+            .iter()
+            .map(|(face, weight)| (*face, *weight))
+            .eq([(9, 1), (3, 2)]));
+        assert_eq!(restored.get(&4u32).map(|faces| faces.len()), Some(0));
+
+        let read: Regions = map_from_saved(&saved, "regions", u32::from_saved, |inner, what| {
+            map_from_saved(inner, what, u32::from_saved, u8::from_saved)
+        })
+        .expect("restores through the readers");
+        assert_eq!(read, regions);
+        let written = map_to_saved(&regions, SavedValue::to_saved, |faces| {
+            map_to_saved(faces, SavedValue::to_saved, SavedValue::to_saved)
+        });
+        assert_eq!(written, saved);
+        type InlineRegions =
+            crate::BoundedMap<u32, crate::BoundedMap<u32, u8, 2, crate::Inline>, 2, crate::Inline>;
+        let inline = InlineRegions::from_saved(&saved, "regions").expect("restores inline");
+        assert_eq!(inline.to_saved(), saved);
+
+        let twice = Regions::from_saved(&json_of("[[5,[[9,1],[9,2]]]]"), "regions")
+            .expect_err("an inner key twice");
+        assert!(
+            twice
+                .reason()
+                .contains("'regions[0][1][1]' holds a key an entry before it holds"),
+            "{twice}"
+        );
+        let past = Regions::from_saved(&json_of("[[5,[[1,1],[2,2],[3,3]]]]"), "regions")
+            .expect_err("an inner map past its bound");
+        assert!(
+            past.reason()
+                .contains("'regions[0][1]' holds 3 entries, past the 2 it is bounded by"),
+            "{past}"
+        );
+        let apart = Regions::from_saved(&json_of("[[5,[[9,1]]],[4,[[9,1]]]]"), "regions")
+            .expect("one inner key under two outer keys");
+        assert_eq!(apart.len(), 2);
+
+        type Rings = crate::BoundedMap<u32, crate::BoundedList<u16, 3>, 2>;
+        let saved = json_of("[[1,[4,5]],[2,[]]]");
+        let rings = Rings::from_saved(&saved, "rings").expect("restores");
+        assert_eq!(
+            rings.get(&1u32).map(|ring| ring.as_slice()),
+            Some(&[4u16, 5][..])
+        );
+        assert_eq!(rings.to_saved(), saved);
+        assert!(Rings::from_saved(&json_of("[[1,[1,2,3,4]]]"), "rings").is_err());
     }
 
     /// A `null` where the restoring build holds a record that is never absent is
