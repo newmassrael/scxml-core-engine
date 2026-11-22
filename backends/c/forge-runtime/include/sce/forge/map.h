@@ -503,11 +503,17 @@ typedef struct {
  * hashed under `seed`: the start of a map's value that is itself a map. */
 typedef void (*sce_map_start_fn)(void *value, sce_map_seed_t seed);
 
+/* What makes the started map or set at `to` take the entries of the one at `from`
+ * (`sce_map_assign`): the put of a map's value that is itself a map. */
+typedef void (*sce_map_assign_fn)(void *to, const void *from);
+
 /* What one map type is, as `SCE_MAP_DECLARE` and `SCE_SET_DECLARE` describe it: its
  * bound, where a slot holds its key and its value and how large each is, where the map
  * holds its index, its slots and the value a read at an absent key gives, the feed of its
- * key, and what starts a value that is a map or a set (NULL for a value of any other type,
- * whose empty value is all zero). A set's value is of size 0. */
+ * key, and what starts a value that is a map or a set and what puts one into another (both
+ * NULL for a value of any other type, whose empty value is all zero and which a put copies
+ * byte for byte). A value is reached as a map through these alone, so no code a map of
+ * other values compiles reads its value as a map. A set's value is of size 0. */
 typedef struct {
     uint32_t capacity;
     size_t slot_size;
@@ -520,6 +526,7 @@ typedef struct {
     size_t absent_offset;
     sce_map_feed_fn feed;
     sce_map_start_fn start_value;
+    sce_map_assign_fn assign_value;
 } sce_map_layout_t;
 
 /* The first member of each map: what it is, the seed it hashes its keys under, the first
@@ -848,23 +855,22 @@ static inline void *sce_map_put_entry(void *map, const void *key, size_t key_siz
     return value;
 }
 
-static inline void sce_map_assign(void *to, const void *from);
-
 /* Put the key at `key`, of `key_size` bytes, with the value at `value`, of `value_size`:
  * a key that is present keeps its place and takes the value, and one that is absent goes
  * last while the map holds fewer than its bound. Into a full map an absent key is not
  * put, and the map is as it was. A key or a value smaller than the map's own is a text
  * buffer of a smaller bound, which the map's buffer holds with its rest zero. A value that
  * is a map or a set is a started one, whose entries the empty map the entry holds takes
- * under its own seed (`sce_map_assign`), and a `value` of NULL puts the empty value. */
+ * under its own seed (the layout's `assign_value`), and a `value` of NULL puts the empty
+ * value. */
 static inline sce_map_put_outcome_t sce_map_put(void *map, const void *key, size_t key_size, const void *value,
                                                 size_t value_size) {
     const sce_map_layout_t *layout = sce_map_core_(map)->layout;
     sce_map_put_outcome_t outcome;
     void *entry = sce_map_put_entry(map, key, key_size, &outcome);
     if (entry != NULL && value != NULL && layout->value_size != 0u) {
-        if (layout->start_value != NULL) {
-            sce_map_assign(entry, value);
+        if (layout->assign_value != NULL) {
+            layout->assign_value(entry, value);
         } else {
             memcpy(entry, value, value_size);
         }
@@ -943,7 +949,7 @@ static inline void sce_map_copy_for_walk(void *to, const void *from) {
  * 32-bit cells. The value a read at an absent key gives is the zero value the map holds
  * beside its slots. A map whose value is a map or a set is declared with
  * `SCE_MAP_NESTED_DECLARE`, whose empty value is started rather than zero. */
-#define SCE_MAP_DECLARE(prefix, K, V, B, FEED) SCE_MAP_DECLARE_STARTED_(prefix, K, V, B, FEED, NULL)
+#define SCE_MAP_DECLARE(prefix, K, V, B, FEED) SCE_MAP_DECLARE_STARTED_(prefix, K, V, B, FEED, NULL, NULL)
 
 /* The type `prefix##_t` of a map of at most `B` entries, each a key of `K` and a value of
  * the map or set type `INNER##_t` that `SCE_MAP_DECLARE`, `SCE_MAP_NESTED_DECLARE` or
@@ -954,11 +960,12 @@ static inline void sce_map_copy_for_walk(void *to, const void *from) {
  * `prefix##_value_mut`, and the value a read at an absent key gives is a started empty map,
  * itself holding a started empty value at every depth below it. */
 #define SCE_MAP_NESTED_DECLARE(prefix, K, INNER, B, FEED)                                                              \
-    SCE_MAP_DECLARE_STARTED_(prefix, K, INNER##_t, B, FEED, INNER##_start_value)
+    SCE_MAP_DECLARE_STARTED_(prefix, K, INNER##_t, B, FEED, INNER##_start_value, sce_map_assign)
 
-/* The map type of `SCE_MAP_DECLARE`, its value started by `START` (a `sce_map_start_fn`, or
- * NULL for a value whose empty value is all zero). */
-#define SCE_MAP_DECLARE_STARTED_(prefix, K, V, B, FEED, START)                                                         \
+/* The map type of `SCE_MAP_DECLARE`, its value started by `START` (a `sce_map_start_fn`) and
+ * put by `ASSIGN` (a `sce_map_assign_fn`), both NULL for a value whose empty value is all
+ * zero and which a put copies. */
+#define SCE_MAP_DECLARE_STARTED_(prefix, K, V, B, FEED, START, ASSIGN)                                                 \
     SCE_STATIC_ASSERT((B) >= 1u && (B) <= 0x7fffffffu, "a map's bound is at least 1 and twice it 32 bits");            \
     typedef struct {                                                                                                   \
         sce_map_links_t links;                                                                                         \
@@ -990,7 +997,8 @@ static inline void sce_map_copy_for_walk(void *to, const void *from) {
                                                 offsetof(prefix##_t, slots),                                           \
                                                 offsetof(prefix##_t, absent),                                          \
                                                 FEED,                                                                  \
-                                                START};                                                                \
+                                                START,                                                                 \
+                                                ASSIGN};                                                               \
         return &layout;                                                                                                \
     }                                                                                                                  \
     static inline void prefix##_start(prefix##_t *map, sce_map_seed_t seed) {                                          \
@@ -1054,6 +1062,7 @@ static inline void sce_map_copy_for_walk(void *to, const void *from) {
                                                 offsetof(prefix##_t, slots),                                           \
                                                 0u,                                                                    \
                                                 FEED,                                                                  \
+                                                NULL,                                                                  \
                                                 NULL};                                                                 \
         return &layout;                                                                                                \
     }                                                                                                                  \
