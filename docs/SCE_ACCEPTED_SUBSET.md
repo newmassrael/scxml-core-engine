@@ -6280,8 +6280,10 @@ integer, a `bool`, an enum, a text or a byte string of a stated bound, or a
 record of an imported event-schema whose every field is a key, compared field
 by field; any other key is `validation/map-key-type`, naming the field of a
 record key that is not one. A value read here is a number, a `bool`, an enum, a
-text, a byte string or a record; a map of any other value, and a map held inside
-another type (a list's element, an optional value), is the language's and is
+text, a byte string or a record, and (docs/adr/0108, D12) a map, a set, a list of
+numbers, `bool`s or records, or a record that holds a list, below; a map of any
+other value (an optional value, a union), and a map held inside another type (a
+list's element, an optional value), is the language's and is
 `generate/unsupported-feature` by name. A map starts empty and takes no `expr`,
 as a list does, and its entries are in the order their keys were first put
 (D2). A map is no operand and two maps are not compared: a map read as a value
@@ -6292,7 +6294,10 @@ anything but another map variable whose type it fits, which copies it whole.
 (docs/adr/0108, D10): `check` judges a document that declares one, the
 Interpreter's lowering, Rust's and C11's hold it (below), and every other
 backend's `generate` refuses it as `generate/unsupported-feature`, naming the type
-and that record, until the step that lands the lane.
+and that record, until the step that lands the lane. A map whose value is a map, a
+set, a list or a record that holds a list is run by the Interpreter alone: Rust's
+and C11's `generate` refuse it as `generate/unsupported-feature`, naming the type
+and docs/adr/0108, D12, until each lane's own step.
 
 **Reading a map.** `len(m)` is the number of entries, a `uint32` as a list's
 length is; `has(m, k)` is `true` when `k` is one of its keys; `m[k]` is the
@@ -6313,7 +6318,8 @@ only into a record variable of its schema, as an element taken whole is
 (`<assign location="last" expr="faces[peer]"/>`), copied field by field with
 its key read once for each, so the key may not name the record being written
 (`last = byId[last.id]` is `scxml/static-datamodel-rule`). An entry is written
-only by the statements below: `<assign location="m[k]">` is refused.
+only by the statements below, through a place held at a key where the map is
+itself held at a key (below): `<assign location="m[k]">` is refused.
 
 **Writing a map: `<sce:put>` and `<sce:remove>`.** Three statements write a map
 or a set, each naming it by `target` as `<sce:append>` names a list
@@ -6365,6 +6371,50 @@ body that writes the map writes the machine's map and not the walk.
 and loop above, and
 `sce-build/tests/a_map_variable_is_judged_by_the_checker_and_generated_by_the_lanes_that_lower_it.rs`
 holds what is accepted and each refusal.
+
+**A map of a map, a list or a record that holds a list** (docs/adr/0108, D12).
+`map<K, map<K2, V>[B2]>[B]`, `map<K, set<K2>[B2]>[B]`, `map<K, list<T>[B2]>[B]` (`T`
+a number, a `bool` or a record) and `map<K, record:R>[B]` whose `R` holds a list
+are judged as every map is, at any depth of a map held at a key. A statement's
+`target` is then a place: the map variable followed by `[key]` steps and, where a
+step reaches a record, `.field` steps (`<sce:put target="m[k]" key="k2" expr="v"/>`,
+`<sce:remove target="m[k]" key="k2"/>`, `<sce:append target="m[k]" expr="e"/>`,
+`<sce:append target="m[k].tags" expr="e"/>`, `<sce:clear target="m[k]"/>`). Each key
+is judged as a key of the map it keys, is evaluated once before anything is written,
+and may not read the variable written; a list has no index step in a target, so a map
+held inside a list stays refused; a set's key carries no value to write through; and
+a step that reaches a value of one entry is no map, list or set a statement writes
+(each `scxml/static-datamodel-rule`). A write through the place changes the value
+inside the outer entry where it stands, whole or not at all: a key that is absent
+raises `error.execution` (`out-of-range`) and ends the block, and nothing is created
+at it, so a document puts the entry first, guarded by `has(m, k)`.
+`<sce:put target="m" key="k"/>` with no `expr`, where the value is a map, a set or a
+list, puts the empty value, and replaces a present key's value with it where it
+stands; an `expr` names a variable of exactly the value's type, copied whole. The
+outcome of a put or a remove through a place is the inner map's: `full` says the
+inner map is full. Reads compose by the type: `m[k][k2]`, `has(m[k], k2)`,
+`len(m[k])`, `m[k].tags[i]`, and `<foreach array="m[k]">`, which walks the value held
+at the key, a body that writes the variable along any path writing the variable and
+not the walk. A map, a set or a list held at a key is no operand, and is taken whole
+only into a variable of exactly its type, as is a loop's item bound to one
+(`expression/unsupported-construct`). The Interpreter holds the value as the nested
+array it is, the saved form `[[k, [[k2, v], ...]], ...]`, `[[k, [e1, e2]], ...]` and
+`[[k, {..., "tags": [...]}], ...]`; each write through a place is a `<script>` that
+writes the variable again, the library's `mapUpdate` copying the path to the root
+and failing a key that is absent before anything is written; and a read of a map
+held at a key is resolved by the place the author wrote before its parts are lowered,
+so `m[k][k2]` is a `mapGet` of a `mapGet`. A list held at a key taken whole into a
+list variable is judged and has no Interpreter lowering of the copy yet, refused by
+name as every list read through an index is. The scenarios `static_map_nested.json`
+(a put, a remove, `len`, `has` and a read through the place, a full inner map, a walk
+of it, and a key that is absent), `static_map_list.json` (an append through the
+place to a full list, `len`, a walk and a clear) and `static_map_record_list.json`
+(an append to `rows[1].tags`, the record variable put left as it was) run on the
+Interpreter; Rust and C11 refuse their machines naming D12, every other backend
+refuses a map, and the C++ suite lists them as not yet lowered.
+`linkstate_interest.json`, the table a router keeps by key expression and by peer,
+holds the keys it empties in a list of texts, which no lane holds in a statechart's
+variable yet, and runs on no engine.
 
 **The Interpreter's map.** `sce-codegen lower` holds a map or a set as the
 array of its entries in the order their keys were first put, each `[key,
