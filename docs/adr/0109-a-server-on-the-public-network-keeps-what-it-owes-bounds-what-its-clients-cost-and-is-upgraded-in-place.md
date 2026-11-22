@@ -24,9 +24,11 @@
   D8's re-seal passes of the outboxes and the audit log (`Sealed::reseal_outboxes`, `Sealed::reseal_audit`) landed
   after step 15, so that every row a sealed store holds has one. D9's record-level half (`sce:payload` on the four
   COSE operations, Rust and C++) landed after ADR 0101's steps 4a and 4b, as its "Landed" note under D9 says, and
-  Open question 9 (a `<log>` honours `sce:sensitivity`, on every lane) as its own note says. Not landed: step 16
-  (D18, on measured need); an in-place upgrade under load in the server suite ("Conformance"); Open questions 5, 7
-  and 8; and the later backend steps of D0. Where a landing differs from the text of a decision, an "Amended on
+  Open question 9 (a `<log>` honours `sce:sensitivity`, on every lane) as its own note says. The in-place upgrade
+  under load of "Conformance" landed with ADR 0112, whose adapter of a generated machine
+  (`sce_rust_mesh::served`) the server suite serves both versions of a document through
+  (`tests/server/tests/a_server_upgraded_in_place_under_load_loses_nothing.rs`), as the note under D11 says. Not
+  landed: step 16 (D18, on measured need); Open questions 5, 7 and 8; and the later backend steps of D0. Where a landing differs from the text of a decision, an "Amended on
   landing" note under it says what landed and why.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0109" line in the landing that moves it):
@@ -618,8 +620,22 @@ not) on Rust and C++; a scenario that tags in one host and verifies in the other
   every kind of element, and a state of the first version restored into the second is the test
   (`a_saved_state_is_migrated_into_the_next_version` on Rust, `ASavedStateIsMigratedIntoTheNextVersionTest` on C++).
   A `convert` names the algorithm by the alias its document imports it under, and on Rust and C++ converts a
-  fixed-width number or a `bool`; another type is refused by name. The in-place upgrade under load of "Conformance"
-  is not built: no test of `tests/server` stops a loaded server and starts the next build on its store.
+  fixed-width number or a `bool`; another type is refused by name.
+- **Landed** (2026-11-22, with ADR 0112): the in-place upgrade under load of "Conformance",
+  `tests/server/tests/a_server_upgraded_in_place_under_load_loses_nothing.rs`. A server of the first version of a
+  generated document (`tests/server/documents/server_upgrade_1.scxml`), on a durable `https` client binding, is
+  stopped in order with sessions at every state, notes the client signed and sealed by name, reminders pending,
+  envelopes unacknowledged and requests in flight; the next build (`server_upgrade_2.scxml`: a state renamed, a
+  variable added, the note's schema at its second revision) starts on the store, is killed with SIGKILL after its
+  sixth checkpoint while it migrates, and starts again. Every session migrates; a session of another document's
+  shape is answered `InternalError` and left as it is; nothing accepted is lost and no envelope is taken in twice,
+  the outbox's incarnation surviving every restart; a request sent again is answered from its first answer; each
+  note verifies and opens at its second revision's defaults; and the first build started again refuses what the
+  next saved. The kill falls in this case and not among D10's kill points: only an upgrade leaves a store holding
+  states of two shapes. Building it found two defects, fixed in the same landing (ADR 0112): no generic code could
+  serve a generated machine from a pool (its D1 to D3), and a record schema grown by a revision that added a list,
+  or a record held below a variable's value, was refused or not grown at all, so a declared migration refused the
+  widening this decision allows (its D5).
 
 ### D12. A machine declares the configuration it reads, and the deployment supplies it, checked
 
@@ -751,7 +767,8 @@ network operator's. An unkeyed digest as a pure algorithm of the standard librar
   `cose_cross_language.json` does for COSE; vectors: RFC 4231 (HMAC), RFC 9421 Appendix B.2.6 (signatures), RFC 9679
   (thumbprints), and D8's own.
 - **The server suite** of ADR 0107 D10 (`tests/server/`), extended: D10's kills with absent clients and full
-  outboxes; an in-place upgrade under load (stop, start the next build, every session migrates, D11); D1's growth
+  outboxes; an in-place upgrade under load (stop, start the next build, every session migrates, D11; landed with ADR
+  0112, the note under D11); D1's growth
   attempts; D2's floods; D9's inspecting proxy that alters, replays and reads.
 - **Deploy and build checks.** Every new code with a test that triggers it and its appendix row
   (`acceptance_doc_covers_every_code`).

@@ -8218,20 +8218,37 @@ without the fields it does not know. A machine whose record schemas are all in
 their first revision writes the first shape and no `revisions`, the text it
 wrote before.
 
+- Amended by: ADR 0112 (D5): a record is named so wherever a state holds it — a
+  record variable, an element of a list, a set or a map, a field of a record, a
+  union's case, a present optional value. A record whose first revision holds
+  one entry per field is named field by field; one whose first revision holds a
+  list or a record by one line, the event its schema declares and its first
+  revision's fields with their types; a union by its tag and each case's record
+  named the same way. No line names the file a schema or a union is read from,
+  so a file renamed, or a revision that adds a field of any type, leaves the
+  shape as it was.
+
 A restore (`saved_state::upgrade` in Rust, `SavedState.upgrade` in Kotlin)
 takes the first shape with no `revisions` or the revised shape with them, and
 refuses a revision of a schema no record variable of the machine is of, a
 revision later than the machine's own (a newer build's state in an older
 build), and one whose `fields` is not the machine's own digest of that revision
 (two builds that disagree about what it declares). It then reads the state as
-one of this machine: each record saved at an earlier revision, a record variable
-or each element of a list of records, takes the `sce:default` of every field a
-later revision added, and a record that already holds such a field is refused,
+one of this machine: each record saved at an earlier revision, wherever the
+state holds it, takes the `sce:default` of every field a later revision added
+(a list it added reads empty, an optional field absent), and a record that already holds such a field is refused,
 since its revision does not declare it. A record that holds `null` in a field a
 later revision widened to `optional<T>` (`sce:optional-since`) is refused too,
 naming the field, the revision it was saved at and the revision that widened it:
 at that revision the field was a value of `T`, so no build wrote it absent. A
-record saved at or after the widening reads `null` as absent. An event in the saved external queue or
+record saved at or after the widening reads `null` as absent. A record held
+below a variable's value or its elements (a field of a record, a list a record
+holds, a union's case) is grown by the Rust and C++ restores, which walk the
+steps to it; every other lane refuses a machine that holds one whose schema
+grew by name (docs/adr/0109, D0). A state saved by a build before
+docs/adr/0112, under the spelling it gave a composed record or a union, is read
+by the Rust and C++ restores as one of this shape, and refused by its shape on
+the other lanes. An event in the saved external queue or
 in a waiting send holds its data as the wire carried it, and the lift reads it
 with the defaults when it is delivered. The shared fixtures
 `saved/static_schema_revision*.json` are a state of `static_schema_revision`
