@@ -1213,8 +1213,10 @@ pub enum PlaceStep {
 }
 
 /// The place a statement writes through a map or set variable
-/// ([`StaticScope::map_place`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// ([`StaticScope::map_place`]). It is compared by what it means, its
+/// variable's id and its steps, and not as a whole: the variable is borrowed
+/// from the scope, and a declaration has no equality of its own.
+#[derive(Debug, Clone)]
 pub struct MapPlace<'s> {
     /// The variable the place starts at, which holds a map or a set.
     pub variable: &'s crate::model::Variable,
