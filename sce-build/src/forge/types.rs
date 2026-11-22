@@ -285,6 +285,15 @@ impl ListElem {
         }
     }
 
+    /// The alias the scope names the enum by when the element is a value of an
+    /// enum, as an algorithm's list may hold; `None` for any other element.
+    pub fn enum_alias(self) -> Option<&'static str> {
+        match self.value() {
+            ValueType::Scalar(SceType::Enum(reference)) => Some(reference.alias.as_str()),
+            _ => None,
+        }
+    }
+
     /// The type one element has as an operand ([`InferredType::of_value`]). A
     /// record element is `Unknown`: it has no operand type, and is read through
     /// its fields.

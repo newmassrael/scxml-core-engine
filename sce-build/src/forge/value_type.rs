@@ -1705,10 +1705,12 @@ impl WrittenType {
             .and_then(|t| t.strip_suffix('>'))
     }
 
-    /// Whether the lowerings of a slot hold a list of `elem` today: a
+    /// Whether the lowerings of every slot hold a list of `elem` today: a
     /// fixed-width number or `bool`. A list of records is held too
     /// ([`Self::slot_view`]); a list of anything else is a composition they do
-    /// not lower yet.
+    /// not lower yet. A list of the values of an enum is an algorithm's alone
+    /// ([`Self::algorithm_view`]): a statechart's variable holds none, so the
+    /// element is not one of these.
     pub fn list_elem_admitted(elem: &SceType) -> bool {
         matches!(
             elem,
@@ -1750,6 +1752,15 @@ impl WrittenType {
             | Self::Map { .. }
             | Self::Set { .. }
             | Self::Optional { .. } => None,
+        }
+    }
+
+    /// The import alias of the enum a list holds values of, or `None` for any
+    /// other type, a list of another element among them.
+    pub fn list_enum_alias(&self) -> Option<&str> {
+        match self.list_elem() {
+            Some(Self::Scalar(SceType::Enum(reference))) => Some(reference.alias.as_str()),
+            _ => None,
         }
     }
 
@@ -1871,6 +1882,12 @@ impl WrittenType {
     /// union is said where the algorithm is rendered
     /// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]).
     ///
+    /// `list<enum:E>`, a list of the values of an enum, is held too, and by an
+    /// algorithm alone (SCE_FORGE.md §4.12): it is read as a list of numbers is,
+    /// each element a value of its enum. Which backend lowers one is said where
+    /// the algorithm is rendered
+    /// ([`crate::forge::codegen_matrix::ALGORITHM_ENUM_LIST_BACKENDS`]).
+    ///
     /// A `map<K, V>` and a `set<K>` are held whole too (docs/adr/0108, D5): a
     /// parameter that views a statechart's map, read by `len`, `has`, `m[k]`
     /// and `<sce:foreach>`, written in place where it is `inout`, a local and a
@@ -1882,7 +1899,11 @@ impl WrittenType {
     pub fn algorithm_view(&self) -> Result<&Self, Composition> {
         match self {
             Self::Union { .. } => Ok(self),
-            Self::List { elem, .. } if matches!(**elem, Self::Union { .. }) => Ok(self),
+            Self::List { elem, .. }
+                if matches!(**elem, Self::Union { .. } | Self::Scalar(SceType::Enum(_))) =>
+            {
+                Ok(self)
+            }
             Self::Map { key, value, .. } => {
                 key.slot_view()?;
                 value.slot_view()?;
@@ -7358,6 +7379,44 @@ mod tests {
             .unwrap()
             .algorithm_view()
             .is_ok());
+    }
+
+    /// An algorithm's slot holds a list of the values of an enum, bounded or
+    /// not; a statechart's variable holds none, and neither holds such a list
+    /// inside another type.
+    #[test]
+    fn a_list_of_enum_values_is_held_by_an_algorithm_and_by_no_variable() {
+        for text in ["list<enum:Level>", "list<enum:Level>[3]"] {
+            let listed = WrittenType::read(text).unwrap();
+            assert!(listed.algorithm_view().is_ok(), "{text}");
+            assert_eq!(listed.list_enum_alias(), Some("Level"), "{text}");
+            assert_eq!(
+                WrittenType::algorithm_from_attr(text).as_ref(),
+                Some(&listed),
+                "{text}"
+            );
+            assert_eq!(listed.slot_view().unwrap_err().place, "enum:Level");
+            for unions in [false, true] {
+                assert_eq!(
+                    listed.variable_view(unions).unwrap_err().place,
+                    "enum:Level"
+                );
+            }
+        }
+        for text in [
+            "optional<list<enum:Level>[3]>",
+            "list<list<enum:Level>[3]>[3]",
+            "map<uint8, list<enum:Level>[3]>[3]",
+        ] {
+            let nested = WrittenType::read(text).unwrap();
+            assert!(nested.algorithm_view().is_err(), "{text}");
+            assert_eq!(nested.list_enum_alias(), None, "{text}");
+        }
+        // The element every slot's list holds is not widened by it.
+        let WrittenType::Scalar(level) = WrittenType::read("enum:Level").unwrap() else {
+            panic!("an enum is a scalar");
+        };
+        assert!(!WrittenType::list_elem_admitted(&level));
     }
 
     #[test]
