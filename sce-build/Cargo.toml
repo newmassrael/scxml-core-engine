@@ -2032,6 +2032,13 @@ name = "a_c11_machine_sizes_its_event_data_slot"
 path = "tests/a_c11_machine_sizes_its_event_data_slot.rs"
 required-features = ["cli"]
 
+# A C11 machine writes its `<log>` through the log seams the deployment defines
+# (docs/adr/0110 D2). It runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_c11_machine_logs_through_the_log_seams"
+path = "tests/a_c11_machine_logs_through_the_log_seams.rs"
+required-features = ["cli"]
+
 # A C++ machine whose only invokes are remote has no pending-invoke queue and no
 # drain. It runs `sce-codegen`, so it carries the `cli` gate.
 [[test]]
