@@ -5,15 +5,17 @@
 //! key, and its value is the record of the payload `[key, state]`, a CBOR array of the key's text
 //! and the saved state's bytes. Its version, earliest due and lease are the wrapped store's, which
 //! compares and orders them. What its write appends to an outbox is sealed as module `outbox`
-//! says, in the same write.
+//! says, and the facts it appends to the journal as module `journal` says, in the same write.
 
 use sce_forge_runtime::cbor::{read_bytes, read_text, write_array_head, write_bytes, write_text};
 use sce_rust_session_store::{
-    AcquireError, Append, Appended, Batched, Change, Committed, Decided, Due, Expiry, Failure,
-    Lease, LeaseError, Note, Outbox, SessionStore, Stored, Write, WriteError, Written,
+    AcquireError, Append, Appended, Batched, Change, Committed, Decided, Due, Expiry, Fact,
+    Failure, Journal, Lease, LeaseError, Note, Outbox, SessionStore, Stored, Write, WriteError,
+    Written,
 };
 use zeroize::Zeroizing;
 
+use super::journal::SealedJournal;
 use super::outbox::SealedAppend;
 use super::{decoded, encoded, expect_items, Reseal, Resealed, SealError, Sealed, STORE_SESSIONS};
 use crate::cose::put;
@@ -41,16 +43,18 @@ fn session_of(plaintext: &[u8]) -> Result<(String, Vec<u8>), SealError> {
 }
 
 /// A write as the wrapped store keeps it: the entry of its session's key, the session's record
-/// when it keeps one, its appends sealed (module `outbox`), and the entries of the sessions a
-/// removal ends, as the wrapped store keeps their identities (module `kv`).
-struct SealedWrite {
+/// when it keeps one, its appends sealed (module `outbox`), the facts it appends to the journal, to
+/// be sealed at their positions (module `journal`), and the entries of the sessions a removal ends,
+/// as the wrapped store keeps their identities (module `kv`).
+struct SealedWrite<'s, S> {
     entry: String,
     record: Option<Vec<u8>>,
     appends: Vec<SealedAppend>,
+    journal: Option<SealedJournal<'s, S>>,
     ended: Vec<String>,
 }
 
-impl SealedWrite {
+impl<S: SessionStore> SealedWrite<'_, S> {
     /// The appends the wrapped store is given, each in the incarnation `write`'s append names.
     fn appends<'a>(&'a self, write: &Write<'a>) -> Vec<Append<'a>> {
         self.appends
@@ -60,17 +64,25 @@ impl SealedWrite {
             .collect()
     }
 
+    /// The facts the wrapped store is given.
+    fn facts(&self) -> Vec<Fact<'_>> {
+        self.journal
+            .as_ref()
+            .map_or_else(Vec::new, SealedJournal::facts)
+    }
+
     /// The entries of the sessions a removal ends.
     fn ended(&self) -> Vec<&str> {
         self.ended.iter().map(String::as_str).collect()
     }
 
-    /// The write the wrapped store is given: `write`, with the session's record, `appends` and
-    /// `ended` in place of what it names in the clear.
+    /// The write the wrapped store is given: `write`, with the session's record, `appends`, `facts`
+    /// and `ended` in place of what it names in the clear.
     fn given<'a>(
         &'a self,
         write: &Write<'a>,
         appends: &'a [Append<'a>],
+        facts: &'a [Fact<'a>],
         ended: &'a [&'a str],
     ) -> Write<'a> {
         let change = match (write.change, &self.record) {
@@ -83,6 +95,10 @@ impl SealedWrite {
         Write {
             change,
             outbox: appends,
+            journal: self.journal.as_ref().map(|journal| Journal {
+                machine: journal.machine(),
+                facts,
+            }),
             sessions: ended,
             ..*write
         }
@@ -90,10 +106,10 @@ impl SealedWrite {
 }
 
 /// An item of a batch as the wrapped store keeps it, with what it names in the clear.
-enum SealedItem<'a> {
+enum SealedItem<'a, S> {
     Write {
-        held: SealedWrite,
-        write: Write<'a>,
+        held: SealedWrite<'a, S>,
+        write: &'a Write<'a>,
     },
     /// An acknowledgement of the outbox of the client whose entry is `client`.
     Acknowledge {
@@ -106,7 +122,11 @@ enum SealedItem<'a> {
 
 impl<S: SessionStore> Sealed<S> {
     /// `write` to the session `key` names, as the wrapped store keeps it.
-    fn seal_write(&self, key: &str, write: &Write<'_>) -> Result<SealedWrite, Failure> {
+    fn seal_write<'a>(
+        &'a self,
+        key: &'a str,
+        write: &Write<'a>,
+    ) -> Result<SealedWrite<'a, S>, Failure> {
         let entry = self.digest_of(key);
         let record = match write.change {
             Change::Keep { state, .. } => {
@@ -116,6 +136,10 @@ impl<S: SessionStore> Sealed<S> {
         };
         Ok(SealedWrite {
             appends: self.seal_appends(write.outbox)?,
+            journal: write
+                .journal
+                .as_ref()
+                .map(|journal| self.seal_journal(key, journal)),
             ended: write
                 .sessions
                 .iter()
@@ -127,10 +151,10 @@ impl<S: SessionStore> Sealed<S> {
     }
 
     /// `item` of a batch, as the wrapped store keeps it.
-    fn seal_item<'a>(&self, item: &Batched<'a>) -> Result<SealedItem<'a>, Failure> {
-        Ok(match *item {
+    fn seal_item<'a>(&'a self, item: &'a Batched<'a>) -> Result<SealedItem<'a, S>, Failure> {
+        Ok(match item {
             Batched::Write { key, write } => SealedItem::Write {
-                held: self.seal_write(key, &write)?,
+                held: self.seal_write(key, write)?,
                 write,
             },
             Batched::Acknowledge {
@@ -141,8 +165,8 @@ impl<S: SessionStore> Sealed<S> {
             } => SealedItem::Acknowledge {
                 client: self.digest_of(client),
                 incarnation,
-                through,
-                now_ms,
+                through: *through,
+                now_ms: *now_ms,
             },
         })
     }
@@ -246,15 +270,18 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
         }))
     }
 
-    /// The session sealed under the entry of its key, and each append sealed for its client's
-    /// entry (module `outbox`), in one write of the wrapped store.
+    /// The session sealed under the entry of its key, each append sealed for its client's entry
+    /// (module `outbox`), and each fact sealed for its stream and the position the wrapped store
+    /// gives it (module `journal`), in one write of the wrapped store.
     fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
         let sealed = self.seal_write(key, write)?;
         let appends = sealed.appends(write);
+        let facts = sealed.facts();
         let ended = sealed.ended();
-        let written = self
-            .inner
-            .write(&sealed.entry, &sealed.given(write, &appends, &ended))?;
+        let written = self.inner.write(
+            &sealed.entry,
+            &sealed.given(write, &appends, &facts, &ended),
+        )?;
         Ok(Written {
             version: written.version,
             appended: Self::named(written.appended, write.outbox),
@@ -268,11 +295,18 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
         let sealed = batch
             .iter()
             .map(|item| self.seal_item(item))
-            .collect::<Result<Vec<SealedItem<'_>>, Failure>>()?;
+            .collect::<Result<Vec<SealedItem<'_, S>>, Failure>>()?;
         let appends: Vec<Vec<Append<'_>>> = sealed
             .iter()
             .map(|item| match item {
                 SealedItem::Write { held, write } => held.appends(write),
+                SealedItem::Acknowledge { .. } => Vec::new(),
+            })
+            .collect();
+        let facts: Vec<Vec<Fact<'_>>> = sealed
+            .iter()
+            .map(|item| match item {
+                SealedItem::Write { held, .. } => held.facts(),
                 SealedItem::Acknowledge { .. } => Vec::new(),
             })
             .collect();
@@ -285,11 +319,11 @@ impl<S: SessionStore> SessionStore for Sealed<S> {
             .collect();
         let given: Vec<Batched<'_>> = sealed
             .iter()
-            .zip(appends.iter().zip(&ended))
-            .map(|(item, (appends, ended))| match item {
+            .zip(appends.iter().zip(&facts).zip(&ended))
+            .map(|(item, ((appends, facts), ended))| match item {
                 SealedItem::Write { held, write } => Batched::Write {
                     key: &held.entry,
-                    write: held.given(write, appends, ended),
+                    write: held.given(write, appends, facts, ended),
                 },
                 SealedItem::Acknowledge {
                     client,
