@@ -6,6 +6,10 @@
 //! of §mesh-22.8: [`HttpsClient`] over the port, and [`HttpsClientTransport`], the core's
 //! transport.
 //!
+//! Every decision is of the module `client_core`, a state machine that moves nothing
+//! (docs/adr/0117, D1). This module moves what it decides: it draws, signs, exchanges, waits,
+//! reports and tells the host, as the core asks, and tells the core what came of it.
+//!
 //! Two threads, each with at most one exchange in flight, as §mesh-22.3 has a client keep them.
 //! The poller holds an exchange open (`Sce-Mesh-Hold-Ms`) so that what the server sends reaches
 //! the client as soon as it is made; the sender carries what the core transmits as soon as it is
@@ -37,17 +41,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sce_rust_crypto::cose::TrustedKey;
 use sce_rust_crypto::random::SystemRandom;
-use sce_rust_metrics::{Counter, ExchangeOutcome, Metrics};
+use sce_rust_metrics::{Counter, Metrics};
 
-use super::signature::{
-    content_digest, draw_nonce, field_value, normalize_target_uri, verify_response, Answered,
-    CONTENT_DIGEST_HEADER, NONCE_HEADER,
-};
-use super::{
-    is_epoch, is_path_segment, retry_after, split_sequence, Credential, HttpsFailure, HttpsRequest,
-    HttpsResponse, HttpsTransport, LinkEvent, ACK_HEADER, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER,
-    HOLD_HEADER, PATH_PREFIX,
-};
+pub use super::client_core::Received;
+use super::client_core::{ClientCore, CoreSettings, Drawn, Effect, Input, Lane, Task, Wait};
+use super::signature::{draw_nonce, normalize_target_uri, RequestSigner};
+use super::{is_path_segment, until, Credential, HttpsTransport, LinkEvent, PATH_PREFIX};
 use crate::endpoint::{Transport, TransportFailure};
 use crate::peers::{HttpsAuthenticator, Peer, PeerLink, Receipt};
 use crate::reconnect::Backoff;
@@ -161,16 +160,13 @@ pub enum ClientError {
 
 /// What the two threads share.
 struct Shared {
-    settings: ClientSettings,
-    /// The URL every exchange posts to.
-    url: String,
-    /// The same URL as a signature covers it (`@target-uri`, SCE_MESH.md section 22.9).
-    target_uri: String,
-    /// The `Authorization` header, when the credential is one.
-    authorization: Option<String>,
+    /// The server machine's name: the peer the core addresses.
+    server: String,
+    /// The key every request is signed by, under the `key` authenticator.
+    signer: Option<RequestSigner>,
     port: Arc<dyn HttpsTransport>,
     state: Mutex<State>,
-    /// Wakes the sender when the core transmits, and either thread when the client stops.
+    /// Wakes a thread when the core asks something of its lane.
     wake: Condvar,
     /// What the client reports each exchange to (docs/adr/0109, D16).
     metrics: Arc<dyn Metrics>,
@@ -179,68 +175,24 @@ struct Shared {
 type EventSink = Box<dyn FnMut(LinkEvent) + Send>;
 
 struct State {
-    /// What the core transmitted and no exchange has carried yet, oldest first.
-    outbox: VecDeque<Vec<u8>>,
-    /// What every request acknowledges: the highest mailbox number handed to the core, in the
-    /// mailbox incarnation the client last saw.
-    mark: Mark,
-    ready: bool,
-    stopped: bool,
-    /// Whether the last `200` did not verify under `verify:`, so that a run of them is told once
-    /// (SCE_MESH.md section 16.7 row 19, once per edge).
-    unauthenticated: bool,
-    /// Under `receipt: durable` (docs/adr/0109, D10), the highest mailbox number, in the
-    /// incarnation of `mark`, that the host reported a durable checkpoint of its own holds
-    /// ([`HttpsClient::held`]): what every request acknowledges, never above `mark.ack`. `None`
-    /// on a binding that is not durable, whose requests acknowledge `mark.ack`.
-    held: Option<u64>,
+    core: ClientCore,
+    /// What the core asked of each lane and its thread has not begun, oldest first.
+    polls: VecDeque<Task>,
+    sends: VecDeque<Task>,
     /// Where the host is told what happened. Called with the state held, so that what the two
     /// threads observe reaches the host in the order it was observed.
     events: EventSink,
 }
 
-/// What a request was sent with that its response is read against: where its acknowledgement
-/// stood, and, when the client verifies, what of it the response's signature covers.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Sent {
-    mark: Mark,
-    answered: Option<Answered>,
-}
-
-/// Where an acknowledgement stands (§mesh-22.3): the highest mailbox number handed to the core,
-/// and the incarnation of the mailbox it counts in, `None` before the first `200`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Mark {
-    ack: u64,
-    epoch: Option<String>,
-}
-
 const HELD: &str = "the client's state is never left mid-update: nothing in it panics while held";
 
 impl State {
-    /// What the next request acknowledges: the highest number handed to the core, or, under
-    /// `receipt: durable`, the highest a durable checkpoint of the host holds (docs/adr/0109,
-    /// D10), so that the server never deletes what a crash of this client would lose.
-    fn acknowledging(&self) -> Mark {
-        match self.held {
-            Some(held) => Mark {
-                ack: held.min(self.mark.ack),
-                epoch: self.mark.epoch.clone(),
-            },
-            None => self.mark.clone(),
+    fn tasks(&mut self, lane: Lane) -> &mut VecDeque<Task> {
+        match lane {
+            Lane::Poll => &mut self.polls,
+            Lane::Send => &mut self.sends,
         }
     }
-}
-
-/// Where a client stands in its server's mailbox (SCE_MESH.md section 22.3): the incarnation
-/// the mailbox numbers in (`None` before the first `200`) and the highest number the client
-/// handed its host. Read by a host that checkpoints under `receipt: durable` before it applies
-/// what the client handed it, and reported back once a checkpoint that holds it is durable
-/// ([`HttpsClient::received`], [`HttpsClient::held`]).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Received {
-    pub epoch: Option<String>,
-    pub number: u64,
 }
 
 impl Shared {
@@ -248,278 +200,47 @@ impl Shared {
         self.state.lock().expect(HELD)
     }
 
-    /// The request that carries `body`, acknowledging `mark` and asking for `hold`, and what it
-    /// was sent with. Refused as [`HttpsFailure::Other`] when a nonce it needs could not be drawn.
-    fn request(
-        &self,
-        body: Vec<u8>,
-        mark: &Mark,
-        hold: Duration,
-    ) -> Result<(HttpsRequest, Sent), HttpsFailure> {
-        // §mesh-22.1: what every request carries besides its body, the media type of the
-        // §mesh-22.2 framing, the acknowledgement and the incarnation it counts in (none before
-        // the first `200`), the hold, and the credential.
-        let mut headers = alloc::vec![
-            ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
-            (ACK_HEADER.to_string(), mark.ack.to_string()),
-            (HOLD_HEADER.to_string(), hold.as_millis().to_string()),
-        ];
-        if let Some(epoch) = &mark.epoch {
-            headers.push((EPOCH_HEADER.to_string(), epoch.clone()));
-        }
-        if let Some(authorization) = &self.authorization {
-            headers.push(("Authorization".to_string(), authorization.clone()));
-        }
-        // §mesh-22.9: a client that verifies or signs draws a nonce for each
-        // exchange, which a response's signature covers so that it answers this request and no
-        // other; a client of the `key` authenticator signs the request over its body's digest.
-        let signer = self.settings.credential.request_signer();
-        let mut answered = None;
-        if self.settings.verify.is_some() || signer.is_some() {
-            let nonce = draw_nonce(&mut SystemRandom).ok_or_else(|| {
-                HttpsFailure::Other("the random source could not be read".to_string())
-            })?;
-            headers.push((NONCE_HEADER.to_string(), nonce.clone()));
-            if self.settings.verify.is_some() {
-                answered = Some(Answered {
-                    target_uri: self.target_uri.clone(),
-                    ack: mark.ack.to_string(),
-                    nonce,
-                });
+    /// Give the core `input`, with the state held, and do what it answers: report and tell the
+    /// host here, in its order, and leave each lane's task to the lane's thread.
+    fn step(&self, state: &mut State, input: Input) {
+        for effect in state.core.step(input) {
+            match effect {
+                Effect::Count(status) => {
+                    self.metrics.count(Counter::ClientExchanges { status }, 1);
+                }
+                Effect::Tell(event) => (state.events)(event),
+                Effect::Ask(lane, task) => {
+                    state.tasks(lane).push_back(task);
+                    self.wake.notify_all();
+                }
             }
         }
-        if let Some(signer) = signer {
-            headers.push((CONTENT_DIGEST_HEADER.to_string(), content_digest(&body)));
-            let created = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|since| i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
-                .unwrap_or(0);
-            let signed = signer
-                .sign(&self.target_uri, &headers, created)
-                .ok_or_else(|| {
-                    HttpsFailure::Other(
-                        "the request lacks a field its signature covers".to_string(),
-                    )
-                })?;
-            headers.extend(signed);
-        }
-        let request = HttpsRequest {
-            url: self.url.clone(),
-            headers,
-            body,
-            timeout: hold.saturating_add(self.settings.exchange_timeout),
-        };
-        Ok((
-            request,
-            Sent {
-                mark: mark.clone(),
-                answered,
-            },
-        ))
     }
 
-    /// Why `response`, a `200`, is not one the client may take: `None` when the binding does not
-    /// verify or the response verifies (SCE_MESH.md section 22.9).
-    fn unverified(&self, sent: &Sent, response: &HttpsResponse) -> Option<String> {
-        let trusted = self.settings.verify.as_ref()?;
-        let Some(answered) = &sent.answered else {
-            return Some("the request was sent without a nonce".to_string());
-        };
-        let field = |name: &str| field_value(&response.headers, name);
-        verify_response(trusted, response.status, &field, &response.body, answered)
-            .err()
-            .map(|refusal| refusal.to_string())
+    /// [`Self::step`], holding the state for it.
+    fn give(&self, input: Input) {
+        self.step(&mut self.lock(), input);
     }
-}
 
-/// What an exchange's outcome asks of the thread that made it.
-#[derive(Debug, PartialEq, Eq)]
-enum Then {
-    /// Go on at once.
-    Continue,
-    /// Wait at least this long first: the server asked (`Retry-After`) or the exchange failed.
-    Wait(Duration),
-}
+    /// What the core asks of `lane` next, once it does.
+    fn next_task(&self, lane: Lane) -> Task {
+        let mut state = self.lock();
+        loop {
+            if let Some(task) = state.tasks(lane).pop_front() {
+                return task;
+            }
+            state = self.wake.wait(state).expect(HELD);
+        }
+    }
 
-/// Take what an exchange returned. `carried` are the envelopes the request carried and `sent` what
-/// it was sent with. Returns what the thread should do next; a response the server shed puts
-/// `carried` back at the front of the outbox, to go again after the wait.
-fn take_outcome(
-    shared: &Shared,
-    carried: Vec<Vec<u8>>,
-    sent: &Sent,
-    outcome: Result<HttpsResponse, HttpsFailure>,
-    failures: &mut u32,
-) -> Then {
-    // docs/adr/0109, D16: every exchange, by the status its server answered, or none.
-    let status = match &outcome {
-        Ok(response) => ExchangeOutcome::of_status(response.status),
-        Err(_) => ExchangeOutcome::NoResponse,
-    };
-    shared.metrics.count(Counter::ClientExchanges { status }, 1);
-    let server = shared.settings.server.clone();
-    // Read before the state is held: a verification is the response's alone.
-    let unverified = match &outcome {
-        Ok(response) if response.status == 200 => shared.unverified(sent, response),
-        _ => None,
-    };
-    let mut state = shared.lock();
-    if state.stopped {
-        // The client stopped while the exchange was in flight: it has told the host its server is
-        // lost, and takes nothing more in. What the mailbox sent stays there, unacknowledged.
-        for envelope in carried {
-            (state.events)(LinkEvent::Unsent(server.clone(), envelope));
-        }
-        return Then::Continue;
-    }
-    match outcome {
-        // §mesh-22.9: a `200` that did not verify proves nothing of the server. The
-        // client takes nothing of it and acknowledges nothing, so what the mailbox holds stays
-        // there for a response that verifies; what the request carried is handed back as not
-        // sent, since nothing says the server took it; readiness stands as it was; and the host
-        // is told once per edge (section 16.7 row 19). The client tries again on its backoff.
-        Ok(_) if unverified.is_some() => {
-            for envelope in carried {
-                (state.events)(LinkEvent::Unsent(server.clone(), envelope));
-            }
-            if !state.unauthenticated {
-                state.unauthenticated = true;
-                let why = unverified.unwrap_or_default();
-                (state.events)(LinkEvent::Unauthenticated(server, why));
-            }
-            let wait = shared.settings.backoff.delay(*failures);
-            *failures = failures.saturating_add(1);
-            Then::Wait(wait)
-        }
-        Ok(response) if response.status == 200 => {
-            *failures = 0;
-            state.unauthenticated = false;
-            if !state.ready {
-                state.ready = true;
-                (state.events)(LinkEvent::Ready(server.clone()));
-            }
-            // docs/adr/0109, D10: under `receipt: durable` the server answers `200` only once a
-            // durable checkpoint holds what the request carried, which is the binding's
-            // acknowledgement of it: the host's core holds it no more.
-            if shared.settings.durable && !carried.is_empty() {
-                (state.events)(LinkEvent::Carried(server.clone(), carried));
-            }
-            take_mailbox(&mut state, &server, &sent.mark, &response);
-            Then::Continue
-        }
-        // §mesh-22.4: load shed is neither a failure nor a lost server. What the request carried
-        // goes again after at least the wait `Retry-After` asks for.
-        Ok(response) if matches!(response.status, 429 | 503) => {
-            for envelope in carried.into_iter().rev() {
-                state.outbox.push_front(envelope);
-            }
-            let asked = response
-                .header("Retry-After")
-                .and_then(|value| retry_after(value, SystemTime::now()));
-            let wait = asked.unwrap_or_else(|| shared.settings.backoff.delay(*failures));
-            *failures = failures.saturating_add(1);
-            Then::Wait(wait)
-        }
-        // A status the binding does not take in: the server answered, so the client stays as
-        // ready as it was, and what the request carried was not taken (§mesh-22.4).
-        Ok(_) => {
-            for envelope in carried {
-                (state.events)(LinkEvent::Unsent(server.clone(), envelope));
-            }
-            let wait = shared.settings.backoff.delay(*failures);
-            *failures = failures.saturating_add(1);
-            Then::Wait(wait)
-        }
-        // §mesh-22.4: a failure at the transport hands the envelopes back as not sent and ends
-        // readiness until the next `200`.
-        Err(failure) => {
-            for envelope in carried {
-                (state.events)(LinkEvent::Unsent(server.clone(), envelope));
-            }
-            // A failure at the transport ends readiness and loses nothing (section 22.4): the
-            // server keeps the mailbox, a reply to a request this client waits on among it, and
-            // a later exchange carries it, so the link is interrupted, not lost.
-            if state.ready {
-                state.ready = false;
-                (state.events)(LinkEvent::Interrupted(server, failure.to_string()));
-            }
-            let wait = shared.settings.backoff.delay(*failures);
-            *failures = failures.saturating_add(1);
-            Then::Wait(wait)
-        }
-    }
-}
-
-/// Hand the core the envelopes of a `200` response, in mailbox order and each once, and move the
-/// acknowledgement past them (§mesh-22.3). `sent` is what the response's request acknowledged.
-///
-/// The response's incarnation (`Sce-Mesh-Epoch`) says which numbering its numbers count in:
-///
-/// * the one the client last saw: what is at or below the client's acknowledgement (which the
-///   other thread's response may already have handed on) is passed over;
-/// * another, which the request was sent in: an incarnation the client has left since, because
-///   the other thread's response named a newer one. What is above the request's acknowledgement is
-///   handed on, the section 10.5 window dropping what reached the core before, and the client's
-///   acknowledgement stays with the newer incarnation;
-/// * any other: a mailbox that numbers anew (a server that started again with its mailboxes
-///   empty). The acknowledgement starts over at 0 in it, so all of the response is new. When it
-///   replaces an incarnation the client knew, what that mailbox held is gone, a reply among it:
-///   the host is told the server restarted ([`LinkEvent::Restarted`]) before the response's
-///   envelopes, so the core asks again what it waits on. The first incarnation the client learns
-///   replaces none.
-///
-/// A response that names no incarnation says nothing of what its numbers count in, and a body
-/// without a first number cannot be acknowledged: what a server that breaks the binding sends is
-/// not taken.
-fn take_mailbox(state: &mut State, server: &str, sent: &Mark, response: &HttpsResponse) {
-    // §mesh-22.2: a client takes nothing of a `200` without `Sce-Mesh-Epoch`, reads the body as a
-    // CBOR sequence, and numbers it from `Sce-Mesh-First`.
-    let Some(epoch) = response
-        .header(EPOCH_HEADER)
-        .map(str::trim)
-        .filter(|epoch| is_epoch(epoch))
-    else {
-        return;
-    };
-    let current = if state.mark.epoch.as_deref() == Some(epoch) {
-        true
-    } else if sent.epoch.as_deref() == Some(epoch) {
-        false
-    } else {
-        let replaced = state.mark.epoch.is_some();
-        state.mark = Mark {
-            ack: 0,
-            epoch: Some(epoch.to_string()),
-        };
-        // What a checkpoint held counted in the numbering that is gone.
-        if let Some(held) = state.held.as_mut() {
-            *held = 0;
-        }
-        if replaced {
-            (state.events)(LinkEvent::Restarted(server.to_string()));
-        }
-        true
-    };
-    let envelopes = split_sequence(&response.body);
-    if envelopes.is_empty() {
-        return;
-    }
-    let first = response
-        .header(FIRST_HEADER)
-        .and_then(|value| value.trim().parse::<u64>().ok());
-    let Some(first) = first.filter(|first| *first >= 1) else {
-        return;
-    };
-    let taken = if current { state.mark.ack } else { sent.ack };
-    let last = first.saturating_add(envelopes.len() as u64 - 1);
-    for (number, envelope) in (first..).zip(envelopes) {
-        if number <= taken {
-            continue;
-        }
-        (state.events)(LinkEvent::Received(server.to_string(), envelope));
-    }
-    if current {
-        state.mark.ack = state.mark.ack.max(last);
+    /// Wait `wait`, or less if the core asks something else of `lane` meanwhile. Returns whether
+    /// it waited all of it.
+    fn wait_out(&self, lane: Lane, wait: Duration) -> bool {
+        let (mut state, _) = self
+            .wake
+            .wait_timeout_while(self.lock(), wait, |state| state.tasks(lane).is_empty())
+            .expect(HELD);
+        state.tasks(lane).is_empty()
     }
 }
 
@@ -531,7 +252,7 @@ pub struct HttpsClientTransport {
 
 impl Transport for HttpsClientTransport {
     fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
-        if peer != self.shared.settings.server {
+        if peer != self.shared.server {
             return Err(TransportFailure {
                 retryable: false,
                 message: Some(alloc::format!("no HTTPS binding to {peer}")),
@@ -539,15 +260,15 @@ impl Transport for HttpsClientTransport {
             });
         }
         let mut state = self.shared.lock();
-        if state.stopped {
+        if state.core.stopped() {
             return Err(TransportFailure {
                 retryable: true,
                 message: Some("the HTTPS client has stopped".to_string()),
                 queue_full: None,
             });
         }
-        state.outbox.push_back(bytes.to_vec());
-        self.shared.wake.notify_all();
+        self.shared
+            .step(&mut state, Input::Transmitted(bytes.to_vec()));
         Ok(())
     }
 }
@@ -590,32 +311,41 @@ impl HttpsClient {
         let Some(target_uri) = normalize_target_uri(&url) else {
             return Err(ClientError::BadBase(settings.base));
         };
-        let held = settings.durable.then_some(0);
-        let shared = Arc::new(Shared {
-            authorization: settings.credential.authorization(),
+        let signer = settings.credential.request_signer().cloned();
+        let core = ClientCore::new(CoreSettings {
+            server: settings.server.clone(),
             url,
             target_uri,
-            settings,
+            authorization: settings.credential.authorization(),
+            signs: signer.is_some(),
+            verify: settings.verify,
+            hold: settings.hold,
+            exchange_timeout: settings.exchange_timeout,
+            max_body_bytes: settings.max_body_bytes,
+            backoff: settings.backoff,
+            durable: settings.durable,
+        });
+        let shared = Arc::new(Shared {
+            server: settings.server,
+            signer,
             port,
             state: Mutex::new(State {
-                outbox: VecDeque::new(),
-                mark: Mark::default(),
-                ready: false,
-                stopped: false,
-                unauthenticated: false,
-                held,
+                core,
+                polls: VecDeque::new(),
+                sends: VecDeque::new(),
                 events: Box::new(events),
             }),
             wake: Condvar::new(),
             metrics,
         });
+        shared.give(Input::Started);
         let poller = {
             let shared = Arc::clone(&shared);
-            std::thread::spawn(move || poll(&shared))
+            std::thread::spawn(move || run(&shared, Lane::Poll))
         };
         let sender = {
             let shared = Arc::clone(&shared);
-            std::thread::spawn(move || send(&shared))
+            std::thread::spawn(move || run(&shared, Lane::Send))
         };
         Ok(HttpsClient {
             shared,
@@ -636,11 +366,7 @@ impl HttpsClient {
     /// least this much, and reports it with [`Self::held`] once a checkpoint taken after is
     /// durable.
     pub fn received(&self) -> Received {
-        let state = self.shared.lock();
-        Received {
-            epoch: state.mark.epoch.clone(),
-            number: state.mark.ack,
-        }
+        self.shared.lock().core.received()
     }
 
     /// A durable checkpoint of the host holds every envelope up to `received`, read with
@@ -650,13 +376,7 @@ impl HttpsClient {
     /// has left counts in a numbering that is gone, and moves nothing; on a binding that is not
     /// durable this does nothing.
     pub fn held(&self, received: &Received) {
-        let mut state = self.shared.lock();
-        if state.mark.epoch != received.epoch {
-            return;
-        }
-        if let Some(held) = state.held.as_mut() {
-            *held = (*held).max(received.number);
-        }
+        self.shared.give(Input::Held(received.clone()));
     }
 
     /// Stop the client: no exchange is begun after this, what waits in the outbox is handed back
@@ -671,24 +391,7 @@ impl HttpsClient {
     }
 
     fn signal_stop(&self) {
-        let server = self.shared.settings.server.clone();
-        let mut state = self.shared.lock();
-        if state.stopped {
-            return;
-        }
-        state.stopped = true;
-        let left: Vec<Vec<u8>> = state.outbox.drain(..).collect();
-        for envelope in left {
-            (state.events)(LinkEvent::Unsent(server.clone(), envelope));
-        }
-        // A request waiting on the server can be answered only by an exchange this client makes,
-        // and it makes none from now on: the link is lost whether or not it was ready.
-        state.ready = false;
-        (state.events)(LinkEvent::Lost(
-            server,
-            "the HTTPS client stopped".to_string(),
-        ));
-        self.shared.wake.notify_all();
+        self.shared.give(Input::Stop);
     }
 }
 
@@ -737,100 +440,78 @@ fn is_loopback(host: &str) -> bool {
             .is_ok_and(|address| address.is_loopback())
 }
 
-/// Wait `wait`, or less if the client stops meanwhile. Returns whether it stopped.
-fn pause(shared: &Shared, wait: Duration) -> bool {
-    let state = shared.lock();
-    if state.stopped {
-        return true;
-    }
-    let (state, _) = shared
-        .wake
-        .wait_timeout_while(state, wait, |state| !state.stopped)
-        .expect(HELD);
-    state.stopped
-}
-
-/// The poller: one held exchange after another, carrying nothing.
-fn poll(shared: &Shared) {
-    let mut failures = 0u32;
+/// A lane's thread: do what the core asks of the lane, one task after another, and tell it what
+/// came of each, until it asks the lane to stop.
+fn run(shared: &Shared, lane: Lane) {
     loop {
-        let mark = {
-            let state = shared.lock();
-            if state.stopped {
-                return;
+        let input = match shared.next_task(lane) {
+            Task::Draw => Input::Drawn(
+                lane,
+                draw_nonce(&mut SystemRandom).map(|nonce| Drawn {
+                    nonce,
+                    moment: since_epoch(),
+                }),
+            ),
+            // §mesh-22.9: the key of the `key` authenticator is held here, and signs at once.
+            Task::Sign {
+                target_uri,
+                headers,
+                created,
+            } => Input::Signed(
+                lane,
+                shared
+                    .signer
+                    .as_ref()
+                    .and_then(|signer| signer.sign(&target_uri, &headers, created))
+                    .map(Vec::from),
+            ),
+            Task::Carry(request) => Input::Answered(lane, shared.port.exchange(request)),
+            Task::Wake(wait) => {
+                if !shared.wait_out(lane, length_of(wait)) {
+                    continue;
+                }
+                Input::Woken(lane)
             }
-            state.acknowledging()
+            Task::Stop => return,
         };
-        let (outcome, sent) = exchange(shared, Vec::new(), &mark, shared.settings.hold);
-        if let Then::Wait(wait) = take_outcome(shared, Vec::new(), &sent, outcome, &mut failures) {
-            if pause(shared, wait) {
-                return;
-            }
-        }
+        shared.give(input);
     }
 }
 
-/// Make one exchange carrying `body`, acknowledging `mark` and asking for `hold`: what the port
-/// answered, and what the request was sent with. A request that could not be made is answered as
-/// a failure at the transport, and was sent with nothing.
-fn exchange(
-    shared: &Shared,
-    body: Vec<u8>,
-    mark: &Mark,
-    hold: Duration,
-) -> (Result<HttpsResponse, HttpsFailure>, Sent) {
-    match shared.request(body, mark, hold) {
-        Ok((request, sent)) => (shared.port.exchange(request), sent),
-        Err(failure) => (
-            Err(failure),
-            Sent {
-                mark: mark.clone(),
-                answered: None,
-            },
-        ),
-    }
+/// The moment, since the Unix epoch; none for a clock set before it.
+fn since_epoch() -> Duration {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
 }
 
-/// The sender: an exchange that asks for no hold whenever the outbox holds something.
-fn send(shared: &Shared) {
-    let mut failures = 0u32;
-    loop {
-        let (carried, mark) = {
-            let state = shared.lock();
-            let mut state = shared
-                .wake
-                .wait_while(state, |state| state.outbox.is_empty() && !state.stopped)
-                .expect(HELD);
-            if state.stopped {
-                return;
-            }
-            let mut carried = Vec::new();
-            let mut size = 0usize;
-            while let Some(length) = state.outbox.front().map(Vec::len) {
-                let grown = size.saturating_add(length);
-                if !carried.is_empty() && grown > shared.settings.max_body_bytes {
-                    break;
-                }
-                size = grown;
-                if let Some(envelope) = state.outbox.pop_front() {
-                    carried.push(envelope);
-                }
-            }
-            (carried, state.acknowledging())
-        };
-        let body = super::join_sequence(carried.iter().map(Vec::as_slice));
-        let (outcome, sent) = exchange(shared, body, &mark, Duration::ZERO);
-        if let Then::Wait(wait) = take_outcome(shared, carried, &sent, outcome, &mut failures) {
-            if pause(shared, wait) {
-                return;
-            }
+/// How long `wait` is from now.
+fn length_of(wait: Wait) -> Duration {
+    match wait {
+        Wait::For(delay) => delay,
+        // A backoff of this one wait, for its spread.
+        Wait::Spread(delay) => Backoff {
+            initial: delay,
+            max: delay,
+            factor: 1,
+            jitter: true,
         }
+        .delay(0),
+        Wait::Until(moment) => until(moment, SystemTime::now()),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::signature::{
+        content_digest, field_value, Answered, CONTENT_DIGEST_HEADER, NONCE_HEADER,
+    };
+    use super::super::{
+        HttpsFailure, HttpsRequest, HttpsResponse, ACK_HEADER, CONTENT_TYPE, EPOCH_HEADER,
+        FIRST_HEADER, HOLD_HEADER,
+    };
     use super::*;
+    use sce_rust_metrics::ExchangeOutcome;
     use std::sync::mpsc;
 
     type Answers = Mutex<VecDeque<Result<HttpsResponse, HttpsFailure>>>;
@@ -887,14 +568,6 @@ mod tests {
         ok_in(EPOCH, first, body)
     }
 
-    /// Where a request's acknowledgement stood, in `epoch`.
-    fn mark(ack: u64, epoch: Option<&str>) -> Mark {
-        Mark {
-            ack,
-            epoch: epoch.map(str::to_string),
-        }
-    }
-
     /// The value of the header `name` of `request`.
     fn header_of(request: &HttpsRequest, name: &str) -> Option<String> {
         request
@@ -933,132 +606,29 @@ mod tests {
         }
     }
 
-    /// A bare state for the pure rules, its events into a channel.
-    fn state() -> (State, mpsc::Receiver<LinkEvent>) {
-        let (tx, rx) = mpsc::channel();
-        (
-            State {
-                outbox: VecDeque::new(),
-                mark: Mark::default(),
-                ready: true,
-                stopped: false,
-                unauthenticated: false,
-                held: None,
-                events: Box::new(move |event| {
-                    let _ = tx.send(event);
-                }),
-            },
-            rx,
-        )
-    }
-
-    fn received(rx: &mpsc::Receiver<LinkEvent>) -> Vec<Vec<u8>> {
-        rx.try_iter()
-            .map(|event| match event {
-                LinkEvent::Received(peer, bytes) => {
-                    assert_eq!(peer, "cloud");
-                    bytes
-                }
-                other => panic!("expected only arrivals, got {other:?}"),
-            })
-            .collect()
-    }
-
     /// Three one-byte CBOR items (the unsigned integers 1, 2 and 3), which split as three.
     fn three() -> Vec<u8> {
         alloc::vec![0x01, 0x02, 0x03]
     }
 
+    /// How long each wait the core asks is: as it says, spread by up to 20 percent either way, and
+    /// until a moment, none when it is past. Red if a spread wait is waited as it stands, or a
+    /// date is read as a delay.
     #[test]
-    fn a_response_that_continues_the_numbering_is_taken_once() {
-        let (mut state, rx) = state();
-        state.mark = mark(4, Some(EPOCH));
-        let sent = state.mark.clone();
-        // The request acknowledged 4; the mailbox answers 5, 6, 7.
-        take_mailbox(&mut state, "cloud", &sent, &ok(Some(5), three()));
-        assert_eq!(received(&rx), [[1], [2], [3]]);
-        assert_eq!(state.mark, mark(7, Some(EPOCH)));
-        // The other thread's request also acknowledged 4 and was answered 5 to 8: only 8 is new.
-        take_mailbox(
-            &mut state,
-            "cloud",
-            &sent,
-            &ok(Some(5), alloc::vec![0x01, 0x02, 0x03, 0x04]),
-        );
-        assert_eq!(received(&rx), [[4]]);
-        assert_eq!(state.mark, mark(8, Some(EPOCH)));
-    }
-
-    /// A server that started again with its mailboxes empty numbers them from 1 in a new
-    /// incarnation: the acknowledgement starts over in it, so what it sends is all new though its
-    /// numbers are below what the client acknowledged. The other thread's response to a request
-    /// sent in the earlier incarnation, answered in the new one, is taken from where the new
-    /// numbering stands; one answered in the earlier incarnation is handed on above what its
-    /// request acknowledged, and leaves the acknowledgement in the new one. The host is told the
-    /// server restarted once, when the new incarnation replaces the one the client knew, and
-    /// before what it sends: neither the other thread's response in the new one nor the late one
-    /// in the earlier one is a restart.
-    #[test]
-    fn a_new_incarnation_starts_the_acknowledgement_over() {
-        let (mut state, rx) = state();
-        state.mark = mark(57, Some(EARLIER));
-        let sent = state.mark.clone();
-        take_mailbox(&mut state, "cloud", &sent, &ok(Some(1), three()));
+    fn a_wait_is_as_long_as_the_core_asks() {
+        let delay = Duration::from_secs(10);
+        assert_eq!(length_of(Wait::For(delay)), delay);
+        let spread: Vec<Duration> = (0..64).map(|_| length_of(Wait::Spread(delay))).collect();
+        assert!(spread
+            .iter()
+            .all(|wait| (Duration::from_secs(8)..=Duration::from_secs(12)).contains(wait)));
+        assert!(spread.iter().any(|wait| *wait != delay), "{spread:?}");
         assert_eq!(
-            rx.try_recv().ok(),
-            Some(LinkEvent::Restarted("cloud".to_string())),
-            "the mailbox the client knew is gone"
+            length_of(Wait::Until(Duration::from_secs(1))),
+            Duration::ZERO
         );
-        assert_eq!(received(&rx), [[1], [2], [3]]);
-        assert_eq!(state.mark, mark(3, Some(EPOCH)));
-
-        take_mailbox(
-            &mut state,
-            "cloud",
-            &sent,
-            &ok(Some(1), alloc::vec![0x01, 0x02, 0x03, 0x04]),
-        );
-        assert_eq!(received(&rx), [[4]], "taken once in the new numbering");
-        assert_eq!(state.mark, mark(4, Some(EPOCH)));
-
-        take_mailbox(
-            &mut state,
-            "cloud",
-            &sent,
-            &ok_in(EARLIER, Some(57), alloc::vec![0x09, 0x0a]),
-        );
-        assert_eq!(
-            received(&rx),
-            [[0x0a]],
-            "above what the request acknowledged"
-        );
-        assert_eq!(
-            state.mark,
-            mark(4, Some(EPOCH)),
-            "the newer incarnation stays"
-        );
-    }
-
-    #[test]
-    fn a_body_without_a_number_or_an_incarnation_is_not_taken() {
-        let (mut state, rx) = state();
-        take_mailbox(&mut state, "cloud", &Mark::default(), &ok(None, three()));
-        assert!(received(&rx).is_empty());
-        assert_eq!(
-            state.mark,
-            mark(0, Some(EPOCH)),
-            "the incarnation is learnt"
-        );
-        take_mailbox(&mut state, "cloud", &Mark::default(), &ok(Some(0), three()));
-        assert!(received(&rx).is_empty(), "mailbox numbers start at 1");
-        let unnamed = HttpsResponse {
-            status: 200,
-            headers: alloc::vec![(FIRST_HEADER.to_string(), "1".to_string())],
-            body: three(),
-        };
-        take_mailbox(&mut state, "cloud", &Mark::default(), &unnamed);
-        assert!(received(&rx).is_empty(), "no incarnation names the numbers");
-        assert_eq!(state.mark, mark(0, Some(EPOCH)));
+        let ahead = length_of(Wait::Until(since_epoch() + delay));
+        assert!(ahead > Duration::ZERO && ahead <= delay, "{ahead:?}");
     }
 
     fn dialed(authenticator: HttpsAuthenticator) -> Peer {
@@ -1416,7 +986,7 @@ mod tests {
     /// docs/adr/0109, D10: under `receipt: durable` a client acknowledges only what its host
     /// reported a durable checkpoint holds, never merely what it handed on, and a mark of an
     /// incarnation it left moves nothing; each `200` that carried what the core transmitted is
-    /// told to the host as `Carried`. Red if `State::acknowledging` answers `mark` alone, or the
+    /// told to the host as `Carried`. Red if `ClientCore::acknowledging` answers `mark` alone, or the
     /// `200` branch of `take_outcome` tells no `Carried`.
     #[test]
     fn a_durable_client_acknowledges_only_what_its_host_holds_and_tells_what_a_200_carried() {
