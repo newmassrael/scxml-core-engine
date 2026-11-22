@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
+#include "sce/text.h"
 #include "interpolation_1d_linear.h"
 
 typedef struct {
