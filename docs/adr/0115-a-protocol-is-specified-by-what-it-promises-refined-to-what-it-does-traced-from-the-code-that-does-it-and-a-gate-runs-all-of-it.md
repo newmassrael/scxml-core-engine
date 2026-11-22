@@ -2,7 +2,7 @@
 
 - Status: Accepted (2026-11-22, by the owner), in its third draft: D7 to D11 were added and D13 corrected at the owner's
   order, and the sources checked. D5's gate, and D1 and D2 for two models, were built before it was accepted, at the
-  owner's order.
+  owner's order. Amended 2026-11-22 by the owner: D15, with what it changes of D7 and D8.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) at the owner's question whether TLA+ can be designed and applied so, and whether SCE can meet what a survey
@@ -130,15 +130,17 @@ D7 as far as D8 does not check it, the compilers, the operating system.
   its states, its transitions by the row of its transition table, its variables with their types, and each `cond`,
   `<assign>`, `<sce:call>` and algorithm body as operators. The numbers of a build (bounds, named limits) are constants
   of the module. The data of a document are unbounded in the model only where they are in the document, so a finite
-  exploration needs **domains**: a model configuration file beside the document names the values each input may take and
-  the most events, and is no part of the document, which a build never reads.
+  exploration needs **domains**: an exploration document (D15) names the values each input may take and the most events,
+  and is no part of the machine's document; a build never reads it.
 - **The environment is a module too.** An event from outside is any event of the document's alphabet the domains allow.
   A peer is the Mesh contract, `MeshChannel.tla`, with the attributes `deploy.yaml` gives the binding (order,
   duplication, receipt, loss of a link), so a deployment's machines are composed into one model and checked together.
 - **A kind with no translation is refused by name**, as a lane refuses a construct it does not lower. A refused document
   is recorded and has no model, never a partial one.
-- A document's properties are `<machine>.properties.tla`, named by the `sce:req` tokens they state, so a requirement,
-  the property that judges it and the verdict are one thread, and a requirement with no property is listed as one.
+- A document's properties are declared in SCE's own terms (D15), each named by the `sce:req` token it states, so a
+  requirement, the property that judges it and the verdict are one thread, and a requirement with no property is listed
+  as one. `sce-codegen model` writes them as operators of the module; a property D15 has no form for is written in TLA+
+  beside it (`<machine>.properties.tla`) and is listed as one.
 
 ### D8. A run of every backend is a behaviour of the generated model
 
@@ -153,6 +155,7 @@ is:
   semantics, and a semantics altered in one operator rejects a run of it (the part-taken-out rule of D5).
 - A lane whose run is refused is a defect of the lane, the model generator or the semantics, and which is settled before
   any is edited.
+- Runs drawn at random over an exploration (D15) are runs the model accepts too, beside the scenarios.
 - It judges executions; D3 and the exploration of D7 judge the rest.
 
 ### D9. Every model says what must happen, and what must stay possible
@@ -249,6 +252,114 @@ which does not enumerate) and an **inductive invariant** that no program finds i
 and checked by a program). Interleavings at `await`, an executor and cancellation are in this group: they are hard, they
 are verified elsewhere, and D13 arranges that they decide little.
 
+### D15. A document's author declares its properties, and a violation is a run every lane replays
+
+Added by the owner's amendment of 2026-11-22. A valid document does not say which of its rests is intended, which is why
+ADR 0002 refuses a liveness diagnostic; here the author says it, and a document that declares nothing is judged as it
+was.
+
+**What a property is of.** A run of a machine, as its user sees it, is a sequence of *observations*, one at the end of
+each macrostep: the event it took, what it sent, the values it publishes and the states it is in (`In()`). A property is
+of that sequence and of nothing private, so a machine may be rewritten under it (D1). Two documents, each of its own
+kind, hold what is said:
+
+- `sce:kind="properties"` imports the machine (or a deployment, D12) and states an **assumption** of its environment and
+  the **guarantees** of the machine under it. It is the specification: it changes by a commit of its own (D11), and
+  assuming more is a change of it, since it promises less.
+- `sce:kind="exploration"` names the finite values and counts a search is made over. It claims nothing, is no part of
+  the specification, and takes the place of D7's model configuration file.
+
+They are not in the machine's document, which a build reads and an author edits to make a check pass.
+
+**History is an observer.** A property that must remember is written over an *observer*: a deterministic `sce-static`
+statechart that takes each observation as its event, sends nothing, and is read by nothing but the property. It never
+refuses an observation, so it adds no behaviour and takes none away: it is a history variable (Abadi and Lamport 1991),
+in the language the author already writes, generated and tested as any document is. A condition is then an expression of
+the last observation and of the observer's states. An expression that may fail is refused: it would be neither true nor
+false.
+
+**The forms, and why they are enough.** Every property is the intersection of a safety and a liveness property (Alpern
+and Schneider 1985), and every formula of linear temporal logic is equivalent to a conjunction of formulas `[]<>p \/
+<>[]q` over the past (Manna and Pnueli 1990, *simple reactivity*), which are also what the deterministic automata of
+Streett specify. An observer is such an automaton, and a document's properties are a conjunction. So the first and the
+third form below, with observers, say all that linear time can; the second and the fourth are shorter words for what an
+observer would say.
+
+| Form | Says | Judged as |
+|---|---|---|
+| `<sce:always>` | a condition holds of every observation | an invariant |
+| `<sce:step>` | a condition holds between an observation and the one before it | an invariant, with the observation before kept |
+| `<sce:recurs>` | a condition holds again and again, unless from some moment another always does | simple reactivity |
+| `<sce:leads-to>` | after a condition, another comes | `<sce:recurs>` of an observer that waits for it |
+| `<sce:possible>` | from every reachable state a condition can still be reached | `AG EF` (D9) |
+
+The fifth is of branching time and says nothing of what the machine does; it says the document has not shut something
+out (D9). A property of two runs compared (that what one viewer may not see changes nothing another sees) is no property
+of a run, and is refused by name until a record of its own.
+
+**An assumption is of what the environment does, and a guarantee outlives it by a step.** The assumption is written in
+the same forms, over the events that arrive and never over a value or an event the machine decides: a machine cannot be
+excused by an assumption about itself. It is a safety property with, where the guarantee needs one, a fairness (an event
+that keeps coming). The meaning is Abadi and Lamport's (1995): the guarantee can become false only after the assumption
+has. An assumption is **discharged** where the environment is a machine of SCE: the property document of that machine
+must guarantee it, and the composition is checked whole (D12). Two machines may each assume the other's guarantee where
+both are safety; not where either is progress, for which the same paper shows the argument fails. An assumption of a
+person or of another system is listed with every verdict as *not discharged*, and is watched at run time (below).
+
+**A bound is not an assumption.** The exploration names values and counts. One that is all the values of its type (a
+`bool`, an enum) cuts nothing. Any other cuts, and so does a count that refuses a step the document would have taken:
+the model records each as *reached*, by its name. A document that only copies and compares a type for equality is *data
+independent* in it, and a few values may stand for all; how many, and for which properties, is a theorem with conditions
+of its own, so no verdict uses it before it is read and stated here.
+
+**A verdict never says more than was judged**, and is of exactly one machine, properties, exploration and tool, by their
+digests; a verdict of other digests is none.
+
+| Verdict | Said when |
+|---|---|
+| *proved* | a theorem of D3 says it for every size |
+| *holds of the whole space* | every reachable state was explored and nothing was reached |
+| *holds within* | explored, and these bounds were reached |
+| *violated* | a run breaks it, under the assumption; a run found within bounds is a run |
+| *vacuous* | below |
+| *not judged* | the construct with no translation, or the limit the search came to |
+
+A behaviour that ends at a bound is neither proof nor violation of a progress property. A machine whose macrostep never
+ends has no next observation, and is *violated* under every property document, with the run to it.
+
+**The properties are judged too**, in both directions, by the rule of the part taken out (D5):
+
+- *Vacuity*: a property that holds though a part of it is replaced by what makes it stronger (a condition before a
+  `<sce:leads-to>` that nothing meets is the plainest) passes for nothing, and is refused. One that holds and is not
+  vacuous has a **witness**, a run in which it was at stake, written as a scenario as a violation is.
+- *Coverage*: the machine is altered in each way of a closed list (a transition taken out, by its row; its condition
+  made true, made false; an action taken out; an event it sends, or a value it writes, changed), and never its
+  environment, which it does not control (Chockler, Kupferman and Vardi 2001). A property no alteration breaks is
+  refused. An alteration no property notices is listed, and the document says why it may go unnoticed, or the set of
+  properties is not complete.
+
+**A violation is a scenario.** The run found (its external events with their data, the moments that pass, and the
+observation after each) is written in the form every lane replays. A machine is deterministic in its events, its moments
+and its host's answers, so each lane must make the same observations. A lane that does not is a defect of the model, the
+generator or the lane, settled as D8 settles one, and not a verdict about the document. A `<sce:recurs>` that fails is a
+run and a cycle: the scenario replays the cycle once and shows the saved state, the observer's included, the same at its
+two ends. A `<sce:possible>` that fails has no run that shows it: the scenario goes to the state from which it was lost.
+
+**One explorer, and a watch.** TLC explores the generated model, and nothing explores generated code: that would be a
+second semantics, for what the replay already asks. D8 holds the model to the code, by the scenarios and by runs drawn
+at random over the exploration, every step of which the Interpreter, each lane and the model agree on. The observers and
+the safety forms are also run beside a lane's scenarios, and may be run beside a host's machine, where the assumptions
+are watched with them. A finite run answers *violated* or *inconclusive*, and *holds* only where no continuation could
+break it (Bauer, Leucker and Schallhart 2011); it is never read as a verdict of the search.
+
+**Time** is a variable of the model that advances (Abadi and Lamport 1994): to the next moment a delayed send is due, or
+to a moment an event comes before it. The exploration names the moments an event may come at. That time can always go on
+is a property of every model, so a machine that stops it is found and not assumed away.
+
+**What has no translation is refused by name** (D7): a real number, a text or a byte string the exploration gives no
+finite values to, a host operation whose answers it does not name, an algorithm construct with no operator. A document
+refused has no verdict for any property, and none is reported as holding.
+
 ## Sources
 
 The passages these claims rest on were checked against the papers' own text on 2026-11-22; the papers were not read
@@ -269,9 +380,17 @@ heuristically cacheable and `412` is not); Snodgrass 1999 (valid and transaction
 Konnov et al. 2019; Lattuada et al. (Verus) 2024 (its trusted base); Sun et al. (Anvil) 2024; Cirstea et al. 2024; Li et
 al. 2026 (for the figure about Lion); the Verus guide's feature list and the `vstd/future.rs` of its main branch.
 
-**Read in another edition than the one cited:** the TKDE 1999 text of Jensen and Snodgrass (ADR 0114) and the conference
-text of Liskov, Shrira and Wroclawski were not reached, and the reports above were read for them.
-**Not reached:** Tomlinson 1975, for which ADR 0113 now cites RFC 9293, and the paper on Lion itself.
+For D15, checked on the same day: Alpern and Schneider 1985 (its theorem 1); Manna and Pnueli 1990 (the reactivity
+theorem and the correspondence with automata, as it states them; it gives the proof of the first elsewhere); Abadi and
+Lamport 1995 (the meaning of assumption and guarantee, and the composition of safety); Chockler, Kupferman and Vardi
+2001 (coverage, and the environment left out of it); Purandare and Somenzi 2002 (vacuity, as a strengthening that does
+not fail); Bauer, Leucker and Schallhart 2011 (three values); Abadi and Lamport 1994 (time as a variable, and that it
+must go on); Lazić, Newcomb and Roscoe 2003 (what data independence is; not its thresholds). **Not reached, and not
+relied on:** Beer et al. 1997 and Kupferman and Vardi 1999 on vacuity, Wolper 1986, Vardi and Wolper 1986, Clarkson and
+Schneider 2010, Dwyer et al. 1999. **Read in another edition than the one cited:** the TKDE 1999 text of Jensen and
+Snodgrass (ADR 0114) and the conference text of Liskov, Shrira and Wroclawski were not reached, and the reports above
+were read for them. **Not reached:** Tomlinson 1975, for which ADR 0113 now cites RFC 9293, and the paper on Lion
+itself.
 
 ## Not in scope
 
@@ -300,6 +419,16 @@ use of it, a proof of the asynchronous shell (D13 says what judges it), strategi
   interleaving at every `await`, cancellation and an executor meet, and it decides nothing a smaller shell would not
   leave to the core (D13).
 - **Translating documents to Lean or Veil.** A second target with no second use; a theorem of D3 is TLA+'s.
+- **Properties in the machine's own document.** Who edits the machine then edits what it is held to, in one commit
+  (D11).
+- **A property language with temporal operators.** Observers and simple reactivity say all of it, in the language the
+  author writes and the generators already lower.
+- **The finite values of a search as an assumption.** What was not searched would read as what cannot happen.
+- **Properties in TLA+ alone.** An author of a document reads and writes SCE's language, and the gate would hold a
+  second one to the first by hand. TLA+ beside the module stays for what no form says.
+- **An explorer of generated code.** A second explorer and a second semantics, for what the replay of a violation
+  already asks of the code.
+- **A bound that says nothing when it is reached.** What was cut would read as what holds.
 
 ## Order of work
 
@@ -311,7 +440,14 @@ Each step lands with a test that fails without it.
    not stated: a store ends the transactions of a writer that is gone.
 3. D11's refusals in the gate.
 4. D7: `AppendixD.tla`, accepted against the W3C corpus by the Interpreter's traces (D8's second bullet); then
-   `sce-codegen model` for one machine, then for every document that has no refused construct, and D8 lane by lane.
+   `sce-codegen model` for one machine, then for every document that has no refused construct, and D8 lane by lane. Then
+   D15, for one machine and then for every document that has a model: the two kinds, observers, and the verdicts with
+   their digests; the scenarios of a violation and of a witness, replayed on every lane; vacuity and coverage; the
+   assumptions discharged between two machines; the watch. Its tests: the model, the Interpreter and each lane agree on
+   every step of random runs; a property broken on purpose in each form is found and its run replays on every lane; a
+   bound reached is named and its property is not told as holding; a vacuous property, a property no alteration breaks,
+   an assumption about the machine itself and each refused construct are refused by name; a verdict of another digest is
+   not read.
 5. D4, with the code of ADR 0113 steps 4 and 5 and of ADR 0114 step 4, so that each lands traced.
 6. D10's first algorithm. D13's first module. D3 with Apalache. D12.
 
