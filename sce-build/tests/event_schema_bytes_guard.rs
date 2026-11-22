@@ -446,6 +446,9 @@ int main(void) {
         .arg("-I")
         .arg(&dir)
         .arg(dir.join("bounded_payload_sm.c"))
+        // docs/adr/0110, D2: the machine reads and writes a real (`ratio`), and
+        // the runtime's text unit defines the real seams its core hands one to.
+        .arg(repo_root().join("backends/c/runtime/text/real_text.c"))
         .arg(&driver)
         .arg("-o")
         .arg(&bin)
