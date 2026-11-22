@@ -235,3 +235,91 @@ fn every_backend_accepts_an_enum_where_one_is_declared() {
         ),
     );
 }
+
+/// An enum beside `probe_status` whose variants have other names.
+fn shade() -> Probe {
+    Probe {
+        file: "probe_shade.scxml".into(),
+        text: STATUS
+            .replace("probe_status", "probe_shade")
+            .replace("open", "light")
+            .replace("done", "dark"),
+    }
+}
+
+/// A schema that imports `probe_status` under an alias of its own, `E`, which is
+/// what its field `c` is written with.
+fn row() -> Probe {
+    Probe {
+        file: "probe_row.scxml".into(),
+        text: r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_row" sce:event-name="probe.row">
+  <sce:import kind="enum" src="probe_status.scxml" as="E"/>
+  <datamodel>
+    <data id="c" sce:type="enum:E" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#
+        .into(),
+    }
+}
+
+/// An enum is its document, whatever alias a document imports it under
+/// (SCE_FORGE.md §4.12): a field of an imported record is of the enum its schema
+/// names, and the schema's alias means nothing in the algorithm that imports it.
+/// The algorithm's own alias for the enum was refused beside it, as a value of
+/// another enum, wherever the two aliases differed.
+#[test]
+fn a_record_field_is_of_the_enum_its_schema_names_under_any_alias() {
+    let imports = r#"<sce:import kind="event-schema" src="probe_row.scxml" as="Row"/>"#;
+    accepted_everywhere(
+        &[row()],
+        &algorithm(
+            "row_is_open",
+            imports,
+            r#"<sce:param name="r" type="record:Row"/>"#,
+            "bool",
+            r#"<sce:return expr="r.c === Status.open"/>"#,
+        ),
+    );
+    accepted_everywhere(
+        &[row()],
+        &algorithm(
+            "rows_agree",
+            imports,
+            r#"<sce:param name="r" type="record:Row"/><sce:param name="s" type="record:Row"/>"#,
+            "enum:Status",
+            r#"<sce:if cond="r.c === s.c"><sce:return expr="r.c"/></sce:if>
+    <sce:return expr="Status.done"/>"#,
+        ),
+    );
+    accepted_everywhere(
+        &[row()],
+        &algorithm(
+            "row_of",
+            imports,
+            r#"<sce:param name="s" type="enum:Status"/>"#,
+            "record:Row",
+            r#"<sce:var name="made" type="record:Row"><sce:set name="c" expr="s"/></sce:var>
+    <sce:return expr="made"/>"#,
+        ),
+    );
+}
+
+/// The schema's alias, where the algorithm gives it to another enum, does not make
+/// the field a value of that one: the field was compared with it by the alias alone.
+#[test]
+fn a_record_field_is_not_of_an_enum_that_shares_its_schemas_alias() {
+    refused_everywhere(
+        &[row(), shade()],
+        &algorithm(
+            "row_is_light",
+            r#"<sce:import kind="enum" src="probe_shade.scxml" as="E"/>
+  <sce:import kind="event-schema" src="probe_row.scxml" as="Row"/>"#,
+            r#"<sce:param name="r" type="record:Row"/>"#,
+            "bool",
+            r#"<sce:return expr="r.c === E.light"/>"#,
+        ),
+        "a comparison of an enum value with anything but a value of the same enum",
+    );
+}

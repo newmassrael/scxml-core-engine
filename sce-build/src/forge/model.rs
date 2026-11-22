@@ -723,6 +723,17 @@ pub enum SceType {
 }
 
 impl SceType {
+    /// The type with its enum, if it is one, named by `name` in place of the
+    /// alias it is written with ([`EntryType::naming_enums`]).
+    pub fn naming_enum(&self, name: &dyn Fn(&str) -> String) -> SceType {
+        match self {
+            SceType::Enum(reference) => SceType::Enum(EnumRef {
+                alias: name(&reference.alias),
+            }),
+            other => other.clone(),
+        }
+    }
+
     /// Every scalar `sce:type` value, in declaration order — the closed
     /// set a refusal of an unknown type offers as its candidates.
     ///
@@ -5167,6 +5178,18 @@ pub enum EntryType {
 }
 
 impl EntryType {
+    /// The type with its enum, if it holds one, named by `name` in place of the
+    /// alias it is written with: what a reader in another document, whose aliases
+    /// are its own, reads it as.
+    pub fn naming_enums(&self, name: &dyn Fn(&str) -> String) -> EntryType {
+        match self {
+            Self::Scalar(ty) => Self::Scalar(ty.naming_enum(name)),
+            Self::Optional { elem } => Self::Optional {
+                elem: elem.naming_enum(name),
+            },
+        }
+    }
+
     /// The scalar type, or `None` for an optional one: an optional scalar is
     /// not a scalar, since a value of it may be absent.
     pub fn scalar(&self) -> Option<&SceType> {
