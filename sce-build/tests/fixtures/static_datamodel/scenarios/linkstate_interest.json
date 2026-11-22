@@ -1,6 +1,6 @@
 {
   "machine": "linkstate_interest",
-  "about": "A map whose value is a map (docs/adr/0108, D7): register with the value-diff gate, withdraw, the purge of one peer across every key expression, and both refusals. Expected values are derived from the document by hand, not observed from a backend.",
+  "about": "A map whose value is a map (docs/adr/0108, D7): register with the value-diff gate, withdraw, the purge of one peer across every key expression, and both refusals. A half of a zid held in the table is a 64-bit integer, stated as the text of its digits as a saved state writes one at any depth. Expected values are derived from the document by hand, not observed from a backend.",
   "steps": [
     {
       "expect": {
@@ -34,8 +34,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -72,8 +72,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -107,8 +107,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": true,
@@ -141,8 +141,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": true,
@@ -151,8 +151,8 @@
                 ],
                 [
                   {
-                    "low": 2,
-                    "high": 0
+                    "low": "2",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -187,8 +187,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": true,
@@ -197,8 +197,8 @@
                 ],
                 [
                   {
-                    "low": 2,
-                    "high": 0
+                    "low": "2",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -263,8 +263,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": true,
@@ -273,8 +273,8 @@
                 ],
                 [
                   {
-                    "low": 2,
-                    "high": 0
+                    "low": "2",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -288,8 +288,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -303,8 +303,8 @@
               [
                 [
                   {
-                    "low": 2,
-                    "high": 0
+                    "low": "2",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -318,8 +318,8 @@
               [
                 [
                   {
-                    "low": 2,
-                    "high": 0
+                    "low": "2",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -377,8 +377,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": true,
@@ -387,8 +387,8 @@
                 ],
                 [
                   {
-                    "low": 2,
-                    "high": 0
+                    "low": "2",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -402,8 +402,8 @@
               [
                 [
                   {
-                    "low": 2,
-                    "high": 0
+                    "low": "2",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -417,8 +417,8 @@
               [
                 [
                   {
-                    "low": 2,
-                    "high": 0
+                    "low": "2",
+                    "high": "0"
                   },
                   {
                     "complete": false,
@@ -462,8 +462,8 @@
               [
                 [
                   {
-                    "low": 1,
-                    "high": 0
+                    "low": "1",
+                    "high": "0"
                   },
                   {
                     "complete": true,
