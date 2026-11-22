@@ -58,10 +58,18 @@ holds the key's lease, and the store judges its fence before anything is written
 of an event store is the fence and the session's version here, and a process that lost the key appends nothing. A fact
 that concerns two sessions is made by each in its own stream, or by a request between them, as any such rule is.
 
+**Amended on landing (2026-11-22, step 2).** A session is the machine and the key, and the store's `sessions` row is
+keyed by the key alone, so two machines that keep their sessions in one file would share a row where they hold an equal
+key. A write therefore names its machine for the journal alone (`Journal::machine`). The session's own identity is
+brought to (machine, key) as the first part of step 4, in a layout of its own; until then a deployment that `follows:`
+another machine keeps the two in two stores, and step 3 refuses one that names the same store.
+
 ### D3. Position, and the reader's horizon
 
-The store gives each entry a position, above every position it gave before. Positions are one sequence for the journal;
-a gap is allowed and means nothing. A store states a **horizon** with every read: the position at or below which nothing
+The store gives each entry a position, above every position it gave before, inside the transaction that writes it. A
+record sealed to its position (D8) is made there: the store is handed `FactData::AtPosition` and calls it with the
+position, and a `Committer` refuses one, since it has no position to give. Positions are one sequence for the journal; a
+gap is allowed and means nothing. A store states a **horizon** with every read: the position at or below which nothing
 can still become visible. `JournalStore::after(position, limit)` answers entries above a position and at or below the
 horizon, in order. SQLite writes one transaction at a time, so its horizon is its head. A store whose transactions
 commit out of the order of their numbers reports a lower one, and a store that cannot tell is no store of this contract.
@@ -70,21 +78,26 @@ The conformance kit forces the two-transaction case; a store whose horizon is wr
 ### D4. A follower's position is part of its state
 
 A machine entry may carry `follows: [<machine>]`. The pool delivers the followed journal, in order, as an external event
-of the entry's name, its origin `journal://<machine>/<key>/<position>`, to the session that `key_from` names for it. A
-session keeps the position it has taken in of each journal it follows in its checkpoint, written with what the entry
-did, and takes an entry at or below its position as a repeat and drops it. A delivery that is lost or repeated is
-delivered again or dropped, so each entry takes effect once. What a view computed is the checkpoint, so a view needs no
-other snapshot, and a view is rebuilt by following from position 0 under a new name. A follower that cannot keep up
-stops the reader at its inbox's bound (ADR 0109 D1) and nothing is dropped.
+of the entry's name, its origin `journal://<machine>/<key>/<position>`, to the session that `key_from` names for it. An
+entry of an observed stream (D6) has the origin `journal://<stream>/<position>`, two parts where a session's has three;
+a stream and a machine of one deployment have different names. A session keeps the position it has taken in of each
+journal it follows in its checkpoint, written with what the entry did, and takes an entry at or below its position as a
+repeat and drops it. A delivery that is lost or repeated is delivered again or dropped, so each entry takes effect once.
+What a view computed is the checkpoint, so a view needs no other snapshot, and a view is rebuilt by following from
+position 0 under a new name. A follower that cannot keep up stops the reader at its inbox's bound (ADR 0109 D1) and
+nothing is dropped.
 
 ### D5. Two times, and reading as of
 
 Every entry carries its position and the recorded moment: the store's clock, never below the one before it in the order
-of commits, so the two agree. A schema may mark one `int64` field `sce:valid-time="from"`, in milliseconds; an entry of
-a schema without it holds from its recorded moment. A read names `(R, V)`: entries at or below position R whose valid
-time is at or before V, ordered by valid time and then position. R is a position at or below the horizon. A moment of
-the clock is first turned into a position by the store (`position_at`), and only one the horizon has passed is. The
-answer to an `(R, V)` never changes. A correction is an entry; none is changed or removed.
+of commits. Where a store commits in the order of its numbers the two agree. Where it commits out of it they need not,
+and `position_at` answers a position the horizon has passed that no entry recorded at or before the moment is above; it
+may take in one recorded later, and the answer to the position it gives does not change. A schema may mark one `int64`
+field `sce:valid-time="from"`, in milliseconds; an entry of a schema without it holds from its recorded moment. A read
+names `(R, V)`: entries at or below position R whose valid time is at or before V, ordered by valid time and then
+position. R is a position at or below the horizon. A moment of the clock is first turned into a position by the store
+(`position_at`), and only one the horizon has passed is. The answer to an `(R, V)` never changes. A correction is an
+entry; none is changed or removed.
 
 A document asks for a page with `sce-host-journal-read` (stream, after, limit, R, V), whose entries are a value of a
 union of the document's schemas (ADR 0092), bounded by the build's number for a page. A whole journal is a follower's to
@@ -93,12 +106,14 @@ read.
 ### D6. A stream the application observes
 
 Some facts are another system's. `streams:` of the deployment declares an **observed** stream and its schemas; no
-session appends to it. The program, through an adapter that is the application's, gives the store an entry with the
-**origin id** the other system gave it, and the store keeps one entry per (stream, origin id), answering the one it
-holds for a repeat. A session that asks the other system for a change waits for the observed entry that says the system
-accepted it, and does not take its own request for the fact. (ADR 0093's "taken in once accepted" is the same thought
-for a shared list's copy; it is an analogy and no part of this contract.) The adapter, its credentials and its retries
-are not SCE's.
+session appends to it. A read says which it asks: a session's stream or an observed one (`Stream::Session`,
+`Stream::Observed`), which one name never is of both, so an observed name that is also a machine's is refused, at build
+where the deployment is read (step 3) and by the store. The program, through an adapter that is the application's, gives
+the store an entry with the **origin id** the other system gave it, and the store keeps one entry per (stream, origin
+id), answering the one it holds for a repeat. A session that asks the other system for a change waits for the observed
+entry that says the system accepted it, and does not take its own request for the fact. (ADR 0093's "taken in once
+accepted" is the same thought for a shared list's copy; it is an analogy and no part of this contract.) The adapter, its
+credentials and its retries are not SCE's.
 
 ### D7. The protocol is a model before it is code
 
