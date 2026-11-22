@@ -43160,12 +43160,14 @@ fn lower_algorithm_body(
     // Python is dynamic.
     let mut assigned: std::collections::HashSet<String> = std::collections::HashSet::new();
     collect_algorithm_assigned_roots(stmts, &mut assigned);
+    let reads = crate::forge::algorithm_reads::names_read(stmts);
     let ctx = AlgorithmLowerCtx {
         lang: cfg.lang,
         type_ctx: cfg.type_ctx,
         l: &l,
         renames: cfg.renames,
         assigned: &assigned,
+        reads: reads.as_ref(),
         return_ty: cfg.return_ty,
         return_value: cfg.return_value,
         imports: cfg.imports,
@@ -43290,6 +43292,11 @@ struct AlgorithmLowerCtx<'a> {
     l: &'a LangCtx,
     renames: &'a std::collections::HashMap<&'a str, &'a str>,
     assigned: &'a std::collections::HashSet<String>,
+    /// The names an expression of the body reads
+    /// ([`crate::forge::algorithm_reads::names_read`]), or `None` where one does
+    /// not parse and is refused where it is lowered: what a binding nothing reads
+    /// is told by ([`AlgorithmLowerCtx::unread`]).
+    reads: Option<&'a std::collections::HashSet<String>>,
     return_ty: crate::forge::types::InferredType,
     /// The declared return as written — needed for a `list<T>` return, which
     /// `return_ty` (an [`InferredType`]) has no case for.
@@ -43326,6 +43333,73 @@ struct AlgorithmLowerCtx<'a> {
     /// ([`HeldMaps`]); `None` in a body that holds none and calls no algorithm
     /// that takes a seed.
     maps: Option<HeldMaps<'a>>,
+}
+
+impl AlgorithmLowerCtx<'_> {
+    /// Whether no expression of the body reads the binding `name`.
+    fn unread(&self, name: &str) -> bool {
+        self.reads.is_some_and(|reads| !reads.contains(name))
+    }
+}
+
+/// The statement by which a body of `lang` says that `local`, which it declares
+/// and nothing reads, is unread on purpose, or `None` where the language needs
+/// none: Go refuses a local declared and not used, C and C++ refuse one under
+/// `-Werror=unused`, Rust and Swift warn. Kotlin says it before the declaration
+/// ([`KOTLIN_UNREAD`]), and Python has no such notion.
+fn unread_on_purpose(lang: crate::generator::Language, local: &str) -> Option<String> {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust => Some(format!("let _ = &{local};")),
+        Language::Cpp | Language::C11 => Some(format!("(void){local};")),
+        Language::Go | Language::Swift => Some(format!("_ = {local}")),
+        Language::Kotlin | Language::Python => None,
+    }
+}
+
+/// How a Kotlin body says, before the declaration of a local, that nothing reads it.
+const KOTLIN_UNREAD: &str =
+    "@Suppress(\"UNUSED_VARIABLE\", \"ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE\")";
+
+/// What follows, in a body of `ctx.lang`, the declaration `declared` of the local a
+/// statement `s` binds and no expression of the body reads: `declared` itself where
+/// the statement binds none or it is read, and the same with the language's way to
+/// say it is unread on purpose otherwise.
+fn declared_unread(
+    s: &AlgorithmStmt,
+    ctx: &AlgorithmLowerCtx<'_>,
+    pad: &str,
+    declared: String,
+) -> String {
+    use crate::generator::Language;
+    let (name, holds_map) = match s {
+        AlgorithmStmt::Var { name, sce_type, .. } => (name, sce_type.map_key().is_some()),
+        AlgorithmStmt::RecordVar { name, .. }
+        | AlgorithmStmt::RecordFromCall { name, .. }
+        | AlgorithmStmt::UnionVar { name, .. }
+        | AlgorithmStmt::UnionCopied { name, .. } => (name, false),
+        _ => return declared,
+    };
+    // A C11 map is in its caller's storage, and no local of its name is declared.
+    if !ctx.unread(name) || (holds_map && ctx.lang == Language::C11) {
+        return declared;
+    }
+    let local = ctx.l.local_id(name);
+    match ctx.lang {
+        Language::Kotlin => ["val ", "var "]
+            .iter()
+            .find_map(|keyword| {
+                let line = format!("{pad}{keyword}{local}");
+                let rest = declared.strip_prefix(&line)?;
+                rest.starts_with([' ', ':'])
+                    .then(|| format!("{pad}{KOTLIN_UNREAD}\n{declared}"))
+            })
+            .unwrap_or(declared),
+        lang => match unread_on_purpose(lang, &local) {
+            Some(said) => format!("{declared}{pad}{said}\n"),
+            None => declared,
+        },
+    }
 }
 
 /// Where an algorithm's body holds its maps and sets, on each lane that lowers
@@ -43471,7 +43545,9 @@ fn lower_algorithm_stmt_and_check(
     proven: &crate::forge::narrowing::Facts,
     out: &mut String,
 ) -> Result<(), ForgeError> {
-    lower_algorithm_stmt(s, ctx, pad, indent, proven, out)?;
+    let mut lowered = String::new();
+    lower_algorithm_stmt(s, ctx, pad, indent, proven, &mut lowered)?;
+    out.push_str(&declared_unread(s, ctx, pad, lowered));
     if matches!(
         s,
         AlgorithmStmt::Var { .. }
@@ -44379,6 +44455,7 @@ fn lower_algorithm_stmt(
         l,
         renames,
         assigned,
+        reads: _,
         return_ty,
         return_value,
         imports,
@@ -45693,6 +45770,9 @@ fn lower_algorithm_stmt(
                 // (no closure-state-share complications, native
                 // break/return work everywhere).
                 let it = l.local_id(item);
+                // An element nothing reads is not bound: the loop asks only whether
+                // the slot holds one.
+                let unread = ctx.unread(item);
                 let alias = imp.alias.as_str();
                 // Body indent depends on the per-backend BC-iter
                 // shape. Rust/Cpp/C11/Kotlin nest the body inside a
@@ -45719,9 +45799,13 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!(
                             "{pad}for sce_slot_idx in 0..({type_name}::capacity() as u32) {{\n"
                         ));
-                        out.push_str(&format!(
-                            "{pad}    if let Some({it}) = {alias}.get_by_slot(sce_slot_idx) {{\n"
-                        ));
+                        out.push_str(&if unread {
+                            format!("{pad}    if {alias}.get_by_slot(sce_slot_idx).is_some() {{\n")
+                        } else {
+                            format!(
+                                "{pad}    if let Some({it}) = {alias}.get_by_slot(sce_slot_idx) {{\n"
+                            )
+                        });
                     }
                     Language::Cpp => {
                         // `capacity()` is a static member of the imported BC
@@ -45740,9 +45824,11 @@ fn lower_algorithm_stmt(
                             "{pad}    auto sce_{it}_opt = {alias}.get_by_slot(sce_slot_idx);\n"
                         ));
                         out.push_str(&format!("{pad}    if (sce_{it}_opt.has_value()) {{\n"));
-                        out.push_str(&format!(
-                            "{pad}        const auto& {it} = sce_{it}_opt.value();\n"
-                        ));
+                        if !unread {
+                            out.push_str(&format!(
+                                "{pad}        const auto& {it} = sce_{it}_opt.value();\n"
+                            ));
+                        }
                     }
                     Language::C11 => {
                         // C11 needs deref-copy to keep dot member-access
@@ -45777,9 +45863,11 @@ fn lower_algorithm_stmt(
                             "{pad}    const {element_snake}_t *sce_{it}_ptr = {snake}_get_by_slot({alias}, sce_slot_idx);\n"
                         ));
                         out.push_str(&format!("{pad}    if (sce_{it}_ptr == NULL) continue;\n"));
-                        out.push_str(&format!(
-                            "{pad}    {element_snake}_t {it} = *sce_{it}_ptr;\n"
-                        ));
+                        if !unread {
+                            out.push_str(&format!(
+                                "{pad}    {element_snake}_t {it} = *sce_{it}_ptr;\n"
+                            ));
+                        }
                         out.push_str(&format!("{pad}    {{\n"));
                     }
                     Language::Kotlin => {
@@ -45792,9 +45880,15 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!(
                             "{pad}for (sceSlotIdx in 0u until {alias}.capacity().toUInt()) {{\n"
                         ));
-                        out.push_str(&format!(
-                            "{pad}    val {it} = {alias}.getBySlot(sceSlotIdx) ?: continue\n"
-                        ));
+                        out.push_str(&if unread {
+                            format!(
+                                "{pad}    if ({alias}.getBySlot(sceSlotIdx) == null) continue\n"
+                            )
+                        } else {
+                            format!(
+                                "{pad}    val {it} = {alias}.getBySlot(sceSlotIdx) ?: continue\n"
+                            )
+                        });
                     }
                     Language::Go => {
                         // The bound is the collection's own `Capacity()` method,
@@ -45805,8 +45899,9 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!(
                             "{pad}for sceSlotIdx := uint32(0); sceSlotIdx < uint32({alias}.Capacity()); sceSlotIdx++ {{\n"
                         ));
+                        let bound = if unread { "_" } else { it.as_str() };
                         out.push_str(&format!(
-                            "{pad}    {it}, sceOk := {alias}.GetBySlot(sceSlotIdx)\n"
+                            "{pad}    {bound}, sceOk := {alias}.GetBySlot(sceSlotIdx)\n"
                         ));
                         out.push_str(&format!("{pad}    if !sceOk {{ continue }}\n"));
                     }
@@ -45839,9 +45934,15 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!(
                             "{pad}for sceSlotIdx in 0..<{type_name}.capacity {{\n"
                         ));
-                        out.push_str(&format!(
-                            "{pad}    guard let {it} = {held}.getBySlot(UInt32(sceSlotIdx)) else {{ continue }}\n"
-                        ));
+                        out.push_str(&if unread {
+                            format!(
+                                "{pad}    guard {held}.getBySlot(UInt32(sceSlotIdx)) != nil else {{ continue }}\n"
+                            )
+                        } else {
+                            format!(
+                                "{pad}    guard let {it} = {held}.getBySlot(UInt32(sceSlotIdx)) else {{ continue }}\n"
+                            )
+                        });
                     }
                 }
                 lower_algorithm_block(
@@ -45973,6 +46074,10 @@ fn lower_algorithm_stmt(
                     .map_err(|refusal| source_site.place(refusal))?,
                 };
                 let it = l.local_id(item);
+                // An item nothing reads is not bound, where the language can walk
+                // without binding one: a local declared and not used is refused by
+                // Go, and by C and C++ under `-Werror=unused`.
+                let unread = ctx.unread(item);
                 // Kotlin reads a list buffer of numbers through the element's own
                 // reader of its 64-bit slots, as an index into it does; a list
                 // buffer of records is an `ArrayList`, walked as it is.
@@ -45996,6 +46101,21 @@ fn lower_algorithm_stmt(
                     ) => None,
                 };
                 let header = match lang {
+                    Language::Rust if unread => format!("{pad}for _ in {src_lowered}.iter() {{\n"),
+                    Language::Cpp if unread => format!(
+                        "{pad}for ([[maybe_unused]] {item_name} {it} : {src_lowered}) {{\n"
+                    ),
+                    Language::C11 if unread => format!(
+                        "{pad}for (size_t __{it}_i = 0; __{it}_i < {src_lowered}.len; ++__{it}_i) {{\n"
+                    ),
+                    Language::Kotlin if unread => match kotlin_slot_reader {
+                        Some(_) => format!(
+                            "{pad}for (sceAt_{it} in 0 until {src_lowered}.size) {{\n"
+                        ),
+                        None => format!("{pad}for (sceRaw_{it} in {src_lowered}) {{\n"),
+                    },
+                    Language::Go if unread => format!("{pad}for range {src_lowered} {{\n"),
+                    Language::Swift if unread => format!("{pad}for _ in {src_lowered} {{\n"),
                     Language::Rust if item_is_borrowed => {
                         format!("{pad}for {it} in {src_lowered}.iter() {{\n")
                     }
@@ -49835,6 +49955,23 @@ fn render_algorithm(
         },
         body_indent,
     )?;
+    // A parameter nothing reads is unread on purpose, as a local is; Go and Swift
+    // say nothing of one, and Kotlin's compiler no longer does.
+    let body = match crate::forge::algorithm_reads::names_read(&m.body) {
+        Some(reads) if matches!(lang, Language::Rust | Language::Cpp | Language::C11) => {
+            let pad = "    ".repeat(body_indent);
+            let said: String = m
+                .signature
+                .params
+                .iter()
+                .filter(|p| !reads.contains(&p.name))
+                .filter_map(|p| unread_on_purpose(lang, &l.local_id(&p.name)))
+                .map(|said| format!("{pad}{said}\n"))
+                .collect();
+            format!("{said}{body}")
+        }
+        _ => body,
+    };
     // docs/adr/0092, section 6.1 item 4: a body that holds a union may end where
     // its tag's tests have returned on every case, a point the judge proved no
     // path passes ([`crate::forge::narrowing::check_algorithm`]) and the target's

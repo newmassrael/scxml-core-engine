@@ -27681,3 +27681,126 @@ mod tests {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// Algorithms that bind a name nothing reads: a loop item counted and not looked
+/// at, over each shape a loop walks; a local that is never read, one that is only
+/// written, a record local; and a parameter.
+const UNREAD_DOCS: &[(&str, &str)] = &[
+    (
+        "unread_row.scxml",
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="event-schema" name="unread_row" sce:event-name="unread.row">
+  <datamodel><data id="count" sce:type="uint32" sce:direction="in"/></datamodel>
+</scxml>"#,
+    ),
+    (
+        "unread_items.scxml",
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="algorithm" name="unread_items">
+  <sce:import kind="event-schema" src="unread_row.scxml" as="Row"/>
+  <sce:signature>
+    <sce:param name="numbers" type="list&lt;int32&gt;"/>
+    <sce:param name="rows" type="list&lt;record:Row&gt;"/>
+    <sce:param name="octets" type="bytes"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="n" type="uint32" init="0"/>
+    <sce:foreach item="number" in="numbers"><sce:assign target="n" expr="n + 1"/></sce:foreach>
+    <sce:foreach item="row" in="rows"><sce:assign target="n" expr="n + 1"/></sce:foreach>
+    <sce:foreach item="octet" in="octets"><sce:assign target="n" expr="n + 1"/></sce:foreach>
+    <sce:return expr="n"/>
+  </sce:body>
+</scxml>"#,
+    ),
+    (
+        "unread_locals.scxml",
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="algorithm" name="unread_locals">
+  <sce:import kind="event-schema" src="unread_row.scxml" as="Row"/>
+  <sce:signature>
+    <sce:param name="used" type="uint32"/>
+    <sce:param name="spare" type="uint32"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="held" type="uint32" init="used"/>
+    <sce:var name="written" type="uint32" init="0"/>
+    <sce:assign target="written" expr="used"/>
+    <sce:var name="kept" type="record:Row"><sce:set name="count" expr="used"/></sce:var>
+    <sce:if cond="used &gt; 3">
+      <sce:var name="inner" type="bool" init="true"/>
+      <sce:return expr="1"/>
+    </sce:if>
+    <sce:return expr="used"/>
+  </sce:body>
+</scxml>"#,
+    ),
+];
+
+/// A name an algorithm binds and nothing reads is legal, and what is generated
+/// from it compiles where the target refuses a local that is declared and not
+/// used (Go), refuses it under `-Werror` (C and C++) or under the `warnings =
+/// "deny"` the Rust harness sets.
+#[test]
+fn a_name_an_algorithm_binds_and_does_not_read_compiles_on_every_backend() {
+    use sce_build::generator::Language;
+    let mut failures: Vec<String> = Vec::new();
+    for lang in [
+        Language::Rust,
+        Language::Cpp,
+        Language::C11,
+        Language::Go,
+        Language::Kotlin,
+        Language::Python,
+    ] {
+        let id = format!("unread_{lang:?}").to_lowercase();
+        let compiled = generate_temp_docs(lang, &id, UNREAD_DOCS).and_then(|files| match lang {
+            Language::Rust => rustc_run_generated_set(files, &id, "build", RustcProfile::Alloc),
+            Language::Cpp => compile_generated_set_cpp(files, &id),
+            Language::C11 => compile_generated_set_c11(files, &id),
+            Language::Go => compile_generated_set_go(files, &id),
+            Language::Kotlin => compile_generated_set_kotlin(files, &id),
+            Language::Python => compile_generated_set_python(files, &id),
+            Language::Swift => unreachable!("no Swift in the list"),
+        });
+        if let Err(error) = compiled {
+            failures.push(format!("{lang:?}: {error}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// What says a name is unread is written where nothing reads it, and nowhere else:
+/// a loop that reads its item binds it as it always has.
+#[test]
+fn only_an_unread_name_is_said_to_be_unread() {
+    use sce_build::generator::Language;
+    let text = |lang: Language, docs: &[(&str, &str)], id: &str| {
+        generate_temp_docs(lang, id, docs)
+            .expect("the documents generate")
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let swift = text(Language::Swift, UNREAD_DOCS, "unread_swift");
+    assert!(swift.contains("for _ in numbers {"), "{swift}");
+    assert!(swift.contains("_ = held"), "{swift}");
+    let read: Vec<(&str, String)> = UNREAD_DOCS
+        .iter()
+        .map(|&(name, doc)| {
+            (
+                name,
+                doc.replacen("expr=\"n + 1\"", "expr=\"n + (number &gt; 0 ? 1 : 2)\"", 1)
+                    .replace("<sce:return expr=\"used\"/>", "<sce:return expr=\"held\"/>"),
+            )
+        })
+        .collect();
+    let read: Vec<(&str, &str)> = read.iter().map(|(n, d)| (*n, d.as_str())).collect();
+    let rust = text(Language::Rust, &read, "read_rust");
+    assert!(rust.contains("for &number in numbers.iter()"), "{rust}");
+    assert!(!rust.contains("let _ = &held;"), "{rust}");
+    assert!(rust.contains("for _ in rows.iter()"), "{rust}");
+    assert!(rust.contains("let _ = &spare;"), "{rust}");
+}
