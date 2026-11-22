@@ -1831,17 +1831,16 @@ GATES: dict[str, dict] = {
     # The proofs of the host core under Verus, as docs/formal/proofs.json declares them
     # (docs/adr/0115, D13).
     #
-    # `ci_only`: the host is the constraint. Verus runs on a Rust release of its own
-    # through rustup, the build machines carry neither, and no gate installs any part
-    # of a toolchain.
+    # `ci_only`: the push set runs on a developer's machine, which need not carry Verus
+    # and the Rust release it runs on (bx.toml declares both for the build machines).
     "formal-proofs": {
         "workflows": ["formal-proofs.yml"],
         "runner_workflow": True,
         "extra": ["docs/formal/proofs.json", "scripts/formal/proofs.py", "backends/rust/mesh/src/https/**"],
-        "ci_only": "22s measured 2026-11-23 on a host that has Verus, and the host is the "
-                   "constraint: it runs on a Rust release of its own through rustup, which "
-                   "the build machines do not carry and no gate installs. "
-                   "formal-proofs.yml runs it on every change to a proved file or its judge.",
+        "ci_only": "22s measured 2026-11-23 on a host that has Verus, and the push set runs "
+                   "on a developer's machine, which need not carry it or the Rust release it "
+                   "runs on. formal-proofs.yml runs it on every change to a proved file or its "
+                   "judge, and bx.toml declares both tools for the build machines.",
         "cost_s": 22,
         "summary": "Verus proofs of the host core, with each break of it refused",
         # Verus answers one way for one input: the file, the manifest and the pinned tool.
@@ -4603,6 +4602,10 @@ RUST_TOOLCHAIN_PINS = "scripts/lib/rust_toolchains.sh"
 # read it from there, so the gates and the rest of the tree run one release.
 RUST_TOOLCHAIN_FILE = "rust-toolchain.toml"
 RUST_TOOLCHAIN_PLACE = "~/.local/rust/{version}"
+# The manifest that pins Verus and the Rust release it runs on, and the judge of it,
+# which a gate body names to need that release.
+VERUS_MANIFEST = "docs/formal/proofs.json"
+VERUS_JUDGE = "scripts/formal/proofs.py"
 # The one other place a release is linked: the directory of the run account's
 # rustup home where rustup's proxy finds the release rust-toolchain.toml pins,
 # so a cargo a run starts outside a gate unit installs nothing on its first use
@@ -5100,6 +5103,14 @@ def rustup_proxy_failures(repo_root: Path, proxied: dict[str, dict],
     return failures
 
 
+def verus_rust_release(repo_root: Path) -> str | None:
+    """The Rust release docs/formal/proofs.json says Verus runs on."""
+    manifest = repo_root / VERUS_MANIFEST
+    if not manifest.is_file():
+        return None
+    return json.loads(manifest.read_text(encoding="utf-8")).get("verus", {}).get("toolchain")
+
+
 def rust_toolchain_failures(repo_root: Path) -> list[str]:
     """What is wrong with the Rust toolchains bx.toml declares, as sentences."""
     failures: list[str] = []
@@ -5194,6 +5205,13 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
                     f"{RUST_TOOLCHAIN_FILE} lists {key[:-1]} {item!r} and the install "
                     f"line of [platform.linux.tools.{release}] has no `{flag} {item}`, "
                     f"so a build machine's release lacks what every other checkout's has")
+    # The release Verus runs on (docs/formal/proofs.json), which is no package's
+    # and not this tree's: one table, read from the manifest that pins Verus.
+    pins["VERUS_RUST"] = verus_rust_release(repo_root) or ""
+    verus = table_of("VERUS_RUST")
+    if verus and tables[verus].get("version_file") != VERUS_MANIFEST:
+        failures.append(f"[platform.linux.tools.{verus}] does not read the release "
+                        f"Verus runs on from {VERUS_MANIFEST}, which pins Verus")
     if nightly and tables[nightly].get("version_file") != RUST_TOOLCHAIN_PINS:
         failures.append(f"[platform.linux.tools.{nightly}] does not read the nightly "
                         f"from {RUST_TOOLCHAIN_PINS}, the one line that pins it")
@@ -5211,7 +5229,7 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
         else:
             wanted.setdefault(release_of, []).extend(packages)
     msrv = {name: version for name, version in versions.items()
-            if name not in (release, nightly)}
+            if name not in (release, nightly, verus)}
     for version in sorted(set(wanted) - set(msrv.values())):
         failures.append(
             f"{sorted(wanted[version])} declare rust-version {version} and no "
@@ -5232,6 +5250,8 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
         code = script_code(script)
         if "sce_rust_msrv_release" in code:
             return "msrv"
+        if VERUS_JUDGE in code:
+            return "verus"
         if "sce_gate_require_rust " in code or "sce_gate_configure_wasm_tree" in code:
             return "nightly"
         return ""
@@ -5251,6 +5271,8 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
             want_kind = None
         elif name == nightly:
             want_kind = "nightly"
+        elif name == verus:
+            want_kind = "verus"
         else:
             want_kind = "msrv"
         for slug in sorted(GATES):

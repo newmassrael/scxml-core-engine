@@ -10,9 +10,10 @@
 # (scripts/formal/proofs.py --self-test) run first, since a judge that regressed
 # answers confidently and wrongly.
 #
-# Needs rustup and the Rust release the pinned Verus runs on; Verus is fetched once and
-# checked against the digest the manifest pins. Without either the gate could not run,
-# which is exit 3 and no verdict about the code.
+# Needs the pinned Verus and the Rust release it runs on, which bx.toml declares and no
+# gate installs; anywhere but a build machine they are put at the same places by
+# `scripts/formal/proofs.py --install` and `scripts/install_rust.sh --declared`. Without
+# either the gate could not run, which is exit 3 and no verdict about the code.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

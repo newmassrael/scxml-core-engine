@@ -416,6 +416,33 @@ install_inputs = ["scripts/install_genmc.sh"]
 packages = ["g++-14", "clang-19", "llvm-19-dev", "cmake", "ninja-build", "libffi-dev", "zlib1g-dev", "libedit-dev"]
 needed_by = ["genmc-queue"]
 
+# VERUS, the checker of the host core's proofs (`scripts/gates/formal-proofs.sh`), at the release
+# docs/formal/proofs.json pins by digest; scripts/formal/proofs.py stays the one place it is
+# installed from. `bin/verus` under the entry is the program run with no rustup, on the Rust release
+# of the next table; it answers `--version` by itself, so `check` asks nothing of that release.
+[platform.linux.tools.verus]
+version_file = "docs/formal/proofs.json"
+version_pattern = '^    "version": "([0-9a-f.]+)"'
+path = "~/.local/verus/{version}/bin/verus"
+check = "verus {version}"
+prefix_link = "~/.local/verus/{version}"
+install = "python3 scripts/formal/proofs.py --install {prefix}"
+install_inputs = ["scripts/formal/proofs.py", "docs/formal/proofs.json"]
+needed_by = ["formal-proofs"]
+
+# THE RUST RELEASE VERUS RUNS ON, the one it was built with: no package's and not this tree's, read
+# from the same manifest, so a move of Verus moves it with it. Verus reads its compiler libraries and
+# its standard library, and no component is added.
+[platform.linux.tools.rust-verus]
+version_file = "docs/formal/proofs.json"
+version_pattern = '^    "toolchain": "([0-9.]+)"'
+path = "~/.local/rust/{version}/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["formal-proofs"]
+
 # THE EMSCRIPTEN SDK, at the release the hosted lanes install (`emsdk install 6.0.13` in
 # w3c-tests.yml, cpp-suite.yml and deploy-visualizer.yml; the registry's self-test holds them to
 # the script's pin). An update to main is judged here with every gate it reaches, `ci_only`
