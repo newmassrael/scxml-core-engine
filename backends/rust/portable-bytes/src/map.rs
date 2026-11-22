@@ -201,6 +201,13 @@ impl core::fmt::Debug for MapSeed {
     }
 }
 
+/// The ordinal the seed of a map or a set held as a map's value is drawn
+/// under, from the seed of the map that holds it (docs/adr/0108, D12 item 7):
+/// past every ordinal a machine numbers its own maps with, so no inner map is
+/// keyed as one of the machine's maps is, and the one the C11 lane draws an
+/// inner map's seed under (`SCE_MAP_SEED_INNER_ORDINAL`).
+pub const INNER_SEED_ORDINAL: u32 = u32::MAX;
+
 /// The seeds of the maps one machine holds, each drawn from one seed in the
 /// order the machine declares its maps ([`MapSeed::derive`]): what a generated
 /// machine builds its maps from, given the seed its host or its runtime drew.
@@ -770,6 +777,15 @@ impl<K, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
         self.seed.derive(ordinal)
     }
 
+    /// The seed of each map or set this map holds as a value (docs/adr/0108,
+    /// D12 item 7): drawn from this map's own under [`INNER_SEED_ORDINAL`],
+    /// one ordinal at every depth, each depth's seed drawn from the one above
+    /// it, as the C11 lane draws it (`sce_map_seed_of_inner`). What an empty
+    /// value put at a key is built under ([`FromSeed`]).
+    pub fn inner_seed(&self) -> MapSeed {
+        self.seed.derive(INNER_SEED_ORDINAL)
+    }
+
     /// How many entries the map holds.
     pub fn len(&self) -> usize {
         self.live as usize
@@ -1106,6 +1122,16 @@ impl<K: MapKey, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
 impl<K, V, const N: usize, S: MapStorage> FromSeed for BoundedMap<K, V, N, S> {
     fn from_seed(seed: MapSeed) -> Self {
         Self::with_seed(seed)
+    }
+}
+
+/// A list hashes nothing, so its empty value is the one whatever the seed: what
+/// a map whose value is a list puts at a key that names no value
+/// (docs/adr/0108, D12 item 4), as it puts the empty map or set of a map of
+/// those.
+impl<T, const N: usize> FromSeed for BoundedList<T, N> {
+    fn from_seed(_seed: MapSeed) -> Self {
+        Self::new()
     }
 }
 
@@ -1866,6 +1892,43 @@ mod tests {
         assert_ne!(map.derived_seed(0), map.derived_seed(1));
         let set = BoundedSet::<u8, 2>::with_seed(OTHER_SEED);
         assert_eq!(set.derived_seed(3), OTHER_SEED.derive(3));
+    }
+
+    /// docs/adr/0108, D12 items 4 and 7: the empty value a map of maps puts at a
+    /// key is keyed by the seed the map draws under the ordinal no machine's own
+    /// map is numbered by, and a map held at that depth draws the next depth's
+    /// the same way; the empty list a map of lists puts is the empty list
+    /// whatever the seed.
+    #[test]
+    fn an_empty_value_put_at_a_key_is_keyed_by_the_inner_seed() {
+        let mut regions =
+            BoundedMap::<u32, BoundedMap<u8, BoundedSet<u8, 2>, 2>, 3>::with_seed(SEED);
+        assert_eq!(regions.inner_seed(), SEED.derive(INNER_SEED_ORDINAL));
+        assert_eq!(regions.inner_seed(), SEED.derive(u32::MAX));
+        assert_ne!(regions.inner_seed(), SEED.derive(0));
+        let inner_seed = regions.inner_seed();
+        assert_eq!(
+            regions.put(7, FromSeed::from_seed(inner_seed)),
+            PutOutcome::Inserted
+        );
+        let faces = value_mut(&mut regions, &7u32).expect("held");
+        assert_eq!(faces.derived_seed(0), inner_seed.derive(0));
+        assert_eq!(faces.inner_seed(), inner_seed.derive(INNER_SEED_ORDINAL));
+        let deeper = faces.inner_seed();
+        assert_eq!(
+            faces.put(1, FromSeed::from_seed(deeper)),
+            PutOutcome::Inserted
+        );
+        assert_eq!(
+            value(faces, &1u8).map(|kinds| kinds.derived_seed(0)),
+            Some(deeper.derive(0))
+        );
+        let mut samples = BoundedMap::<u32, BoundedList<u16, 3>, 2>::with_seed(SEED);
+        assert_eq!(
+            samples.put(1, FromSeed::from_seed(samples.inner_seed())),
+            PutOutcome::Inserted
+        );
+        assert_eq!(value(&samples, &1u32).map(|list| list.len()), Some(0));
     }
 
     /// A proven read of a key that is absent is no value: it panics, as a
