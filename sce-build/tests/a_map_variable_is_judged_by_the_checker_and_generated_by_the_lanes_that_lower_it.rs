@@ -2054,7 +2054,9 @@ fn rust_writes_a_nested_map_in_place() {
                 .any(|(path, first)| path.ends_with("map :: value_mut") && *first == lent_mut),
             "{machine}: no write through `{variable}` lends its value in place:\n{text}"
         );
-        let lent = format!("& {outer}");
+        // A read lends the map as the expression lowering spells every
+        // operand, in parentheses: `value(&(self.m), &k)`.
+        let lent = format!("& ({outer})");
         assert!(
             calls
                 .0
