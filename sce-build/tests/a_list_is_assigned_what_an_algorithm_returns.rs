@@ -283,3 +283,91 @@ fn a_list_of_records_is_assigned_from_an_algorithm_that_takes_a_truth_value() {
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+/// A machine that names an enum and holds no value of it declares its own type for the
+/// enum: the adapter of a call that hands an algorithm a variant of it names the type,
+/// and so does an expression that reads a variant's number. The generated Rust named
+/// the type in both and defined it in neither, so it did not compile; what is generated
+/// for the call is compiled and run in every lane by the scenario `static_record_call`.
+#[test]
+fn a_machine_declares_the_enum_it_only_names() {
+    let colour = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="colour" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants"><sce:variant name="red" value="4"/><sce:variant name="blue" value="9"/></data>
+  </datamodel>
+</scxml>
+"##;
+    let is_red = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="algorithm" name="is_red">
+  <sce:import kind="enum" src="colour.scxml" as="Colour"/>
+  <sce:signature>
+    <sce:param name="c" type="enum:Colour"/><sce:param name="n" type="uint32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body><sce:return expr="c === Colour.red &amp;&amp; n &gt; 0"/></sce:body>
+</scxml>
+"##;
+    for (imports, assign) in [
+        (
+            r#"<sce:import kind="algorithm" src="is_red.scxml" as="IsRed"/>"#,
+            r#"<assign location="b" expr="IsRed(Colour.red, n)"/>"#,
+        ),
+        (
+            "",
+            r#"<assign location="n" expr="Colour.toNumber(Colour.blue)"/>"#,
+        ),
+    ] {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("colour.scxml"), colour).expect("write the enum");
+        std::fs::write(dir.path().join("is_red.scxml"), is_red).expect("write the algorithm");
+        let path = dir.path().join("painted.scxml");
+        std::fs::write(
+            &path,
+            format!(
+                r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="painted">
+  <sce:import kind="enum" src="colour.scxml" as="Colour"/>
+  {imports}
+  <datamodel>
+    <data id="n" sce:type="uint32" expr="1"/>
+    <data id="b" sce:type="bool" expr="false" sce:direction="out"/>
+  </datamodel>
+  <state id="s"><transition event="go" type="internal">{assign}</transition></state>
+</scxml>
+"##
+            ),
+        )
+        .expect("write the machine");
+        let out_dir = dir.path().join("out");
+        let out = Command::new(sce_codegen_bin())
+            .arg("--workspace-root")
+            .arg(repo_root())
+            .arg("generate")
+            .arg(&path)
+            .args(["-l", "rust", "-o"])
+            .arg(&out_dir)
+            .output()
+            .expect("invoke sce-codegen");
+        assert!(
+            out.status.success(),
+            "{assign}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let unit = std::fs::read_dir(&out_dir)
+            .expect("the generated files")
+            .map(|entry| entry.expect("a file").path())
+            .find(|file| file.ends_with("painted_sm.rs"))
+            .map(|file| std::fs::read_to_string(file).expect("the machine"))
+            .expect("the machine is generated");
+        let defined = unit.matches("pub enum PaintedColourEnum").count();
+        assert!(
+            unit.contains("PaintedColourEnum::"),
+            "{assign}: the machine names no variant of its enum:\n{unit}"
+        );
+        assert_eq!(defined, 1, "{assign}: the enum is defined {defined} times");
+    }
+}
