@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <string.h>
+#include "sce/text.h"
 /* L1 procedure: pure guard-only diamond (no externs, no helpers). */
 
 typedef enum {
@@ -46,7 +46,7 @@ static inline procedure_diamond_result_t procedure_diamond_execute(uint16_t sens
                 if (sensor_value > 500) { current = PROCEDURE_DIAMOND_STATE_MID_PATH; break; }
                 current = PROCEDURE_DIAMOND_STATE_LOW_PATH; break;
             case PROCEDURE_DIAMOND_STATE_HIGH_PATH:
-                if (strcmp(mode, "strict") == 0) { current = PROCEDURE_DIAMOND_STATE_REJECT; break; }
+                if (sce_text_compare(mode, "strict") == 0) { current = PROCEDURE_DIAMOND_STATE_REJECT; break; }
                 current = PROCEDURE_DIAMOND_STATE_ACCEPT; break;
             case PROCEDURE_DIAMOND_STATE_MID_PATH:
                 current = PROCEDURE_DIAMOND_STATE_ACCEPT; break;

@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <string.h>
+#include "sce/text.h"
 /* L1 procedure: pure guard-only diamond (no externs, no helpers). */
 
 typedef enum {
