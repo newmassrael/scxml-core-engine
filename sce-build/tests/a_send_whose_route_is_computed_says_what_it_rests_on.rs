@@ -367,17 +367,24 @@ fn only_the_places_the_route_fails_carry_its_questions() {
             );
         }
     }
-    let delivery: Vec<&str> = machine
-        .lines()
-        .filter(|l| l.contains("engine.raise_internal(") && l.contains("send_id=_sid"))
-        .filter(|l| !l.contains("data="))
-        .collect();
-    assert!(!delivery.is_empty(), "the machine has no delivery failure");
-    for line in delivery {
+    // The delivery to the address the route produced: refused by the processor,
+    // or reaching nobody. Each error is raised with its own sentence, so each
+    // is found by it.
+    for place in [
+        "\"<send> targetexpr produced a value that is not a target\"",
+        "\"<send> targetexpr names a session this processor cannot reach\"",
+    ] {
+        let found = lines_with(&machine, place);
         assert!(
-            line.contains(ASKING),
-            "a delivery failure carries no question: {line}"
+            !found.is_empty(),
+            "the machine has no delivery failure saying {place}"
         );
+        for line in found {
+            assert!(
+                line.contains(ASKING),
+                "a delivery failure carries no question: {line}"
+            );
+        }
     }
 
     // A delayed send is refused, or its target found gone, when its wait is over,
