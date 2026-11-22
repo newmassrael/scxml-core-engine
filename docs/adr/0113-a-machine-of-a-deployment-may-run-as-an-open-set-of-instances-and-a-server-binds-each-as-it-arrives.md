@@ -47,8 +47,11 @@ Two foundations decide the structure:
   object).
 - **State kept for another is leased** (Gray and Cheriton 1989); RIFL drops its records by a client's lease and
   acknowledgements. An expired lease is told, never silently renewed as a new client. (Liskov, Shrira and Wroclawski
-  1991 reach at most once without per-sender state by synchronized clocks; a client of unknown clock rules that out
-  here.)
+  1990, MIT/LCS/TR-476, refuse a duplicate though they keep nothing of its sender: what is dropped from the table raises
+  one bound, and a message not later than the bound is refused. The durable mark of this record is that bound, over
+  counted numbers. Their numbers are clock readings, whose skew costs performance and never correctness; it is not the
+  reason they are not used. A client whose clock runs behind is refused until it is set right, and a reply is dropped by
+  its age, so a client that asks again after that is ignored and never learns the outcome. Here it is told.)
 - **A kind and its instances are addressed separately** (Bernstein et al., Orleans, 2014: type and key).
 - **The end decides** (Saltzer, Reed and Clark 1984): the application, not the transport, decides what to do with an
   operation whose outcome is unknown.
@@ -91,7 +94,8 @@ stays refused.
   nothing.
 - **An exchange confirms.** The first exchange that names the offer in `If-Match`, an empty poll included, makes the
   instance a member under it, in the store, in one write, and ends the incarnation it had before. A join that arrives
-  late only offers, so it puts no live member out (the three-way handshake, Tomlinson 1975).
+  late only offers, so it puts no live member out (the three-way handshake, RFC 9293 §3.5: an old duplicate opening must
+  not be taken for a new one).
 - **A member is leased.** Each authenticated exchange renews its lease (`lease_ms`); an offer and a member whose
   messages no session kept live only `provisional_ms` (ADR 0109 D1, "a session is kept only once its document keeps
   it"). A name that arrives once and goes away costs that, which the rate limits of §22.4 bound.
