@@ -2688,7 +2688,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record_call.scxml"
         STAGE_ALSO schema_entry.scxml algorithm_ledger_larger.scxml algorithm_ledger_amount.scxml
-                   algorithm_ledger_line.scxml
+                   algorithm_ledger_line.scxml algorithm_ledger_settles.scxml enum_item_status.scxml
     )
     # ... and the lists it keeps, a list of records and a list of numbers, to be read.
     sce_generate_static_integration_c_test(static_list_call
@@ -2703,7 +2703,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # (`static_map_take`, D6 item 2).
     set(_STATE_ALGORITHM_HEADERS "")
     foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids
-                          ledger_larger ledger_line ledger_has ids_above
+                          ledger_larger ledger_line ledger_settles ledger_has ids_above
                           schema_item enum_item_status item_status_set item_status_count item_status_of
                           schema_goal goal_earliest goal_until goal_undated goal_day_sum
                           schema_item_pick item_pick_first

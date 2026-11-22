@@ -712,6 +712,7 @@ sce_add_algorithm(
 # the first two imports name (an algorithm's header includes the schema's), and
 # each algorithm takes a record or a list the machine holds. static_record_call's
 # `ledger_larger` and `ledger_line`, and static_list_call's `ledger_has` and `ids_above` are among them.
+# static_record_call's `ledger_settles` takes the enum `enum_item_status`, generated below.
 foreach(_STATE_SCHEMA schema_entry schema_total)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
@@ -736,7 +737,7 @@ sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/enum_item_status.scxml
 )
-foreach(_STATE_ALGORITHM item_status_set item_status_count item_status_of)
+foreach(_STATE_ALGORITHM item_status_set item_status_count item_status_of ledger_settles)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_STATE_ALGORITHM}.scxml

@@ -10787,6 +10787,38 @@ pub fn lower(
             returned_map_types.insert(callee.alias.clone(), held);
         }
     }
+    // The machine's own type for an enum is declared where a variable, a field or a
+    // payload holds a value of it, and is named where none does too: by the adapter
+    // of a call that hands an algorithm a value of it or takes one back, and by an
+    // expression that names a variant of it (`F(Colour.red)`, the number of one).
+    let mut named_enums: BTreeSet<String> = rewrites
+        .sites
+        .borrow()
+        .iter()
+        .filter_map(|site| crate::forge::expr::read_identifiers(&site.source).ok())
+        .flatten()
+        .filter(|name| model.imported_enums.contains_key(name))
+        .collect();
+    for coded in rewrites.state_calls.borrow().iter() {
+        let called = scope
+            .state_call(coded)
+            .and_then(|call| scope.value_callee(&call.alias))
+            .and_then(|callee| callee.value.as_ref());
+        if let Some(value) = called {
+            named_enums.extend(crossing_enums(value, &records));
+        }
+    }
+    for alias in named_enums {
+        // A target that declares no type for an enum, and an enum the document holds
+        // under no name, declare none here: what they lower is said where they do.
+        if target.enum_type(machine, &alias).is_some() && held_enums.contains_key(&alias) {
+            declarations.enum_type(&alias).map_err(|alias| {
+                GenerateError::unsupported(format!(
+                    "a value of the enum `{alias}` has no {lang} lowering yet"
+                ))
+            })?;
+        }
+    }
     let type_defs = declarations.type_defs;
     let saved_defs = declarations.saved_defs;
     let mut adapter_defs = payload_key_defs;
