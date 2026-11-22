@@ -6299,9 +6299,8 @@ anything but another map variable whose type it fits, which copies it whole.
 Interpreter's lowering, Rust's and C11's hold it (below), and every other
 backend's `generate` refuses it as `generate/unsupported-feature`, naming the type
 and that record, until the step that lands the lane. A map whose value is a map, a
-set, a list or a record that holds a list is run by the Interpreter alone: Rust's
-and C11's `generate` refuse it as `generate/unsupported-feature`, naming the type
-and docs/adr/0108, D12, until each lane's own step.
+set, a list or a record that holds a list is run by the Interpreter, Rust and C11
+(docs/adr/0108, D12; below).
 
 **Reading a map.** `len(m)` is the number of entries, a `uint32` as a list's
 length is; `has(m, k)` is `true` when `k` is one of its keys; `m[k]` is the
@@ -6414,22 +6413,32 @@ name as every list read through an index is. The scenarios `static_map_nested.js
 of it, and a key that is absent), `static_map_list.json` (an append through the
 place to a full list, `len`, a walk and a clear) and `static_map_record_list.json`
 (an append to `rows[1].tags`, the record variable put left as it was) run on the
-Interpreter and on C11; Rust refuses their machines naming D12, every other backend
-refuses a map, and the C++ suite lists them as not yet lowered. A C11 machine holds
-each value where the outer map holds it: a map of maps or of sets is declared by
-`SCE_MAP_NESTED_DECLARE` over the inner map's type, which starts each inner map
-under the seed drawn from the outer one's, a list in the type a list variable of it
-is held in, and a record that holds a list in the machine's own record (rule 9). A
-write through a place reaches the value with `sce_map_value_mut`, each key read once
-into a local of its map's key type; a put that names no value makes the empty one
-with `_put_entry`, and one that names a variable copies it into the entry, a map by
-its type's `_assign`; a read of `m[k]` is the outer map's lookup, so `m[k][k2]`
-fails for either key that is absent; a walk of a place held at a key reads it once
-before the loop and binds a list, a map or a record that holds one where the map
-holds it; and the saved form reads each value into the entry it makes, no value of
-a bound passing through a frame. A map whose value is a map or a set is taken whole
-only from a map of exactly its type, and a list held at a key holds numbers, `bool`s
-or records.
+Interpreter, on C11 and on Rust; every other backend refuses a map, and the C++
+suite lists them as not yet lowered. A C11 machine holds each value where the outer
+map holds it: a map of maps or of sets is declared by `SCE_MAP_NESTED_DECLARE` over
+the inner map's type, which starts each inner map under the seed drawn from the
+outer one's, a list in the type a list variable of it is held in, and a record that
+holds a list in the machine's own record (rule 9). A write through a place reaches
+the value with `sce_map_value_mut`, each key read once into a local of its map's key
+type; a put that names no value makes the empty one with `_put_entry`, and one that
+names a variable copies it into the entry, a map by its type's `_assign`; a read of
+`m[k]` is the outer map's lookup, so `m[k][k2]` fails for either key that is absent;
+a walk of a place held at a key reads it once before the loop and binds a list, a map
+or a record that holds one where the map holds it; and the saved form reads each
+value into the entry it makes, no value of a bound passing through a frame. Rust
+holds the value at a key in the runtime's map of the inner type, a list variable's
+type, or the machine's own record for a record that holds a list (rule 9). A write
+through a place reads each key, its own key and its value first, and then writes the
+value where the outer map holds it, lent by `portable::map::value_mut`, so no outer
+map is copied out and put back; a read of a map, a set or a list held at a key lends
+it (`portable::map::value`); a loop over one binds the place once, in an `if let`
+that raises `error.execution` and ends the block for a key that is absent; and the
+empty inner map a put that names no value puts is keyed by the seed the outer map
+draws for what it holds (`BoundedMap::inner_seed`, drawn under the ordinal C11's
+`SCE_MAP_SEED_INNER_ORDINAL` names). A restored inner map hashes under a seed of its
+own, as every map a Rust machine restores does. On both lanes a map whose value is a
+map or a set is taken whole only from a map of exactly its type, and a list held at a
+key holds numbers, `bool`s or records.
 `linkstate_interest.json`, the table a router keeps by key expression and by peer,
 holds the keys it empties in a list of texts, which no lane holds in a statechart's
 variable yet, and runs on no engine.
