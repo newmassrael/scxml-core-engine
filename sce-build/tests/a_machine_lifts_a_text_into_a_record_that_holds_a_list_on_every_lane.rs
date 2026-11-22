@@ -224,7 +224,10 @@ fn a_c11_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
 /// `Lifted::Whole` arm (`sce-build/src/forge/static_js.rs`): the Interpreter lowers
 /// the machine, the lift handing the text to the library's `lift` with the reader of
 /// the record's whole type and writing the variable with the value it answers, the
-/// plain object a scenario compares; the Interpreter saves no state. The
+/// plain object a scenario compares; the Interpreter saves no state. The text is the
+/// payload's field as every expression of the document reads it, through the
+/// library's `field` held to the bound its schema declares
+/// (`JsTarget::payload_bounded_read`). The
 /// Interpreter's replay finds `scenarios/static_lift_list.json` by scanning its
 /// directory (`AStaticDatamodelRunsLoweredUnderTheInterpreterTest`).
 #[test]
@@ -233,10 +236,17 @@ fn the_interpreter_holds_the_record_and_lifts_it_whole() {
     let lowered =
         sce_build::forge::static_js::lower_file(path.to_str().expect("a utf-8 path"), Vec::new())
             .unwrap_or_else(|e| panic!("the Interpreter lowers static_lift_list: {e:?}"));
+    let document = roxmltree::Document::parse(&lowered).expect("well-formed");
+    let script = document
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "script")
+        .filter_map(|n| n.text())
+        .find(|text| text.contains("SceStatic.lift("))
+        .unwrap_or_else(|| panic!("a <script> lifts the text:\n{lowered}"));
     holds(
-        &lowered,
+        script,
         &[
-            "SceStatic.lift(_event.data.text, ",
+            "SceStatic.lift(SceStatic.field(_event.data, 'text', {string: 512}), ",
             "if (sceLift.refusal === null) { answer = sceLift.value; why = null; }",
         ],
     );
