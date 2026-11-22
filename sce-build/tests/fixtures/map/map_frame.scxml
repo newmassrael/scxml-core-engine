@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A record value of a map whose field is a byte string the schema bounds
+  (docs/adr/0108, D6 item 4): a frame kept by its id, its body at most sixteen
+  bytes. The map holds it in the type this schema's unit declares, and the
+  machine's own record crosses into that type and back within the bound.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="map_frame"
+       sce:event-name="frame.taken">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="body" sce:type="bytes[16]" sce:direction="in"/>
+  </datamodel>
+</scxml>

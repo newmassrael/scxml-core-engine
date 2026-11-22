@@ -6339,7 +6339,13 @@ from `sce-portable-bytes`), each key and value in the type a variable of its
 type is held in, but a record and an enum, which are held in the type their
 unit declares (docs/adr/0108, D6 item 4), a put crossing the machine's value
 into it through `<Type>ToDocument` and a read of an entry crossing back through
-`<Type>FromDocument`, field by field as a call's adapter crosses one; the map is
+`<Type>FromDocument`, field by field as a call's adapter crosses one. A byte
+string field, which the unit holds in a `Vec<u8>` and the machine in the
+`SceBytes<N>` of its bound, is copied whole into the unit and held to the bound
+again on the way back, which never refuses: only the machine's own put writes an
+entry of such a record, since an algorithm holds none. No map is keyed by such a
+record on Rust, whose unit holds the bytes in a type that is no key of the
+runtime's map: `generate` refuses it naming the field. The map is
 (docs/adr/0108, D8) an array of `N` entry slots with a free
 list, a doubly linked order through them, which is the order a walk, the saved
 form and the snapshot follow, and an open-addressing index of twice the bound
