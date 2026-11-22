@@ -77,6 +77,64 @@ type Functions = &'static [(&'static str, usize)];
 /// The places that open a file without `confine`: the source, the function the open is in as the
 /// scan attributes it (the nearest `fn` above it), how many opens that function has, and why.
 const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
+    // The action layer (ADR 0097): it materializes the trees the checkout declares, running
+    // the generator as a program of its own, which reads a document through `confine` as any
+    // run does. What it opens itself is the checkout's manifests and the files a run's read set
+    // names, there to be hashed into a key, and its own scratch, cache and output.
+    (
+        "src/action/build_script.rs",
+        Why::Repository,
+        &[("checkout_of", 1), ("watched_paths", 1)],
+    ),
+    (
+        "src/action/generation.rs",
+        Why::Repository,
+        // `run` also reads back the read set the run wrote into its scratch.
+        &[("generation_key", 1), ("run", 3), ("hash", 2)],
+    ),
+    (
+        "src/action/generation.rs",
+        Why::Output,
+        &[("new", 1), ("walk_files", 3), ("is_executable", 1)],
+    ),
+    (
+        "src/action/materialize.rs",
+        Why::Repository,
+        // The checkout's `Cargo.toml` for the edition rustfmt formats by, and the committed
+        // tree a materialized one is compared with.
+        &[("rustfmt_settings", 1), ("compare", 3)],
+    ),
+    (
+        "src/action/materialize.rs",
+        Why::Output,
+        &[
+            ("rustfmt", 2),
+            ("remove_empty_directories", 3),
+            ("files_under", 3),
+            ("rust_files_under", 3),
+            ("is_generated_file", 1),
+        ],
+    ),
+    (
+        "src/action/provenance.rs",
+        Why::Output,
+        &[
+            ("output_tree", 1),
+            ("read", 1),
+            ("record", 1),
+            ("is_executable", 1),
+        ],
+    ),
+    (
+        "src/action/store.rs",
+        Why::Output,
+        &[("read", 1), ("find_missing", 1), ("write_blob", 1)],
+    ),
+    (
+        "src/action/tree.rs",
+        Why::Repository,
+        &[("trees", 2), ("matching", 7)],
+    ),
     (
         "src/acceptance_record.rs",
         Why::Operator,
@@ -131,7 +189,7 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     (
         "src/lib.rs",
         Why::Installation,
-        &[("find_template_base", 3)],
+        &[("search_template_base", 3)],
     ),
     ("src/requirement_manifest.rs", Why::Operator, &[("load", 1)]),
     ("src/requirement_sidecar.rs", Why::Operator, &[("load", 1)]),
@@ -166,6 +224,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Operator,
         &[
             ("load_deploy_config", 1),
+            // The deployment a refusal of it is placed in, read again for the row of the key
+            // the refusal names: the operator's descriptor, as `load_deploy_config` reads it.
+            ("cmd_generate", 1),
             ("cmd_check", 1),
             ("cmd_read_metadata", 1),
             ("cmd_manifest", 1),
@@ -192,6 +253,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             // each is the arguments of a plan, whose run reads its document
             // through `confine` as any plan does.
             ("cmd_plan_batch", 1),
+            // The directory `verify` is given, which a header's `source:` lines are found
+            // in: a seed is looked for under the roots the operator named.
+            ("anchor_of", 1),
         ],
     ),
     (
@@ -207,6 +271,8 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("clean_stale", 9),
             ("cmd_verify", 1),
             ("walk", 2),
+            // A child the run asked for: a document the run wrote or staged into its output.
+            ("generate_child_generations", 1),
             // The date of the stamp a `plan-batch` run has just written,
             // which its answers are dated by.
             ("date_written_now", 1),
@@ -215,9 +281,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     (
         "src/cli/mod.rs",
         Why::Installation,
-        // `depfile_entry` asks whether the running program is still on disk, to
+        // `this_program` asks whether the running program is still on disk, to
         // name it as a prerequisite of what it wrote.
-        &[("depfile_entry", 1)],
+        &[("this_program", 1)],
     ),
     (
         "src/cli/mod.rs",
@@ -227,6 +293,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("read_metadata", 2),
             ("find_scxml", 1),
             ("validates", 1),
+            // What a `generate-w3c` run reads: the registry and every file of the
+            // checkout's W3C resources directory.
+            ("w3c_reads", 3),
         ],
     ),
     (
@@ -234,6 +303,8 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Operator,
         &[
             ("collect_within", 2),
+            // The deployment named on the command line, as `deploy.yaml` of the closure.
+            ("read_deploy", 1),
             ("walk", 2),
             ("read_to_string", 1),
             ("observe", 1),
