@@ -117,7 +117,7 @@ const EXPECTED: &[(&str, [&str; 3])] = &[
         [
             "self._pending_job_completed_payload.elapsed_ms == 0",
             "self._pending_job_completed_payload.retried == True",
-            "self._pending_job_completed_payload.job_id == 'sentinel'",
+            "self._pending_job_completed_payload.job_id == \"sentinel\"",
         ],
     ),
 ];
