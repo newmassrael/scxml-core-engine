@@ -1,17 +1,18 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 755ec532fd2d5e3fc0e52d3c4cce81bb0ba91bab8dfc46ac168de8f610f03a6e
+// source-hash: 1c4345fd879065241c0c00b76f8e6b6a7a7f3f3f200f379431412a268aff8b25
 // source: static_record_call.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_call.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_record_call.scxml:13 :: _machine
+// SCE-MAP: static_record_call.scxml:14 :: _machine
 
 package com.sce.integration.static_datamodel.static_record_call
 
 import com.sce.runtime.*
 import com.sce.generated.ledger_amount.*
 import com.sce.generated.ledger_larger.*
+import com.sce.generated.ledger_line.*
 import com.sce.generated.schema_entry.*
 
 
@@ -65,6 +66,10 @@ private fun call_Larger__vp(p0: StaticRecordCallEntryRecord, p1: StaticRecordCal
     val r = ledgerLarger(SchemaEntryPayload(id = p0.id, amount = p0.amount), SchemaEntryPayload(id = p1.id, amount = p1.amount))
     return StaticRecordCallEntryRecord(id = r.id, amount = r.amount)
 }
+private fun call_LineOf__(p0: UInt, p1: Int): StaticRecordCallEntryRecord {
+    val r = ledgerLine(p0, p1)
+    return StaticRecordCallEntryRecord(id = r.id, amount = r.amount)
+}
 
 // --- State Machine (W3C SCXML) ---
 
@@ -89,6 +94,11 @@ class StaticRecordCallStateMachine(
 
     /** What the published `best` holds. */
     val best: StaticRecordCallEntryRecord get() = vBest
+    /** W3C SCXML 5.2: the `made` datamodel variable, published (`sce:direction="out"`). */
+    private var vMade: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id = 0.toUInt(), amount = 0)
+
+    /** What the published `made` holds. */
+    val made: StaticRecordCallEntryRecord get() = vMade
     /** W3C SCXML 5.2: the `large` datamodel variable, published (`sce:direction="out"`). */
     private var vLarge: UInt = 0.toUInt()
 
@@ -129,6 +139,7 @@ class StaticRecordCallStateMachine(
     @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
         vBest = StaticRecordCallEntryRecord(id = 0.toUInt(), amount = 0)
+        vMade = StaticRecordCallEntryRecord(id = 0.toUInt(), amount = 0)
         vLarge = params.large ?: (0.toUInt())
         vDebts = params.debts ?: (0.toUInt())
         vPeaks = params.peaks ?: (0.toUInt())
@@ -137,6 +148,7 @@ class StaticRecordCallStateMachine(
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
         val best: StaticRecordCallEntryRecord,
+        val made: StaticRecordCallEntryRecord,
         val large: UInt,
         val debts: UInt,
         val peaks: UInt,
@@ -157,6 +169,7 @@ class StaticRecordCallStateMachine(
 
     private fun currentData(): Data = Data(
         best = vBest,
+        made = vMade,
         large = vLarge,
         debts = vDebts,
         peaks = vPeaks,
@@ -189,10 +202,10 @@ class StaticRecordCallStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "dc127a7411589216f56f7e89ef942578e92878ca89a119099a7221bc3092f957",
-        revised = "8e7f755283cf3e3a2dc6d431941d678b939e964d88fffdd9bd9b317c46ed2832",
-        format2First = "dc127a7411589216f56f7e89ef942578e92878ca89a119099a7221bc3092f957",
-        format2Revised = "8e7f755283cf3e3a2dc6d431941d678b939e964d88fffdd9bd9b317c46ed2832",
+        first = "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
+        revised = "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
+        format2First = "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
+        format2Revised = "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
         records = listOf(
             RecordLineage(
                 event = "ledger.entry",
@@ -204,6 +217,7 @@ class StaticRecordCallStateMachine(
                 ),
                 holders = listOf(
                     RecordHolder("best", false),
+                    RecordHolder("made", false),
                 ),
             ),
         ),
@@ -230,6 +244,7 @@ class StaticRecordCallStateMachine(
 
     private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
         variables += "best" to vBest.toSaved()
+        variables += "made" to vMade.toSaved()
         variables += "large" to SavedValues.of(vLarge)
         variables += "debts" to SavedValues.of(vDebts)
         variables += "peaks" to SavedValues.of(vPeaks)
@@ -274,6 +289,7 @@ class StaticRecordCallStateMachine(
     // has already held to its variables' types.
     private fun restoreVariablesPart0(savedGrown: SavedState) {
         vBest = StaticRecordCallEntryRecord.fromSaved(savedGrown.variable("best"), "best")
+        vMade = StaticRecordCallEntryRecord.fromSaved(savedGrown.variable("made"), "made")
         vLarge = SavedValues.uint32(savedGrown.variable("large"), "large")
         vDebts = SavedValues.uint32(savedGrown.variable("debts"), "debts")
         vPeaks = SavedValues.uint32(savedGrown.variable("peaks"), "peaks")
@@ -294,6 +310,7 @@ class StaticRecordCallStateMachine(
 
     private fun judgeVariablesPart0(savedGrown: SavedState) {
         StaticRecordCallEntryRecord.fromSaved(savedGrown.variable("best"), "best")
+        StaticRecordCallEntryRecord.fromSaved(savedGrown.variable("made"), "made")
         SavedValues.uint32(savedGrown.variable("large"), "large")
         SavedValues.uint32(savedGrown.variable("debts"), "debts")
         SavedValues.uint32(savedGrown.variable("peaks"), "peaks")
@@ -446,7 +463,7 @@ class StaticRecordCallStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_record_call.scxml:13 :: _machine
+    // SCE-MAP: static_record_call.scxml:14 :: _machine
     override fun onEntry(state: StaticRecordCallState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticRecordCallState.Open -> onEntryOfOpen()
@@ -455,11 +472,11 @@ class StaticRecordCallStateMachine(
 
 
     private fun onEntryOfOpen() {
-                // SCE-MAP: static_record_call.scxml:27 :: open :: _state_body
+                // SCE-MAP: static_record_call.scxml:33 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_record_call.scxml:13 :: _machine
+    // SCE-MAP: static_record_call.scxml:14 :: _machine
     override fun onExit(state: StaticRecordCallState) {
         when (state) {
             is StaticRecordCallState.Open -> onExitOfOpen()
@@ -468,13 +485,13 @@ class StaticRecordCallStateMachine(
 
 
     private fun onExitOfOpen() {
-                // SCE-MAP: static_record_call.scxml:27 :: open :: _state_body
+                // SCE-MAP: static_record_call.scxml:33 :: open :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_record_call.scxml:13 :: _machine
+    // SCE-MAP: static_record_call.scxml:14 :: _machine
     override fun executeTransitionContent(source: StaticRecordCallState, transitionIndex: Int) {
         when (source) {
             is StaticRecordCallState.Open -> transitionContentOfOpen(transitionIndex)
@@ -496,7 +513,7 @@ class StaticRecordCallStateMachine(
 
 
     private fun transitionContentOfOpenAt0() {
-                // SCE-MAP: static_record_call.scxml:28 :: open :: _transition_0
+                // SCE-MAP: static_record_call.scxml:34 :: open :: _transition_0
                 if (pendingLedgerEntryPayload == null) {
                     return
                 }
@@ -526,5 +543,7 @@ class StaticRecordCallStateMachine(
                 return
             }
             }
+
+            vMade = call_LineOf__(vDebts, pendingLedgerEntryPayload!!.amount)
     }
 }

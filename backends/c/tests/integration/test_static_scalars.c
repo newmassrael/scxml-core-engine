@@ -1505,6 +1505,7 @@ VARIABLE_READER(static_record_call, large)
 VARIABLE_READER(static_record_call, debts)
 VARIABLE_READER(static_record_call, peaks)
 RECORD_READER(static_record_call, best, static_record_call_record_entry_t, ENTRY_FIELDS)
+RECORD_READER(static_record_call, made, static_record_call_record_entry_t, ENTRY_FIELDS)
 static const name_value_t record_call_states[] = {
     {"open", STATIC_RECORD_CALL_STATE_OPEN},
 };
@@ -1513,7 +1514,8 @@ static const variable_t record_call_variables[] = {
     {"debts", static_record_call_read_debts},
     {"peaks", static_record_call_read_peaks},
 };
-static const record_variable_t record_call_records[] = {RECORD_ROW(static_record_call, best), {NULL, NULL, NULL, NULL}};
+static const record_variable_t record_call_records[] = {
+    RECORD_ROW(static_record_call, best), RECORD_ROW(static_record_call, made), {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_call, record_call_states, record_call_variables, NULL, no_lists, record_call_records)
 
 // static_list_call: algorithms are handed the lists the machine keeps, a list of
