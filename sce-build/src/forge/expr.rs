@@ -7740,6 +7740,12 @@ fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         ExprKind::Call { callee, args, .. } => keyed_builtin(callee, args, ctx),
         _ => None,
     };
+    // `len(m[k])`, `has(m[k], k2)`: a map held at a key is read where the map
+    // that holds it lends it (docs/adr/0108, D12), a reference already.
+    let lent_map = matches!(
+        &expr.kind,
+        ExprKind::Call { args, .. } if args.first().is_some_and(|map| rust_lends_keyed(map, ctx))
+    );
     for child in expr.children_mut() {
         lower_keyed_reads_for_rust(child, ctx);
     }
@@ -7758,9 +7764,21 @@ fn lower_keyed_reads_for_rust(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         if position == 1 {
             rust_typed_key_literal(arg, &held);
         }
+        if position == 0 && lent_map {
+            continue;
+        }
         let ty = arg.ty;
         wrap_in_call(arg, "&", ty);
     }
+}
+
+/// Whether `node` reads a map, a set or a list held at a key of a map
+/// (`m[k]`, docs/adr/0108, D12), which a Rust machine reads where the map that
+/// holds it lends it ([`rust_keyed_value`]): a container is no operand (rule
+/// 6), so it is read only through a further step, a builtin, a loop, or a copy
+/// the statement that takes it whole makes.
+fn rust_lends_keyed(node: &TypedExpr, ctx: &TypeCtx<'_>) -> bool {
+    keyed_entry(node, ctx).is_some_and(|value| value.ty.is_container())
 }
 
 /// The place of the value `node` reads at a key of a map (`m[k]`,
@@ -7876,6 +7894,13 @@ fn rust_unit_field(
 /// it through `function` of [`RUST_MAP_READS`] that `found` fails where the
 /// key is absent ([`lower_keyed_reads_for_rust`]), its key's own reads lowered
 /// first; `false`, and `node` as it was, for any other node.
+///
+/// A map, a set or a list held at the key (docs/adr/0108, D12) is read through
+/// `value`, lent where the map holds it, whatever `function` asks: a container
+/// is read only through a further step, a builtin, a loop, or a copy the
+/// statement that takes it whole makes (rule 6), so no read copies it. A map
+/// read at a key of one held at a key (`m[k][k2]`) is read through the one the
+/// outer map lends, never through a copy of the outer map.
 fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> bool {
     let held = match &node.kind {
         ExprKind::Index { object, .. } => keyed_place(object, ctx),
@@ -7883,6 +7908,14 @@ fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> 
     };
     let Some(held) = held else {
         return false;
+    };
+    let function = if held
+        .map_value()
+        .is_some_and(|value| value.ty.is_container())
+    {
+        "value"
+    } else {
+        function
     };
     let ExprKind::Index { object, index } = std::mem::replace(&mut node.kind, ExprKind::NullLit)
     else {
@@ -7892,7 +7925,10 @@ fn rust_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>, function: &str) -> 
     lower_keyed_reads_for_rust(&mut key, ctx);
     rust_typed_key_literal(&mut key, &held);
     let (map_ty, key_ty) = (map.ty, key.ty);
-    wrap_in_call(&mut map, "&", map_ty);
+    // A map held at a key of another is the reference its map lends.
+    if !rust_keyed_value(&mut map, ctx, "value") {
+        wrap_in_call(&mut map, "&", map_ty);
+    }
     wrap_in_call(&mut key, "&", key_ty);
     let algorithm_reads = ctx.rust_algorithm_map_reads();
     let reads = algorithm_reads.unwrap_or(RUST_MAP_READS);

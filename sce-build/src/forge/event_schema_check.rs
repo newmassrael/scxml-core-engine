@@ -361,11 +361,14 @@ impl ComposedLowering {
         };
         match language {
             // A map or a set variable is held in the runtime's `BoundedMap` and
-            // `BoundedSet` (docs/adr/0108, "Order of work", step 5).
+            // `BoundedSet` (docs/adr/0108, "Order of work", step 5), and a map
+            // whose value is a map, a set, a list or a record that holds a list,
+            // each written in place where its map holds it (D12).
             Language::Rust => Self {
                 unions: true,
                 records: true,
                 maps: true,
+                map_values: true,
                 ..walks
             },
 
@@ -3007,6 +3010,13 @@ mod tests {
             // A map is held exactly where the target spells the map a variable
             // starts as (docs/adr/0108, D10).
             assert_eq!(lowering.maps, target.map_empty().is_some(), "{language:?}");
+            // ... and a map of a nested value exactly where it spells the empty
+            // value a put that names none puts at a key (docs/adr/0108, D12).
+            assert_eq!(
+                lowering.map_values,
+                target.nested_value(None).is_some(),
+                "{language:?}"
+            );
             assert_eq!(lowering.name, language.canonical_name());
         }
     }

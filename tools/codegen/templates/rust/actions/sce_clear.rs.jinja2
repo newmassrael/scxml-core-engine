@@ -2,6 +2,11 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {# SCE Accepted Subset §2.15: empty a sce-static list, lowered ahead of the
-   template by `forge::static_lowering` and stored on `action.native_code`. #}
+   template by `forge::static_lowering` and stored on `action.native_code`.
+   A list, a map or a set held at a key of a map (docs/adr/0108, D12) is
+   emptied through its place, which fails where a key on the way is absent
+   (`native_fails`): the failure ends its block as any element that raised
+   does (W3C SCXML 4.9). #}
+{% import 'actions/_native_statement.rs.jinja2' as native %}
 // SCE Accepted Subset §2.15: <sce:clear target="{{ action.location }}">
-{{ action.native_code | rust_in_predicate }}
+{{ native.emit(action, in_action_block is defined and in_action_block) }}

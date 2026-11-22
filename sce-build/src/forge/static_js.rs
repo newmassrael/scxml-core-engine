@@ -197,7 +197,7 @@ use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
     lower, Callee, CalleeImport, InPlaceCall, LiftStatement, Lifted, LoweredElement, LoweredSite,
     MapEntry, MapOp, MapPathStep, MapWrite, NestedWalk, NestedWrite, RenderCall, ReturnedMap,
-    StaticTarget,
+    StaticTarget, WalkOpening,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
@@ -1395,10 +1395,16 @@ impl StaticTarget for JsTarget {
     }
     // The document's own `<foreach>` walks the array the place read gives,
     // which fails for a key that is absent as the read does.
-    fn nested_walk(&self, read: &str, _failed: &str) -> Option<NestedWalk> {
+    fn nested_walk(
+        &self,
+        read: &str,
+        _lent: bool,
+        _failed: &str,
+        _depth: usize,
+    ) -> Option<NestedWalk> {
         Some(NestedWalk {
-            head: String::new(),
             walked: read.to_string(),
+            opening: WalkOpening::InHead,
         })
     }
     // A map, a set and a list are each the array of their entries or
@@ -3708,6 +3714,7 @@ mod tests {
                     capacity,
                     key: "k",
                     op,
+                    empty: false,
                     outcome,
                     outcome_enum: None,
                     full: "",
@@ -3762,6 +3769,7 @@ mod tests {
                 capacity: 2,
                 key: "k",
                 op: MapOp::Remove,
+                empty: false,
                 outcome: None,
                 outcome_enum: None,
                 full: "",
@@ -3802,6 +3810,7 @@ mod tests {
                     capacity: 2,
                     key: "j",
                     op,
+                    empty: false,
                     outcome,
                     outcome_enum: None,
                     full: "",
@@ -3892,10 +3901,15 @@ mod tests {
         assert_eq!(target.nested_value(None).as_deref(), Some("[]"));
         assert_eq!(target.nested_value(Some("peers")).as_deref(), Some("peers"));
         assert_eq!(
-            target.nested_walk("SceStatic.mapGet(m, {key: 'integer'}, k)", "FAILED();"),
+            target.nested_walk(
+                "SceStatic.mapGet(m, {key: 'integer'}, k)",
+                true,
+                "FAILED();",
+                0
+            ),
             Some(NestedWalk {
-                head: String::new(),
                 walked: "SceStatic.mapGet(m, {key: 'integer'}, k)".to_string(),
+                opening: WalkOpening::InHead,
             })
         );
     }

@@ -27,7 +27,12 @@
    and clippy reads a loop around it as one that never loops (`never_loop`).
    That body runs under the head the lowering gave for the first element
    (`native_loop_first`), which binds the same loop variables and runs
-   nothing for an empty list. #}
+   nothing for an empty list.
+   A loop over a list, a map or a set held at a key of a map (docs/adr/0108,
+   D12 rule 8) is held in the statement the lowering opens it with
+   (`native_code`), which binds the place where every key on the way is
+   present and raises error.execution where one is absent; that runs no loop,
+   and its `else` ends the block (W3C SCXML 4.9). #}
 {% with block_flow = namespace(ended=false) %}
 {% set foreach_body %}
 {% for body_action in action.actions %}
@@ -38,12 +43,21 @@
 {% endif %}
 {% endfor %}
 {% endset %}
+{% if action.native_code %}
+{{ action.native_code | rust_in_predicate }} {
+{% endif %}
 {{ (action.native_loop_first if block_flow.ended else action.native_loop) | rust_in_predicate }} {
 {% if action.native_loop_prologue %}
     {{ action.native_loop_prologue | rust_in_predicate }}
 {% endif %}
 {{ foreach_body }}{% endwith %}
 }
+{% if action.native_code %}
+}{% if foreach_ends_block %} else {
+    break 'action_block;  // W3C SCXML 4.9: the place the loop walks could not be read
+}{% endif %}
+
+{% endif %}
 {% else %}
 {
     // W3C SCXML 4.6: <foreach array="{{ action.array | default("") }}" item="{{ action.item | default("") }}">

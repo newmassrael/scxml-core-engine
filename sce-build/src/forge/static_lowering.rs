@@ -127,6 +127,8 @@ pub struct StaticField {
 /// target whose list type holds a byte string reads and writes it apart.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SavedMapParts {
+    /// The parts are a set's, whose entries carry no value.
+    pub of_set: bool,
     /// The key is a byte string.
     pub key_bytes: bool,
     /// The value is a byte string; `false` for a set, whose entries carry none.
@@ -141,6 +143,38 @@ pub struct SavedMapParts {
     pub key_crossing: Option<crate::forge::types::MapUnit>,
     /// ... and the value; `None` for a set.
     pub value_crossing: Option<crate::forge::types::MapUnit>,
+    /// The form of a value that is itself a map or a set (docs/adr/0108, D12),
+    /// written and read by the same rule one level down; `None` for a set and
+    /// for a map of any other value.
+    pub value_parts: Option<Box<SavedMapParts>>,
+}
+
+/// The form a saved state writes a map or a set of the type `ty` in
+/// ([`SavedMapParts`], docs/adr/0108, D8): a byte string as its Latin-1 text,
+/// which a target whose list type holds one writes and reads apart; a part held
+/// in its unit's type as the machine's own type saves it (D6 item 4,
+/// `map_units`); and a value that is itself a map or a set in the form its own
+/// type has, at every depth of a map held at a key (D12).
+fn saved_map_parts(
+    ty: &crate::forge::model::AlgorithmValueType,
+    map_units: &crate::forge::types::MapUnits,
+) -> SavedMapParts {
+    use crate::forge::model::AlgorithmValueType;
+    let bytes =
+        |part: Option<&AlgorithmValueType>| matches!(part, Some(AlgorithmValueType::Bytes { .. }));
+    let crossing =
+        |part: Option<&AlgorithmValueType>| part.and_then(|part| map_units.of_slot(part).cloned());
+    let value = ty.map_value();
+    SavedMapParts {
+        of_set: matches!(ty, AlgorithmValueType::Set { .. }),
+        key_bytes: bytes(ty.map_key()),
+        value_bytes: bytes(value),
+        key_crossing: crossing(ty.map_key()),
+        value_crossing: crossing(value),
+        value_parts: value
+            .filter(|value| value.map_key().is_some())
+            .map(|value| Box::new(saved_map_parts(value, map_units))),
+    }
 }
 
 /// The values a machine's deployment supplies (`<data sce:from="deployment">`,
@@ -1643,6 +1677,13 @@ pub struct MapWrite<'a> {
     pub key: &'a str,
     /// What the statement does.
     pub op: MapOp<'a>,
+    /// Whether the put names no value of a map, a set or a list held at a key
+    /// (docs/adr/0108, D12 rule 4), so that it puts the empty one: a target
+    /// that seeds each map builds it under the seed the map written draws for
+    /// the values it holds, after the map is reached, and one that holds the
+    /// value where the map holds it ([`Self::in_place`]) leaves the entry it
+    /// makes as it starts it. `false` for every other statement.
+    pub empty: bool,
     /// The variable of the statement's standard outcome enum it writes what it
     /// did to, as the target names it; `None` where it names none.
     pub outcome: Option<&'a str>,
@@ -1667,9 +1708,9 @@ pub struct MapWrite<'a> {
     /// Whether the value put is one only a lowering of a nested value holds
     /// (docs/adr/0108, D12): a list, a map, a set or a record that holds a
     /// composition, the variable [`MapOp::Put`] names taken whole or, where
-    /// it names none, the empty value (rule 4). A target that holds a value
-    /// where the map holds it writes such a value there, never through a copy
-    /// in its frame.
+    /// it names none ([`Self::empty`]), the empty value (rule 4). A target
+    /// that holds a value where the map holds it writes such a value there,
+    /// never through a copy in its frame.
     pub in_place: bool,
     /// The type the machine holds the value in where [`Self::in_place`] and
     /// the value is a map or a set, for a target that types its maps
@@ -1829,27 +1870,62 @@ pub struct NestedWrite<'a> {
     /// fields are read.
     pub types: Option<&'a crate::forge::value_type::TypeScope>,
     /// The statement that raises `error.execution` for a key of the path the
-    /// map it keys does not hold (rule 3), for a target that raises it itself.
+    /// map it keys does not hold (rule 3), for a target that raises it itself
+    /// and tells an absent key apart from a failed read.
     pub absent: &'a str,
     /// The statement that raises `error.execution` for a key or a value that
-    /// cannot be computed, for a target that raises it itself.
+    /// cannot be computed or held, for a target that raises it itself, and for
+    /// a key of the path that is absent on a target whose lookup of it fails
+    /// as any other read does.
     pub failed: &'a str,
     /// The statement that raises `error.execution` for an append to a list
-    /// that holds its bound, for a target that raises it itself; empty for a
-    /// clear.
+    /// that holds its bound, for a target that raises it itself
+    /// ([`StaticTarget::append`]'s `overflow`, [`append_overflow`]); empty
+    /// for a clear and where the document names no such event.
     pub full: &'a str,
 }
 
 /// What a `<foreach>` over a list, a map or a set held at a key of a map
 /// walks (docs/adr/0108, D12 rule 8), as a target spells it
-/// ([`StaticTarget::nested_walk`]): `walked`, the place as the loop reads
-/// it, and `head`, what stands before the loop's own head, which reads the
-/// place once and fails the block for a key that is absent; empty for a
-/// target that reads the place where the loop's head names it.
+/// ([`StaticTarget::nested_walk`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NestedWalk {
-    pub head: String,
+    /// The place as the loop's head reads it.
     pub walked: String,
+    /// Where the target reads the place once, before the loop, failing the
+    /// block for a key that is absent (rule 3).
+    pub opening: WalkOpening,
+}
+
+impl NestedWalk {
+    /// What stands before the loop's own head ([`WalkOpening::BeforeHead`]);
+    /// empty for a walk that opens anywhere else.
+    pub fn before_head(&self) -> &str {
+        match &self.opening {
+            WalkOpening::BeforeHead(head) => head.as_str(),
+            WalkOpening::InHead | WalkOpening::Holder(_) => "",
+        }
+    }
+}
+
+/// Where a target reads the place a `<foreach>` walks through a map held at a
+/// key (docs/adr/0108, D12 rule 8, [`NestedWalk::opening`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WalkOpening {
+    /// Nowhere apart: the loop's head reads the place, whose read fails for a
+    /// key that is absent as every other read of it does.
+    InHead,
+    /// What stands before the loop's own head, in the loop the target writes:
+    /// it reads the place once and ends the block for a key that is absent.
+    BeforeHead(String),
+    /// The head of the statement that holds the loop, which then fails: it
+    /// binds the place [`NestedWalk::walked`] names where every key on the way
+    /// is present, and raises `error.execution` where one is absent, the
+    /// statement then running no loop and ending its block (rule 3). The
+    /// binding is a borrow the loop holds while it runs, which a body that
+    /// takes the machine whole cannot hold: such a body walks a copy of the
+    /// place.
+    Holder(String),
 }
 
 /// How the body of a `<foreach>` over a map or a set reads what the loop binds
@@ -3216,11 +3292,20 @@ pub trait StaticTarget {
     }
     /// What a `<foreach>` over a list, a map or a set held at a key of a map
     /// walks (docs/adr/0108, D12 rule 8), given `read`, the place read as an
-    /// expression lowers it, which fails for a key that is absent, and
-    /// `failed`, the statement that raises `error.execution` for it, for a
-    /// target that raises it itself ([`NestedWalk`]). `None` for a target that
-    /// lowers no nested place yet.
-    fn nested_walk(&self, _read: &str, _failed: &str) -> Option<NestedWalk> {
+    /// expression lowers it, which fails for a key that is absent; `lent`,
+    /// whether the place ends at a key, so that a target whose map lends its
+    /// value reads a reference there, and not a field of a record held there;
+    /// `failed`, the statement that raises `error.execution` for a key that is
+    /// absent, for a target that raises it itself; and `depth`, how many loops
+    /// hold this one, which a target that binds the place names its binding by
+    /// ([`NestedWalk`]). `None` for a target that lowers no nested place yet.
+    fn nested_walk(
+        &self,
+        _read: &str,
+        _lent: bool,
+        _failed: &str,
+        _depth: usize,
+    ) -> Option<NestedWalk> {
         None
     }
     /// The value a `<sce:put>` puts at a key of a map whose value only a
@@ -5063,6 +5148,36 @@ fn rust_union_crossing(value: &str, cases: &[CrossedCase]) -> String {
     format!("match {value} {{ {} }}", arms.join(", "))
 }
 
+/// The empty value a put that names none puts at a key of a map whose value is
+/// a map, a set or a list (docs/adr/0108, D12 rule 4) on a Rust machine: the
+/// runtime's `FromSeed`, which the put applies to the seed the map it writes
+/// draws for what it holds (`BoundedMap::inner_seed`, rule 7), so an inner map
+/// is keyed apart from every map the machine numbers. A list hashes nothing,
+/// and is the empty list under any seed.
+const RUST_EMPTY_VALUE: &str = "::sce_rust_runtime::FromSeed::from_seed";
+
+/// `let {local} = {value};`, the local held at the Rust type of a key of `ty`
+/// where `ty` is a number or a bool, so a literal key is read at the key's own
+/// type and not at the type Rust gives a literal it cannot infer, which may not
+/// hold it (docs/adr/0108, D12 rule 1). A key of any other type names its own.
+fn rust_bound_local(
+    local: &str,
+    ty: Option<&crate::forge::value_type::ValueType>,
+    value: &str,
+) -> String {
+    match ty {
+        Some(crate::forge::value_type::ValueType::Scalar(scalar))
+            if !matches!(scalar, SceType::Enum(_)) =>
+        {
+            format!(
+                "let {local}: {} = {value};",
+                crate::forge::generator::rust_type(scalar)
+            )
+        }
+        _ => format!("let {local} = {value};"),
+    }
+}
+
 /// The runtime's map of `key` and `value`, or its set of `key` where `value` is
 /// `None`, of the bound `bound`, a number or the name of a bound a function
 /// takes (docs/adr/0108, D8): one spelling for a machine's variable
@@ -5374,6 +5489,59 @@ impl RustTarget {
     /// prologue reads it as the `uint32` index: `enumerate` counts in `usize`.
     fn loop_position(index: &str) -> String {
         format!("sce_position_of_{index}")
+    }
+
+    /// The place a statement writes, or a loop walks, through a map held at a
+    /// key of another (docs/adr/0108, D12 rule 1), from the variable `root`
+    /// along `path`: the statements that read each key on the way once, before
+    /// anything is written, into a local of its own (`sce_key_<i>`, held at its
+    /// key's type, [`rust_bound_local`]); the place itself, each map on the way
+    /// lent at its key by the runtime's `value_mut` (`value` where `mutable`
+    /// is `false`) where the map that holds it holds it, read `found`, so a
+    /// key that is absent fails `out-of-range` before anything is written
+    /// (rule 3), and each field of a record held there by the name the machine's
+    /// record gives it; and whether the place is a reference the runtime lent,
+    /// rather than a field of one. Each answers through `?`: the statement that
+    /// names them runs where a failure returns.
+    fn nested_place(
+        root: &str,
+        path: &[MapPathStep<'_>],
+        mutable: bool,
+    ) -> (Vec<String>, String, bool) {
+        let found = crate::forge::expr::found_wrapper(ExprTarget::Rust)
+            .unwrap_or("sce_forge_runtime::algorithm::found");
+        let reads = crate::forge::expr::RUST_MAP_READS;
+        let (lend, borrow) = if mutable {
+            ("value_mut", "&mut ")
+        } else {
+            ("value", "&")
+        };
+        let mut keys = Vec::new();
+        let mut place = root.to_string();
+        let mut lent = false;
+        for step in path {
+            match step {
+                MapPathStep::Key { map, key } => {
+                    let local = format!("sce_key_{}", keys.len());
+                    keys.push(rust_bound_local(
+                        &local,
+                        map.map_key().as_ref().map(|key| &key.ty),
+                        key,
+                    ));
+                    let held = if lent { "" } else { borrow };
+                    place = format!("{found}({reads}::{lend}({held}{place}, &{local}))?");
+                    lent = true;
+                }
+                MapPathStep::Field(field) => {
+                    place = format!(
+                        "{place}.{}",
+                        crate::forge::generator::event_schema_field_ident(field, Language::Rust)
+                    );
+                    lent = false;
+                }
+            }
+        }
+        (keys, place, lent)
     }
 
     /// `value`, a list an imported algorithm or an adapter gave back, copied
@@ -6667,23 +6835,63 @@ impl StaticTarget for RustTarget {
     // did is the runtime's outcome, written into the variable `outcome` names
     // as the variant of the same name of its standard enum; a put that names
     // none fails into a full map.
+    //
+    // A write through a map held at a key of another (docs/adr/0108, D12)
+    // reads each key on the way, its own key and its value first, and then
+    // writes the map where the map that holds it holds it, lent by the
+    // runtime's `value_mut` ([`Self::nested_place`]): a key that is absent
+    // fails the statement before anything is written (rule 3), and what the
+    // statement did is the inner map's (rule 5). A put that names no value of a
+    // map, a set or a list puts the empty one, built under the seed the map
+    // written draws for what it holds (rules 4 and 7, [`RUST_EMPTY_VALUE`]).
     fn map_write(&self, write: &MapWrite<'_>) -> Option<String> {
-        // A write through a map held at a key of another is lowered by D12's
-        // own step on this lane (docs/adr/0108, D12), which the lane's row
-        // refuses before the walk.
-        if !write.path.is_empty() {
-            return None;
-        }
         let (map, key) = (write.map, write.key);
-        let call = match write.op {
-            MapOp::Put { value: Some(value) } => format!("{map}.put({key}, {value})"),
-            MapOp::Put { value: None } => format!("{map}.put({key})"),
-            MapOp::Remove => format!("{map}.remove(&{key})"),
+        let empty = |built: &str, holder: &str| {
+            if write.empty {
+                format!("{built}({holder}.inner_seed())")
+            } else {
+                built.to_string()
+            }
         };
+        let (prelude, call) = if write.path.is_empty() {
+            let call = match write.op {
+                MapOp::Put { value: Some(value) } => {
+                    format!("{map}.put({key}, {})", empty(value, map))
+                }
+                MapOp::Put { value: None } => format!("{map}.put({key})"),
+                MapOp::Remove => format!("{map}.remove(&{key})"),
+            };
+            (Vec::new(), call)
+        } else {
+            let (mut prelude, place, _) = Self::nested_place(map, write.path, true);
+            prelude.push(rust_bound_local(
+                "sce_key",
+                write.place.map_key().as_ref().map(|key| &key.ty),
+                key,
+            ));
+            let value = match write.op {
+                MapOp::Put { value: Some(value) } if write.empty => Some(empty(value, "sce_map")),
+                MapOp::Put { value: Some(value) } => {
+                    prelude.push(format!("let sce_value = {value};"));
+                    Some("sce_value".to_string())
+                }
+                MapOp::Put { value: None } | MapOp::Remove => None,
+            };
+            prelude.push(format!("let sce_map = {place};"));
+            let call = match (write.op, value) {
+                (MapOp::Put { .. }, Some(value)) => format!("sce_map.put(sce_key, {value})"),
+                (MapOp::Put { .. }, None) => "sce_map.put(sce_key)".to_string(),
+                (MapOp::Remove, _) => "sce_map.remove(&sce_key)".to_string(),
+            };
+            (prelude, call)
+        };
+        let prelude: Vec<String> = prelude.iter().map(|line| format!("    {line}")).collect();
         let closure = |returned: &str| {
-            format!(
+            let mut opening = vec![format!(
                 "match (|| -> Result<{returned}, sce_forge_runtime::algorithm::AlgorithmError> {{"
-            )
+            )];
+            opening.extend(prelude.iter().cloned());
+            opening
         };
         let failed = [
             "    Err(_) => {".to_string(),
@@ -6710,39 +6918,135 @@ impl StaticTarget for RustTarget {
                     })
                     .collect();
                 let written = format!("match sce_outcome {{ {} }}", arms.join(", "));
-                vec![
-                    closure(&format!("::sce_rust_runtime::{runtime}")),
+                let mut lines = closure(&format!("::sce_rust_runtime::{runtime}"));
+                lines.extend([
                     format!("    Ok({call})"),
                     "})() {".to_string(),
                     "    Ok(sce_outcome) => {".to_string(),
                     format!("        {}", self.assign(outcome, &written)),
                     "        false".to_string(),
                     "    }".to_string(),
-                ]
+                ]);
+                lines
             }
             // An outcome named for a target with no type for its enum is no
             // statement this target writes.
             (Some(_), None, _) => return None,
-            (None, _, MapOp::Put { .. }) => vec![
-                closure("bool"),
-                format!("    Ok({call} == ::sce_rust_runtime::PutOutcome::Full)"),
-                "})() {".to_string(),
-                "    Ok(false) => false,".to_string(),
-                "    Ok(true) => {".to_string(),
-                format!("        {}", write.full),
-                "        true".to_string(),
-                "    }".to_string(),
-            ],
-            (None, _, MapOp::Remove) => vec![
-                closure("()"),
-                format!("    let _ = {call};"),
-                "    Ok(())".to_string(),
-                "})() {".to_string(),
-                "    Ok(()) => false,".to_string(),
-            ],
+            (None, _, MapOp::Put { .. }) => {
+                let mut lines = closure("bool");
+                lines.extend([
+                    format!("    Ok({call} == ::sce_rust_runtime::PutOutcome::Full)"),
+                    "})() {".to_string(),
+                    "    Ok(false) => false,".to_string(),
+                    "    Ok(true) => {".to_string(),
+                    format!("        {}", write.full),
+                    "        true".to_string(),
+                    "    }".to_string(),
+                ]);
+                lines
+            }
+            (None, _, MapOp::Remove) => {
+                let mut lines = closure("()");
+                lines.extend([
+                    format!("    let _ = {call};"),
+                    "    Ok(())".to_string(),
+                    "})() {".to_string(),
+                    "    Ok(()) => false,".to_string(),
+                ]);
+                lines
+            }
         };
         lines.extend(failed);
         Some(Self::lines(&lines))
+    }
+    // A list held at a key of a map, or in a field of a record held there
+    // (docs/adr/0108, D12), appended to as a list variable is ([`Self::append`]):
+    // each key on the way and the value read first, then the list where the map
+    // holds it, lent ([`Self::nested_place`]), so a key that is absent fails
+    // before anything is written (rule 3) and a full list raises its overflow.
+    fn nested_append(&self, at: &NestedWrite<'_>, capacity: u32, value: &str) -> Option<String> {
+        let (keys, place, lent) = Self::nested_place(at.root, at.path, true);
+        let mut lines = vec![
+            "match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {".to_string(),
+        ];
+        lines.extend(keys.iter().map(|key| format!("    {key}")));
+        lines.push(format!("    let sce_value = {value};"));
+        lines.push(format!(
+            "    let sce_list = {}{place};",
+            if lent { "" } else { "&mut " }
+        ));
+        lines.extend([
+            format!("    if sce_list.len() < {capacity} {{"),
+            "        Ok(sce_list.push(sce_value).is_err())".to_string(),
+            "    } else {".to_string(),
+            "        Ok(true)".to_string(),
+            "    }".to_string(),
+            "})() {".to_string(),
+            "    Ok(false) => false,".to_string(),
+            "    Ok(true) => {".to_string(),
+            format!("        {}", at.full),
+            "        true".to_string(),
+            "    }".to_string(),
+            "    Err(_) => {".to_string(),
+            format!("        {}", at.failed),
+            "        true".to_string(),
+            "    }".to_string(),
+            "}".to_string(),
+        ]);
+        Some(Self::lines(&lines))
+    }
+    // ... and a list, a map or a set held there emptied where it stands, each
+    // key on the way read first.
+    fn nested_clear(&self, at: &NestedWrite<'_>) -> Option<String> {
+        let (mut statement, place, _) = Self::nested_place(at.root, at.path, true);
+        statement.push(format!("{place}.clear();"));
+        Some(self.receiving_statement(&statement.join(" "), at.failed))
+    }
+    // The loop is held in an `if let` that binds the place once, where the map
+    // holds it, before the loop opens (docs/adr/0108, D12 rule 8): a key that is
+    // absent raises `error.execution` and runs no loop, and the `else` the
+    // template writes ends the block (rule 3). The place is lent, and the loop
+    // over it copies it as a loop over its kind does where the body writes it
+    // ([`Self::foreach_loop`], [`Self::map_loop`]), so no turn of the loop
+    // holds a borrow of the variable a body writes.
+    fn nested_walk(
+        &self,
+        read: &str,
+        lent: bool,
+        failed: &str,
+        depth: usize,
+    ) -> Option<NestedWalk> {
+        let walked = format!("sce_place_{depth}");
+        let opening = Self::lines(&[
+            format!(
+                "if let Some({walked}) = match (|| -> Result<_, \
+                 sce_forge_runtime::algorithm::AlgorithmError> {{"
+            ),
+            format!("    let sce_place = {}{read};", if lent { "" } else { "&" }),
+            "    Ok(sce_place)".to_string(),
+            "})() {".to_string(),
+            "    Ok(sce_place) => Some(sce_place),".to_string(),
+            "    Err(_) => {".to_string(),
+            format!("        {failed}"),
+            "        None".to_string(),
+            "    }".to_string(),
+            "}".to_string(),
+        ]);
+        Some(NestedWalk {
+            walked,
+            opening: WalkOpening::Holder(opening),
+        })
+    }
+    // A value held whole at a key (docs/adr/0108, D12 rules 4 and 9) is a copy
+    // of the variable or the record named, which the map then holds apart from
+    // it; one named by none is the empty one, built by the runtime's
+    // `FromSeed` under the seed the map it is put into draws for what it
+    // holds, which the put hands it ([`RUST_EMPTY_VALUE`], [`Self::map_write`]).
+    fn nested_value(&self, named: Option<&str>) -> Option<String> {
+        Some(match named {
+            Some(named) => format!("{named}.clone()"),
+            None => RUST_EMPTY_VALUE.to_string(),
+        })
     }
     // A loop of its own over the map's positions, which holds no borrow of the
     // map between two reads: a body that writes the map walks a copy of it
@@ -7710,18 +8014,6 @@ fn nested_append(
     let steps = lowered_path(&written, ctx, renames, rewrites, lower, lower_bounded)?;
     let path = steps.path();
     let root = written.variable.id.as_str();
-    let full = if rewrites.raises_error {
-        target.raise_execution_error(
-            rewrites.machine,
-            "assignmentFailed",
-            &format!(
-                "<sce:append target='{list}'>: the list already holds its capacity of {}",
-                max.max
-            ),
-        )
-    } else {
-        String::new()
-    };
     let construct = format!("<sce:append target='{list}'>");
     target
         .nested_append(
@@ -7732,12 +8024,30 @@ fn nested_append(
                 types: ctx.value_scope,
                 absent: &absent_key(rewrites, &construct),
                 failed: &execution_failure(rewrites, &construct),
-                full: &full,
+                full: &append_overflow(rewrites, list, max.max),
             },
             max.max,
             &value.text,
         )
         .ok_or_else(|| nested_place_not_lowered(&element, target.name()))
+}
+
+/// The statement that raises `error.execution` for an `<sce:append>` to the
+/// list `list` that already holds its `capacity` (SCE Accepted Subset §2.15),
+/// a list variable or one held at a key of a map (docs/adr/0108, D12), for a
+/// target that raises it itself; empty where the document names no such event.
+fn append_overflow(rewrites: &Rewrites<'_>, list: &str, capacity: u32) -> String {
+    if rewrites.raises_error {
+        rewrites.target.raise_execution_error(
+            rewrites.machine,
+            "assignmentFailed",
+            &format!(
+                "<sce:append target='{list}'>: the list already holds its capacity of {capacity}"
+            ),
+        )
+    } else {
+        String::new()
+    }
 }
 
 /// An `<sce:clear>` of a list, a map or a set held at a key of a map
@@ -8457,7 +8767,6 @@ fn composed_record_variable_field(
     use crate::forge::composed_lowering as composed;
     use crate::forge::value_type::ValueType;
     let target = declarations.target;
-    let machine = declarations.machine;
     let what = match start {
         ComposedRecordStart::Built => {
             format!("<data id=\"{}\" sce:type=\"record:{alias}\">", var.id)
@@ -8472,25 +8781,15 @@ fn composed_record_variable_field(
             "{what}: {why} (docs/adr/0087, \"Landing order\" item 8)"
         ))
     };
+    let ComposedRecordType {
+        ty: record_ty,
+        enums,
+        held,
+        spelling,
+    } = composed_record_type(declarations, model, alias, &refused)?;
     let record = ValueType::Record {
         alias: alias.to_string(),
     };
-    let enums = declare_composed(
-        declarations,
-        model,
-        &record,
-        ComposedHolder::Variable,
-        &refused,
-    )?;
-    let spelling = target.composed_spelling(machine).ok_or_else(|| {
-        refused(format!(
-            "{} has no lowering of a composed value yet",
-            target.name()
-        ))
-    })?;
-    let held = composed::StatechartRecords::of(model);
-    let record_ty =
-        composed::machine_type(&record, None, &held, &enums, &*spelling).map_err(refused)?;
     let (field_ty, init) = match start {
         ComposedRecordStart::Built => {
             let init = composed_record_start(
@@ -8561,6 +8860,59 @@ fn composed_record_variable_field(
         holds_bytes: false,
         seeded: false,
         module_parameter: false,
+    })
+}
+
+/// The machine's own record of `alias`, a record that holds a list or a record
+/// at any depth (docs/adr/0087, "Landing order" item 8), as
+/// [`composed_record_type`] declares it, with what the walks over it read: the
+/// machine's enums, the records the statechart imports, and the target's
+/// spelling, whose declarations the caller takes once it has spelled the rest.
+struct ComposedRecordType<'s> {
+    ty: String,
+    enums: BTreeMap<String, crate::forge::composed_lowering::MachineEnum>,
+    held: crate::forge::composed_lowering::StatechartRecords,
+    spelling: Box<dyn crate::forge::composed_lowering::ComposedSpelling + 's>,
+}
+
+/// The type a value of `record:R` is held in where `R` (`alias`) holds a list or
+/// a record at any depth: the machine's own record, declared with every record,
+/// enum and union it holds, each described for a saved state
+/// ([`ComposedHolder::Variable`]). What a statechart's variable of it is held in
+/// ([`composed_record_variable_field`]) and a map's value of it
+/// (docs/adr/0108, D12 rule 9, [`map_value_part`]). `refused` names
+/// the place that holds it.
+fn composed_record_type<'s>(
+    declarations: &mut TypeDeclarations<'s>,
+    model: &SCXMLModel,
+    alias: &str,
+    refused: &dyn Fn(String) -> GenerateError,
+) -> Result<ComposedRecordType<'s>, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    let (target, machine) = (declarations.target, declarations.machine);
+    let record = crate::forge::value_type::ValueType::Record {
+        alias: alias.to_string(),
+    };
+    let enums = declare_composed(
+        declarations,
+        model,
+        &record,
+        ComposedHolder::Variable,
+        refused,
+    )?;
+    let spelling = target.composed_spelling(machine).ok_or_else(|| {
+        refused(format!(
+            "{} has no lowering of a composed value yet",
+            target.name()
+        ))
+    })?;
+    let held = composed::StatechartRecords::of(model);
+    let ty = composed::machine_type(&record, None, &held, &enums, &*spelling).map_err(refused)?;
+    Ok(ComposedRecordType {
+        ty,
+        enums,
+        held,
+        spelling,
     })
 }
 
@@ -9586,9 +9938,6 @@ pub fn lower(
                 } else {
                     (ty.as_attr(), None, None, empty)
                 };
-                let saved_crossing = |part: Option<&crate::forge::model::AlgorithmValueType>| {
-                    map_units.of_slot(part?).cloned()
-                };
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
@@ -9601,31 +9950,7 @@ pub fn lower(
                     saved_kind: if set { "set" } else { "map" },
                     saved_type: ty.as_attr(),
                     saved_elem: None,
-                    // A byte string is saved as its Latin-1 text, which a target
-                    // whose list type holds it writes and reads apart.
-                    saved_map: Some(SavedMapParts {
-                        key_bytes: matches!(
-                            ty.map_key(),
-                            Some(crate::forge::model::AlgorithmValueType::Bytes { .. })
-                        ),
-                        value_bytes: matches!(
-                            ty,
-                            crate::forge::model::AlgorithmValueType::Map { value, .. }
-                                if matches!(
-                                    value.as_ref(),
-                                    crate::forge::model::AlgorithmValueType::Bytes { .. }
-                                )
-                        ),
-                        // A part held in its unit's type is saved as the
-                        // machine's own type saves it (docs/adr/0108, D6 item 4).
-                        key_crossing: saved_crossing(ty.map_key()),
-                        value_crossing: saved_crossing(match ty {
-                            crate::forge::model::AlgorithmValueType::Map { value, .. } => {
-                                Some(value.as_ref())
-                            }
-                            _ => None,
-                        }),
-                    }),
+                    saved_map: Some(saved_map_parts(ty, &map_units)),
                     elem_ty: None,
                     reader: None,
                     holds_bytes: false,
@@ -11223,8 +11548,9 @@ fn map_value_types(
 /// ([`StaticTarget::types_maps`]): its key's and its value's types declared
 /// ([`TypeDeclarations::map_part`]), and the map's own type declared once
 /// after them. `element` is what a refusal names. A variable's
-/// ([`map_variable_type`]) and the destination a call builds the map an
-/// algorithm returns in, of the return's bound (docs/adr/0108, D5).
+/// ([`map_variable_type`]), the destination a call builds the map an
+/// algorithm returns in, of the return's bound (docs/adr/0108, D5), and a map
+/// or a set held at a key of one, of its own bound (D12).
 fn map_type_of(
     element: &str,
     ty: &crate::forge::model::AlgorithmValueType,
@@ -11292,7 +11618,7 @@ struct HeldValue {
 /// in the type [`map_type_of`] declares for it, a list of numbers, `bool`s or
 /// records in the type a list variable of it is held in, and a record that
 /// holds a composition in the machine's own record type (rule 9), declared as
-/// a variable of it declares it ([`declare_composed`]). Every other value is
+/// a variable of it declares it ([`composed_record_type`]). Every other value is
 /// held as [`TypeDeclarations::map_part`] holds it. A list of any other
 /// element is refused by name. `element` names the variable in a refusal.
 fn map_value_part(
@@ -11302,7 +11628,6 @@ fn map_value_part(
     records: &BTreeMap<String, EntrySchema>,
     declarations: &mut TypeDeclarations<'_>,
 ) -> Result<HeldValue, GenerateError> {
-    use crate::forge::composed_lowering as composed;
     use crate::forge::model::AlgorithmValueType;
     let lang = declarations.target.name();
     let unheld = |why: String| GenerateError::unsupported(format!("{element}: {why}"));
@@ -11358,32 +11683,14 @@ fn map_value_part(
                     crate::forge::value_type::MAP_VALUE_LANDING
                 ))
             };
-            let record = crate::forge::value_type::ValueType::Record {
-                alias: alias.clone(),
-            };
-            let enums = declare_composed(
-                declarations,
-                model,
-                &record,
-                ComposedHolder::Variable,
-                &refused,
-            )?;
-            let spelling = declarations
-                .target
-                .composed_spelling(declarations.machine)
-                .ok_or_else(|| {
-                    refused(format!("{lang} has no lowering of a composed value yet"))
-                })?;
-            let held = composed::StatechartRecords::of(model);
-            let record_ty = composed::machine_type(&record, None, &held, &enums, &*spelling)
-                .map_err(&refused)?;
-            for def in spelling.take_declared() {
+            let composed = composed_record_type(declarations, model, alias, &refused)?;
+            for def in composed.spelling.take_declared() {
                 if !declarations.type_defs.contains(&def) {
                     declarations.type_defs.push(def);
                 }
             }
             HeldValue {
-                held: record_ty,
+                held: composed.ty,
                 elem: None,
                 in_place: true,
             }
@@ -21298,7 +21605,7 @@ impl StaticTarget for CTarget {
                 let entry = format!("{prefix}_put_entry(&({map}), sce_key, &sce_put_)");
                 // The empty value (rule 4) is the one `_put_entry` leaves; a
                 // variable named is taken into it whole.
-                if value.is_empty() {
+                if write.empty {
                     lines.push(format!("(void){entry};"));
                 } else {
                     lines.push(format!(
@@ -21389,7 +21696,13 @@ impl StaticTarget for CTarget {
     // (each declares its own `sce_failure_`), and a key that is absent ends the
     // block before the loop's head, as the read does elsewhere. The loop walks
     // the value where the map holds it, through the address the read answers.
-    fn nested_walk(&self, read: &str, failed: &str) -> Option<NestedWalk> {
+    fn nested_walk(
+        &self,
+        read: &str,
+        _lent: bool,
+        failed: &str,
+        _depth: usize,
+    ) -> Option<NestedWalk> {
         let n = self
             .loops
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -21398,13 +21711,13 @@ impl StaticTarget for CTarget {
         let read = read.replace("&sce_failure_", &format!("&{failure}"));
         let walked = format!("sce_walked_{n}_");
         Some(NestedWalk {
-            head: format!(
+            walked: format!("(*{walked})"),
+            opening: WalkOpening::BeforeHead(format!(
                 "for (sce_forge_algorithm_failure_t {failure} = {{0}}, *sce_read_{n}_ = &{failure}; \
                  sce_read_{n}_ != NULL; sce_read_{n}_ = NULL) \
                  for (__typeof__(&({read})) {walked} = &({read}); {walked} != NULL; {walked} = NULL) \
                  if ({failure}.failed) {{ {failed} return; }} else "
-            ),
-            walked: format!("(*{walked})"),
+            )),
         })
     }
     // A value held in place is named as it is read, and the empty one is
@@ -25839,18 +26152,7 @@ fn lower_action(
                 }
             };
             let name = renames.get(list).copied().unwrap_or(list);
-            let overflow = if rewrites.raises_error {
-                target.raise_execution_error(
-                    rewrites.machine,
-                    "assignmentFailed",
-                    &format!(
-                        "<sce:append target='{list}'>: the list already holds its capacity of \
-                         {capacity}"
-                    ),
-                )
-            } else {
-                String::new()
-            };
+            let overflow = append_overflow(rewrites, list, *capacity);
             action.native_code = target.append(
                 name,
                 *capacity,
@@ -26260,6 +26562,13 @@ fn lower_action(
             } else {
                 String::new()
             };
+            // A put that names no value of a map, a set or a list puts the empty
+            // one (docs/adr/0108, D12 rule 4).
+            let empty = put
+                && action.expr.trim().is_empty()
+                && place
+                    .map_value()
+                    .is_some_and(|value| value.ty.is_container());
             let write = MapWrite {
                 map: renames.get(root).copied().unwrap_or(root),
                 path: &path,
@@ -26275,6 +26584,7 @@ fn lower_action(
                 } else {
                     MapOp::Remove
                 },
+                empty,
                 outcome,
                 outcome_enum: outcome_enum
                     .as_ref()
@@ -26418,19 +26728,34 @@ fn lower_action(
                 Some(Ok(written)) if !written.steps.is_empty() => {
                     let read = lower(&list, InferredType::Unknown)?;
                     let walked = target
-                        .nested_walk(&read.text, &failed(construct.clone()))
+                        .nested_walk(
+                            &read.text,
+                            matches!(
+                                written.steps.last(),
+                                Some(crate::forge::type_ctx::PlaceStep::Key { .. })
+                            ),
+                            &failed(format!("<foreach array='{list}'>")),
+                            rewrites.loop_depth.get(),
+                        )
                         .ok_or_else(|| nested_place_not_lowered(&construct, lang))?;
+                    // A target whose loop reads the place once where it opens
+                    // holds the loop in the statement that binds it, which fails
+                    // and ends the block for a key that is absent (D12 rule 3).
+                    if let WalkOpening::Holder(holder) = &walked.opening {
+                        action.native_code = holder.clone();
+                        action.native_fails = true;
+                    }
                     if written.place.is_keyed() {
                         let root = written.variable.id.clone();
                         let lowered = lower_map_foreach(
                             action,
                             &list,
-                            Some((root.as_str(), walked.walked.as_str())),
+                            Some((root.as_str(), &walked)),
                             ctx,
                             renames,
                             rewrites,
                         );
-                        action.native_loop.insert_str(0, &walked.head);
+                        action.native_loop.insert_str(0, walked.before_head());
                         return lowered;
                     }
                     Some(walked)
@@ -26552,7 +26877,7 @@ fn lower_action(
                 // A list held at a key of a map is read once before the loop,
                 // which fails the block for a key that is absent (D12 rule 8).
                 action.native_loop = match &nested {
-                    Some(walked) => format!("{}{head}", walked.head),
+                    Some(walked) => format!("{}{head}", walked.before_head()),
                     None => head,
                 };
                 action.native_loop_prologue = prologue;
@@ -26906,7 +27231,7 @@ fn lower_action(
 fn lower_map_foreach(
     action: &mut Action,
     map: &str,
-    nested: Option<(&str, &str)>,
+    nested: Option<(&str, &NestedWalk)>,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
@@ -26930,7 +27255,7 @@ fn lower_map_foreach(
     // The map as the loop's head reaches it, for a target that runs the
     // document's own `<foreach>` (the Interpreter).
     let name = match nested {
-        Some((_, walked)) => walked,
+        Some((_, walked)) => walked.walked.as_str(),
         None => renames.get(map).copied().unwrap_or(map),
     };
     rewrites.note(&action.array, action.spellings.get("array"), name);
@@ -26977,7 +27302,14 @@ fn lower_map_foreach(
         None => 0,
     };
     let held = rewrites.held_map(root, depth);
-    let copies = Writes::of_block(&action.actions).reaches(root);
+    let lends = reaches_fields_alone(&action.actions);
+    // A place a walk binds as a borrow the loop holds while it runs
+    // ([`WalkOpening::Holder`]) cannot stay lent while a body that takes the
+    // machine whole runs: such a body walks a copy of it, as one that writes
+    // the variable does (docs/adr/0108, D12 rule 8).
+    let held_lent =
+        nested.is_some_and(|(_, walked)| matches!(walked.opening, WalkOpening::Holder(_)));
+    let copies = Writes::of_block(&action.actions).reaches(root) || (held_lent && !lends);
     // The copy a loop that writes its map walks is held where the copy of a
     // list a loop of the same depth walks is, for a target that holds those in
     // the machine (docs/adr/0082): of the map's own type, one per depth.
@@ -27002,7 +27334,7 @@ fn lower_map_foreach(
         set: place.is_set(),
         copies,
         depth: rewrites.loop_depth.get(),
-        lends: reaches_fields_alone(&action.actions),
+        lends,
     };
     let entry = match target.map_loop(&walk) {
         Some(walked) => {
@@ -29229,6 +29561,7 @@ mod tests {
                     capacity: 3,
                     key: "k",
                     op,
+                    empty: false,
                     outcome,
                     outcome_enum: outcome.map(|_| ("put_outcome_enum_t", "put_outcome")),
                     full: "FULL();",
@@ -29282,6 +29615,7 @@ mod tests {
                 capacity: 3,
                 key: "text",
                 op: MapOp::Put { value: None },
+                empty: false,
                 outcome: None,
                 outcome_enum: None,
                 full: "",
@@ -29309,6 +29643,7 @@ mod tests {
                 capacity: 3,
                 key: "k",
                 op: MapOp::Remove,
+                empty: false,
                 outcome: None,
                 outcome_enum: None,
                 full: "",
@@ -29372,6 +29707,7 @@ mod tests {
                     capacity: 2,
                     key: &key,
                     op,
+                    empty: false,
                     outcome: None,
                     outcome_enum: None,
                     full: "",
@@ -29486,6 +29822,9 @@ mod tests {
                     capacity: 2,
                     key: "10",
                     op: MapOp::Put { value },
+                    // A put that names no value is handed the empty one, which
+                    // C11 spells as nothing (`CTarget::nested_value`).
+                    empty: value == Some(""),
                     outcome: None,
                     outcome_enum: None,
                     full: "FULL();",
@@ -29638,22 +29977,21 @@ mod tests {
         let target = CTarget::new("m", "m", &std::collections::BTreeMap::new());
         let read = "SCE_MAP_VALUE_OF(sm->policy.v_slots, sce_map_lookup_take(&sce_failure_, x))";
         let walked = target
-            .nested_walk(read, "FAILED();")
+            .nested_walk(read, true, "FAILED();", 0)
             .expect("C11 walks a nested place");
         assert_eq!(walked.walked, "(*sce_walked_1_)");
+        let WalkOpening::BeforeHead(head) = &walked.opening else {
+            panic!("C11 reads the place before the loop's own head: {walked:?}");
+        };
+        assert_eq!(walked.before_head(), head.as_str());
         assert!(
-            walked.head.contains(
+            head.contains(
                 "for (sce_forge_algorithm_failure_t sce_walk_failure_1_ = {0}, \
                  *sce_read_1_ = &sce_walk_failure_1_;"
-            ) && walked
-                .head
-                .contains("sce_map_lookup_take(&sce_walk_failure_1_, x)")
-                && !walked.head.contains("&sce_failure_")
-                && walked
-                    .head
-                    .ends_with("if (sce_walk_failure_1_.failed) { FAILED(); return; } else "),
-            "{}",
-            walked.head
+            ) && head.contains("sce_map_lookup_take(&sce_walk_failure_1_, x)")
+                && !head.contains("&sce_failure_")
+                && head.ends_with("if (sce_walk_failure_1_.failed) { FAILED(); return; } else "),
+            "{head}"
         );
         let walk = MapWalk {
             map: "sm->policy.v_slots",

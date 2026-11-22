@@ -562,6 +562,23 @@ impl<'m> Analysis<'m> {
     /// model does not state is not proven; a body that only fails raises once
     /// however many items there are.
     fn foreach(&mut self, action: &Action) -> Result<Cost, String> {
+        // A loop over a place held at a key of a map that a lowering opens by
+        // reading the place may fail there, a key on the way absent, raising its
+        // error and running no loop (docs/adr/0108, D12 rules 3 and 8).
+        let opening = if !action.native_code.is_empty() && action.native_fails {
+            self.execution_error()
+        } else {
+            0
+        };
+        let walked = self.walked(action)?;
+        Ok(Cost {
+            completes: walked.completes,
+            ends: walked.ends.max(opening),
+        })
+    }
+
+    /// The loop of a `<foreach>` once it is open: each pass of its body.
+    fn walked(&mut self, action: &Action) -> Result<Cost, String> {
         // The list walked is a place, a variable's, the payload's or an
         // enclosing item's, and its item is a place of its body's.
         let list =
@@ -1567,6 +1584,36 @@ mod tests {
             .entry("a", vec![keyed("sce_put")])
             .entry("a", vec![keyed("sce_remove")]);
         assert_eq!(two_blocks.bound(), chain(2, 0));
+    }
+
+    /// A loop over a place held at a key of a map that a lowering opens by
+    /// reading the place raises its error where a key on the way is absent, and
+    /// runs no loop (docs/adr/0108, D12 rules 3 and 8): a body that raises
+    /// nothing leaves that one error. The same loop opened by no read raises
+    /// none.
+    #[test]
+    fn a_loop_that_fails_where_it_opens_raises_one_error() {
+        let walk = |opening: &str| Action {
+            action_type: "foreach".to_string(),
+            native_loop: "for item in sce_place_0.clone()".to_string(),
+            native_code: opening.to_string(),
+            native_fails: !opening.is_empty(),
+            actions: vec![Action {
+                action_type: "assign".to_string(),
+                ..Action::default()
+            }],
+            ..Action::default()
+        };
+        let opened = Doc::new()
+            .names("error.execution")
+            .state("a", None)
+            .entry("a", vec![walk("if let Some(sce_place_0) = place")]);
+        assert_eq!(opened.bound(), chain(1, 0));
+        let unread = Doc::new()
+            .names("error.execution")
+            .state("a", None)
+            .entry("a", vec![walk("")]);
+        assert_eq!(unread.bound().depth(), Some(0));
     }
 
     /// A call of an algorithm that writes a map in place raises nothing, even

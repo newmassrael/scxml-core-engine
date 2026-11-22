@@ -113,8 +113,17 @@ use sce_rust_tests::integration::static_datamodel::static_map_composite_key_sm::
 use sce_rust_tests::integration::static_datamodel::static_map_full_sm::{
     StaticMapFullPersist, StaticMapFullPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_map_list_sm::{
+    StaticMapListPersist, StaticMapListPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_map_nested_sm::{
+    StaticMapNestedPersist, StaticMapNestedPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_map_order_sm::{
     StaticMapOrderPersist, StaticMapOrderPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_map_record_list_sm::{
+    StaticMapRecordListPersist, StaticMapRecordListPolicy,
 };
 use sce_rust_tests::integration::static_datamodel::static_map_record_sm::{
     StaticMapRecordPersist, StaticMapRecordPolicy,
@@ -759,6 +768,49 @@ fn static_map_returned_takes_the_map_an_algorithm_returns_whole() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_returned.json"
+        ),
+    );
+}
+
+// A map whose value is a map (docs/adr/0108, D12): the empty inner map put at a
+// key with no value, written in place through `slots[1]`, its own outcome when
+// it is full, read and walked through the place; a key that is absent fails the
+// write and creates nothing.
+#[test]
+fn static_map_nested_writes_a_map_held_at_a_key_in_place() {
+    replay(
+        Engine::new(StaticMapNestedPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_nested.json"
+        ),
+    );
+}
+
+// A map whose value is a list (docs/adr/0108, D12): the empty list put at a key,
+// appended to through `samples[1]` until it is full, walked and emptied where it
+// stands; an append through a key that is absent creates nothing.
+#[test]
+fn static_map_list_appends_to_a_list_held_at_a_key() {
+    replay(
+        Engine::new(StaticMapListPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_list.json"
+        ),
+    );
+}
+
+// A map whose value is a record that holds a list (docs/adr/0108, D12 rule 9):
+// the record variable put at a key is a copy, its list appended to through
+// `rows[1].tags`, read, walked and emptied where it stands.
+#[test]
+fn static_map_record_list_appends_to_the_list_a_held_record_holds() {
+    replay(
+        Engine::new(StaticMapRecordListPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_map_record_list.json"
         ),
     );
 }

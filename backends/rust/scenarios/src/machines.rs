@@ -178,26 +178,11 @@ macro_rules! scenarios {
 /// (`generate/unsupported-feature`), so there is no module a row could build it
 /// from. The step that lowers the construct on Rust generates the machine, takes
 /// the entry off and adds the row.
-pub const NOT_YET_LOWERED: &[(&str, &str)] = &[
-    (
-        "linkstate_interest",
-        "a map whose value is a map (docs/adr/0108, D12), beside a list of texts, which no \
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[(
+    "linkstate_interest",
+    "a map whose value is a map (docs/adr/0108, D12), beside a list of texts, which no \
          lane holds in a statechart's variable yet",
-    ),
-    (
-        "static_map_list",
-        "a map whose value is a list, written through `samples[1]` (docs/adr/0108, D12)",
-    ),
-    (
-        "static_map_nested",
-        "a map whose value is a map, written through `slots[1]` (docs/adr/0108, D12)",
-    ),
-    (
-        "static_map_record_list",
-        "a map whose value is a record that holds a list, written through `rows[1].tags` \
-         (docs/adr/0108, D12)",
-    ),
-];
+)];
 
 scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
@@ -257,8 +242,11 @@ scenarios! {
     "static_map" => static_map_sm::{StaticMapPolicy, StaticMapPersist};
     "static_map_composite_key" => static_map_composite_key_sm::{StaticMapCompositeKeyPolicy, StaticMapCompositeKeyPersist};
     "static_map_full" => static_map_full_sm::{StaticMapFullPolicy, StaticMapFullPersist};
+    "static_map_list" => static_map_list_sm::{StaticMapListPolicy, StaticMapListPersist};
+    "static_map_nested" => static_map_nested_sm::{StaticMapNestedPolicy, StaticMapNestedPersist};
     "static_map_order" => static_map_order_sm::{StaticMapOrderPolicy, StaticMapOrderPersist};
     "static_map_record" => static_map_record_sm::{StaticMapRecordPolicy, StaticMapRecordPersist};
+    "static_map_record_list" => static_map_record_list_sm::{StaticMapRecordListPolicy, StaticMapRecordListPersist};
     "static_map_returned" => static_map_returned_sm::{StaticMapReturnedPolicy, StaticMapReturnedPersist};
     "static_map_take" => static_map_take_sm::{StaticMapTakePolicy, StaticMapTakePersist};
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
