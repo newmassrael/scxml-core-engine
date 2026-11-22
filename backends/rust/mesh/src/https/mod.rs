@@ -31,6 +31,7 @@
 pub mod adapter;
 pub mod client;
 mod client_core;
+mod client_mailbox;
 #[cfg(feature = "https-conformance")]
 pub mod conformance;
 pub mod rate;

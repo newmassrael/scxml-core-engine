@@ -349,6 +349,8 @@ COST_MEASURED: dict[str, str] = {
     # 208s, the gate's script through bx on hkl002 with three cores, the first run
     # that judged every model and its refinement.
     "formal-models": "2026-11-22",
+    # 22s, `scripts/formal/proofs.py` on the workstation, eleven mutants, Verus fetched.
+    "formal-proofs": "2026-11-23",
     # 451s, the gate's script through bx on hkl002, cold (its entry says why
     # that and not a warm reading).
     "rust-version": "2026-10-20",
@@ -1596,6 +1598,28 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 8,
+    },
+    # The proofs of the host core under Verus, as docs/formal/proofs.json declares them
+    # (docs/adr/0115, D13).
+    #
+    # `ci_only`: the host is the constraint. Verus runs on a Rust release of its own
+    # through rustup, the build machines carry neither, and no gate installs any part
+    # of a toolchain.
+    "formal-proofs": {
+        "workflows": ["formal-proofs.yml"],
+        "runner_workflow": True,
+        "extra": ["docs/formal/proofs.json", "scripts/formal/proofs.py", "backends/rust/mesh/src/https/**"],
+        "ci_only": "22s measured 2026-11-23 on a host that has Verus, and the host is the "
+                   "constraint: it runs on a Rust release of its own through rustup, which "
+                   "the build machines do not carry and no gate installs. "
+                   "formal-proofs.yml runs it on every change to a proved file or its judge.",
+        "cost_s": 22,
+        "summary": "Verus proofs of the host core, with each break of it refused",
+        # Verus answers one way for one input: the file, the manifest and the pinned tool.
+        "cache": True,
+        "inputs": None,
+        "commits": [],
+        "peak_gb": 2,
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs

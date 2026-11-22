@@ -26,6 +26,7 @@ use core::time::Duration;
 use sce_rust_crypto::cose::TrustedKey;
 use sce_rust_metrics::ExchangeOutcome;
 
+use super::client_mailbox::{Mailbox, Mark, Numbering};
 use super::signature::{
     content_digest, field_value, verify_response, Answered, CONTENT_DIGEST_HEADER, NONCE_HEADER,
 };
@@ -162,18 +163,24 @@ pub struct Received {
 
 /// What a request was sent with that its response is read against: where its acknowledgement
 /// stood, and, when the client verifies, what of it the response's signature covers.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Sent {
     mark: Mark,
     answered: Option<Answered>,
 }
 
-/// Where an acknowledgement stands (§mesh-22.3): the highest mailbox number handed to the core,
-/// and the incarnation of the mailbox it counts in, `None` before the first `200`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Mark {
-    ack: u64,
-    epoch: Option<String>,
+/// The number an incarnation's 32 hexadecimal digits spell, and none for any other text.
+fn epoch_number(text: &str) -> Option<u128> {
+    if is_epoch(text) {
+        u128::from_str_radix(text, 16).ok()
+    } else {
+        None
+    }
+}
+
+/// The 32 digits of an incarnation, as [`epoch_number`] reads them.
+fn epoch_text(epoch: u128) -> String {
+    alloc::format!("{epoch:032x}")
 }
 
 /// An exchange from the moment its lane began it: the envelopes its request carries, and what the
@@ -229,34 +236,27 @@ pub(super) struct ClientCore {
     settings: CoreSettings,
     /// What the core of the machine transmitted and no exchange has carried yet, oldest first.
     outbox: VecDeque<Vec<u8>>,
-    /// What every request acknowledges: the highest mailbox number handed to the core of the
-    /// machine, in the mailbox incarnation the client last saw.
-    mark: Mark,
+    /// Where the client stands in its server's mailbox, which every request acknowledges.
+    mailbox: Mailbox,
     ready: bool,
     stopped: bool,
     /// Whether the last `200` did not verify under `verify:`, so that a run of them is told once
     /// (SCE_MESH.md section 16.7 row 19, once per edge).
     unauthenticated: bool,
-    /// Under `receipt: durable` (docs/adr/0109, D10), the highest mailbox number, in the
-    /// incarnation of `mark`, that the host reported a durable checkpoint of its own holds
-    /// ([`Input::Held`]): what every request acknowledges, never above `mark.ack`. `None`
-    /// on a binding that is not durable, whose requests acknowledge `mark.ack`.
-    held: Option<u64>,
     poll: LaneState,
     send: LaneState,
 }
 
 impl ClientCore {
     pub(super) fn new(settings: CoreSettings) -> Self {
-        let held = settings.durable.then_some(0);
+        let mailbox = Mailbox::new(settings.durable);
         ClientCore {
             settings,
             outbox: VecDeque::new(),
-            mark: Mark::default(),
+            mailbox,
             ready: false,
             stopped: false,
             unauthenticated: false,
-            held,
             poll: LaneState::new(),
             send: LaneState::new(),
         }
@@ -270,8 +270,8 @@ impl ClientCore {
     /// Where the client stands in its server's mailbox.
     pub(super) fn received(&self) -> Received {
         Received {
-            epoch: self.mark.epoch.clone(),
-            number: self.mark.ack,
+            epoch: self.mailbox.epoch.map(epoch_text),
+            number: self.mailbox.ack,
         }
     }
 
@@ -318,15 +318,16 @@ impl ClientCore {
     }
 
     /// A durable checkpoint of the host holds every envelope up to `received` (docs/adr/0109,
-    /// D10). A mark of an incarnation the client has left counts in a numbering that is gone, and
-    /// moves nothing; on a binding that is not durable this does nothing.
+    /// D10). Text that spells no incarnation is of no mailbox the client knew.
     fn hold(&mut self, received: &Received) {
-        if self.mark.epoch != received.epoch {
-            return;
-        }
-        if let Some(held) = self.held.as_mut() {
-            *held = (*held).max(received.number);
-        }
+        let epoch = match &received.epoch {
+            None => None,
+            Some(text) => match epoch_number(text) {
+                Some(epoch) => Some(epoch),
+                None => return,
+            },
+        };
+        self.mailbox.hold(epoch, received.number);
     }
 
     /// No exchange is begun after this, what waits in the outbox is handed back as not sent, and
@@ -364,7 +365,7 @@ impl ClientCore {
             }
             Lane::Send => (self.take_outbox(), Duration::ZERO),
         };
-        let mark = self.acknowledging();
+        let mark = self.mailbox.acknowledging();
         // §mesh-22.1: what every request carries besides its body, the media type of the
         // §mesh-22.2 framing, the acknowledgement and the incarnation it counts in (none before
         // the first `200`), the hold, and the credential.
@@ -373,8 +374,8 @@ impl ClientCore {
             (ACK_HEADER.to_string(), mark.ack.to_string()),
             (HOLD_HEADER.to_string(), hold.as_millis().to_string()),
         ];
-        if let Some(epoch) = &mark.epoch {
-            headers.push((EPOCH_HEADER.to_string(), epoch.clone()));
+        if let Some(epoch) = mark.epoch {
+            headers.push((EPOCH_HEADER.to_string(), epoch_text(epoch)));
         }
         if let Some(authorization) = &self.settings.authorization {
             headers.push(("Authorization".to_string(), authorization.clone()));
@@ -419,19 +420,6 @@ impl ClientCore {
             }
         }
         carried
-    }
-
-    /// What the next request acknowledges: the highest number handed to the core, or, under
-    /// `receipt: durable`, the highest a durable checkpoint of the host holds (docs/adr/0109,
-    /// D10), so that the server never deletes what a crash of this client would lose.
-    fn acknowledging(&self) -> Mark {
-        match self.held {
-            Some(held) => Mark {
-                ack: held.min(self.mark.ack),
-                epoch: self.mark.epoch.clone(),
-            },
-            None => self.mark.clone(),
-        }
     }
 
     /// The nonce and the moment the lane's request needs. A request they could not be drawn for
@@ -646,62 +634,41 @@ impl ClientCore {
     ///   learns replaces none.
     ///
     /// A response that names no incarnation says nothing of what its numbers count in, and a body
-    /// without a first number cannot be acknowledged: what a server that breaks the binding sends
-    /// is not taken.
+    /// without a first number, or whose numbers would pass the last one there is, cannot be
+    /// acknowledged: what a server that breaks the binding sends is not taken.
     fn take_mailbox(&mut self, sent: &Mark, response: &HttpsResponse, effects: &mut Vec<Effect>) {
         // §mesh-22.2: a client takes nothing of a `200` without `Sce-Mesh-Epoch`, reads the body
         // as a CBOR sequence, and numbers it from `Sce-Mesh-First`.
         let Some(epoch) = response
             .header(EPOCH_HEADER)
-            .map(str::trim)
-            .filter(|epoch| is_epoch(epoch))
+            .and_then(|epoch| epoch_number(epoch.trim()))
         else {
             return;
         };
-        let current = if self.mark.epoch.as_deref() == Some(epoch) {
-            true
-        } else if sent.epoch.as_deref() == Some(epoch) {
-            false
-        } else {
-            let replaced = self.mark.epoch.is_some();
-            self.mark = Mark {
-                ack: 0,
-                epoch: Some(epoch.to_string()),
-            };
-            // What a checkpoint held counted in the numbering that is gone.
-            if let Some(held) = self.held.as_mut() {
-                *held = 0;
-            }
-            if replaced {
-                effects.push(Effect::Tell(LinkEvent::Restarted(
-                    self.settings.server.clone(),
-                )));
-            }
-            true
-        };
-        let envelopes = split_sequence(&response.body);
-        if envelopes.is_empty() {
-            return;
-        }
-        let first = response
-            .header(FIRST_HEADER)
-            .and_then(|value| value.trim().parse::<u64>().ok());
-        let Some(first) = first.filter(|first| *first >= 1) else {
-            return;
-        };
-        let taken = if current { self.mark.ack } else { sent.ack };
-        let last = first.saturating_add(envelopes.len() as u64 - 1);
-        for (number, envelope) in (first..).zip(envelopes) {
-            if number <= taken {
-                continue;
-            }
-            effects.push(Effect::Tell(LinkEvent::Received(
+        let numbering = self.mailbox.enter(sent, epoch);
+        if numbering == (Numbering::Anew { replaced: true }) {
+            effects.push(Effect::Tell(LinkEvent::Restarted(
                 self.settings.server.clone(),
-                envelope,
             )));
         }
-        if current {
-            self.mark.ack = self.mark.ack.max(last);
+        let envelopes = split_sequence(&response.body);
+        let Some(first) = response
+            .header(FIRST_HEADER)
+            .and_then(|value| value.trim().parse::<u64>().ok())
+        else {
+            return;
+        };
+        let count = envelopes.len() as u64;
+        let Some(passed) = self.mailbox.take(sent, numbering, first, count) else {
+            return;
+        };
+        for (index, envelope) in (0..count).zip(envelopes) {
+            if index >= passed {
+                effects.push(Effect::Tell(LinkEvent::Received(
+                    self.settings.server.clone(),
+                    envelope,
+                )));
+            }
         }
     }
 
@@ -1660,8 +1627,14 @@ mod tests {
     fn mark(ack: u64, epoch: Option<&str>) -> Mark {
         Mark {
             ack,
-            epoch: epoch.map(str::to_string),
+            epoch: epoch.and_then(epoch_number),
         }
+    }
+
+    /// Let the client stand at `mark`.
+    fn at(core: &mut ClientCore, mark: Mark) {
+        core.mailbox.ack = mark.ack;
+        core.mailbox.epoch = mark.epoch;
     }
 
     /// What [`ClientCore::take_mailbox`] tells of `response` to a request sent with `sent`.
@@ -1677,20 +1650,20 @@ mod tests {
     #[test]
     fn a_response_that_continues_the_numbering_is_taken_once() {
         let mut core = ClientCore::new(settings());
-        core.mark = mark(4, Some(EPOCH));
-        let sent = core.mark.clone();
+        at(&mut core, mark(4, Some(EPOCH)));
+        let sent = core.mailbox.acknowledging();
         // The request acknowledged 4; the mailbox answers 5, 6, 7.
         assert_eq!(
             take(&mut core, &sent, &ok(Some(5), &THREE)),
             [arrived(&[1]), arrived(&[2]), arrived(&[3])]
         );
-        assert_eq!(core.mark, mark(7, Some(EPOCH)));
+        assert_eq!(core.mailbox.acknowledging(), mark(7, Some(EPOCH)));
         // The other lane's request also acknowledged 4 and was answered 5 to 8: only 8 is new.
         assert_eq!(
             take(&mut core, &sent, &ok(Some(5), &[0x01, 0x02, 0x03, 0x04])),
             [arrived(&[4])]
         );
-        assert_eq!(core.mark, mark(8, Some(EPOCH)));
+        assert_eq!(core.mailbox.acknowledging(), mark(8, Some(EPOCH)));
     }
 
     /// A server that started again with its mailboxes empty numbers them from 1 in a new
@@ -1705,8 +1678,8 @@ mod tests {
     #[test]
     fn a_new_incarnation_starts_the_acknowledgement_over() {
         let mut core = ClientCore::new(settings());
-        core.mark = mark(57, Some(EARLIER));
-        let sent = core.mark.clone();
+        at(&mut core, mark(57, Some(EARLIER)));
+        let sent = core.mailbox.acknowledging();
         assert_eq!(
             take(&mut core, &sent, &ok(Some(1), &THREE)),
             [
@@ -1717,14 +1690,14 @@ mod tests {
             ],
             "the mailbox the client knew is gone"
         );
-        assert_eq!(core.mark, mark(3, Some(EPOCH)));
+        assert_eq!(core.mailbox.acknowledging(), mark(3, Some(EPOCH)));
 
         assert_eq!(
             take(&mut core, &sent, &ok(Some(1), &[0x01, 0x02, 0x03, 0x04])),
             [arrived(&[4])],
             "taken once in the new numbering"
         );
-        assert_eq!(core.mark, mark(4, Some(EPOCH)));
+        assert_eq!(core.mailbox.acknowledging(), mark(4, Some(EPOCH)));
 
         assert_eq!(
             take(&mut core, &sent, &ok_in(EARLIER, Some(57), &[0x09, 0x0a])),
@@ -1732,7 +1705,7 @@ mod tests {
             "above what the request acknowledged"
         );
         assert_eq!(
-            core.mark,
+            core.mailbox.acknowledging(),
             mark(4, Some(EPOCH)),
             "the newer incarnation stays"
         );
@@ -1741,13 +1714,14 @@ mod tests {
     #[test]
     fn a_body_without_a_number_or_an_incarnation_is_not_taken() {
         let mut core = ClientCore::new(settings());
+        assert_eq!(take(&mut core, &mark(0, None), &ok(None, &THREE)), NOTHING);
         assert_eq!(
-            take(&mut core, &Mark::default(), &ok(None, &THREE)),
-            NOTHING
+            core.mailbox.acknowledging(),
+            mark(0, Some(EPOCH)),
+            "the incarnation is learnt"
         );
-        assert_eq!(core.mark, mark(0, Some(EPOCH)), "the incarnation is learnt");
         assert_eq!(
-            take(&mut core, &Mark::default(), &ok(Some(0), &THREE)),
+            take(&mut core, &mark(0, None), &ok(Some(0), &THREE)),
             NOTHING,
             "mailbox numbers start at 1"
         );
@@ -1757,10 +1731,45 @@ mod tests {
             body: THREE.to_vec(),
         };
         assert_eq!(
-            take(&mut core, &Mark::default(), &unnamed),
+            take(&mut core, &mark(0, None), &unnamed),
             NOTHING,
             "no incarnation names the numbers"
         );
-        assert_eq!(core.mark, mark(0, Some(EPOCH)));
+        assert_eq!(core.mailbox.acknowledging(), mark(0, Some(EPOCH)));
+    }
+
+    /// A response numbered up to the last number there is is taken, and one whose numbers would
+    /// pass it is not, whatever its server meant: the numbers are counted and never wrap.
+    #[test]
+    fn a_response_that_numbers_past_the_last_number_is_not_taken() {
+        let mut core = ClientCore::new(settings());
+        at(&mut core, mark(4, Some(EPOCH)));
+        let sent = core.mailbox.acknowledging();
+        assert_eq!(
+            take(&mut core, &sent, &ok(Some(u64::MAX - 1), &THREE)),
+            NOTHING
+        );
+        assert_eq!(core.mailbox.acknowledging(), mark(4, Some(EPOCH)));
+        assert_eq!(
+            take(&mut core, &sent, &ok(Some(u64::MAX), &[0x01])),
+            [arrived(&[1])]
+        );
+        assert_eq!(core.mailbox.acknowledging(), mark(u64::MAX, Some(EPOCH)));
+    }
+
+    /// An incarnation is kept as the number its digits spell, and named by the same digits again.
+    #[test]
+    fn an_incarnation_is_named_by_the_digits_it_was_read_from() {
+        for text in [EPOCH, EARLIER, "00000000000000000000000000000000"] {
+            assert_eq!(epoch_number(text).map(epoch_text).as_deref(), Some(text));
+        }
+        for text in [
+            "",
+            "0123",
+            "0123456789ABCDEF0123456789abcdef",
+            "+123456789abcdef0123456789abcdef",
+        ] {
+            assert_eq!(epoch_number(text), None, "{text}");
+        }
     }
 }

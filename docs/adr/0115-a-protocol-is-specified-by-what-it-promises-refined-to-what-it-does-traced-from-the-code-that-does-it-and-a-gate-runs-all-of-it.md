@@ -232,8 +232,26 @@ assumed. Its checker considers one single-threaded program, which the split belo
   clean-slate runtime with a Tokio-compatible interface, has about 40,000 lines of specification and proof for 3,400 of
   code. The shell moves bytes and readiness; what it may not do is decide. D4's traces judge it, and it has tests that
   drop a task at each `await`, which hold that a cancellation loses nothing a `200` acknowledged.
-- The first module is chosen by its size and its weight: `https/rate.rs`, then `outbound.rs`. What the first costs, and
-  what it finds, decide the rest.
+- **The first module (2026-11-23, Verus approved by the owner): `https/client_mailbox.rs`**, the numbers of the `https`
+  client's core, and not `rate.rs` as this record first had it: the core was separated that day (ADR 0117 D1), and these
+  are the rules it loses or repeats an envelope by. Proved, whatever a response is: the client acknowledges nothing it
+  did not hand on, so the server drops nothing unread; in one incarnation no number is handed on twice; under `receipt:
+  durable` it acknowledges nothing above what its host reported; and no number wraps. What is taken as given of the
+  server (it answers from the oldest number it holds above the acknowledgement, without a gap) is a precondition, as is
+  that a request acknowledged no more than the client does now, and the proof fails without either. The core keeps an
+  incarnation as the number its 32 digits spell, which Verus reads.
+- **How a proof stands beside the code.** A file of its own, which Verus reads alone: its contracts are attributes that
+  are there only under `cfg(verus_only)`, so the same text is the plain Rust the crate compiles, and nobody who builds
+  it needs a crate more. `docs/formal/proofs.json` pins Verus by digest with the Rust release it runs on, and declares
+  each proof with the number of functions it verifies and the changes of the code it must refuse;
+  `scripts/formal/proofs.py` is the judge, refuses a proof that takes anything on trust, and a file with a contract that
+  is not declared. The contracts are tied to the functions: a checked caller takes `enter` and `take` through a whole
+  response, so a contract that is weakened fails there.
+- **What it cost and found.** 22 seconds to check, with eleven changes refused, and three restatements of the code (an
+  index for an open range, a number for a text, the rules out of the core). It found a fault the suites had not: a
+  `Sce-Mesh-First` of the last number there is made the client panic in a build that checks overflow. The suites are
+  what still say that the core asks these rules (`client_core.rs`, the kit); they do not prove it. `outbound.rs` and
+  `rate.rs` are next.
 
 ### D14. What stays assumed, and of what kind
 
