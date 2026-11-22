@@ -1557,6 +1557,21 @@ name (`mesh/codegen-durable-receipt-unsupported`); and
 `persistence: checkpoint` on a document that saves nothing is refused
 (`mesh/codegen-persistence-without-saved-state`).
 
+A machine takes `instances: open`, the one value of the key (docs/adr/0113,
+D1): any number of copies of it run, each an instance. It is refused, as
+`mesh/deploy-invalid-instances`, beside `sessions:`, `server:` or
+`invoked_by:`, on a machine another names in `invoked_by:`, in a
+`partitions:` entry, with a causal binding, and where a binding of the
+machine, or to it, is on a transport that serves no open machine (every one
+but `https`) or is dialed by the other side. A document that names it by a
+literal `<send target="#m">` or `<invoke type="sce:mesh-rpc" src="#m">` is
+refused when its machine is generated
+(`mesh/topology-open-machine-named-literally`): an instance is addressed by
+the origin its event carried, `<send targetexpr="_event.origin">`. A
+deployment that declares one is generated for Rust alone; every other backend
+refuses each of its machines by name
+(`mesh/codegen-open-instances-unsupported`).
+
 #### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
 
 Optional top-level map carrying per-codec default-arm overrides for
@@ -11205,7 +11220,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (564 codes)
+## Appendix — `DiagnosticCode` index (567 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -11626,6 +11641,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-server-response-deadline` | Mesh Deploy |
 | `mesh/deploy-invalid-outbound-buffer` | Mesh Deploy |
 | `mesh/deploy-invalid-sessions` | Mesh Deploy |
+| `mesh/deploy-invalid-instances` | Mesh Deploy |
 | `mesh/deploy-sessions-key-not-in-request` | Mesh Deploy |
 | `mesh/deploy-config-missing` | Mesh Deploy |
 | `mesh/deploy-config-unknown` | Mesh Deploy |
@@ -11734,6 +11750,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/topology-event-binding-unused` | Mesh Topology |
 | `mesh/topology-ordering-cannot-be-guaranteed` | Mesh Topology |
 | `mesh/topology-pool-param-name-missing` | Mesh Topology |
+| `mesh/topology-open-machine-named-literally` | Mesh Topology |
 | `mesh/topology-subscription-source-unbound` | Mesh Topology |
 | `mesh/topology-machine-lifetime-subscription-unsupported` | Mesh Topology |
 | `mesh/codegen-unsupported-language` | Mesh Codegen |
@@ -11744,6 +11761,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-cpp-router-unsupported` | Mesh Codegen |
 | `mesh/codegen-keyed-pool-unsupported` | Mesh Codegen |
 | `mesh/codegen-durable-receipt-unsupported` | Mesh Codegen |
+| `mesh/codegen-open-instances-unsupported` | Mesh Codegen |
 | `mesh/codegen-persistence-without-saved-state` | Mesh Codegen |
 
 ### Diagnostic-only

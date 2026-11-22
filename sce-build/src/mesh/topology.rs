@@ -649,9 +649,9 @@ pub struct ResolvedTarget {
     /// Codegen emits it as the `responders` argument to
     /// `InvokeCorrelation::registerInvoke` and as the per-target
     /// allow-list the SOME/IP response handler checks before consulting
-    /// `pending_rpcs_`.
-    #[serde(default)]
-    pub responders: Vec<String>,
+    /// `pending_rpcs_`. A binding to an open machine has no such list
+    /// ([`Responders::Instance`]).
+    pub responders: Responders,
     /// SCE_MESH.md §mesh-9.5 binding-level request deadline — deploy.yaml
     /// `bindings.<target>.deadline_ms`, the fallback a request takes when
     /// its `<invoke>` carries no `_mesh_deadline_ms`. Static sites already
@@ -684,6 +684,29 @@ pub struct ResolvedTarget {
     /// ambiguous half-built pool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool_plan: Option<PoolPlan>,
+}
+
+/// Whose reply may answer a request sent to a resolved target
+/// ([`ResolvedTarget::responders`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Responders {
+    /// The machines the binding declares, by name. Never empty.
+    Machines(Vec<String>),
+    /// The target runs as an open set of instances (`instances: open`,
+    /// docs/adr/0113, D3): the instance the request was sent to, and no list
+    /// the build could write.
+    Instance,
+}
+
+impl Responders {
+    /// The machines named, or none for [`Self::Instance`].
+    pub fn machines(&self) -> &[String] {
+        match self {
+            Self::Machines(names) => names,
+            Self::Instance => &[],
+        }
+    }
 }
 
 /// SCE_MESH.md §mesh-14.4 — resolved binding pool plan for runtime target
@@ -1983,6 +2006,55 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
     }
 }
 
+/// Refuse a literal address of an open machine in `model`, the document of the
+/// machine `machine_name` (docs/adr/0113, D2): `<send target="#m">` and
+/// `<invoke type="sce:mesh-rpc" src="#m">` name a machine that runs as any
+/// number of instances, and so name none of them. An instance is addressed by
+/// the origin its event carried.
+///
+/// Every `<send>` a state runs is read, nesting included, by the predicate the
+/// host routers take a literal peer by
+/// ([`crate::host_processor_analyzer::is_static_mesh_send`]). Sites are
+/// judged in order of their state and what they wrote, so the refusal reported
+/// is the same on every run.
+pub fn refuse_literal_open_targets(
+    model: &SCXMLModel,
+    deploy: &DeployConfig,
+    machine_name: &str,
+) -> Result<(), TopologyError> {
+    let mut sites: BTreeSet<(String, String, TargetId)> = BTreeSet::new();
+    let mut literal = |state: &str, address: &str, written: String| {
+        let named = TargetId::new(address).filter(|target| deploy.is_open_machine(target.name()));
+        if let Some(target) = named {
+            sites.insert((state.to_string(), written, target));
+        }
+    };
+    crate::host_processor_analyzer::walk_model_actions(model, &mut |state, action| {
+        if crate::host_processor_analyzer::is_static_mesh_send(action) {
+            let written = format!("<send target=\"{}\">", action.target);
+            literal(state, &action.target, written);
+        }
+    });
+    for invoke in &model.invokes {
+        let Invoke::MeshRpc(info) = invoke else {
+            continue;
+        };
+        if let Some(src) = info.target.src_literal() {
+            let written = format!("<invoke type=\"sce:mesh-rpc\" src=\"{src}\">");
+            literal(&info.base.state_name, src, written);
+        }
+    }
+    match sites.into_iter().next() {
+        Some((state, written, target)) => Err(TopologyError::OpenMachineNamedLiterally {
+            machine: machine_name.to_string(),
+            state,
+            target,
+            written,
+        }),
+        None => Ok(()),
+    }
+}
+
 /// Collect (target, event) pairs from an SCXML model.
 ///
 /// Used by `validate_event_coverage` (multi-model API). The per-model
@@ -2281,7 +2353,8 @@ pub(crate) fn contribute_send_partials(
 ///
 /// Asked of the merged list, whichever contributor brought a binding in: one
 /// reached only by a `targetexpr`, an `srcexpr` or a subscription is the same
-/// binding, read by the same arms.
+/// binding, read by the same arms. An open machine's is reached by nothing else
+/// (docs/adr/0113, D2).
 fn validate_binding_extras(
     machine_name: &str,
     partials: &[PartialTarget],
@@ -2435,6 +2508,15 @@ pub fn build_resolved_targets(
                     field: format!("server instance of a causal pool member ({reason})"),
                 })?;
             }
+        }
+    }
+    // docs/adr/0113, D3: a request to an instance is answered by that
+    // instance, which no list of machine names could say. Whether a target is
+    // an open machine is the deployment's to say, not the binding's, so it is
+    // read here, off the one place that declares it.
+    for target in &mut resolved {
+        if deploy.is_open_machine(target.target.name()) {
+            target.responders = Responders::Instance;
         }
     }
     validate_someip_event_fields(&resolved, machine_name)?;
@@ -3645,7 +3727,7 @@ pub(crate) fn finalize_targets(
             invoke_sites: pt.invoke_sites,
             ordering: pt.ordering,
             causal: pt.causal,
-            responders: pt.responders,
+            responders: Responders::Machines(pt.responders),
             deadline_ms: pt.deadline_ms,
             retry: pt.retry,
             auth: pt.auth,
@@ -5278,7 +5360,7 @@ mod tests {
             invoke_sites: Vec::new(),
             ordering: crate::mesh::deploy::OrderingRequirement::None,
             causal: None,
-            responders: vec!["motor".to_string()],
+            responders: Responders::Machines(vec!["motor".to_string()]),
             deadline_ms: None,
             retry: None,
             auth: None,
@@ -5639,23 +5721,23 @@ topology:
         assert_eq!(warned, vec![false, true, true]);
     }
 
-    /// A binding the document reaches only by a `targetexpr` is held to its
-    /// transport's fields as one a written target reaches is. Red if only
-    /// written targets are judged: the arm that reads the binding then panics
-    /// on what nothing proved.
-    #[test]
-    fn a_binding_reached_only_at_run_time_is_held_to_its_fields() {
-        let deploy = parse_deploy_str(
+    /// The peers of [`TARGETEXPR_SHAPES_SCXML`]'s machine, bound to `#phone` by
+    /// `binding`, where `phone`'s entry is `phone`.
+    fn reached_at_run_time(
+        binding: &str,
+        phone: &str,
+    ) -> Result<Vec<ResolvedTarget>, TopologyError> {
+        let deploy = parse_deploy_str(&format!(
             r##"version: "1.0"
 topology:
   cloud:
     machines:
-      sender: { source: sender.scxml, bindings: { "#phone": { transport: https, listen: "127.0.0.1:9443" } } }
-      phone: { source: phone.scxml }
-"##,
-        )
+      sender: {{ source: sender.scxml, bindings: {{ "#phone": {binding} }} }}
+      phone: {phone}
+"##
+        ))
         .unwrap();
-        let refused = build_resolved_targets(
+        build_resolved_targets(
             &TargetContributions {
                 send_summary: &summary_for(&parse_model(TARGETEXPR_SHAPES_SCXML, "sender")),
                 subscriptions: &[],
@@ -5663,6 +5745,19 @@ topology:
             &deploy,
             "sender",
             &super::super::external::ExternalResolution::default(),
+        )
+        .map(|resolution| resolution.targets)
+    }
+
+    /// A binding the document reaches only by a `targetexpr`, as it reaches
+    /// every open machine's, is held to its transport's fields as one a written
+    /// target reaches is. Red if only written targets are judged: the arm that
+    /// reads the binding then panics on what nothing proved.
+    #[test]
+    fn a_binding_reached_only_at_run_time_is_held_to_its_fields() {
+        let refused = reached_at_run_time(
+            r#"{ transport: https, listen: "127.0.0.1:9443" }"#,
+            "{ source: phone.scxml }",
         );
         assert!(
             matches!(
@@ -5670,6 +5765,29 @@ topology:
                 Err(TopologyError::BindingWithoutAuthenticator { .. })
             ),
             "{refused:?}"
+        );
+    }
+
+    /// docs/adr/0113, D3: a request to an open machine is answered by the
+    /// instance it was sent to, and to any other by the machines the binding
+    /// declares. Red if an open machine keeps a list of names.
+    #[test]
+    fn the_responder_of_an_open_machine_is_the_instance_itself() {
+        let https = r#"{ transport: https, listen: "127.0.0.1:9443", authenticator: install }"#;
+        let responders = |phone: &str| -> Vec<Responders> {
+            reached_at_run_time(https, phone)
+                .expect("a valid binding")
+                .into_iter()
+                .map(|target| target.responders)
+                .collect()
+        };
+        assert_eq!(
+            responders("{ source: phone.scxml, instances: open }"),
+            vec![Responders::Instance]
+        );
+        assert_eq!(
+            responders("{ source: phone.scxml }"),
+            vec![Responders::Machines(vec!["phone".to_string()])]
         );
     }
 

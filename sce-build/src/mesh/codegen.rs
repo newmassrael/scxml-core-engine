@@ -1248,6 +1248,29 @@ pub struct MeshCodegenInputs<'a> {
     /// The machine's `receipt: { window, retry_ms }` block, or its defaults:
     /// how its durable dialing bindings send.
     pub machine_receipt: super::deploy::ReceiptConfig,
+    /// A machine of the deployment that runs as an open set of instances
+    /// (`instances: open`, docs/adr/0113, D1), or `None` for a deployment each
+    /// of whose machines is one. Only the Rust host core serves such a
+    /// deployment ([`CodegenError::OpenInstancesUnsupported`]).
+    pub open_machine: Option<&'a str>,
+    /// This machine itself runs as an open set of instances.
+    pub open: bool,
+}
+
+/// The backends whose Mesh core tells the instances of one machine apart
+/// (`instances: open`, docs/adr/0113, D7): the Rust host core.
+/// Every other backend refuses the machines of a deployment that declares an
+/// open one ([`CodegenError::OpenInstancesUnsupported`]).
+fn serves_open_instances(language: Language) -> bool {
+    match language {
+        Language::Rust => true,
+        Language::Cpp
+        | Language::Kotlin
+        | Language::Swift
+        | Language::Go
+        | Language::Python
+        | Language::C11 => false,
+    }
 }
 
 /// The backends whose Mesh core keeps a checkpoint and a durable receipt
@@ -1301,6 +1324,17 @@ pub fn generate_mesh(
             machine: inputs.deploy_machine_name.to_string(),
             backend: language.canonical_name().to_string(),
         });
+    }
+    // docs/adr/0113, D7: refused by the open machine's name, before anything
+    // of this machine, rather than emitted as one that reads every instance as
+    // one sender.
+    if let Some(open) = inputs.open_machine {
+        if !serves_open_instances(language) {
+            return Err(CodegenError::OpenInstancesUnsupported {
+                machine: open.to_string(),
+                backend: language.canonical_name().to_string(),
+            });
+        }
     }
     // A custom_tcp `listen:` on the device requires the machine to host a
     // server even when it has no `bindings:`/`server:`/`subscriptions:` of
@@ -1626,6 +1660,10 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         // receipt block only tells a durable binding how to send.
         durable: _,
         machine_receipt: _,
+        // `generate_mesh` refused a deployment with an open machine for this
+        // backend.
+        open_machine: _,
+        open: _,
     } = inputs;
     // Validate: every target's transport must be in the registry AND
     // carried by the C++ template. Three failure modes, one refusal:
@@ -1843,7 +1881,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                     _ => None,
                 },
                 causal: causal.map(CausalGroupContext::from),
-                responders: t.responders.clone(),
+                responders: t.responders.machines().to_vec(),
                 event_patterns,
                 subscription_event_ids,
                 has_rpc,
@@ -2405,8 +2443,9 @@ struct HostPeerContext {
     ordered: bool,
     /// §14.6: the machines whose reply may answer a request sent to this
     /// peer — [`crate::mesh::topology::ResolvedTarget::responders`], never
-    /// empty.
-    responders: Vec<String>,
+    /// empty; `null` for an open machine, whose responder is the instance
+    /// itself (docs/adr/0113, D3).
+    responders: Option<Vec<String>>,
     /// §9.5: deploy.yaml's binding-level request deadline, the fallback a
     /// request to this peer takes when it carries no `_mesh_deadline_ms`.
     /// Serialised as `null` when absent, which the templates read with
@@ -2596,10 +2635,11 @@ fn generate_host_mesh(
         template_base,
         sessions,
         machine_receipt,
+        open,
         ..
     } = inputs;
     use super::error::HostCoreGap;
-    use crate::mesh::topology::TransportState;
+    use crate::mesh::topology::{Responders, TransportState};
     let refuse = |feature: HostCoreGap| CodegenError::HostCoreUnsupported {
         machine: deploy_machine_name.to_string(),
         feature,
@@ -2738,7 +2778,10 @@ fn generate_host_mesh(
                 stamp_sequence: policy.needs_ordering,
                 dedup: policy.needs_dedup,
                 ordered: policy.needs_ordering,
-                responders: t.responders.clone(),
+                responders: match &t.responders {
+                    Responders::Machines(names) => Some(names.clone()),
+                    Responders::Instance => None,
+                },
                 deadline_ms: t.deadline_ms,
                 reply_events: {
                     let reply = super::pattern::CommunicationPattern::ServiceResponse.wire_value();
@@ -2758,6 +2801,12 @@ fn generate_host_mesh(
         })
         .collect();
     peers.sort_by(|a, b| a.name.cmp(&b.name));
+    // docs/adr/0113, D3: an open machine is no peer the router binds by its
+    // name; its instances are found under its one `PeerConfig`, so it stands in
+    // a list of its own.
+    let (open_peers, peers): (Vec<HostPeerContext>, Vec<HostPeerContext>) = peers
+        .into_iter()
+        .partition(|peer| peer.responders.is_none());
 
     let template_name = host_peer_table_template(language)
         .expect("mesh_backend names only host-core languages here");
@@ -2799,9 +2848,12 @@ fn generate_host_mesh(
             dedup_window => machine_dedup.window_size,
             gap_timeout_ms => machine_ordering.gap_timeout_ms,
             peers => peers,
-            // The keyed pool: only the Rust table has a place for it, and
-            // `generate_mesh` refused it for every other backend.
+            // The keyed pool, the open machines this one is bound to and
+            // whether it is open itself: only the Rust table has a place for
+            // them, and `generate_mesh` refused them for every other backend.
             sessions => sessions,
+            open_peers => open_peers,
+            open => open,
         })
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
     Ok(GeneratedOutput {

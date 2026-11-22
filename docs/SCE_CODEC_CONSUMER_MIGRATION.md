@@ -3792,3 +3792,30 @@ journal yet.
   does, with `Sealed::reseal_journal` for a rotation.
 - `Committer` carries a write's facts; one whose bytes are made at its position (`FactData::AtPosition`, which a
   sealing store gives the store it wraps) is refused there.
+
+## The Mesh envelope names the instance of an open machine, and a Rust peer table says whose reply answers (ADR 0113)
+
+Landing: the commits that add this section (ADR 0113 step 3). Every committed tree that holds the generated envelope
+is regenerated; a consumer regenerates its Rust peer tables.
+
+- `sce:std/mesh/envelope` has one optional entry more, key 21, `instance`: which instance of a machine that runs as
+  an open set of them sends, a text of at most 64 bytes. An envelope without one is written as it was, byte for byte,
+  and a decoder built before the key skips it. A C++ caller that builds the generated `Envelope` by its constructor
+  passes one argument more, `std::nullopt` for a machine that is not open; a Swift caller of the memberwise `init`
+  does the same; a Rust literal that names every field adds `instance: None`, and one that ends in
+  `..Envelope::new()` changes nothing. The C++ runtime's `MeshEnvelope` does not hold it.
+- deploy.yaml takes `instances: open` on a machine (`docs/SCE_ACCEPTED_SUBSET.md` section 2.8), with three new codes:
+  `mesh/deploy-invalid-instances`, `mesh/topology-open-machine-named-literally` and
+  `mesh/codegen-open-instances-unsupported`. A `match` over `DiagnosticCode` names them, one over `DeployError`,
+  `TopologyError` or `CodegenError` names the variant each has gained, and a `TransportDescriptor` literal gives
+  `serves_open_instances`.
+- Rust `PeerConfig::responders` is a `Responders`, where it was a list of names: `responders: &["cloud"]` is now
+  `responders: Responders::Named(&["cloud"])`, and `Responders::Instance` is the responder of an open machine's
+  instance. `Machine` has `open_peers`, the open machines it is bound to, and `instances`, whether it is one itself: a
+  generated table has them, and one written by hand adds `open_peers: &[]` and `instances: Instances::One`. The
+  generated table of a closed deployment binds the peers it bound.
+- `ResolvedTarget::responders` of `sce_build::mesh::topology` is a `Responders` too: `Machines`, the names it held, or
+  `Instance`; `machines()` lends the names.
+- A binding reached only by a `targetexpr`, an `srcexpr` or a subscription is held to its transport's fields, as one a
+  written target reaches always was: a deployment that left out such a binding's `key`, `connect`, `topic` or
+  `authenticator` is refused by name where it generated an empty address or stopped the generator.

@@ -11685,6 +11685,11 @@ pub fn compile_mesh_transport(
         }
     }
 
+    // docs/adr/0113, D2: a literal address of an open machine names none of
+    // its instances, whatever binding the deployment gives it, so it is
+    // refused before any target is resolved.
+    mesh::topology::refuse_literal_open_targets(model, &deploy_cfg, &effective_machine_name)?;
+
     // Machine-lifetime subscriptions from deploy.yaml (SCE_MESH.md §13).
     // Looked up once and consumed by both `build_resolved_targets` (to
     // synthesise the implicit target per source) and the codegen call
@@ -11782,6 +11787,11 @@ pub fn compile_mesh_transport(
         .and_then(|m| m.receipt)
         .unwrap_or(mesh::deploy::ReceiptConfig::DEFAULT);
 
+    // docs/adr/0113, D7: a deployment that declares an open machine reaches
+    // codegen for each of its machines, with a binding or without, where a
+    // backend that serves none refuses it by that machine's name.
+    let open_machine = deploy_cfg.first_open_machine();
+
     // SCE_MESH.md §16.5 wire-21: a partition may produce no
     // conventional `<send target="#X">` traffic and still need a
     // transport.h that opens inter-partition shm channels for
@@ -11827,6 +11837,7 @@ pub fn compile_mesh_transport(
     if resolved.is_empty()
         && server_binding.is_none()
         && keyed_pool.is_none()
+        && open_machine.is_none()
         && !has_custom_tcp_listen
         && !has_wire21_routing
         && !has_scxml_remote_wire
@@ -12014,6 +12025,8 @@ pub fn compile_mesh_transport(
             sessions: keyed_pool.as_ref(),
             durable,
             machine_receipt,
+            open_machine,
+            open: machine_entry.is_some_and(mesh::deploy::MachineConfig::is_open),
         },
         language,
     )?;

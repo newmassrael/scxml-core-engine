@@ -3139,6 +3139,11 @@ pub enum DiagnosticCode {
     /// serve, or sits beside what a keyed pool cannot keep.
     #[serde(rename = "mesh/deploy-invalid-sessions")]
     MeshDeployInvalidSessions,
+    /// A machine declared to run as an open set of instances
+    /// (docs/adr/0113, D1) beside what its instances cannot be told apart or
+    /// served in.
+    #[serde(rename = "mesh/deploy-invalid-instances")]
+    MeshDeployInvalidInstances,
     /// A machine's `receipt:` block cannot be kept: a field below 1, or no
     /// durable binding on the machine to read it.
     #[serde(rename = "mesh/deploy-invalid-receipt")]
@@ -3692,6 +3697,10 @@ pub enum DiagnosticCode {
     MeshTopologyOrderingCannotBeGuaranteed,
     #[serde(rename = "mesh/topology-pool-param-name-missing")]
     MeshTopologyPoolParamNameMissing,
+    /// A document names an open machine by a literal address, which names none
+    /// of its instances (docs/adr/0113, D2).
+    #[serde(rename = "mesh/topology-open-machine-named-literally")]
+    MeshTopologyOpenMachineNamedLiterally,
     #[serde(rename = "mesh/topology-subscription-source-unbound")]
     MeshTopologySubscriptionSourceUnbound,
     #[serde(rename = "mesh/topology-machine-lifetime-subscription-unsupported")]
@@ -3724,6 +3733,10 @@ pub enum DiagnosticCode {
     /// is generated for a backend whose Mesh core keeps neither.
     #[serde(rename = "mesh/codegen-durable-receipt-unsupported")]
     MeshCodegenDurableReceiptUnsupported,
+    /// A deployment that declares an open machine (docs/adr/0113, D1) is
+    /// generated for a backend whose Mesh core serves none.
+    #[serde(rename = "mesh/codegen-open-instances-unsupported")]
+    MeshCodegenOpenInstancesUnsupported,
     /// A machine the deployment checkpoints has a document with no saved
     /// state for a checkpoint to hold.
     #[serde(rename = "mesh/codegen-persistence-without-saved-state")]
@@ -4521,6 +4534,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidServerResponseDeadline,
         MeshDeployInvalidOutboundBuffer,
         MeshDeployInvalidSessions,
+        // ADR 0113, D1 and D7: an open machine whose instances cannot be served
+        MeshDeployInvalidInstances,
         MeshDeploySessionsKeyNotInRequest,
         MeshDeployConfigMissing,
         MeshDeployConfigUnknown,
@@ -4643,6 +4658,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshTopologyEventBindingUnused,
         MeshTopologyOrderingCannotBeGuaranteed,
         MeshTopologyPoolParamNameMissing,
+        // ADR 0113, D2: an open machine named by a literal address
+        MeshTopologyOpenMachineNamedLiterally,
         MeshTopologySubscriptionSourceUnbound,
         MeshTopologyMachineLifetimeSubscriptionUnsupported,
         // Mesh Codegen
@@ -4660,6 +4677,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // ADR 0109, D10: a checkpoint or a durable receipt on a core that keeps neither, and a
         // checkpoint of a document that saves nothing
         MeshCodegenDurableReceiptUnsupported,
+        // ADR 0113, D7: an open machine on a core that serves none
+        MeshCodegenOpenInstancesUnsupported,
         MeshCodegenPersistenceWithoutSavedState,
         // Mesh Io
         MeshIo,
@@ -5372,6 +5391,10 @@ impl DiagnosticCode {
             MeshDeployConfigMissing | MeshDeployConfigUnknown | MeshDeployConfigInvalid => {
                 Some("ADR 0109 D12")
             }
+
+            // ── An open set of instances (docs/adr/0113, D2 and D7) ──
+            MeshDeployInvalidInstances | MeshCodegenOpenInstancesUnsupported => Some("ADR 0113 D7"),
+            MeshTopologyOpenMachineNamedLiterally => Some("ADR 0113 D2"),
 
             // ── Checkpoint and durable receipt (SCE_MESH.md §10.11) ──
             MeshDeployInvalidReceipt
@@ -6260,6 +6283,7 @@ impl DiagnosticCode {
             | MeshDeployInvalidServerResponseDeadline
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
+            | MeshDeployInvalidInstances
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigUnknown
@@ -6371,6 +6395,7 @@ impl DiagnosticCode {
             | MeshTopologyEventBindingUnused
             | MeshTopologyOrderingCannotBeGuaranteed
             | MeshTopologyPoolParamNameMissing
+            | MeshTopologyOpenMachineNamedLiterally
             | MeshTopologySubscriptionSourceUnbound
             | MeshTopologyMachineLifetimeSubscriptionUnsupported
             | MeshCodegenUnsupportedLanguage
@@ -6383,6 +6408,7 @@ impl DiagnosticCode {
             | MeshCodegenCppRouterUnsupported
             | MeshCodegenKeyedPoolUnsupported
             | MeshCodegenDurableReceiptUnsupported
+            | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
             | MeshIo
             | ForgeSourceHashMismatch
@@ -6883,6 +6909,7 @@ impl DiagnosticCode {
             }
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
             MeshDeployInvalidSessions => "mesh/deploy-invalid-sessions",
+            MeshDeployInvalidInstances => "mesh/deploy-invalid-instances",
             MeshDeployInvalidReceipt => "mesh/deploy-invalid-receipt",
             MeshDeployReceiptWithoutPersistence => "mesh/deploy-receipt-without-persistence",
             MeshDeploySessionsKeyNotInRequest => "mesh/deploy-sessions-key-not-in-request",
@@ -7064,6 +7091,7 @@ impl DiagnosticCode {
             MeshTopologyEventBindingUnused => "mesh/topology-event-binding-unused",
             MeshTopologyOrderingCannotBeGuaranteed => "mesh/topology-ordering-cannot-be-guaranteed",
             MeshTopologyPoolParamNameMissing => "mesh/topology-pool-param-name-missing",
+            MeshTopologyOpenMachineNamedLiterally => "mesh/topology-open-machine-named-literally",
             MeshTopologySubscriptionSourceUnbound => "mesh/topology-subscription-source-unbound",
             MeshTopologyMachineLifetimeSubscriptionUnsupported => {
                 "mesh/topology-machine-lifetime-subscription-unsupported"
@@ -7080,6 +7108,7 @@ impl DiagnosticCode {
             MeshCodegenCppRouterUnsupported => "mesh/codegen-cpp-router-unsupported",
             MeshCodegenKeyedPoolUnsupported => "mesh/codegen-keyed-pool-unsupported",
             MeshCodegenDurableReceiptUnsupported => "mesh/codegen-durable-receipt-unsupported",
+            MeshCodegenOpenInstancesUnsupported => "mesh/codegen-open-instances-unsupported",
             MeshCodegenPersistenceWithoutSavedState => {
                 "mesh/codegen-persistence-without-saved-state"
             }
@@ -19125,6 +19154,15 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:6da513c942580141","code":"mesh/deploy-invalid-sessions","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'rooms': invalid `sessions:` section in deploy.yaml — `key_from` is 'room', which is neither `client` nor `data.<field>` naming one top-level field of a request's data (a letter or `_`, then letters, digits or `_`).","actual":"rooms"}"#,
             ),
             (
+                "mesh/deploy-invalid-instances",
+                DeployError::InvalidInstances {
+                    machine: "phone".into(),
+                    reason: "the machine also declares `sessions:`, and a pool of open machines would be several masters of one key, which the lease and fence of a keyed pool choose one of".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c0d6f7f257a9845b","code":"mesh/deploy-invalid-instances","stage":"mesh-deploy","spec":"ADR 0113 D7","message":"machine 'phone': `instances: open` in deploy.yaml cannot be kept — the machine also declares `sessions:`, and a pool of open machines would be several masters of one key, which the lease and fence of a keyed pool choose one of.","actual":"phone"}"#,
+            ),
+            (
                 "mesh/deploy-invalid-receipt",
                 DeployError::InvalidReceipt {
                     machine: "calendar".into(),
@@ -20398,6 +20436,17 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:a5b1eb818d07e3a7","code":"mesh/topology-pool-param-name-missing","stage":"mesh-topology","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' declares a runtime pool that needs <param> values [\"id\"] at every using <invoke>, but invoke '_invoke_0' in state 's' does not supply [\"id\"]. Add the missing <param>(s) to that invoke, or drop the placeholder / `instance_from:` from the binding.","actual":"_invoke_0"}"#,
             ),
             (
+                "mesh/topology-open-machine-named-literally",
+                TopologyError::OpenMachineNamedLiterally {
+                    machine: "rooms".into(),
+                    state: "open".into(),
+                    target: TargetId::new("#phone").unwrap(),
+                    written: r##"<send target="#phone">"##.into(),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:22d614e5eaf3976b","code":"mesh/topology-open-machine-named-literally","stage":"mesh-topology","spec":"ADR 0113 D2","message":"state 'open' of machine 'rooms': `<send target=\"#phone\">` names machine 'phone', which runs as an open set of instances (`instances: open`), so the literal names none of them. Address an instance by the origin its event carried: `<send targetexpr=\"_event.origin\">`, or a data item that kept that origin (docs/adr/0113, D2)","actual":"#phone"}"##,
+            ),
+            (
                 "mesh/topology-subscription-source-unbound",
                 TopologyError::SubscriptionSourceUnbound {
                     machine: "brake".into(),
@@ -20528,6 +20577,15 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5ce07e1021118305","code":"mesh/codegen-durable-receipt-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.11","message":"machine 'calendar' declares `persistence: checkpoint` or a binding with `receipt: durable`, which the cpp Mesh core does not keep (SCE_MESH.md section 10.11). Generate this machine with `--lang rust`, whose host core keeps them, or remove them from deploy.yaml.","actual":"calendar"}"#,
+            ),
+            (
+                "mesh/codegen-open-instances-unsupported",
+                CodegenError::OpenInstancesUnsupported {
+                    machine: "phone".into(),
+                    backend: "cpp".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:22a3a69c390f9b20","code":"mesh/codegen-open-instances-unsupported","stage":"mesh-codegen","spec":"ADR 0113 D7","message":"machine 'phone' declares `instances: open`, an open set of instances, which the cpp Mesh core does not serve (docs/adr/0113, D7). Generate this deployment's machines with `--lang rust`, whose host core serves it, or remove `instances:` from deploy.yaml.","actual":"phone"}"#,
             ),
             (
                 "mesh/codegen-persistence-without-saved-state",
@@ -22069,6 +22127,7 @@ mod tests {
             | MeshDeployInvalidServerResponseDeadline
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
+            | MeshDeployInvalidInstances
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigInvalid
@@ -22196,6 +22255,7 @@ mod tests {
             | MeshTopologyEventBindingUnused
             | MeshTopologyOrderingCannotBeGuaranteed
             | MeshTopologyPoolParamNameMissing
+            | MeshTopologyOpenMachineNamedLiterally
             | MeshTopologyMachineLifetimeSubscriptionUnsupported
             | MeshCodegenTemplateRead
             | MeshCodegenTemplateRender
@@ -22205,6 +22265,7 @@ mod tests {
             | MeshCodegenCppRouterUnsupported
             | MeshCodegenKeyedPoolUnsupported
             | MeshCodegenDurableReceiptUnsupported
+            | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
@@ -22969,6 +23030,7 @@ mod tests {
                 | MeshDeployInvalidServerResponseDeadline
                 | MeshDeployInvalidOutboundBuffer
                 | MeshDeployInvalidSessions
+                | MeshDeployInvalidInstances
                 | MeshDeploySessionsKeyNotInRequest
                 | MeshDeployConfigMissing
                 | MeshDeployConfigUnknown
@@ -23072,6 +23134,7 @@ mod tests {
                 | MeshTopologyBindingWithoutAuthenticator
                 | MeshTopologyEventBindingUnused | MeshTopologyOrderingCannotBeGuaranteed
                 | MeshTopologyPoolParamNameMissing
+                | MeshTopologyOpenMachineNamedLiterally
                 | MeshTopologySubscriptionSourceUnbound
                 | MeshTopologyMachineLifetimeSubscriptionUnsupported
                 | MeshCodegenUnsupportedLanguage
@@ -23082,6 +23145,7 @@ mod tests {
                 | MeshCodegenCppRouterUnsupported
                 | MeshCodegenKeyedPoolUnsupported
                 | MeshCodegenDurableReceiptUnsupported
+                | MeshCodegenOpenInstancesUnsupported
                 | MeshCodegenPersistenceWithoutSavedState
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
@@ -24091,6 +24155,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeployInvalidServerResponseDeadline
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidSessions
+            | MeshDeployInvalidInstances
             | MeshDeploySessionsKeyNotInRequest
             | MeshDeployConfigMissing
             | MeshDeployConfigUnknown
@@ -24202,6 +24267,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshTopologyEventBindingUnused
             | MeshTopologyOrderingCannotBeGuaranteed
             | MeshTopologyPoolParamNameMissing
+            | MeshTopologyOpenMachineNamedLiterally
             | MeshTopologySubscriptionSourceUnbound
             | MeshTopologyMachineLifetimeSubscriptionUnsupported
             | MeshCodegenUnsupportedLanguage
@@ -24214,6 +24280,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenCppRouterUnsupported
             | MeshCodegenKeyedPoolUnsupported
             | MeshCodegenDurableReceiptUnsupported
+            | MeshCodegenOpenInstancesUnsupported
             | MeshCodegenPersistenceWithoutSavedState
             | MeshIo
             | ForgeSourceHashMismatch

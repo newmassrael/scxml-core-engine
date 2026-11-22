@@ -1222,6 +1222,7 @@ references against a real document and drift silently.
 | `mesh/codegen-event-name-collision` | `mesh-codegen` | no |  |
 | `mesh/codegen-host-core-unsupported` | `mesh-codegen` | no | SCE Mesh §19 |
 | `mesh/codegen-keyed-pool-unsupported` | `mesh-codegen` | no | SCE Mesh §14.4 |
+| `mesh/codegen-open-instances-unsupported` | `mesh-codegen` | no | ADR 0113 D7 |
 | `mesh/codegen-persistence-without-saved-state` | `mesh-codegen` | no | SCE Mesh §10.11 |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | `mesh-codegen` | no |  |
 | `mesh/codegen-template-read` | `mesh-codegen` | no |  |
@@ -1247,6 +1248,7 @@ references against a real document and drift silently.
 | `mesh/deploy-invalid-custom-tcp-socket` | `mesh-deploy` | no | SCE Mesh §16.8.3 |
 | `mesh/deploy-invalid-dds-qos` | `mesh-deploy` | no | SCE Mesh §8.2 |
 | `mesh/deploy-invalid-dedup-window` | `mesh-deploy` | no | SCE Mesh §10.5 |
+| `mesh/deploy-invalid-instances` | `mesh-deploy` | no | ADR 0113 D7 |
 | `mesh/deploy-invalid-liveliness` | `mesh-deploy` | no | SCE Mesh §16.7 |
 | `mesh/deploy-invalid-ordering-timings` | `mesh-deploy` | no | SCE Mesh §10.6 |
 | `mesh/deploy-invalid-outbound-buffer` | `mesh-deploy` | no | SCE Mesh §10.10 |
@@ -1323,6 +1325,7 @@ references against a real document and drift silently.
 | `mesh/topology-machine-lifetime-subscription-unsupported` | `mesh-topology` | no | SCE Mesh §13 |
 | `mesh/topology-machine-not-found` | `mesh-topology` | `replace_one_of` | SCE Mesh §14 |
 | `mesh/topology-missing-binding-field` | `mesh-topology` | `add_attribute` | SCE Mesh §14 |
+| `mesh/topology-open-machine-named-literally` | `mesh-topology` | no | ADR 0113 D2 |
 | `mesh/topology-ordering-cannot-be-guaranteed` | `mesh-topology` | no | SCE Mesh §10.6 |
 | `mesh/topology-pattern-capability-violation` | `mesh-topology` | no | SCE Mesh §9 |
 | `mesh/topology-pool-param-name-missing` | `mesh-topology` | no | SCE Mesh §14.4 |
