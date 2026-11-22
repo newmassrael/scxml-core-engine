@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "43d74f3",
+  "embed_version": "6db9236",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 799,
@@ -3593,13 +3593,13 @@
       "header": "saved/SavedValues.h",
       "kind": "function",
       "name": "SCE::Saved::savedBoundedBytes",
-      "signature": " SCE::Saved::savedBoundedBytes(lambda at /tmp/tmp.GHvmfmeyLs.embed/include/saved/SavedValues.h:400:9) (std::size_t)"
+      "signature": " SCE::Saved::savedBoundedBytes(lambda at saved/SavedValues.h:400:9) (std::size_t)"
     },
     {
       "header": "saved/SavedValues.h",
       "kind": "function",
       "name": "SCE::Saved::savedBoundedString",
-      "signature": " SCE::Saved::savedBoundedString(lambda at /tmp/tmp.GHvmfmeyLs.embed/include/saved/SavedValues.h:391:12) (std::size_t)"
+      "signature": " SCE::Saved::savedBoundedString(lambda at saved/SavedValues.h:391:12) (std::size_t)"
     },
     {
       "header": "saved/SavedValues.h",

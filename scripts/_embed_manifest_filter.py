@@ -135,6 +135,23 @@ def _extract_typedef(node, qualified_name, header):
     }
 
 
+def _portable(value, include_dir):
+    """`value` with the include dir taken off every path clang wrote into it.
+
+    clang names a lambda's type by where it is written, `(lambda at
+    <absolute path>:<line>:<column>)`, and the include dir is a scratch copy
+    whose absolute path differs on every emit, so a signature that carries
+    one would make the manifest a function of where it was emitted.
+    """
+    if isinstance(value, str):
+        return value.replace(include_dir, "")
+    if isinstance(value, list):
+        return [_portable(v, include_dir) for v in value]
+    if isinstance(value, dict):
+        return {k: _portable(v, include_dir) for k, v in value.items()}
+    return value
+
+
 def _walk(node, include_dir, path, current_file, out):
     loc = node.get("loc") or {}
     if "file" in loc:
@@ -173,6 +190,9 @@ def _walk(node, include_dir, path, current_file, out):
                     emitted = _extract_function(child, qn + "<T>", rel_header)
                     break
         if emitted is not None:
+            emitted = _portable(emitted, include_dir)
+            if "members" in emitted:
+                emitted["members"] = sorted(set(emitted["members"]))
             out.write(json.dumps(emitted, sort_keys=True, ensure_ascii=False) + "\n")
         return
 
