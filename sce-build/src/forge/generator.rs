@@ -878,6 +878,13 @@ pub struct ImportContext {
     /// import.
     #[serde(skip)]
     pub enum_type: Option<crate::forge::value_type::ScopedEnum>,
+    /// For an imported `sce:kind="enum"`: the identity of its document
+    /// ([`crate::forge::stdlib::identity`]). An enum is its document, whatever
+    /// alias a document imports it under (SCE_FORGE.md §4.12), so a field of
+    /// another document is told to be of it by this ([`enum_named_here`]). `None`
+    /// for every other import.
+    #[serde(skip)]
+    pub enum_identity: Option<String>,
     /// For an imported `sce:kind="enum"`: the revision of the enum
     /// (`sce:revision`, 1 when it declares none), which is the revision of a
     /// union whose tag is a value of it (docs/adr/0092, section 8.1). `None`
@@ -1753,6 +1760,7 @@ fn resolve_single_import(
         record: None,
         record_type: None,
         record_composed: None,
+        enum_identity: None,
         enum_slots: None,
         test_template: None,
         test_component: None,
@@ -42535,7 +42543,8 @@ fn collect_bc_foreach_member_types(
                                     continue;
                                 }
                                 let path = format!("{item}.{fname}");
-                                out.types.push((path.clone(), fty.clone()));
+                                out.types
+                                    .push((path.clone(), enum_named_here(fty, imports)));
                                 if by_accessor {
                                     out.accessors.push(MemberAccessor {
                                         path: path.clone(),
@@ -42583,6 +42592,27 @@ fn collect_bc_foreach_member_types(
             | AlgorithmStmt::Require { .. } => {}
         }
     }
+}
+
+/// The type `ty` of a field of a collection's element, whose enum is told by its
+/// document's identity ([`crate::ElementFieldSchema`]), as the algorithm that
+/// imports `imports` names it: by the alias it imports that document under, or,
+/// where it imports none, by the identity, which no alias equals.
+fn enum_named_here(ty: &SceType, imports: &[ImportContext]) -> SceType {
+    let SceType::Enum(reference) = ty else {
+        return ty.clone();
+    };
+    imports
+        .iter()
+        .find(|i| i.enum_identity.as_deref() == Some(reference.alias.as_str()))
+        .map_or_else(
+            || ty.clone(),
+            |i| {
+                SceType::Enum(crate::forge::model::EnumRef {
+                    alias: i.alias.clone(),
+                })
+            },
+        )
 }
 
 /// A buffer local of an algorithm body — `bytes` or `list<T>` — as the
@@ -52003,6 +52033,7 @@ mod tests {
             record: None,
             record_type: None,
             record_composed: None,
+            enum_identity: None,
             enum_slots: None,
             test_template: None,
             test_component: None,
@@ -52938,6 +52969,7 @@ mod tests {
                 record: None,
                 record_type: None,
                 record_composed: None,
+                enum_identity: None,
                 enum_slots: None,
                 test_template: None,
                 test_component: None,
@@ -53016,6 +53048,7 @@ mod tests {
                 record: None,
                 record_type: None,
                 record_composed: None,
+                enum_identity: None,
                 enum_slots: None,
                 test_template: None,
                 test_component: None,
