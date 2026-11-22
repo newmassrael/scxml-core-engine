@@ -30,6 +30,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use sce_build::forge::bound_spelling;
 use sce_build::forge::model::{CodecEncoding, ForgeDocument};
 use sce_build::forge::parser::parse_forge;
 use sce_build::DocumentLabel;
@@ -513,9 +514,11 @@ fn from_the_root(relative: &str) -> String {
 }
 
 /// The repository's own codec documents were moved to format 2 by hand, the rule
-/// applied entry by entry; the tool's rewrite of what they were is what they are.
-/// A fixture whose conformance cases hold the bytes it generates is therefore the
-/// document the rewrite of its format 1 says, and those bytes are not changed.
+/// applied entry by entry, and later had every bound an attribute stated moved
+/// into its type (docs/adr/0086, section 1.3); the tool's rewrite of what they
+/// were, followed by `bound-spelling`'s, is what they are. A fixture whose
+/// conformance cases hold the bytes it generates is therefore the document those
+/// rewrites of its format 1 say, and those bytes are not changed.
 #[test]
 fn the_rewrite_of_a_documents_format_1_is_the_document_the_repository_holds() {
     for (format_1, relative) in [
@@ -528,7 +531,10 @@ fn the_rewrite_of_a_documents_format_1_is_the_document_the_repository_holds() {
             "tests/forge/resources/codec_content_line_records.scxml",
         ),
     ] {
-        assert_eq!(printed(format_1), from_the_root(relative), "{relative}");
+        let in_format_2 = printed(format_1);
+        let bounds_in_types = bound_spelling::rewritten_document(&in_format_2, relative)
+            .unwrap_or_else(|refusal| panic!("{relative}: bound-spelling refused: {refusal}"));
+        assert_eq!(bounds_in_types, from_the_root(relative), "{relative}");
     }
 }
 
