@@ -29,7 +29,9 @@
 //!   ([`JournalPage::horizon`]), the position at or below which nothing can still become visible,
 //!   and no read answers an entry above it. A store that writes one transaction at a time has its
 //!   last position as its horizon; a store that cannot tell its horizon is no store of this
-//!   contract.
+//!   contract. A store ends the transaction of a writer that is gone, as a database does the one of
+//!   a connection that closed: one left open keeps the horizon below it, and nothing past it would
+//!   ever be read.
 //! * **Two times.** An entry's recorded moment is the store's clock as the write gave it
 //!   ([`Write::now_ms`]), never below that of the entry committed before it, so it never goes back
 //!   when the clock does. Its **valid time**, when its schema marks one, is when the fact holds in
