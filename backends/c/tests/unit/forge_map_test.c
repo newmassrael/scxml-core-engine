@@ -686,7 +686,7 @@ static void a_map_of_maps_writes_its_inner_maps_in_place(void) {
 }
 
 // docs/adr/0108, D12 items 4 and 7: a put of no value puts the empty map, a map of maps taken
-// whole keys each inner map from its own seed, and the absent value two levels down is
+// whole (`prefix##_assign`) keys each inner map from its own seed, and the absent value two levels down is
 // started under a seed drawn once per depth.
 static void a_map_of_maps_is_started_and_taken_whole_at_every_depth(void) {
     static region_map_t regions;
@@ -694,9 +694,9 @@ static void a_map_of_maps_is_started_and_taken_whole_at_every_depth(void) {
     static world_map_t world;
     static peers_map_t peers;
     sce_map_put_outcome_t outcome = SCE_MAP_PUT_FULL;
-    const uint16_t one = 1u;
     region_map_start(&regions, SEED);
-    expect(sce_map_put(&regions, &one, sizeof(one), NULL, 0u) == SCE_MAP_PUT_INSERTED, "a put of no value inserts");
+    expect(region_map_put_entry(&regions, 1u, &outcome) != NULL && outcome == SCE_MAP_PUT_INSERTED,
+           "a put of no value inserts");
     face_map_t *faces = faces_of(&regions, 1u);
     expect(faces != NULL && faces->core.layout == face_map_layout() && sce_map_count(faces) == 0u,
            "a put of no value holds the empty map");
@@ -705,7 +705,7 @@ static void a_map_of_maps_is_started_and_taken_whole_at_every_depth(void) {
     }
     expect(face_map_put(faces, 7u, 70u) == SCE_MAP_PUT_INSERTED, "face 7 is put");
     region_map_start(&copy, OTHER_SEED);
-    sce_map_assign(&copy, &regions);
+    region_map_assign(&copy, &regions);
     const face_map_t *copied = faces_of(&copy, 1u);
     expect(copied != NULL && copied != faces && face_holds(copied, 7u, 70u), "the copy holds region 1's faces");
     expect(copied != NULL && same_seed(copied->core.seed, sce_map_seed_of_inner(OTHER_SEED)),
