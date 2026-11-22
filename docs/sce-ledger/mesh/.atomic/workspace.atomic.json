@@ -3846,6 +3846,10 @@
         {
           "file": "sce/src/mesh/HttpsClient.cpp",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client_core.rs",
+          "kind": "implements"
         }
       ]
     },
@@ -3864,15 +3868,15 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/mesh/src/https/client.rs",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/mesh/tests/https_conformance.rs",
           "kind": "verifies"
         },
         {
           "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client_core.rs",
           "kind": "implements"
         }
       ]
@@ -3902,6 +3906,10 @@
         {
           "file": "sce/src/mesh/HttpsClient.cpp",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client_core.rs",
+          "kind": "implements"
         }
       ]
     },
@@ -3911,10 +3919,6 @@
       "parent_section": "mesh-22",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "backends/rust/mesh/src/https/client.rs",
-          "kind": "implements"
-        },
         {
           "file": "backends/rust/mesh/src/https/server.rs",
           "kind": "implements"
@@ -3929,6 +3933,10 @@
         },
         {
           "file": "sce/src/mesh/HttpsClient.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client_core.rs",
           "kind": "implements"
         }
       ]
@@ -4094,6 +4102,10 @@
         {
           "file": "tests/mesh/HttpsSignatureTest.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/https/client_core.rs",
+          "kind": "implements"
         }
       ]
     },
@@ -5798,6 +5810,18 @@
       "target_kind": "section",
       "target_id": "mesh-22.9",
       "reason": "sce-build/tests is not a path this ledger scans, so the file's cite cannot back a binding; the three signature tests carry the verifies evidence"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-22.2",
+      "reason": "The client's decisions moved to client_core.rs, which carries this section's cites"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-22.4",
+      "reason": "The client's decisions moved to client_core.rs, which carries this section's cites"
     }
   ],
   "frames": {},

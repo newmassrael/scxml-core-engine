@@ -10,7 +10,9 @@
 //! * The semantics, which are this module and [`client`] and [`server`]: the path, the framing
 //!   (a CBOR sequence of envelopes), the mailbox and its acknowledgement, the hold, readiness, the
 //!   status codes, the authenticators and the message signatures ([`signature`]). They are the
-//!   same in every language, and so every adapter gets them.
+//!   same in every language, and so every adapter gets them. The client's decisions are a state
+//!   machine of their own, `client_core`, which moves nothing, and [`client`] is the threads that
+//!   move what it decides.
 //! * The port, [`HttpsTransport`]: one exchange at the level of HTTP semantics, a POST with its
 //!   headers and body and a bound on the wait, answered with a response or a failure of a named
 //!   kind. The client reaches the network through it and through nothing else.
@@ -28,6 +30,7 @@
 
 pub mod adapter;
 pub mod client;
+mod client_core;
 #[cfg(feature = "https-conformance")]
 pub mod conformance;
 pub mod rate;
@@ -324,12 +327,37 @@ pub fn join_sequence<'a>(envelopes: impl IntoIterator<Item = &'a [u8]>) -> Vec<u
 /// the IMF-fixdate form (RFC 9110, sections 10.2.3 and 5.6.7). A date already past asks for no
 /// wait. A value of neither form is `None`.
 pub fn retry_after(value: &str, now: SystemTime) -> Option<Duration> {
+    Some(match read_retry_after(value)? {
+        RetryAfter::Delay(delay) => delay,
+        RetryAfter::Date(moment) => until(moment, now),
+    })
+}
+
+/// What a `Retry-After` value asks, read without a clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RetryAfter {
+    /// To wait this long.
+    Delay(Duration),
+    /// To wait for this moment, since the Unix epoch.
+    Date(Duration),
+}
+
+/// The two forms [`retry_after`] reads; a value of neither is `None`.
+fn read_retry_after(value: &str) -> Option<RetryAfter> {
     let value = value.trim();
     if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
-        return value.parse::<u64>().ok().map(Duration::from_secs);
+        let seconds = value.parse::<u64>().ok()?;
+        return Some(RetryAfter::Delay(Duration::from_secs(seconds)));
     }
-    let at = UNIX_EPOCH + Duration::from_secs(imf_fixdate(value)?);
-    Some(at.duration_since(now).unwrap_or(Duration::ZERO))
+    let seconds = imf_fixdate(value)?;
+    Some(RetryAfter::Date(Duration::from_secs(seconds)))
+}
+
+/// How long it is at `now` until `moment`, since the Unix epoch; none when it is past.
+fn until(moment: Duration, now: SystemTime) -> Duration {
+    (UNIX_EPOCH + moment)
+        .duration_since(now)
+        .unwrap_or(Duration::ZERO)
 }
 
 /// Seconds since the Unix epoch of an IMF-fixdate, `Sun, 06 Nov 1994 08:49:37 GMT`.
