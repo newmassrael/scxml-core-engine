@@ -1269,11 +1269,6 @@
         },
         {
           "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
-          "symbol": "CodecVariantDefaultMarkerDefault",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
           "symbol": "CodecVariantDefaultMarkerVariant",
           "kind": "references"
         },
@@ -1712,6 +1707,11 @@
           "file": "sce-build/src/cli/mod.rs",
           "symbol": "ListFixturesArgs",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
+          "symbol": "CodecVariantDefaultMarkerVariantDefault",
+          "kind": "references"
         }
       ]
     },
@@ -7896,6 +7896,12 @@
       "target_kind": "section",
       "target_id": "synth-6.2.6",
       "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "7ebd7aa4a73 regenerated the Go codec printer output, which renamed the symbol to CodecVariantDefaultMarkerVariantDefault"
     }
   ],
   "frames": {},
