@@ -69,6 +69,9 @@ pub mod pool;
 pub mod reconnect;
 pub mod router;
 pub mod rpc;
+pub mod served;
+#[cfg(feature = "conformance")]
+pub mod session_conformance;
 pub mod signal;
 #[cfg(test)]
 mod testing;
