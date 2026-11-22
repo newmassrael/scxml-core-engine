@@ -1821,7 +1821,7 @@ fn a_map_of_a_nested_value_is_lowered_by_the_interpreter_and_refused_by_rust_and
                 "SceStatic.mapUpdate(samples, ",
                 "function (sceAt0) { return SceStatic.append(sceAt0, 3, ",
                 "function (sceAt0) { return []; }",
-                "array=\"SceStatic.mapGet(samples, ",
+                "array=\"SceStatic.out(SceStatic.mapGet(samples, ",
             ][..],
         ),
         (
@@ -1830,7 +1830,7 @@ fn a_map_of_a_nested_value_is_lowered_by_the_interpreter_and_refused_by_rust_and
                 "SceStatic.mapUpdate(rows, ",
                 "SceStatic.set(sceAt0, &apos;tags&apos;, SceStatic.append(sceAt0.tags, 2, ",
                 "SceStatic.set(sceAt0, &apos;tags&apos;, [])",
-                "array=\"SceStatic.mapGet(rows, ",
+                "array=\"SceStatic.out(SceStatic.mapGet(rows, ",
             ][..],
         ),
     ] {
