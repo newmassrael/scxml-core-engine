@@ -20,8 +20,9 @@
 (* TLC must then find a violation.                                         *)
 (*                                                                         *)
 (* Taken as given:                                                         *)
-(*   Authentication proves which instance speaks (a token of the server's  *)
-(*     issuer).                                                            *)
+(*   Authentication proves which instance speaks.                          *)
+(*   What a party signed cannot be changed or made by another; what a      *)
+(*     message carries that is not signed can be (the Sign parts, D4).     *)
 (*   An incarnation number is drawn once and never given twice, across a   *)
 (*     restart.                                                            *)
 (*   A record, a membership and the mark of a commit are durable once      *)
@@ -43,7 +44,12 @@ CONSTANTS NInst, NSess, MaxK,         \* instances, sessions, requests of an ins
           Recheck,                    \* a session judges incarnation and mark again as it runs
           GcDurable,                  \* records are dropped by the durable mark
           Evict,                      \* a live member's records may be dropped
-          SameOffer                   \* a join repeated is offered the same incarnation
+          SameOffer,                  \* a join repeated is offered the same incarnation
+          SignInc,                    \* a request's incarnation is signed
+          SignMark,                   \* a request's low-water mark is signed
+          SignOffer,                  \* the incarnation an offer names is signed
+          SignFence,                  \* the answer that fences is signed
+          MaxForge                    \* messages an intermediary changes or makes
 
 Inst == 1..NInst
 Sess == 0..(NSess - 1)
@@ -52,13 +58,13 @@ Target(k) == k % NSess
 
 VARIABLES member, offer, ofor, drawn, low, lowD, rec, inbox, effects,   \* the server
           cinc, cjn, cwait, cnext, slot, status, got,             \* the instances
-          net, nCli, nSrv, nExp
+          net, nCli, nSrv, nExp, nForge
 
 srv  == <<member, offer, ofor, drawn, low, lowD, rec, inbox, effects>>
 cli  == <<cinc, cjn, cwait, cnext, slot, status, got>>
-cnt  == <<nCli, nSrv, nExp>>
+cnt  == <<nCli, nSrv, nExp, nForge>>
 vars == <<member, offer, ofor, drawn, low, lowD, rec, inbox, effects,
-          cinc, cjn, cwait, cnext, slot, status, got, net, nCli, nSrv, nExp>>
+          cinc, cjn, cwait, cnext, slot, status, got, net, nCli, nSrv, nExp, nForge>>
 
 Msg(kind, i, inc, seq, k, mark, jn) ==
     [kind |-> kind, i |-> i, inc |-> inc, seq |-> seq, k |-> k, mark |-> mark, jn |-> jn]
@@ -75,7 +81,7 @@ Init ==
     /\ cnext = [i \in Inst |-> 1] /\ slot = [i \in Inst |-> [q \in Ks |-> 0]]
     /\ status = [i \in Inst |-> [k \in Ks |-> "new"]]
     /\ got = [i \in Inst |-> [k \in Ks |-> 0]]
-    /\ net = {} /\ nCli = 0 /\ nSrv = 0 /\ nExp = 0
+    /\ net = {} /\ nCli = 0 /\ nSrv = 0 /\ nExp = 0 /\ nForge = 0
 
 -----------------------------------------------------------------------------
 \* The instances.
@@ -141,7 +147,7 @@ CCrash(i) ==
     /\ nCli < MaxCliCrash /\ nCli' = nCli + 1
     /\ status' = [status EXCEPT ![i] = Unknown(i)]
     /\ cinc' = [cinc EXCEPT ![i] = 0] /\ cwait' = [cwait EXCEPT ![i] = FALSE]
-    /\ UNCHANGED <<srv, cjn, cnext, slot, got, net, nSrv, nExp>>
+    /\ UNCHANGED <<srv, cjn, cnext, slot, got, net, nSrv, nExp, nForge>>
 
 -----------------------------------------------------------------------------
 \* The server. What is taken from the network stays in it when messages repeat.
@@ -197,7 +203,8 @@ SCommitMark(i) ==
 
 Of(r, m) == r.i = m.i /\ r.inc = m.inc /\ r.seq = m.seq
 
-\* A session runs a request: the effect and its record are one write.
+\* A session runs a request: the effect and its record are one write, and that write is refused when
+\* the store no longer holds the incarnation, which is the judgement `gone` makes (D5).
 SRun(s, m) ==
     /\ m \in inbox[s]
     /\ inbox' = [inbox EXCEPT ![s] = @ \ {m}]
@@ -235,12 +242,32 @@ SExpire(i) ==
     /\ nExp < MaxExpire /\ nExp' = nExp + 1
     /\ \/ member[i] # 0 /\ member' = [member EXCEPT ![i] = 0] /\ UNCHANGED offer
        \/ offer[i] # 0 /\ offer' = [offer EXCEPT ![i] = 0] /\ UNCHANGED member
-    /\ UNCHANGED <<ofor, drawn, low, lowD, rec, inbox, effects, cli, net, nCli, nSrv>>
+    /\ UNCHANGED <<ofor, drawn, low, lowD, rec, inbox, effects, cli, net, nCli, nSrv, nForge>>
 
 SCrash ==
     /\ nSrv < MaxSrvCrash /\ nSrv' = nSrv + 1
     /\ low' = lowD /\ inbox' = [s \in Sess |-> {}]
-    /\ UNCHANGED <<member, offer, ofor, drawn, lowD, rec, effects, cli, net, nCli, nExp>>
+    /\ UNCHANGED <<member, offer, ofor, drawn, lowD, rec, effects, cli, net, nCli, nExp, nForge>>
+
+-----------------------------------------------------------------------------
+\* An intermediary that reads an exchange changes what of it is not signed, or makes an answer that
+\* nobody signed. It holds no key, so with every Sign part in place it can do nothing but what the
+\* network does.
+Incs == 1..MaxInc
+
+AForge ==
+    /\ nForge < MaxForge /\ nForge' = nForge + 1
+    /\ \E forged \in
+           (IF SignInc THEN {} ELSE
+              {[m EXCEPT !.inc = c] : m \in {x \in net : x.kind \in {"req", "ack"}}, c \in Incs})
+           \cup (IF SignMark THEN {} ELSE
+              {[m EXCEPT !.mark = k] : m \in {x \in net : x.kind \in {"req", "ack"}}, k \in 1..(MaxK + 1)})
+           \cup (IF SignOffer THEN {} ELSE
+              {[m EXCEPT !.inc = c] : m \in {x \in net : x.kind = "offer"}, c \in Incs})
+           \cup (IF SignFence THEN {} ELSE
+              {Msg("fenced", i, c, 0, 0, 0, 0) : i \in Inst, c \in Incs}) :
+         net' = net \cup {forged}
+    /\ UNCHANGED <<srv, cli, nCli, nSrv, nExp>>
 
 -----------------------------------------------------------------------------
 Next ==
@@ -249,6 +276,7 @@ Next ==
     \/ \E m \in net : COffer(m) \/ CReply(m) \/ CFenced(m) \/ SJoin(m) \/ SEdge(m)
     \/ \E s \in Sess : SDrop(s) \/ SEvict(s) \/ \E m \in inbox[s] : SRun(s, m)
     \/ SCrash
+    \/ AForge
 
 Spec == Init /\ [][Next]_vars
 

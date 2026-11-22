@@ -219,7 +219,11 @@
         "Recheck": "TRUE",
         "GcDurable": "TRUE",
         "Evict": "FALSE",
-        "SameOffer": "TRUE"
+        "SameOffer": "TRUE",
+        "SignInc": "TRUE",
+        "SignMark": "TRUE",
+        "SignOffer": "TRUE",
+        "SignFence": "TRUE"
       },
       "runs": [
         {
@@ -299,6 +303,35 @@
           "expect": "violates",
           "invariant": "AtMostOnce",
           "without": "Evict",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_signed_incarnation.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "SignInc",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_signed_mark.cfg",
+          "expect": "violates",
+          "property": "Ends",
+          "without": "SignMark",
+          "promise": "kept",
+          "why": "a mark raised past a request keeps it from being run or answered; nothing false is told, and it never ends"
+        },
+        {
+          "config": "OpenInstances_without_signed_offer.cfg",
+          "expect": "violates",
+          "invariant": "Undisturbed",
+          "without": "SignOffer",
+          "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_signed_fence.cfg",
+          "expect": "violates",
+          "invariant": "Undisturbed",
+          "without": "SignFence",
           "promise": "broken"
         }
       ],
@@ -414,6 +447,225 @@
       ]
     },
     {
+      "module": "Principals",
+      "decision": "docs/adr/0116",
+      "parts": {
+        "BindInst": "TRUE",
+        "BindInc": "TRUE",
+        "OnePerInc": "TRUE",
+        "Condition": "TRUE",
+        "Durable": "TRUE",
+        "Quoted": "TRUE",
+        "Told": "TRUE"
+      },
+      "runs": [
+        {
+          "config": "Principals.cfg",
+          "expect": "holds",
+          "states": 8721642
+        },
+        {
+          "config": "Principals_live.cfg",
+          "expect": "holds",
+          "states": 18622
+        },
+        {
+          "config": "Principals_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Enters",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what lets a person in; the promise of the service is safety and needs none"
+        },
+        {
+          "config": "Principals_live_without_fence.cfg",
+          "expect": "violates",
+          "property": "Enters",
+          "without": "Told",
+          "promise": "kept",
+          "why": "an instance that is not told waits for good; nothing false is told of a person"
+        },
+        {
+          "config": "Principals_without_bound_instance.cfg",
+          "expect": "violates",
+          "invariant": "OnlyProved",
+          "without": "BindInst",
+          "promise": "broken"
+        },
+        {
+          "config": "Principals_without_bound_incarnation.cfg",
+          "expect": "violates",
+          "invariant": "OnlyProved",
+          "without": "BindInc",
+          "promise": "broken"
+        },
+        {
+          "config": "Principals_without_one_person.cfg",
+          "expect": "violates",
+          "invariant": "RightReader",
+          "without": "OnePerInc",
+          "promise": "broken"
+        },
+        {
+          "config": "Principals_without_condition.cfg",
+          "expect": "violates",
+          "property": "NothingAfterEnd",
+          "without": "Condition",
+          "promise": "broken"
+        },
+        {
+          "config": "Principals_without_durable_end.cfg",
+          "expect": "violates",
+          "property": "NothingAfterEnd",
+          "without": "Durable",
+          "promise": "broken"
+        },
+        {
+          "config": "Principals_without_quote.cfg",
+          "expect": "violates",
+          "invariant": "OnlyProved",
+          "without": "Quoted",
+          "promise": "broken"
+        }
+      ],
+      "promise": "Refines",
+      "refines": "PrincipalService",
+      "progress": [
+        "Enters"
+      ]
+    },
+    {
+      "module": "BrowserNode",
+      "decision": "docs/adr/0117",
+      "parts": {
+        "JoinInStore": "TRUE",
+        "MatchInStore": "TRUE",
+        "NumberInStore": "TRUE",
+        "StoreFirst": "TRUE",
+        "Fence": "TRUE",
+        "ClearTold": "TRUE",
+        "DeleteOld": "TRUE"
+      },
+      "runs": [
+        {
+          "config": "BrowserNode.cfg",
+          "expect": "holds",
+          "states": 268075
+        },
+        {
+          "config": "BrowserNode_two_requests.cfg",
+          "expect": "holds",
+          "states": 216143
+        },
+        {
+          "config": "BrowserNode_live.cfg",
+          "expect": "holds",
+          "states": 66226
+        },
+        {
+          "config": "BrowserNode_live_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Ends",
+          "against": "the fairness of LiveSpec",
+          "promise": "kept",
+          "why": "fairness is what makes a request end; the promise of the service is safety and needs none"
+        },
+        {
+          "config": "BrowserNode_without_match_in_store.cfg",
+          "expect": "violates",
+          "invariant": "Answered",
+          "without": "MatchInStore",
+          "promise": "broken"
+        },
+        {
+          "config": "BrowserNode_without_join_in_store.cfg",
+          "expect": "violates",
+          "invariant": "Undisturbed",
+          "without": "JoinInStore",
+          "promise": "broken"
+        },
+        {
+          "config": "BrowserNode_without_number_in_store.cfg",
+          "expect": "violates",
+          "invariant": "Answered",
+          "without": "NumberInStore",
+          "promise": "broken"
+        },
+        {
+          "config": "BrowserNode_without_store_first.cfg",
+          "expect": "violates",
+          "invariant": "Kept",
+          "without": "StoreFirst",
+          "promise": "kept",
+          "why": "a request told accepted and lost is never run or answered; nothing false is told, and it never ends"
+        },
+        {
+          "config": "BrowserNode_without_fence.cfg",
+          "expect": "violates",
+          "invariant": "AtMostOnce",
+          "without": "Fence",
+          "promise": "broken"
+        },
+        {
+          "config": "BrowserNode_without_clearing_told.cfg",
+          "expect": "violates",
+          "property": "Ends",
+          "without": "ClearTold",
+          "promise": "kept",
+          "why": "a request that is not told unknown is left waiting; nothing false is told, and it never ends"
+        },
+        {
+          "config": "BrowserNode_without_deletion.cfg",
+          "expect": "violates",
+          "invariant": "RightReader",
+          "without": "DeleteOld",
+          "promise": "kept",
+          "why": "the service is of requests and says nothing of who reads; what is read is the promise of PrincipalService (ADR 0116)"
+        }
+      ],
+      "promise": "Refines",
+      "refines": "AtMostOnceService",
+      "progress": [
+        "Ends"
+      ]
+    },
+    {
+      "module": "Freshness",
+      "decision": "docs/adr/0117",
+      "parts": {
+        "Step": "TRUE",
+        "Tell": "TRUE"
+      },
+      "runs": [
+        {
+          "config": "Freshness.cfg",
+          "expect": "holds",
+          "states": 3482
+        },
+        {
+          "config": "Freshness_without_fairness.cfg",
+          "expect": "violates",
+          "property": "Taken",
+          "against": "the fairness of LiveSpec"
+        },
+        {
+          "config": "Freshness_without_step.cfg",
+          "expect": "violates",
+          "invariant": "Bounded",
+          "without": "Step"
+        },
+        {
+          "config": "Freshness_without_telling.cfg",
+          "expect": "violates",
+          "property": "Taken",
+          "without": "Tell"
+        }
+      ],
+      "progress": [
+        "Taken"
+      ]
+    },
+    {
       "module": "AtMostOnceService",
       "decision": "docs/adr/0115",
       "runs": [],
@@ -421,6 +673,12 @@
     },
     {
       "module": "JournalService",
+      "decision": "docs/adr/0115",
+      "runs": [],
+      "abstract": true
+    },
+    {
+      "module": "PrincipalService",
       "decision": "docs/adr/0115",
       "runs": [],
       "abstract": true
