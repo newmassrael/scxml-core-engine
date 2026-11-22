@@ -3368,7 +3368,10 @@ pub trait StaticTarget {
     /// by (docs/adr/0108, D12 rule 6); `failed`, where the value is read
     /// through a key and so can fail, the statement that raises
     /// `error.execution` for it, for a target that raises it itself: the
-    /// variable is then left as it was.
+    /// variable is then left as it was. A copy that can fail is received as
+    /// every statement that can fail is ([`Self::receiving_write`]), so a key
+    /// that is absent ends the block before the variable is written
+    /// (§scxml-4.9).
     fn map_assign(
         &self,
         location: &str,
@@ -3376,10 +3379,14 @@ pub trait StaticTarget {
         from: &crate::forge::model::AlgorithmValueType,
         to: &crate::forge::model::AlgorithmValueType,
         _held: &str,
-        _failed: Option<&str>,
+        failed: Option<&str>,
     ) -> Option<String> {
-        self.map_copy(value, from, to)
-            .map(|copy| self.assign(location, &copy))
+        let copy = self.map_copy(value, from, to)?;
+        let write = |copied: &str| self.assign(location, copied);
+        Some(match failed {
+            Some(failed) => self.receiving_write(&write, &copy, InferredType::Unknown, failed),
+            None => write(&copy),
+        })
     }
     /// The statement an `<assign>` of the map an imported algorithm returns
     /// lowers to ([`ReturnedMap`], docs/adr/0108, D5), and whether it answers
@@ -7259,12 +7266,22 @@ impl StaticTarget for RustTarget {
             bound.push(format!("&{index}"));
         }
         prologue.push(format!("let _ = ({},);", bound.join(", ")));
+        // A list, a map or a set the map holds, or a record that holds one,
+        // lent where the map holds it, is bound as a reference to it, and the
+        // body reads it through that reference as the value it is, as C11
+        // reads it through its address (docs/adr/0108, D12 rule 8): a read of
+        // it lends the value, never a reference to the reference.
+        let value = if lent && walk.item_in_place && !walk.set && !walk.item_copied {
+            format!("(*{})", walk.item)
+        } else {
+            walk.item.to_string()
+        };
         Some(MapLoop {
             head: format!("{opening} while let Some({at}) = {cursor}"),
             prologue: prologue.join(" "),
             first: format!("{opening} if let Some({at}) = {cursor}"),
             entry: MapEntry {
-                value: walk.item.to_string(),
+                value,
                 key: walk
                     .key
                     .map_or_else(|| walk.item.to_string(), |(key, _)| key.to_string()),

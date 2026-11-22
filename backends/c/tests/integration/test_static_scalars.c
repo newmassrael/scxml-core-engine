@@ -3744,7 +3744,9 @@ static int a_payload_enum_field_is_written_as_the_name_its_enum_declares(void) {
 //     map whose value is a map, a list, or a record that holds a list, the value put empty or whole
 //     and written, read and walked through the place `m[k]` or `m[k].field` where the map holds
 //     it; a full inner map answers its own outcome, a full list raises error.execution, and a write
-//     through a key that is absent raises error.execution and creates nothing.
+//     through a key that is absent raises error.execution and creates nothing. An inner map is
+//     taken whole into a variable of its type, which a key that is absent fails before the variable
+//     is written, and a walk of the outer map asks has and len of each inner map it binds.
 //   * `linkstate_interest` (docs/adr/0108, D12): the table a router keeps by key expression and by
 //     peer, a map whose value is a map, the inner map taken out, written and put back whole, and the
 //     key expressions a purge empties kept in a list of texts (docs/adr/0086, section 7.3) and
@@ -3927,7 +3929,7 @@ int main(void) {
     bad |= static_set_scenario("static_set", 14);
     bad |= static_map_take_scenario("static_map_take", 12);
     bad |= static_map_returned_scenario("static_map_returned", 11);
-    bad |= static_map_nested_scenario("static_map_nested", 12);
+    bad |= static_map_nested_scenario("static_map_nested", 16);
     bad |= static_map_list_scenario("static_map_list", 9);
     bad |= static_map_record_list_scenario("static_map_record_list", 9);
     bad |= linkstate_interest_scenario("linkstate_interest", 15);

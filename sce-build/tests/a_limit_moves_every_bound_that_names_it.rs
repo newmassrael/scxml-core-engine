@@ -483,8 +483,9 @@ fn no_c11_frame_grows_with_a_map_bound() {
 /// list, each put empty, written through its place, read, walked and saved where the
 /// map holds the value, so the bound of the inner map and of the list is the machine's
 /// storage and never a frame's. Each statechart (`static_map_nested.scxml`,
-/// `static_map_list.scxml`), the bound of its map's value named, is built at that bound
-/// and at 64 times it, and every function has the frame it had.
+/// `static_map_list.scxml`), the bound of its map's value named wherever that type is
+/// written, is built at that bound and at 64 times it, and every function has the frame
+/// it had.
 #[test]
 fn no_c11_frame_grows_with_the_bound_of_a_value_a_map_holds() {
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
@@ -504,13 +505,11 @@ fn no_c11_frame_grows_with_the_bound_of_a_value_a_map_holds() {
     ] {
         let dir = tempdir().expect("tempdir");
         let document = std::fs::read_to_string(fixtures.join(name)).expect("the statechart");
-        assert_eq!(
-            document.matches(bound).count(),
-            1,
-            "`{bound}` stands once in {name}"
-        );
+        // Every place of the value's type is named: a variable that takes the
+        // value whole is of exactly its type (docs/adr/0108, D12 rule 6).
+        assert!(document.contains(bound), "`{bound}` stands in {name}");
         let path = dir.path().join(name);
-        std::fs::write(&path, document.replacen(bound, named, 1)).expect("write the statechart");
+        std::fs::write(&path, document.replace(bound, named)).expect("write the statechart");
         let small = c11_frames(dir.path(), &path, &[("value_max", SMALL)]);
         // The type of the value is named by its bound, and so is the map's that
         // holds it (`sce_static_map_uint32_sce_static_list_uint16_2_2_t`), and each
