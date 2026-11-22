@@ -6292,6 +6292,44 @@ pub(crate) fn written_place(text: &str) -> Option<String> {
     place_path(&parse_to_ast(text.trim()).ok()?)
 }
 
+/// One step of a place written in a statement's attribute, after the name it
+/// starts at ([`written_steps`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WrittenStep {
+    /// `[index]`: the text of the index, as written.
+    Index(String),
+    /// `.field`: the name of the field.
+    Field(String),
+}
+
+/// The name the place `text` starts at and each step after it, in order:
+/// `("m", [Index("k"), Field("tags")])` for `m[k].tags`. What a statement
+/// that writes through a nested place reads its `target` by (docs/adr/0108,
+/// D12 rule 1). `None` for a text that does not parse, and for one that reads a
+/// part of no place (a call, a literal, an operation).
+pub(crate) fn written_steps(text: &str) -> Option<(String, Vec<WrittenStep>)> {
+    fn walk(node: &TypedExpr, text: &str) -> Option<(String, Vec<WrittenStep>)> {
+        match &node.kind {
+            ExprKind::Ident(name) => Some((name.clone(), Vec::new())),
+            ExprKind::Member { object, property } => {
+                let (root, mut steps) = walk(object, text)?;
+                steps.push(WrittenStep::Field(property.clone()));
+                Some((root, steps))
+            }
+            ExprKind::Index { object, index } => {
+                let (root, mut steps) = walk(object, text)?;
+                steps.push(WrittenStep::Index(
+                    text.get(index.span.clone()?)?.trim().to_string(),
+                ));
+                Some((root, steps))
+            }
+            _ => None,
+        }
+    }
+    let text = text.trim();
+    walk(&parse_to_ast(text).ok()?, text)
+}
+
 /// One read of an element on the way down to the element an expression reads
 /// whole ([`written_elements`]): the text of its index, and the fields read
 /// after it (`.shapes`, or nothing), which reach the next list.

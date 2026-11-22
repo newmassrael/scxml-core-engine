@@ -1197,6 +1197,44 @@ pub struct StaticScope {
     limits: Vec<(String, BuildLimit)>,
 }
 
+/// One step from a map or set variable to the place a statement writes through
+/// it ([`StaticScope::map_place`], docs/adr/0108, D12 rule 1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlaceStep {
+    /// `[key]`: the value at a key of the map `map`, the place the step is
+    /// taken from; the key as written, evaluated once before anything is
+    /// written.
+    Key {
+        key: String,
+        map: crate::forge::value_path::Place,
+    },
+    /// `.field`: a field of a record value.
+    Field(String),
+}
+
+/// The place a statement writes through a map or set variable
+/// ([`StaticScope::map_place`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapPlace<'s> {
+    /// The variable the place starts at, which holds a map or a set.
+    pub variable: &'s crate::model::Variable,
+    /// Each step from the variable to the place, in order; none for the
+    /// variable itself.
+    pub steps: Vec<PlaceStep>,
+    /// The place written, typed by walking the variable's type.
+    pub place: crate::forge::value_path::Place,
+}
+
+impl MapPlace<'_> {
+    /// The text of each key the place reads, in the order the steps take them.
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.steps.iter().filter_map(|step| match step {
+            PlaceStep::Key { key, .. } => Some(key.as_str()),
+            PlaceStep::Field(_) => None,
+        })
+    }
+}
+
 /// What a build gives a bound a document names (`sce:limit`): the number every
 /// element that names it resolved to, or the first two numbers two of them resolved
 /// to when they disagree, which is no one value a constant or a read could have.
@@ -1984,6 +2022,85 @@ impl StaticScope {
             let ty = v.value_type.as_ref()?;
             (v.id == name.trim() && ty.map_key().is_some()).then_some((v, ty))
         })
+    }
+
+    /// The place a statement writes through the map or set variable `target`
+    /// starts at (docs/adr/0108, D12 rule 1): the variable, each step from it to
+    /// the place written, and that place, typed. A step is `[key]`, the value at a
+    /// key of a map, or `.field`, a field of a record a step reached; the place
+    /// written may be the variable itself, of no step. `None` where `target` is
+    /// no place that starts at a map or set variable, which a statement refuses as
+    /// naming none; `Err` says which step reaches nothing a statement writes
+    /// through: an index of a list (a list has no index step in a target, so a
+    /// map held inside a list stays refused), a key of a set or of a value that
+    /// is no map, a field of a value that is no record, or a field its record
+    /// does not declare.
+    pub fn map_place(&self, target: &str) -> Option<Result<MapPlace<'_>, String>> {
+        use crate::forge::expr::WrittenStep;
+        use crate::forge::value_type::ValueType;
+        let (root, written) = crate::forge::expr::written_steps(target)?;
+        let (variable, _) = self.map_variable(&root)?;
+        let mut place = crate::forge::value_path::variable_place(variable)?;
+        let mut reached = root;
+        let mut steps = Vec::with_capacity(written.len());
+        for step in written {
+            match step {
+                WrittenStep::Index(key) => {
+                    let value = match &place.ty {
+                        ValueType::Map { .. } => place.map_value(),
+                        _ => None,
+                    };
+                    let Some(value) = value else {
+                        let why = match &place.ty {
+                            ValueType::List { .. } => format!(
+                                "`{reached}` is a list, which has no index step in a target: \
+                                 a statement writes through the value at a key of a map and a \
+                                 field of a record"
+                            ),
+                            ValueType::Set { .. } => format!(
+                                "`{reached}` is a set, whose keys carry no value to write \
+                                 through"
+                            ),
+                            other => format!(
+                                "`{reached}` is a value of `{other}`, which holds no entry at a \
+                                 key"
+                            ),
+                        };
+                        return Some(Err(why));
+                    };
+                    reached = format!("{reached}[{key}]");
+                    steps.push(PlaceStep::Key { key, map: place });
+                    place = value;
+                }
+                WrittenStep::Field(name) => {
+                    if !matches!(place.ty, ValueType::Record { .. }) {
+                        return Some(Err(format!(
+                            "`{reached}` is a value of `{}`, which has no field `{name}`",
+                            place.ty
+                        )));
+                    }
+                    let Some(field) = crate::forge::value_path::walk(
+                        Some(&self.type_scope),
+                        &place,
+                        &[crate::forge::value_path::Step::Field(&name)],
+                    ) else {
+                        return Some(Err(format!(
+                            "`{reached}` is a value of `{}`, whose schema declares no field \
+                             `{name}`",
+                            place.ty
+                        )));
+                    };
+                    reached = format!("{reached}.{name}");
+                    steps.push(PlaceStep::Field(name));
+                    place = field;
+                }
+            }
+        }
+        Some(Ok(MapPlace {
+            variable,
+            steps,
+            place,
+        }))
     }
 
     /// Whether `name` is a variable the map slot `slot` takes: a map or a set

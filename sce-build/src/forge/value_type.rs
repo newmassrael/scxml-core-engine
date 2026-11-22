@@ -468,6 +468,62 @@ impl<B> TypeOf<B> {
         }
     }
 
+    /// The value of a map, or `None` for a set, whose entries carry none, and
+    /// for any other type.
+    pub fn map_value(&self) -> Option<&Self> {
+        match self {
+            Self::Map { value, .. } => Some(value),
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Optional { .. }
+            | Self::Record { .. }
+            | Self::Union { .. }
+            | Self::List { .. }
+            | Self::Set { .. } => None,
+        }
+    }
+
+    /// Whether the type is a value a statechart's map holds at a key
+    /// (docs/adr/0108, D3 and D12): a number, a bool, an enum, a text, a byte
+    /// string or a record; a list of fixed-width numbers, bools or records, as a
+    /// list variable holds one; a set; or a map whose value is again one of
+    /// these. An optional value and a union are none, and nor is a list of
+    /// anything else, a map held inside a list among it.
+    pub fn held_at_a_key(&self) -> bool {
+        match self {
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::Set { .. } => true,
+            Self::List { elem, .. } => match &**elem {
+                Self::Scalar(t) => WrittenType::list_elem_admitted(t),
+                Self::Record { .. } => true,
+                Self::Text { .. }
+                | Self::Bytes { .. }
+                | Self::Optional { .. }
+                | Self::Union { .. }
+                | Self::List { .. }
+                | Self::Map { .. }
+                | Self::Set { .. } => false,
+            },
+            Self::Map { value, .. } => value.held_at_a_key(),
+            Self::Optional { .. } | Self::Union { .. } => false,
+        }
+    }
+
+    /// Whether the type is a map, a set or a list: a container, which a map's
+    /// value of it holds at a key only where a lowering holds a nested value
+    /// (docs/adr/0108, D12), and which is read through its length, its keys or
+    /// elements and a loop, never as an operand (D12 rule 6).
+    pub fn is_container(&self) -> bool {
+        matches!(
+            self,
+            Self::Map { .. } | Self::Set { .. } | Self::List { .. }
+        )
+    }
+
     /// The aliases of every union the type names, in the order they are
     /// written, at every depth. The records a union's cases hold are its own
     /// document's, and are not among them.
@@ -1587,6 +1643,11 @@ impl Composition {
 /// The record a refusal of a map or a set names: the decision that lands it
 /// on each lane, one step at a time (docs/adr/0108, D10).
 pub const MAP_LANDING: &str = "docs/adr/0108, D10";
+
+/// The record a refusal of a map whose value is a map, a set, a list or a
+/// record that holds a list names: the section that lowers a nested value and
+/// a write through a nested place, lane by lane (docs/adr/0108, D12).
+pub const MAP_VALUE_LANDING: &str = "docs/adr/0108, D12";
 
 /// The record a refusal of a call that lends an algorithm a map names: the
 /// step that lowers a map slot, an `inout` one and the statement that calls

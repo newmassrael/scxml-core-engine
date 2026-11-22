@@ -268,6 +268,15 @@ pub struct ComposedLowering {
     /// lets one through ([`Self::ANY_BACKEND`]), and each lowering's own row
     /// decides whether it generates one.
     pub maps: bool,
+    /// Whether it holds a map whose value is a map, a set, a list or a record
+    /// that holds a composition, and lowers the statements that write through
+    /// a nested place, `m[k]` and `m[k].field` (docs/adr/0108, D12): the
+    /// nested value held in the map, and each write through it whole or doing
+    /// nothing. A lowering that holds a map but none of these refuses such a map
+    /// by name, naming that section, until its own step lifts it. As with
+    /// [`Self::maps`], the checker judges one before every lowering holds one,
+    /// so the gate every route asks lets one through ([`Self::ANY_BACKEND`]).
+    pub map_values: bool,
 }
 
 impl ComposedLowering {
@@ -282,8 +291,9 @@ impl ComposedLowering {
     /// saved state of the Interpreter keeps (docs/adr/0087, Landing order item
     /// 8), and holds a map or a set variable as the array of its entries, read
     /// and written through the canonical text of each key (docs/adr/0108, D10
-    /// and "Order of work", step 4). Pinned beside that spelling
-    /// (`composed_lowering/ecmascript.rs`).
+    /// and "Order of work", step 4), and a map of a nested value as the nested
+    /// array, each write through a nested place copying the path to the root
+    /// (D12). Pinned beside that spelling (`composed_lowering/ecmascript.rs`).
     pub const ECMASCRIPT: Self = Self {
         name: "ecmascript",
         reads: true,
@@ -292,6 +302,7 @@ impl ComposedLowering {
         records: true,
         sends: true,
         maps: true,
+        map_values: true,
     };
 
     /// What some generated backend lowers: the gate every route asks before a
@@ -300,7 +311,8 @@ impl ComposedLowering {
     /// generated. Each position is the union of [`Self::of`] over every backend,
     /// but a map: the checker judges one before any lowering holds one
     /// (docs/adr/0108, "Order of work", step 3), so `check` accepts a well-formed
-    /// map and every lowering that holds none refuses it by name ([`Self::maps`]).
+    /// map and every lowering that holds none refuses it by name ([`Self::maps`]),
+    /// and so a map of a nested value ([`Self::map_values`]).
     pub const ANY_BACKEND: Self = Self {
         name: "backend",
         reads: true,
@@ -309,6 +321,7 @@ impl ComposedLowering {
         records: true,
         sends: true,
         maps: true,
+        map_values: true,
     };
 
     /// What the backend `language` lowers: the one table of what each
@@ -338,6 +351,7 @@ impl ComposedLowering {
             records: false,
             sends: false,
             maps: false,
+            map_values: false,
         };
         let walks = Self {
             reads: true,
@@ -480,6 +494,7 @@ fn first_unlowered_composed_use(
         records: lowers_records,
         sends: lowers_sends,
         maps: lowers_maps,
+        map_values: lowers_map_values,
     } = lowering;
     // Each refusal names the construct and the lowering that has none of it,
     // as every backend's refusal of what it does not lower yet does.
@@ -561,6 +576,25 @@ fn first_unlowered_composed_use(
                 at,
             );
         }
+        // A map whose value is a map, a set, a list, or a record that holds a
+        // composition, is held where the lowering holds a nested value
+        // (docs/adr/0108, D12), and refused by name, naming that section, by a
+        // lowering that holds a map but no nested value yet.
+        if lowers_maps && !lowers_map_values {
+            if let Some(nested) = nested_map_value(ty, scxml) {
+                return not_lowered(
+                    format!(
+                        "<data id=\"{}\">: `{nested}` as the value of `{ty}` in a statechart's \
+                         variable is a type of the language, and has no {lowering} lowering of a \
+                         map whose value is a map, a set, a list or a record that holds one yet \
+                         ({})",
+                        var.id,
+                        crate::forge::value_type::MAP_VALUE_LANDING
+                    ),
+                    at,
+                );
+            }
+        }
         // A variable of `record:R` or `optional<record:R>` whose `R` holds a
         // composition is the machine's own record where the lowering holds one
         // ([`ComposedLowering::records`]): built where it is declared by
@@ -569,14 +603,25 @@ fn first_unlowered_composed_use(
         // a lift writes it whole; the records `R` holds are declared with it.
         // Every other variable that names such a record, inside a list, is
         // refused by name.
-        let held_whole = if lowers_records {
-            ty.record_alias()
-                .or_else(|| ty.optional_elem().and_then(|elem| elem.record_alias()))
-        } else {
-            None
-        };
+        let mut held_whole: Vec<&str> = Vec::new();
+        if lowers_records {
+            held_whole.extend(
+                ty.record_alias()
+                    .or_else(|| ty.optional_elem().and_then(|elem| elem.record_alias())),
+            );
+            // ... and so is the record a map holds at a key, at every depth of
+            // a map held at a key, where the lowering holds a nested value
+            // (docs/adr/0108, D12 rule 9).
+            if lowers_maps && lowers_map_values {
+                let mut value = ty.map_value();
+                while let Some(at) = value {
+                    held_whole.extend(at.record_alias());
+                    value = at.map_value();
+                }
+            }
+        }
         for alias in ty.record_aliases() {
-            if held_whole == Some(alias) {
+            if held_whole.contains(&alias) {
                 continue;
             }
             let Some(schema) = scxml.imported_records.get(alias) else {
@@ -750,6 +795,22 @@ fn first_unlowered_composed_use(
         );
     }
     None
+}
+
+/// The value of the map or set `ty`, at any depth of a map held at a key, that
+/// only a lowering of a nested value holds (docs/adr/0108, D12): a map, a set,
+/// a list, or a record whose schema holds a composition. `None` for a map of
+/// values of one entry each, and for a type that is no map.
+fn nested_map_value<'t>(
+    ty: &'t crate::forge::model::AlgorithmValueType,
+    scxml: &SCXMLModel,
+) -> Option<&'t crate::forge::model::AlgorithmValueType> {
+    let value = ty.map_value()?;
+    let composed_record = value
+        .record_alias()
+        .and_then(|alias| scxml.imported_records.get(alias))
+        .is_some_and(|schema| schema.entry_schema().is_err());
+    (value.is_container() || composed_record).then_some(value)
 }
 
 /// Whether `expr` is a place a value is held at, a name and the fields,

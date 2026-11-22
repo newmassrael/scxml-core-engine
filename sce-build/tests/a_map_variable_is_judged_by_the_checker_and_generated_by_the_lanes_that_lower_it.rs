@@ -1573,20 +1573,47 @@ fn a_walk_over_a_map_binds_its_key_by_the_rules_of_a_loop() {
     }
 }
 
-/// docs/adr/0108, D1 and D10: a map whose value is no value an entry's read
-/// reads (a list, another map, an optional value) is the language's, and is
-/// refused by name; and a map, its statements and its loop are a `sce-static`
-/// statechart's alone.
+/// docs/adr/0108, D1, D10 and D12: a map whose value is a map, a set or a list
+/// is judged as any map is, since its reads and its statements compose by the
+/// type; a map whose value is an optional value, and a map held inside a list,
+/// stay the language's and are refused by name; and a map, its statements and
+/// its loop are a `sce-static` statechart's alone.
 #[test]
 fn a_map_the_checker_does_not_read_is_refused_by_name() {
+    for value in [
+        "map&lt;uint32, uint8&gt;[2]",
+        "set&lt;uint8&gt;[2]",
+        "list&lt;uint8&gt;[2]",
+    ] {
+        let document = edited(
+            &faces(),
+            "<data id=\"order\"",
+            &format!(
+                "<data id=\"nested\" sce:type=\"map&lt;uint32, {value}&gt;[16]\"/>\n    \
+                 <data id=\"order\""
+            ),
+        );
+        let (ok, out) = check(&document);
+        assert!(ok, "check judges a map of {value}:\n{out}");
+    }
     refused(
         &edited(
             &faces(),
             "map&lt;uint32, uint64&gt;[16]",
-            "map&lt;uint32, list&lt;uint8&gt;[2]&gt;[16]",
+            "map&lt;uint32, optional&lt;uint8&gt;&gt;[16]",
         ),
         "generate/unsupported-feature",
-        "as the value of `map<uint32, list<uint8>[2]>[16]`",
+        "as the value of `map<uint32, optional<uint8>>[16]`",
+    );
+    refused(
+        &edited(
+            &faces(),
+            "<data id=\"order\"",
+            "<data id=\"inside\" sce:type=\"list&lt;map&lt;uint32, uint8&gt;[2]&gt;[2]\"/>\n    \
+             <data id=\"order\"",
+        ),
+        "generate/unsupported-feature",
+        "a map or a set is a type of the language, and no lowering holds one here yet",
     );
     for (statement, part) in [
         (
@@ -1611,6 +1638,139 @@ fn a_map_the_checker_does_not_read_is_refused_by_name() {
 "#
         );
         refused(&document, "scxml/static-datamodel-rule", part);
+    }
+}
+
+/// The statechart with a map of maps, `nested`, a map of lists, `lists`, and a
+/// map of the inner type, `inner`, declared beside the committed ones, and a
+/// statement of each kind written through a place held at a key
+/// (docs/adr/0108, D12): every one of them is judged and accepted.
+fn nested_places() -> String {
+    let declared = edited(
+        &faces(),
+        "<data id=\"order\"",
+        "<data id=\"nested\" sce:type=\"map&lt;uint32, map&lt;uint32, uint8&gt;[2]&gt;[2]\"/>\n    \
+         <data id=\"lists\" sce:type=\"map&lt;uint32, list&lt;uint8&gt;[2]&gt;[2]\"/>\n    \
+         <data id=\"inner\" sce:type=\"map&lt;uint32, uint8&gt;[2]\"/>\n    \
+         <data id=\"order\"",
+    );
+    edited(
+        &declared,
+        "<sce:clear target=\"flags\"/>",
+        "<sce:clear target=\"flags\"/>\n      \
+         <sce:put target=\"nested\" key=\"1\"/>\n      \
+         <sce:put target=\"nested[1]\" key=\"2\" expr=\"3\" outcome=\"putResult\"/>\n      \
+         <sce:remove target=\"nested[1]\" key=\"2\" outcome=\"removeResult\"/>\n      \
+         <sce:clear target=\"nested[1]\"/>\n      \
+         <sce:put target=\"lists\" key=\"1\"/>\n      \
+         <sce:append target=\"lists[1]\" expr=\"4\"/>\n      \
+         <sce:clear target=\"lists[1]\"/>\n      \
+         <if cond=\"has(nested[1], 2) &amp;&amp; len(lists[1]) &gt; 0\">\
+         <assign location=\"walked\" expr=\"len(nested[1])\"/></if>\n      \
+         <assign location=\"inner\" expr=\"nested[1]\"/>\n      \
+         <sce:put target=\"nested\" key=\"2\" expr=\"inner\"/>\n      \
+         <foreach array=\"nested[1]\" item=\"n\" sce:key=\"j\">\
+         <assign location=\"walked\" expr=\"j\"/></foreach>\n      \
+         <foreach array=\"lists[1]\" item=\"x\"><assign location=\"walked\" expr=\"x\"/></foreach>",
+    )
+}
+
+/// docs/adr/0108, D12 rules 1, 4 and 6: a put, a remove, an append and a clear
+/// write through a place held at a key, the reads compose by the type, the
+/// empty inner value is put where a put names none and a variable of exactly
+/// its type is put whole, and a map held at a key is taken whole into a variable
+/// of exactly its type; each is accepted. What a nested place is not is refused
+/// naming what is accepted: a target that reaches a value of one entry, a key
+/// that reads the variable written, an index of a list, a key of a set, a key or
+/// a value of another type, a container put from a variable of another type, a
+/// map held at a key taken into a variable of another type or into a number,
+/// and a container held at a key as an operand.
+#[test]
+fn a_write_through_a_nested_place_is_judged_and_refused_naming_what_it_takes() {
+    let document = nested_places();
+    let (ok, out) = check(&document);
+    assert!(
+        ok,
+        "check judges every write through a nested place:\n{out}"
+    );
+    let rule = "scxml/static-datamodel-rule";
+    let unsupported = "expression/unsupported-construct";
+    for (from, to, code, part) in [
+        (
+            "<sce:put target=\"nested[1]\" key=\"2\" expr=\"3\" outcome=\"putResult\"/>",
+            "<sce:put target=\"nested[1][2]\" key=\"3\" expr=\"1\"/>",
+            rule,
+            "target names a map or a set, and `nested[1][2]` is a value of `uint8`",
+        ),
+        (
+            "<sce:remove target=\"nested[1]\" key=\"2\" outcome=\"removeResult\"/>",
+            "<sce:remove target=\"nested[len(nested)]\" key=\"2\"/>",
+            rule,
+            "the key `len(nested)` reads `nested`, which the statement writes through",
+        ),
+        (
+            "<sce:append target=\"lists[1]\" expr=\"4\"/>",
+            "<sce:append target=\"lists[1][0]\" expr=\"4\"/>",
+            rule,
+            "`lists[1]` is a list, which has no index step in a target",
+        ),
+        (
+            "<sce:clear target=\"lists[1]\"/>",
+            "<sce:put target=\"seen[3]\" key=\"1\"/>",
+            rule,
+            "`seen` is a set, whose keys carry no value to write through",
+        ),
+        (
+            "<sce:put target=\"nested[1]\" key=\"2\" expr=\"3\" outcome=\"putResult\"/>",
+            "<sce:put target=\"nested['one']\" key=\"2\" expr=\"3\"/>",
+            "expression/type-mismatch",
+            "uint32",
+        ),
+        (
+            "<sce:append target=\"lists[1]\" expr=\"4\"/>",
+            "<sce:append target=\"lists[1]\" expr=\"true\"/>",
+            "expression/type-mismatch",
+            "uint8",
+        ),
+        (
+            "<sce:put target=\"nested\" key=\"2\" expr=\"inner\"/>",
+            "<sce:put target=\"nested\" key=\"2\" expr=\"spare\"/>",
+            rule,
+            "names no expr to put the empty one, or a variable of exactly `map<uint32, uint8>[2]`",
+        ),
+        (
+            "<sce:clear target=\"nested[1]\"/>",
+            "<sce:clear target=\"nested[1][2]\"/>",
+            rule,
+            "target names a list, a map or a set variable",
+        ),
+        (
+            "<assign location=\"inner\" expr=\"nested[1]\"/>",
+            "<assign location=\"spare\" expr=\"nested[1]\"/>",
+            unsupported,
+            "is taken whole only into a variable of exactly its type (docs/adr/0108, D12 rule 6)",
+        ),
+        (
+            "<assign location=\"inner\" expr=\"nested[1]\"/>",
+            "<assign location=\"walked\" expr=\"nested[1]\"/>",
+            unsupported,
+            "held at a key of the map `nested`",
+        ),
+        (
+            "<assign location=\"inner\" expr=\"nested[1]\"/>",
+            "<assign location=\"order\" expr=\"lists[1]\"/>",
+            unsupported,
+            "an assignment to the whole list `order` of `lists[1]`, a value of \
+             `list<uint8>[2]` held at a key of the map `lists`",
+        ),
+        (
+            "<assign location=\"walked\" expr=\"len(nested[1])\"/>",
+            "<assign location=\"walked\" expr=\"len(lists) + nested[1]\"/>",
+            unsupported,
+            "as an operand",
+        ),
+    ] {
+        refused(&edited(&document, from, to), code, part);
     }
 }
 

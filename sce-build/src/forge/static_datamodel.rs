@@ -2330,6 +2330,43 @@ impl<'a> Judge<'a> {
         )
     }
 
+    /// An `<sce:append>` whose `target` is no list variable: a list held at a
+    /// key of a map, or in a field of a record held there (docs/adr/0108, D12
+    /// rule 1, [`Self::written_through`]), `m[k]` and `m[k].tags`, takes the
+    /// value appended as a list variable does: a record whole by the name of a
+    /// record of its schema, and any other element as a scalar expression of its
+    /// type. A `target` that names no list at all is refused naming the list
+    /// variables there are.
+    fn nested_append(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::value_type::ValueType;
+        let place = match self.written_through(ctx, action, state) {
+            Some(place) => place?,
+            None => return Err(self.not_a_list(action, state)),
+        };
+        let element = match place.place.element() {
+            Some(element) if !place.steps.is_empty() => element,
+            _ => return Err(self.not_a_list(action, state)),
+        };
+        let spelling = action.spellings.get("expr");
+        match &element.ty {
+            ValueType::Record { alias } => {
+                self.record_of("sce:append", &action.expr, spelling, alias, state)
+            }
+            other => {
+                let slot = other
+                    .scalar()
+                    .map_or(InferredType::Unknown, InferredType::from_sce_type);
+                self.expr(ctx, &action.expr, spelling, Expected::Slot(slot))
+                    .map(|_| ())
+            }
+        }
+    }
+
     /// The refusal of an `<sce:put>` or an `<sce:remove>` whose `target` names
     /// no map or set variable (docs/adr/0108, D11).
     fn not_a_map(&self, action: &Action, state: &str) -> Located<ForgeError> {
@@ -2450,7 +2487,34 @@ impl<'a> Judge<'a> {
             .map_variable(written)
             .and_then(|(source, _)| crate::forge::value_path::variable_place(source))
         else {
-            return Some(Err(whole(String::new())));
+            // A map or a set held at a key (`m[k]`), or bound by a loop over a
+            // map of them, is taken whole only into a variable of exactly its
+            // type (docs/adr/0108, D12 rule 6): widening a nested value between
+            // two bounds is not decided.
+            let Some(at) = self
+                .whole_place(ctx, written)
+                .filter(crate::forge::value_path::Place::is_keyed)
+            else {
+                return Some(Err(whole(String::new())));
+            };
+            let exact =
+                crate::forge::value_path::variable_place(map).is_some_and(|to| to.ty == at.ty);
+            if !exact {
+                return Some(Err(whole(format!(
+                    ": `{written}` is a value of `{}`, and a map or a set held at a key is taken \
+                     whole only into a variable of exactly its type (docs/adr/0108, D12 rule 6)",
+                    at.ty
+                ))));
+            }
+            return Some(
+                self.expr(
+                    ctx,
+                    written,
+                    action.spellings.get("expr"),
+                    Expected::Hint(InferredType::Unknown),
+                )
+                .map(|_| ()),
+            );
         };
         Some(
             list_fits(&held.ty, map, &StatechartNames)
@@ -2635,29 +2699,34 @@ impl<'a> Judge<'a> {
         judged
     }
 
-    /// An `<sce:put>` (docs/adr/0108, D3 and D4): `target` a map or set
-    /// variable; `key` a key of it ([`Self::map_key`]); `expr` the value put
-    /// at the key, required of a map and refused on a set, whose entries carry
-    /// none: a scalar expression for a value of a number, a bool, a text or a
-    /// byte string, a value of the enum for an enum, and the name of a record
-    /// of the schema for a record, as `<sce:append>` takes a record; and
-    /// `outcome`, when written, a variable of the standard put outcome
-    /// ([`PUT_OUTCOME_DOCUMENT`]).
+    /// An `<sce:put>` (docs/adr/0108, D3, D4 and D12): `target` a map or set
+    /// variable, or a map or a set held at a key of one
+    /// ([`Self::written_map`]); `key` a key of it ([`Self::key_of`]); `expr`
+    /// the value put at the key, required of a map of a value of one entry and
+    /// refused on a set, whose entries carry none: a scalar expression for a
+    /// value of a number, a bool, a text or a byte string, a value of the enum
+    /// for an enum, and the name of a record of the schema for a record, as
+    /// `<sce:append>` takes a record. A value that is a map, a set or a list
+    /// (D12 rule 4) is the empty one where `expr` is left out, which replaces
+    /// the value at a key that is present, and otherwise the variable `expr`
+    /// names, of exactly the value's type, copied whole. `outcome`, when
+    /// written, is a variable of the standard put outcome
+    /// ([`PUT_OUTCOME_DOCUMENT`]), what the inner map did for a put through a
+    /// nested place (D12 rule 5).
     fn put(
         &self,
         ctx: &TypeCtx<'_>,
         action: &Action,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
-        let Some((map, ty)) = self.scope.map_variable(&action.location) else {
-            return Err(self.not_a_map(action, state));
-        };
-        self.map_key(ctx, action, map, ty, state)?;
+        use crate::forge::value_type::ValueType;
+        let place = self.written_map(ctx, action, state)?;
+        let target = action.location.trim();
         let spelling = action.spellings.get("expr");
         let written = action.expr.trim();
         let rule = |rule: String| {
             self.rule_at(
-                format!("<sce:put target=\"{}\">", map.id),
+                format!("<sce:put target=\"{target}\">"),
                 &rule,
                 spelling.map(|s| s.row()),
                 spelling.map(|s| s.col()),
@@ -2665,34 +2734,55 @@ impl<'a> Judge<'a> {
                 written,
             )
         };
-        match ty {
-            crate::forge::model::AlgorithmValueType::Map { value, .. } => {
-                if written.is_empty() {
+        match place.place.map_value() {
+            Some(value) if value.ty.is_container() => {
+                let exact = written.is_empty()
+                    || self
+                        .scope
+                        .variables
+                        .iter()
+                        .find(|v| v.id == written)
+                        .and_then(crate::forge::value_path::variable_place)
+                        .is_some_and(|held| held.ty == value.ty);
+                if !exact {
                     return Err(rule(format!(
-                        "a put into the map `{}` names the value it puts at the key: expr, a \
-                         value of `{value}`",
-                        map.id
+                        "a put into `{target}`, whose value is `{ty}`, names no expr to put the \
+                         empty one, or a variable of exactly `{ty}`, copied whole \
+                         (docs/adr/0108, D12 rule 4)",
+                        ty = value.ty
                     )));
                 }
-                if let Some(alias) = value.record_alias() {
-                    self.record_named("sce:put", "expr", written, spelling, alias, state)?;
-                } else if let Some(crate::forge::model::SceType::Enum(reference)) = value.scalar() {
-                    self.expr_of_enum(ctx, written, spelling, &reference.alias)?;
-                } else {
-                    let slot = value
-                        .scalar()
-                        .map_or(InferredType::Unknown, InferredType::from_sce_type);
-                    self.expr(ctx, written, spelling, Expected::Slot(slot))?;
+            }
+            Some(value) => {
+                if written.is_empty() {
+                    return Err(rule(format!(
+                        "a put into the map `{target}` names the value it puts at the key: expr, \
+                         a value of `{}`",
+                        value.ty
+                    )));
+                }
+                match &value.ty {
+                    ValueType::Record { alias } => {
+                        self.record_named("sce:put", "expr", written, spelling, alias, state)?;
+                    }
+                    ValueType::Scalar(crate::forge::model::SceType::Enum(reference)) => {
+                        self.expr_of_enum(ctx, written, spelling, &reference.alias)?;
+                    }
+                    other => {
+                        let slot = other
+                            .scalar()
+                            .map_or(InferredType::Unknown, InferredType::from_sce_type);
+                        self.expr(ctx, written, spelling, Expected::Slot(slot))?;
+                    }
                 }
             }
-            _ if !written.is_empty() => {
+            None if !written.is_empty() => {
                 return Err(rule(format!(
-                    "the set `{}` holds keys that carry no value, so a put into it names the key \
-                     alone and takes no expr",
-                    map.id
+                    "the set `{target}` holds keys that carry no value, so a put into it names the \
+                     key alone and takes no expr"
                 )));
             }
-            _ => {}
+            None => {}
         }
         self.map_outcome(
             action,
@@ -2702,28 +2792,27 @@ impl<'a> Judge<'a> {
         )
     }
 
-    /// An `<sce:remove>` (docs/adr/0108, D3 and D4): `target` a map or set
-    /// variable, `key` a key of it ([`Self::map_key`]), no value, and
-    /// `outcome`, when written, a variable of the standard remove outcome
-    /// ([`REMOVE_OUTCOME_DOCUMENT`]).
+    /// An `<sce:remove>` (docs/adr/0108, D3, D4 and D12): `target` a map or set
+    /// variable, or a map or a set held at a key of one
+    /// ([`Self::written_map`]), `key` a key of it ([`Self::key_of`]), no
+    /// value, and `outcome`, when written, a variable of the standard remove
+    /// outcome ([`REMOVE_OUTCOME_DOCUMENT`]).
     fn remove(
         &self,
         ctx: &TypeCtx<'_>,
         action: &Action,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
-        let Some((map, ty)) = self.scope.map_variable(&action.location) else {
-            return Err(self.not_a_map(action, state));
-        };
-        self.map_key(ctx, action, map, ty, state)?;
+        self.written_map(ctx, action, state)?;
+        let target = action.location.trim();
         let written = action.expr.trim();
         if !written.is_empty() {
             let spelling = action.spellings.get("expr");
             return Err(self.rule_at(
-                format!("<sce:remove target=\"{}\">", map.id),
+                format!("<sce:remove target=\"{target}\">"),
                 &format!(
-                    "a remove from `{}` names the key of the entry it removes, and takes no expr",
-                    map.id
+                    "a remove from `{target}` names the key of the entry it removes, and takes no \
+                     expr"
                 ),
                 spelling.map(|s| s.row()),
                 spelling.map(|s| s.col()),
@@ -2734,51 +2823,155 @@ impl<'a> Judge<'a> {
         self.map_outcome(action, REMOVE_OUTCOME_DOCUMENT, "removed, absent", state)
     }
 
-    /// The `key` of an `<sce:put>` or an `<sce:remove>` on the map or set
-    /// variable `map` of `ty` (docs/adr/0108, D3), judged as an assignment to a
-    /// place of the key's type is: a scalar expression for a number, a bool, a
-    /// text or a byte string, a value of the enum for an enum, and the name of a
-    /// record of the schema (a record variable, the item or key of a
-    /// `<foreach>`, the payload) for a record, which nothing in an expression
-    /// makes.
-    fn map_key(
+    /// The map or the set an `<sce:put>` or an `<sce:remove>` writes
+    /// ([`Self::written_through`]), and its `key` judged as a key of it
+    /// ([`Self::key_of`]). A `target` that starts at no map or set variable is
+    /// refused naming the variables there are ([`Self::not_a_map`]), and one that
+    /// reaches a value that is no map or set, naming that value's type.
+    fn written_map(
         &self,
         ctx: &TypeCtx<'_>,
         action: &Action,
-        map: &Variable,
-        ty: &crate::forge::model::AlgorithmValueType,
         state: &str,
-    ) -> Result<(), Located<ForgeError>> {
-        let element = format!("sce:{}", action.action_type.trim_start_matches("sce_"));
-        let spelling = action.spellings.get("key");
-        let written = action.key.trim();
-        let Some(key) = ty.map_key() else {
-            return Ok(());
+    ) -> Result<crate::forge::type_ctx::MapPlace<'_>, Located<ForgeError>> {
+        let Some(place) = self.written_through(ctx, action, state) else {
+            return Err(self.not_a_map(action, state));
         };
-        if written.is_empty() {
+        let place = place?;
+        let Some(key) = place.place.map_key() else {
+            let element = action.action_type.trim_start_matches("sce_");
+            let target = action.location.trim();
             let at = action.spellings.get("target");
             return Err(self.rule_at(
-                format!("<{element} target=\"{}\">", map.id),
+                format!("<sce:{element} target=\"{target}\">"),
                 &format!(
-                    "a <{element}> names the key of the entry it writes: key, a value of `{key}`"
+                    "target names a map or a set, and `{target}` is a value of `{}`, which holds \
+                     no entry at a key",
+                    place.place.ty
                 ),
                 at.map(|s| s.row()),
                 at.map(|s| s.col()),
                 state,
-                &map.id,
+                target,
+            ));
+        };
+        self.key_of(
+            ctx,
+            action,
+            &action.key,
+            action.spellings.get("key"),
+            &key,
+            state,
+        )?;
+        Ok(place)
+    }
+
+    /// The place a statement's `target` writes through a map or set variable
+    /// (docs/adr/0108, D12 rule 1, [`StaticScope::map_place`]): the variable
+    /// itself, or a value held at a key of one and a field of a record held
+    /// there, `m[k]`, `m[k][k2]`, `m[k].tags`. Each key on the way is judged
+    /// as a key of the map it keys ([`Self::key_of`]), and none may read the
+    /// variable the statement writes through: each key is evaluated once,
+    /// before anything is written, as the key of a record's copy may not name
+    /// the record being written. A step that reaches nothing a statement writes
+    /// through (an index of a list, a key of a set) is refused, saying which.
+    /// `None` for a `target` that starts at no map or set variable.
+    fn written_through(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Option<Result<crate::forge::type_ctx::MapPlace<'_>, Located<ForgeError>>> {
+        let element = action.action_type.trim_start_matches("sce_");
+        let target = action.location.trim();
+        let spelling = action.spellings.get("target");
+        let refuse = |rule: &str| {
+            self.rule_at(
+                format!("<sce:{element} target=\"{target}\">"),
+                rule,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                target,
+            )
+        };
+        let place = match self.scope.map_place(target)? {
+            Ok(place) => place,
+            Err(why) => return Some(Err(refuse(&why))),
+        };
+        let root = place.variable.id.as_str();
+        for step in &place.steps {
+            let crate::forge::type_ctx::PlaceStep::Key { key, map } = step else {
+                continue;
+            };
+            if names_identifier(key, root) {
+                return Some(Err(refuse(&format!(
+                    "the key `{key}` reads `{root}`, which the statement writes through: each \
+                     key of a target is evaluated once, before anything is written, and reads \
+                     no part of the variable written (docs/adr/0108, D12 rule 1): take the key \
+                     into a variable first"
+                ))));
+            }
+            let Some(keyed) = map.map_key() else {
+                continue;
+            };
+            if let Err(refusal) = self.key_of(ctx, action, key, spelling, &keyed, state) {
+                return Some(Err(refusal));
+            }
+        }
+        Some(Ok(place))
+    }
+
+    /// The key `written` of a statement's entry, or of a step of its target,
+    /// judged as a value of the key `key` of a map or a set (docs/adr/0108, D3)
+    /// is, as an assignment to a place of the key's type is: a scalar
+    /// expression for a number, a bool, a text or a byte string, a value of the
+    /// enum for an enum, and the name of a record of the schema (a record
+    /// variable, the item or key of a `<foreach>`, the payload) for a record,
+    /// which nothing in an expression makes. A statement that names no key is
+    /// refused at its `target`.
+    fn key_of(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        written: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        key: &crate::forge::value_path::Place,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::value_type::ValueType;
+        let element = format!("sce:{}", action.action_type.trim_start_matches("sce_"));
+        let written = written.trim();
+        if written.is_empty() {
+            let target = action.location.trim();
+            let at = action.spellings.get("target");
+            return Err(self.rule_at(
+                format!("<{element} target=\"{target}\">"),
+                &format!(
+                    "a <{element}> names the key of the entry it writes: key, a value of `{}`",
+                    key.ty
+                ),
+                at.map(|s| s.row()),
+                at.map(|s| s.col()),
+                state,
+                target,
             ));
         }
-        if let Some(alias) = key.record_alias() {
-            return self.record_named(&element, "key", written, spelling, alias, state);
+        match &key.ty {
+            ValueType::Record { alias } => {
+                self.record_named(&element, "key", written, spelling, alias, state)
+            }
+            ValueType::Scalar(crate::forge::model::SceType::Enum(reference)) => {
+                self.expr_of_enum(ctx, written, spelling, &reference.alias)
+            }
+            other => {
+                let slot = other
+                    .scalar()
+                    .map_or(InferredType::Unknown, InferredType::from_sce_type);
+                self.expr(ctx, written, spelling, Expected::Slot(slot))
+                    .map(|_| ())
+            }
         }
-        if let Some(crate::forge::model::SceType::Enum(reference)) = key.scalar() {
-            return self.expr_of_enum(ctx, written, spelling, &reference.alias);
-        }
-        let slot = key
-            .scalar()
-            .map_or(InferredType::Unknown, InferredType::from_sce_type);
-        self.expr(ctx, written, spelling, Expected::Slot(slot))
-            .map(|_| ())
     }
 
     /// The `outcome` of an `<sce:put>` or an `<sce:remove>` (docs/adr/0108,
@@ -3326,12 +3519,17 @@ impl<'a> Judge<'a> {
     /// A variable that is itself a map or a set, starting empty (D3), is then
     /// accepted, its reads, statements and loop judged where they are written,
     /// when its value is one an entry's read reads: a number, a bool, an enum,
-    /// a text, a byte string or a record, each record of its key and value
-    /// closed and bounded as a list's records are. A map held inside another
-    /// type (a list's element, an optional value) and a map of any other value
-    /// are the language's, and no judgment reads them yet: each is refused by
-    /// name (`generate/unsupported-feature`, D10). Whether a lane generates a
-    /// map is that lane's to say ([`crate::forge::event_schema_check::ComposedLowering::maps`]).
+    /// a text, a byte string or a record, and (D12) a list of numbers, bools or
+    /// records, a set, or a map of such a value
+    /// ([`crate::forge::model::AlgorithmValueType::held_at_a_key`]), each record
+    /// of its keys and values closed and bounded as a list's records are. A map
+    /// held inside another type (a list's element, an optional value) and a map
+    /// of any other value are the language's, and no judgment reads them yet:
+    /// each is refused by name (`generate/unsupported-feature`, D10). Whether a
+    /// lane generates a map is that lane's to say
+    /// ([`crate::forge::event_schema_check::ComposedLowering::maps`]), and a map
+    /// of a nested value
+    /// ([`crate::forge::event_schema_check::ComposedLowering::map_values`]).
     ///
     /// `Ok(true)` for a map or set variable accepted here, `Ok(false)` for a
     /// type that holds none.
@@ -3386,21 +3584,28 @@ impl<'a> Judge<'a> {
                 )))
             }
         };
-        if let Some(value) = value.filter(|v| v.scalar().is_none() && v.record_alias().is_none()) {
+        if let Some(value) = value.filter(|v| !v.held_at_a_key()) {
             return Err(unread(format!(
                 "`{value}` as the value of `{ty}`: a map's entry is read here when its value is \
-                 a number, a bool, an enum, a text, a byte string or a record, and a map of any \
-                 other value is a type of the language no judgment or lowering holds yet ({})",
+                 a number, a bool, an enum, a text, a byte string, a record, a list of numbers, \
+                 bools or records, a set, or a map of such a value ({}), and a map of any other \
+                 value is a type of the language no judgment or lowering holds yet ({})",
+                crate::forge::value_type::MAP_VALUE_LANDING,
                 crate::forge::value_type::MAP_LANDING
             )));
         }
         // A record key or value is held to what a list's record element is:
-        // the enums it holds closed and the texts it holds bounded.
-        for alias in [Some(key), value]
-            .into_iter()
-            .flatten()
-            .filter_map(crate::forge::model::AlgorithmValueType::record_alias)
-        {
+        // the enums it holds closed and the texts it holds bounded, at every
+        // depth of a map held at a key (docs/adr/0108, D12).
+        let mut aliases = vec![key.record_alias()];
+        let mut held = value;
+        while let Some(at) = held {
+            aliases.push(at.record_alias());
+            aliases.push(at.list_elem().and_then(|elem| elem.record_alias()));
+            aliases.push(at.map_key().and_then(|inner| inner.record_alias()));
+            held = at.map_value();
+        }
+        for alias in aliases.into_iter().flatten() {
             if let Some(schema) = records.get(alias) {
                 self.schema_enums_closed(var, alias, schema)?;
                 self.schema_strings_bounded(var, alias, schema)?;
@@ -5858,6 +6063,33 @@ impl<'a> Judge<'a> {
                     {
                         return self.state_from_call(ctx, action, list, callee);
                     }
+                    // A list held at a key of a map is taken whole only into a
+                    // variable of exactly its type (docs/adr/0108, D12 rule 6).
+                    if let Some(Ok(at)) = self.scope.map_place(&action.expr) {
+                        let exact = crate::forge::value_path::variable_place(list)
+                            .is_some_and(|to| to.ty == at.place.ty);
+                        if !at.steps.is_empty() && !exact {
+                            let written = action.expr.trim();
+                            return Err(Located::in_file(
+                                ExpressionSite::new(&action.expr, action.spellings.get("expr"))
+                                    .place(
+                                        crate::forge::error::ExprError::UnsupportedConstruct {
+                                            construct: format!(
+                                                "an assignment to the whole list `{location}` of \
+                                                 `{written}`, a value of `{}` held at a key of \
+                                                 the map `{}` (a value held at a key is taken \
+                                                 whole only into a variable of exactly its type, \
+                                                 docs/adr/0108, D12 rule 6)",
+                                                at.place.ty, at.variable.id
+                                            ),
+                                            observed: Some(written.to_string()),
+                                        }
+                                        .at(None),
+                                    ),
+                                self.diag_label,
+                            ));
+                        }
+                    }
                     // A list a place holds, at any depth, taken whole: a copy that
                     // cannot fail when its type fits the variable's
                     // (docs/adr/0086, section 6.1).
@@ -5890,6 +6122,33 @@ impl<'a> Judge<'a> {
                             ),
                         self.diag_label,
                     ));
+                }
+                // A map, a set or a list held at a key of a map is no value of
+                // one entry (docs/adr/0108, D12 rule 6): it is taken whole only
+                // into a variable of exactly its type, which the branches above
+                // take, and read through `len`, `has`, a further key and a
+                // <foreach>.
+                if let Some(Ok(held)) = self.scope.map_place(&action.expr) {
+                    if !held.steps.is_empty() && held.place.ty.is_container() {
+                        let written = action.expr.trim();
+                        return Err(Located::in_file(
+                            ExpressionSite::new(&action.expr, action.spellings.get("expr")).place(
+                                crate::forge::error::ExprError::UnsupportedConstruct {
+                                    construct: format!(
+                                        "an assignment to `{location}` of `{written}`, a value of \
+                                         `{}` held at a key of the map `{}` (a map, a set or a \
+                                         list held at a key is read through len, has, a further \
+                                         key and a <foreach>, and is taken whole only into a \
+                                         variable of exactly its type, docs/adr/0108, D12 rule 6)",
+                                        held.place.ty, held.variable.id
+                                    ),
+                                    observed: Some(written.to_string()),
+                                }
+                                .at(None),
+                            ),
+                            self.diag_label,
+                        ));
+                    }
                 }
                 // The location is a declared variable; its type is the slot.
                 // Typing it reads it as an expression, which an index read
@@ -6055,8 +6314,11 @@ impl<'a> Judge<'a> {
             // against the list's element, as a typed assignment is judged
             // against its variable — the rule E8 holds an algorithm's list to.
             "sce_append" => {
+                // A list held at a key of a map, or in a field of a record held
+                // there, is appended to through its place (docs/adr/0108, D12
+                // rule 1).
                 let Some(list) = self.list_var(&action.location) else {
-                    return Err(self.not_a_list(action, state));
+                    return self.nested_append(ctx, action, state);
                 };
                 match list
                     .value_type
@@ -6107,9 +6369,16 @@ impl<'a> Judge<'a> {
             }
             // A list, a map or a set is emptied whole (docs/adr/0108, D3).
             "sce_clear" => {
-                if self.list_var(&action.location).is_none()
-                    && self.scope.map_variable(&action.location).is_none()
-                {
+                // ... and so is a list, a map or a set held at a key of a map
+                // (docs/adr/0108, D12 rule 1).
+                let names_one = self.list_var(&action.location).is_some()
+                    || self.scope.map_variable(&action.location).is_some()
+                    || match self.written_through(ctx, action, state) {
+                        Some(Ok(place)) => place.place.ty.is_container(),
+                        Some(Err(refusal)) => return Err(refusal),
+                        None => false,
+                    };
+                if !names_one {
                     return Err(self.no_target(
                         action,
                         state,
@@ -6209,11 +6478,18 @@ impl<'a> Judge<'a> {
         // put (docs/adr/0108, D2 and D5): the item is the value of each entry
         // and the key, `sce:key`, its key; a set's item is the key, and it
         // binds no other.
-        let map = self
-            .scope
-            .map_variable(array)
+        // ... and so is a map or a set held at a key of one, `m[k]`
+        // (docs/adr/0108, D12 rule 8), the variable it is held in the one a
+        // body that writes it along any path writes.
+        let walked_root = match self.scope.map_place(array) {
+            Some(Ok(place)) => Some((place.variable.id.clone(), !place.steps.is_empty())),
+            Some(Err(_)) | None => None,
+        };
+        let map = walked_root
+            .as_ref()
             .and(held.as_ref())
             .filter(|place| place.is_keyed());
+        let nested = walked_root.as_ref().is_some_and(|(_, nested)| *nested);
         let (element, key_place) = match map {
             Some(map) => match map.map_value() {
                 Some(value) => (Some(value), map.map_key()),
@@ -6235,7 +6511,7 @@ impl<'a> Judge<'a> {
         // judged as any expression's are. A list, a map or a set variable is no
         // value an expression reads ([`StaticScope::list_read_as_value`],
         // [`StaticScope::map_read_as_value`]), and holds none.
-        if self.list_var(array).is_none() && map.is_none() {
+        if self.list_var(array).is_none() && (map.is_none() || nested) {
             self.expr(
                 ctx,
                 array,
@@ -6363,8 +6639,8 @@ impl<'a> Judge<'a> {
         // The map the body walks is no map a `<sce:call>` in it writes in place
         // ([`Self::call`]).
         let walks_a_map = map.is_some();
-        if walks_a_map {
-            self.walked_maps.borrow_mut().push(array.to_string());
+        if let Some((root, _)) = walked_root.as_ref().filter(|_| walks_a_map) {
+            self.walked_maps.borrow_mut().push(root.clone());
         }
         let judged = self.actions(&inner, &action.actions, state);
         if walks_a_map {
@@ -7173,6 +7449,99 @@ mod tests {
             None
         );
         assert_eq!(slot(scalar(SceType::Bytes)), None);
+    }
+
+    /// docs/adr/0108, D12 rule 1: a statement's target that starts at a map or a
+    /// set variable is read step by step, each key of a map keeping its text and
+    /// the map it keys, the place reached typed by walking the variable's type;
+    /// a step that reaches nothing a statement writes through is refused saying
+    /// which (an index of a list, a key of a set or of a value of one entry, a
+    /// field of a value that is no record); and a target that starts at no map
+    /// or set variable is none of these places.
+    #[test]
+    fn a_target_is_read_step_by_step_from_the_map_it_starts_at() {
+        use crate::forge::type_ctx::PlaceStep;
+        let declared = |id: &str, ty: &str| Variable {
+            id: id.to_string(),
+            value_type: Some(AlgorithmValueType::read(ty).expect("a type")),
+            ..Variable::default()
+        };
+        let model = SCXMLModel {
+            datamodel: Datamodel::SceStatic,
+            variables: vec![
+                declared("m", "map<uint32, map<uint32, uint32>[2]>[3]"),
+                declared("lists", "map<uint32, list<uint8>[2]>[2]"),
+                declared("seen", "set<uint32>[2]"),
+                declared("total", "uint32"),
+                declared("order", "list<uint32>[4]"),
+            ],
+            ..SCXMLModel::default()
+        };
+        let scope = StaticScope::of(&model).expect("a sce-static scope");
+        let reached = |target: &str| {
+            scope
+                .map_place(target)
+                .unwrap_or_else(|| panic!("`{target}` starts at a map"))
+                .unwrap_or_else(|why| panic!("`{target}` is a place: {why}"))
+        };
+        let refused = |target: &str| {
+            scope
+                .map_place(target)
+                .unwrap_or_else(|| panic!("`{target}` starts at a map"))
+                .expect_err("a step reaches nothing written through")
+        };
+
+        // The variable itself, of no step.
+        let whole = reached("m");
+        assert_eq!(whole.variable.id, "m");
+        assert!(whole.steps.is_empty());
+        assert_eq!(
+            whole.place.ty.to_string(),
+            "map<uint32, map<uint32, uint32>[2]>[3]"
+        );
+        // The map held at a key of it: the key as written, and the map it keys.
+        let inner = reached("m[k]");
+        assert_eq!(inner.variable.id, "m");
+        assert_eq!(
+            inner.steps,
+            [PlaceStep::Key {
+                key: "k".to_string(),
+                map: whole.place.clone(),
+            }]
+        );
+        assert_eq!(inner.place.ty.to_string(), "map<uint32, uint32>[2]");
+        // Two keys reach a value of one entry, each key in the order written.
+        let deep = reached("m[k][j]");
+        assert_eq!(deep.keys().collect::<Vec<_>>(), ["k", "j"]);
+        assert_eq!(deep.place.ty.to_string(), "uint32");
+        // A list held at a key.
+        assert_eq!(reached("lists[3]").place.ty.to_string(), "list<uint8>[2]");
+
+        // A list has no index step in a target, so a map in a list stays refused.
+        let why = refused("lists[3][0]");
+        assert!(
+            why.contains("`lists[3]` is a list, which has no index step in a target"),
+            "{why}"
+        );
+        let why = refused("seen[3]");
+        assert!(why.contains("`seen` is a set"), "{why}");
+        let why = refused("m[k][j][i]");
+        assert!(
+            why.contains("`m[k][j]` is a value of `uint32`, which holds no entry at a key"),
+            "{why}"
+        );
+        let why = refused("m[k].tags");
+        assert!(
+            why.contains(
+                "`m[k]` is a value of `map<uint32, uint32>[2]`, which has no field `tags`"
+            ),
+            "{why}"
+        );
+
+        // A target that starts at no map or set variable is no such place.
+        for target in ["total", "order", "order[0]", "len(m)", "nothing[1]"] {
+            assert!(scope.map_place(target).is_none(), "`{target}`");
+        }
     }
 
     /// A value that may be absent stands for no value handed, so a child whose

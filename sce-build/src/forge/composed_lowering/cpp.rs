@@ -1380,6 +1380,7 @@ mod tests {
                 records: true,
                 sends: true,
                 maps: false,
+                map_values: false,
             }
         );
     }

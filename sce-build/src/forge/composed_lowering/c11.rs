@@ -1950,6 +1950,7 @@ mod tests {
                 records: true,
                 sends: true,
                 maps: true,
+                map_values: false,
             }
         );
     }
