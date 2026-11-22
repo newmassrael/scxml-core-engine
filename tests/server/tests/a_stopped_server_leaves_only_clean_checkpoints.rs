@@ -20,7 +20,7 @@ use sce_rust_session_store::SqliteStore;
 use sce_server_suite::draw::seed_for;
 use sce_server_suite::ledger::{take_data, TAKE};
 use sce_server_suite::process::{Reported, ServerProcess};
-use sce_server_suite::protocol::{Command, Durable, Report, ServerOptions};
+use sce_server_suite::protocol::{Build, Command, Durable, Report, ServerOptions};
 use sce_server_suite::scratch::Scratch;
 use sce_server_suite::wire::{self, Ids};
 
@@ -48,6 +48,7 @@ fn options(scratch: &Scratch) -> ServerOptions {
             mailbox: 4_096,
             retain_ms: 600_000,
         }),
+        build: Build::Ledger,
     }
 }
 

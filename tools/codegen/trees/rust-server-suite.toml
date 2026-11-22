@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The generated machines the server suite serves (tests/server; docs/adr/0109,
+# "Conformance", and docs/adr/0112): the two versions of the document a server
+# is upgraded between in place (tests/server/documents/server_upgrade_1.scxml
+# and server_upgrade_2.scxml), each with every document it imports, in one
+# flat module directory, as rust-static-datamodel places its machines: a
+# machine names what it imports as `super::<name>`.
+#
+# Not committed: a build output of sce-server-suite, whose build script writes
+# it into its OUT_DIR and declares the module `generated` over the index placed
+# here (docs/adr/0097).
+
+[tree]
+name = "rust-server-suite"
+roots = ["tests/server/src/generated"]
+committed = false
+
+[[generation]]
+each = { files = "tests/server/documents/server_upgrade_*.scxml", as = "machine" }
+arguments = ["generate", "tests/server/documents/{machine}.scxml", "--with-imports", "-l", "rust", "-o", "{out}"]
+place = "tests/server/src/generated"
+keep = ["*.rs"]
+
+# The module index: every file the actions placed, a public module each.
+[[index]]
+directories = "tests/server/src/generated"
+file = "mod.rs"
+header = "// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-server-suite)\n\n"
+entries = [{ files = "*.rs", line = "pub mod {module};\n" }]

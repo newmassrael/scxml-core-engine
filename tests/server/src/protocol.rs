@@ -310,6 +310,39 @@ pub struct ServerOptions {
     /// client's outbox is kept in the store and the client reads it by polls; `None` hands
     /// every envelope to the client as it is sent.
     pub durable: Option<Durable>,
+    /// The machine the server serves: the build of the server it is.
+    pub build: Build,
+}
+
+/// The machine a server process serves (`--build`): what a deployment changes when it moves a
+/// server to its next build (docs/adr/0109, D11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Build {
+    /// The ledger, written by hand (`crate::ledger`).
+    Ledger,
+    /// The first version of the upgraded document, generated (`crate::upgrade`,
+    /// tests/server/documents/server_upgrade_1.scxml).
+    Upgrade1,
+    /// Its next version, which migrates what the first saved (server_upgrade_2.scxml).
+    Upgrade2,
+}
+
+impl Build {
+    /// The value of `--build` that names it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Build::Ledger => "ledger",
+            Build::Upgrade1 => "upgrade-1",
+            Build::Upgrade2 => "upgrade-2",
+        }
+    }
+
+    /// The build `name` names, if any.
+    pub fn parse(name: &str) -> Option<Build> {
+        [Build::Ledger, Build::Upgrade1, Build::Upgrade2]
+            .into_iter()
+            .find(|build| build.name() == name)
+    }
 }
 
 /// A durable client binding's bounds (docs/adr/0109, D10).
@@ -335,6 +368,8 @@ impl ServerOptions {
             self.lease_ttl_ms.to_string(),
             "--renew-every-ms".to_string(),
             self.renew_every_ms.to_string(),
+            "--build".to_string(),
+            self.build.name().to_string(),
         ];
         if let Some(halt) = self.halt {
             args.push("--halt".to_string());
@@ -350,7 +385,7 @@ impl ServerOptions {
     }
 
     /// The options `args` (the command line after the program's name) give, or why they give
-    /// none. Every option takes a value; every one but `--halt` must be given.
+    /// none. Every option takes a value; every one but `--halt` and the durable binding's pair must be given.
     pub fn from_args(args: &[String]) -> Result<ServerOptions, String> {
         let number = |flag: &str, value: &str| {
             value
@@ -359,7 +394,7 @@ impl ServerOptions {
         };
         let (mut store, mut owner, mut halt) = (None, None, None);
         let (mut idle_ms, mut lease_ttl_ms, mut renew_every_ms) = (None, None, None);
-        let (mut mailbox, mut retain_ms) = (None, None);
+        let (mut mailbox, mut retain_ms, mut build) = (None, None, None);
         for pair in args.chunks(2) {
             let [flag, value] = pair else {
                 return Err(format!("{} takes a value", pair[0]));
@@ -378,6 +413,12 @@ impl ServerOptions {
                     )
                 }
                 "--retain-ms" => retain_ms = Some(number(flag, value)?),
+                "--build" => {
+                    build = Some(
+                        Build::parse(value)
+                            .ok_or_else(|| format!("--build {value} names no build"))?,
+                    )
+                }
                 "--halt" => {
                     halt = Some(
                         Halt::parse(value)
@@ -401,6 +442,7 @@ impl ServerOptions {
             renew_every_ms: renew_every_ms.ok_or_else(|| required("--renew-every-ms"))?,
             halt,
             durable,
+            build: build.ok_or_else(|| required("--build"))?,
         })
     }
 }
@@ -519,6 +561,7 @@ mod tests {
                 mailbox: 64,
                 retain_ms: 60_000,
             }),
+            build: Build::Upgrade2,
         };
         assert_eq!(
             ServerOptions::from_args(&options.args()),

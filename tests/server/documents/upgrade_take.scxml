@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A request of tests/server's upgraded document (server_upgrade_1.scxml and
+  server_upgrade_2.scxml): record `tag` for the session of `key`, answer its
+  position, and remind the client of it later.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="upgrade_take"
+       sce:event-name="service.request.take">
+  <datamodel>
+    <data id="key" sce:type="string[32]" sce:direction="in"/>
+    <data id="tag" sce:type="string[32]" sce:direction="in"/>
+  </datamodel>
+</scxml>
