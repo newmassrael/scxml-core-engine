@@ -1,15 +1,16 @@
 # ADR 0115 — A protocol is specified by what it promises, refined to what it does, traced from the code that does it, and a gate runs all of it
 
-- Status: Proposed (2026-11-22), third draft: the owner ordered D7 to D11 added and D13 corrected on that day, and the
-  sources checked. D5's gate is built on the owner's order, and D1 and D2 with it for two models; the rest is not to be
-  built until the owner accepts this record.
+- Status: Accepted (2026-11-22, by the owner), in its third draft: D7 to D11 were added and D13 corrected at the owner's
+  order, and the sources checked. D5's gate, and D1 and D2 for two models, were built before it was accepted, at the
+  owner's order.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) at the owner's question whether TLA+ can be designed and applied so, and whether SCE can meet what a survey
   of the field asks of it (reasonable.io, "The internet discovers TLA+. Now what?", 2026-09-25).
-- Amends, once accepted: `docs/formal` (a README that states the levels), `scripts/formal`, the gate registry, ADR 0113
-  and ADR 0114 (their "Order of work" gain the levels below), `docs/SCE_TRANSITION_TABLE.md` (a run read against a
-  model), `SCE_FORGE.md` section 4.12 (an algorithm's contract, D10), `docs/SCE_TEST_PROFILE.md` (a trace is evidence).
+- Amends (each amended document gains an "Amended by: ADR 0115" line in the landing that moves it): `docs/formal` (a
+  README that states the levels), `scripts/formal`, the gate registry, ADR 0113 and ADR 0114 (their "Order of work" gain
+  the levels below), `docs/SCE_TRANSITION_TABLE.md` (a run read against a model), `SCE_FORGE.md` section 4.12 (an
+  algorithm's contract, D10), `docs/SCE_TEST_PROFILE.md` (a trace is evidence).
 - Scope: the models of `docs/formal`, the Rust host core's protocols first, and the `sce-static` documents. A generated
   machine's output does not change.
 - Related: ADR 0034, ADR 0062, ADR 0064, ADR 0089, ADR 0091, ADR 0113, ADR 0114, RFC §synth-5-P (GenMC, which judges the
@@ -312,11 +313,11 @@ Each step lands with a test that fails without it.
 5. D4, with the code of ADR 0113 steps 4 and 5 and of ADR 0114 step 4, so that each lands traced.
 6. D10's first algorithm. D13's first module. D3 with Apalache. D12.
 
-## Open questions
+## Questions decided at acceptance
 
-1. Apalache, TLAPS and Verus as dependencies. Recommended: Verus with D10's first algorithm and D13's first module,
-   Apalache with D3, TLAPS per theorem, each the owner's to approve when its step comes.
-2. Whether a trace is kept by a failing run only, or always. Recommended: always in the world tests, the server suite
+1. Apalache, TLAPS and Verus as dependencies: Verus with D10's first algorithm and D13's first module, Apalache with D3,
+   TLAPS per theorem. Acceptance of this record adds none of them; each is the owner's to approve when its step comes.
+2. Whether a trace is kept by a failing run only, or always: always, in the world tests, the server suite
    and the scenarios of a lane, since a run with no trace has judged nothing of the model.
-3. Whether `<sce:ensure>` is a change every lane reads at once. Recommended: yes, as a documented contract, and checked
+3. Whether `<sce:ensure>` is a change every lane reads at once: yes, as a documented contract, and checked
    on the Rust lane alone.
