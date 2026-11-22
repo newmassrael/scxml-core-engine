@@ -590,6 +590,9 @@ pub fn statechart_scope(model: &crate::model::SCXMLModel) -> TypeScope {
                     .collect(),
                 scope: TypeScope::default(),
                 added: crate::forge::import_source::added_fields(&schema.fields),
+                lineage: crate::forge::import_source::scoped_lineage(schema, |alias| {
+                    model.held_enum(alias).cloned()
+                }),
             });
     }
     scope
@@ -646,6 +649,7 @@ mod tests {
             ],
             scope: TypeScope::default(),
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut batch_scope = TypeScope::default();
         batch_scope.records.insert("Item".into(), item);
@@ -660,6 +664,7 @@ mod tests {
             ],
             scope: batch_scope,
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut scope = TypeScope::default();
         scope.records.insert("Batch".into(), batch);
@@ -865,6 +870,7 @@ mod tests {
             ],
             scope: line_scope,
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut parts_scope = TypeScope::default();
         parts_scope.records.insert("Line".into(), line);
@@ -874,6 +880,7 @@ mod tests {
             fields: vec![("lines".into(), ty("list<record:Line>[2]"))],
             scope: parts_scope,
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut base = TypeScope::default();
         base.records.insert("Parts".into(), parts);

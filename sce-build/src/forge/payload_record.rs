@@ -555,6 +555,7 @@ pub fn derive_completions(
             scope,
             // The result keeps its own revision facts.
             added: scoped.added.clone(),
+            lineage: Default::default(),
         };
         model.imported_records.insert(alias.clone(), schema);
         model
@@ -890,6 +891,7 @@ mod tests {
                 ],
                 scope: inner,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         scope
@@ -978,6 +980,7 @@ mod tests {
                 .into_iter()
                 .map(|(id, field)| (id.to_string(), field))
                 .collect(),
+                lineage: Default::default(),
             },
         );
         scope
@@ -1064,6 +1067,7 @@ mod tests {
                 )],
                 scope: TypeScope::default(),
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let why = describe(
@@ -1087,6 +1091,7 @@ mod tests {
                 fields: vec![("v".to_string(), ty)],
                 scope: enums,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         scope

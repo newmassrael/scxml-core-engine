@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The tag of grow_shape_1.scxml and grow_shape_2.scxml: a case that holds an inner record,
+  and an empty one.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="grow_kind"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="single" value="1"/>
+      <sce:variant name="none" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

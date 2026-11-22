@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The record grown at any depth (docs/adr/0112, D5; docs/adr/0044): static_grow_1.scxml
+  holds records of the first revision of each schema, static_grow_2.scxml the same
+  records at the second, which adds a number with a default (`rank`), a list
+  (`tags`), a record, optional since no literal spells one (`leaf`), and an optional
+  text (`memo`).
+  This is the inner record at its second revision.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="event-schema" name="grow_inner_2" sce:event-name="grow.inner" sce:revision="2">
+  <sce:import kind="event-schema" src="grow_leaf.scxml" as="Leaf"/>
+  <datamodel>
+    <data id="n" sce:type="uint16" sce:direction="in"/>
+    <data id="rank" sce:type="int8" sce:direction="in" sce:since="2" sce:default="-2"/>
+    <data id="tags" sce:type="list&lt;uint8&gt;[2]" sce:direction="in" sce:since="2"/>
+    <data id="leaf" sce:type="optional&lt;record:Leaf&gt;" sce:direction="in" sce:since="2"/>
+    <data id="memo" sce:type="optional&lt;string[8]&gt;" sce:direction="in" sce:since="2"/>
+  </datamodel>
+</scxml>

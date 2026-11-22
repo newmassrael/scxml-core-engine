@@ -185,7 +185,7 @@ d6e0075c39f72e26e18bdff57e3ab690e6519f0a sce/include/runtime/StateMachineBuilder
 3b11b4f37e1c18bf963ee24c80dccf3196adbfc8 sce/include/runtime/TypeRegistry.h
 84f096da3ec9122451828cf76ddfbefde54c4751 sce/include/saved/SavedEngine.h
 cb36d357bda7176a8c7fc77135548b2f44c97c3f sce/include/saved/SavedJson.h
-c862d79dc6cb7b4c05c02ecda13c4c3c1d3cdad9 sce/include/saved/SavedState.h
+41a73a2e4d37df24730274f18ebaa9a1886b3ed8 sce/include/saved/SavedState.h
 17c0e3d375b53e0f957935d5df55a6665338717a sce/include/saved/SavedValues.h
 7582177709e9e15bf4256aea1109dd75c792bc28 sce/include/saved/SessionId.h
 b631e81cb52538532a5c5fe633c1c0f0d2bdb5eb sce/include/scripting/ClassBinding.h

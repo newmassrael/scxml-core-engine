@@ -68,6 +68,38 @@ use crate::{
     StatePolicy,
 };
 
+/// A generated machine's save and restore, reached by a host that is generic
+/// over the document (docs/adr/0112): the generator implements it for each
+/// policy whose machine can be saved, by the same functions as the machine's
+/// own `<Machine>Persist`, so a host that serves any document (a keyed
+/// session pool's adapter, `sce_rust_mesh::served`) saves, judges and restores
+/// one without naming it.
+pub trait PersistentPolicy: StatePolicy {
+    /// What `<Machine>Persist::SHAPE` is: the shape and the revisions every
+    /// state of this machine is written and judged against.
+    const SHAPE: SavedShape;
+
+    /// `<Machine>Persist::save_at`: `engine`'s whole state, each delayed send
+    /// written as the moment it comes due on the wall clock whose reading now
+    /// is `wall_now_ms`.
+    fn save_at(engine: &Engine<Self>, wall_now_ms: u64) -> Result<SavedState, StateRefusal>;
+
+    /// `<Machine>Persist::judge`: refuse `saved` unless a machine of this
+    /// document could restore it, building nothing.
+    fn judge(saved: &SavedState) -> Result<(), StateRefusal>;
+
+    /// `<Machine>Persist::restore_with`: a machine of `policy` standing where
+    /// `saved` left one, carried by the migration the document declares when
+    /// an earlier version saved it (docs/adr/0109, D11), measuring time by
+    /// `clock` and told by `wall_now_ms` what time it is.
+    fn restore_with(
+        policy: Self,
+        saved: &SavedState,
+        clock: SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Engine<Self>, StateRefusal>;
+}
+
 /// The format of a saved state that names each running child by its id alone
 /// (`schemas/sce-saved-state.v1.schema.json`): a restore starts each again from
 /// its beginning.
@@ -341,6 +373,13 @@ pub struct SavedShape {
     pub format2_first: &'static str,
     /// [`Self::revised`] as a format-2 state names it, and a format-3 one.
     pub format2_revised: &'static str,
+    /// The shapes a build before docs/adr/0112 named a state of this document
+    /// by, where it spelled the document otherwise: a record that holds a
+    /// composition, a union's case. A state it saved holds the same values and
+    /// is restored as one of this shape, each record that build did not name in
+    /// `revisions` ([`RecordLineage::tracked_before`]) at this machine's
+    /// revision of it.
+    pub legacy: &'static [&'static str],
     /// Each record schema a variable is of, by the event it declares, ordered by
     /// it.
     pub records: &'static [RecordLineage],
@@ -502,7 +541,13 @@ pub struct RecordLineage {
     /// Each field a revision widened from `T` to `optional<T>`, in the schema's
     /// order (docs/adr/0055, section 6).
     pub widened: &'static [WidenedField],
-    /// The variables that hold a record of it, or a list of them.
+    /// Whether a build before docs/adr/0112 named this record in a state's
+    /// `revisions`: a record of entries a variable or its elements hold. A state
+    /// of a [`SavedShape::legacy`] shape that names none of a record it did not
+    /// name holds it at this machine's revision.
+    pub tracked_before: bool,
+    /// Where a record of it is held: by a variable, an element of it, or below
+    /// either ([`RecordHolder::path`]).
     pub holders: &'static [RecordHolder],
 }
 
@@ -544,6 +589,99 @@ pub struct RecordHolder {
     /// record is (docs/adr/0108, D8): 0 its key and 1 its value. `None` for any
     /// other variable, whose item, or which, is the record itself.
     pub part: Option<usize>,
+    /// The steps from that value to the record, for a record held below it
+    /// (docs/adr/0112, D5): a field of a record, the elements of a list, a part
+    /// of a map's entry, the case of a union. Empty for the value itself.
+    pub path: &'static [HeldStep],
+}
+
+/// One step of a [`RecordHolder::path`], from a saved value to a value it holds
+/// (docs/adr/0112, D5). An absent optional value (`null`) holds nothing, and a
+/// present one is the value it holds, so it takes no step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeldStep {
+    /// The member of this id of a saved record.
+    Field(&'static str),
+    /// Each element of a saved list, or each key of a saved set.
+    Items,
+    /// This part of a saved map entry `[key, value]`.
+    Part(usize),
+    /// A saved union in the case `variant`, the text under its tag's key `tag`:
+    /// the case's record is the same object, beside the tag.
+    Case {
+        /// The key the union's tag is written under.
+        tag: &'static str,
+        /// The declared name of the case's variant.
+        variant: &'static str,
+    },
+}
+
+/// Call `visit` on every record `holder` holds in `value`, the saved value of its
+/// variable, with the path that names it in a refusal: the variable, an element
+/// of it, the part of a map's entry, and each step of [`RecordHolder::path`]. A
+/// value of another kind where a step expects one is left for the variable's own
+/// read to refuse, and an absent optional value holds nothing.
+fn each_held_mut(
+    value: &mut Value,
+    holder: &RecordHolder,
+    visit: &mut dyn FnMut(&mut Value, &str) -> Result<(), StateRefusal>,
+) -> Result<(), StateRefusal> {
+    let mut steps: Vec<HeldStep> = Vec::with_capacity(holder.path.len() + 2);
+    if holder.list {
+        steps.push(HeldStep::Items);
+        if let Some(part) = holder.part {
+            steps.push(HeldStep::Part(part));
+        }
+    }
+    steps.extend_from_slice(holder.path);
+    walk_held_mut(value, &steps, holder.variable, visit)
+}
+
+fn walk_held_mut(
+    value: &mut Value,
+    steps: &[HeldStep],
+    what: &str,
+    visit: &mut dyn FnMut(&mut Value, &str) -> Result<(), StateRefusal>,
+) -> Result<(), StateRefusal> {
+    if matches!(value, Value::Null) {
+        return Ok(());
+    }
+    let Some((step, rest)) = steps.split_first() else {
+        return visit(value, what);
+    };
+    match *step {
+        HeldStep::Field(id) => match value {
+            Value::Object(members) => match members.iter_mut().find(|(name, _)| name == id) {
+                Some((_, member)) => walk_held_mut(member, rest, &format!("{what}.{id}"), visit),
+                None => Ok(()),
+            },
+            _ => Ok(()),
+        },
+        HeldStep::Items => match value {
+            Value::Array(items) => {
+                for (i, item) in items.iter_mut().enumerate() {
+                    walk_held_mut(item, rest, &format!("{what}[{i}]"), visit)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        },
+        HeldStep::Part(part) => match value {
+            Value::Array(entry) => match entry.get_mut(part) {
+                Some(held) => walk_held_mut(held, rest, &format!("{what}[{part}]"), visit),
+                None => Ok(()),
+            },
+            _ => Ok(()),
+        },
+        HeldStep::Case { tag, variant } => {
+            let in_case = matches!(value.member(tag), Some(Value::Text(name)) if name == variant);
+            if in_case {
+                walk_held_mut(value, rest, what, visit)
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 /// The record `holder` holds in `item`, an item of the array its variable is
@@ -554,15 +692,6 @@ fn held_record(item: &Value, part: Option<usize>) -> Option<&Value> {
     match (part, item) {
         (None, item) => Some(item),
         (Some(part), Value::Array(entry)) => entry.get(part),
-        (Some(_), _) => None,
-    }
-}
-
-/// [`held_record`], to be grown in place.
-fn held_record_mut(item: &mut Value, part: Option<usize>) -> Option<&mut Value> {
-    match (part, item) {
-        (None, item) => Some(item),
-        (Some(part), Value::Array(entry)) => entry.get_mut(part),
         (Some(_), _) => None,
     }
 }
@@ -3211,7 +3340,11 @@ pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, Sta
         FORMAT_1 => (shape.first, shape.revised),
         _ => (shape.format2_first, shape.format2_revised),
     };
-    if saved.revisions.is_empty() {
+    // docs/adr/0112, D5: a state a build before it saved, under the spelling it
+    // gave the document, holds the same values as one of this shape.
+    let legacy = shape.legacy.contains(&saved.shape.as_str());
+    if legacy {
+    } else if saved.revisions.is_empty() {
         check_shape(saved, first)?;
     } else if saved.shape == first {
         return Err(StateRefusal::new(
@@ -3283,11 +3416,7 @@ pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, Sta
     // wrote. Judged on the values as saved, before a record is grown by defaults,
     // which are this machine's and may be `null` for a field added absent.
     for record in shape.records {
-        let at = saved
-            .revisions
-            .iter()
-            .find(|(event, _)| event.as_str() == record.event)
-            .map_or(1, |(_, named)| named.revision);
+        let at = saved_at(saved, record, legacy);
         let held: Vec<&WidenedField> = record
             .widened
             .iter()
@@ -3296,21 +3425,29 @@ pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, Sta
         if held.is_empty() {
             continue;
         }
+        let mut values = saved.clone();
         for holder in record.holders {
-            check_widened_holder(saved, record, holder, at, &held)?;
+            let Some((_, value)) = values
+                .variables
+                .iter_mut()
+                .find(|(id, _)| id.as_str() == holder.variable)
+            else {
+                continue;
+            };
+            each_held_mut(value, holder, &mut |held_value, what| {
+                check_widened_record(held_value, what, record, at, &held)
+            })?;
         }
     }
     let mut grown = saved.clone();
     for record in shape.records {
-        let at = saved
-            .revisions
-            .iter()
-            .find(|(event, _)| event.as_str() == record.event)
-            .map_or(1, |(_, named)| named.revision);
+        let at = saved_at(saved, record, legacy);
         let added: Vec<&AddedField> = record.added.iter().filter(|f| f.since > at).collect();
         if added.is_empty() {
             continue;
         }
+        // Every record of the schema the state holds, at any depth
+        // (docs/adr/0112, D5), grown at the defaults of the revisions after `at`.
         for holder in record.holders {
             let Some((_, value)) = grown
                 .variables
@@ -3319,27 +3456,28 @@ pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, Sta
             else {
                 continue;
             };
-            match value {
-                Value::Array(items) if holder.list => {
-                    for (i, item) in items.iter_mut().enumerate() {
-                        let Some(held) = held_record_mut(item, holder.part) else {
-                            continue;
-                        };
-                        grow_record(
-                            held,
-                            &held_path(holder.variable, i, holder.part),
-                            record,
-                            at,
-                            &added,
-                        )?;
-                    }
-                }
-                _ if holder.list => {}
-                _ => grow_record(value, holder.variable, record, at, &added)?,
-            }
+            each_held_mut(value, holder, &mut |held, what| {
+                grow_record(held, what, record, at, &added)
+            })?;
         }
     }
     Ok(grown)
+}
+
+/// The revision of `record`'s schema `saved` was saved at: the one its
+/// `revisions` names, the first where it names none, or, for a state of a
+/// [`SavedShape::legacy`] shape that names none of a record its build did not
+/// name ([`RecordLineage::tracked_before`]), this machine's (docs/adr/0112, D5).
+fn saved_at(saved: &SavedState, record: &RecordLineage, legacy: bool) -> u32 {
+    match saved
+        .revisions
+        .iter()
+        .find(|(event, _)| event.as_str() == record.event)
+    {
+        Some((_, named)) => named.revision,
+        None if legacy && !record.tracked_before => record.revision,
+        None => 1,
+    }
 }
 
 /// Refuse a value `holder` holds, in `saved`, that names one of `later`, the
@@ -3390,42 +3528,6 @@ fn check_enum_holder(
         }
     }
     Ok(())
-}
-
-/// Refuse a `null` the record, or each record of the list, `holder` holds in
-/// `saved` has in a field of `widened`, the fields of `record` that a revision
-/// after `at`, the one it was saved at, widened to optional: at `at` each was a
-/// value of `T`. What is not a record where one is held, and a member the record
-/// lacks, is left for the variable's own read to refuse.
-fn check_widened_holder(
-    saved: &SavedState,
-    record: &RecordLineage,
-    holder: &RecordHolder,
-    at: u32,
-    widened: &[&WidenedField],
-) -> Result<(), StateRefusal> {
-    let Ok(value) = saved.variable(holder.variable) else {
-        return Ok(());
-    };
-    match value {
-        Value::Array(items) if holder.list => {
-            for (i, item) in items.iter().enumerate() {
-                let Some(held) = held_record(item, holder.part) else {
-                    continue;
-                };
-                check_widened_record(
-                    held,
-                    &held_path(holder.variable, i, holder.part),
-                    record,
-                    at,
-                    widened,
-                )?;
-            }
-            Ok(())
-        }
-        _ if holder.list => Ok(()),
-        _ => check_widened_record(value, holder.variable, record, at, widened),
-    }
 }
 
 /// Refuse the saved record `value`, of `record` saved at revision `at`, if it
@@ -5202,6 +5304,7 @@ mod tests {
         // It holds no enum, so format 2 names its shape as format 1 does.
         format2_first: FIRST_SHAPE,
         format2_revised: REVISED_SHAPE,
+        legacy: &[],
         records: &[RecordLineage {
             event: "reading.taken",
             revision: 3,
@@ -5219,16 +5322,19 @@ mod tests {
                 },
             ],
             widened: &[],
+            tracked_before: true,
             holders: &[
                 RecordHolder {
                     variable: "last",
                     list: false,
                     part: None,
+                    path: &[],
                 },
                 RecordHolder {
                     variable: "seen",
                     list: true,
                     part: None,
+                    path: &[],
                 },
             ],
         }],
@@ -5245,6 +5351,7 @@ mod tests {
         revised: REVISED_SHAPE,
         format2_first: FIRST_SHAPE,
         format2_revised: REVISED_SHAPE,
+        legacy: &[],
         records: &[RecordLineage {
             event: "reading.taken",
             revision: 3,
@@ -5266,16 +5373,19 @@ mod tests {
                     optional_since: 3,
                 },
             ],
+            tracked_before: true,
             holders: &[
                 RecordHolder {
                     variable: "last",
                     list: false,
                     part: None,
+                    path: &[],
                 },
                 RecordHolder {
                     variable: "seen",
                     list: true,
                     part: None,
+                    path: &[],
                 },
             ],
         }],
@@ -5292,6 +5402,7 @@ mod tests {
         revised: REVISED_SHAPE,
         format2_first: FORMAT2_FIRST_SHAPE,
         format2_revised: FORMAT2_REVISED_SHAPE,
+        legacy: &[],
         records: &[],
         enums: &[EnumLineage {
             key: "enum:enum_view_mode.scxml",
@@ -5440,10 +5551,12 @@ mod tests {
                     },
                 ],
                 widened: &[],
+                tracked_before: true,
                 holders: &[RecordHolder {
                     variable: "seen",
                     list: true,
                     part: Some(1),
+                    path: &[],
                 }],
             }],
             ..READING_SHAPE
@@ -6404,6 +6517,7 @@ mod tests {
             revised: "",
             format2_first: TO,
             format2_revised: TO_REVISED,
+            legacy: &[],
             records: &[],
             enums: &[],
             features: None,

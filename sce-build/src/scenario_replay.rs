@@ -2056,6 +2056,7 @@ mod tests {
                 .collect(),
             scope,
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut within_plan = TypeScope::default();
         within_plan.records.insert(
@@ -2110,6 +2111,7 @@ mod tests {
                 .collect(),
             scope: TypeScope::default(),
             added: Default::default(),
+            lineage: Default::default(),
         };
         let case = |variant: &str, value: i128, held: Option<&str>| ScopedCase {
             variant: ScopedVariant {

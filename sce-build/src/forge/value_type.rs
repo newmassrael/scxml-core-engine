@@ -2048,6 +2048,29 @@ pub struct ScopedRecord {
     /// The fields a revision of the schema after its first added, by id
     /// (docs/adr/0044); empty for a schema of one revision.
     pub added: std::collections::BTreeMap<String, AddedField>,
+    /// What a saved state names the record by and grows it through (docs/adr/0044,
+    /// docs/adr/0112, D5): the schema's identity and revisions, whichever depth of a
+    /// statechart's types it is held at.
+    pub lineage: ScopedLineage,
+}
+
+/// A record's identity and revisions as a saved state names them (docs/adr/0112,
+/// D5): the event its schema declares, which names it whatever file it is read
+/// from, its revision, the revision each field became optional at, and the
+/// variants of the first revision of each enum a field is of, which a revision's
+/// digest names.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ScopedLineage {
+    /// The event the schema declares (`sce:event-name`).
+    pub event: String,
+    /// The schema's `sce:revision`, 1 when it declares none.
+    pub revision: u32,
+    /// Each field a revision widened from `T` to `optional<T>`
+    /// (`sce:optional-since`), by id.
+    pub optional_since: std::collections::BTreeMap<String, u32>,
+    /// For each field of an enum, by id, the names of the variants the enum's
+    /// first revision declares, in order of name.
+    pub first_variants: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// A field a revision of an event schema after its first added (docs/adr/0044):
@@ -5248,6 +5271,7 @@ mod tests {
                 fields: vec![("level".into(), ValueType::Scalar(enum_ty("Level")))],
                 scope: item_scope,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let item = ValueType::Record {
@@ -6444,6 +6468,7 @@ mod tests {
                 fields: vec![("mood".into(), ty("enum:Mood")), ("id".into(), ty("uint8"))],
                 scope: item_scope,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         scope.records.insert(
@@ -6454,6 +6479,7 @@ mod tests {
                 fields: vec![("x".into(), ty("bool"))],
                 scope: TypeScope::default(),
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let mut loop_scope = TypeScope::default();
@@ -6463,6 +6489,7 @@ mod tests {
             fields: vec![("next".into(), ty("optional<record:Loop>"))],
             scope: TypeScope::default(),
             added: Default::default(),
+            lineage: Default::default(),
         };
         loop_scope.records.insert("Loop".into(), looping.clone());
         scope.records.insert(
@@ -7061,6 +7088,7 @@ mod tests {
                 fields: vec![("x".into(), ty("bool"))],
                 scope: TypeScope::default(),
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let mut outer = TypeScope::default();
@@ -7072,6 +7100,7 @@ mod tests {
                 fields: vec![("inner".into(), ty("record:Inner"))],
                 scope: wrapper_scope,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let mut defs = SchemaDefs::default();
@@ -7163,6 +7192,7 @@ mod tests {
                 .collect(),
             scope: TypeScope::default(),
             added: Default::default(),
+            lineage: Default::default(),
         }
     }
 
@@ -7533,6 +7563,7 @@ mod tests {
                 fields: vec![("next".into(), ty("optional<union:U>"))],
                 scope: node_scope,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         assert_eq!(
@@ -7862,6 +7893,7 @@ mod tests {
                 fields: vec![("next".into(), ty("optional<union:U>"))],
                 scope: node_scope,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let cycle = GrammarError::ContainsItself {
@@ -7880,6 +7912,7 @@ mod tests {
                 fields: vec![("x".into(), ty("bool"))],
                 scope: TypeScope::default(),
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         for fields in [

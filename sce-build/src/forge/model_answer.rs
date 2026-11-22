@@ -384,6 +384,7 @@ mod tests {
                 )],
                 scope: TypeScope::default(),
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let union = ScopedUnion {

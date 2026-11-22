@@ -27,7 +27,9 @@ use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal, C_BUFFER_TEXT,
     RUST_LIST_DESTINATION,
 };
-use crate::forge::model::{EntryField, EntrySchema, EntryType, EnumModel, SceType};
+use crate::forge::model::{
+    EntryField, EntrySchema, EntryType, EnumModel, EventSchemaModel, SceType,
+};
 use crate::forge::narrowing::{Chain, Facts, Writes};
 use crate::forge::static_datamodel::{
     indexed_element, is_null_literal, proving, record_field_place,
@@ -390,6 +392,13 @@ pub struct SavedShape {
     pub format2_first: String,
     /// [`Self::revised`] as a format-2 saved state names it.
     pub format2_revised: String,
+    /// The shapes a build before docs/adr/0112 named a state of this document
+    /// by, each a digest of its text, where it spelled the document otherwise
+    /// (a record that holds a composition by its document and every field, a
+    /// union's case the same way): a state it saved holds the same values, and
+    /// is restored as one of this shape, each such record at this build's
+    /// revision of it (docs/adr/0112, D5). Empty where the spellings agree.
+    pub legacy: Vec<String>,
     /// Each record schema a variable is of, by the event it declares, ordered
     /// by it.
     pub records: Vec<SavedRecordLineage>,
@@ -509,6 +518,12 @@ pub struct SavedRecordLineage {
     pub widened: Vec<SavedWidenedField>,
     /// The variables that hold a record of it, or a list of them, in
     /// declaration order.
+    /// Whether a build before docs/adr/0112 named the record's revision in a
+    /// state's `revisions` (a record whose every revision holds one entry per
+    /// field, held by a variable or its elements): a state such a build saved
+    /// that names none of a record it did not name is at this build's revision of
+    /// it ([`SavedShape::legacy`]).
+    pub tracked_before: bool,
     pub holders: Vec<SavedRecordHolder>,
 }
 
@@ -552,6 +567,30 @@ pub struct SavedRecordHolder {
     /// (docs/adr/0108, D8) the record is: 0 its key and 1 its value. `None` for
     /// any other variable, whose element, or which, is the record itself.
     pub part: Option<u32>,
+    /// The steps from that value (the variable, its element or the part of its
+    /// entry) to the record, for a record held below it (docs/adr/0112, D5): a
+    /// field of a record, the elements of a list or the keys of a set, a part of
+    /// a map's entry, the case of a union. Empty for the value itself. Walked by
+    /// the Rust and C++ restores; every other lane refuses a machine that holds
+    /// one (docs/adr/0109, D0).
+    pub path: Vec<SavedHeldStep>,
+}
+
+/// One step of a [`SavedRecordHolder::path`], from a saved value to a value it
+/// holds (docs/adr/0112, D5). An optional value that is absent holds nothing,
+/// and one that is present is walked as the value it holds, so it takes no step.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SavedHeldStep {
+    /// The member `id` of a saved record.
+    Field { id: String },
+    /// Each element of a saved list, or each key of a saved set.
+    Items,
+    /// The part `index` of a saved map entry `[key, value]`.
+    Part { index: u32 },
+    /// A saved union in its case `variant`, named by the text under its tag's
+    /// key `tag`: the case's record is the same object, beside the tag.
+    Case { tag: String, variant: String },
 }
 
 /// One field of a [`StaticRecord`].
@@ -1924,6 +1963,15 @@ pub trait StaticTarget {
     /// declares one, by name (D0), rather than generate a machine that refuses
     /// every state an earlier version saved.
     fn lowers_migrations(&self) -> bool {
+        false
+    }
+    /// Whether this target's restore walks a record holder's path
+    /// ([`SavedRecordHolder::path`], docs/adr/0112, D5): it grows a record held
+    /// below a variable's value, in a field of a record, a list a record holds or
+    /// a union's case, at the defaults of the revisions after the one it was
+    /// saved at. A target that does not refuses a machine that holds one, by name
+    /// (docs/adr/0109, D0), rather than restore it without the fields it lacks.
+    fn walks_held_paths(&self) -> bool {
         false
     }
     /// Whether this target lowers a variable that holds an optional value
@@ -5359,6 +5407,10 @@ impl StaticTarget for RustTarget {
     }
     // docs/adr/0109, D11: `saved_state::upgrade` applies the plan.
     fn lowers_migrations(&self) -> bool {
+        true
+    }
+    // docs/adr/0112, D5: `saved_state::upgrade` walks each holder's path.
+    fn walks_held_paths(&self) -> bool {
         true
     }
     // `core`'s `Option<T>` (docs/adr/0055, section 5): the type is the default
@@ -9222,6 +9274,36 @@ pub fn lower(
     // Taken before any expression is rewritten: the shape is the document's,
     // and the same for every backend.
     let mut saved_shape = saved_shape(model, &scope);
+    // docs/adr/0112, D5, and docs/adr/0109, D0: a record that grows by revisions
+    // below a variable's value is grown by a restore that walks a holder's path.
+    if !target.walks_held_paths() {
+        let below = saved_shape.as_ref().and_then(|shape| {
+            shape.records.iter().find_map(|record| {
+                record
+                    .holders
+                    .iter()
+                    .find(|holder| !holder.path.is_empty())
+                    .map(|holder| (record.event.clone(), holder.variable.clone()))
+            })
+        });
+        if let Some((event, variable)) = below {
+            let at = scope
+                .variables
+                .iter()
+                .find(|data| data.id == variable)
+                .and_then(|data| data.source_location.clone());
+            return Err(GenerateError::unsupported_at(
+                format!(
+                    "'{variable}' holds a record of '{event}' below its value whose schema grew by \
+                     revisions, which only the Rust and C++ restores grow there (docs/adr/0112, \
+                     D5; docs/adr/0109, D0): a {} restore would read it without the fields its \
+                     later revisions added",
+                    target.name()
+                ),
+                at,
+            ));
+        }
+    }
     // docs/adr/0109, D11: the migrations the document declares, judged against
     // the shape just taken, which is this build's, and planned for the target.
     let migrations =
@@ -11506,9 +11588,15 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     // Each record schema a variable is of, by the event it declares: ordered, so
     // the same document names them in the same order on every backend.
     let mut records: BTreeMap<String, SavedRecordLineage> = BTreeMap::new();
-    // The records of entries a variable may name, one entry per field; a record
-    // that holds a composition is named by its type below.
-    let entry_records = model.entry_records();
+    // The records a variable may name field by field: each whose FIRST revision
+    // holds one entry per field (docs/adr/0044), seen as the entries of every
+    // revision; a field a later revision added that is a composition is the
+    // lineage's to carry, not the shape's. A record whose first revision holds a
+    // composition is named by its type below.
+    let entry_records = first_revision_entries(&model.imported_records);
+    // The records a build before docs/adr/0112 named field by field: those whose
+    // every revision holds one entry per field.
+    let whole_entry_records = model.entry_records();
     // The unions a variable may name, each with its cases' records.
     let type_scope = crate::forge::value_path::statechart_scope(model);
     // Where each value of an enum is held — a variable, or a field of a record a
@@ -11547,80 +11635,122 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             &format!("variable {} {ty} {bound}", var.id),
             &format!("variable {} {by_document} {bound}", var.id),
         );
-        // A union is named by its document and each case's record shape, in
-        // the enum's order (docs/adr/0092, section 6.1 item 7), so a change of
-        // a case moves the shape as a change of a record does.
+        // A union is named by its document and each case's record, in the enum's
+        // order (docs/adr/0092, section 6.1 item 7), so a change of a case moves
+        // the shape as a change of a record does. A case's record is named as
+        // every record is (docs/adr/0112, D5): by the event its schema declares
+        // and its first revision's fields; a field a later revision added is the
+        // saved state's `revisions` to name.
         if let Some(crate::forge::model::AlgorithmValueType::Union { alias }) = shaped.as_ref() {
             if let Some(union) = type_scope.unions.get(alias) {
-                text.line(&format!("union {} {} {}", var.id, union.name, union.tag));
+                // Named by what a value of it holds, its tag and its cases below,
+                // not by its document (docs/adr/0112, D5).
+                text.now(&format!("union {} {}", var.id, union.tag));
+                text.then(&format!("union {} {} {}", var.id, union.name, union.tag));
                 for case in &union.cases {
                     let record = case
                         .record
                         .as_deref()
                         .and_then(|record| union.scope.records.get(record));
-                    let fields = record.map_or_else(
-                        || "-".to_string(),
-                        |record| {
-                            record
-                                .fields
-                                .iter()
-                                .map(|(id, ty)| format!("{id}:{ty}"))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        },
-                    );
-                    text.line(&format!(
-                        "case {} {} {} {fields}",
+                    text.now(&format!(
+                        "case {} {} {} {}",
                         var.id,
                         case.variant.name,
-                        record.map_or("-", |record| record.name.as_str())
+                        record.map_or("-", record_identity),
+                        record.map_or_else(|| "-".to_string(), first_revision_fields)
+                    ));
+                    // The spelling of a build before docs/adr/0112, which a state
+                    // it saved names: the record's document and every field.
+                    text.then(&format!(
+                        "case {} {} {} {}",
+                        var.id,
+                        case.variant.name,
+                        record.map_or("-", |record| record.name.as_str()),
+                        record.map_or_else(|| "-".to_string(), every_field)
                     ));
                 }
             }
         }
-        // A record that holds a list or a record at any depth, which a variable
-        // holds built where it is declared or optional (docs/adr/0087, "Landing
-        // order" item 8 and "Decided while landing item 8", decision 10), each
-        // named by its shape type alike, is named by its document and each
-        // field's type, as a union's case is,
-        // so a change of the record moves the shape as a change of a record of
-        // entries does.
-        if let Some(record) = shaped
+        // A record whose first revision holds a list or a record, which a
+        // variable holds built where it is declared or optional (docs/adr/0087,
+        // "Landing order" item 8 and "Decided while landing item 8", decision
+        // 10), is named by its schema's event and its first revision's fields
+        // with their types (docs/adr/0112, D5), so a change of the record moves
+        // the shape as a change of a record of entries does, and a revision that
+        // adds a field, or a file renamed, does not.
+        if let Some((alias, record)) = shaped
             .as_ref()
             .and_then(|t| t.record_alias())
-            .filter(|alias| !entry_records.contains_key(*alias))
-            .and_then(|alias| type_scope.records.get(alias))
+            .and_then(|alias| Some((alias, type_scope.records.get(alias)?)))
         {
-            let fields = record
-                .fields
-                .iter()
-                .map(|(id, ty)| format!("{id}:{ty}"))
-                .collect::<Vec<_>>()
-                .join(" ");
-            text.line(&format!("record {} {} {fields}", var.id, record.name));
+            if !entry_records.contains_key(alias) {
+                text.now(&format!(
+                    "record {} {} {}",
+                    var.id,
+                    record_identity(record),
+                    first_revision_fields(record)
+                ));
+            }
+            // A build before docs/adr/0112 named a record that holds a
+            // composition at any revision by its document and every field.
+            if !whole_entry_records.contains_key(alias) {
+                text.then(&format!(
+                    "record {} {} {}",
+                    var.id,
+                    record.name,
+                    every_field(record)
+                ));
+            }
         }
-        // A record's fields, whether it is the variable, the element of the
+        // Every record the variable holds, at any depth (docs/adr/0112, D5): the
+        // variable itself, an element of the list or the key of the set it is,
+        // the key or the value of each entry of the map it is (docs/adr/0108,
+        // D8), a field of a record any of those is, a case of a union: where a
+        // restore finds each record of a schema, to grow it at the defaults of
+        // the revisions after the one it was saved at.
+        let mut held = Vec::new();
+        if let Some(shaped) = shaped.as_ref() {
+            records_held(shaped, &type_scope, &mut Vec::new(), 0, &mut held);
+        }
+        for (record, steps) in held {
+            let (list, part, path) = holder_steps(&steps);
+            let lineage = record_lineage(record);
+            let tracked_before =
+                path.is_empty() && record.fields.iter().all(|(_, ty)| ty.entry().is_ok());
+            // A record is named where a restore has something to do with it: a
+            // revision past its first, a field made optional, or, as a build
+            // before docs/adr/0112 named it, a record of entries the variable or
+            // its elements hold. A record held below them is walked to only by a
+            // restore that walks a holder's path (docs/adr/0112, D5).
+            if lineage.revision <= 1 && lineage.widened.is_empty() && !tracked_before {
+                continue;
+            }
+            let named = records.entry(lineage.event.clone()).or_insert(lineage);
+            named.tracked_before |= tracked_before;
+            named.holders.push(SavedRecordHolder {
+                variable: var.id.clone(),
+                list,
+                part,
+                path,
+            });
+        }
+        // A record's fields, named field by field where its first revision holds
+        // one entry per field, whether it is the variable, the element of the
         // list the variable is, a key of the set it is, or the key or the value
         // of each entry of the map it is (docs/adr/0108, D8): what a saved state
-        // names of it, and where a restore finds each record it holds.
+        // names of it.
         for (alias, list, part) in held_records(shaped.as_ref()) {
             let Some(schema) = entry_records.get(alias) else {
                 continue;
             };
+            // Named so by a build before docs/adr/0112 too only where every
+            // revision of the record holds one entry per field.
+            let named_before = whole_entry_records.contains_key(alias);
             // The path a shape line and a refusal name a field of the record by.
             let holder = match part {
                 Some(part) => format!("{}[{part}]", var.id),
                 None => var.id.clone(),
             };
-            records
-                .entry(schema.event_name.clone())
-                .or_insert_with(|| record_lineage(model, schema))
-                .holders
-                .push(SavedRecordHolder {
-                    variable: var.id.clone(),
-                    list,
-                    part,
-                });
             // Every enum field holds a value of its enum, whichever revision of
             // the schema added the field.
             let field_documents = model.enum_documents.by_field.get(&schema.event_name);
@@ -11651,17 +11781,25 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                     ),
                     _ => by_alias.clone(),
                 };
-                text.spelled(
-                    &format!("field {holder}.{} {by_alias}", field.id),
-                    &format!("field {holder}.{} {by_document}", field.id),
-                );
+                let format1 = format!("field {holder}.{} {by_alias}", field.id);
+                let format2 = format!("field {holder}.{} {by_document}", field.id);
+                if named_before {
+                    text.spelled(&format1, &format2);
+                } else {
+                    text.now_spelled(&format1, &format2);
+                }
                 if let SceType::Enum(reference) = field.sce_type.present_type() {
-                    text.variants(model, &reference.alias, &format!("{holder}.{}", field.id));
+                    text.variants(
+                        model,
+                        &reference.alias,
+                        &format!("{holder}.{}", field.id),
+                        named_before,
+                    );
                 }
             }
         }
         if let Some(SceType::Enum(reference)) = scalar {
-            text.variants(model, &reference.alias, &var.id);
+            text.variants(model, &reference.alias, &var.id, true);
             if let Some(document) = model.enum_documents.by_alias.get(&reference.alias) {
                 enum_holders.push((
                     document,
@@ -11687,6 +11825,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             .push(holder);
     }
     let [first, format2_first] = text.digests();
+    let [legacy_first, legacy_format2_first] = text.legacy_digests();
     // What a shape file of this version holds (docs/adr/0109, D11): the text a
     // state of format 2 or later names its shape by.
     let shape_text = text.format2.clone();
@@ -11695,11 +11834,25 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     // reading it without the fields it does not know.
     text.line("revisions");
     let [revised, format2_revised] = text.digests();
+    let [legacy_revised, legacy_format2_revised] = text.legacy_digests();
+    let current = [&first, &revised, &format2_first, &format2_revised];
+    let mut legacy = Vec::new();
+    for digest in [
+        legacy_first,
+        legacy_revised,
+        legacy_format2_first,
+        legacy_format2_revised,
+    ] {
+        if !current.contains(&&digest) && !legacy.contains(&digest) {
+            legacy.push(digest);
+        }
+    }
     Some(SavedShape {
         first,
         revised,
         format2_first,
         format2_revised,
+        legacy,
         records: records.into_values().collect(),
         enums: enums.into_values().collect(),
         features: model.configuration.clone(),
@@ -11748,45 +11901,88 @@ struct ShapeTexts {
     format1: String,
     /// The format-2 text.
     format2: String,
+    /// The format-1 and format-2 texts as a build before docs/adr/0112 spelled
+    /// the document ([`SavedShape::legacy`]).
+    legacy1: String,
+    legacy2: String,
 }
 
 impl ShapeTexts {
-    /// Both texts, each beginning with the line `header`.
+    /// Every text, each beginning with the line `header`.
     fn new(header: &str) -> Self {
         let mut texts = Self {
             format1: String::new(),
             format2: String::new(),
+            legacy1: String::new(),
+            legacy2: String::new(),
         };
         texts.line(header);
         texts
     }
 
-    /// `line` in both texts: a line that names no enum.
+    /// `line` in every text: a line that names no enum, spelled so by every
+    /// build.
     fn line(&mut self, line: &str) {
         self.spelled(line, line);
     }
 
-    /// `format1` in the format-1 text and `format2` in the format-2 one: the
-    /// same line, with an enum named the way each format names it.
+    /// `format1` in the format-1 texts and `format2` in the format-2 ones: the
+    /// same line, with an enum named the way each format names it, spelled so by
+    /// every build.
     fn spelled(&mut self, format1: &str, format2: &str) {
+        self.now_spelled(format1, format2);
+        for (text, line) in [(&mut self.legacy1, format1), (&mut self.legacy2, format2)] {
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+
+    /// [`Self::spelled`] in this build's texts alone.
+    fn now_spelled(&mut self, format1: &str, format2: &str) {
         for (text, line) in [(&mut self.format1, format1), (&mut self.format2, format2)] {
             text.push_str(line);
             text.push('\n');
         }
     }
 
-    /// The variants of the enum imported as `alias`, under `holder`, in both
-    /// texts ([`write_variants`]): a variant's name is the same in either.
-    fn variants(&mut self, model: &SCXMLModel, alias: &str, holder: &str) {
-        write_variants(&mut self.format1, model, alias, holder);
-        write_variants(&mut self.format2, model, alias, holder);
+    /// `line` in this build's texts alone, a line a build before docs/adr/0112
+    /// spelled otherwise ([`Self::then`]).
+    fn now(&mut self, line: &str) {
+        self.now_spelled(line, line);
     }
 
-    /// The SHA-256 of each text as it stands, as lowercase hex: format 1's,
-    /// then format 2's.
+    /// `line` in the texts of a build before docs/adr/0112 alone.
+    fn then(&mut self, line: &str) {
+        for text in [&mut self.legacy1, &mut self.legacy2] {
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+
+    /// The variants of the enum imported as `alias`, under `holder`, in this
+    /// build's texts and, when `before`, in those of a build before
+    /// docs/adr/0112 ([`write_variants`]): a variant's name is the same in
+    /// every format.
+    fn variants(&mut self, model: &SCXMLModel, alias: &str, holder: &str, before: bool) {
+        write_variants(&mut self.format1, model, alias, holder);
+        write_variants(&mut self.format2, model, alias, holder);
+        if before {
+            write_variants(&mut self.legacy1, model, alias, holder);
+            write_variants(&mut self.legacy2, model, alias, holder);
+        }
+    }
+
+    /// The SHA-256 of each of this build's texts as it stands, as lowercase hex:
+    /// format 1's, then format 2's.
     fn digests(&self) -> [String; 2] {
         use sha2::{Digest, Sha256};
         [&self.format1, &self.format2].map(|text| format!("{:x}", Sha256::digest(text.as_bytes())))
+    }
+
+    /// [`Self::digests`] of the texts of a build before docs/adr/0112.
+    fn legacy_digests(&self) -> [String; 2] {
+        use sha2::{Digest, Sha256};
+        [&self.legacy1, &self.legacy2].map(|text| format!("{:x}", Sha256::digest(text.as_bytes())))
     }
 }
 
@@ -11806,76 +12002,272 @@ fn enum_type_by_document(
     document.map_or_else(|| by_alias.to_string(), |d| enum_key(&d.key))
 }
 
-/// What a saved state names of `schema`, a record schema a variable of `model`
-/// is of: its revision, the digest of each revision past the first, and the
-/// fields those revisions added with their defaults. Its holders are the
-/// caller's to add.
-fn record_lineage(model: &SCXMLModel, schema: &EntrySchema) -> SavedRecordLineage {
-    let revision = schema.revision();
+/// The name a shape line gives `record` (docs/adr/0112, D5): the event its
+/// schema declares, its identity whichever file it is read from; its document's
+/// name only for a record read from no schema document, which declares none.
+fn record_identity(record: &crate::forge::value_type::ScopedRecord) -> &str {
+    if record.lineage.event.is_empty() {
+        &record.name
+    } else {
+        &record.lineage.event
+    }
+}
+
+/// The fields of `record`'s first revision with their types, as a shape line
+/// names them: a field a later revision added is a saved state's `revisions`
+/// to name (docs/adr/0044).
+fn first_revision_fields(record: &crate::forge::value_type::ScopedRecord) -> String {
+    record
+        .fields
+        .iter()
+        .filter(|(id, _)| !record.added.contains_key(id))
+        .map(|(id, ty)| format!("{id}:{ty}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Every field of `record` with its type, as a build before docs/adr/0112
+/// named a record that holds a composition.
+fn every_field(record: &crate::forge::value_type::ScopedRecord) -> String {
+    record
+        .fields
+        .iter()
+        .map(|(id, ty)| format!("{id}:{ty}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// How deep [`records_held`] walks a type: further than any document nests a
+/// record, and a bound on a walk that a cycle of imports would not end.
+const HELD_DEPTH: usize = 32;
+
+/// Every record a value of `ty` holds, at any depth (docs/adr/0112, D5), each
+/// with the steps from the value to it: `ty` itself, the element of a list or
+/// the key of a set, a part of a map's entry, the field of a record, the case of
+/// a union, an optional value's present one. A record's fields name their types
+/// in the record's own scope.
+fn records_held<'a, B>(
+    ty: &crate::forge::value_type::TypeOf<B>,
+    scope: &'a crate::forge::value_type::TypeScope,
+    steps: &mut Vec<SavedHeldStep>,
+    depth: usize,
+    out: &mut Vec<(
+        &'a crate::forge::value_type::ScopedRecord,
+        Vec<SavedHeldStep>,
+    )>,
+) {
+    use crate::forge::value_type::TypeOf;
+    if depth > HELD_DEPTH {
+        return;
+    }
+    match ty {
+        TypeOf::Optional { elem } => records_held(elem, scope, steps, depth + 1, out),
+        TypeOf::List { elem, .. } | TypeOf::Set { key: elem, .. } => {
+            steps.push(SavedHeldStep::Items);
+            records_held(elem, scope, steps, depth + 1, out);
+            steps.pop();
+        }
+        TypeOf::Map { key, value, .. } => {
+            for (index, part) in [(0, key), (1, value)] {
+                steps.push(SavedHeldStep::Items);
+                steps.push(SavedHeldStep::Part { index });
+                records_held(part, scope, steps, depth + 1, out);
+                steps.pop();
+                steps.pop();
+            }
+        }
+        TypeOf::Record { alias } => {
+            if let Some(record) = scope.records.get(alias) {
+                record_and_fields(record, steps, depth, out);
+            }
+        }
+        TypeOf::Union { alias } => {
+            let Some(union) = scope.unions.get(alias) else {
+                return;
+            };
+            for case in &union.cases {
+                let Some(record) = case
+                    .record
+                    .as_deref()
+                    .and_then(|record| union.scope.records.get(record))
+                else {
+                    continue;
+                };
+                steps.push(SavedHeldStep::Case {
+                    tag: union.tag.clone(),
+                    variant: case.variant.name.clone(),
+                });
+                record_and_fields(record, steps, depth, out);
+                steps.pop();
+            }
+        }
+        TypeOf::Scalar(_) | TypeOf::Text { .. } | TypeOf::Bytes { .. } => {}
+    }
+}
+
+/// `record`, held at `steps`, and every record its fields hold.
+fn record_and_fields<'a>(
+    record: &'a crate::forge::value_type::ScopedRecord,
+    steps: &mut Vec<SavedHeldStep>,
+    depth: usize,
+    out: &mut Vec<(
+        &'a crate::forge::value_type::ScopedRecord,
+        Vec<SavedHeldStep>,
+    )>,
+) {
+    out.push((record, steps.clone()));
+    for (id, ty) in &record.fields {
+        steps.push(SavedHeldStep::Field { id: id.clone() });
+        records_held(ty, &record.scope, steps, depth + 1, out);
+        steps.pop();
+    }
+}
+
+/// `steps` as a holder names them: whether the variable's saved value is an
+/// array whose items are walked (a list, a set, a map), the part of each map
+/// entry, and the steps left below that, which only a restore that walks a path
+/// takes.
+fn holder_steps(steps: &[SavedHeldStep]) -> (bool, Option<u32>, Vec<SavedHeldStep>) {
+    match steps {
+        [SavedHeldStep::Items, SavedHeldStep::Part { index }, rest @ ..] => {
+            (true, Some(*index), rest.to_vec())
+        }
+        [SavedHeldStep::Items, rest @ ..] => (true, None, rest.to_vec()),
+        rest => (false, None, rest.to_vec()),
+    }
+}
+
+/// What a saved state names of `record` (docs/adr/0044, docs/adr/0112, D5): its
+/// revision, the digest of each revision past the first, the fields those
+/// revisions added with their defaults, and the fields a revision made optional.
+/// The same for the record wherever it is held, since every reader of it reads
+/// one schema. Its holders are the caller's to add.
+fn record_lineage(record: &crate::forge::value_type::ScopedRecord) -> SavedRecordLineage {
+    use crate::forge::value_type::ValueType;
+    let revision = record.lineage.revision.max(1);
     SavedRecordLineage {
-        event: schema.event_name.clone(),
+        event: record_identity(record).to_string(),
         revision,
         revisions: (2..=revision)
-            .map(|at| revision_digest(model, schema, at))
+            .map(|at| revision_digest(record, at))
             .collect(),
-        added: schema
+        added: record
             .fields
             .iter()
-            .filter_map(|field| {
+            .filter_map(|(id, ty)| {
+                let added = record.added.get(id)?;
+                // A field of one entry takes its default, written as a delivery
+                // writes the value; an optional one that declares none reads
+                // absent (docs/adr/0055, section 4). A composition a later
+                // revision added reads as its one value without a writer: a list
+                // the empty list, an optional record absent (docs/adr/0086,
+                // section 10).
+                let default = match ty.entry() {
+                    Ok((entry, bound)) => match added.default.as_deref() {
+                        Some(text) => crate::forge::schema_revision::wire_of(
+                            entry.present_type(),
+                            bound.map(|bound| bound.max),
+                            text,
+                        )
+                        .ok()?,
+                        None if entry.optional_elem().is_some() => "null".to_string(),
+                        None => return None,
+                    },
+                    Err(_) => match ty {
+                        ValueType::List { .. } => "[]".to_string(),
+                        ValueType::Optional { .. } => "null".to_string(),
+                        _ => return None,
+                    },
+                };
                 Some(SavedAddedField {
-                    id: field.id.clone(),
-                    since: field.since?,
-                    // The parser refuses a field with a `since` and no default
-                    // that is a value of it, but for an optional one, whose
-                    // default is then `null` (docs/adr/0055, section 4), so
-                    // this is never `None` for one.
-                    default: crate::forge::schema_revision::default_wire(field)?,
+                    id: id.clone(),
+                    since: added.since,
+                    default,
                 })
             })
             .collect(),
-        widened: schema
+        widened: record
             .fields
             .iter()
-            .filter_map(|field| {
+            .filter_map(|(id, _)| {
                 Some(SavedWidenedField {
-                    id: field.id.clone(),
-                    since: crate::forge::schema_revision::added_at(field),
-                    optional_since: field.optional_since?,
+                    id: id.clone(),
+                    since: record.added.get(id).map_or(1, |added| added.since),
+                    optional_since: *record.lineage.optional_since.get(id)?,
                 })
             })
             .collect(),
+        tracked_before: false,
         holders: Vec::new(),
     }
 }
 
-/// The SHA-256, as lowercase hex, of what revision `at` of `schema` declares, as
-/// a saved state names it (docs/adr/0044): each field the revision has (its
-/// `sce:since` at most `at`, or none), in the schema's order, with its type and
-/// the variant names of its enum. Not a field's default or `since`: a saved
-/// state holds a value for each field and names neither, so two builds that
-/// agree on what a revision holds agree on its digest.
-fn revision_digest(model: &SCXMLModel, schema: &EntrySchema, at: u32) -> String {
+/// The SHA-256, as lowercase hex, of what revision `at` of `record` declares, as
+/// a saved state names it (docs/adr/0044): each field the revision has, in the
+/// schema's order, with its type and the variant names of its enum's first
+/// revision. Not a field's default or `since`: a saved state holds a value for
+/// each field and names neither, so two builds that agree on what a revision
+/// holds agree on its digest. A field of one entry is named by its present type,
+/// as a schema of entries alone always named it, so a digest a build before
+/// docs/adr/0112 computed is the one computed here; a composition by its type.
+fn revision_digest(record: &crate::forge::value_type::ScopedRecord, at: u32) -> String {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
 
     let mut text = String::from("sce-saved-record 1\n");
-    let _ = writeln!(text, "event {}", schema.event_name);
-    for field in schema
-        .fields
-        .iter()
-        .filter(|f| crate::forge::schema_revision::added_at(f) <= at)
-    {
-        let _ = writeln!(
-            text,
-            "field {} {}",
-            field.id,
-            field.sce_type.present_type().as_attr()
-        );
-        if let SceType::Enum(reference) = field.sce_type.present_type() {
-            write_variants(&mut text, model, &reference.alias, &field.id);
+    let _ = writeln!(text, "event {}", record_identity(record));
+    for (id, ty) in &record.fields {
+        if record.added.get(id).map_or(1, |added| added.since) > at {
+            continue;
+        }
+        match ty.entry() {
+            Ok((entry, _)) => {
+                let _ = writeln!(text, "field {id} {}", entry.present_type().as_attr());
+                for name in record.lineage.first_variants.get(id).into_iter().flatten() {
+                    let _ = writeln!(text, "variant {id}.{name}");
+                }
+            }
+            Err(_) => {
+                let _ = writeln!(text, "field {id} {ty}");
+            }
         }
     }
     format!("{:x}", Sha256::digest(text.as_bytes()))
+}
+
+/// The records a saved state's shape names field by field, by the alias each is
+/// imported under (docs/adr/0044): each whose FIRST revision holds one entry per
+/// field, seen as the entries of every revision. A field a later revision added
+/// that is a composition is left out of the view, since the shape names only the
+/// first revision's fields, and the record's lineage carries it.
+fn first_revision_entries(
+    schemas: &std::collections::BTreeMap<String, EventSchemaModel>,
+) -> std::collections::BTreeMap<String, EntrySchema> {
+    schemas
+        .iter()
+        .filter_map(|(alias, schema)| {
+            let mut fields = Vec::new();
+            for field in &schema.fields {
+                match field.entry_field() {
+                    Ok(entry) => fields.push(entry),
+                    Err(_) if field.since.is_some() => {}
+                    Err(_) => return None,
+                }
+            }
+            Some((
+                alias.clone(),
+                EventSchemaModel {
+                    name: schema.name.clone(),
+                    event_name: schema.event_name.clone(),
+                    fields,
+                    payload_none: schema.payload_none,
+                    datamodel_markers: schema.datamodel_markers.clone(),
+                    revision: schema.revision,
+                    source_location: schema.source_location.clone(),
+                },
+            ))
+        })
+        .collect()
 }
 
 /// The key a saved state's `revisions` names an enum by: `enum:` and the
@@ -13102,6 +13494,10 @@ impl StaticTarget for CppTarget {
     }
     // docs/adr/0109, D11: `upgradeSavedState` applies the plan.
     fn lowers_migrations(&self) -> bool {
+        true
+    }
+    // docs/adr/0112, D5: `upgradeSavedState` walks each holder's path.
+    fn walks_held_paths(&self) -> bool {
         true
     }
     // `std::optional<T>` (docs/adr/0055, section 5): the type is the default
@@ -31352,6 +31748,7 @@ mod tests {
                 ],
                 scope: schema_scope,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let root = Place::of(ty("record:Verdict"));

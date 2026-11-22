@@ -609,6 +609,7 @@ add_executable(static_datamodel_generated_cpp_test
     integration/ASavedWaitingSendSurvivesARestoreTest.cpp
     integration/ASavedChildSessionIsResumedAfterARestoreTest.cpp
     integration/ASavedStateIsMigratedIntoTheNextVersionTest.cpp
+    integration/ARecordIsGrownAtAnyDepthItIsHeldTest.cpp
     integration/ATestTemplateMatchesItsValuesTest.cpp
     integration/ATestComponentRunsThroughItsDoorsTest.cpp
     integration/ATestSuiteRunsEndToEndTest.cpp
@@ -667,11 +668,14 @@ sce_add_static_scenario_suite(
 # generated for integration_tests, whose inbox driver posts to it. The two versions
 # of one machine a saved state is migrated between (docs/adr/0109, D11) are driven
 # by ASavedStateIsMigratedIntoTheNextVersionTest; the second reads the shape files
-# under shapes/ beside it when it is generated. The machine built from the values its
+# under shapes/ beside it when it is generated. The two versions of a machine whose
+# records grew at every depth a state holds one (docs/adr/0112, D5) are driven by
+# ARecordIsGrownAtAnyDepthItIsHeldTest. The machine built from the values its
 # deployment supplies (docs/adr/0109, D12) is constructed from them, which a scenario
 # has no word for.
 foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_hybrid_saved static_schema_pending
-                            static_composed_send static_migration_1 static_migration_2 static_deployment)
+                            static_composed_send static_migration_1 static_migration_2 static_deployment
+                            static_grow_1 static_grow_2)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
