@@ -567,6 +567,7 @@ impl ImportLifePersist for Engine<ImportLifePolicy> {
             revised: "16901aa74a4f002cf5b20ba196a5457bfb12f9f5439947911eb600771ee27bd0",
             format2_first: "db28c40e4a829df9a4001a69bf9bdeebe66c8af72227c836c0c4f961624ee217",
             format2_revised: "81cc5e854b4973a16fd928db3f70e85b475ba3f4a7a214a76a44e8da786367aa",
+            legacy: &[],
             records: &[],
             enums: &[::sce_rust_runtime::saved_state::EnumLineage {
                 key: "enum:enum_verdict.scxml",
@@ -650,6 +651,36 @@ impl ImportLifePersist for Engine<ImportLifePolicy> {
             "verdict",
         )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::PersistentPolicy for ImportLifePolicy {
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
+        <Engine<Self> as ImportLifePersist>::SHAPE;
+
+    fn save_at(
+        engine: &Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        <Engine<Self> as ImportLifePersist>::save_at(engine, wall_now_ms)
+    }
+
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        <Engine<Self> as ImportLifePersist>::judge(saved)
+    }
+
+    fn restore_with(
+        policy: Self,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Engine<Self>, ::sce_rust_runtime::saved_state::StateRefusal> {
+        <Engine<Self> as ImportLifePersist>::restore_with(policy, saved, clock, wall_now_ms)
     }
 }
 

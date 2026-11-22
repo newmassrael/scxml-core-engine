@@ -787,6 +787,7 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
             revised: "c26511f2edd5fb2aac560d215e79e238e6aaa43fe7e8c70b1dc5f21f7256f86f",
             format2_first: "85c3e3bd969a76d99386127835599fc030811f279370bf154d8a8b7414c18845",
             format2_revised: "a15700090952e6a278de46a5c76aa39074e33c5d6c83fd54079640a2a2948f3c",
+            legacy: &[],
             records: &[],
             enums: &[::sce_rust_runtime::saved_state::EnumLineage {
                 key: "enum:enum_verdict.scxml",
@@ -922,6 +923,36 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
             "verdict",
         )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::PersistentPolicy for RequestLifePolicy {
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
+        <Engine<Self> as RequestLifePersist>::SHAPE;
+
+    fn save_at(
+        engine: &Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        <Engine<Self> as RequestLifePersist>::save_at(engine, wall_now_ms)
+    }
+
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        <Engine<Self> as RequestLifePersist>::judge(saved)
+    }
+
+    fn restore_with(
+        policy: Self,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Engine<Self>, ::sce_rust_runtime::saved_state::StateRefusal> {
+        <Engine<Self> as RequestLifePersist>::restore_with(policy, saved, clock, wall_now_ms)
     }
 }
 

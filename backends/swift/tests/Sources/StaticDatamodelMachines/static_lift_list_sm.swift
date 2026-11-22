@@ -873,11 +873,22 @@ extension StaticLiftListPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "1badb4b2ea4309b9fe4d2047edb7ee38bbf70284e0a5c161f4c36f65ce8e5007",
-            revised: "2bda32d52e03119ef6769780bb6f8a23892e7d4b9f2dd15da0e8255d4b74d8cb",
-            format2First: "faf8c7daee60057fdde6766390a6d6359101f01bd1dc0ea21592ae102e644ef8",
-            format2Revised: "072c13694c3eff7feee42b34c9812ee7a849c165765afc3e99f61d3cf5cea42e",
+            first: "0fd2223388f9b520a9640acdaf519ae8c5083fd258a5dcfb36e2ae5e61f0faf4",
+            revised: "75929cce183f22226dd0e497277cd04e734005bc4eee1daa29163d00a53a6e13",
+            format2First: "ccb8089299bd7473d0e488117b85eb5c71a10427254730848e66a2e937aea0db",
+            format2Revised: "d3a9dc73c5e2a8b93edfcfc1d2648d3be77f26eabd3691b5e590787a43292603",
             records: [
+                SavedRecordLineage(
+                    event: "lift.list", revision: 2,
+                    revisions: ["413d209d6122b420ee5e57d9d8aec007e58c8f0af8e81fb6325b6ce2481dab74"],
+                    added: [
+                        SavedAddedField(id: "priority", since: 2, defaultJSON: "3"),
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "answer", list: false),
+                    ]),
                 SavedRecordLineage(
                     event: "lift.refusal", revision: 1,
                     revisions: [],

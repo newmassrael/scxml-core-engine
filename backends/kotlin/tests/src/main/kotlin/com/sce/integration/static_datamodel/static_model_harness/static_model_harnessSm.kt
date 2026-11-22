@@ -544,7 +544,7 @@ class StaticModelHarnessStateMachine(
             RecordLineage(
                 event = "lift.answer",
                 revision = 2,
-                revisions = listOf("346ba2c78ac1d5e5d878a2f364be668e2f2503a0f555b1d323584dc30cd26483"),
+                revisions = listOf("4736d3e8772c4a074b74014ea84f08767fb6aec255f4a50f3e4d29835e0841de"),
                 added = listOf(
                     AddedField("priority", 2, "3"),
                 ),
