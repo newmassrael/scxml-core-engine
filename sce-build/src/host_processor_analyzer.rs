@@ -746,7 +746,7 @@ fn routes_dynamic_mesh(language: Language) -> bool {
 /// one: a literal `target` naming a peer, through the SCXML Event I/O
 /// Processor (written or defaulted), with no `typeexpr` or `targetexpr` that
 /// could make it something else at run time.
-fn is_static_mesh_send(action: &Action) -> bool {
+pub(crate) fn is_static_mesh_send(action: &Action) -> bool {
     action.action_type == "send"
         && action.targetexpr.is_empty()
         && action.typeexpr.is_empty()

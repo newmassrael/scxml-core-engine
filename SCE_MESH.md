@@ -1243,18 +1243,18 @@ on the wire at all (CAN broadcast has no such notion), which is a different
 question from whether the transport *supplies* ordering.
 
 <!-- BEGIN transport-capability-matrix (generated from the registry) -->
-| Transport | Core | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr | Pool shape | Pool member | §13 subscribe | §10.10 buffer | Multi-inst server | Inter-partition IPC | Cross-target reply | Server deadline |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `local` | C++ template | yes | RFPA | — | yes | yes | yes | None | None | no | no | no | no | yes | Unsupported |
-| `shm` | C++ template | yes | F | — | yes | yes | yes | None | None | no | no | no | yes | no | Unsupported |
-| `custom_tcp` | C++ template | yes | RFPA | `connect:` | yes | yes | yes | None | None | yes | no | no | yes | no | ActiveError |
-| `someip` | C++ template | yes | RFPA | — | no | no | yes | Bounded | TypedInstanceId | yes | yes | yes | no | yes | ActiveError |
-| `zenoh_keyexpr` | C++ template | yes | RFPA | `key:` | no | no | yes | Open | StringSegment | yes | yes | no | no | no | DropSilently |
-| `dds` | C++ template | yes | RFPA | `topic:` | no | no | yes | Bounded | StringSegment | yes | no | no | no | no | ActiveError |
-| `can` | C++ template | no | FA | — | no | no | no | None | None | no | no | no | no | no | Unsupported |
-| `wss` | host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
-| `zenoh_inbox` | host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
-| `https` | C++ template, host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
+| Transport | Core | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr | Pool shape | Pool member | §13 subscribe | §10.10 buffer | Multi-inst server | Inter-partition IPC | Cross-target reply | Open instances | Server deadline |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `local` | C++ template | yes | RFPA | — | yes | yes | yes | None | None | no | no | no | no | yes | no | Unsupported |
+| `shm` | C++ template | yes | F | — | yes | yes | yes | None | None | no | no | no | yes | no | no | Unsupported |
+| `custom_tcp` | C++ template | yes | RFPA | `connect:` | yes | yes | yes | None | None | yes | no | no | yes | no | no | ActiveError |
+| `someip` | C++ template | yes | RFPA | — | no | no | yes | Bounded | TypedInstanceId | yes | yes | yes | no | yes | no | ActiveError |
+| `zenoh_keyexpr` | C++ template | yes | RFPA | `key:` | no | no | yes | Open | StringSegment | yes | yes | no | no | no | no | DropSilently |
+| `dds` | C++ template | yes | RFPA | `topic:` | no | no | yes | Bounded | StringSegment | yes | no | no | no | no | no | ActiveError |
+| `can` | C++ template | no | FA | — | no | no | no | None | None | no | no | no | no | no | no | Unsupported |
+| `wss` | host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | no | Unsupported |
+| `zenoh_inbox` | host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | no | Unsupported |
+| `https` | C++ template, host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | yes | Unsupported |
 <!-- END transport-capability-matrix -->
 
 If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch. The same holds for every other column: a deploy.yaml asking for something the row does not offer is rejected at parse or codegen time, never silently degraded.
@@ -1912,6 +1912,7 @@ Every transport implementation must honour the following lifecycle phases. The g
 | `supports_multi_instance_server` | `bool` | Inbound messages carry a peer-identifying instance dimension, so the machine can host a multi-instance server pool (§14.4). |
 | `supports_inter_partition_ipc` | `bool` | Transport may carry traffic between the OS processes a `partitions:` split creates (§14). |
 | `supports_cross_target_reply` | `bool` | An RpcReply for a request sent to target A can arrive from a different target B, because correlation goes through a lookup table keyed on a sender-minted identifier. `false` where the reply path is bound to the request at the protocol layer (Zenoh `session.get`) or where there is no `RequestReply` capability. Gates a `reply_from:` set wider than the binding's own target (§14.6). |
+| `serves_open_instances` | `bool` | A binding of an open machine, or to one, may be on this transport (`instances: open`, docs/adr/0113, D7): its link names its sender (§10.9 invariant 10) and it keeps a mailbox per sender. `https` alone. Gates `mesh/deploy-invalid-instances`, whose message names the transports from this registry. |
 | `server_deadline_notice` | `Unsupported \| DropSilently \| ActiveError` | What the requesting peer observes when `server.response_deadline_ms` elapses (§9.5.1). Deliberately **not** a boolean: whether the deadline can be armed and what the peer learns when it fires are different questions, and the second is author-visible — it decides which `RpcStatus` the requester's failure carries, and therefore what the client document can branch on. `ActiveError` where an answer has somewhere to go — a reserved protocol slot (SOME/IP `MT_ERROR` / `E_TIMEOUT`), the request's own return stream (custom_tcp), or the paired reply topic (DDS); `DropSilently` where releasing the parked handle is the only signal available (Zenoh `Query`); `Unsupported` where no server arm parks anything a deadline could bound, which makes the knob a parse-time reject rather than a silent no-op. The parse-time rejection enumerates the realising transports from this registry rather than from prose, so a new arm reaches the diagnostic with its descriptor. |
 
 `https` (§22) is the one transport both cores serve: the generated C++ `TransportRouter` carries its client side as an arm, and the host core carries both sides, so neither emitter refuses it. Which host cores have an adapter for it is still per language (§19, "What a host core refuses"): the Rust core's alone so far.
@@ -3160,6 +3161,15 @@ topology:
         sessions:
           key_from: data.<field> | client  # where an envelope's key is read
           idle_ms: <integer>               # an idle session is saved and dropped after this
+
+        # An open set of instances (docs/adr/0113, D1): any number of copies of
+        # the machine run, each an instance, and a sender of it is the pair
+        # (machine, instance). Optional, with one value. Refused beside
+        # `sessions:`, `server:` or `invoked_by:`, in a `partitions:` entry,
+        # with a causal binding, and with a binding on any transport but
+        # `https` (`mesh/deploy-invalid-instances`). Served by the Rust host
+        # core; every other backend refuses the deployment.
+        instances: open
 
         bindings:
           "<target_id>":
