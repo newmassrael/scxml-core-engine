@@ -240,7 +240,8 @@ fn choice(v: &Value) -> Choice {
     match case.as_str() {
         "idle" => Choice::Idle,
         "card" => Choice::Card(Card {
-            token: hex(&record["token"]),
+            token: BoundedList::try_from_iter(hex(&record["token"]))
+                .expect("within the token's bound"),
             amount: int(&record["amount"]),
         }),
         "batch" => Choice::Batch(Batch {
@@ -352,11 +353,11 @@ fn what_is_no_value_of_the_type_is_refused_by_the_name_of_its_class() {
     }
 }
 
-/// The `card` case of a token of `len` bytes, which the card's unit holds in
-/// the language's own vector and its type bounds at four.
+/// The `card` case of a token of `len` bytes, at most the four its type
+/// holds.
 fn card_of(len: u8) -> Choice {
     Choice::Card(Card {
-        token: (1..=len).collect(),
+        token: BoundedList::try_from_iter(1..=len).expect("within the token's bound of four"),
         amount: 0,
     })
 }
@@ -369,27 +370,12 @@ type Unencodable = (&'static str, fn(&mut CodecCborComposed<'_>));
 fn a_value_its_types_hold_and_no_encoding_carries_is_refused_before_a_byte() {
     let corpus = corpus();
     let smallest = &rows(&corpus, "cases")[0]["decoded"];
-    let changes: [Unencodable; 5] = [
+    let changes: [Unencodable; 2] = [
         ("no flag, below the lower count 1", |v| {
             v.flags = BoundedList::new();
         }),
         ("no union in choices, below the lower count 1", |v| {
             v.choices = BoundedList::new();
-        }),
-        ("a card of a long token in choice", |v| {
-            v.choice = card_of(5);
-        }),
-        ("a card of a long token in maybe", |v| {
-            v.maybe = Some(card_of(5));
-        }),
-        ("a card of a long token in choices", |v| {
-            v.choices = BoundedList::new();
-            v.choices
-                .push(Choice::Idle)
-                .expect("within the bound of three");
-            v.choices
-                .push(card_of(5))
-                .expect("within the bound of three");
         }),
     ];
     for (why, change) in changes {
@@ -403,10 +389,13 @@ fn a_value_its_types_hold_and_no_encoding_carries_is_refused_before_a_byte() {
         );
         assert!(out.is_empty(), "{why}: the encode wrote before it refused");
     }
-    // A token at its bound has an encoding.
+    // A token at its bound has an encoding. One past it is no value of the
+    // card: its bytes are held in the SceBytes of their bound, which refuses
+    // a fifth byte before an encode is reached (docs/adr/0086).
     let mut v = value(smallest);
     v.choice = card_of(4);
     assert!(v.encode_to_vec().is_ok());
+    assert!(BoundedList::<u8, 4>::try_from_iter(1..=5).is_err());
 }
 
 #[test]
