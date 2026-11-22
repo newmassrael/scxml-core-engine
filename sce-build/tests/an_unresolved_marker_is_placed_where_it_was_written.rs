@@ -20,8 +20,11 @@
 //!
 //! Every fixture puts an include before its marker, so the expanded row and
 //! the authored row differ; each expected position is read off the fixture
-//! text, not restated. Documents are named by a path with a directory, so a
-//! basename in `location.file` is visible as the wrong answer it is.
+//! text, not restated. A marker stands where its id is written, the value of
+//! the attribute and not its name (SCE_ERROR_CONTRACT.md §2.2: the id is what
+//! the record reports), so a column that stopped at the attribute's name is
+//! visible too. Documents are named by a path with a directory, so a basename
+//! in `location.file` is visible as the wrong answer it is.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -41,6 +44,14 @@ fn written_at(text: &str, needle: &str) -> (u64, u64) {
         .count() as u64
         + 1;
     (row, col)
+}
+
+/// The row and column the value of the first `attribute` written in `text`
+/// starts at, after its opening quote: where a marker's id is written.
+fn value_written_at(text: &str, attribute: &str) -> (u64, u64) {
+    let opening = format!("{attribute}=\"");
+    let (row, col) = written_at(text, &opening);
+    (row, col + opening.chars().count() as u64)
 }
 
 /// `files` written into a fresh directory.
@@ -134,7 +145,7 @@ fn a_statechart_marker_after_an_include_is_placed_where_it_was_written() {
     let dir = fixture(&[("states.xml", STATES_FRAGMENT), ("sc.scxml", STATECHART)]);
     let doc: PathBuf = dir.path().join("sc.scxml");
     let file = doc.to_str().unwrap();
-    let at = written_at(STATECHART, "sce:unresolved=");
+    let at = value_written_at(STATECHART, "sce:unresolved");
 
     let records = listed(&doc);
     assert_eq!(records.len(), 1, "{records:?}");
@@ -169,7 +180,7 @@ fn a_forge_marker_after_an_include_is_placed_where_it_was_written() {
     let dir = fixture(&[("inputs.xml", INPUTS_FRAGMENT), ("marked.scxml", TRANSFORM)]);
     let doc = dir.path().join("marked.scxml");
     let file = doc.to_str().unwrap();
-    let at = written_at(TRANSFORM, "sce:unresolved=");
+    let at = value_written_at(TRANSFORM, "sce:unresolved");
 
     let records = listed(&doc);
     assert_eq!(records.len(), 1, "{records:?}");
@@ -210,7 +221,7 @@ fn a_forge_marker_an_include_carries_is_listed_in_its_fragment() {
         ("included.scxml", TRANSFORM_INCLUDING_A_MARKER),
     ]);
     let doc = dir.path().join("included.scxml");
-    let at = written_at(MARKED_FRAGMENT, "sce:unresolved=");
+    let at = value_written_at(MARKED_FRAGMENT, "sce:unresolved");
 
     let records = listed(&doc);
     assert_eq!(
