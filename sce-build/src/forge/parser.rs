@@ -15506,7 +15506,8 @@ fn read_algorithm_slot_type(
     }
     // A union is held whole (docs/adr/0092, Landing order step 5); a backend
     // that does not lower one refuses it by name where it renders the
-    // algorithm, and no backend holds one inside another type yet.
+    // algorithm, and no backend holds one inside another type yet. A list of
+    // enum values is refused the same way by a backend that lowers none.
     written.algorithm_view().map_err(|composition| {
         composition_refusal(node, doc_name, element, "an algorithm", &composition)
     })?;

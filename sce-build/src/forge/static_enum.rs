@@ -25,7 +25,8 @@
 //
 // An algorithm's body is held to the same rule ([`check_algorithm`]): its
 // parameters, locals, loop items and record fields are typed by the enum they
-// are declared as, and its return by the signature. Before that pass an
+// are declared as, an element of a list of enum values by the list's, and its
+// return by the signature. Before that pass an
 // algorithm that returned an enum parameter as an `int64`, or an `int64` as an
 // enum, passed `check` on every backend, and the Rust it generated
 // (`fn status_number(s: Status) -> i64 { return s; }`) did not compile.
@@ -38,7 +39,7 @@ use crate::forge::expression_site::ExpressionSite;
 use crate::forge::generator::{AlgorithmTypes, CalleeEnum, ImportContext};
 use crate::forge::model::{AlgorithmModel, AlgorithmStmt, AlgorithmValueType, SceType};
 use crate::forge::type_ctx::INDEXED_ELEMENT;
-use crate::forge::types::TypeCtx;
+use crate::forge::types::{InferredType, TypeCtx};
 
 /// The enum each slot of a call of an imported algorithm holds, by the alias the
 /// statechart imports it under ([`crate::forge::type_ctx::StaticScope::call_enums`]):
@@ -336,6 +337,15 @@ fn class_of(
             index_held(object, index, ctx, reading)?;
             Ok(crate::forge::expr::place_path(node).and_then(|path| (reading.var_alias)(&path)))
         }
+        // `<list>[<index>]`: an element of a list of enum values an algorithm
+        // holds is a value of that enum, whatever the index is.
+        ExprKind::Index { object, index } => match listed_enum(object, ctx) {
+            Some(alias) => {
+                index_held(object, index, ctx, reading)?;
+                Ok(Some(alias))
+            }
+            None => nothing_but(node, ctx, reading),
+        },
         ExprKind::Ident(name) => Ok((reading.var_alias)(name)),
         // A conditional and a read with a default are values of an enum when
         // [`held`] says they are present ones; an optional one is no value of it.
@@ -515,6 +525,29 @@ fn class_of(
                 .map(|slot| slot.alias))
         }
         _ => nothing_but(node, ctx, reading),
+    }
+}
+
+/// The enum an element of the list `object` names is a value of, when it names
+/// a `list<enum:<alias>>` parameter or local of an algorithm (SCE_FORGE.md
+/// §4.12), by the alias the algorithm imports the enum under. `None` for any
+/// other list, and for any other node.
+///
+/// A statechart's list is a place of the one value type whose elements its
+/// scope types ([`TypeCtx::reads_elements_of`]), read by the statechart's own
+/// rules; this is an algorithm's rule, and passes such a list by.
+fn listed_enum(object: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<String> {
+    let ExprKind::Ident(name) = &object.kind else {
+        return None;
+    };
+    if ctx.reads_elements_of(name) {
+        return None;
+    }
+    match ctx.lookup_var(name) {
+        InferredType::List(elem) | InferredType::ListBuffer(elem) => {
+            elem.enum_alias().map(str::to_string)
+        }
+        _ => None,
     }
 }
 

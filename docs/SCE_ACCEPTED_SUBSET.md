@@ -6059,8 +6059,10 @@ four for `éé`. Measured 2026-10-21, before this was held, Kotlin wrote `.size`
 `String`, which does not compile.
 
 **List variables.** `sce:type="list<T>"` (in XML `list&lt;T&gt;`) holds a
-sequence of `T`, a fixed-width number or `bool` — the element an algorithm's
-list admits (SCE_FORGE.md §4.12). It starts empty and takes no `expr`; it
+sequence of `T`, a fixed-width number or `bool`, the elements an algorithm's
+list admits on every backend (SCE_FORGE.md §4.12). A list of enum values,
+`list<enum:E>`, is an algorithm's alone: no variable holds one, and it is refused
+by name (`generate/unsupported-feature`). A list starts empty and takes no `expr`; it
 declares the most elements it ever holds with `sce:capacity`, which is
 required on a list and on a string, and refused on any other variable. Two
 statements write it, both naming it by `target` as E8's does:
@@ -6634,7 +6636,7 @@ statechart unless the statechart can hand it what it takes and receive what it
 returns — a host calls it, and another algorithm when its slots are records or
 unions it is handed by name (SCE_FORGE.md §4.12) — and is refused where it is
 called, with two exceptions: an algorithm that takes scalars only, declares `may-fail` and
-returns a `list<T>` of numbers or bools with a `returns-max-size` is taken
+returns a `list<T>` of numbers or bools (never of enum values) with a `returns-max-size` is taken
 whole by an `<assign>` to a list variable (below), and an algorithm whose
 records are ones the statechart imports as event-schemas is handed the
 variables that hold them (State an algorithm takes and gives back, below). The import is

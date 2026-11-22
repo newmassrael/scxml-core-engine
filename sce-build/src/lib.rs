@@ -10166,8 +10166,14 @@ pub(crate) fn discover_stateless_signature(
                     .collect::<Option<Vec<_>>>()
                     .filter(|_| m.signature.may_fail)
                     .and_then(|params| {
+                        // A list of enum values is an algorithm's alone: no list
+                        // variable holds one.
                         let elem = match m.signature.return_type.as_ref()?.list_elem()? {
-                            forge::model::AlgorithmValueType::Scalar(elem) => elem.clone(),
+                            forge::model::AlgorithmValueType::Scalar(elem)
+                                if forge::model::AlgorithmValueType::list_elem_admitted(elem) =>
+                            {
+                                elem.clone()
+                            }
                             _ => return None,
                         };
                         Some(ListReturn {
@@ -10201,6 +10207,13 @@ pub(crate) fn discover_stateless_signature(
                                 )
                             } else if elem.record_alias().is_some() {
                                 "it returns a list of records, and a statechart takes a list of \
+                                 numbers or bools only"
+                                    .to_string()
+                            } else if matches!(
+                                elem.scalar(),
+                                Some(forge::model::SceType::Enum(_))
+                            ) {
+                                "it returns a list of enum values, and a statechart takes a list of \
                                  numbers or bools only"
                                     .to_string()
                             } else if !m.signature.may_fail {

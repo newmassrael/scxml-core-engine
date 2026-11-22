@@ -34069,9 +34069,11 @@ pub fn generate_swift_with_imports(
     }
     // An algorithm that holds a map is refused by the one refusal every
     // backend that lowers none answers (docs/adr/0108, D10), before the
-    // constructs Swift has yet to lower are asked about.
+    // constructs Swift has yet to lower are asked about, and one that holds a
+    // list of enum values by the one its own list answers.
     if let ForgeDocument::Algorithm(m) = doc {
         reject_map_in_unsupported_lang(m, Language::Swift)?;
+        reject_enum_list_in_unsupported_lang(m, Language::Swift)?;
     }
     let refused = match doc {
         ForgeDocument::Algorithm(m) => {
@@ -40362,44 +40364,15 @@ fn render_observer(
 
 // ── Algorithm (RFC §synth-5-A) ──────────────────────────────────────
 
-/// The declared type a list's element is — the inverse of
-/// [`ListElem::of`](crate::forge::types::ListElem::of), which admits only
-/// these.
+/// The scalar a list's element is: a fixed-width number, a `bool` or a value of
+/// an enum, whose alias is the list's own document's.
 fn sce_type_of_list_elem(elem: crate::forge::types::ListElem) -> SceType {
-    use crate::forge::types::InferredType;
-    match elem.element_type() {
-        InferredType::Int {
-            signed: false,
-            bits: 8,
-        } => SceType::Uint8,
-        InferredType::Int {
-            signed: false,
-            bits: 16,
-        } => SceType::Uint16,
-        InferredType::Int {
-            signed: false,
-            bits: 32,
-        } => SceType::Uint32,
-        InferredType::Int { signed: false, .. } => SceType::Uint64,
-        InferredType::Int {
-            signed: true,
-            bits: 8,
-        } => SceType::Int8,
-        InferredType::Int {
-            signed: true,
-            bits: 16,
-        } => SceType::Int16,
-        InferredType::Int {
-            signed: true,
-            bits: 32,
-        } => SceType::Int32,
-        InferredType::Int { signed: true, .. } => SceType::Int64,
-        InferredType::Float { bits: 32 } => SceType::Float32,
-        InferredType::Float { .. } => SceType::Float64,
-        InferredType::Bool => SceType::Bool,
-        // A record element is typed by its schema, which a caller resolves
-        // before asking for a scalar (the foreach lowering does).
-        other => unreachable!("a list element of {other:?} has no scalar type"),
+    match elem.value() {
+        crate::forge::value_type::ValueType::Scalar(ty) => ty.clone(),
+        // A record element is typed by its schema and a union element by its
+        // unit, which a caller resolves before asking for a scalar (the foreach
+        // lowering does), and no list holds another element.
+        other => unreachable!("a list element of {other} has no scalar type"),
     }
 }
 
@@ -41162,6 +41135,45 @@ fn reject_map_in_unsupported_lang(
             m.name,
             lang.canonical_name(),
             crate::forge::value_type::MAP_LANDING
+        ),
+        m.source_location.clone(),
+    )
+    .into())
+}
+
+/// SCE_FORGE.md §4.12: an algorithm that holds a list of the values of an enum —
+/// a parameter, a local or its return — generates only on a backend that lowers
+/// one ([`crate::forge::codegen_matrix::ALGORITHM_ENUM_LIST_BACKENDS`]); on any
+/// other it is refused by name before any statement of its body is lowered, so
+/// that no container of a scalar (Kotlin's primitive arrays, C11's runtime
+/// views) is asked for one of an enum.
+fn reject_enum_list_in_unsupported_lang(
+    m: &AlgorithmModel,
+    lang: crate::generator::Language,
+) -> Result<(), ForgeError> {
+    use crate::forge::codegen_matrix::ALGORITHM_ENUM_LIST_BACKENDS;
+    if ALGORITHM_ENUM_LIST_BACKENDS.contains(&lang) {
+        return Ok(());
+    }
+    let Some((name, ty)) = m.first_enum_list() else {
+        return Ok(());
+    };
+    let held = if name == "return" {
+        format!("a return of {}", ty.as_attr())
+    } else {
+        format!("`{name}` of {}", ty.as_attr())
+    };
+    let served: Vec<&'static str> = ALGORITHM_ENUM_LIST_BACKENDS
+        .iter()
+        .map(|candidate| candidate.canonical_name())
+        .collect();
+    Err(GenerateError::unsupported_at(
+        format!(
+            "algorithm '{}' holds {held}, and {} does not lower a list of enum values in an \
+             algorithm yet (SCE_FORGE.md section 4.12; lowered for: {})",
+            m.name,
+            lang.canonical_name(),
+            served.join(", ")
         ),
         m.source_location.clone(),
     )
@@ -43022,9 +43034,11 @@ impl<'a> ListSpelling<'a> {
             SceType::Float64 => "DoubleArray",
             SceType::Float32 => "FloatArray",
             SceType::Bool => "BooleanArray",
-            // `AlgorithmValueType::list_elem_admitted` keeps every other
-            // type out of a list before any backend renders.
-            other => unreachable!("list<{}> is refused by the parser", other.as_attr()),
+            // `AlgorithmValueType::algorithm_view` keeps every other type out
+            // of a list before any backend renders, and a list of enum values
+            // is refused on Kotlin before its body is
+            // ([`reject_enum_list_in_unsupported_lang`]).
+            other => unreachable!("list<{}> is refused before this", other.as_attr()),
         }
     }
 
@@ -43044,7 +43058,7 @@ impl<'a> ListSpelling<'a> {
             SceType::Float64 => "toDoubleArray",
             SceType::Float32 => "toFloatArray",
             SceType::Bool => "toBooleanArray",
-            other => unreachable!("list<{}> is refused by the parser", other.as_attr()),
+            other => unreachable!("list<{}> is refused before this", other.as_attr()),
         }
     }
 }
@@ -48803,11 +48817,15 @@ impl<'a> AlgorithmTypes<'a> {
             }
         }
         // A list buffer reads the same way, from the algorithm's own storage.
+        // Its element is a fixed-width number, a `bool` or a value of an enum
+        // ([`AlgorithmValueType::algorithm_view`]), which has no operand type
+        // and is held to its enum by the enum rule, as an enum parameter is.
         for (name, elem) in &self.list_buffers {
-            if let Some(list_elem) = crate::forge::types::ListElem::of(elem) {
-                type_ctx.insert_var(name.as_str(), InferredType::ListBuffer(list_elem));
-                type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
-            }
+            let list_elem = crate::forge::types::ListElem::of_value(
+                &crate::forge::value_type::ValueType::Scalar(elem.clone()),
+            );
+            type_ctx.insert_var(name.as_str(), InferredType::ListBuffer(list_elem));
+            type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
         }
         // A buffer of records is a list as a value (`len(xs)`, a foreach
         // source) and has no operand element, as a list parameter of records
@@ -49022,6 +49040,7 @@ fn render_algorithm(
     reject_may_fail_in_unsupported_lang(m, lang)?;
     reject_union_in_unsupported_lang(m, lang)?;
     reject_map_in_unsupported_lang(m, lang)?;
+    reject_enum_list_in_unsupported_lang(m, lang)?;
     let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
     // docs/adr/0108, D4 "Storage" and D6 on C11: every map the algorithm holds
