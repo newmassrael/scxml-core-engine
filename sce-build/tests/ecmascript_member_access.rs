@@ -216,12 +216,11 @@ fn the_same_words_on_an_authors_object_are_still_callable() {
 /// Lua would satisfy a text assertion.
 #[test]
 fn every_field_the_specification_names_still_reads() {
-    let engine = engine_with(&[(
-        "_event",
+    let engine = engine_with_event(
         "{ name = 'go', type = 'external', sendid = 's1', origin = 'o', \
           origintype = 'ot', invokeid = 'i1', data = { items = { 1, 2 } }, \
           raw = 'POST / HTTP/1.1' }",
-    )]);
+    );
     for (source, expected) in [
         ("_event.name", "go"),
         ("_event.type", "external"),
@@ -451,17 +450,40 @@ fn the_bracket_spelling_measures_the_same_value() {
 /// A session on the engine a generated Rust machine runs, with the named
 /// variables already assigned.
 fn engine_with(variables: &[(&str, &str)]) -> (LuaEngine, String) {
+    let (engine, session) = new_session();
+    for (name, lua) in variables {
+        engine
+            .execute_script(&session, &format!("{name} = {lua}"))
+            .unwrap_or_else(|err| panic!("could not establish {name}: {err}"));
+    }
+    (engine, session)
+}
+
+/// A session on that engine whose `_event` is the Lua table `event`.
+///
+/// A script cannot assign `_event`: the engine binds it read-only, and a
+/// write to it fails. It is bound here through `_scxml_bind_system`, the one
+/// way the shared Lua semantics give an engine to bind a system variable
+/// (`sce/include/scripting/ecma_semantics.lua`), so every read below goes
+/// through the read-only view a running machine reads. The engine's own
+/// `set_current_event` fills only the fields it is handed, and `raw` is not
+/// one of them.
+fn engine_with_event(event: &str) -> (LuaEngine, String) {
+    let (engine, session) = new_session();
+    engine
+        .execute_script(&session, &format!("_scxml_bind_system('_event', {event})"))
+        .unwrap_or_else(|err| panic!("could not bind _event: {err}"));
+    (engine, session)
+}
+
+/// A started engine and a session on it, with nothing assigned.
+fn new_session() -> (LuaEngine, String) {
     let engine = LuaEngine::new();
     assert!(engine.initialize(), "the Lua engine must start");
     let session = "member_access".to_string();
     engine
         .create_session(&session)
         .expect("the session is created");
-    for (name, lua) in variables {
-        engine
-            .execute_script(&session, &format!("{name} = {lua}"))
-            .unwrap_or_else(|err| panic!("could not establish {name}: {err}"));
-    }
     (engine, session)
 }
 
