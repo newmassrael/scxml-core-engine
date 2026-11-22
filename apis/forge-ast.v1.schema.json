@@ -9081,6 +9081,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "description": "§scxml-5.3: each backend's name for this variable's typed reader. Set only on the entries of [`SCXMLModel::readable_variables`], by [`crate::reader_names::assign`]; templates spell the reader from this and from nothing else."
         },
         "record_fields": {
