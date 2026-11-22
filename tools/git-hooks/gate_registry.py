@@ -672,6 +672,33 @@ NOTHING_TO_VERIFY = "no-gate-applies"
 # a workflow, and gives its reason.
 BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 
+# ── A gate whose cost the change sets: `audited_after_landing` ─────────
+#
+# The queue judges one candidate at a time for everybody, so what a landing may
+# run is bounded: the cost of a gate is the tree's, and the fleet's machines
+# and bx's kept passes share it out. The cost of a gate that does one build per
+# mutation case its change reaches is the change's, and nothing bounds it.
+# Measured 2026-11-21 on item 346: its change set reaches 15 casefiles and 152
+# cases, and in its second attempt the one unit that ran them held one machine
+# 10367s of the judgment's four hours (named by elimination: the account times
+# the units it does not name). The unit keeps no verdict, so every attempt
+# begins it again. Over the sixteen commits of main before
+# 2026-11-22 the change set reaches 188 casefiles and 1207 cases. No shard
+# count makes that a landing's: at a minute a case it is a machine-day, and a
+# ctest case is tens of minutes. The textbook place for it is the one it had,
+# an audit of what landed, where hosted CI already shards it and defers what
+# is past its own ceiling (`SCE_PUSH_ROUND_JOBS`).
+#
+# So a gate that declares `audited_after_landing` is left out of the landing,
+# with the reason as its value, and named in the judgment beside the gates off
+# the fleet (`drop_hosted_only`). It is the same kind of answer, "hosted CI
+# audits it after landing", for another reason. It is for a gate whose cost has
+# no bound in the tree, never for one that is merely slow: a slow gate is made
+# a unit that fits, since what the landing does not judge lands unjudged.
+# `a-gate-audited-after-landing-is-ci-only-and-says-why` in the self-test holds
+# that such a gate is `ci_only`, names the workflow that audits it, and gives
+# its reason.
+
 # ── Gates that run in an image: `container` ───────────────────────────
 #
 # A gate whose verdict is one compiler's names, in `container`, the tracked
@@ -972,6 +999,11 @@ GATES: dict[str, dict] = {
                    "bypassed. Runs in CI, where the cost is not the "
                    "developer's wait, at the price of a red arriving one "
                    "round later.",
+        "audited_after_landing": "one build and one test run per mutation case "
+                                 "its change set reaches, so its cost has no "
+                                 "bound in the tree; mutation-rounds.yml "
+                                 "shards it and the weekly sweep runs the "
+                                 "corpus whole",
         # The harness itself. The gate invokes `scripts/mutate` twice — once
         # to ask a casefile what it declares, once to run the round — so an
         # edit to it changes every verdict this lane produces. It was not
@@ -996,9 +1028,10 @@ GATES: dict[str, dict] = {
                            "duration against the cost model (`date +%s`), and with "
                            "no change set it takes its base from the upstream ref",
         "inputs": None,
-        # It picks casefiles by the change set, so a unit is handed the push's
-        # range: the checkout a unit runs in is a build machine's, and its
-        # upstream says nothing about the push (see `commits` above).
+        # It picks casefiles by the change set, so a run away from the push's
+        # checkout is handed the range (`scripts/gate --change-set`): that
+        # checkout's upstream says nothing about the push (see `commits` above).
+        # A landing runs none (`audited_after_landing`).
         "commits": ["CHANGES"],
         "peak_gb": 5,
         "cores": CORES_COMPILE,
@@ -3173,6 +3206,54 @@ INERT = [
     # cost the comment above prices for the other `docs/` documents, paid on
     # the one file this repository's closure work edits every round.
     "docs/SCE_NL_IR_CLOSURE.md",
+    # The other documents directly under `docs/`, by the same claim and one
+    # line each. Checked 2026-11-22: `git grep` for each name over
+    # `sce-build/`, `scripts/`, `tools/`, `.github/`, `backends/`, `tests/` and
+    # `cmake/`, every hit that is not a comment or a docstring read by hand.
+    # What names one is prose in a message, a Cargo description, a schema's
+    # description, the list of an evaluation tool no gate runs
+    # (`tools/authoring/eval/divide_draft.py`), or a path its own test writes
+    # into a temporary repository (`a_consumer_visible_change_carries_its_
+    # migration_section` for the migration guide, whose content is judged by
+    # `consumer-guide-gate.sh` in the hook, before any gate is chosen). What
+    # sweeps every tracked file (`tree-hygiene`) runs for every change, and the
+    # citation sweep of `ledger-citations` is the one it already is for
+    # `docs/adr/**`. Two documents of this kind have a reader that does not run
+    # for every change and are not here: `SCE_LUA_TRANSLATION_SEAM.md`
+    # (`kotlin_lowering_dividend`) and `SCE_TTCN3_LANE.md`
+    # (`the_corpus_covers_every_row_and_refusal_of_adr_0091`), both of which
+    # `rust-workspace-tests.yml` names, so editing one selects
+    # `workspace-tests`.
+    #
+    # ⚠ What leaving them unclassified costs since the landing queue runs the
+    # `ci_only` gates: every one of them bought the whole table. The migration
+    # guide alone was edited by 198 commits of main in the month before
+    # 2026-11-22, and each landing of one would have held the queue for the
+    # whole table. What is under `docs/formal/` stays unclassified: no gate
+    # reads it, but `scripts/formal/check.sh` does, and it is in no lane.
+    "docs/EMBED_MANIFEST.md",
+    "docs/MESH_SCXML_COMPATIBILITY.md",
+    "docs/SCE_AUDIT_LOG.md",
+    "docs/SCE_AXIS_6_PATTERNS.md",
+    "docs/SCE_CODEC_CONSUMER_MIGRATION.md",
+    "docs/SCE_CODEGEN_DETERMINISM.md",
+    "docs/SCE_FORGE_AST.md",
+    "docs/SCE_HOST_FEATURES.md",
+    "docs/SCE_MESH_CONFORMANCE_MATRIX.md",
+    "docs/SCE_MESH_KEYING_AUDIT.md",
+    "docs/SCE_RELAY_DEPLOY.md",
+    "docs/SCE_SEALED_RECORD.md",
+    "docs/SCE_SERVER_DEPLOY.md",
+    "docs/SCE_SHARED_LIST_MLS.md",
+    "docs/SCE_SHARED_LIST_PEER_ABI.md",
+    "docs/SCE_SHARED_LIST_RELAY.md",
+    "docs/SCE_SHARED_LIST_REVIEW_BRIEF.md",
+    "docs/SCE_SHARED_LIST_TRUST.md",
+    "docs/SCE_TEST_PROFILE.md",
+    "docs/SCE_TEST_PROFILE_MIGRATION.md",
+    "docs/SCE_TRANSITION_FUNCTION.md",
+    "docs/SCE_TRANSITION_TABLE.md",
+    "docs/SCE_W3C_TEST_REGISTRATION.md",
     "LICENSE*",
     # Local tooling. The one gate that reads these, `roadmap_marker_gate`,
     # reaches every change through `tree-hygiene`, and this file's own
@@ -4049,7 +4130,7 @@ def push_keeps(repo_root: Path, reached, landing: bool = False) -> set[str]:
     The one place the two kinds of push differ, so the hook, the runner and
     the plan cannot select differently: a push of another ref drops every
     `ci_only` gate (`drop_ci_only`); an update to main keeps them and drops
-    only the gates whose platform the fleet does not have (`drop_hosted_only`).
+    only the gates hosted CI judges in its place (`drop_hosted_only`).
     """
     if landing:
         return drop_hosted_only(reached, fleet_platforms(repo_root))
@@ -4075,16 +4156,33 @@ def fleet_platforms(repo_root: Path) -> set[str]:
 
 
 def drop_hosted_only(selected, platforms, table=None) -> set[str]:
-    """Remove the gates whose `platform` is not one the fleet has.
+    """Remove the gates a landing leaves to hosted CI.
 
-    A gate that names no platform runs on bx.toml's own and stays. Its
-    dependencies stay as well, as `drop_ci_only` keeps them: they are gates
-    the change reached, whichever gate pulled them in.
+    Two kinds: a gate whose `platform` is not one the fleet has, and one whose
+    cost the change sets (`audited_after_landing`). A gate that names no
+    platform runs on bx.toml's own and stays. Its dependencies stay as well, as
+    `drop_ci_only` keeps them: they are gates the change reached, whichever
+    gate pulled them in.
     """
     table = GATES if table is None else table
     return {slug for slug in selected
-            if table[slug].get("platform") is None
-            or table[slug]["platform"] in platforms}
+            if (table[slug].get("platform") is None
+                or table[slug]["platform"] in platforms)
+            and not table[slug].get("audited_after_landing")}
+
+
+def why_hosted(slug: str, table=None) -> str:
+    """Why a landing leaves `slug` to hosted CI, for the line that names it.
+
+    A gate with both reasons is named by its cost: the platform would be the
+    reason only if the fleet could bear the cost.
+    """
+    table = GATES if table is None else table
+    audited = table[slug].get("audited_after_landing")
+    if audited:
+        return f"is audited after landing ({audited})"
+    return (f"needs platform {table[slug]['platform']!r}, which bx.toml does "
+            f"not declare ({table[slug].get('platform_reason', '')})")
 
 
 def container_placement(order, table=None) -> list[tuple[str, str, str]]:
@@ -4148,7 +4246,8 @@ def ci_owed(repo_root: Path, changed: list[str],
 
     "Only CI" is whatever the push left out, so it follows `landing`: a push
     of another ref leaves out every `ci_only` gate, and an update to main
-    only the gates off the fleet (`push_keeps`). Derived from the selection
+    only the gates it leaves to hosted CI (`push_keeps`). Derived from the
+    selection
     rather than from the field, so the notice cannot name a gate the push ran.
     """
     return run_order({s for s in left_out(repo_root, changed, landing)
@@ -5604,10 +5703,22 @@ def self_test(repo_root: Path) -> int:
           want_has=["codegen-build", "workspace-tests", "clippy"],
           landing=True)
     # Rule 1 on an update to main: every gate the fleet can run, `ci_only`
-    # included, and never a gate off the fleet.
+    # included, and never a gate hosted CI audits in its place.
     check("unclassified-landing", ["some_new_top_level_dir/thing.txt"],
-          want_full=True, want_has=["mutation-rounds", "clippy"],
-          want_lacks=["windows-msvc"], landing=True)
+          want_full=True, want_has=["cpp-suite-wasm", "clippy"],
+          want_lacks=["windows-msvc", "mutation-rounds"], landing=True)
+    # A document under `docs/` that no path-scoped gate reads does not buy the
+    # whole table on an update to main, and the two that a suite reads select
+    # that suite.
+    for doc in ("docs/SCE_CODEC_CONSUMER_MIGRATION.md",
+                "docs/SCE_TEST_PROFILE.md"):
+        check("document-landing", [doc], want_full=False,
+              want_has=["tree-hygiene"], want_lacks=["workspace-tests"],
+              landing=True)
+    for doc in ("docs/SCE_LUA_TRANSLATION_SEAM.md",
+                "docs/SCE_TTCN3_LANE.md"):
+        check("read-document-landing", [doc], want_full=False,
+              want_has=["tree-hygiene", "workspace-tests"], landing=True)
     # Dependency closure: an example-only change still builds sce-codegen.
     # `example-codegen` is `ci_only` now, but the closure it pulls in is not:
     # the dependency must survive its dependent leaving, or a gate that
@@ -5687,10 +5798,11 @@ def self_test(repo_root: Path) -> int:
             "landing: on a push of another ref, workspace-tests is reached and "
             "left out, and neither --ci-owed nor --ci-unowed names it")
 
-    # a-landing-leaves-out-only-the-gates-off-the-fleet. An unclassified path
-    # reaches every gate (rule 1), so the landing's answer there is exactly
-    # the table less the gates whose platform bx.toml does not declare, and
-    # what it leaves out is exactly those.
+    # a-landing-leaves-out-only-the-gates-hosted-ci-audits. An unclassified
+    # path reaches every gate (rule 1), so the landing's answer there is exactly
+    # the table less the gates whose platform bx.toml does not declare and the
+    # ones that say they are audited after landing, and what it leaves out is
+    # exactly those.
     cases += 1
     platforms = fleet_platforms(repo_root)
     if not platforms:
@@ -5700,20 +5812,22 @@ def self_test(repo_root: Path) -> int:
     off_fleet = {s for s in GATES
                  if GATES[s].get("platform") is not None
                  and GATES[s]["platform"] not in platforms}
+    audited = {s for s in GATES if GATES[s].get("audited_after_landing")}
+    left_to_ci = off_fleet | audited
     unclassified = ["some_new_top_level_dir/thing.txt"]
     full_keys, _ = select(repo_root, unclassified, landing=True)
-    if set(full_keys) != set(GATES) - off_fleet:
+    if set(full_keys) != set(GATES) - left_to_ci:
         failures.append(
             f"landing: an unclassified path on an update to main runs "
-            f"{len(full_keys)} gate(s), not the {len(GATES) - len(off_fleet)} "
-            f"the fleet can run; missing="
-            f"{sorted(set(GATES) - off_fleet - set(full_keys))} "
-            f"extra={sorted(set(full_keys) & off_fleet)}")
-    if left_out(repo_root, unclassified, landing=True) != off_fleet:
+            f"{len(full_keys)} gate(s), not the {len(GATES) - len(left_to_ci)} "
+            f"the fleet can run and bound; missing="
+            f"{sorted(set(GATES) - left_to_ci - set(full_keys))} "
+            f"extra={sorted(set(full_keys) & left_to_ci)}")
+    if left_out(repo_root, unclassified, landing=True) != left_to_ci:
         failures.append(
             f"landing: what an update to main leaves out is "
             f"{sorted(left_out(repo_root, unclassified, landing=True))}, not "
-            f"the gates off the fleet {sorted(off_fleet)}")
+            f"the gates off the fleet and the audited ones {sorted(left_to_ci)}")
     # The filter itself, on a fixture, so it keeps measuring when the live
     # table has no gate off the fleet.
     cases += 1
@@ -5721,6 +5835,7 @@ def self_test(repo_root: Path) -> int:
         "anywhere": {},
         "on-linux": {"platform": "linux"},
         "on-macos": {"platform": "macos"},
+        "audited": {"audited_after_landing": "its cost has no bound"},
     }
     kept = drop_hosted_only(set(platform_fixture), {"linux"},
                             table=platform_fixture)
@@ -5728,7 +5843,34 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             f"platform-fixture: with only `linux` declared the fleet keeps "
             f"{sorted(kept)}; a gate naming no platform and a gate naming a "
-            f"declared one stay, a gate naming another goes")
+            f"declared one stay, a gate naming another goes, and so does one "
+            f"audited after landing")
+
+    # a-gate-audited-after-landing-is-ci-only-and-says-why. It is left out of
+    # the landing for its cost, so it has to be `ci_only` (no push of another
+    # ref can run it either), it has to name the workflow that audits it, and
+    # the judgment prints the reason, so it has to be one.
+    cases += 1
+    for slug, spec in sorted(GATES.items()):
+        if "audited_after_landing" not in spec:
+            continue
+        if not spec.get("ci_only"):
+            failures.append(
+                f"audited: {slug} is left out of a landing and is not "
+                f"ci_only; a push of another ref would run it")
+        if not spec.get("workflows"):
+            failures.append(
+                f"audited: {slug} is left to hosted CI after landing and "
+                f"names no workflow, so nothing judges it")
+        why = spec["audited_after_landing"]
+        if not isinstance(why, str) or len(why.strip()) < 40:
+            failures.append(
+                f"audited: {slug} is audited after landing with no reason "
+                f"saying what bounds its cost in no landing")
+    if not audited:
+        failures.append(
+            "audited: no gate says it is audited after landing, so the rule "
+            "above is held by nothing")
 
     # a-gate-off-the-fleet-is-ci-only-and-says-why. Such a gate is left out of
     # the landing, so it has to be `ci_only` (no push of another ref can run
@@ -7968,9 +8110,7 @@ def print_plan(args, repo_root: Path) -> int:
     print(f"  selection: {reason}", file=sys.stderr)
     for slug in off_fleet:
         print(f"  NOT JUDGED HERE, hosted CI audits it after landing: {slug} "
-              f"needs platform {GATES[slug]['platform']!r}, which bx.toml "
-              f"does not declare ({GATES[slug].get('platform_reason', '')})",
-              file=sys.stderr)
+              f"{why_hosted(slug)}", file=sys.stderr)
     if head is None:
         print("  git names no HEAD commit, so no unit that reads it keeps a "
               "verdict", file=sys.stderr)
@@ -8141,8 +8281,7 @@ def main() -> int:
         if args.landing:
             for slug in hosted_only(repo_root, matched(repo_root, changed)[0]):
                 print(f"  NOT JUDGED HERE, hosted CI audits it after landing: "
-                      f"{slug} ({GATES[slug].get('platform_reason', '')})",
-                      file=sys.stderr)
+                      f"{slug} {why_hosted(slug)}", file=sys.stderr)
     for k in keys:
         print(k)
     return 0
