@@ -18,6 +18,10 @@ use std::path::{Path, PathBuf};
 /// embedded template registry and the provenance stamps, so editing it
 /// changes emitted output without touching a single file under `src/`.
 ///
+/// So are the manifests of the local packages the generator links (listed in
+/// [`WITNESS_TREES`] by their sources): the features a manifest declares
+/// decide which of those sources are compiled.
+///
 /// The rest are files outside [`WITNESS_TREES`] that the generator compiles
 /// in with `include_str!`, so an edit to one changes what it emits: the
 /// harnesses and base classes `w3c_suite.rs` writes beside the W3C machines,
@@ -31,6 +35,8 @@ pub const WITNESS_FILES: &[&str] = &[
     "Cargo.lock",
     "sce-build/Cargo.toml",
     "sce-build/build.rs",
+    "backends/rust/runtime/Cargo.toml",
+    "backends/rust/portable-bytes/Cargo.toml",
     "backends/go/tests/go.sum",
     "backends/go/tests/harness/harness.go",
     "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -40,7 +46,6 @@ pub const WITNESS_FILES: &[&str] = &[
     "backends/kotlin/test-harness/src/main/kotlin/com/sce/w3c/W3CTestBase.kt",
     "backends/python/runtime/sce_runtime/policy.py",
     "backends/python/tests/conftest.py",
-    "backends/rust/runtime/src/policy.rs",
     "backends/rust/tests/src/harness.rs",
     "sce/include/scripting/ecma_semantics.lua",
     "sce/include/scripting/json_builtins.lua",
@@ -57,7 +62,21 @@ pub const WITNESS_FILES: &[&str] = &[
 /// resolved from the copy `build.rs` embeds, never from disk, so an edited
 /// standard document changes what this generator emits. So are the kind
 /// examples, which the generator compiles in as the example of each kind.
-pub const WITNESS_TREES: &[&str] = &["sce-build/src", "sce-build/kind-examples", "stdlib"];
+///
+/// So are the sources of the local packages the generator links, the Rust
+/// runtime and the byte storage it holds: the check of a recorded trace
+/// (`ttcn3_export::trace_check`) and the macrostep core
+/// (`ttcn3_export::macrostep`) run the runtime's own code, so an edit to it
+/// changes what the generator answers. The runtime's `src` also holds the
+/// policy source `reader_names.rs` includes.
+pub const WITNESS_TREES: &[&str] = &[
+    "sce-build/src",
+    "sce-build/kind-examples",
+    "stdlib",
+    "backends/rust/runtime/src",
+    "backends/rust/runtime/generated",
+    "backends/rust/portable-bytes/src",
+];
 
 /// The one directory the binary may compile files from without the witness
 /// covering them, relative to the workspace root: the Jinja2 template tree.
@@ -284,7 +303,19 @@ mod tests {
         .unwrap();
         fs::create_dir_all(dir.join("stdlib/time")).unwrap();
         fs::write(dir.join("stdlib/time/a.scxml"), b"<scxml/>\n").unwrap();
+        for file in LINKED_PACKAGE_SOURCES {
+            let path = dir.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, format!("// {file}\n")).unwrap();
+        }
     }
+
+    /// One file in each tree of the local packages the generator links.
+    const LINKED_PACKAGE_SOURCES: [&str; 3] = [
+        "backends/rust/runtime/src/lib.rs",
+        "backends/rust/runtime/generated/mod.rs",
+        "backends/rust/portable-bytes/src/lib.rs",
+    ];
 
     #[test]
     fn a_one_byte_source_edit_moves_the_digest() {
@@ -400,6 +431,7 @@ mod tests {
                 "sce-build/kind-examples/enum.scxml",
                 "stdlib/time/a.scxml",
             ])
+            .chain(LINKED_PACKAGE_SOURCES)
             .map(|p| tmp.path().join(p))
             .collect();
         expected.sort();
