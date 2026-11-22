@@ -46,10 +46,12 @@ use sce_build::generator::Language;
 /// being declared and written by `materialize`.
 const MIN_ROUTES: usize = 6;
 
-/// Lower bound on the refusals that carry a candidate list: the backends
-/// the routes that restrict their menu refuse, `generate-w3c` one and
-/// `generate-conformance` two.
-const MIN_REFUSALS: usize = 3;
+/// Lower bound on the refusals that carry a candidate list: the unknown name
+/// each of the six routes refuses, and the one backend a route restricts its
+/// menu by (`generate-w3c` refuses `c11`). `generate-conformance` serves
+/// every backend that writes a transform in whole or in part, which is all
+/// of them since Swift writes one in part.
+const MIN_REFUSALS: usize = 7;
 
 /// Lower bound on (route, backend) pairs actually executed.
 const MIN_PROBES: usize = 40;
@@ -468,11 +470,21 @@ fn a_route_that_refuses_a_backend_names_it_in_help() {
         }
     }
 
+    // The table's own count of what the routes refuse: the help is parsed
+    // apart from it, so the two agreeing is not the table agreeing with itself.
+    let refused_by_the_table: usize = LanguageRoute::ALL
+        .iter()
+        .map(|route| Language::ALL.len() - route.languages().len())
+        .sum();
     assert!(
-        checked >= 3,
-        "only {checked} refused backends were checked for an explanation; \
-         two routes restrict their menu (one backend and two backends), so \
-         three is the count this build has"
+        refused_by_the_table >= 1,
+        "no route restricts its menu, so this test checks nothing: drop it, or \
+         restate it over a route that does"
+    );
+    assert_eq!(
+        checked, refused_by_the_table,
+        "the helps name {checked} refused backends and the routes refuse \
+         {refused_by_the_table}: a route's help menu and what it serves disagree"
     );
 }
 
