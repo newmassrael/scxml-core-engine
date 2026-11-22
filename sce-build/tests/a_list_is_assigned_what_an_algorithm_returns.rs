@@ -14,6 +14,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::{emitting, language_wire_name};
+use sce_build::forge::model::ForgeKind;
 use tempfile::{tempdir, TempDir};
 
 fn sce_codegen_bin() -> PathBuf {
@@ -210,7 +212,7 @@ const LINES: &str = r##"<?xml version="1.0"?>
   <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
   <sce:signature>
     <sce:param name="some" type="bool"/>
-    <sce:return type="list&lt;record:Entry&gt;" sce:returns-max-size="8" may-fail="true"/>
+    <sce:return type="list&lt;record:Entry&gt;" returns-max-size="8" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="8"/>
@@ -259,7 +261,8 @@ fn a_list_of_records_is_assigned_from_an_algorithm_that_takes_a_truth_value() {
     )
     .expect("write probe");
     let mut wrong = Vec::new();
-    for lang in ["", "rust", "kotlin", "cpp", "go", "python", "c11", "swift"] {
+    let wires = std::iter::once("").chain(emitting(ForgeKind::Algorithm).map(language_wire_name));
+    for lang in wires {
         let mut command = Command::new(sce_codegen_bin());
         command
             .arg("--workspace-root")
