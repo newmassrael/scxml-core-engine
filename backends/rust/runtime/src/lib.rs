@@ -322,10 +322,11 @@ pub use sce_portable_bytes as portable;
 /// The value of a `map<K, V>[N]` and of a `set<K>[N]` (docs/adr/0108, D8), in
 /// which a generated machine holds a map variable, with what a put and a remove
 /// answer and the canonical bytes a key hashes and compares by. The reads an
-/// expression lowers to are `portable::map`'s functions. A machine's map is
-/// kept in the default storage (`DefaultMapStorage`); a host names
-/// `MapStorage`'s `Inline` for a map of its own that must never allocate
-/// (`portable::Heap` under the leaf crate's `alloc` feature).
+/// expression lowers to, and the place a nested write changes
+/// (`portable::map::value_mut`), are `portable::map`'s functions. A
+/// machine's map is kept in the default storage (`DefaultMapStorage`); a host
+/// names `MapStorage`'s `Inline` for a map of its own that must never
+/// allocate (`portable::Heap` under the leaf crate's `alloc` feature).
 pub use sce_portable_bytes::{
     BoundedMap, BoundedSet, DefaultMapStorage, FromSeed, Inline, KeyFeed, MapCursor, MapKey,
     MapSeed, MapSeeds, MapStorage, PutOutcome, RemoveOutcome,
