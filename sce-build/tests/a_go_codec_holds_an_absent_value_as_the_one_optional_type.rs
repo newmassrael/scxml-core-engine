@@ -14,8 +14,14 @@
 //! - a CBOR map's `optional<T>` entry, and a content-line codec's entry and
 //!   parameter, in a record of lines too;
 //! - a positional codec's field gated by `sce:present-if`, of every layout it
-//!   admits: fixed width, variable width, a tail, a length-ref byte string or
-//!   text, a repeat, a TLV chain and an embedded codec.
+//!   admits: fixed width, variable width, a tail, a length-ref text whose length
+//!   is gated beside it, a repeat, a TLV chain and an embedded codec.
+//!
+//! A gated length-ref byte string whose length the frame carries whether or not
+//! it is there is no optional field of its own: the length is a number the
+//! encode derives where the content is present and one the value states where
+//! it is absent, so the two sides of its flag are the arms of one group
+//! (docs/adr/0065 §6 R4b), and the value holds the arm.
 //!
 //! What the Go does with the type (the decode into a statechart's variable, the
 //! encode from one, a present `false` or zero told from absence) is held by
@@ -295,12 +301,6 @@ fn a_gated_field_is_the_one_optional_type_in_every_layout() {
             "w.WriteBytes(src.Payload().Proven().Bytes())",
         ),
         (
-            "codec_present_if_length_ref",
-            &["payload optional.Of[codec.Bytes[CodecPresentIfLengthRefPayloadBound]]"],
-            "Payload = optional.Some(append([]byte(nil), raw...))",
-            "w.WriteBytes(src.Payload().Proven().Bytes())",
-        ),
-        (
             "codec_present_if_string",
             &["text optional.Of[codec.Text[CodecPresentIfStringTextBound]]"],
             "Text = optional.Some(string(raw))",
@@ -338,6 +338,83 @@ fn a_gated_field_is_the_one_optional_type_in_every_layout() {
         assert!(
             source.contains(encoded),
             "{document}: the encode lacks `{encoded}`:\n{source}"
+        );
+    }
+}
+
+/// A gated length-ref byte string whose length field is not gated is the arm of
+/// a group of its flag (docs/adr/0065 §6 R4b): where the flag holds, the arm
+/// holds the content and the encode derives the length from it; where it does
+/// not, the arm holds the length the value states. The value holds one arm of
+/// the sum, the first where it was handed none, and no member of the group is a
+/// field of the value or an optional field of its own; the derived length reads
+/// the content through the optional type, never a nil.
+#[test]
+fn a_length_ref_byte_string_whose_length_is_ungated_is_the_arm_of_a_group() {
+    let document = "codec_present_if_length_ref";
+    let source = go_of(document);
+    assert!(
+        source.contains(OPTIONAL_IMPORT),
+        "{document}: names optional.Of and imports no optional package:\n{source}"
+    );
+    let fields = struct_fields(&source);
+    for declaration in [
+        "payload codec.Bytes[CodecPresentIfLengthRefPayloadBound]",
+        "payloadSize uint8",
+        "flagsHasPayload CodecPresentIfLengthRefFlagsHasPayload",
+    ] {
+        assert!(
+            fields
+                .iter()
+                .any(|line| *line == format!("\t{declaration}")),
+            "{document}: no field `{declaration}` in the generated types:\n{source}"
+        );
+    }
+    assert!(
+        !fields.iter().any(|line| {
+            let line = line.trim_start();
+            line.starts_with("payload optional.Of[") || line.starts_with("payloadSize optional.Of[")
+        }),
+        "{document}: a member of the group is an optional field of its own: {fields:?}"
+    );
+    assert!(
+        pointer_fields(&source).is_empty(),
+        "{document}: a field is held by a pointer: {:?}",
+        pointer_fields(&source)
+    );
+    for line in [
+        "type CodecPresentIfLengthRefFlagsHasPayload interface {\n\
+         \tisCodecPresentIfLengthRefFlagsHasPayload()\n}\n",
+        "\tFlagsHasPayload() CodecPresentIfLengthRefFlagsHasPayload\n",
+        "func (a CodecPresentIfLengthRefFlagsHasPayloadHasPayload) Payload() \
+         codec.Bytes[CodecPresentIfLengthRefPayloadBound] {\n\treturn a.payload\n}\n",
+        "func (a CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload) PayloadSize() uint8 {\n\
+         \treturn a.payloadSize\n}\n",
+        // The zero value holds the first arm.
+        "\tif s.flagsHasPayload == nil {\n\
+         \t\treturn CodecPresentIfLengthRefFlagsHasPayloadHasPayload{}\n\t}\n",
+        // The length is derived from the content the arm holds, read through
+        // the optional type, and is what the value states otherwise.
+        "\tvar _mPayload optional.Of[codec.Bytes[CodecPresentIfLengthRefPayloadBound]]\n",
+        "\t\t_mPayload = optional.Some(_g.Payload())\n",
+        "\t\t_mPayloadSize = optional.Some(_g.PayloadSize())\n",
+        "\tif _v, ok := _mPayload.Get(); ok {\n\t\treturn uint8(_v.Len())\n\t}\n",
+        "\tif _s, ok := _mPayloadSize.Get(); ok {\n\t\treturn _s\n\t}\n",
+    ] {
+        assert!(
+            source.contains(line),
+            "{document}: the group lacks `{line}`:\n{source}"
+        );
+    }
+    for line in [
+        "src.Payload()",
+        "src.PayloadSize()",
+        "s.payload ",
+        "s.payloadSize ",
+    ] {
+        assert!(
+            !source.contains(line),
+            "{document}: a member of the group is read off the value, not its arm: `{line}`"
         );
     }
 }
