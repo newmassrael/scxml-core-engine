@@ -4114,8 +4114,10 @@ line of the element or attribute that breaks it:
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each
 record variable's `<id>.<field>`, the triggering event's
-`_event.data.<field>` when the event carries an imported schema, the
-imported enums, and `In(<state id>)` — gathered once by
+`_event.data.<field>` when the event carries an imported schema (a read of
+`_event.data` in an entry, an exit or a transition on an event no imported
+schema declares names no value, and is `scxml/static-datamodel-rule` in whatever
+expression it stands), the imported enums, and `In(<state id>)` — gathered once by
 `crate::forge::type_ctx::StaticScope`, which validation, the host-action
 check and the lowering all read, and which shares its payload registration
 with the typed guard path. Each is judged against the

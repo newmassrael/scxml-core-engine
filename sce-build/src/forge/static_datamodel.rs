@@ -360,27 +360,6 @@ pub fn check(
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
             {
-                // A guard reads `_event.data` through the schema its event
-                // declares. With none, the data is text this model has no type
-                // for (the failure code of an `error.*` event, a refusal's
-                // reason), and a read of it was accepted here and written into
-                // the generated machine as the expression the author wrote,
-                // which names no value there.
-                if whole.is_none()
-                    && crate::forge::expr::references_event_data_lexically(&transition.cond)
-                {
-                    let spelling = transition.cond_spelling.as_ref();
-                    return Err(judge.rule_at(
-                        format!("<transition event=\"{}\" cond=\"{}\">", transition.event, transition.cond),
-                        "a guard reads `_event.data`, and the event declares no schema, so no payload is in \
-                         scope: the data of an event without one is text this data model has no type for. \
-                         Declare a schema for the event, or branch on its name",
-                        spelling.map(|s| s.row()),
-                        spelling.map(|s| s.col()),
-                        &state.id,
-                        &transition.cond,
-                    ));
-                }
                 judge.expr(
                     &ctx,
                     &transition.cond,
@@ -1528,6 +1507,31 @@ impl<'a> Judge<'a> {
             )
         };
         self.record_reads(expr);
+        // `_event.data` is the payload of the event the transition is on, read
+        // through the schema that event declares. Everywhere else it names no
+        // value of the machine: the data of an event without a schema (the
+        // failure code of an `error.*` event, a refusal's reason) is text this
+        // model has no type for, and an entry or an exit has no event. Such a
+        // read was judged a value of no type, which fits every place, and
+        // written into the generated machine as the author wrote it.
+        if !self.payload_declared.get() && crate::forge::expr::references_event_data_lexically(expr)
+        {
+            return Err(self.rule_at(
+                format!(
+                    "a read of `_event.data` in the expression `{}`",
+                    expr.trim()
+                ),
+                "no payload is in scope: `_event.data` is the payload of the event a transition \
+                 is on, read there through the schema an import declares for that event, and an \
+                 entry, an exit or a transition on an event no imported schema declares has none. \
+                 Import a schema whose sce:event-name is the event's, or branch on the event's \
+                 name",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                &self.walk_state.borrow(),
+                expr.trim(),
+            ));
+        }
         // A call of an algorithm that writes a map in place is the statement
         // `<sce:call>`, the whole of its `expr`, and no value of any other
         // expression, which has no effect (docs/adr/0108, D6 item 2).
