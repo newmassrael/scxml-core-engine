@@ -355,9 +355,9 @@ COST_MEASURED: dict[str, str] = {
     # 72s, `scripts/gate genmc-queue` on pc2 with two harnesses and ten mutants
     # each, the first run that read GenMC's reports rather than its exit codes.
     "genmc-queue": "2026-10-10",
-    # 208s, the gate's script through bx on hkl002 with three cores, the first run
-    # that judged every model and its refinement.
-    "formal-models": "2026-11-22",
+    # 367s, the gate through bx with four cores, the first run with the models of
+    # ADR 0116 and ADR 0117 (208s on hkl002 with three cores before them).
+    "formal-models": "2026-11-23",
     # 22s, `scripts/formal/proofs.py` on the workstation, eleven mutants, Verus fetched.
     "formal-proofs": "2026-11-23",
     # 451s, the gate's script through bx on hkl002, cold (its entry says why
@@ -1816,10 +1816,10 @@ GATES: dict[str, dict] = {
         "workflows": ["formal-models.yml"],
         "runner_workflow": True,
         "extra": ["docs/formal/**", "scripts/formal/**"],
-        "ci_only": "The largest model is explored whole (OpenInstances, 1.4 million "
+        "ci_only": "Every model is explored whole (the largest, BroadcastLog, 15.4 million "
                    "states), which takes minutes of a push that has five for everything. "
                    "formal-models.yml runs it on every change to a model or its judge.",
-        "cost_s": 210,
+        "cost_s": 367,
         "summary": "TLA+ models under TLC, with every protocol part taken out in turn",
         # TLC explores every reachable state of a configuration, and the manifest
         # records the count, so one input gives one answer.
