@@ -7,7 +7,7 @@
         "state": "routing",
         "variables": {
           "by_key": [],
-          "version": 0,
+          "version": "0",
           "changes": 0,
           "refused_peers": 0,
           "refused_keys": 0,
@@ -47,7 +47,7 @@
           ],
           "changed": true,
           "changes": 1,
-          "version": 1
+          "version": "1"
         }
       }
     },
@@ -65,7 +65,7 @@
         "variables": {
           "changed": false,
           "changes": 1,
-          "version": 2,
+          "version": "2",
           "by_key": [
             [
               "demo/q",
@@ -100,7 +100,7 @@
         "variables": {
           "changed": true,
           "changes": 2,
-          "version": 3,
+          "version": "3",
           "by_key": [
             [
               "demo/q",
@@ -134,7 +134,7 @@
         "variables": {
           "changed": true,
           "changes": 3,
-          "version": 4,
+          "version": "4",
           "by_key": [
             [
               "demo/q",
@@ -180,7 +180,7 @@
           "changed": false,
           "refused_peers": 1,
           "changes": 3,
-          "version": 5,
+          "version": "5",
           "by_key": [
             [
               "demo/q",
@@ -224,7 +224,7 @@
         "variables": {
           "changed": true,
           "changes": 4,
-          "version": 6
+          "version": "6"
         }
       }
     },
@@ -240,7 +240,7 @@
       "expect": {
         "variables": {
           "changes": 5,
-          "version": 7
+          "version": "7"
         }
       }
     },
@@ -256,7 +256,7 @@
       "expect": {
         "variables": {
           "changes": 6,
-          "version": 8,
+          "version": "8",
           "by_key": [
             [
               "demo/q",
@@ -347,7 +347,7 @@
           "changed": false,
           "refused_keys": 1,
           "changes": 6,
-          "version": 9
+          "version": "9"
         }
       }
     },
@@ -370,7 +370,7 @@
       "expect": {
         "variables": {
           "was": true,
-          "version": 10,
+          "version": "10",
           "by_key": [
             [
               "demo/q",
@@ -441,7 +441,7 @@
       "expect": {
         "variables": {
           "was": false,
-          "version": 11
+          "version": "11"
         }
       }
     },
@@ -455,7 +455,7 @@
       "expect": {
         "variables": {
           "dropped": 3,
-          "version": 12,
+          "version": "12",
           "by_key": [
             [
               "demo/q",
