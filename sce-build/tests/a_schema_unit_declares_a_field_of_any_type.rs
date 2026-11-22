@@ -202,7 +202,9 @@ fn generated(language: &str, name: &str) -> String {
 }
 
 /// Each backend's spelling of the composed fields of `event_batch.scxml`, as its
-/// unit's struct declares them.
+/// unit's struct declares them. A Swift field holds no value until its initializer
+/// writes it, so it is declared with none and its initializer takes it
+/// (docs/adr/0099, section 4).
 #[test]
 fn every_backend_declares_each_composed_field_of_the_batch() {
     for (language, fragments) in [
@@ -266,10 +268,12 @@ fn every_backend_declares_each_composed_field_of_the_batch() {
         (
             "swift",
             &[
-                "public var items: [EventBatchItemPayload] = []",
-                "public var grid: [[UInt8]] = []",
-                "public var maybe: [UInt16?] = []",
-                "public var spare: [UInt8]? = nil",
+                "    public var items: [EventBatchItemPayload]\n",
+                "    public var grid: [[UInt8]]\n",
+                "    public var maybe: [UInt16?]\n",
+                "    public var spare: [UInt8]?\n",
+                "public init(items: [EventBatchItemPayload], grid: [[UInt8]], ",
+                "maybe: [UInt16?], spare: [UInt8]?, ",
             ][..],
         ),
         (
@@ -312,7 +316,7 @@ fn every_backend_declares_a_record_that_holds_a_list_of_texts() {
         ),
         ("go", "Tags []string"),
         ("python", "tags: list[str]"),
-        ("swift", "public var tags: [String] = []"),
+        ("swift", "    public var tags: [String]\n"),
         ("c", "sce_list_4_string_8_t tags;"),
     ] {
         let out = generated(language, "event_batch_item.scxml");
