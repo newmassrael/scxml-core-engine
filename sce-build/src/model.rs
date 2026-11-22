@@ -1590,7 +1590,7 @@ pub struct Variable {
     /// Set only on the entries of [`SCXMLModel::readable_variables`], by
     /// [`crate::reader_names::assign`]; templates spell the reader from
     /// this and from nothing else.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub reader: Option<crate::reader_names::ReaderNames>,
     /// `sce:req` requirement IDs attached to this `<data>` — a value the
     /// document decides, which a requirement can be the reason for as
