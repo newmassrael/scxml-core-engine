@@ -2704,7 +2704,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # a record key or value in the type the record's unit declares (docs/adr/0108, D6
     # item 4), whose header the machine's includes. So are the algorithm a map machine
     # lends its table to and the enum, the record and the union it answers in
-    # (`static_map_take`, D6 item 2).
+    # (`static_map_take`, D6 item 2). The table a router keeps by key expression and by
+    # peer (`linkstate_interest`) holds a record key and a record value in its inner map,
+    # so its schemas are here too, those of its events beside them.
     set(_STATE_ALGORITHM_HEADERS "")
     foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids
                           ledger_larger ledger_has ids_above
@@ -2713,8 +2715,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                           schema_item_pick item_pick_first
                           schema_map_face schema_map_peer
                           enum_take_kind schema_take_duplicate union_take_result take_generation
-                          amounts_above)
-        if(_STATE_HEADER MATCHES "^(schema|enum|union)_")
+                          amounts_above
+                          linkstate_zid linkstate_qinfo linkstate_register linkstate_withdraw)
+        if(_STATE_HEADER MATCHES "^(schema|enum|union|linkstate)_")
             set(_STATE_SOURCE
                 "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_HEADER}.scxml")
         else()
