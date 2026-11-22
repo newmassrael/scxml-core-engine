@@ -402,25 +402,13 @@ pub fn channel_cannot_host(stem: &str, channel: Channel) -> Option<Exemption> {
     }
 }
 
-/// The reason a stem Swift refuses is exempt, spelled once: what the generator refuses it for.
-macro_rules! swift_refusal {
-    ($what:literal) => {
-        concat!(
-            "`generate -l swift` refuses the document by name (generate/unsupported-feature): ",
-            $what,
-            " has no Swift codegen path yet"
-        )
-    };
-}
-
 /// The stems the Swift backend refuses by name (`generate/unsupported-feature`), each with the
 /// reason it is exempt, which says what it is refused for. Every entry is a lowering not built yet, never a defect of the engine, and is
 /// deleted when the construct is built: `a_swift_exemption_still_holds` asks the generator, so an
-/// entry for a stem Swift now writes is red.
-pub const SWIFT_REFUSED: &[(&str, &str)] = &[(
-    "a_mesh_request_reaches_the_router",
-    swift_refusal!("a Mesh remote-procedure `<invoke>` (Swift has no host Mesh core)"),
-)];
+/// entry for a stem Swift now writes is red. Empty today: the last entry, the Mesh request
+/// (`a_mesh_request_reaches_the_router`), is written since the engine reads a host invoke's
+/// request, and its driver drives it through the router.
+pub const SWIFT_REFUSED: &[(&str, &str)] = &[];
 
 /// The stems the Swift backend writes and whose driver is not written yet, a debt register that
 /// shrinks: each slice that writes a driver deletes its stem here, and
