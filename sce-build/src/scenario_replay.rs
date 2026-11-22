@@ -118,8 +118,9 @@ pub const HOST_FEATURE_EXPECT: &[&str] = &["state", "variables", "host_invokes",
 /// user say of a permission, the store's quota, the operations it fails, what
 /// its transport answers, what its scripted model provider is like
 /// (docs/adr/0087, section 9.1 item 7), the keys it signs, seals and tags with
-/// (docs/SCE_HOST_FEATURES.md, sections 10 and 12), and the bytes its random
-/// source gives next (section 11).
+/// (docs/SCE_HOST_FEATURES.md, sections 10 and 12), the bytes its random
+/// source gives next (section 11), and the streams its audit log keeps
+/// (section 15).
 pub const HOST_DIRECTIVES: &[&str] = &[
     "clock",
     "permission",
@@ -130,6 +131,7 @@ pub const HOST_DIRECTIVES: &[&str] = &[
     "model",
     "cose_keys",
     "random",
+    "audit",
 ];
 
 /// Which drivers replay a scenario, and so which members it may carry.
