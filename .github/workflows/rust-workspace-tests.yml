@@ -117,6 +117,10 @@ on:
       # `ci-only-coverage` in tools/git-hooks/gate_registry.py refuses the
       # two lists disagreeing.
       - 'docs/SCE_ACCEPTED_SUBSET.md'
+      # Read at run time by `kotlin_lowering_dividend` and by
+      # `the_corpus_covers_every_row_and_refusal_of_adr_0091`.
+      - 'docs/SCE_LUA_TRANSLATION_SEAM.md'
+      - 'docs/SCE_TTCN3_LANE.md'
       - 'schemas/**'
       - 'apis/**'
       # Tables every engine is held to, read at run time by the runtime's and
@@ -302,6 +306,10 @@ on:
       # `ci-only-coverage` in tools/git-hooks/gate_registry.py refuses the
       # two lists disagreeing.
       - 'docs/SCE_ACCEPTED_SUBSET.md'
+      # Read at run time by `kotlin_lowering_dividend` and by
+      # `the_corpus_covers_every_row_and_refusal_of_adr_0091`.
+      - 'docs/SCE_LUA_TRANSLATION_SEAM.md'
+      - 'docs/SCE_TTCN3_LANE.md'
       - 'schemas/**'
       - 'apis/**'
       # Tables every engine is held to, read at run time by the runtime's and
