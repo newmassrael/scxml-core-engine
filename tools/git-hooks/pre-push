@@ -34,9 +34,10 @@
 # gate its change reaches, `ci_only` included (`--landing`), on the build
 # machines. Only the queue's integrator can make that push (a GitHub ruleset
 # refuses any other), and it runs this hook for the landing push's own line to
-# judge each candidate. The gates whose platform the fleet does not have are
-# left to hosted CI's audit and named. prepush-gates.sh says why; the registry
-# makes the selection.
+# judge each candidate. The gates whose platform the fleet does not have, and
+# those whose cost has no bound in the tree (`audited_after_landing` in the
+# registry), are left to hosted CI's audit and named. prepush-gates.sh says
+# why; the registry makes the selection.
 #
 # `PREPUSH_FULL=1` runs every gate regardless of paths, `ci_only` included,
 # so it is NOT bounded by the budget and is the deliberate way to verify a

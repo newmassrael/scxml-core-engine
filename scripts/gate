@@ -330,7 +330,7 @@ case "$MODE" in
         ;;
     all)
         # Captured and THEN split, for the reason the `named` branch gives. A
-        # landing leaves out the gates off the fleet (`drop_hosted_only`), the
+        # landing leaves out the gates hosted CI audits (`drop_hosted_only`), the
         # same answer `--plan --all --landing` gives.
         if ! ORDER_TEXT="$(python3 - "$REGISTRY" "$REPO_ROOT" "$LANDING" <<'PYEOF'
 import runpy, sys
