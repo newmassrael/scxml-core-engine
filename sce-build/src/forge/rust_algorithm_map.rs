@@ -12,7 +12,7 @@
 //!
 //! * A **parameter** states no bound of its own: its map is the caller's,
 //!   whatever bound the caller's variable states and in whatever storage the
-//!   caller keeps it (`Inline` or `Heap`, D4 "Storage"), so the function is
+//!   caller keeps it (`Inline`, `Heap` or `Linear`, D4 "Storage"), so the function is
 //!   generic over both (`const N0: usize`, `S0: MapStorage`) and takes the map
 //!   lent, `&` to be read (D6 item 1) and `&mut` where it is declared `inout`
 //!   (D6 item 2). A text or a byte string key or value is held to the bound the
