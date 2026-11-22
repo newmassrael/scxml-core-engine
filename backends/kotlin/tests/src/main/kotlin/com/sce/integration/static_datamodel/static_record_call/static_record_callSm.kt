@@ -1,18 +1,20 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 1c4345fd879065241c0c00b76f8e6b6a7a7f3f3f200f379431412a268aff8b25
+// source-hash: cc3cf3e4da9e1c2e0e4db97442f49095c4e4773e22e51b8c4548ad0f3af2248f
 // source: static_record_call.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_call.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_record_call.scxml:14 :: _machine
+// SCE-MAP: static_record_call.scxml:16 :: _machine
 
 package com.sce.integration.static_datamodel.static_record_call
 
 import com.sce.runtime.*
+import com.sce.generated.enum_item_status.*
 import com.sce.generated.ledger_amount.*
 import com.sce.generated.ledger_larger.*
 import com.sce.generated.ledger_line.*
+import com.sce.generated.ledger_settles.*
 import com.sce.generated.schema_entry.*
 
 
@@ -53,6 +55,34 @@ data class StaticRecordCallEntryRecord(val id: UInt, val amount: Int) {
         fun fromSaved(value: Any?, what: String): StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), amount = SavedValues.int32(SavedValues.field(value, what, "amount"), "$what.amount"))
     }
 }
+/** SCE Accepted Subset §2.15: an `enum:Status` datamodel value. */
+enum class StaticRecordCallStatusEnum(val declaredName: String) {
+    OPEN("open"),
+    IN_PROGRESS("in_progress"),
+    DONE("done");
+
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = declaredName
+
+    /** The number the enum document declares for this value. */
+    fun toUnderlying(): UByte = when (this) {
+        OPEN -> 2u.toUByte()
+        IN_PROGRESS -> 5u.toUByte()
+        DONE -> 7u.toUByte()
+    }
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): StaticRecordCallStatusEnum {
+            val declared = SavedValues.string(value, what)
+            return entries.firstOrNull { it.declaredName == declared }
+                ?: throw StateRefusal("'$what' ($declared) is not a variant of Status")
+        }
+
+        /** The variant that declares [raw], or null for a number no variant declares. */
+        fun fromUnderlying(raw: UByte): StaticRecordCallStatusEnum? = entries.firstOrNull { it.toUnderlying() == raw }
+    }
+}
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 private fun call_AmountOf__p(p0: StaticRecordCallLedgerEntryPayload): Int {
     val r = ledgerAmount(SchemaEntryPayload(id = p0.id, amount = p0.amount))
@@ -69,6 +99,10 @@ private fun call_Larger__vp(p0: StaticRecordCallEntryRecord, p1: StaticRecordCal
 private fun call_LineOf__(p0: UInt, p1: Int): StaticRecordCallEntryRecord {
     val r = ledgerLine(p0, p1)
     return StaticRecordCallEntryRecord(id = r.id, amount = r.amount)
+}
+private fun call_Settles__(p0: StaticRecordCallStatusEnum, p1: Int): Boolean {
+    val r = ledgerSettles(when (p0) { StaticRecordCallStatusEnum.OPEN -> EnumItemStatus.OPEN; StaticRecordCallStatusEnum.IN_PROGRESS -> EnumItemStatus.IN_PROGRESS; StaticRecordCallStatusEnum.DONE -> EnumItemStatus.DONE }, p1)
+    return r
 }
 
 // --- State Machine (W3C SCXML) ---
@@ -114,6 +148,11 @@ class StaticRecordCallStateMachine(
 
     /** What the published `peaks` holds. */
     val peaks: UInt get() = vPeaks
+    /** W3C SCXML 5.2: the `settled` datamodel variable, published (`sce:direction="out"`). */
+    private var vSettled: UInt = 0.toUInt()
+
+    /** What the published `settled` holds. */
+    val settled: UInt get() = vSettled
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -124,6 +163,7 @@ class StaticRecordCallStateMachine(
         var large: UInt? = null
         var debts: UInt? = null
         var peaks: UInt? = null
+        var settled: UInt? = null
     }
 
     /**
@@ -143,6 +183,7 @@ class StaticRecordCallStateMachine(
         vLarge = params.large ?: (0.toUInt())
         vDebts = params.debts ?: (0.toUInt())
         vPeaks = params.peaks ?: (0.toUInt())
+        vSettled = params.settled ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -152,6 +193,7 @@ class StaticRecordCallStateMachine(
         val large: UInt,
         val debts: UInt,
         val peaks: UInt,
+        val settled: UInt,
     )
 
     /**
@@ -173,6 +215,7 @@ class StaticRecordCallStateMachine(
         large = vLarge,
         debts = vDebts,
         peaks = vPeaks,
+        settled = vSettled,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -202,10 +245,10 @@ class StaticRecordCallStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
-        revised = "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
-        format2First = "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
-        format2Revised = "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
+        first = "9ecb7e846af99a2a8fd9c089ae23029dc80fc023474d449392c8a5db0f673032",
+        revised = "0baf78f70ea4930ac1f5f6a390052b54e5c67b59732345bfab3e17c218be100f",
+        format2First = "9ecb7e846af99a2a8fd9c089ae23029dc80fc023474d449392c8a5db0f673032",
+        format2Revised = "0baf78f70ea4930ac1f5f6a390052b54e5c67b59732345bfab3e17c218be100f",
         records = listOf(
             RecordLineage(
                 event = "ledger.entry",
@@ -248,6 +291,7 @@ class StaticRecordCallStateMachine(
         variables += "large" to SavedValues.of(vLarge)
         variables += "debts" to SavedValues.of(vDebts)
         variables += "peaks" to SavedValues.of(vPeaks)
+        variables += "settled" to SavedValues.of(vSettled)
     }
 
     /** [save] at the host's wall clock now. */
@@ -293,6 +337,7 @@ class StaticRecordCallStateMachine(
         vLarge = SavedValues.uint32(savedGrown.variable("large"), "large")
         vDebts = SavedValues.uint32(savedGrown.variable("debts"), "debts")
         vPeaks = SavedValues.uint32(savedGrown.variable("peaks"), "peaks")
+        vSettled = SavedValues.uint32(savedGrown.variable("settled"), "settled")
     }
 
     /** [restore] at the host's wall clock now. */
@@ -314,6 +359,7 @@ class StaticRecordCallStateMachine(
         SavedValues.uint32(savedGrown.variable("large"), "large")
         SavedValues.uint32(savedGrown.variable("debts"), "debts")
         SavedValues.uint32(savedGrown.variable("peaks"), "peaks")
+        SavedValues.uint32(savedGrown.variable("settled"), "settled")
     }
 
     override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
@@ -463,7 +509,7 @@ class StaticRecordCallStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_record_call.scxml:14 :: _machine
+    // SCE-MAP: static_record_call.scxml:16 :: _machine
     override fun onEntry(state: StaticRecordCallState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticRecordCallState.Open -> onEntryOfOpen()
@@ -472,11 +518,11 @@ class StaticRecordCallStateMachine(
 
 
     private fun onEntryOfOpen() {
-                // SCE-MAP: static_record_call.scxml:33 :: open :: _state_body
+                // SCE-MAP: static_record_call.scxml:38 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_record_call.scxml:14 :: _machine
+    // SCE-MAP: static_record_call.scxml:16 :: _machine
     override fun onExit(state: StaticRecordCallState) {
         when (state) {
             is StaticRecordCallState.Open -> onExitOfOpen()
@@ -485,13 +531,13 @@ class StaticRecordCallStateMachine(
 
 
     private fun onExitOfOpen() {
-                // SCE-MAP: static_record_call.scxml:33 :: open :: _state_body
+                // SCE-MAP: static_record_call.scxml:38 :: open :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_record_call.scxml:14 :: _machine
+    // SCE-MAP: static_record_call.scxml:16 :: _machine
     override fun executeTransitionContent(source: StaticRecordCallState, transitionIndex: Int) {
         when (source) {
             is StaticRecordCallState.Open -> transitionContentOfOpen(transitionIndex)
@@ -513,7 +559,7 @@ class StaticRecordCallStateMachine(
 
 
     private fun transitionContentOfOpenAt0() {
-                // SCE-MAP: static_record_call.scxml:34 :: open :: _transition_0
+                // SCE-MAP: static_record_call.scxml:39 :: open :: _transition_0
                 if (pendingLedgerEntryPayload == null) {
                     return
                 }
@@ -545,5 +591,13 @@ class StaticRecordCallStateMachine(
             }
 
             vMade = call_LineOf__(vDebts, pendingLedgerEntryPayload!!.amount)
+
+
+            if (call_Settles__(StaticRecordCallStatusEnum.DONE, pendingLedgerEntryPayload!!.amount) && !call_Settles__(StaticRecordCallStatusEnum.OPEN, pendingLedgerEntryPayload!!.amount)) {
+
+            if (try { vSettled = com.sce.forge.runtime.SceChecked.add(vSettled, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+                return
+            }
+            }
     }
 }

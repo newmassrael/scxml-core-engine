@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 1c4345fd879065241c0c00b76f8e6b6a7a7f3f3f200f379431412a268aff8b25
+// source-hash: cc3cf3e4da9e1c2e0e4db97442f49095c4e4773e22e51b8c4548ad0f3af2248f
 // source: static_record_call.scxml
 
 
@@ -21,7 +21,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_record_call.scxml:14 :: _machine
+// SCE-MAP: static_record_call.scxml:16 :: _machine
 
 package static_record_call
 
@@ -34,9 +34,12 @@ import (
 	sce "github.com/newmassrael/sce-go-runtime"
 	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
+	sce_enum_item_status "github.com/newmassrael/sce-go-tests/integration/static_datamodel/enum_item_status"
 	sce_ledger_amount "github.com/newmassrael/sce-go-tests/integration/static_datamodel/ledger_amount"
 	sce_ledger_larger "github.com/newmassrael/sce-go-tests/integration/static_datamodel/ledger_larger"
 	sce_ledger_line "github.com/newmassrael/sce-go-tests/integration/static_datamodel/ledger_line"
+	sce_ledger_settles "github.com/newmassrael/sce-go-tests/integration/static_datamodel/ledger_settles"
 	sce_schema_entry "github.com/newmassrael/sce-go-tests/integration/static_datamodel/schema_entry"
 )
 
@@ -251,18 +254,77 @@ func StaticRecordCallEntryRecordFromSaved(value any, what string) (StaticRecordC
 	return record, nil
 }
 
+// SCE Accepted Subset §2.15: an `enum:Status` datamodel value.
+type StaticRecordCallStatusEnum uint8
+
+const (
+	StaticRecordCallStatusEnumOpen StaticRecordCallStatusEnum = 2
+	StaticRecordCallStatusEnumInProgress StaticRecordCallStatusEnum = 5
+	StaticRecordCallStatusEnumDone StaticRecordCallStatusEnum = 7
+)
+
+// String is the name the enum document declares for the value.
+func (v StaticRecordCallStatusEnum) String() string {
+	switch v {
+	case StaticRecordCallStatusEnumOpen:
+		return "open"
+	case StaticRecordCallStatusEnumInProgress:
+		return "in_progress"
+	case StaticRecordCallStatusEnumDone:
+		return "done"
+	}
+	return ""
+}
+
+// ToUnderlying is the number the enum document declares for the value.
+func (v StaticRecordCallStatusEnum) ToUnderlying() uint8 {
+	return uint8(v)
+}
+
+// StaticRecordCallStatusEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticRecordCallStatusEnumFromUnderlying(raw uint8) optional.Of[StaticRecordCallStatusEnum] {
+	switch raw {
+	case 2, 5, 7:
+		return optional.Some(StaticRecordCallStatusEnum(raw))
+	}
+	return optional.None[StaticRecordCallStatusEnum]()
+}
+
+// ToSaved is this value as a saved state writes it.
+func (v StaticRecordCallStatusEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticRecordCallStatusEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticRecordCallStatusEnumFromSaved(value any, what string) (StaticRecordCallStatusEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "open":
+		return StaticRecordCallStatusEnumOpen, nil
+	case "in_progress":
+		return StaticRecordCallStatusEnumInProgress, nil
+	case "done":
+		return StaticRecordCallStatusEnumDone, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Status", what, declared))
+}
+
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
 // StaticRecordCallSavedShapeFormat2 is the shape a format-2 saved state of
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticRecordCallSavedShapeFormat2 = "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34"
+const StaticRecordCallSavedShapeFormat2 = "9ecb7e846af99a2a8fd9c089ae23029dc80fc023474d449392c8a5db0f673032"
 
 // StaticRecordCallSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticRecordCallSavedShapeFormat2Revised = "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9"
+const StaticRecordCallSavedShapeFormat2Revised = "0baf78f70ea4930ac1f5f6a390052b54e5c67b59732345bfab3e17c218be100f"
 
 // StaticRecordCallSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -277,10 +339,10 @@ var StaticRecordCallSavedEnumKeys = [...]string{}
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticRecordCallSavedShape = sce.SavedShape{
-	First:          "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
-	Revised:        "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
-	Format2First:   "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
-	Format2Revised: "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
+	First:          "9ecb7e846af99a2a8fd9c089ae23029dc80fc023474d449392c8a5db0f673032",
+	Revised:        "0baf78f70ea4930ac1f5f6a390052b54e5c67b59732345bfab3e17c218be100f",
+	Format2First:   "9ecb7e846af99a2a8fd9c089ae23029dc80fc023474d449392c8a5db0f673032",
+	Format2Revised: "0baf78f70ea4930ac1f5f6a390052b54e5c67b59732345bfab3e17c218be100f",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "ledger.entry",
@@ -327,6 +389,7 @@ func StaticRecordCallSaveAt(engine *sce.Engine[StaticRecordCallState, StaticReco
 	variables.Set("large", sce.SavedWriteUint32(p.vLarge))
 	variables.Set("debts", sce.SavedWriteUint32(p.vDebts))
 	variables.Set("peaks", sce.SavedWriteUint32(p.vPeaks))
+	variables.Set("settled", sce.SavedWriteUint32(p.vSettled))
 	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticRecordCallSavedShape, variables,
 		sce.SaveHistory[StaticRecordCallState, StaticRecordCallEvent](p, StaticRecordCallHistories),
@@ -373,6 +436,11 @@ func StaticRecordCallJudge(saved *sce.SavedState) error {
 	if raw, err := grown.Variable("peaks"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadUint32(raw, "peaks"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("settled"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "settled"); err != nil {
 		return err
 	}
 	return sce.JudgeSession[StaticRecordCallState, StaticRecordCallEvent](p, grown)
@@ -442,6 +510,14 @@ func StaticRecordCallRestoreAt(policy *StaticRecordCallPolicy, saved *sce.SavedS
 	if err != nil {
 		return nil, err
 	}
+	raw6, err := grown.Variable("settled")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadUint32(raw6, "settled")
+	if err != nil {
+		return nil, err
+	}
 	if err := sce.JudgeSession[StaticRecordCallState, StaticRecordCallEvent](policy, grown); err != nil {
 		return nil, err
 	}
@@ -450,6 +526,7 @@ func StaticRecordCallRestoreAt(policy *StaticRecordCallPolicy, saved *sce.SavedS
 	policy.vLarge = read3
 	policy.vDebts = read4
 	policy.vPeaks = read5
+	policy.vSettled = read6
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -537,6 +614,10 @@ func sceAdapt_StaticRecordCall_LineOf__(p0 uint32, p1 int32) StaticRecordCallEnt
 	return out
 }
 
+func sceAdapt_StaticRecordCall_Settles__(p0 StaticRecordCallStatusEnum, p1 int32) bool {
+	return sce_ledger_settles.LedgerSettles(map[StaticRecordCallStatusEnum]sce_enum_item_status.EnumItemStatus{StaticRecordCallStatusEnumOpen: sce_enum_item_status.EnumItemStatusOpen, StaticRecordCallStatusEnumInProgress: sce_enum_item_status.EnumItemStatusInProgress, StaticRecordCallStatusEnumDone: sce_enum_item_status.EnumItemStatusDone}[p0], p1)
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -563,6 +644,8 @@ type StaticRecordCallPolicy struct {
 	vDebts uint32
 	// W3C SCXML 5.2: the `peaks` datamodel variable, published (`sce:direction="out"`).
 	vPeaks uint32
+	// W3C SCXML 5.2: the `settled` datamodel variable, published (`sce:direction="out"`).
+	vSettled uint32
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -584,6 +667,7 @@ func NewStaticRecordCallPolicy() StaticRecordCallPolicy {
 	var vLarge uint32 = 0
 	var vDebts uint32 = 0
 	var vPeaks uint32 = 0
+	var vSettled uint32 = 0
 	return StaticRecordCallPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
@@ -595,6 +679,7 @@ func NewStaticRecordCallPolicy() StaticRecordCallPolicy {
 		vLarge: vLarge,
 		vDebts: vDebts,
 		vPeaks: vPeaks,
+		vSettled: vSettled,
 	}
 }
 
@@ -643,6 +728,12 @@ func (p *StaticRecordCallPolicy) Peaks() uint32 {
 	return p.vPeaks
 }
 
+// Settled reports what the published `settled` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticRecordCallPolicy) Settled() uint32 {
+	return p.vSettled
+}
+
 // StaticRecordCallInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
 // variable left nil, or absent for an optional one, keeps the value its `<data>`
@@ -651,6 +742,7 @@ type StaticRecordCallInvokeParams struct {
 	VLarge *uint32
 	VDebts *uint32
 	VPeaks *uint32
+	VSettled *uint32
 }
 
 // AcceptParams gives this machine the values handed carries, each as the
@@ -678,11 +770,18 @@ func (p *StaticRecordCallPolicy) AcceptParams(handed StaticRecordCallInvokeParam
 	} else {
 		vPeaks = 0
 	}
+	var vSettled uint32
+	if handed.VSettled != nil {
+		vSettled = *handed.VSettled
+	} else {
+		vSettled = 0
+	}
 	p.vBest = vBest
 	p.vMade = vMade
 	p.vLarge = vLarge
 	p.vDebts = vDebts
 	p.vPeaks = vPeaks
+	p.vSettled = vSettled
 }
 
 
@@ -950,7 +1049,7 @@ func (p *StaticRecordCallPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_record_call.scxml:14
+//line static_record_call.scxml:16
 func (p *StaticRecordCallPolicy) ExecuteEntryActions(state StaticRecordCallState, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -963,7 +1062,7 @@ func (p *StaticRecordCallPolicy) ExecuteEntryActions(state StaticRecordCallState
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_record_call.scxml:14
+//line static_record_call.scxml:16
 func (p *StaticRecordCallPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -971,7 +1070,7 @@ func (p *StaticRecordCallPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_record_call.scxml:14
+//line static_record_call.scxml:16
 func (p *StaticRecordCallPolicy) ExecuteExitActions(state StaticRecordCallState, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent], configurationBeforeExit []StaticRecordCallState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -988,7 +1087,7 @@ func (p *StaticRecordCallPolicy) ExecuteExitActions(state StaticRecordCallState,
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_record_call.scxml:14
+//line static_record_call.scxml:16
 func (p *StaticRecordCallPolicy) BindCurrentEvent(event StaticRecordCallEvent, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -998,7 +1097,7 @@ func (p *StaticRecordCallPolicy) BindCurrentEvent(event StaticRecordCallEvent, e
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_record_call.scxml:14
+//line static_record_call.scxml:16
 func (p *StaticRecordCallPolicy) FirstEnabledTransition(state StaticRecordCallState, event StaticRecordCallEvent, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent]) (sce.EnabledTransition[StaticRecordCallState, sce.HistoryID], bool) {
 	switch state {
 	case StaticRecordCallStateOpen:
@@ -1018,13 +1117,13 @@ func (p *StaticRecordCallPolicy) FirstEnabledTransition(state StaticRecordCallSt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_record_call.scxml:14
+//line static_record_call.scxml:16
 func (p *StaticRecordCallPolicy) ExecuteTransitionContent(source StaticRecordCallState, transitionIndex int, engine *sce.Engine[StaticRecordCallState, StaticRecordCallEvent]) {
 	switch source {
 	case StaticRecordCallStateOpen:
 		switch transitionIndex {
 		case 0:
-//line static_record_call.scxml:34
+//line static_record_call.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordCallPayloadTagLedgerEntry {
@@ -1067,6 +1166,16 @@ func (p *StaticRecordCallPolicy) ExecuteTransitionContent(source StaticRecordCal
 
 
 	p.vMade = sceAdapt_StaticRecordCall_LineOf__(p.vDebts, p.pendingLedgerEntryPayload.amount)
+
+
+	if sceAdapt_StaticRecordCall_Settles__(StaticRecordCallStatusEnumDone, p.pendingLedgerEntryPayload.amount) && !sceAdapt_StaticRecordCall_Settles__(StaticRecordCallStatusEnumOpen, p.pendingLedgerEntryPayload.amount) {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSettled, 1); if sceFailure.Failed() { return true }; p.vSettled = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
 
 			}()
 		}
