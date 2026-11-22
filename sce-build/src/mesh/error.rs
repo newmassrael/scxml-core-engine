@@ -4424,7 +4424,9 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
         DeployError::InvalidInstances { machine, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidInstances,
             stage: Stage::MeshDeploy,
-            actual: Some(machine.clone()),
+            // The value that cannot be kept, where it is written: the key's
+            // one value (docs/adr/0113, D1).
+            actual: Some("open".into()),
             // `instances:` removed, or what it cannot stand beside: which
             // depends on what the machine is for, so nothing is offered.
             expected: None,
