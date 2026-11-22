@@ -3198,6 +3198,9 @@ fn reject_call_argument_mismatches(
                 return Err(unreceived_failure_call(&name, observed()).at(callee.span.clone()));
             }
             judge_arguments(&name, &signature.params, callee, args, source)?;
+            if let Some(arg) = string_for_a_bytes_parameter(&signature.params, args) {
+                return Err(string_where_bytes_are_held(arg, source));
+            }
         } else if is_bytes_eq_builtin(callee, ctx) {
             judge_arguments("eq", &BYTES_EQ_PARAMS, callee, args, source)?;
         }
@@ -3234,6 +3237,30 @@ fn judge_arguments(
         Some((param, arg)) => Err(type_mismatch(*param, arg, source)),
         None => Ok(()),
     }
+}
+
+/// The first of a registered function's `args` that is a string where its
+/// parameter is a byte string. [`slot_admits`] lets a string through where bytes
+/// are declared, which a payload field and the `eq` builtin rely on, but a call
+/// hands its argument as it is, and no backend takes a text for a byte string: it
+/// was generated and refused by the target language's compiler. A text is not
+/// converted here either, since a text's bytes are of an encoding and a byte
+/// string's text is Latin-1 (docs/adr/0005, decision 2).
+fn string_for_a_bytes_parameter<'a>(
+    params: &[InferredType],
+    args: &'a [TypedExpr],
+) -> Option<&'a TypedExpr> {
+    params
+        .iter()
+        .zip(args)
+        .find(|(param, arg)| {
+            let present = match **param {
+                InferredType::Optional(elem) => elem.present(),
+                param => param,
+            };
+            present == InferredType::Bytes && arg.ty == InferredType::Str
+        })
+        .map(|(_, arg)| arg)
 }
 
 /// `expr` parsed and resolved against `ctx` — typed, and refused for a name
@@ -6526,7 +6553,12 @@ fn land_strings_in_bytes_slot(expr: &mut TypedExpr, source: &str) -> Result<(), 
     if expr.ty != InferredType::Str || string_literal_as_bytes(expr) {
         return Ok(());
     }
-    Err(ExprError::UnsupportedConstruct {
+    Err(string_where_bytes_are_held(expr, source))
+}
+
+/// The refusal of `expr`, a string that stands where a byte string does.
+fn string_where_bytes_are_held(expr: &TypedExpr, source: &str) -> Refusal {
+    ExprError::UnsupportedConstruct {
         construct: "a string where a byte string is held (only a literal of printable ASCII \
                     with no backslash stands for bytes)"
             .to_string(),
@@ -6536,7 +6568,7 @@ fn land_strings_in_bytes_slot(expr: &mut TypedExpr, source: &str) -> Result<(), 
             .and_then(|span| source.get(span))
             .map(str::to_string),
     }
-    .at(expr.span.clone()))
+    .at(expr.span.clone())
 }
 
 /// The text of a byte string, each byte the character of that code point
@@ -15497,14 +15529,25 @@ mod tests {
 
     #[test]
     fn projection_does_not_fire_without_algorithm_flag() {
-        // Outside the algorithm kind the flag is off → no projection, the
-        // arg is emitted verbatim (pre-W-project behaviour preserved).
+        // Outside the algorithm kind the flag is off → no projection, and the
+        // text is refused where the parameter is a byte string: emitted as it
+        // was, it reached a backend's compiler.
         let mut ctx = projection_ctx();
         ctx.project_str_args_as_bytes_view = false;
         ctx.insert_member_len_field("entry.pattern", "klen");
-        assert_eq!(
-            tp_with("eq(entry.pattern, target)", ExprTarget::C, &ctx),
-            "eq(entry.pattern, target)"
+        let refusal = transpile_typed(
+            "eq(entry.pattern, target)",
+            ExprTarget::C,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .expect_err("a text where a byte string is taken");
+        assert!(
+            refusal
+                .to_string()
+                .contains("a string where a byte string is held"),
+            "{refusal}"
         );
     }
 
@@ -15769,6 +15812,50 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A call hands its argument as it is, so a string is refused where the
+    /// parameter is a byte string ([`string_for_a_bytes_parameter`]), a text of a
+    /// variable, a concatenation and a literal alike, on every backend; the bytes
+    /// it takes and the `eq` builtin, which converts a literal, are not.
+    #[test]
+    fn a_string_is_refused_where_a_call_takes_a_byte_string() {
+        let mut ctx = bytes_ctx();
+        ctx.insert_var("title", InferredType::Str);
+        ctx.insert_var("flag", InferredType::Bool);
+        ctx.insert_func(
+            "Length",
+            FuncSig::new(
+                vec![InferredType::Bytes],
+                InferredType::Int {
+                    signed: false,
+                    bits: 32,
+                },
+            ),
+        );
+        for target in ExprTarget::ALL {
+            for text in ["title", "title + 'x'", "'x'", "flag ? title : 'x'"] {
+                let call = format!("Length({text})");
+                match transpile_into(&call, target, &ctx, &empty_renames(), InferredType::Unknown) {
+                    Ok(lowered) => panic!(
+                        "{target:?}, `{call}` hands a text to bytes, yet lowered to {lowered}"
+                    ),
+                    Err(e) => assert!(
+                        e.to_string()
+                            .contains("a string where a byte string is held"),
+                        "{target:?}, `{call}`: expected the refusal naming the string: {e}"
+                    ),
+                }
+            }
+        }
+        assert_eq!(
+            tp_with("Length(raw)", ExprTarget::Rust, &ctx),
+            "length(raw)"
+        );
+        assert_eq!(
+            tp_with("eq(raw, 'ack')", ExprTarget::Rust, &ctx),
+            "raw == b\"ack\""
+        );
     }
 
     #[test]
