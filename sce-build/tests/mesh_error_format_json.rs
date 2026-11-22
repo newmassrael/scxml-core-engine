@@ -1313,6 +1313,267 @@ fn a_keyed_pool_section_is_checked_when_the_deployment_is_read() {
     assert_eq!(rec["actual"], "rooms", "record: {rec}");
 }
 
+/// A server that answers each `ping` at the origin it carried, as a document answers an instance of
+/// an open machine (docs/adr/0113, D2).
+const ANSWERING_SERVER_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="server" datamodel="ecmascript" initial="idle">
+  <state id="idle">
+    <transition event="ping">
+      <send targetexpr="_event.origin" event="pong"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+
+/// A server that takes its client's requests and sends nothing, so it resolves no target.
+const TAKING_SERVER_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="server" initial="idle">
+  <state id="idle">
+    <transition event="ping" target="idle"/>
+  </state>
+</scxml>
+"##;
+
+/// [`HTTPS_DEPLOY`] whose client runs as an open set of instances (docs/adr/0113, D1).
+fn open_https_deploy() -> String {
+    HTTPS_DEPLOY.replace(
+        "        source: client.scxml\n",
+        "        source: client.scxml\n        instances: open\n",
+    )
+}
+
+/// A directory that holds the open deployment, its client and `server` as its server.
+fn open_deployment(label: &str, server: &str) -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new(label);
+    dir.write("client.scxml", ANSWERED_CLIENT_SCXML);
+    dir.write("server.scxml", server);
+    let deploy = dir.write("deploy.yaml", &open_https_deploy());
+    (dir, deploy)
+}
+
+/// docs/adr/0113, D1 and D3: the open machine's own table says it is open and binds its server by
+/// name, and its server's table holds it beside its peers and not among them, under one
+/// configuration whose responder is the instance itself. Red if the template drops either field,
+/// or the open machine is bound as a peer.
+#[test]
+fn an_open_machine_reaches_the_rust_peer_tables_of_both_sides() {
+    let (dir, deploy) = open_deployment("mesh-open-client", ANSWERING_SERVER_SCXML);
+    let out = run_with_deploy_for(
+        "rust",
+        &dir.path().join("client.scxml"),
+        &deploy,
+        dir.path(),
+    );
+    assert!(
+        out.status.success(),
+        "the Rust host core serves an open machine; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = generated_file_under(dir.path(), "_mesh_peers.rs");
+    for line in [
+        "instances: sce_rust_mesh::peers::Instances::Open,",
+        "responders: sce_rust_mesh::router::Responders::Named(&[\"server\"]),",
+        "link: PeerLink::HttpsDial {",
+    ] {
+        assert!(table.contains(line), "missing `{line}`:\n{table}");
+    }
+    assert!(!table.contains("Responders::Instance"), "{table}");
+
+    let (dir, deploy) = open_deployment("mesh-open-server", ANSWERING_SERVER_SCXML);
+    let out = run_with_deploy_for(
+        "rust",
+        &dir.path().join("server.scxml"),
+        &deploy,
+        dir.path(),
+    );
+    assert!(
+        out.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = generated_file_under(dir.path(), "_mesh_peers.rs");
+    let (peers, open) = table
+        .split_once("open_peers: &[")
+        .expect("the open machines are a list of their own");
+    assert!(!peers.contains("name: \"client\""), "no peer by its name");
+    for line in [
+        "name: \"client\",",
+        "responders: sce_rust_mesh::router::Responders::Instance,",
+        "link: PeerLink::HttpsAccept {",
+        "instances: sce_rust_mesh::peers::Instances::One,",
+    ] {
+        assert!(open.contains(line), "missing `{line}`:\n{table}");
+    }
+}
+
+/// docs/adr/0113, D7: each backend but Rust refuses a machine of a deployment that declares an
+/// open one, by the open machine's name, whichever machine of it is generated. Red if a backend is
+/// added to the ones that serve an open machine, or the refusal is asked of the open machine alone.
+#[test]
+fn every_backend_but_rust_refuses_a_deployment_with_an_open_machine() {
+    use sce_build::generator::Language;
+    use sce_build::mesh::error::{CodegenError, MeshError};
+
+    let (_dir, deploy) = open_deployment("mesh-open-refused", TAKING_SERVER_SCXML);
+    for (name, document) in [
+        ("client", ANSWERED_CLIENT_SCXML),
+        ("server", TAKING_SERVER_SCXML),
+    ] {
+        for language in Language::ALL {
+            let mut model = sce_build::parser::SCXMLParser::new()
+                .parse_string(document, name)
+                .expect("parse");
+            let compiled = sce_build::compile_mesh_transport(&mut model, &deploy, *language);
+            match (language, compiled) {
+                (Language::Rust, Ok(_)) => {}
+                (Language::Rust, Err(e)) => panic!("{name}: Rust serves an open machine: {e}"),
+                (
+                    language,
+                    Err(MeshError::Codegen(CodegenError::OpenInstancesUnsupported {
+                        machine,
+                        backend,
+                    })),
+                ) => {
+                    assert_eq!(machine, "client", "{name}: the open machine is named");
+                    assert_eq!(backend, language.canonical_name());
+                }
+                (language, Err(e)) => panic!("{name}: {language:?} refused by another: {e}"),
+                (language, Ok(_)) => panic!("{name}: {language:?} took an open machine"),
+            }
+        }
+    }
+}
+
+#[test]
+fn a_backend_that_serves_no_open_machine_refuses_it_by_its_code() {
+    let (dir, deploy) = open_deployment("mesh-open-cpp", TAKING_SERVER_SCXML);
+    let out = run_with_deploy_for("cpp", &dir.path().join("client.scxml"), &deploy, dir.path());
+    assert!(
+        !out.status.success(),
+        "the C++ router serves no open machine"
+    );
+    assert_eq!(out.status.code(), Some(12), "a CodegenError");
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-open-instances-unsupported",
+        "record: {rec}"
+    );
+    assert_eq!(rec["stage"], "mesh-codegen", "record: {rec}");
+    assert_eq!(rec["spec"], "ADR 0113 D7", "record: {rec}");
+    assert_eq!(rec["actual"], "client", "record: {rec}");
+}
+
+/// docs/adr/0113, D2: a literal address of an open machine, in a send at any depth and in a
+/// request, is refused when the machine is generated, naming the origin as the repair; a run-time
+/// target is not. Red if a nested send is not read, or the machine's own binding to the name lets
+/// the literal through.
+#[test]
+fn a_literal_address_of_an_open_machine_is_refused() {
+    for (label, body, written) in [
+        (
+            "send",
+            r##"<send target="#client" event="pong"/>"##,
+            r##"<send target="#client">"##,
+        ),
+        (
+            "nested-send",
+            r##"<if cond="true"><send target="#client" event="pong"/></if>"##,
+            r##"<send target="#client">"##,
+        ),
+    ] {
+        let server = format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="server" datamodel="ecmascript" initial="idle">
+  <state id="idle">
+    <transition event="ping">{body}</transition>
+  </state>
+</scxml>
+"##
+        );
+        refused_as_named_literally(
+            &format!("mesh-open-literal-{label}"),
+            &server,
+            "idle",
+            written,
+        );
+    }
+    let asking = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="server" datamodel="ecmascript" initial="asking">
+  <state id="asking">
+    <invoke type="sce:mesh-rpc" src="#client">
+      <param name="_mesh_event" expr="'service.request.look'"/>
+    </invoke>
+    <transition event="ping" target="asking"/>
+  </state>
+</scxml>
+"##;
+    refused_as_named_literally(
+        "mesh-open-literal-request",
+        asking,
+        "asking",
+        r##"<invoke type="sce:mesh-rpc" src="#client">"##,
+    );
+}
+
+/// The server `document` of the open deployment is refused for the address it `written`, in the
+/// state `state`.
+fn refused_as_named_literally(label: &str, document: &str, state: &str, written: &str) {
+    use sce_build::mesh::error::{MeshError, TopologyError};
+
+    let (dir, deploy) = open_deployment(label, document);
+    let mut model = sce_build::parser::SCXMLParser::new()
+        .parse_string(document, "server")
+        .expect("parse");
+    let language = sce_build::generator::Language::Rust;
+    match sce_build::compile_mesh_transport(&mut model, &deploy, language) {
+        Err(MeshError::Topology(refusal)) => match *refusal {
+            TopologyError::OpenMachineNamedLiterally {
+                machine,
+                state: at,
+                target,
+                written: address,
+            } => {
+                assert_eq!(machine, "server");
+                assert_eq!(at, state);
+                assert_eq!(target.as_str(), "#client");
+                assert_eq!(address, written);
+            }
+            other => panic!("{label}: refused by another: {other}"),
+        },
+        Err(e) => panic!("{label}: refused by another: {e}"),
+        Ok(_) => panic!("{label}: a literal address of an open machine was taken"),
+    }
+
+    let out = run_with_deploy(&dir.path().join("server.scxml"), &deploy, dir.path());
+    assert!(!out.status.success(), "{label}");
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = stderr
+        .lines()
+        .rfind(|line| line.starts_with('{'))
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("valid JSON"))
+        .unwrap_or_else(|| panic!("{label}: no record on stderr:\n{stderr}"));
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/topology-open-machine-named-literally",
+        "record: {rec}"
+    );
+    assert_eq!(rec["stage"], "mesh-topology", "record: {rec}");
+    assert_eq!(rec["spec"], "ADR 0113 D2", "record: {rec}");
+    assert_eq!(rec["actual"], "#client", "record: {rec}");
+    assert!(
+        rec["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("<send targetexpr=\"_event.origin\">")),
+        "record: {rec}"
+    );
+}
+
 #[test]
 fn deploy_parse_error_is_ndjson() {
     // Malformed YAML (control character in `version:` scalar) routes

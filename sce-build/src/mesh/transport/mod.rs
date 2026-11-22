@@ -796,6 +796,26 @@ pub struct TransportDescriptor {
     /// (`DeployError::CrossTargetReplyNotSupported`). The default
     /// responder set — the binding's own target — is always legal.
     pub supports_cross_target_reply: bool,
+    /// Can a binding on this transport join an open machine, one that runs as
+    /// any number of instances (`instances: open`, docs/adr/0113, D1 and D7)?
+    ///
+    /// `true` where both halves of D7's test hold: the link names its sender,
+    /// so the (machine, instance) pair is what the link's authenticator proved
+    /// (SCE_MESH.md section 10.9, invariant 10), and the binding keeps a
+    /// mailbox per sender, so what is owed to one instance is told apart from
+    /// what is owed to another:
+    ///   - `https`: the client's path and its authenticator name it, and the
+    ///     server keeps each client's mailbox (SCE_MESH.md section 22).
+    ///
+    /// `false` where either half fails: `wss` and `zenoh_inbox` name their
+    /// sender and keep no mailbox for one whose link is down, and every other
+    /// transport reads `source` as the sender's word.
+    ///
+    /// Consumed by `deploy::validate_instances`: a binding of an open machine,
+    /// or to one, on a transport whose flag is `false` is rejected at parse
+    /// time (`DeployError::InvalidInstances`), which names the transports whose
+    /// flag is `true` from this registry.
+    pub serves_open_instances: bool,
     /// What a requesting peer observes when this transport's server
     /// arm lets `server.response_deadline_ms` elapse (SCE_MESH.md
     /// server response deadline).
@@ -911,6 +931,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // `dispatchToSession`, which keys on `invoke_id` alone and
         // never consults the arrival path.
         supports_cross_target_reply: true,
+        // In-process dispatch has no link that names an instance.
+        serves_open_instances: false,
         // In-process dispatch never parks a request handle: the reply
         // leg runs on the caller's own stack, so there is no stranded
         // server-side state for a deadline to release.
@@ -964,6 +986,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: true,
         // No RequestReply capability; the question does not arise.
         supports_cross_target_reply: false,
+        // A channel joins two processes and names neither.
+        serves_open_instances: false,
         // One-way ring with no reverse path — no server arm exists to
         // bound.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
@@ -1045,6 +1069,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // `register_message_handler` resolves it against the same
         // router-scoped `pending_rpcs_` table.
         supports_cross_target_reply: true,
+        // `source` is the sender's word: nothing authenticates a client.
+        serves_open_instances: false,
         // AUTOSAR SOME/IP defines the timeout notice the request
         // originator needs: message type `MT_ERROR` (0x81) with return
         // code `E_TIMEOUT` (0x06). `create_response` copies the
@@ -1110,6 +1136,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // query with no shared correlation table. Same-target by
         // construction.
         supports_cross_target_reply: false,
+        // A key expression is put under by whoever may write it.
+        serves_open_instances: false,
         // `zenoh::Query` exposes `reply` and destruction, nothing in
         // between: there is no server-authored failure channel to put
         // a timeout on. Dropping the stored query is the whole notice,
@@ -1179,6 +1207,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // feature. A `reply_from:` wider than the binding's own target
         // is therefore rejected at parse time.
         supports_cross_target_reply: false,
+        // A server answers whoever connected, and no one it names.
+        serves_open_instances: false,
         // `pending_server_links_` holds the reply stream the deadline
         // bounds, and the notice is SCE's own envelope framed on that
         // same stream — the request's return leg (SCE_MESH.md section
@@ -1257,6 +1287,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // pair — has no entry its reply could land in. Same conclusion
         // as zenoh_keyexpr and custom_tcp, reached from the topic model.
         supports_cross_target_reply: false,
+        // A topic is written by whoever may write it.
+        serves_open_instances: false,
         // The notice is published on the reply topic paired with the
         // request topic (SCE_MESH.md section 8.2) — the same leg a
         // normal reply takes, so a requester needs no second reader to
@@ -1301,6 +1333,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: false,
         // Broadcast bus, no RequestReply capability.
         supports_cross_target_reply: false,
+        // A broadcast bus names no sender.
+        serves_open_instances: false,
         // Unimplemented, and a broadcast bus carries no server arm.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
@@ -1351,6 +1385,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // need; no test holds a reply from a second peer yet, so the wider
         // `reply_from:` stays refused until one does.
         supports_cross_target_reply: false,
+        // The link names its sender and keeps no mailbox for one that is gone.
+        serves_open_instances: false,
         // No server arm holds a request handle.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
@@ -1404,6 +1440,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // by the binding it arrived on (section 14.6); the wider `reply_from:`
         // stays refused here as it does for `wss`.
         supports_cross_target_reply: false,
+        // The key names its sender and nothing is kept for one that is gone.
+        serves_open_instances: false,
         // No server arm holds a request handle.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
@@ -1485,6 +1523,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // A reply reaches the client in the mailbox of the binding it asked
         // over; the wider `reply_from:` stays refused as it does for `wss`.
         supports_cross_target_reply: false,
+        // docs/adr/0113, D7: the path and the authenticator name the client, and
+        // its mailbox is kept apart from every other client's.
+        serves_open_instances: true,
         // No server arm holds a request handle a deadline could bound.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
@@ -1636,6 +1677,22 @@ pub fn machine_lifetime_subscribe_alternatives() -> String {
         .join(", ")
 }
 
+/// The transports a binding of an open machine, or to one, may be on
+/// (`TransportDescriptor::serves_open_instances`; docs/adr/0113, D7), as the
+/// alternatives clause of [`DeployError::InvalidInstances`] lists them. Read
+/// from the registry, as [`machine_lifetime_subscribe_alternatives`] is, so the
+/// next transport that serves one is a row and not a second edit.
+///
+/// [`DeployError::InvalidInstances`]: crate::mesh::error::DeployError::InvalidInstances
+pub fn open_instance_alternatives() -> String {
+    known_names()
+        .iter()
+        .filter(|name| lookup(name).is_some_and(|d| d.serves_open_instances))
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 // ── Tests ───────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1749,6 +1806,21 @@ mod tests {
         assert!(!d.supplies_dedup);
         assert!(!d.supplies_ordering);
         assert_eq!(d.pool_shape, PoolShape::None);
+    }
+
+    /// docs/adr/0113, D7: an open machine's bindings are on the transports
+    /// whose link names its sender and that keep a mailbox per sender, `https`
+    /// today, and the refusal's clause names the same ones. Red if a row flips
+    /// without the binding behind it.
+    #[test]
+    fn the_transports_that_serve_an_open_machine_are_the_ones_the_refusal_offers() {
+        let serving: Vec<&str> = known_names()
+            .iter()
+            .filter(|name| lookup(name).expect("known").serves_open_instances)
+            .copied()
+            .collect();
+        assert_eq!(serving, ["https"]);
+        assert_eq!(open_instance_alternatives(), "'https'");
     }
 
     #[test]
@@ -2441,13 +2513,14 @@ mod tests {
         rendered.push_str(
             "| Transport | Core | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr \
              | Pool shape | Pool member | §13 subscribe | §10.10 buffer | Multi-inst server \
-             | Inter-partition IPC | Cross-target reply | Server deadline |\n",
+             | Inter-partition IPC | Cross-target reply | Open instances | Server deadline |\n",
         );
-        rendered.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
+        rendered
+            .push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
         for name in ORDER {
             let d = lookup(name).unwrap_or_else(|| panic!("{name} is not in the registry"));
             rendered.push_str(&format!(
-                "| `{name}` | {} | {} | {} | {} | {} | {} | {} | {:?} | {:?} | {} | {} | {} | {} | {} | {:?} |\n",
+                "| `{name}` | {} | {} | {} | {} | {} | {} | {} | {:?} | {:?} | {} | {} | {} | {} | {} | {} | {:?} |\n",
                 d.served_by,
                 yn(d.implemented),
                 patterns(d),
@@ -2462,6 +2535,7 @@ mod tests {
                 yn(d.supports_multi_instance_server),
                 yn(d.supports_inter_partition_ipc),
                 yn(d.supports_cross_target_reply),
+                yn(d.serves_open_instances),
                 d.server_deadline_notice,
             ));
         }

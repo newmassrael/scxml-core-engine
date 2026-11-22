@@ -45,8 +45,11 @@ pub const MACHINE: Machine = Machine {
     name: "{{ machine | escape_rust }}",
     dedup_window: {{ dedup_window }},
     gap_timeout_ms: {{ gap_timeout_ms }},
-    peers: &[
-{%- for peer in peers %}
+{#- The peers bound by name, and the open machines (deploy.yaml `instances: open`,
+    docs/adr/0113, D3), whose instances are found under their one entry. -#}
+{%- for field, entries in [["peers", peers], ["open_peers", open_peers]] %}
+    {{ field }}: &[
+{%- for peer in entries %}
         Peer {
             name: "{{ peer.name | escape_rust }}",
             config: PeerConfig {
@@ -75,7 +78,11 @@ pub const MACHINE: Machine = Machine {
                     dedup: {{ peer.dedup }},
                     ordered: {{ peer.ordered }},
                 },
-                responders: &[{% for r in peer.responders %}"{{ r | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+{%- if peer.responders is none %}
+                responders: sce_rust_mesh::router::Responders::Instance,
+{%- else %}
+                responders: sce_rust_mesh::router::Responders::Named(&[{% for r in peer.responders %}"{{ r | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}]),
+{%- endif %}
                 deadline_ms: {% if peer.deadline_ms is not none %}Some({{ peer.deadline_ms }}){% else %}None{% endif %},
                 reply_events: &[{% for e in peer.reply_events %}"{{ e | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
 {%- if peer.causal %}
@@ -134,6 +141,8 @@ pub const MACHINE: Machine = Machine {
         },
 {%- endfor %}
     ],
+{%- endfor %}
+    instances: sce_rust_mesh::peers::Instances::{% if open %}Open{% else %}One{% endif %},
 {#- deploy.yaml `sessions:`: the machine served as a keyed pool of sessions
     (`sce_rust_mesh::pool`), as `topology::resolve_keyed_pool` read it
     against the document. -#}

@@ -72,7 +72,9 @@ use crate::forge::pseudo::{Deployment, Fact, InjectedSend};
 use crate::generator::Language;
 use crate::mesh::error::MeshError;
 use crate::mesh::pattern::CommunicationPattern;
-use crate::mesh::topology::{EventPatternInfo, ResolvedTarget, SendSite, TransportState};
+use crate::mesh::topology::{
+    EventPatternInfo, ResolvedTarget, Responders, SendSite, TransportState,
+};
 use crate::model::SCXMLModel;
 
 /// The facts a deployment settles about this machine.
@@ -237,7 +239,11 @@ fn facts_for(target: &ResolvedTarget) -> Vec<Fact> {
     push_nested("ordering", ordering, &mut facts);
     // Absent is the per-source rules, not a causal group (docs/adr/0085, section 3.2).
     push_optional("causal", causal.as_ref(), &mut facts);
-    push_list("responders", responders, &mut facts);
+    match responders {
+        Responders::Machines(names) => push_list("responders", names, &mut facts),
+        // An open machine's: no list, and none is missing (docs/adr/0113, D3).
+        Responders::Instance => facts.push(Fact::new("responders", "the instance itself")),
+    }
     // Absent is not a default: a request with no deadline of its own
     // waits for its reply indefinitely (§mesh-9.5).
     match deadline_ms {
