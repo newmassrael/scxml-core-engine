@@ -32,6 +32,10 @@ and brought to every step of it that landed by its step 15:
 - D17: the named bounds of the signing and sealing records, which a build moves and the host is given (sections 1 and
   11).
 
+Amended by ADR 0114
+(`docs/adr/0114-a-keyed-sessions-facts-are-kept-in-a-journal-written-with-its-state-and-a-follower-reads-them-in-an-order-that-misses-nothing.md`),
+D1 to D3, D5, D6 and D8: the event journal's store contract, kept in the session store's file (sections 0 and 3).
+
 SCE builds the parts of a server, as libraries of the Rust host core; it builds no server program. Each deployment
 writes the program that joins the parts to its machine, its keys and its credentials (section 1). What this document
 says of "the program" is what such a program must do.
@@ -56,6 +60,7 @@ says of "the program" is what such a program must do.
 | Group commit: the checkpoints of many sessions and the acknowledgements of durable clients written in one transaction, each answered once it is durable; the server tells its host per client | `sce_rust_mesh::commit::Committer` (`Pool::committer`) over `SessionStore::write_many` (`SqliteStore`: one savepoint per write, one sync; sealed under `Sealed`); `ServerHost::deliver` called at once for different clients | ADR 0109, D15; SCE_MESH.md sections 10.11, 14.4 and 22.8 |
 | The key-value feature's values kept durably, each put-if's first result in the transaction of its write, the first results of a session deleted with it | `KvStore` of `sce-rust-session-store` (`SqliteStore` from layout 6, sealed under `Sealed`), given to the host by `ReferenceHost::with_kv_store`; the pool names the sessions a removal ends (`Write::sessions`) | ADR 0109, D13; docs/SCE_HOST_FEATURES.md section 3 |
 | An audit log: entries redacted by their schema, chained, checkpointed under the audit key, durable before the append answers, retained by segments | `AuditStore` of `sce-rust-session-store` (`SqliteStore` from layout 7, sealed under `Sealed`), `sce_rust_crypto::audit` (the chain, the checkpoints, `verify`, `retain`), given to the host by `ReferenceHost::set_audit_store` and `set_audit_streams`; `audit_stop` at the orderly stop, `audit_retain` on the host's schedule | ADR 0109, D14; docs/SCE_HOST_FEATURES.md section 15; docs/SCE_AUDIT_LOG.md |
+| The event journal's store: a session's facts appended by the write that keeps its state, in one order of positions read up to the horizon and as of an earlier moment, and what another system's adapter observed, once for each id it gave | `JournalStore` of `sce-rust-session-store` (`SqliteStore` from layout 8, sealed under `Sealed`), appended to by `Write::journal` and `JournalStore::observe`. The store contract alone: no pool writes a fact, no document declares a journal and no follower reads one yet | ADR 0114 |
 | The key ring: the keys a host generates and derives, its issuing key of tokens and its audit keys, and the index and sealing keys of a sealed store, each kept wrapped under a key-encryption key the store never holds | `Keyring` of `sce_rust_crypto::keyring` over a `KeyStore` of `sce-rust-session-store` (`SqliteStore` from layout 2); the `KeyWrap` port and its reference adapter `KeyEncryptionKey` of `sce_rust_crypto::wrap` (`from_file`, `from_variable`); given to the host by `ReferenceHost::set_keyring` | ADR 0109, D7 and D8; docs/SCE_HOST_FEATURES.md section 13; section 3.2 |
 | The standard host features a server's machine asks for, the clock, key-value, HTTP, signing and sealing, random bytes, keyed digests, keys, credentials and the audit log among them, served by one reference host | `ReferenceHost` of `sce-rust-host-features` (`ReferenceHost::new` or `with_kv_store`, and its setters, section 1), joined to a generated machine by `sce_rust_host_features::serve` | docs/SCE_HOST_FEATURES.md; ADR 0109, D3 to D7, D13, D14 |
 | Outbound HTTP from a server: each request judged by a destination policy before anything is sent, connected to the address judged, no redirect followed, bounded in time and size | `NetworkTransport::new(policy, settings)` of `sce-rust-host-http`, the reference host's transport; `DestinationPolicy::allow_list` or `public_internet` of `sce_rust_host_features::destination` | ADR 0109, D4; docs/SCE_HOST_FEATURES.md section 5 |
@@ -74,6 +79,9 @@ limits. It is a test suite, not a guarantee of a deployment's own composition.
 
 Not built, and a server must not count on them:
 
+- The rest of ADR 0114: the document surface of a journal (`journal:`, `follows:`, `streams:`, `sce:journal` sends,
+  `sce:valid-time`, `sce-host-journal-read`), the pool's write that carries facts, and a follower of a journal. The
+  journal's store is there (above) and nothing of SCE appends to it. It has no retention: a journal keeps every entry.
 - A server program (ADR 0107; ADR 0109, "Not in scope"): each deployment writes its own (section 1).
 - A store on media several machines share, and an exchange routed to the process that holds its key's lease (ADR
   0109, D18): its direction is decided and it is built only once a deployment measures one active process with a
@@ -338,10 +346,10 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   one sync of the log at the commit. A write refused for its version or its fence, or one the database refuses part
   of the way through, is rolled back to its savepoint and answered alone; the others commit. Section 3.1 says when a
   batch holds more than one write, and how to measure what it buys.
-- **Its layout.** The database's `user_version` names the layout, `7` today. A file of layout `1` to `6` is brought
-  to `7` when it is opened, in one transaction, its sessions, leases, keys, credentials, outboxes and values kept. A
-  file of a layout this build does not know, or one that holds tables the store did not make, is refused. A later
-  build that changes the layout makes a rollback to an earlier build refuse the file: a build before layout 7
+- **Its layout.** The database's `user_version` names the layout, `8` today. A file of layout `1` to `7` is brought
+  to `8` when it is opened, in one transaction, its sessions, leases, keys, credentials, outboxes, values and audit
+  log kept. A file of a layout this build does not know, or one that holds tables the store did not make, is refused.
+  A later build that changes the layout makes a rollback to an earlier build refuse the file: a build before layout 8
   refuses a file this one opened.
 - **The outboxes** (ADR 0109, D10). Under `receipt: durable` what a session sends a client is appended to the
   client's outbox by the same transaction that writes the session's checkpoint (`SessionStore::write`), so either
@@ -358,17 +366,17 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   its row, and every key (a session's key, a client's name, a key's id, a token's digest) is kept as its **entry**,
   the HMAC-SHA-256 of the key under the store's index key. The sealed store is the one handed to `Pool::new`, to the
   server's authenticator and to the host (`ReferenceHost::with_kv_store`, `set_credentials`, `set_audit_store`, and
-  its key ring's store): it is a `SessionStore`, a `CredentialStore`, a `KeyStore`, a `KvStore` and an `AuditStore`,
-  as the file is, so one `Arc` of it serves the pool, the authenticator and each store the host takes by `Arc`, and
-  the key ring, which owns its store, takes a handle of its own (section 3.2). A store opened without the sealing
-  keys reads every row as a record it cannot open; a record moved to another row, changed by a byte, or read under
+  its key ring's store): it is a `SessionStore`, a `CredentialStore`, a `KeyStore`, a `KvStore`, an `AuditStore` and
+  a `JournalStore`, as the file is, so one `Arc` of it serves the pool, the authenticator and each store the host
+  takes by `Arc`, and the key ring, which owns its store, takes a handle of its own (section 3.2). A store opened
+  without the sealing keys reads every row as a record it cannot open; a record moved to another row, changed by a byte, or read under
   another key is refused (`Failure`), and the pool answers that session's requests as it answers a store that
   failed.
 - **What the file shows.** Every value is a record, and every key an entry; in the clear are what the store compares
   or sets: a session's version, earliest due and lease (owner, fence, expiry), a token's revocation, a key's use,
-  algorithm, creation and state, an outbox's incarnation and numbers, a value's version, and the audit log's
-  sequences, moments and chain (the table below). The index key (`index:sealed`) and the sealing keys
-  (`sealing:<hex>`) are rows of the `keys` table wrapped under the key-encryption key, the one thing the sealed store
+  algorithm, creation and state, an outbox's incarnation and numbers, a value's version, the audit log's
+  sequences, moments and chain, and the journal's positions and recorded moments (the table below). The index key
+  (`index:sealed`) and the sealing keys (`sealing:<hex>`) are rows of the `keys` table wrapped under the key-encryption key, the one thing the sealed store
   keeps as it is given.
 - **Rotation.** `SealingKeys::rotate(&keyring, now_ms, &mut SystemRandom)` makes a new sealing key and retires the
   one before, which still opens what it sealed. Give each process the keys read again (`Sealed::set_keys`, or a
@@ -377,7 +385,8 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   holds; `Sealed::reseal_credentials()`; `Sealed::reseal_values()`, the key-value feature's;
   `Sealed::reseal_outboxes()`, every durable client's outbox and every expiry's note; `Sealed::reseal_audit()`, every
   audit row's entry and every checkpoint's signature, each row's sequence, moment and chain kept, so a reader verifies
-  the stream as before; and `Sealed::reseal_keys()`, never beside a rotation of the key-encryption key. Each writes a
+  the stream as before; `Sealed::reseal_journal()`, every journal entry's data, its position and its moments kept, so
+  no answer changes; and `Sealed::reseal_keys()`, never beside a rotation of the key-encryption key. Each writes a
   row again by the store's replacement from the bytes it read, so a row another process changed or deleted in between
   is left, not overwritten. Each answers `Resealed`: rows written again (`resealed`), rows `left` (run the pass again
   later), rows `refused` (they do not open: changed on the medium, or sealed under a key the process was not given).
@@ -385,14 +394,14 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   destroyed; a backup carries the keys its own rows were sealed under (section 8). Each record names the key that
   sealed it in the clear, after its magic (`docs/SCE_SEALED_RECORD.md` section 1), so a read confirms it:
   `SELECT count(*) FROM audit_rows WHERE CAST(substr(entry, 14, 40) AS TEXT) = '<the retired id>'`, and the same of
-  `sessions.state`, `outbox_entries.envelope`, `outbox_notes.envelope`, `audit_checkpoints.signature` and the other
-  sealed columns of the table below. The index key is never rotated.
+  `sessions.state`, `outbox_entries.envelope`, `outbox_notes.envelope`, `audit_checkpoints.signature`,
+  `journal_entries.data` and the other sealed columns of the table below. The index key is never rotated.
 - **What sealing does not give.** Freshness against someone who can write the medium: a row replaced by an earlier
   sealing of the same row opens, and a token's revocation, kept in the clear, can be set back by hand. The lease's
   fence and the version stop a process that is wrong, not a medium written by hand; keep the file where only the
   server's account writes it.
 
-The tables, by the layout that added them (`LAYOUT_1` to `LAYOUT_7` in `sqlite.rs`), and what each column holds under
+The tables, by the layout that added them (`LAYOUT_1` to `LAYOUT_8` in `sqlite.rs`), and what each column holds under
 a sealed store (`docs/SCE_SEALED_RECORD.md` section 3). An entry is the keyed digest of a key, a record a sealed
 value; a column the last column does not name is kept in the clear, since the store compares or sets it.
 
@@ -404,6 +413,7 @@ value; a column the last column does not name is kept in the clear, since the st
 | 5, the outboxes of section 2.3 | `outbox_heads` (`client`, `incarnation`, `next`, `touched_ms`); `outbox_entries` (`client`, `number`, `at_ms`, `sender`, `envelope`); `outbox_notes` (`id`, `session`, `client`, `number`, `at_ms`, `envelope`), an expiry's note for the session that sent the entry | `client`, `sender` and a note's `session` entries, `envelope` a record |
 | 6, the key-value feature (`KvStore`, docs/SCE_HOST_FEATURES.md section 3) | `kv_values` (`key`, `value`, `version`); `kv_numbers`, the feature's own counter of versions; `kv_first_results` (`session`, `invoke`, `start`, `outcome`, `version`), the first result of each put-if by its invocation's identity, deleted with the session that started it | `key`, and a first result's `session` and `invoke`, entries; `value` a record |
 | 7, the audit log (`AuditStore`, docs/SCE_HOST_FEATURES.md section 15, docs/SCE_AUDIT_LOG.md) | `audit_heads` (`stream`, `sequence`, `chain`), each stream's last row, which retention leaves; `audit_rows` (`stream`, `sequence`, `at_ms`, `entry`, `chain`), never updated and deleted only with their segment; `audit_checkpoints` (`stream`, `sequence`, `chain`, `signature`); `audit_identities` (`session`, `invoke`, `start`, `sequence`), the sequence each append's identity was appended at, deleted with its session | `stream`, and an identity's `session` and `invoke`, entries; a row's `entry` and a checkpoint's `signature` records; the chain is kept as it is, so the log is verified without the sealing keys |
+| 8, the event journal (`JournalStore`, ADR 0114) | `journal_head` (`issued`, `recorded_ms`), the last position given and the last moment recorded; `journal_entries` (`position`, `recorded_ms`, `name`, `key`, `origin`, `schema`, `revision`, `valid_ms`, `holds_ms`, `data`), a session's entry under its machine's `name` and its `key`, an observed stream's under its `name` and the other system's `origin`; `holds_ms` the valid time, or the recorded moment where there is none; never deleted | `name`, `key` and `origin` entries, `data` a record; `schema` empty, `revision` 0, `valid_ms` null and `holds_ms` the recorded moment |
 
 Every moment is milliseconds since the Unix epoch.
 
