@@ -23,10 +23,11 @@
 #   the second half of a character stands alone;
 #   the field an inject seam writes is the bytes as they are.
 #
-# The two cases of a half of a character take the decision from the grammar's walk
-# (`skipWellFormedString`), which refuses the whole text before a field is read, as
-# every runtime's reader does (tests/json_text/payload_refusal.json); the reader of a
-# text keeps the same check behind it.
+# Two of the cases, those of a half of a character, take the decision from the
+# grammar's walk (`skipWellFormedString`), which refuses the whole text before a
+# field is read, as every runtime's reader does
+# (tests/json_text/payload_refusal.json); the reader of a text keeps the same check
+# behind it.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
