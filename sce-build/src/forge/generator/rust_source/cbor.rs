@@ -165,12 +165,15 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
 
 // ── Values below an entry's own level ───────────────────────────────────
 
-/// Where a value stands in the type a schema unit declares, which decides the
-/// type the language holds a byte string in (docs/adr/0086, section 7.1): a
-/// record's own field, bare or optional, is held as the unit holds one entry,
-/// a byte string in the language's own vector, which carries no bound; every
-/// other value, inside a list or held whole by an entry, in the bounded types
-/// of a composition.
+/// Where a value stands in the type a schema unit declares, which decides how
+/// the plan's totality reads a byte string (docs/adr/0086, section 7.1;
+/// [`crate::forge::codec_totality::cbor_value_refuses`]): a record's own
+/// field, bare or optional, is one entry of the record, which the units of the
+/// languages that hold it in their own vector can hold past its bound, and the
+/// totality, the document's on every lane, reads it so on Rust too, whose unit
+/// holds it in the `SceBytes<N>` of its bound as every other value, inside a
+/// list or held whole by an entry, is held in the bounded types of a
+/// composition.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Held {
     Field,
@@ -275,7 +278,7 @@ fn rust_byte_array(bytes: &[u8]) -> String {
 /// 5.3), the payload type of a record's event schema, the type of a union's
 /// unit, the language's list of its bound and `Option`.
 pub(crate) fn composed_type(shape: &CborShape) -> String {
-    rust_type(shape, Held::Composed)
+    rust_type(shape)
 }
 
 /// Whether the type [`composed_type`] names for a value of `shape` is `Copy`,
@@ -299,14 +302,13 @@ pub(crate) fn composed_is_copy(shape: &CborShape) -> bool {
     }
 }
 
-fn rust_type(shape: &CborShape, held: Held) -> String {
+fn rust_type(shape: &CborShape) -> String {
     let runtime = cbor_codec::RUST_RUNTIME_CODEC;
     match shape {
         CborShape::Int { bits, signed } => format!("{}{bits}", if *signed { "i" } else { "u" }),
         CborShape::Float { bits } => format!("f{bits}"),
         CborShape::Bool => "bool".to_string(),
         CborShape::Text { max } => format!("{runtime}::SceString<{max}>"),
-        CborShape::Bytes { .. } if held == Held::Field => "Vec<u8>".to_string(),
         CborShape::Bytes { max, .. } => format!("{runtime}::SceBytes<{max}>"),
         CborShape::Enum(enumeration) => {
             enum_qualified_type(&enumeration.name, crate::generator::Language::Rust)
@@ -315,11 +317,10 @@ fn rust_type(shape: &CborShape, held: Held) -> String {
             event_schema_payload_type(&record.name, crate::generator::Language::Rust)
         }
         CborShape::Union(union) => union_type(union),
-        CborShape::List { elem, max, .. } => format!(
-            "{runtime}::BoundedList<{}, {max}>",
-            rust_type(elem, Held::Composed)
-        ),
-        CborShape::Nullable(elem) => format!("Option<{}>", rust_type(elem, Held::Composed)),
+        CborShape::List { elem, max, .. } => {
+            format!("{runtime}::BoundedList<{}, {max}>", rust_type(elem))
+        }
+        CborShape::Nullable(elem) => format!("Option<{}>", rust_type(elem)),
         CborShape::Unresolved { what } => unresolved(what),
     }
 }
@@ -338,10 +339,10 @@ fn unresolved(what: &str) -> ! {
 /// as the type [`composed_type`] names: a value of the type, or the refusal of
 /// the input, returned from the enclosing read.
 pub(crate) fn decode(shape: &CborShape, cursor: &str) -> String {
-    decode_expr(shape, cursor, Held::Composed, 0)
+    decode_expr(shape, cursor, 0)
 }
 
-fn decode_expr(shape: &CborShape, cursor: &str, held: Held, depth: usize) -> String {
+fn decode_expr(shape: &CborShape, cursor: &str, depth: usize) -> String {
     let runtime = cbor_codec::RUST_RUNTIME_CODEC;
     match shape {
         CborShape::Int { bits, signed } => int_decode(*bits, *signed, cursor),
@@ -351,9 +352,6 @@ fn decode_expr(shape: &CborShape, cursor: &str, held: Held, depth: usize) -> Str
         CborShape::Text { max } => format!(
             "{runtime}::SceString::<{max}>::from_text(cbor::read_text({cursor}, Some({max}))?)?"
         ),
-        CborShape::Bytes { max, .. } if held == Held::Field => {
-            format!("cbor::read_bytes({cursor}, Some({max}))?.to_vec()")
-        }
         CborShape::Bytes { max, .. } => format!(
             "{runtime}::SceBytes::<{max}>::from_slice(cbor::read_bytes({cursor}, Some({max}))?)?"
         ),
@@ -376,7 +374,7 @@ fn decode_expr(shape: &CborShape, cursor: &str, held: Held, depth: usize) -> Str
             } else {
                 format!("{len} > {max}")
             };
-            let element = decode_expr(elem, cursor, Held::Composed, depth + 1);
+            let element = decode_expr(elem, cursor, depth + 1);
             format!(
                 "{{\n    // A definite-length array within the list's counts.\n    \
                  let {len} = cbor::read_array_len({cursor})?;\n    \
@@ -384,7 +382,7 @@ fn decode_expr(shape: &CborShape, cursor: &str, held: Held, depth: usize) -> Str
                  let mut {list}: {ty} = {runtime}::BoundedList::new();\n    \
                  for _ in 0..{len} {{\n        {list}.push({element})?;\n    }}\n    \
                  {list}\n}}",
-                ty = rust_type(shape, Held::Composed),
+                ty = rust_type(shape),
                 element = continued(&element, 8),
             )
         }
@@ -392,7 +390,7 @@ fn decode_expr(shape: &CborShape, cursor: &str, held: Held, depth: usize) -> Str
         // which refuses what is no value of it.
         CborShape::Nullable(elem) => format!(
             "if cbor::take_null({cursor})? {{\n    None\n}} else {{\n    Some({})\n}}",
-            continued(&decode_expr(elem, cursor, Held::Composed, depth + 1), 4)
+            continued(&decode_expr(elem, cursor, depth + 1), 4)
         ),
         CborShape::Unresolved { what } => unresolved(what),
     }
@@ -499,12 +497,13 @@ fn write_stmts(shape: &CborShape, access: &Access, depth: usize) -> Vec<String> 
     vec![line]
 }
 
-/// Whether a value of `shape` that its Rust type holds can still have no
-/// encoding (docs/adr/0101, section 3.5): a list below its lower count at any
-/// depth, and a byte string a record's field holds in the language's own
-/// vector past its bound. The one reading the plan's totality makes of the
-/// shape ([`crate::forge::codec_totality::cbor_value_refuses`]), so the two
-/// name the same entries.
+/// Whether the plan's totality names a refusal for a value of `shape`
+/// (docs/adr/0101, section 3.5): a list below its lower count at any depth,
+/// and a byte string a record's field holds, which a unit that holds it in its
+/// language's own vector holds past its bound. The one reading the totality
+/// makes of the shape ([`crate::forge::codec_totality::cbor_value_refuses`]),
+/// so the two name the same entries. The Rust unit holds the byte string in
+/// the `SceBytes<N>` of its bound, so its check of one never refuses.
 fn can_refuse(shape: &CborShape, held: Held) -> bool {
     crate::forge::codec_totality::cbor_value_refuses(shape, held == Held::Field)
 }
@@ -680,7 +679,7 @@ fn field_names(field: &crate::forge::encode_plan::CborField) -> FieldNames {
     FieldNames {
         member: event_schema_field_ident(&field.id, crate::generator::Language::Rust),
         key: format!("{:?}", field.id),
-        ty: rust_type(&field.shape, Held::Field),
+        ty: rust_type(&field.shape),
     }
 }
 
@@ -719,7 +718,7 @@ fn record_fns(record: &CborRecord) -> String {
     read.push_str("    for _ in 0..count {\n        match cbor::read_text(c, None)? {\n");
     for field in &record.fields {
         let names = field_names(field);
-        let value = decode_expr(&field.shape, "c", Held::Field, 0);
+        let value = decode_expr(&field.shape, "c", 0);
         read.push_str(&format!(
             "            {key} => {{\n                \
              // A key given twice is not one map entry.\n                \
@@ -742,7 +741,7 @@ fn record_fns(record: &CborRecord) -> String {
             // A field a later revision of the schema added: a map a writer of an
             // earlier revision wrote lacks its key, and it reads the value the
             // plan holds for it, by the reader of the field's own value.
-            let value = decode_expr(&field.shape, "&mut lacked", Held::Field, 0);
+            let value = decode_expr(&field.shape, "&mut lacked", 0);
             read.push_str(&format!(
                 "        {member}: match held_{member} {{\n            \
                  Some(value) => value,\n            \
@@ -1241,7 +1240,7 @@ mod tests {
             max: 4,
             exact: false,
         };
-        assert_eq!(rust_type(&bytes, Held::Field), "Vec<u8>");
+        assert_eq!(rust_type(&bytes), "::sce_forge_runtime::codec::SceBytes<4>");
         // Either is written as the slice it lends.
         assert_eq!(
             write_stmts(&bytes, &Access::Place("record.blob".to_string()), 0),

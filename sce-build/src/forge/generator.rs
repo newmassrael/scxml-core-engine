@@ -4383,22 +4383,6 @@ fn render_text_template(
     l.render(env, "text_template", ctx)
 }
 
-/// Whether the Rust unit of an event schema feeds the field `f` into the canonical
-/// bytes its payload is a key of a map by (docs/adr/0108, D1 and D6 item 4): a
-/// fixed-width integer, a truth value, a value of an enum and a text the schema
-/// bounds, each held in a type the runtime's map takes as a key. A float is no key
-/// (D1), nor is a value that may be absent, and a byte string is none on Rust: the
-/// unit holds it in a `Vec<u8>` ([`rust_type`]), which is no key of the map. A
-/// payload with a field that is no key is no key itself.
-pub(crate) fn rust_unit_field_is_key(f: &EntryField) -> bool {
-    match &f.sce_type {
-        EntryType::Scalar(SceType::Float32 | SceType::Float64 | SceType::Bytes)
-        | EntryType::Optional { .. } => false,
-        EntryType::Scalar(SceType::String) => f.max_size.is_some(),
-        EntryType::Scalar(_) => true,
-    }
-}
-
 fn render_event_schema(
     env: &minijinja::Environment,
     m: &EventSchemaModel,
@@ -4480,9 +4464,18 @@ fn render_event_schema(
                 (SceType::String, Some(bound)) => Some(bound),
                 _ => None,
             };
-            let rs_type = match text_bound {
-                Some(bound) => format!("::sce_portable_bytes::SceString<{bound}>").into(),
-                None => resolved.clone(),
+            // ... and a `bytes` field on Rust in the one byte-string type of its
+            // bound, `SceBytes<N>`, the type a machine holds the same bytes in
+            // and a composition holds a byte string in (docs/adr/0086, section
+            // 7.4), so a record crosses between the two as it is.
+            let bytes_bound = match (f.sce_type.present_type(), f.max_size) {
+                (SceType::Bytes, Some(bound)) => Some(bound),
+                _ => None,
+            };
+            let rs_type = match (text_bound, bytes_bound) {
+                (Some(bound), _) => format!("::sce_portable_bytes::SceString<{bound}>").into(),
+                (None, Some(bound)) => format!("::sce_portable_bytes::SceBytes<{bound}>").into(),
+                (None, None) => resolved.clone(),
             };
             let cpp_type: std::borrow::Cow<'static, str> = match text_bound {
                 Some(bound) => crate::forge::composed_lowering::cpp_text_type(bound).into(),
@@ -4764,8 +4757,8 @@ fn render_event_schema(
     }
     ctx.insert("fields".into(), serde_json::json!(fields));
     // docs/adr/0108, D1 and D6 item 4: a payload whose every field is a key (a
-    // fixed-width integer, a truth value, a value of an enum or a text the
-    // schema bounds) is a key of a map by those fields, in the order the schema
+    // fixed-width integer, a truth value, a value of an enum, or a text or a
+    // byte string the schema bounds) is a key of a map by those fields, in the order the schema
     // declares them. A statechart holds a map's record key in this type, so the
     // Rust unit makes it a key of the runtime's map itself: a machine of the
     // same crate cannot, since two machines keyed by one record would each
@@ -4774,8 +4767,13 @@ fn render_event_schema(
         .iter()
         .map(|entry| {
             let f = entry.as_ref()?;
-            rust_unit_field_is_key(f)
-                .then(|| event_schema_field_ident(&f.id, crate::generator::Language::Rust))
+            let keyed = match &f.sce_type {
+                EntryType::Scalar(SceType::Float32 | SceType::Float64)
+                | EntryType::Optional { .. } => false,
+                EntryType::Scalar(SceType::String | SceType::Bytes) => f.max_size.is_some(),
+                EntryType::Scalar(_) => true,
+            };
+            keyed.then(|| event_schema_field_ident(&f.id, crate::generator::Language::Rust))
         })
         .collect::<Option<Vec<String>>>()
         .unwrap_or_default();

@@ -556,8 +556,8 @@ fn order_reader(dir: &Path) -> PathBuf {
 /// list mapped element by element into the machine's records, an enum by a
 /// `match` into the machine's variant of the same declared name, a union by a
 /// `match` over every case of its unit's sum into the machine's case of the
-/// same variant, and a byte string the case's record holds as one entry from
-/// the unit's `Vec<u8>` into the machine's `SceBytes` of its bound. The
+/// same variant, and a byte string the case's record holds as one entry
+/// cloned, the unit holding it in the machine's `SceBytes` of its bound. The
 /// machine imports the unit of the union and of the enum the copy matches the
 /// values of.
 #[test]
@@ -578,7 +578,7 @@ fn a_message_holding_records_an_enum_and_a_union_is_made_case_by_case() {
         "order_payment::OrderPayment::Cash => OrderReaderOrderPaymentUnion::Cash, ",
         "order_payment::OrderPayment::Voucher(v) => \
          OrderReaderOrderPaymentUnion::Voucher(OrderReaderVoucherRecord { voucher_code: \
-         ::sce_rust_runtime::portable::SceBytes::<4>::from_slice(&v.voucher_code).expect(",
+         v.voucher_code.clone()",
         "use super::order_payment;",
         "use super::paint_color;",
     ] {

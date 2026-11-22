@@ -916,11 +916,9 @@ impl<'a> UnitCrossing<'a> {
     /// `value`, a field of a record of the schema `alias` read from the side
     /// `crossing` leaves, as the other side's record holds it: a value of an enum
     /// by [`Self::enum_crossing`], one that may be absent by
-    /// [`Self::optional_enum_crossing`], a byte string by
-    /// [`StaticTarget::bytes_field_crossing`], any other field as it is (`None`
-    /// for an enum field or a byte string this target cannot spell, and for a
-    /// byte string with no bound). `text` spells the copy of a field that is
-    /// neither.
+    /// [`Self::optional_enum_crossing`], any other field as it is (`None` for an
+    /// enum field this target cannot spell). `text` spells the copy of a field
+    /// that is no enum.
     fn record_field_crossing(
         &self,
         target: &dyn StaticTarget,
@@ -938,13 +936,6 @@ impl<'a> UnitCrossing<'a> {
             } => self.optional_enum_crossing(target, ty, value, crossing),
             EntryType::Scalar(SceType::Enum(reference)) => {
                 self.enum_crossing(target, &reference.alias, value, crossing)
-            }
-            // A byte string is held in the machine's record in the target's
-            // storage of the bound its schema declares, and in the unit's record in
-            // the type that unit spells, which the target copies between
-            // (docs/adr/0108, D6 item 4); one with no bound has no storage.
-            EntryType::Scalar(SceType::Bytes) => {
-                target.bytes_field_crossing(value, field.max_size?, crossing)
             }
             EntryType::Scalar(_) | EntryType::Optional { .. } => Some(text(value)),
         }
@@ -1048,11 +1039,12 @@ pub(crate) fn record_field_copies(ty: &SceType, max_size: Option<u32>) -> bool {
 /// Whether a field of a record crosses between the type a machine holds the record
 /// in and the type its unit declares ([`UnitCrossing::field_crosses`]): every field
 /// a call copies ([`record_field_copies`]), and a byte string the schema bounds,
-/// which a target copies within that bound where it spells the copy
-/// ([`StaticTarget::bytes_field_crossing`]). Only an entry of a map crosses such a
-/// byte string (docs/adr/0108, D6 item 4): an algorithm holds no record of a schema
-/// with a byte string field (`forge::generator::resolve_record`), so a call's
-/// import refuses one by [`record_field_copies`].
+/// which the machine and the unit hold in one type of that bound on every target
+/// whose map holds a record in its unit's type (Rust's `SceBytes<N>`, C11's buffer
+/// of the bound), so it is copied as a text is. Only an entry of a map crosses
+/// such a byte string (docs/adr/0108, D6 item 4): an algorithm holds no record of a
+/// schema with a byte string field (`forge::generator::resolve_record`), so a
+/// call's import refuses one by [`record_field_copies`].
 fn record_field_crosses(ty: &SceType, max_size: Option<u32>) -> bool {
     record_field_copies(ty, max_size) || (matches!(ty, SceType::Bytes) && max_size.is_some())
 }
@@ -2231,23 +2223,6 @@ pub trait StaticTarget {
     /// scope, which an adapter names the algorithm's enum type through; `None` for a
     /// target that needs none.
     fn enum_import(&self, _enum_name: &str) -> Option<String> {
-        None
-    }
-    /// `value`, a byte string field of a record bounded by `max` bytes, read
-    /// from the side `crossing` leaves, as the other side's record holds it: the
-    /// machine's record holds it in the target's storage of the bound
-    /// ([`Self::bytes_storage`]), and the record the schema's unit declares in
-    /// the type that unit spells (docs/adr/0108, D6 item 4). `None` for a target
-    /// with no spelling of the copy, which refuses the crossing by name.
-    fn bytes_field_crossing(&self, _value: &str, _max: u32, _crossing: Crossing) -> Option<String> {
-        None
-    }
-    /// Why the record the unit of `schema` declares is no key of the target's
-    /// map, where a map is keyed by a record it holds in that type
-    /// ([`Self::map_unit`]): the first field the unit does not feed into the
-    /// canonical bytes of its key (docs/adr/0108, D1), named, which refuses the
-    /// map by name. `None` where the unit is a key whenever the record is one.
-    fn map_unit_key_refusal(&self, _schema: &EntrySchema) -> Option<String> {
         None
     }
     /// The declaration of the bounds `machine` names (`sce:limit`), each a typed
@@ -5045,16 +5020,17 @@ enum RustHeld {
 impl RustHeld {
     /// `read`, the field `field` read off the record, as the record the
     /// crossing builds takes it. Both sides hold the text of one field in one
-    /// type, the field's `SceString<N>` (docs/adr/0086, section 7.4), so a text
-    /// is taken as it is, absent where it is absent: copied out of a record
-    /// that is lent, and moved out of one that is the crossing's own. A payload
+    /// type, the field's `SceString<N>`, and a byte string in the field's
+    /// `SceBytes<N>` (docs/adr/0086, section 7.4), so each is taken as it is,
+    /// absent where it is absent: copied out of a record that is lent, and moved
+    /// out of one that is the crossing's own. A payload
     /// whose schema holds text never crosses a call: its struct holds the text
     /// in the engine's own text type, which the lift holds to the bound (section
     /// 4.4) and the type does not, so the call that hands one is refused at
     /// check until the struct holds the field's `SceString<N>`.
     fn field(self, field: &crate::forge::model::EntryField, read: &str) -> String {
         match (self, field.sce_type.present_type()) {
-            (RustHeld::Lent, SceType::String) => format!("{read}.clone()"),
+            (RustHeld::Lent, SceType::String | SceType::Bytes) => format!("{read}.clone()"),
             (RustHeld::Lent | RustHeld::Owned, _) => read.to_string(),
         }
     }
@@ -5410,43 +5386,6 @@ impl StaticTarget for RustTarget {
             .map(|(from, to)| format!("{from} => {to}"))
             .collect();
         Some(format!("match {value} {{ {} }}", arms.join(", ")))
-    }
-    // The machine holds a byte string in the portable `SceBytes<N>` of its bound
-    // (docs/adr/0086, section 7.4), and the unit in a `Vec<u8>`
-    // (`forge::generator::rust_type`), which holds no bound: into the unit the
-    // bytes are copied whole, and back they are held to the bound again. Only a
-    // map's entry crosses one, and only the machine's own put writes an entry of
-    // a record with a byte string field, since an algorithm holds no such record
-    // (`forge::generator::resolve_record`): the entry holds the bytes of a
-    // record of the machine's type, within the bound, so the copy back is not
-    // refused, and a value past it is a defect that stops the program.
-    fn bytes_field_crossing(&self, value: &str, max: u32, crossing: Crossing) -> Option<String> {
-        Some(match crossing {
-            Crossing::ToAlgorithm => format!("{value}.as_slice().to_vec()"),
-            Crossing::FromAlgorithm => crate::forge::composed_lowering::rust_unit_bytes_within(
-                max,
-                &format!("&{value}"),
-                "a map holds a record's byte string within the bound its schema declares",
-            ),
-        })
-    }
-    // The unit makes its type a key of the runtime's map itself
-    // (`forge/rust/event_schema.rs.jinja2`) by the fields it holds in a key's type,
-    // which a byte string it holds in a `Vec<u8>` is not
-    // ([`crate::forge::generator::rust_unit_field_is_key`]).
-    fn map_unit_key_refusal(&self, schema: &EntrySchema) -> Option<String> {
-        schema
-            .fields
-            .iter()
-            .find(|f| !crate::forge::generator::rust_unit_field_is_key(f))
-            .map(|f| {
-                format!(
-                    "its field `{}` of type {} is held in the unit in a type that is no key \
-                     of the runtime's map",
-                    f.id,
-                    f.sce_type.as_attr()
-                )
-            })
     }
     // The line that brings the enum document's module into scope, as for a schema.
     fn enum_import(&self, enum_name: &str) -> Option<String> {
@@ -10632,18 +10571,6 @@ impl<'t> TypeDeclarations<'t> {
             schemas: records,
             enums: self.held_enums,
         };
-        // A key is looked up by its canonical bytes, which the unit's type writes
-        // where the map holds the key in it (docs/adr/0108, D1).
-        if key {
-            if let Some(why) = target.map_unit_key_refusal(schema) {
-                return Err(GenerateError::unsupported(format!(
-                    "{element}: a map keyed by record:{alias} holds the key in the type its \
-                     unit declares (docs/adr/0108, D6 item 4), and {}'s unit of it is no key of \
-                     a map: {why}",
-                    target.name()
-                )));
-            }
-        }
         let defs = target
             .map_unit_defs(&crossing, alias, schema, unit, key, &enum_types)
             .ok_or_else(|| {
@@ -19648,12 +19575,6 @@ impl StaticTarget for CTarget {
         value: &str,
         _crossing: Crossing,
     ) -> Option<String> {
-        Some(value.to_string())
-    }
-    // The machine's record and the record the schema's unit declares hold a byte
-    // string in the one buffer of its bound beside the length it holds
-    // ([`c_bytes_storage_def`]), so it crosses as it is, a struct copied by value.
-    fn bytes_field_crossing(&self, value: &str, _max: u32, _crossing: Crossing) -> Option<String> {
         Some(value.to_string())
     }
     // The line a forge kind importing the schema writes (`#include "<snake>.h"`),
