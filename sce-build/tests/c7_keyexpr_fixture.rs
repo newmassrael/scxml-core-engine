@@ -152,9 +152,11 @@ fn cpp_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     );
     // Cross-algorithm dispatch — Cpp qualified call form. Identity SSOT:
     // the namespace is named from the algorithm's `name=` attribute
-    // (`SCE::Generated::KeyexprIntersect`), not its file stem.
+    // (`SCE::Generated::KeyexprIntersect`), not its file stem. The element
+    // codec is printed from its plan, so its field is read through its
+    // accessor (`entry.callback_id()`, docs/adr/0081 step 4).
     assert!(
-        code.contains("KeyexprIntersect::keyexpr_intersect(entry.callback_id, target)"),
+        code.contains("KeyexprIntersect::keyexpr_intersect(entry.callback_id(), target)"),
         "Cpp cross-algo dispatch missing qualified call; got:\n{code}"
     );
     assert!(
@@ -214,11 +216,11 @@ fn go_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     );
     // Cross-algorithm dispatch — Go package-qualified form. Identity SSOT:
     // the package is named from the algorithm's `name=` attribute
-    // (`keyexpr_intersect`), not its file stem. The element field read is
-    // exported PascalCase (`entry.CallbackId`) to bind against the Go codec
-    // struct field (`codec_field_id` SSOT).
+    // (`keyexpr_intersect`), not its file stem. The element codec is printed
+    // from its plan, so its field is read through the exported PascalCase
+    // method of its source (`entry.CallbackId()`, docs/adr/0081 step 4).
     assert!(
-        code.contains("keyexpr_intersect.KeyexprIntersect(entry.CallbackId, target)"),
+        code.contains("keyexpr_intersect.KeyexprIntersect(entry.CallbackId(), target)"),
         "Go cross-algo dispatch missing qualified call; got:\n{code}"
     );
 }
