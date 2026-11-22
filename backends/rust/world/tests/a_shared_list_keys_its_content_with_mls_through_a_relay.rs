@@ -196,6 +196,18 @@ impl Group {
         self.parties.iter_mut().find(|p| p.node == node).unwrap()
     }
 
+    /// One round of the courier of `node` alone, what it brings raised into its machine as a round
+    /// of [`Self::pump`] raises it. A round hands the roster over once, at the front of its events,
+    /// when the log moved, and counts it told; a round whose events were not raised leaves the
+    /// machine with the roster it held before, which judges a member's change by its author.
+    fn sync(&mut self, node: u64) {
+        let party = self.parties.iter_mut().find(|p| p.node == node).unwrap();
+        let round = party.courier.sync().unwrap();
+        for (event, data) in round.events {
+            self.world.raise(party.copy, &event, &data);
+        }
+    }
+
     /// Rounds of every courier, what each brings taken in by its member and raised into its machine,
     /// until a round of each brings nothing new.
     fn pump(&mut self) {
@@ -256,7 +268,8 @@ impl Group {
 }
 
 /// `node` leaves a key package with the relay, and alice adds it: the commit and the Welcome go to the
-/// relay, and the new member joins when its courier reads them.
+/// relay, and the new member joins when its courier reads them. Alice's machine is told the roster
+/// her log now holds, so that her copy takes in what the new member writes.
 fn add(group: &mut Group, copy: &'static str, node: u64) {
     group.attach(copy, node, None);
     let package = group.party(node).member.device_mut().key_package().unwrap();
@@ -279,8 +292,8 @@ fn add(group: &mut Group, copy: &'static str, node: u64) {
         .member
         .add_member(&administrator(), node, 2, key_of(node).public(), &package)
         .unwrap();
+    group.sync(1);
     let alice = group.party(1);
-    alice.courier.sync().unwrap();
     alice
         .courier
         .publish_commit(issued.epoch, &issued.commit)
@@ -307,6 +320,11 @@ fn members_agree_on_one_list_sealed_under_the_key_of_each_epoch_the_group_reache
     quiet(&mut group.world);
     group.pump();
     assert_eq!(group.agreed(&["alice", "bob"]), 2);
+    // Each copy took the other member's change in as a writer's: its roster names him.
+    for copy in ["alice", "bob"] {
+        let denied = whole(&record_variables_of(&mut group.world, copy)["denied"]);
+        assert_eq!(denied, 0, "{copy}'s copy denied a member's change");
+    }
 
     // The relay holds what was written sealed, and none of the text.
     let held = group.feed_text();
@@ -359,14 +377,12 @@ fn a_member_taken_off_is_cut_off_at_the_next_epoch() {
         .member
         .remove_member(&administrator(), 2)
         .unwrap();
-    {
-        let alice = group.party(1);
-        alice.courier.sync().unwrap();
-        alice
-            .courier
-            .publish_commit(issued.epoch, &issued.commit)
-            .unwrap();
-    }
+    group.sync(1);
+    group
+        .party(1)
+        .courier
+        .publish_commit(issued.epoch, &issued.commit)
+        .unwrap();
     // Bob still tries: his host reads the log, which says he is off, and the relay lets his device
     // read nothing more, so the commit never reaches him and the group never opens to him again.
     let steps = {
@@ -454,9 +470,9 @@ fn a_device_a_relay_gave_false_commits_before_the_log_joins_when_its_host_reads_
         .member
         .add_member(&administrator(), 2, 2, key_of(2).public(), &package)
         .unwrap();
+    group.sync(1);
     {
         let alice = group.party(1);
-        alice.courier.sync().unwrap();
         alice
             .courier
             .publish_commit(issued.epoch, &issued.commit)
