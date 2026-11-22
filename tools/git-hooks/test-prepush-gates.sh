@@ -30,6 +30,7 @@
 #  14-18. a missing tool, or a skip of the gate, is 3 in a landing and the skip it was outside one
 #  19-21. a suite case that finds its tool missing is 3 in a landing; a suite's own failure is 1
 #  22. the runner exports SCE_GATE_LANDING for --landing
+#  23. in a landing, a suite that passes beside a service the gate started returns without waiting for it
 #
 # Usage: tools/git-hooks/test-prepush-gates.sh   (no network, no build; a few seconds)
 
@@ -184,7 +185,12 @@ cat >"$WORK/bin/suite-that-fails" <<'STUB'
 echo "case: assertion failed"
 exit 101
 STUB
-chmod +x "$WORK/bin/suite-needs-a-tool" "$WORK/bin/suite-that-fails"
+cat >"$WORK/bin/suite-that-passes" <<'STUB'
+#!/usr/bin/env bash
+echo "case: passed"
+exit 0
+STUB
+chmod +x "$WORK/bin/suite-needs-a-tool" "$WORK/bin/suite-that-fails" "$WORK/bin/suite-that-passes"
 
 # lib_case <name> <want status> <shell text run after sourcing the library> [VAR=value...]
 lib_case() {
@@ -216,6 +222,15 @@ lib_case "20 in a landing, a suite that fails on its own is the tree's failure (
     "sce_gate_run_suite 'the suite' '$WORK/bin/suite-that-fails'" SCE_GATE_LANDING=1
 lib_case "21 outside a landing, a suite case that skips passes as it always has (0)" 0 \
     "sce_gate_run_suite 'the suite' '$WORK/bin/suite-needs-a-tool'"
+
+# A gate that runs a suite also starts services it stops at its own exit (the W3C HTTP fixture
+# server of `workspace-tests`). The library's suite runner must not wait for them: a landing's unit
+# that does never ends, and the machine's idle limit ends it. The service here lives 60 s, and the
+# suite is over in under one, so a runner that waits for it takes the minute and the case is red.
+# The service is a child of the shell that runs the suite, which is what a bare `wait` waits for.
+service_body='sleep 60 >/dev/null 2>&1 & sce_gate_on_exit "kill $! 2>/dev/null"; sce_gate_run_suite "the suite" "$SUITE"; (( SECONDS < 30 ))'
+lib_case "23 in a landing, a suite that passes beside a service of the gate's returns" 0 \
+    "$service_body" SCE_GATE_LANDING=1 SUITE="$WORK/bin/suite-that-passes"
 
 # The runner is what turns `--landing` into SCE_GATE_LANDING for every gate it starts.
 if grep -q '^    export SCE_GATE_LANDING=1$' "$HERE/../../scripts/gate"; then

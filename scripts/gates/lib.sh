@@ -117,6 +117,15 @@ sce_gate_skip() {
 # run, rather than 1, which would blame the tree for the machine; any other
 # failure is the tree's. The output is shown in full as it runs and kept only
 # to be read here.
+#
+# A pipe, whose status is read off the suite's side of it, and not a process
+# substitution with a `wait` for the writer behind it: a `wait` that names no
+# process waits for every child of the shell, and a gate that runs a suite has
+# one that does not end with it. Measured 2026-11-22: `workspace-tests` starts
+# the W3C HTTP fixture server as a child and stops it when the script exits, so
+# on three machines the unit sat in that `wait` after its suites had passed,
+# until the fleet's idle limit ended it (item 357, ten hours of the landing
+# queue).
 sce_gate_run_suite() {
     local label="$1" log status=0
     shift
@@ -126,10 +135,7 @@ sce_gate_run_suite() {
     fi
     log="$(mktemp)"
     sce_gate_on_exit "rm -f '$log'"
-    SCE_REQUIRE_TOOLS=1 "$@" > >(tee "$log") 2>&1 || status=$?
-    # The process substitution ends after the command; wait for it so the log
-    # is whole before it is read.
-    wait
+    SCE_REQUIRE_TOOLS=1 "$@" 2>&1 | tee "$log" || status="${PIPESTATUS[0]}"
     (( status == 0 )) && return 0
     if grep -q "SCE_REQUIRE_TOOLS" "$log"; then
         sce_gate_cannot_run "$label: a case found a tool or a built program missing on this machine (its message names SCE_REQUIRE_TOOLS, above). This run is a landing's, where a skip is not a pass."
