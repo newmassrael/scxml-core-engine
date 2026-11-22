@@ -2594,10 +2594,12 @@ func TestARecordIsHandedToAnImportedAlgorithmAndTakenBackWhole(t *testing.T) {
 	policy := static_record_call.NewStaticRecordCallPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_record_call", drive[static_record_call.StaticRecordCallState, static_record_call.StaticRecordCallEvent](&policy, map[string]func() any{
-		"best":  func() any { return entryJSON(policy.Best()) },
-		"large": func() any { return policy.Large() },
-		"debts": func() any { return policy.Debts() },
-		"peaks": func() any { return policy.Peaks() },
+		"best":    func() any { return entryJSON(policy.Best()) },
+		"made":    func() any { return entryJSON(policy.Made()) },
+		"large":   func() any { return policy.Large() },
+		"debts":   func() any { return policy.Debts() },
+		"peaks":   func() any { return policy.Peaks() },
+		"settled": func() any { return policy.Settled() },
 	}))
 }
 
