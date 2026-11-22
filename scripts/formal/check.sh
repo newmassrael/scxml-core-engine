@@ -49,6 +49,10 @@
 #     find no violation.
 #     OpenInstances_without_*.cfg and _with_eviction.cfg: the same with one part of the protocol taken out. TLC must
 #     find the violation each names. Together they are the check that every part is needed.
+#   * EventJournal.cfg, _two_inputs.cfg (docs/formal/EventJournal.tla, ADR 0114): entries written with the state of the
+#     session that made them, read by followers and as of a position. TLC must find no violation.
+#     EventJournal_without_*.cfg and _by_clock.cfg: the same with one part taken out. TLC must find the violation each
+#     names.
 #
 # Needs Java 11 or later. TLC is fetched once into ~/.cache/sce-formal and checked against a pinned
 # SHA-256, or taken from $TLA2TOOLS.
@@ -168,6 +172,27 @@ for config in OpenInstances_without_handshake OpenInstances_without_same_offer O
     echo "== $config: one part of the protocol taken out, a violation expected"
     set +e
     tlc "$config.cfg" OpenInstances > "$config.log" 2>&1
+    status=$?
+    set -e
+    tail -n 25 "$config.log"
+    if [[ "$status" -ne 12 ]]; then
+        echo "check.sh: expected TLC to report an invariant violation (exit 12) for $config, got $status" >&2
+        exit 1
+    fi
+done
+for config in EventJournal EventJournal_two_inputs; do
+    echo "== $config: the event journal of ADR 0114, no violation expected"
+    if ! tlc "$config.cfg" EventJournal; then
+        echo "check.sh: TLC found a violation of the event journal's protocol ($config)" >&2
+        exit 1
+    fi
+done
+
+for config in EventJournal_without_fence EventJournal_without_atomic EventJournal_without_horizon \
+    EventJournal_without_horizon_stable EventJournal_without_cursor_atomic EventJournal_by_clock; do
+    echo "== $config: one part of the journal taken out, a violation expected"
+    set +e
+    tlc "$config.cfg" EventJournal > "$config.log" 2>&1
     status=$?
     set -e
     tail -n 25 "$config.log"
