@@ -960,6 +960,19 @@ impl<K: MapKey, V, const N: usize, S: MapStorage> BoundedMap<K, V, N, S> {
         }
     }
 
+    /// The value at `key`, lent to be changed where the map holds it, or
+    /// `None` where it is absent: what a write into a value the map holds goes
+    /// through (docs/adr/0108, D12 item 2). The key, its slot, its place in the
+    /// map's order, the index and the free slots are all left as they are, so a
+    /// value that is itself a map, a set or a list is written without being
+    /// taken out and put back.
+    pub fn get_mut<Q: MapKey + ?Sized>(&mut self, key: &Q) -> Option<&mut V> {
+        match self.probe(key, hash_of(&self.seed, key)) {
+            Probe::Found { slot, .. } => self.slot_mut(slot).entry.as_mut().map(|(_, value)| value),
+            Probe::Vacant(_) | Probe::NoRoom => None,
+        }
+    }
+
     /// Set the value at `key` to `value`: a key that is present keeps its place
     /// and takes the value, and one that is absent goes last while the map
     /// holds fewer than `N` entries. Into a full map an absent key is not put,
@@ -1397,6 +1410,18 @@ pub fn value_cloned<K: MapKey, V: Clone, Q: MapKey + ?Sized, const N: usize, S: 
     key: &Q,
 ) -> Option<V> {
     map.get(key).cloned()
+}
+
+/// `m[k]` as the place a nested write changes, the `target` of
+/// `<sce:put target="m[k]">` and its kin (docs/adr/0108, D12): the value at
+/// `key`, lent to be written where the map holds it ([`BoundedMap::get_mut`]);
+/// `None` where the key is absent, which the write fails on as a read of
+/// [`value`] does (D12 item 3), no entry being made for it.
+pub fn value_mut<'m, K: MapKey, V, Q: MapKey + ?Sized, const N: usize, S: MapStorage>(
+    map: &'m mut BoundedMap<K, V, N, S>,
+    key: &Q,
+) -> Option<&'m mut V> {
+    map.get_mut(key)
 }
 
 /// `m[k].field` in an algorithm that does not declare `may-fail`, where the
@@ -2079,5 +2104,198 @@ mod tests {
         assert_eq!(tags.put(4), PutOutcome::Inserted);
         assert!(tags.contains_key(&4u8));
         assert_eq!(tags.derived_seed(0), SEED.derive(0));
+    }
+
+    /// docs/adr/0108, D12 item 2: a value changed where the map holds it keeps
+    /// its key's place. After writes through `get_mut` every entry is in the
+    /// slot it was in and in the order it was in, the index, the links, the
+    /// free slot and the counts are as they were, and only the values written
+    /// are new; a key that is absent lends nothing. The slot a remove freed is
+    /// still the one the next put takes. In every storage.
+    #[test]
+    fn a_value_changed_in_place_keeps_its_slot_and_its_place() {
+        a_value_changed_in_place_keeps_its_slot::<DefaultMapStorage>();
+        a_value_changed_in_place_keeps_its_slot::<Inline>();
+        #[cfg(feature = "alloc")]
+        a_value_changed_in_place_keeps_its_slot::<Heap>();
+    }
+
+    /// The writes of `a_value_changed_in_place_keeps_its_slot_and_its_place`
+    /// on a map kept in the storage `S`.
+    fn a_value_changed_in_place_keeps_its_slot<S: MapStorage>() {
+        const BOUND: usize = 6;
+        let placed = |map: &BoundedMap<u16, u32, BOUND, S>| {
+            let mut entries: heapless::Vec<(u16, u32, MapCursor), BOUND> = heapless::Vec::new();
+            let mut at = map.first();
+            while let Some(cursor) = at {
+                entries
+                    .push((*map.key_at(cursor), *map.value_at(cursor), cursor))
+                    .expect("within the bound");
+                at = map.next_after(cursor);
+            }
+            entries
+        };
+        let mut map = BoundedMap::<u16, u32, BOUND, S>::with_seed(SEED);
+        for key in 0..5u16 {
+            assert_eq!(map.put(key, u32::from(key) * 10), PutOutcome::Inserted);
+        }
+        let freed = placed(&map)
+            .iter()
+            .find(|(key, _, _)| *key == 1)
+            .map(|(_, _, cursor)| *cursor);
+        assert_eq!(map.remove(&1u16), RemoveOutcome::Removed);
+        let before = placed(&map);
+        let links = (map.head, map.tail, map.free, map.live, map.tombstones);
+        let cells: heapless::Vec<u32, { 2 * BOUND }> = (0..map.index.cell_count())
+            .map(|cell| map.index.cell(cell))
+            .collect();
+
+        *map.get_mut(&3u16).expect("held") = 333;
+        // A key of another width that writes the same bytes is the same key.
+        *map.get_mut(&0u8).expect("held by its bytes") += 1;
+        assert!(map.get_mut(&1u16).is_none(), "a removed key lends nothing");
+        assert!(map.get_mut(&9u16).is_none(), "an absent key lends nothing");
+
+        let after = placed(&map);
+        assert_eq!(after.len(), before.len());
+        for ((key, old, cursor), (key_after, new, cursor_after)) in before.iter().zip(after.iter())
+        {
+            assert_eq!((key, cursor), (key_after, cursor_after), "key {key}");
+            let expected = match *key {
+                3 => 333,
+                0 => *old + 1,
+                _ => *old,
+            };
+            assert_eq!(*new, expected, "key {key}");
+        }
+        assert_eq!(
+            (map.head, map.tail, map.free, map.live, map.tombstones),
+            links
+        );
+        assert!((0..map.index.cell_count())
+            .map(|cell| map.index.cell(cell))
+            .eq(cells.iter().copied()));
+        assert_eq!(map.get(&3u16), Some(&333));
+        assert_eq!(map.put(7, 70), PutOutcome::Inserted);
+        let last = placed(&map).last().map(|(key, _, cursor)| (*key, *cursor));
+        assert_eq!(last, freed.map(|cursor| (7, cursor)));
+    }
+
+    /// docs/adr/0108, D12 items 2 and 3: a place at a key the map does not hold
+    /// is none, as the value at it is: `value_mut` answers `None` where
+    /// `value` does, before the key is put and after it is removed, and leaves
+    /// the map as it was; at a key the map holds, what is written through it
+    /// is what `value` reads next.
+    #[test]
+    fn a_place_at_an_absent_key_is_none_as_its_value_is() {
+        let mut amounts = BoundedMap::<u32, i32, 3>::with_seed(SEED);
+        assert_eq!(value(&amounts, &7u32), None);
+        assert_eq!(value_mut(&mut amounts, &7u32), None);
+        assert!(amounts.is_empty());
+        assert_eq!(amounts.put(7, 5), PutOutcome::Inserted);
+        assert_eq!(amounts.put(9, 6), PutOutcome::Inserted);
+        assert_eq!(amounts.remove(&9u32), RemoveOutcome::Removed);
+        assert_eq!(value(&amounts, &9u32), None);
+        assert_eq!(value_mut(&mut amounts, &9u32), None);
+        assert_eq!(count(&amounts), 1);
+        *value_mut(&mut amounts, &7u32).expect("held") = -3;
+        assert_eq!(value(&amounts, &7u32), Some(&-3));
+        assert_eq!(value_cloned(&amounts, &7u8), Some(-3));
+        assert!(amounts.iter().map(|(k, v)| (*k, *v)).eq([(7, -3)]));
+    }
+
+    /// docs/adr/0108, D12: a map whose value is a map is a value like any
+    /// other. A put into an inner map answers the inner map's outcome, `Full`
+    /// when the inner map is full (item 5); a write at an outer key that is
+    /// absent finds no place and makes no entry (item 3). A copy holds equal
+    /// inner maps in their order and compares equal, and a write into the
+    /// copy's inner map leaves the original's as it was; the same inner
+    /// entries in another order are another value. An inner map keyed by the
+    /// outer map's seed derived (item 7) draws its own seeds from that one. In
+    /// every storage.
+    #[test]
+    fn a_map_of_maps_is_copied_whole_and_written_in_place() {
+        a_map_of_maps_in::<DefaultMapStorage>();
+        a_map_of_maps_in::<Inline>();
+        #[cfg(feature = "alloc")]
+        a_map_of_maps_in::<Heap>();
+    }
+
+    /// The map of maps of `a_map_of_maps_is_copied_whole_and_written_in_place`,
+    /// both levels kept in the storage `S`.
+    fn a_map_of_maps_in<S: MapStorage>() {
+        let faces_of = |regions: &BoundedMap<u32, BoundedMap<u8, u16, 2, S>, 3, S>, region: u32| {
+            let mut faces: heapless::Vec<(u8, u16), 2> = heapless::Vec::new();
+            for (face, weight) in regions.get(&region).into_iter().flatten() {
+                faces
+                    .push((*face, *weight))
+                    .expect("within the inner bound");
+            }
+            faces
+        };
+        let mut regions = BoundedMap::<u32, BoundedMap<u8, u16, 2, S>, 3, S>::with_seed(SEED);
+        let inner_seed = regions.derived_seed(1);
+        assert_eq!(
+            regions.put(7, BoundedMap::with_seed(inner_seed)),
+            PutOutcome::Inserted
+        );
+        assert_eq!(
+            regions.put(4, BoundedMap::with_seed(inner_seed)),
+            PutOutcome::Inserted
+        );
+        let mut put = |region: u32, face: u8, weight: u16| {
+            value_mut(&mut regions, &region).map(|faces| faces.put(face, weight))
+        };
+        assert_eq!(put(7, 9, 90), Some(PutOutcome::Inserted));
+        assert_eq!(put(7, 2, 20), Some(PutOutcome::Inserted));
+        assert_eq!(put(7, 5, 50), Some(PutOutcome::Full));
+        assert_eq!(put(7, 9, 91), Some(PutOutcome::Replaced));
+        assert_eq!(put(4, 9, 1), Some(PutOutcome::Inserted));
+        assert_eq!(put(8, 1, 1), None);
+        assert_eq!(regions.len(), 2);
+        assert!(!regions.contains_key(&8u32));
+        assert!(regions.iter().map(|(region, _)| *region).eq([7, 4]));
+        assert_eq!(faces_of(&regions, 7).as_slice(), &[(9, 91), (2, 20)]);
+        assert_eq!(faces_of(&regions, 4).as_slice(), &[(9, 1)]);
+
+        let copy = regions.clone();
+        assert_eq!(copy, regions);
+        assert_eq!(faces_of(&copy, 7).as_slice(), &[(9, 91), (2, 20)]);
+        let mut changed = regions.clone();
+        assert_eq!(
+            changed.get_mut(&7u32).map(|faces| faces.remove(&9u8)),
+            Some(RemoveOutcome::Removed)
+        );
+        assert_ne!(changed, regions);
+        assert_eq!(faces_of(&changed, 7).as_slice(), &[(2, 20)]);
+        assert_eq!(faces_of(&regions, 7).as_slice(), &[(9, 91), (2, 20)]);
+        let mut reordered = regions.clone();
+        let faces = reordered.get_mut(&7u32).expect("held");
+        assert_eq!(faces.remove(&9u8), RemoveOutcome::Removed);
+        assert_eq!(faces.put(9, 91), PutOutcome::Inserted);
+        assert_ne!(reordered, regions);
+
+        assert_eq!(
+            regions.get(&7u32).map(|faces| faces.derived_seed(0)),
+            Some(inner_seed.derive(0))
+        );
+    }
+
+    /// docs/adr/0108, D8 and D12 item 7: a seed is derived as the C11 lane's
+    /// `sce_map_seed_derive` derives it, two SipHash-1-3 values under the seed,
+    /// of a side byte (0, then 1) followed by the ordinal's four little-endian
+    /// bytes, so an inner map is keyed from its outer map's seed alike on every
+    /// lane. The halves are the function's values under `SEED`, the seed the
+    /// C11 lane's own map tests start their maps with.
+    #[test]
+    fn a_derived_seed_is_the_one_every_lane_derives() {
+        assert_eq!(
+            SEED.derive(0),
+            MapSeed::from_halves(0xbe0c_97ec_4d02_272d, 0xac1c_1e65_c25b_faa3)
+        );
+        assert_eq!(
+            SEED.derive(1),
+            MapSeed::from_halves(0xbbf2_e616_ed4f_55e8, 0xc818_9588_b142_684c)
+        );
     }
 }
