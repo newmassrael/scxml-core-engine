@@ -53,12 +53,16 @@ fn repo_root() -> PathBuf {
 }
 
 /// What the gate reads, and so what every copy of the tree it runs in carries:
-/// the harness and the gate, the corpus, and the workflow whose ceiling the
-/// gate sizes each job against (`scripts/lib/mutation_rounds_cost.sh`).
-const GATE_TREE: [&str; 3] = [
+/// the harness and the gate, the corpus, the workflow whose ceiling the gate
+/// sizes each job against (`scripts/lib/mutation_rounds_cost.sh`), and the
+/// release pin. A casefile that sources `scripts/lib/queue_sanitizer.sh` reads
+/// `rust-toolchain.toml` through `scripts/lib/rust_toolchains.sh` while it is
+/// only being declared, so a copy without the pin cannot declare the corpus.
+const GATE_TREE: [&str; 4] = [
     "scripts",
     "sce-build/tests/mutations",
     ".github/workflows/mutation-rounds.yml",
+    "rust-toolchain.toml",
 ];
 
 /// A copy of the harness, the gate and the corpus under a fresh git index.
