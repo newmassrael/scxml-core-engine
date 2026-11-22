@@ -2145,21 +2145,25 @@ fn the_lane_prepares_the_tree_the_rounds_judge() {
 /// written by the same tooling. A prefix or substring match would pull in
 /// every casefile under a directory somebody touched, which is how a
 /// change-scoped gate quietly becomes an unconditional one.
+///
+/// The target is one whose resembling paths are of nothing a tree is made of:
+/// a change under `sce-build/` rightly selects every round that mutates a
+/// `<tree>:<path>` file (`a_tree_is_made_of`), so a resemblance there would
+/// be selected by that rule and say nothing about how a path is matched.
 #[test]
 fn a_path_that_only_resembles_a_declared_target_selects_nothing() {
     let corpus = casefiles();
-    let target = corpus
+    let (target, parent, neighbour) = corpus
         .iter()
         .flat_map(|casefile| declared_targets(casefile))
-        .next()
-        .expect("the corpus declares at least one target");
-
-    let parent = Path::new(&target)
-        .parent()
-        .expect("a declared target has a parent directory")
-        .to_string_lossy()
-        .to_string();
-    let neighbour = format!("{target}.orig");
+        .filter(|target| tree_of_target(target).is_none())
+        .find_map(|target| {
+            let parent = Path::new(&target).parent()?.to_string_lossy().to_string();
+            let neighbour = format!("{target}.orig");
+            (!parent.is_empty() && !a_tree_is_made_of(&parent) && !a_tree_is_made_of(&neighbour))
+                .then_some((target, parent, neighbour))
+        })
+        .expect("the corpus declares a target outside what any tree is made of");
 
     let (ok, chosen, log) = selection_for(&[&parent, &neighbour]);
 
