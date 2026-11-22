@@ -581,51 +581,99 @@ fn the_shell_locator_refuses_when_the_rebuild_fails() {
     );
 }
 
-/// Enough regen scripts must reach the scan for a clean result to mean
-/// anything. 115 per-stem scripts existed when this bound was measured
-/// (2026-08-21); the floor sits well under that so adding or retiring a
-/// fixture does not move it, and a glob that matched nothing still fails.
-const MIN_REGEN_SCRIPTS: usize = 80;
+/// The scripts that write committed trees and must stay, named so that a scan
+/// whose selection matched nothing still fails. ADR 0097 retired the per-stem
+/// regen scripts (90 of them on 2026-11-16, 6 left after it) for the trees
+/// `tools/codegen/trees/*.toml` declares, so a floor on how many scripts the
+/// naming convention finds measures retirements, not the scan: these two are
+/// what the convention and the declared trees are reached by.
+const TREE_ENTRY_POINTS: &[&str] = &[
+    // The one command for a declared tree, for a person and for a casefile's
+    // `mutation_regen` alike.
+    "scripts/materialize.sh",
+    // Every committed tree in one run, the declared ones through `materialize`.
+    "scripts/regen_all_committed_trees.sh",
+];
 
-/// Every regen script reaches the generator through the shell locator.
+/// Scripts of the regen naming convention that reach no generator binary, each
+/// with why. Each is held to that: a code line of one that names the generator
+/// fails the test, since it would then reach a binary without the locator.
+const REACHES_NO_GENERATOR: &[(&str, &str)] = &[(
+    "scripts/regen_corpus_expected_logs.sh",
+    "writes the expected logs of the TTCN-3 corpus by running the Rust runner \
+     programs cargo builds; the trees those are built from are written by their \
+     crate's build script into its OUT_DIR (docs/adr/0097), not by this script",
+)];
+
+/// Every script that writes committed trees reaches the generator through the
+/// shell locator.
 ///
 /// The locator is not only where the binary is found — it is also where a
 /// binary built from other sources is rebuilt before use, by asking its
-/// witness (`verify-generator`). A regen script that reaches the generator
-/// some other way can refresh a committed tree with a generator predating
-/// the very edit it regenerates for, and one commit then holds trees from
-/// two generators.
+/// witness (`verify-generator`). A script that reaches the generator some other
+/// way can refresh a committed tree with a generator predating the very edit
+/// it regenerates for, and one commit then holds trees from two generators.
 ///
-/// Stated over the scripts rather than over the locator, because the
-/// rebuild lives in one place and a test that read it back there would be
-/// asking the fix whether it applied itself. What can actually drift is a
-/// script that stops going through the locator.
+/// The scripts are the regen naming convention (`scripts/regen_*.sh`) and the
+/// entry of the declared trees (`scripts/materialize.sh`). Stated over the
+/// scripts rather than over the locator, because the rebuild lives in one place
+/// and a test that read it back there would be asking the fix whether it
+/// applied itself. What can actually drift is a script that stops going
+/// through the locator.
 #[test]
 fn every_regen_script_sources_the_shell_locator() {
     let root = repo_root();
-    let mut scanned = 0usize;
+    let mut scanned: Vec<String> = Vec::new();
     let mut orphans: Vec<String> = Vec::new();
+    let mut exemptions_broken: Vec<String> = Vec::new();
 
     for rel in tracked_files() {
         let Some(name) = rel.strip_prefix("scripts/") else {
             continue;
         };
-        if !name.starts_with("regen_") || !name.ends_with(".sh") {
+        let by_convention = name.starts_with("regen_") && name.ends_with(".sh");
+        if !by_convention && !TREE_ENTRY_POINTS.contains(&rel.as_str()) {
             continue;
         }
-        scanned += 1;
-        let Ok(text) = std::fs::read_to_string(root.join(&rel)) else {
+        scanned.push(rel.clone());
+        let text = std::fs::read_to_string(root.join(&rel))
+            .unwrap_or_else(|e| panic!("{rel} is tracked and cannot be read: {e}"));
+        if REACHES_NO_GENERATOR.iter().any(|(path, _)| *path == rel) {
+            if code_lines(&text)
+                .any(|(_, l)| l.contains("sce-codegen") || l.contains("sce_codegen"))
+            {
+                exemptions_broken.push(rel);
+            }
             continue;
-        };
+        }
         if !code_lines(&text).any(|(_, l)| l.contains("lib/sce_codegen.sh")) {
             orphans.push(rel);
         }
     }
 
+    let missing: Vec<&&str> = TREE_ENTRY_POINTS
+        .iter()
+        .filter(|entry| !scanned.iter().any(|rel| rel == *entry))
+        .collect();
     assert!(
-        scanned >= MIN_REGEN_SCRIPTS,
-        "only {scanned} regen scripts reached the scan, under the floor of \
-         {MIN_REGEN_SCRIPTS} — the naming convention this walks moved",
+        missing.is_empty(),
+        "the scan did not reach {missing:?} (it read {scanned:?}), so the selection \
+         this walks moved and a clean result would mean nothing",
+    );
+    let stale: Vec<&str> = REACHES_NO_GENERATOR
+        .iter()
+        .map(|(path, _)| *path)
+        .filter(|path| !scanned.iter().any(|rel| rel == path))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "{stale:?} is listed as reaching no generator and is no script the scan \
+         reads; drop the entry rather than keep an allowance a script could take",
+    );
+    assert!(
+        exemptions_broken.is_empty(),
+        "{exemptions_broken:?} is listed as reaching no generator and names it on a \
+         code line: source scripts/lib/sce_codegen.sh and drop the entry",
     );
     assert!(
         orphans.is_empty(),
