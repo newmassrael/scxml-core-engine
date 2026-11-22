@@ -17,8 +17,8 @@
 //!   unit's fields and an algorithm's slots hold these. A map of at most `N`
 //!   entries by key and a set of at most `N` keys, [`BoundedMap`] and
 //!   [`BoundedSet`] (docs/adr/0108), are the [`map`] module's; where a map
-//!   keeps its entries is a parameter of its type, [`Inline`] or [`Heap`],
-//!   not a feature of the build.
+//!   keeps its entries is a parameter of its type, [`Inline`], [`Heap`] or
+//!   [`Linear`], not a feature of the build.
 //! * **A codec's storage profiles** ([`HeapList`] / [`InlineList`],
 //!   [`HeapStr`] / [`InlineStr`]): the containers a decoded frame of a protocol
 //!   SCE does not own is held in, whose heap form's `N` is advisory, as the
@@ -63,8 +63,8 @@ pub mod map;
 #[cfg(feature = "alloc")]
 pub use map::Heap;
 pub use map::{
-    BoundedMap, BoundedSet, DefaultMapStorage, FromSeed, Inline, KeyFeed, MapCursor, MapKey,
-    MapSeed, MapSeeds, MapStorage, PutOutcome, RemoveOutcome,
+    BoundedMap, BoundedSet, DefaultMapStorage, FromSeed, Inline, KeyFeed, Linear, MapCursor,
+    MapKey, MapSeed, MapSeeds, MapStorage, PutOutcome, RemoveOutcome,
 };
 
 /// Returned by `from_slice` / `push` / `extend_from_slice` when a copy would
