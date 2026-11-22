@@ -3674,3 +3674,25 @@ is regenerated; no committed generated tree holds one.
 - A byte string past `N` is no value of the unit any more, so a CBOR codec that holds the record no longer meets one:
   a test that built such a record and expected its encode to refuse it with `CborOutOfRange` builds the field
   instead and expects `CapacityExceeded` there.
+
+## A small Rust map keeps no hash index in `Linear` storage (ADR 0108 D4)
+
+Landing: the commits that add this section. Additive: nothing a consumer wrote stops compiling or answers otherwise,
+and no committed generated tree changes.
+
+- `sce_portable_bytes` and `sce_rust_runtime` export a third map storage, `Linear`, beside `Inline` and `Heap`. A map
+  of a small bound on a target that counts its code names it where it declares the map, `BoundedMap<K, V, N, Linear>`
+  or `BoundedSet<K, N, Linear>`: its slots are reserved in the value as `Inline`'s are, and it keeps no hash index,
+  each lookup comparing the key with the keys the map holds, at most `N` of them. It hashes no key and no lookup of it
+  reads its seed, so an image whose maps are all `Linear` links no key hash and no probe of an index. A map of a
+  large bound keeps `Inline` or `Heap`, whose lookup does not grow with `N`.
+- `BoundedMap::<K, V, N, Linear>::new()` and `BoundedSet::<K, N, Linear>::new()` are `const fn`s that build the map
+  empty with no seed, all zero bytes, so a `static` of it is placed in `.bss`; `Default` builds the same.
+  `with_seed` builds it as for any storage, the seed kept only to hand on (`derived_seed`, a copy into another
+  storage).
+- What the map answers, its order, its saved form, `==` with a map of another storage, `get_mut` and
+  `portable::map::value_mut` are as for `Inline`. A generated algorithm takes a `Linear` map where it took any
+  storage, with no change to the call, and a map it builds for itself from a `Linear` map is `Linear` too. It draws
+  that map's seed by `derived_seed`, which is SipHash-1-3 of the seed, so an image whose algorithms build maps of
+  their own still links SipHash for the derivation, though every map in it is `Linear`; a generated machine draws the
+  seeds of its own maps, which keep `DefaultMapStorage`, the same way.
