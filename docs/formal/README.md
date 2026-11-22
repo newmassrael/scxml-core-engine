@@ -8,8 +8,8 @@ this file says what is here and how to read it.
 
 | Level (ADR 0115) | Here | Built |
 |---|---|---|
-| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`: what a user may rely on, no mechanism | yes, for two protocols |
-| 2. Protocol refinement | `Refines` in `OpenInstances.tla` and `EventJournal.tla` | yes, for two protocols |
+| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`, `PrincipalService.tla`: what a user may rely on, no mechanism | yes, for four protocols |
+| 2. Protocol refinement | `Refines` in `OpenInstances.tla`, `EventJournal.tla`, `Principals.tla` and `BrowserNode.tla` | yes, for four protocols |
 | Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
 | Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
 | 3. Theorem for every size (D3) | | no |
@@ -25,6 +25,9 @@ this file says what is here and how to read it.
 | `BroadcastLog`, `BroadcastLogWrapped` | ADR 0062, the broadcast log of one producer and its readers |
 | `OpenInstances` | ADR 0113, open instances: joining, the lease, the fence, requests at most once |
 | `EventJournal` | ADR 0114, the event journal: the write, the horizon, a follower and a question as of a moment |
+| `Principals` | ADR 0116, a person bound to an incarnation: the proof, the end, the write's condition |
+| `BrowserNode` | ADR 0117, the pages of one browser as one node: the lock, the store, a cleared store, a change of person |
+| `Freshness` | ADR 0117, a request signed ahead by one who was inside a page |
 
 Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
 tool that judges that level; the model shows nothing of it.
