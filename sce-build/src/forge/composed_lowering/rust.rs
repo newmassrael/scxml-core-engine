@@ -311,6 +311,16 @@ pub(crate) fn rust_bytes_type(max: u32) -> String {
     format!("{RUST_PORTABLE}::SceBytes<{max}>")
 }
 
+/// The byte string `bytes` (a `&[u8]`, or a reference that derefs to one) of a
+/// unit's record, which holds one in a `Vec<u8>` (`forge::generator::rust_type`)
+/// that holds no bound, as the `SceBytes<max>` a machine holds it in
+/// ([`rust_bytes_type`]). `held` is the sentence the copy asserts: why the bytes
+/// are within the bound where the copy is written, so a value past it is a defect
+/// that stops the program and not a refusal of the run.
+pub(crate) fn rust_unit_bytes_within(max: u32, bytes: &str, held: &str) -> String {
+    format!("{RUST_PORTABLE}::SceBytes::<{max}>::from_slice({bytes}).expect(\"{held}\")")
+}
+
 /// The empty list a Rust machine starts a list variable at, its element and
 /// bound taken from the place ([`rust_bounded_list`]).
 pub(crate) const RUST_EMPTY_LIST: &str = "::sce_rust_runtime::portable::BoundedList::new()";
@@ -699,10 +709,10 @@ impl ComposedSpelling for RustComposed<'_> {
     // stops the program, as a message of another type than the one the guard
     // matched does.
     fn unit_entry_bytes(&self, max: u32, held: &Held) -> String {
-        format!(
-            "{RUST_PORTABLE}::SceBytes::<{max}>::from_slice({}).expect(\"a message holds its \
-             byte string within the bound its type declares\")",
-            held.borrowed()
+        rust_unit_bytes_within(
+            max,
+            &held.borrowed(),
+            "a message holds its byte string within the bound its type declares",
         )
     }
     // A `match` over every variant of the unit's enum, each arm the machine's

@@ -902,6 +902,261 @@ fn a_c11_map_holds_its_records_in_the_types_their_units_declare() {
     }
 }
 
+/// The statechart that keeps a map of records whose field is a bounded byte
+/// string, and the schema of those records, as committed, each by the name it
+/// is imported under.
+fn frame_documents() -> Vec<(&'static str, String)> {
+    ["map_frame.scxml", "map_frames.scxml"]
+        .into_iter()
+        .map(|name| {
+            let text = std::fs::read_to_string(fixtures().join(name))
+                .unwrap_or_else(|e| panic!("read {name}: {e}"));
+            (name, text)
+        })
+        .collect()
+}
+
+/// The frame documents with the field `body` of the schema retyped `to`, and the
+/// statechart cut to its map alone, so that the map's record is the one thing
+/// that differs from a machine that generates.
+fn frame_documents_with_body(to: &str) -> Vec<(&'static str, String)> {
+    let schema = std::fs::read_to_string(fixtures().join("map_frame.scxml"))
+        .expect("read the schema of the frames");
+    let from = "sce:type=\"bytes[16]\"";
+    assert_eq!(
+        schema.matches(from).count(),
+        1,
+        "`{from}` stands once in the schema"
+    );
+    vec![
+        ("map_frame.scxml", schema.replacen(from, to, 1)),
+        (
+            "map_frames.scxml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\"\n\
+             \x20      version=\"1.0\" initial=\"holding\" datamodel=\"sce-static\" \
+             name=\"map_frames\">\n\
+             \x20 <sce:import kind=\"event-schema\" src=\"map_frame.scxml\" as=\"Frame\"/>\n\
+             \x20 <datamodel>\n\
+             \x20   <data id=\"frames\" sce:type=\"map&lt;uint32, record:Frame&gt;[2]\"/>\n\
+             \x20 </datamodel>\n\
+             \x20 <state id=\"holding\"/>\n\
+             </scxml>\n"
+                .to_string(),
+        ),
+    ]
+}
+
+/// The text of `tokens` with no whitespace, so a path or an expression is
+/// compared whatever spacing its tokens print with.
+fn unspaced(tokens: &str) -> String {
+    tokens.split_whitespace().collect()
+}
+
+/// docs/adr/0108, D6 item 4: a Rust map holds a record whose field is a byte
+/// string its schema bounds in the type the record's unit declares, as any
+/// record. The unit holds the bytes in a `Vec<u8>` and the machine in the
+/// `SceBytes<16>` of the field's bound: a put copies the bytes whole out of the
+/// machine's record, and the value at a key read whole holds them to the bound
+/// again on the way back. Read off the syntax tree of the generated machine.
+#[test]
+fn rust_holds_a_maps_record_with_a_bounded_byte_string_in_its_units_type() {
+    use quote::ToTokens;
+    let (ok, printed, files) = generate_rust_beside(&frame_documents(), "map_frames.scxml", false);
+    assert!(
+        ok,
+        "Rust generates a map of records with a bounded byte string:\n{printed}"
+    );
+    let (declared, called, machine) = declared_machine(&files);
+    let frames = bounded_map_arguments(&declared.field("frames", &machine))
+        .unwrap_or_else(|| panic!("`frames` is no BoundedMap:\n{machine}"));
+    assert_eq!(
+        frames[..2],
+        [
+            "u32".to_string(),
+            "map_frame :: MapFramePayload".to_string()
+        ],
+        "`frames` holds its value in its unit's type:\n{machine}"
+    );
+    let record = declared
+        .field("last", &machine)
+        .to_token_stream()
+        .to_string();
+    let into = declared.function(&record, "map_frame :: MapFramePayload", &machine);
+    let back = declared.function("map_frame :: MapFramePayload", &record, &machine);
+    for name in [&into, &back] {
+        assert!(
+            called.0.contains(name),
+            "no statement of the machine crosses through `{name}`:\n{machine}"
+        );
+    }
+    let functions = functions_of(&files);
+    // Into the unit: the bytes of the machine's bounded storage, copied whole.
+    let mut into_calls = MethodCalls::default();
+    syn::visit::Visit::visit_item_fn(&mut into_calls, function_named(&functions, &into));
+    assert!(
+        into_calls
+            .0
+            .iter()
+            .any(|(receiver, method)| method == "to_vec"
+                && unspaced(receiver) == "v.body.as_slice()"),
+        "`{into}` does not copy the body whole into the unit: {:?}\n{machine}",
+        into_calls.0
+    );
+    // Back: the unit's bytes held to the field's bound again.
+    let from_slice = "::sce_rust_runtime::portable::SceBytes::<16>::from_slice";
+    let mut back_paths = Called::default();
+    syn::visit::Visit::visit_item_fn(&mut back_paths, function_named(&functions, &back));
+    assert!(
+        back_paths.0.iter().any(|path| unspaced(path) == from_slice),
+        "`{back}` does not hold the body to its bound: {:?}\n{machine}",
+        back_paths.0
+    );
+    let mut back_calls = MethodCalls::default();
+    syn::visit::Visit::visit_item_fn(&mut back_calls, function_named(&functions, &back));
+    assert!(
+        back_calls
+            .0
+            .iter()
+            .any(|(receiver, method)| method == "expect"
+                && unspaced(receiver) == format!("{from_slice}(&v.body)")),
+        "`{back}` does not build the body from the unit's: {:?}\n{machine}",
+        back_calls.0
+    );
+}
+
+/// docs/adr/0108, D6 item 4: a C11 map holds a record whose field is a byte
+/// string its schema bounds in the type the record's unit declares, and the
+/// unit holds the bytes in the buffer of the bound the machine's record holds
+/// them in, so the field crosses as it is both ways.
+#[test]
+fn c11_copies_a_maps_record_with_a_bounded_byte_string_as_it_is() {
+    let (ok, printed, code) = generate_c11_among(&frame_documents(), "map_frames.scxml");
+    assert!(
+        ok,
+        "C11 generates a map of records with a bounded byte string:\n{printed}"
+    );
+    for held in [
+        "#include \"map_frame.h\"",
+        "    sce_static_bytes_16_t body;",
+        "static inline map_frames_record_frame_t map_frames_record_frame_of_unit(MapFramePayload_t from)",
+        "static inline MapFramePayload_t \
+         map_frames_record_frame_to_unit(map_frames_record_frame_t from)",
+        "return (map_frames_record_frame_t){ .id = from.id, .body = from.body };",
+        "return (MapFramePayload_t){ .id = from.id, .body = from.body };",
+        "sce_value = map_frames_record_frame_to_unit(sm->policy.v_frame);",
+        "map_frames_record_frame_of_unit(SCE_MAP_VALUE_OF(sm->policy.v_frames, ",
+    ] {
+        assert!(
+            code.contains(held),
+            "no `{held}` in the generated C11:\n{code}"
+        );
+    }
+}
+
+/// docs/adr/0108, D6 item 4: a map whose record has a field Rust does not copy
+/// between the machine's record and the unit's (an optional byte string, which
+/// no Rust unit holds yet) is refused on Rust naming that field and its type,
+/// and not as a field with no bound.
+#[test]
+fn a_maps_record_rust_does_not_copy_is_refused_naming_the_field() {
+    let documents = frame_documents_with_body("sce:type=\"optional&lt;bytes[16]&gt;\"");
+    let (ok, printed, _) = generate_rust_beside(&documents, "map_frames.scxml", false);
+    assert!(
+        !ok,
+        "Rust copies no optional byte string into a unit:\n{printed}"
+    );
+    for part in [
+        "\"code\":\"generate/unsupported-feature\"",
+        "a map holds record:Frame in the type its unit declares (docs/adr/0108, D6 item 4), \
+         and Rust copies no record of it there: its field `body` of type optional<bytes>",
+    ] {
+        assert!(printed.contains(part), "expected `{part}`:\n{printed}");
+    }
+    assert!(
+        !printed.contains("with no bound"),
+        "the refusal says a bounded field has no bound:\n{printed}"
+    );
+}
+
+/// docs/adr/0108, D1 and D6 item 4: a byte string its schema bounds is a key, so
+/// a record that holds one keys a map. C11 holds the key in the unit's record and
+/// feeds the bytes of the field with their length; the Rust unit holds the bytes
+/// in a `Vec<u8>`, which is no key of the runtime's map, so Rust refuses the map
+/// keyed by the record by name, naming the field, and not as a record it cannot
+/// copy.
+#[test]
+fn a_map_keyed_by_a_record_with_a_byte_string_is_refused_by_rust_naming_the_field() {
+    let documents: Vec<(&str, String)> = frame_documents()
+        .into_iter()
+        .map(|(name, text)| match name {
+            "map_frames.scxml" => (
+                name,
+                edited(
+                    &text,
+                    "<data id=\"held\"",
+                    "<data id=\"byFrame\" sce:type=\"map&lt;record:Frame, uint32&gt;[2]\"/>\n    \
+                     <data id=\"held\"",
+                ),
+            ),
+            _ => (name, text),
+        })
+        .collect();
+    let (ok, printed, _) = generate_rust_beside(&documents, "map_frames.scxml", false);
+    assert!(
+        !ok,
+        "Rust keys no map by a record with a byte string:\n{printed}"
+    );
+    for part in [
+        "\"code\":\"generate/unsupported-feature\"",
+        "a map keyed by record:Frame holds the key in the type its unit declares \
+         (docs/adr/0108, D6 item 4), and Rust's unit of it is no key of a map: its field \
+         `body` of type bytes is held in the unit in a type that is no key",
+    ] {
+        assert!(printed.contains(part), "expected `{part}`:\n{printed}");
+    }
+    assert!(
+        !printed.contains("copies no record"),
+        "the refusal is the key's, not the copy's:\n{printed}"
+    );
+    let (ok, printed, code) = generate_c11_among(&documents, "map_frames.scxml");
+    assert!(ok, "C11 keys a map by the record:\n{printed}");
+    for held in [
+        "static inline void MapFramePayload_map_key(const void *key, sce_map_sink_t *sink)",
+        "sce_map_feed_bytes(sink, ",
+    ] {
+        assert!(
+            code.contains(held),
+            "no `{held}` in the generated C11:\n{code}"
+        );
+    }
+}
+
+/// docs/adr/0086, section 1.4: a byte string field with no bound is refused
+/// where its schema is read, by every lane and by `check` alike, naming the
+/// type that states none, before any map asks whether its record crosses.
+#[test]
+fn a_maps_record_with_an_unbounded_byte_string_is_refused_at_its_type() {
+    let documents = frame_documents_with_body("sce:type=\"bytes\"");
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for (name, text) in &documents {
+        std::fs::write(dir.path().join(name), text).expect("write a document");
+    }
+    let (ok, checked) = run(&["check"], &dir.path().join("map_frames.scxml"));
+    let (generated, printed, _) = generate_rust_beside(&documents, "map_frames.scxml", false);
+    assert!(
+        checked.contains("validation/attribute-rule-violated"),
+        "`check` refuses the field at its type:\n{checked}"
+    );
+    for (ok, out) in [(ok, &checked), (generated, &printed)] {
+        assert!(!ok, "a byte string with no bound is refused:\n{out}");
+        assert!(
+            out.contains("`bytes` has no bound") && !out.contains("copies no record"),
+            "expected the type's refusal, not the map's:\n{out}"
+        );
+    }
+}
+
 /// docs/adr/0108, D8: a C11 parent that starts a child holding a map takes a
 /// seed at its own start though it holds no map itself, keeps it, and hands the
 /// child a seed derived from it (`sce_map_seed_of_child`) where it begins the

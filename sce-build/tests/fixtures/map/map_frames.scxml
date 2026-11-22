@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Map and set
+  variables", docs/adr/0108, D6 item 4): a machine that keeps frames by their
+  id, each a record whose body is a byte string its schema bounds. A put of a
+  record variable crosses it into the type the schema's unit declares, and the
+  value at a key read whole crosses it back into the machine's record, the body
+  held to its bound on both sides.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="holding" datamodel="sce-static" name="map_frames">
+  <sce:import kind="event-schema" src="map_frame.scxml" as="Frame"/>
+  <datamodel>
+    <data id="frames" sce:type="map&lt;uint32, record:Frame&gt;[2]"/>
+    <data id="frame" sce:type="record:Frame">
+      <sce:set name="id" expr="7"/>
+      <sce:set name="body" expr="'ab'"/>
+    </data>
+    <data id="last" sce:type="record:Frame">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="body" expr="'zz'"/>
+    </data>
+    <data id="held" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="holding">
+    <onentry>
+      <sce:put target="frames" key="frame.id" expr="frame"/>
+      <if cond="has(frames, frame.id)">
+        <assign location="last" expr="frames[frame.id]"/>
+      </if>
+      <assign location="held" expr="len(frames)"/>
+    </onentry>
+  </state>
+</scxml>
