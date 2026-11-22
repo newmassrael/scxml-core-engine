@@ -306,7 +306,9 @@ use of it, a proof of the asynchronous shell (D13 says what judges it), strategi
 Each step lands with a test that fails without it.
 
 1. (2026-11-22) D5: the gate, its manifest and its self-test. D1 and D2 for `OpenInstances` and `EventJournal`.
-2. D9's progress for every model of today, and `AG EF` with its first use; D6's README and the assumptions.
+2. (2026-11-22) D9's progress for every model of today, and `AG EF` with its first use (a journal's follower can always
+   come to have taken in all there is); D6's README and the assumptions. The first use found a condition ADR 0114 had
+   not stated: a store ends the transactions of a writer that is gone.
 3. D11's refusals in the gate.
 4. D7: `AppendixD.tla`, accepted against the W3C corpus by the Interpreter's traces (D8's second bullet); then
    `sce-codegen model` for one machine, then for every document that has no refused construct, and D8 lane by lane.

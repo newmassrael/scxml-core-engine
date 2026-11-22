@@ -1,0 +1,56 @@
+# Formal models
+
+What a protocol of SCE promises, how it keeps it, and what shows that. Decided by ADR 0115
+(`docs/adr/0115-a-protocol-is-specified-by-what-it-promises-refined-to-what-it-does-traced-from-the-code-that-does-it-and-a-gate-runs-all-of-it.md`);
+this file says what is here and how to read it.
+
+## The levels, and what is built
+
+| Level (ADR 0115) | Here | Built |
+|---|---|---|
+| 1. Promise | `AtMostOnceService.tla`, `JournalService.tla`: what a user may rely on, no mechanism | yes, for two protocols |
+| 2. Protocol refinement | `Refines` in `OpenInstances.tla` and `EventJournal.tla` | yes, for two protocols |
+| Bounded exploration | every `.cfg`: one size, one part taken out or none | yes |
+| Progress and what stays possible (D9) | `progress` and `possible` of `models.json` | yes |
+| 3. Theorem for every size (D3) | | no |
+| 4. A model generated from a document (D7, D8) | | no |
+| 5. A run read against a model (D4) | | no |
+| 6. A function's contract (D10, D13) | | no |
+
+## The models
+
+| Module | What it is of |
+|---|---|
+| `SharedListConvergence`, `SharedListConflicts` | ADR 0034, the shared list |
+| `BroadcastLog`, `BroadcastLogWrapped` | ADR 0062, the broadcast log of one producer and its readers |
+| `OpenInstances` | ADR 0113, open instances: joining, the lease, the fence, requests at most once |
+| `EventJournal` | ADR 0114, the event journal: the write, the horizon, a follower and a question as of a moment |
+
+Each module opens with what it takes as given ("Taken as given"). The code must be shown to have it, by the test or the
+tool that judges that level; the model shows nothing of it.
+
+## Running them
+
+`scripts/formal/check.sh` (or `python3 scripts/formal/models.py`, `--only <module>` for one) checks every model as
+`models.json` declares it, with the TLC that file pins by digest. `--self-test` judges the judge, with no Java. Exit 1 is
+a verdict about the models; exit 3 is "could not run".
+
+A configuration of its own is not enough: `models.json` must declare it, and the gate refuses
+
+- a configuration or a module that is not declared, and a part of a model that no run takes out;
+- a run that holds with another number of states than is recorded (a model that shrank still reports "no error");
+- a run that takes a part out and fails for another reason than it names;
+- a model that states no progress and gives no reason, and a progress no run shows to fail without what it stands on;
+- a temporal property beside a constraint, a symmetry or a view, under which it may hold for nothing;
+- what must stay possible (`AG EF`, decided over the whole graph) and no run that loses it.
+
+After a change that moves a count on purpose, `--record` writes the counts TLC found, and the diff is read.
+
+## What all of this stands on
+
+- **TLC**, the pinned release, and the Java that runs it.
+- **The bounds** of a configuration: an error past them is not found. A theorem (level 3) is what would say so.
+- **That the model is of the code.** Nothing here reads the code; levels 4 to 6 are what will.
+- **That the promise is what was meant.** It is read by a person.
+- What is judged elsewhere and not here: the memory order (GenMC), the bytes of a wire (the conformance kits), and
+  cryptography (assumed).

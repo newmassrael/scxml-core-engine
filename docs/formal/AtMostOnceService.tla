@@ -12,6 +12,9 @@
 (* it may have taken effect or not, and it happens only after a fault:     *)
 (* a client that was stopped or forgotten. Nothing the network does     *)
 (* ends a request unanswered.                                           *)
+(*                                                                         *)
+(* Taken as given:                                                         *)
+(*   Nothing: it is what a user may rely on, and names no mechanism.       *)
 (***************************************************************************)
 EXTENDS Naturals
 
