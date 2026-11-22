@@ -1234,6 +1234,7 @@ mod tests {
                 ..TypeScope::default()
             },
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut union_scope = TypeScope::default();
         union_scope.records.insert("R".to_string(), record.clone());

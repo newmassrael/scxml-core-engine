@@ -1405,6 +1405,7 @@ mod tests {
                 fields: vec![("tags".to_string(), ty("list<string[8]>[4]"))],
                 scope: TypeScope::default(),
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         doc.model.imported_type_scope.records.insert(
@@ -1415,6 +1416,7 @@ mod tests {
                 fields: vec![("items".to_string(), ty("list<record:Item>[3]"))],
                 scope: batch_scope,
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         let mut inner = foreach_over("row.tags", vec![raise("tag")]);

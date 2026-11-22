@@ -45,6 +45,7 @@ const SHAPE: SavedShape = SavedShape {
     revised: "shape",
     format2_first: "shape",
     format2_revised: "shape",
+    legacy: &[],
     records: &[],
     enums: &[],
     features: None,

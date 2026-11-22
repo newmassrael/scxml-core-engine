@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/adr/0112, D5; docs/adr/0044): a machine that holds records of the
+  first revision of grow_inner_1.scxml and grow_outer_1.scxml at every depth a state can hold one: a
+  record variable (`kept`), an optional record that holds a record (`outer`, and `outer.inner`
+  inside it), a list a record holds (`outer.inners`), a list variable (`many`, of a record whose revision adds what an element of one holds), an optional variable
+  (`maybe`) and the case of a union (`shape`). static_grow_2.scxml restores the state it saves.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="holding" datamodel="sce-static" name="static_grow_1">
+  <sce:import kind="event-schema" src="grow_outer_1.scxml" as="Outer"/>
+  <sce:import kind="event-schema" src="grow_inner_1.scxml" as="Inner"/>
+  <sce:import kind="event-schema" src="grow_item_1.scxml" as="Item"/>
+  <sce:import kind="event-schema" src="grow_maybe_1.scxml" as="Maybe"/>
+  <sce:import kind="event-schema" src="grow_holding_1.scxml" as="Holding"/>
+  <sce:import kind="event-schema" src="grow_shaped_1.scxml" as="Shaped"/>
+  <sce:import kind="union" src="grow_shape_1.scxml" as="Shape"/>
+  <sce:import kind="enum" src="grow_kind.scxml" as="Kind"/>
+  <datamodel>
+    <data id="outer" sce:type="optional&lt;record:Outer&gt;" expr="null" sce:direction="out"/>
+    <data id="kept" sce:type="record:Inner" sce:direction="out">
+      <sce:set name="n" expr="0"/>
+    </data>
+    <data id="many" sce:type="list&lt;record:Item&gt;[2]" sce:direction="out"/>
+    <data id="maybe" sce:type="optional&lt;record:Inner&gt;" expr="null" sce:direction="out"/>
+    <data id="shape" sce:type="union:Shape" sce:direction="out">
+      <sce:set name="kind" expr="Kind.none"/>
+    </data>
+  </datamodel>
+  <state id="holding">
+    <transition event="grow.holding" type="internal">
+      <assign location="outer" expr="_event.data.outer"/>
+    </transition>
+    <transition event="grow.inner" type="internal">
+      <assign location="kept" expr="_event.data"/>
+    </transition>
+    <transition event="grow.item" type="internal">
+      <sce:append target="many" expr="_event.data"/>
+    </transition>
+    <transition event="grow.maybe" type="internal">
+      <assign location="maybe" expr="_event.data.inner"/>
+    </transition>
+    <transition event="grow.shaped" type="internal">
+      <assign location="shape" expr="_event.data.shape"/>
+    </transition>
+  </state>
+</scxml>

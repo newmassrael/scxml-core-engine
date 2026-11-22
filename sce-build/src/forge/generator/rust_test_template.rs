@@ -1064,6 +1064,7 @@ mod tests {
             fields: vec![("amount".to_string(), TypeOf::Scalar(SceType::Uint32))],
             scope: TypeScope::default(),
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut union_scope = TypeScope::default();
         union_scope.records.insert("Card".to_string(), card);
@@ -1125,6 +1126,7 @@ mod tests {
             ],
             scope,
             added: Default::default(),
+            lineage: Default::default(),
         };
         let mut outer = TypeScope::default();
         outer.records.insert("Order".to_string(), order);

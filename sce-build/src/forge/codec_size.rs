@@ -952,6 +952,7 @@ mod tests {
                 ],
                 scope: TypeScope::default(),
                 added: Default::default(),
+                lineage: Default::default(),
             },
         );
         scope
