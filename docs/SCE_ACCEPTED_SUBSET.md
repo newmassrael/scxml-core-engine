@@ -6246,6 +6246,25 @@ objects, and the saved shape names the record's fields.
 `scenarios/static_record_list.json` holds this on every engine that runs the
 model.
 
+**A list of texts** (docs/adr/0086, section 7.3).
+`sce:type="list<string[4]>[3]"` holds texts of at most the bound its
+element states, in UTF-8 bytes, as a `string[4]` variable does, and is declared,
+bounded, measured, read by an index, walked and cleared as a list of numbers is.
+`<sce:append target="names" expr="word"/>` takes any text expression, a literal
+or a text variable among them: a text past the element's bound appends nothing,
+raises `error.execution` and ends its block, as an append to a full list does. An
+element read by its index (`first = names[cursor]`) and the item of a
+`<foreach>` over the list are texts, typed and checked as an element of a list of
+numbers is, an index outside the list a failure. A saved state writes the list as
+an array of its texts and reads each back held to the element's bound. The
+Interpreter holds it in an array of strings, Rust in
+`BoundedList<SceString<4>, 3>` and C11 in the machine's list layout over the
+buffer of the element's bound (`sce_static_string_4_list_3_t`, whose reader
+answers it by value); every other generated lane refuses it by name, by its
+element (`generate/unsupported-feature`), until its own step. A list of texts held
+at a key of a map is not held yet. `scenarios/static_list_text.json` holds this on
+the Interpreter, Rust and C11.
+
 **Iterating a list.** `<foreach array="picked" item="v" index="i">`
 (W3C SCXML 4.6) walks a list variable: `array` names one the machine
 declares, `item` is each element typed as the list's element, and `index`,
@@ -6440,8 +6459,8 @@ own, as every map a Rust machine restores does. On both lanes a map whose value 
 map or a set is taken whole only from a map of exactly its type, and a list held at a
 key holds numbers, `bool`s or records.
 `linkstate_interest.json`, the table a router keeps by key expression and by peer,
-holds the keys it empties in a list of texts, which no lane holds in a statechart's
-variable yet, and runs on no engine.
+holds the keys it empties in a list of texts (**A list of texts**, above), which the
+Interpreter, Rust and C11 hold, and runs on those three.
 
 **The Interpreter's map.** `sce-codegen lower` holds a map or a set as the
 array of its entries in the order their keys were first put, each `[key,
@@ -6948,7 +6967,7 @@ held in the type a delivery's field of its type is held in and read as one is
 (docs/adr/0086, section 6.1: its length, and a `<foreach>` that walks it as the place
 it is), so a list of it holds any element a payload's list holds, a text among them
 (`list<string[32]>[4]`), where a list variable of the machine's own holds a number, a
-`bool` or a record. A map or a set, which has no wire form yet (docs/adr/0108, D7), has its key judged as any map
+`bool`, a record or, on the Interpreter, Rust and C11, a text of a bound. A map or a set, which has no wire form yet (docs/adr/0108, D7), has its key judged as any map
 variable's is and is then refused, as is any other type with no payload schema (an open
 enum among them), by name (`scxml/static-datamodel-rule`). The deployment is the one source `sce:from` names; the
 declaration takes no `expr`, no `<sce:set>` and no in-line content, since the document

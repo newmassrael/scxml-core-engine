@@ -582,6 +582,17 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    spells a `<sce:variant name>` for Swift), and the Go and Python gates' arms for a record's field, judged names
    the parser had already refused, and are removed with them
    (`a_reserved_name_a_machine_holds_is_refused_where_it_is_declared`).
+
+   *A statechart's variable may be a list of texts* (amended 2026-11-23). `list<string[N]>[M]` was a composition no
+   lowering of a statechart's variable held, refused by its element by every lane, while a list of texts a payload or
+   the deployment holds was read. It is now one position of the table, `ComposedLowering::text_lists`, held by the
+   Interpreter (an array of strings), Rust (`BoundedList<SceString<N>, M>`) and C11 (the machine's list layout over
+   `sce_static_string_<N>_t`), each through the paths a list of numbers takes: an append holds the text to the
+   element's bound as an assignment to a `string[N]` variable does, and a text past it raises `error.execution` as a
+   full list does; `len`, an index, a `<foreach>`, a clear and a saved state read and write it as they do a list of
+   numbers, an element read as a text. Every other lane refuses it by name, by its element, until its own step, and
+   an algorithm's slot holds none yet. A map's value that is a list of texts is not held yet either (docs/adr/0108,
+   D12 admits a list of numbers, `bool`s or records at a key).
 4. **A Rust machine holds every bound in its type** (amended 2026-11-04, answer G). The machine row of the table is
    every place a Rust machine has, not only a composed one: a variable, a record the machine declares, the payload
    struct of an event it reads, at the top level and at any depth. A `list<T>[N]` is
