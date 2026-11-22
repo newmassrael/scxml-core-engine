@@ -44,7 +44,7 @@
 # every case at worst. No round has measured a case under Miri: the one round CI
 # ran (run 44107166637, 2026-11-17, on the one casefile they then were) read every
 # case INCONCLUSIVE within seconds and timed nothing, so the bound stands as
-# written. The nine cases were one casefile
+# written. The nine weakenings were one casefile
 # until the cargo row of `scripts/lib/mutation_rounds_cost.sh` rose to 20 minutes
 # a case: nine at that cost and the bound are 345 minutes, past the lane's 330, so
 # they are two casefiles, each a job that fits (`mutation_corpus_fits_its_lane`).
