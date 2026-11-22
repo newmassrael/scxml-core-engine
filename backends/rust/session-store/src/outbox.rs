@@ -25,6 +25,8 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::journal::Journal;
+
 /// One envelope a write appends to a client's outbox.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Append<'a> {
@@ -114,12 +116,13 @@ pub enum Change<'a> {
         state: &'a [u8],
         earliest_due: Option<u64>,
     },
-    /// Remove the session, and every note written for it.
+    /// Remove the session, and every note written for it. What it made of the journal stays.
     Remove,
 }
 
 /// One write of a session store: what it does to the session, under which version and fence, and
-/// what it appends to outboxes and takes of the session's notes, all in one transaction.
+/// what it appends to outboxes and to the journal and takes of the session's notes, all in one
+/// transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Write<'a> {
     pub change: Change<'a>,
@@ -129,10 +132,16 @@ pub struct Write<'a> {
     pub fence: u64,
     /// The envelopes appended to their clients' outboxes, in the order given.
     pub outbox: &'a [Append<'a>],
+    /// The facts the session made since its last write, appended to its stream of the journal in
+    /// the order given (ADR 0114; module [`crate::journal`]); `None` for a write that makes none. A
+    /// store that keeps no journal refuses a write that gives facts, as
+    /// [`NoJournal`](crate::NoJournal).
+    pub journal: Option<Journal<'a>>,
     /// Every note of the session numbered at most this is removed: the notes whose rows the state
     /// written holds as raised. `0` takes none.
     pub notes_through: u64,
-    /// The moment the appends are kept at, in milliseconds since the Unix epoch.
+    /// The moment the appends are kept at and the facts recorded at, in milliseconds since the Unix
+    /// epoch.
     pub now_ms: u64,
     /// The ids of the sessions (`_sessionid`) a removal ends: the root and every child its last
     /// state held. A store that keeps the first results of the key-value feature too (module
@@ -158,6 +167,7 @@ impl<'a> Write<'a> {
             expected_version,
             fence,
             outbox: &[],
+            journal: None,
             notes_through: 0,
             now_ms: 0,
             sessions: &[],
@@ -171,6 +181,7 @@ impl<'a> Write<'a> {
             expected_version,
             fence,
             outbox: &[],
+            journal: None,
             notes_through: 0,
             now_ms: 0,
             sessions: &[],

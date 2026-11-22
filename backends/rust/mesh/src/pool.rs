@@ -1986,6 +1986,7 @@ where
                     expected_version: session.version,
                     fence,
                     outbox: &appends,
+                    journal: None,
                     notes_through: session.notes_through,
                     now_ms: now,
                     sessions: &[],

@@ -40,7 +40,8 @@ use std::time::{Duration, Instant};
 
 use sce_rust_metrics::{Histogram, Metrics};
 use sce_rust_session_store::{
-    Append, Batched, Change, Committed, Decided, Failure, SessionStore, Write, WriteError, Written,
+    Append, Batched, Change, Committed, Decided, Fact, FactData, Failure, Journal, SessionStore,
+    Write, WriteError, Written,
 };
 
 /// The committer of one store. See the module documentation.
@@ -92,9 +93,51 @@ struct HeldWrite {
     expected_version: u64,
     fence: u64,
     outbox: Vec<HeldAppend>,
+    journal: Option<HeldJournal>,
     notes_through: u64,
     now_ms: u64,
     sessions: Vec<String>,
+}
+
+/// A [`Journal`] as the committer holds it (docs/adr/0114).
+struct HeldJournal {
+    machine: String,
+    facts: Vec<HeldFact>,
+}
+
+/// A [`Fact`] as the committer holds it.
+struct HeldFact {
+    schema: String,
+    revision: u32,
+    data: Vec<u8>,
+    valid_ms: Option<i64>,
+}
+
+impl HeldJournal {
+    /// Refused for a fact whose bytes are made at its position: the maker is its caller's, and the
+    /// leader that writes the batch may be another thread, so the committer holds bytes alone. A
+    /// store that makes them wraps the store the committer commits to, below it.
+    fn of(journal: &Journal<'_>) -> Result<Self, Failure> {
+        let facts = journal
+            .facts
+            .iter()
+            .map(|fact| match fact.data {
+                FactData::Bytes(data) => Ok(HeldFact {
+                    schema: fact.schema.to_string(),
+                    revision: fact.revision,
+                    data: data.to_vec(),
+                    valid_ms: fact.valid_ms,
+                }),
+                FactData::AtPosition(_) => Err(Failure::new(
+                    "a fact handed to the committer gives its bytes, not what makes them",
+                )),
+            })
+            .collect::<Result<Vec<HeldFact>, Failure>>()?;
+        Ok(HeldJournal {
+            machine: journal.machine.to_string(),
+            facts,
+        })
+    }
 }
 
 /// An [`Append`] as the committer holds it.
@@ -106,8 +149,8 @@ struct HeldAppend {
 }
 
 impl HeldWrite {
-    fn of(write: &Write<'_>) -> Self {
-        HeldWrite {
+    fn of(write: &Write<'_>) -> Result<Self, Failure> {
+        Ok(HeldWrite {
             keep: match write.change {
                 Change::Keep {
                     state,
@@ -127,10 +170,11 @@ impl HeldWrite {
                     envelope: append.envelope.to_vec(),
                 })
                 .collect(),
+            journal: write.journal.as_ref().map(HeldJournal::of).transpose()?,
             notes_through: write.notes_through,
             now_ms: write.now_ms,
             sessions: write.sessions.iter().map(|id| id.to_string()).collect(),
-        }
+        })
     }
 
     /// Its appends, as a [`Write`] names them.
@@ -146,14 +190,33 @@ impl HeldWrite {
             .collect()
     }
 
+    /// Its facts, as a [`Write`] names them.
+    fn facts(&self) -> Vec<Fact<'_>> {
+        self.journal
+            .iter()
+            .flat_map(|journal| &journal.facts)
+            .map(|fact| Fact {
+                schema: &fact.schema,
+                revision: fact.revision,
+                data: FactData::Bytes(&fact.data),
+                valid_ms: fact.valid_ms,
+            })
+            .collect()
+    }
+
     /// The sessions a removal ends, as a [`Write`] names them.
     fn ended(&self) -> Vec<&str> {
         self.sessions.iter().map(String::as_str).collect()
     }
 
-    /// The [`Write`] it is, with `appends` and `ended` as [`Self::appends`] and [`Self::ended`]
-    /// gave them.
-    fn written<'a>(&'a self, appends: &'a [Append<'a>], ended: &'a [&'a str]) -> Write<'a> {
+    /// The [`Write`] it is, with `appends`, `facts` and `ended` as [`Self::appends`],
+    /// [`Self::facts`] and [`Self::ended`] gave them.
+    fn written<'a>(
+        &'a self,
+        appends: &'a [Append<'a>],
+        facts: &'a [Fact<'a>],
+        ended: &'a [&'a str],
+    ) -> Write<'a> {
         Write {
             change: match &self.keep {
                 Some((state, earliest_due)) => Change::Keep {
@@ -165,6 +228,10 @@ impl HeldWrite {
             expected_version: self.expected_version,
             fence: self.fence,
             outbox: appends,
+            journal: self.journal.as_ref().map(|journal| Journal {
+                machine: &journal.machine,
+                facts,
+            }),
             notes_through: self.notes_through,
             now_ms: self.now_ms,
             sessions: ended,
@@ -253,7 +320,7 @@ impl Committer {
     pub fn write(&self, key: &str, write: &Write<'_>) -> Result<Written, WriteError> {
         let item = Item::Write {
             key: key.to_string(),
-            write: HeldWrite::of(write),
+            write: HeldWrite::of(write).map_err(WriteError::Failed)?,
         };
         match self.commit(item)? {
             Committed::Written(written) => Ok(written),
@@ -347,6 +414,13 @@ impl Committer {
                 Item::Acknowledge { .. } => Vec::new(),
             })
             .collect();
+        let facts: Vec<Vec<Fact<'_>>> = batch
+            .iter()
+            .map(|(_, item)| match item {
+                Item::Write { write, .. } => write.facts(),
+                Item::Acknowledge { .. } => Vec::new(),
+            })
+            .collect();
         let ended: Vec<Vec<&str>> = batch
             .iter()
             .map(|(_, item)| match item {
@@ -356,11 +430,11 @@ impl Committer {
             .collect();
         let given: Vec<Batched<'_>> = batch
             .iter()
-            .zip(appends.iter().zip(&ended))
-            .map(|((_, item), (appends, ended))| match item {
+            .zip(appends.iter().zip(&facts).zip(&ended))
+            .map(|((_, item), ((appends, facts), ended))| match item {
                 Item::Write { key, write } => Batched::Write {
                     key: key.as_str(),
-                    write: write.written(appends, ended),
+                    write: write.written(appends, facts, ended),
                 },
                 Item::Acknowledge {
                     client,
@@ -638,6 +712,80 @@ mod tests {
         first.join().expect("no writer panicked").expect("a");
         second.join().expect("no writer panicked").expect("b");
         assert_eq!(gated.batches(), vec![2]);
+    }
+
+    /// docs/adr/0114, D1: the facts a write gives the committer are appended with it, as it gave
+    /// them, through the batch that commits it; a fact whose bytes are made at its position is
+    /// refused, and its write with it. Red if the committer drops a write's journal, which loses
+    /// the entries of a state that is kept.
+    #[test]
+    fn a_write_handed_to_the_committer_keeps_its_facts() {
+        use sce_rust_session_store::{AtPosition, JournalStore, Stream};
+
+        struct Made;
+        impl AtPosition for Made {
+            fn bytes(&self, _: u64) -> Result<Vec<u8>, Failure> {
+                Ok(Vec::new())
+            }
+        }
+
+        let store = MemoryStore::new();
+        let gated = Arc::new(Gated::over(store.clone()));
+        gated.open();
+        let committer = committer(&gated, Duration::ZERO);
+        let k = lease(&store, "k");
+        let fact = Fact {
+            schema: "entry.recorded",
+            revision: 2,
+            data: FactData::Bytes(b"opened"),
+            valid_ms: Some(-5),
+        };
+        let made = Fact {
+            data: FactData::AtPosition(&Made),
+            ..fact
+        };
+        let (kept, refused) = ([fact], [made]);
+        let given = |facts| Write {
+            journal: Some(Journal {
+                machine: "ledger",
+                facts,
+            }),
+            now_ms: 1_000,
+            ..Write::put(b"k", None, 0, k.fence)
+        };
+        assert!(
+            matches!(
+                committer.write("k", &given(&refused)),
+                Err(WriteError::Failed(_))
+            ),
+            "a fact whose bytes are made at its position is refused"
+        );
+        assert_eq!(SessionStore::get(&store, "k").expect("a read"), None);
+        committer
+            .write("k", &given(&kept))
+            .expect("a write that appends");
+        let entries = store
+            .stream(
+                Stream::Session {
+                    machine: "ledger",
+                    key: "k",
+                },
+                0,
+                10,
+            )
+            .expect("its stream")
+            .entries;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            (
+                entries[0].schema.as_str(),
+                entries[0].revision,
+                entries[0].data.as_slice(),
+                entries[0].valid_ms,
+                entries[0].recorded_ms
+            ),
+            ("entry.recorded", 2, &b"opened"[..], Some(-5), 1_000)
+        );
     }
 
     /// docs/adr/0109, D16: each commit reports how long the store took to make it durable and how
