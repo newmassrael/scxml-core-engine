@@ -196,7 +196,8 @@ use crate::forge::model::{
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
     lower, Callee, CalleeImport, InPlaceCall, LiftStatement, Lifted, LoweredElement, LoweredSite,
-    MapEntry, MapOp, MapPathStep, MapWrite, NestedWrite, RenderCall, ReturnedMap, StaticTarget,
+    MapEntry, MapOp, MapPathStep, MapWrite, NestedWalk, NestedWrite, RenderCall, ReturnedMap,
+    StaticTarget,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
@@ -1394,8 +1395,11 @@ impl StaticTarget for JsTarget {
     }
     // The document's own `<foreach>` walks the array the place read gives,
     // which fails for a key that is absent as the read does.
-    fn nested_walk(&self, read: &str) -> Option<String> {
-        Some(read.to_string())
+    fn nested_walk(&self, read: &str, _failed: &str) -> Option<NestedWalk> {
+        Some(NestedWalk {
+            head: String::new(),
+            walked: read.to_string(),
+        })
     }
     // A map, a set and a list are each the array of their entries or
     // elements, and a record the plain object it is everywhere: never changed
@@ -3708,6 +3712,9 @@ mod tests {
                     outcome_enum: None,
                     full: "",
                     failed: "",
+                    absent: "",
+                    in_place: false,
+                    value_ty: "",
                 })
                 .expect("the Interpreter holds a map")
         };
@@ -3759,6 +3766,9 @@ mod tests {
                 outcome_enum: None,
                 full: "",
                 failed: "",
+                absent: "",
+                in_place: false,
+                value_ty: "",
             })
             .is_none());
     }
@@ -3796,6 +3806,9 @@ mod tests {
                     outcome_enum: None,
                     full: "",
                     failed: "",
+                    absent: "",
+                    in_place: false,
+                    value_ty: "",
                 })
                 .expect("the Interpreter writes through a nested place")
         };
@@ -3827,10 +3840,15 @@ mod tests {
             },
             MapPathStep::Field("tags"),
         ];
+        let tags = place_of("list<uint16>[3]");
         let at = NestedWrite {
             root: "rows",
             path: &row_path,
+            place: &tags,
             types: None,
+            absent: "",
+            failed: "",
+            full: "",
         };
         assert_eq!(
             target.nested_append(&at, 3, "e").as_deref(),
@@ -3858,7 +3876,11 @@ mod tests {
                 .nested_clear(&NestedWrite {
                     root: "d",
                     path: &deep_path,
+                    place: &place_of("set<uint8>[2]"),
                     types: None,
+                    absent: "",
+                    failed: "",
+                    full: "",
                 })
                 .as_deref(),
             Some(
@@ -3870,10 +3892,11 @@ mod tests {
         assert_eq!(target.nested_value(None).as_deref(), Some("[]"));
         assert_eq!(target.nested_value(Some("peers")).as_deref(), Some("peers"));
         assert_eq!(
-            target
-                .nested_walk("SceStatic.mapGet(m, {key: 'integer'}, k)")
-                .as_deref(),
-            Some("SceStatic.mapGet(m, {key: 'integer'}, k)")
+            target.nested_walk("SceStatic.mapGet(m, {key: 'integer'}, k)", "FAILED();"),
+            Some(NestedWalk {
+                head: String::new(),
+                walked: "SceStatic.mapGet(m, {key: 'integer'}, k)".to_string(),
+            })
         );
     }
 

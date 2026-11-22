@@ -389,12 +389,13 @@ fn no_c11_frame_grows_with_a_list_bound() {
 /// every read, statement and loop of a map (`fixtures/map/map_faces.scxml`), every map
 /// and set of it bounded by one name and one of its loops writing the set it walks,
 /// is built at that bound and at 64 times it, and every function has the frame it had.
-/// The name `function` has at bound `to`, when it is an operation of a C11 map or set
-/// type: the bound is the last number of the type's name, before the operation's own.
-/// Any other function keeps its name.
+/// The name `function` has at bound `to`, when it is an operation of a C11 map, set
+/// or list type: the bound is the last number of the type's name, before the
+/// operation's own. Any other function keeps its name.
 fn at_bound(function: &str, from: u32, to: u32) -> String {
-    let named_by_bound =
-        function.starts_with("sce_static_map_") || function.starts_with("sce_static_set_");
+    let named_by_bound = function.starts_with("sce_static_map_")
+        || function.starts_with("sce_static_set_")
+        || function.starts_with("sce_static_list_");
     let from = format!("_{from}_");
     match function.rfind(&from).filter(|_| named_by_bound) {
         Some(at) => format!("{}_{to}_{}", &function[..at], &function[at + from.len()..]),
@@ -475,6 +476,80 @@ fn no_c11_frame_grows_with_a_map_bound() {
         "frames that grow with a map's bound:\n{}",
         grown.join("\n")
     );
+}
+
+/// No frame of a C11 machine grows with the bound of a value its map holds either
+/// (docs/adr/0108, D12 rule 2): a map whose value is a map, and one whose value is a
+/// list, each put empty, written through its place, read, walked and saved where the
+/// map holds the value, so the bound of the inner map and of the list is the machine's
+/// storage and never a frame's. Each statechart (`static_map_nested.scxml`,
+/// `static_map_list.scxml`), the bound of its map's value named, is built at that bound
+/// and at 64 times it, and every function has the frame it had.
+#[test]
+fn no_c11_frame_grows_with_the_bound_of_a_value_a_map_holds() {
+    let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
+    const SMALL: u32 = 2;
+    const LARGE: u32 = SMALL * 64;
+    for (name, bound, named) in [
+        (
+            "static_map_nested.scxml",
+            "map&lt;uint32, int32&gt;[2]",
+            "map&lt;uint32, int32&gt;[value_max=2]",
+        ),
+        (
+            "static_map_list.scxml",
+            "list&lt;uint16&gt;[3]",
+            "list&lt;uint16&gt;[value_max=2]",
+        ),
+    ] {
+        let dir = tempdir().expect("tempdir");
+        let document = std::fs::read_to_string(fixtures.join(name)).expect("the statechart");
+        assert_eq!(
+            document.matches(bound).count(),
+            1,
+            "`{bound}` stands once in {name}"
+        );
+        let path = dir.path().join(name);
+        std::fs::write(&path, document.replacen(bound, named, 1)).expect("write the statechart");
+        let small = c11_frames(dir.path(), &path, &[("value_max", SMALL)]);
+        // The type of the value is named by its bound, and so is the map's that
+        // holds it (`sce_static_map_uint32_sce_static_list_uint16_2_2_t`), and each
+        // operation of either.
+        let large: BTreeMap<(String, String), String> =
+            c11_frames(dir.path(), &path, &[("value_max", LARGE)])
+                .into_iter()
+                .map(|((file, function), frame)| ((file, at_bound(&function, LARGE, SMALL)), frame))
+                .collect();
+        // A comparison that never met the saved form of the value would pass.
+        assert!(
+            small
+                .keys()
+                .any(|(_, function)| function.ends_with("_saved_read")
+                    && function.starts_with("sce_static_map_uint32_sce_static_")),
+            "{name}: the saved form of the map of a nested value was not read: {:?}",
+            small.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            small.keys().collect::<Vec<_>>(),
+            large.keys().collect::<Vec<_>>(),
+            "{name}: the two builds lay out the same functions"
+        );
+        let grown: Vec<String> = small
+            .iter()
+            .filter(|(function, frame)| large.get(*function) != Some(*frame))
+            .map(|((file, function), frame)| {
+                format!(
+                    "{file} {function}: {frame} -> {}",
+                    large[&(file.clone(), function.clone())]
+                )
+            })
+            .collect();
+        assert!(
+            grown.is_empty(),
+            "{name}: frames that grow with the bound of a value a map holds:\n{}",
+            grown.join("\n")
+        );
+    }
 }
 
 /// No frame of an algorithm a C11 machine lends its map to grows with the map's

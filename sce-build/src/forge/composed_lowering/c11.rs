@@ -1936,7 +1936,8 @@ mod tests {
     /// its tag, lifted and saved (docs/adr/0092, section 7), and a variable of
     /// a record that holds a composition, which a lift writes whole and a saved
     /// state keeps by its type (docs/adr/0087, "Landing order" item 8), and a
-    /// map or a set variable (docs/adr/0108, "Order of work", step 6).
+    /// map or a set variable (docs/adr/0108, "Order of work", step 6), whose
+    /// value may be a map, a list or a record that holds one (D12).
     #[test]
     fn the_c11_row_lowers_every_composed_position() {
         use crate::forge::event_schema_check::ComposedLowering;
@@ -1950,7 +1951,7 @@ mod tests {
                 records: true,
                 sends: true,
                 maps: true,
-                map_values: false,
+                map_values: true,
             }
         );
     }

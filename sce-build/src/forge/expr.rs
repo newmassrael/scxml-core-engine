@@ -8056,7 +8056,7 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
         _ => None,
     };
     // The key of a `has` is lowered as the probe it is handed as
-    // ([`c_map_probe`]), and its map is a place no read lowers.
+    // ([`c_map_probe`]), and its map where the call is lowered below.
     if !matches!(builtin, Some((KeyedBuiltin::Has, _))) {
         for child in expr.children_mut() {
             lower_keyed_reads_for_c(child, ctx)?;
@@ -8094,6 +8094,9 @@ fn lower_keyed_reads_for_c(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<()
                 .at(span));
             };
             let (probe, feed) = c_map_probe(key, &held, ctx)?;
+            // A map variable is a place no read lowers; a map held at a key of
+            // another (`has(m[k], k2)`, docs/adr/0108, D12) is read first.
+            lower_keyed_reads_for_c(&mut map, ctx)?;
             let map_ty = map.ty;
             wrap_in_call(&mut map, "&", map_ty);
             **callee = TypedExpr::new(ExprKind::Raw(C_MAP_HOLDS.to_string()));
@@ -8144,7 +8147,7 @@ fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusa
     else {
         return Ok(false);
     };
-    let (map, key) = (*object, *index);
+    let (mut map, key) = (*object, *index);
     // A map an algorithm is lent by the address of its storage names no type
     // its value could be read as, so the read names the value's own
     // ([`TypeCtx::c11_algorithm_map_value`]).
@@ -8152,6 +8155,10 @@ fn c_keyed_value(node: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<bool, Refusa
         ExprKind::Ident(name) => ctx.c11_algorithm_map_value(name).map(str::to_string),
         _ => None,
     };
+    // A map held at a key of another (`m[k][k2]`, docs/adr/0108, D12) is
+    // itself the value a read finds: it is read first, where the map that
+    // holds it holds it, and its lookup's failure is the read's.
+    lower_keyed_reads_for_c(&mut map, ctx)?;
     let (probe, feed) = c_map_probe(key, &held, ctx)?;
     let mut address = map.clone();
     let address_ty = address.ty;

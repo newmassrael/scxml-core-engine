@@ -394,11 +394,14 @@ impl ComposedLowering {
             },
 
             // ... and in the type `sce/forge/map.h` declares for its parts and
-            // its bound, reserved in the machine (step 6).
+            // its bound, reserved in the machine (step 6), a map of a map, a
+            // list or a record that holds a composition among them, each
+            // written in place (docs/adr/0108, D12).
             Language::C11 => Self {
                 unions: true,
                 records: true,
                 maps: true,
+                map_values: true,
                 ..walks
             },
 

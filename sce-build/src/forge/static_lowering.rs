@@ -1659,6 +1659,23 @@ pub struct MapWrite<'a> {
     /// The statement that raises `error.execution` for a key or a value that
     /// cannot be computed or held, for a target that raises it itself.
     pub failed: &'a str,
+    /// The statement that raises `error.execution` for a key of
+    /// [`Self::path`] the map it keys does not hold (docs/adr/0108, D12 rule
+    /// 3), for a target that raises it itself: nothing is written, and nothing
+    /// is created at the key.
+    pub absent: &'a str,
+    /// Whether the value put is one only a lowering of a nested value holds
+    /// (docs/adr/0108, D12): a list, a map, a set or a record that holds a
+    /// composition, the variable [`MapOp::Put`] names taken whole or, where
+    /// it names none, the empty value (rule 4). A target that holds a value
+    /// where the map holds it writes such a value there, never through a copy
+    /// in its frame.
+    pub in_place: bool,
+    /// The type the machine holds the value in where [`Self::in_place`] and
+    /// the value is a map or a set, for a target that types its maps
+    /// ([`StaticTarget::map_type`]): what a map taken whole into the entry is
+    /// assigned by. Empty for any other value.
+    pub value_ty: &'a str,
 }
 
 /// A `<foreach>` over a map or a set (docs/adr/0108, D5), as a target that
@@ -1689,6 +1706,10 @@ pub struct MapWalk<'a> {
     pub key_is_text: bool,
     /// The index, spelled as a local, where the document names one.
     pub index: Option<&'a str>,
+    /// Whether the item is a list, a map, a set or a record that holds one
+    /// (docs/adr/0108, D12 rule 8), which a target that walks the map where
+    /// it stands binds where the map holds it and never copies.
+    pub item_in_place: bool,
     /// Whether the loop walks a set, whose item is each key.
     pub set: bool,
     /// Whether the body writes the map at any depth, so that the loop walks a
@@ -1747,6 +1768,21 @@ pub struct MapLoop {
     pub entry: MapEntry,
 }
 
+/// The value of a map whose saved form a target declares
+/// ([`StaticTarget::map_saved_def`], docs/adr/0108, D8 and D12): the type the
+/// machine holds it in and the type the document writes it as, the type each
+/// record of a list value is held in, and whether the value is held in place, a
+/// list, a map, a set or a record that holds a composition, which a restore
+/// reads where the map holds it and never through a copy in a frame.
+pub struct MapSavedValue<'a> {
+    pub held: &'a str,
+    pub ty: &'a crate::forge::model::AlgorithmValueType,
+    /// The type each record of a list value is held in; `None` for any other
+    /// value.
+    pub elem: Option<&'a str>,
+    pub in_place: bool,
+}
+
 /// What a [`MapWrite`] does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MapOp<'a> {
@@ -1786,9 +1822,34 @@ pub struct NestedWrite<'a> {
     pub root: &'a str,
     /// Each step from it to the place written, at least one.
     pub path: &'a [MapPathStep<'a>],
+    /// The place written, at the end of [`Self::path`]: a list, a map or a
+    /// set.
+    pub place: &'a crate::forge::value_path::Place,
     /// The scope the statechart names its types in, in which a record key's
     /// fields are read.
     pub types: Option<&'a crate::forge::value_type::TypeScope>,
+    /// The statement that raises `error.execution` for a key of the path the
+    /// map it keys does not hold (rule 3), for a target that raises it itself.
+    pub absent: &'a str,
+    /// The statement that raises `error.execution` for a key or a value that
+    /// cannot be computed, for a target that raises it itself.
+    pub failed: &'a str,
+    /// The statement that raises `error.execution` for an append to a list
+    /// that holds its bound, for a target that raises it itself; empty for a
+    /// clear.
+    pub full: &'a str,
+}
+
+/// What a `<foreach>` over a list, a map or a set held at a key of a map
+/// walks (docs/adr/0108, D12 rule 8), as a target spells it
+/// ([`StaticTarget::nested_walk`]): `walked`, the place as the loop reads
+/// it, and `head`, what stands before the loop's own head, which reads the
+/// place once and fails the block for a key that is absent; empty for a
+/// target that reads the place where the loop's head names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NestedWalk {
+    pub head: String,
+    pub walked: String,
 }
 
 /// How the body of a `<foreach>` over a map or a set reads what the loop binds
@@ -3102,12 +3163,21 @@ pub trait StaticTarget {
     /// ([`Self::map_copy`]), and for a target that holds a map in storage the
     /// value is no expression of, the statement that writes its entries into
     /// the variable's own. `None` for a target whose machine holds no map yet.
+    ///
+    /// `held` is the type the machine holds the variable in, for a target that
+    /// types its maps, which a map whose value is a map or a set is taken whole
+    /// by (docs/adr/0108, D12 rule 6); `failed`, where the value is read
+    /// through a key and so can fail, the statement that raises
+    /// `error.execution` for it, for a target that raises it itself: the
+    /// variable is then left as it was.
     fn map_assign(
         &self,
         location: &str,
         value: &str,
         from: &crate::forge::model::AlgorithmValueType,
         to: &crate::forge::model::AlgorithmValueType,
+        _held: &str,
+        _failed: Option<&str>,
     ) -> Option<String> {
         self.map_copy(value, from, to)
             .map(|copy| self.assign(location, &copy))
@@ -3146,9 +3216,11 @@ pub trait StaticTarget {
     }
     /// What a `<foreach>` over a list, a map or a set held at a key of a map
     /// walks (docs/adr/0108, D12 rule 8), given `read`, the place read as an
-    /// expression lowers it, which fails for a key that is absent. `None` for a
-    /// target that lowers no nested place yet.
-    fn nested_walk(&self, _read: &str) -> Option<String> {
+    /// expression lowers it, which fails for a key that is absent, and
+    /// `failed`, the statement that raises `error.execution` for it, for a
+    /// target that raises it itself ([`NestedWalk`]). `None` for a target that
+    /// lowers no nested place yet.
+    fn nested_walk(&self, _read: &str, _failed: &str) -> Option<NestedWalk> {
         None
     }
     /// The value a `<sce:put>` puts at a key of a map whose value only a
@@ -3200,13 +3272,13 @@ pub trait StaticTarget {
         None
     }
     /// The saved form of the map type [`Self::map_type_def`] declares, for a
-    /// target that [`Self::saves_apart`]. `None` for a target that writes it
-    /// with the declaration, or declares no map type.
+    /// target that [`Self::saves_apart`] ([`MapSavedValue`]). `None` for a
+    /// target that writes it with the declaration, or declares no map type.
     fn map_saved_def(
         &self,
         _ty: &str,
         _key: (&str, &crate::forge::model::AlgorithmValueType),
-        _value: Option<(&str, &crate::forge::model::AlgorithmValueType)>,
+        _value: Option<&MapSavedValue<'_>>,
         _capacity: u32,
     ) -> Option<String> {
         None
@@ -7392,11 +7464,26 @@ fn map_units_of(
         }
     };
     for ty in scope.variables.iter().filter_map(|v| v.value_type.as_ref()) {
-        let parts: Vec<&AlgorithmValueType> = match ty {
-            AlgorithmValueType::Map { key, value, .. } => vec![key.as_ref(), value.as_ref()],
-            AlgorithmValueType::Set { key, .. } => vec![key.as_ref()],
-            _ => continue,
-        };
+        // The key and the value of the map, and of each map or set held at a
+        // key of it, at any depth (docs/adr/0108, D12).
+        let mut parts: Vec<&AlgorithmValueType> = Vec::new();
+        let mut at = Some(ty);
+        while let Some(map) = at.take() {
+            match map {
+                AlgorithmValueType::Map { key, value, .. } => {
+                    parts.push(key.as_ref());
+                    match value.as_ref() {
+                        held
+                        @ (AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. }) => {
+                            at = Some(held);
+                        }
+                        held => parts.push(held),
+                    }
+                }
+                AlgorithmValueType::Set { key, .. } => parts.push(key.as_ref()),
+                _ => {}
+            }
+        }
         for part in parts {
             match part {
                 AlgorithmValueType::Record { alias } => {
@@ -7623,12 +7710,29 @@ fn nested_append(
     let steps = lowered_path(&written, ctx, renames, rewrites, lower, lower_bounded)?;
     let path = steps.path();
     let root = written.variable.id.as_str();
+    let full = if rewrites.raises_error {
+        target.raise_execution_error(
+            rewrites.machine,
+            "assignmentFailed",
+            &format!(
+                "<sce:append target='{list}'>: the list already holds its capacity of {}",
+                max.max
+            ),
+        )
+    } else {
+        String::new()
+    };
+    let construct = format!("<sce:append target='{list}'>");
     target
         .nested_append(
             &NestedWrite {
                 root: renames.get(root).copied().unwrap_or(root),
                 path: &path,
+                place: &written.place,
                 types: ctx.value_scope,
+                absent: &absent_key(rewrites, &construct),
+                failed: &execution_failure(rewrites, &construct),
+                full: &full,
             },
             max.max,
             &value.text,
@@ -7663,13 +7767,58 @@ fn nested_clear(
     let steps = lowered_path(&written, ctx, renames, rewrites, lower, lower_bounded)?;
     let path = steps.path();
     let root = written.variable.id.as_str();
+    let construct = format!("<sce:clear target='{held}'>");
     target
         .nested_clear(&NestedWrite {
             root: renames.get(root).copied().unwrap_or(root),
             path: &path,
+            place: &written.place,
             types: ctx.value_scope,
+            absent: &absent_key(rewrites, &construct),
+            failed: &execution_failure(rewrites, &construct),
+            full: "",
         })
         .ok_or_else(|| nested_place_not_lowered(&element, target.name()))
+}
+
+/// Whether a value of `ty` at a key of a map is one only a lowering of a nested
+/// value holds (docs/adr/0108, D12): a list, a map, a set, or a record that
+/// holds a composition, which no event schema of entries declares and the
+/// statechart's types do (rule 9). A target that holds a value where the map
+/// holds it puts such a value there ([`MapWrite::in_place`]).
+fn held_whole_at_a_key(ty: &crate::forge::value_type::ValueType, rewrites: &Rewrites<'_>) -> bool {
+    match ty {
+        crate::forge::value_type::ValueType::Record { alias } => {
+            !rewrites.schemas.contains_key(alias) && rewrites.type_scope.records.contains_key(alias)
+        }
+        other => other.is_container(),
+    }
+}
+
+/// How many keys `steps`, the place a statement writes through a map, steps
+/// through: the depth of the map or the set it reaches below its variable
+/// ([`Rewrites::held_map`]).
+fn key_depth(steps: &[crate::forge::type_ctx::PlaceStep]) -> usize {
+    steps
+        .iter()
+        .filter(|step| matches!(step, crate::forge::type_ctx::PlaceStep::Key { .. }))
+        .count()
+}
+
+/// The statement that raises `error.execution` for a key of the place of
+/// `element` the map it keys does not hold (docs/adr/0108, D12 rule 3), for a
+/// target that raises it itself, as a read of an absent key does; empty where
+/// the document names no such event.
+fn absent_key(rewrites: &Rewrites<'_>, element: &str) -> String {
+    if rewrites.raises_error {
+        rewrites.target.raise_execution_error(
+            rewrites.machine,
+            "expressionFailed",
+            &format!("{element}: a key of its place is not one its map holds"),
+        )
+    } else {
+        String::new()
+    }
 }
 
 /// The refusal of a statement that writes through a place held at a key of a
@@ -7738,9 +7887,8 @@ fn map_part(
     match ty {
         // A record that holds a composition is held whole, where the lowering
         // holds a nested value (docs/adr/0108, D12 rule 9).
-        ValueType::Record { alias }
-            if !rewrites.schemas.contains_key(alias)
-                && rewrites.type_scope.records.contains_key(alias)
+        ValueType::Record { .. }
+            if held_whole_at_a_key(ty, rewrites)
                 && written != crate::forge::event_schema_check::EVENT_DATA_PATH =>
         {
             nested(Some(named()))
@@ -9172,6 +9320,7 @@ pub fn lower(
         loop_depth: Default::default(),
         loop_lists: Default::default(),
         map_types: Default::default(),
+        map_value_types: Default::default(),
         sites: Default::default(),
         elements: Default::default(),
         keyed_loops: Default::default(),
@@ -9412,7 +9561,14 @@ pub fn lower(
                 let ordinal = map_ordinal;
                 map_ordinal += 1;
                 let (held_ty, view, read, init) = if target.types_maps() {
-                    let held = map_variable_type(var, ty, &records, &mut declarations)?;
+                    let held = map_variable_type(var, ty, model, &records, &mut declarations)?;
+                    let nested = map_value_types(var, ty, model, &records, &mut declarations)?;
+                    if !nested.is_empty() {
+                        rewrites
+                            .map_value_types
+                            .borrow_mut()
+                            .insert(var.id.clone(), nested);
+                    }
                     if let crate::forge::model::AlgorithmValueType::Record { alias } =
                         ty.map_key().unwrap_or(ty)
                     {
@@ -10213,7 +10369,14 @@ pub fn lower(
                 continue;
             };
             let element = format!("<sce:import as=\"{}\">", callee.alias);
-            let held = map_type_of(&element, &returned.ty, bound, &records, &mut declarations)?;
+            let held = map_type_of(
+                &element,
+                &returned.ty,
+                bound,
+                model,
+                &records,
+                &mut declarations,
+            )?;
             returned_map_types.insert(callee.alias.clone(), held);
         }
     }
@@ -11006,6 +11169,7 @@ impl<'t> TypeDeclarations<'t> {
 fn map_variable_type(
     var: &crate::model::Variable,
     ty: &crate::forge::model::AlgorithmValueType,
+    model: &SCXMLModel,
     records: &BTreeMap<String, EntrySchema>,
     declarations: &mut TypeDeclarations<'_>,
 ) -> Result<String, GenerateError> {
@@ -11013,7 +11177,45 @@ fn map_variable_type(
     let capacity = var.capacity().ok_or_else(|| {
         GenerateError::unsupported(format!("{element}: a map or a set states its bound"))
     })?;
-    map_type_of(&element, ty, capacity, records, declarations)
+    map_type_of(&element, ty, capacity, model, records, declarations)
+}
+
+/// The type the machine holds each map or set held at a key of the map
+/// variable `var`, of the type `ty`, in, the map one key below the variable
+/// first, down to the last map whose value is a map or a set (docs/adr/0108,
+/// D12): each declared once by [`map_type_of`] already, where the variable's
+/// own type was, and named again here. Empty for a map whose value is no map.
+fn map_value_types(
+    var: &crate::model::Variable,
+    ty: &crate::forge::model::AlgorithmValueType,
+    model: &SCXMLModel,
+    records: &BTreeMap<String, EntrySchema>,
+    declarations: &mut TypeDeclarations<'_>,
+) -> Result<Vec<String>, GenerateError> {
+    use crate::forge::model::AlgorithmValueType;
+    let element = format!("<data id=\"{}\">", var.id);
+    let mut held = Vec::new();
+    let mut at = ty;
+    while let AlgorithmValueType::Map { value, .. } = at {
+        let (AlgorithmValueType::Map { max, .. } | AlgorithmValueType::Set { max, .. }) =
+            value.as_ref()
+        else {
+            break;
+        };
+        let capacity = max.as_ref().map(|bound| bound.max).ok_or_else(|| {
+            GenerateError::unsupported(format!("{element}: `{value}` states no bound"))
+        })?;
+        held.push(map_type_of(
+            &element,
+            value,
+            capacity,
+            model,
+            records,
+            declarations,
+        )?);
+        at = value;
+    }
+    Ok(held)
 }
 
 /// The type a map or a set of the type `ty`, bounded by `capacity`, is held in
@@ -11027,6 +11229,7 @@ fn map_type_of(
     element: &str,
     ty: &crate::forge::model::AlgorithmValueType,
     capacity: u32,
+    model: &SCXMLModel,
     records: &BTreeMap<String, EntrySchema>,
     declarations: &mut TypeDeclarations<'_>,
 ) -> Result<String, GenerateError> {
@@ -11039,28 +11242,158 @@ fn map_type_of(
     };
     let key = declarations.map_part(key_part, true, records, element)?;
     let value = value_part
-        .map(|value| declarations.map_part(value, false, records, element))
+        .map(|value| map_value_part(element, value, model, records, declarations))
         .transpose()?;
+    let value_held = value.as_ref().map(|value| value.held.as_str());
     let held = declarations
         .target
-        .map_type(&key, value.as_deref(), capacity)
+        .map_type(&key, value_held, capacity)
         .ok_or_else(|| map_not_lowered(element, lang))?;
     // A target that declares its map types declares each once, after the
-    // types of its parts.
+    // types of its parts, a map's value among them.
     let def = declarations.target.map_type_def(
         &held,
         (key.as_str(), key_part),
-        value.as_deref().zip(value_part),
+        value_held.zip(value_part),
         capacity,
     );
+    let saved_value = value
+        .as_ref()
+        .zip(value_part)
+        .map(|(value, ty)| MapSavedValue {
+            held: &value.held,
+            ty,
+            elem: value.elem.as_deref(),
+            in_place: value.in_place,
+        });
     let saved = declarations.target.map_saved_def(
         &held,
         (key.as_str(), key_part),
-        value.as_deref().zip(value_part),
+        saved_value.as_ref(),
         capacity,
     );
     declarations.map_type(&held, def, saved);
     Ok(held)
+}
+
+/// How a map holds its value ([`map_value_part`]): the type, the type each
+/// record of a list value is held in, and whether the value is held where the
+/// map holds it (docs/adr/0108, D12).
+struct HeldValue {
+    held: String,
+    elem: Option<String>,
+    in_place: bool,
+}
+
+/// The type a value of a map, of the type `value`, is held in on a target that
+/// holds a map in a type of its own ([`StaticTarget::types_maps`]), declared
+/// before the map's, and whether it is one only a lowering of a nested value
+/// holds (docs/adr/0108, D12), held where the map holds it: a map or a set
+/// in the type [`map_type_of`] declares for it, a list of numbers, `bool`s or
+/// records in the type a list variable of it is held in, and a record that
+/// holds a composition in the machine's own record type (rule 9), declared as
+/// a variable of it declares it ([`declare_composed`]). Every other value is
+/// held as [`TypeDeclarations::map_part`] holds it. A list of any other
+/// element is refused by name. `element` names the variable in a refusal.
+fn map_value_part(
+    element: &str,
+    value: &crate::forge::model::AlgorithmValueType,
+    model: &SCXMLModel,
+    records: &BTreeMap<String, EntrySchema>,
+    declarations: &mut TypeDeclarations<'_>,
+) -> Result<HeldValue, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    use crate::forge::model::AlgorithmValueType;
+    let lang = declarations.target.name();
+    let unheld = |why: String| GenerateError::unsupported(format!("{element}: {why}"));
+    let bound = |max: &Option<crate::forge::value_type::Bound>| {
+        max.as_ref()
+            .map(|bound| bound.max)
+            .ok_or_else(|| unheld(format!("`{value}` states no bound")))
+    };
+    Ok(match value {
+        AlgorithmValueType::Map { max, .. } | AlgorithmValueType::Set { max, .. } => {
+            let capacity = bound(max)?;
+            HeldValue {
+                held: map_type_of(element, value, capacity, model, records, declarations)?,
+                elem: None,
+                in_place: true,
+            }
+        }
+        AlgorithmValueType::List { elem, max } => {
+            let capacity = bound(max)?;
+            match elem.as_ref() {
+                AlgorithmValueType::Scalar(scalar)
+                    if AlgorithmValueType::list_elem_admitted(scalar) =>
+                {
+                    HeldValue {
+                        held: declarations.scalar_list(scalar, Some(capacity)).ty,
+                        elem: None,
+                        in_place: true,
+                    }
+                }
+                AlgorithmValueType::Record { alias } if records.contains_key(alias) => {
+                    let record_ty = declarations.record(alias, &records[alias])?;
+                    HeldValue {
+                        held: declarations.record_list(&record_ty, Some(capacity)).ty,
+                        elem: Some(record_ty),
+                        in_place: true,
+                    }
+                }
+                other => {
+                    return Err(unheld(format!(
+                        "a list of `{other}` held at a key of a map has no {lang} lowering yet \
+                         ({})",
+                        crate::forge::value_type::MAP_VALUE_LANDING
+                    )))
+                }
+            }
+        }
+        // A record that holds a composition is the machine's own record
+        // (docs/adr/0108, D12 rule 9).
+        AlgorithmValueType::Record { alias } if !records.contains_key(alias) => {
+            let refused = |why: String| {
+                unheld(format!(
+                    "{why} ({})",
+                    crate::forge::value_type::MAP_VALUE_LANDING
+                ))
+            };
+            let record = crate::forge::value_type::ValueType::Record {
+                alias: alias.clone(),
+            };
+            let enums = declare_composed(
+                declarations,
+                model,
+                &record,
+                ComposedHolder::Variable,
+                &refused,
+            )?;
+            let spelling = declarations
+                .target
+                .composed_spelling(declarations.machine)
+                .ok_or_else(|| {
+                    refused(format!("{lang} has no lowering of a composed value yet"))
+                })?;
+            let held = composed::StatechartRecords::of(model);
+            let record_ty = composed::machine_type(&record, None, &held, &enums, &*spelling)
+                .map_err(&refused)?;
+            for def in spelling.take_declared() {
+                if !declarations.type_defs.contains(&def) {
+                    declarations.type_defs.push(def);
+                }
+            }
+            HeldValue {
+                held: record_ty,
+                elem: None,
+                in_place: true,
+            }
+        }
+        _ => HeldValue {
+            held: declarations.map_part(value, false, records, element)?,
+            elem: None,
+            in_place: false,
+        },
+    })
 }
 
 /// The enum `model`, held by the machine as `alias` in the type `ty`
@@ -12375,6 +12708,11 @@ struct Rewrites<'m> {
     /// statement of one and a copy a loop walks name (docs/adr/0108, D8).
     /// Written once the variables are declared, read by the walk after.
     map_types: std::cell::RefCell<BTreeMap<String, String>>,
+    /// The type the machine holds each map or set held at a key of a map
+    /// variable in, by the variable's id, the map one key below the variable
+    /// first (docs/adr/0108, D12): what a statement that writes one through
+    /// its place and a copy a loop over one walks name ([`Self::held_map`]).
+    map_value_types: std::cell::RefCell<BTreeMap<String, Vec<String>>>,
     /// What the walk has lowered so far ([`StaticLowering::sites`]). Written
     /// through a shared reference because the walk reads `Rewrites` from
     /// closures.
@@ -12460,6 +12798,22 @@ struct Rewrites<'m> {
 }
 
 impl Rewrites<'_> {
+    /// The type the machine holds the map or the set `depth` keys below the
+    /// map variable `root` in ([`Self::map_types`], [`Self::map_value_types`]):
+    /// the variable's own at depth 0. Empty for a target that holds no map in a
+    /// type of its own.
+    fn held_map(&self, root: &str, depth: usize) -> String {
+        match depth.checked_sub(1) {
+            None => self.map_types.borrow().get(root).cloned(),
+            Some(below) => self
+                .map_value_types
+                .borrow()
+                .get(root)
+                .and_then(|held| held.get(below).cloned()),
+        }
+        .unwrap_or_default()
+    }
+
     /// The ordinal for an `<if>` the walk writes, and the one after it.
     fn take_if_ordinal(&self) -> u32 {
         let ordinal = self.next_if_ordinal.get();
@@ -18198,6 +18552,47 @@ fn c11_map_part_value(ty: &crate::forge::value_type::ValueType, value: &str) -> 
     }
 }
 
+/// The statements that reach the place at the end of `path` from the map
+/// variable `root` for a C11 statement that writes through it (docs/adr/0108,
+/// D12 rules 1 to 3), and that place as an lvalue: each key computed into a
+/// local of its map's key type, a key that fails ending the block through
+/// `failed`, and the value at it reached where the map holds it through
+/// `sce_map_value_mut`, which touches no index, no order and no free list, a
+/// key the map does not hold ending the block through `absent` before anything
+/// is written; each field of a record reached where the record stands. Each
+/// key is read once, before anything is written. The statements stand in a
+/// block that holds `sce_failure_`. `None` for a key of a map that holds none.
+fn c11_nested_place(
+    root: &str,
+    path: &[MapPathStep<'_>],
+    failed: &str,
+    absent: &str,
+) -> Option<(Vec<String>, String)> {
+    let mut lines = Vec::new();
+    let mut at = format!("({root})");
+    for (depth, step) in path.iter().enumerate() {
+        match step {
+            MapPathStep::Key { map, key } => {
+                let key = c11_map_part_value(&map.map_key()?.ty, key);
+                lines.push(format!(
+                    "__typeof__({at}.slots[0].key) sce_key_{depth}_ = {key};"
+                ));
+                lines.push(format!("if (sce_failure_.failed) {{ {failed} return; }}"));
+                lines.push(format!(
+                    "__typeof__(&{at}.slots[0].value) sce_held_{depth}_ = \
+                     sce_map_value_mut(&{at}, &sce_key_{depth}_, NULL);"
+                ));
+                lines.push(format!(
+                    "if (sce_held_{depth}_ == NULL) {{ {absent} return; }}"
+                ));
+                at = format!("(*sce_held_{depth}_)");
+            }
+            MapPathStep::Field(field) => at = format!("{at}.{field}"),
+        }
+    }
+    Some((lines, at))
+}
+
 /// What holds a field a C11 key's canonical bytes are written from
 /// ([`c11_key_field_feed`]): a record of the machine, which holds a text and a
 /// byte string in the buffers of their bounds, or the payload channel, which
@@ -18271,7 +18666,9 @@ fn c11_map_key_feed(part: (&str, &crate::forge::model::AlgorithmValueType)) -> O
 /// The statement that writes `value`, a key or a value of the part `part` held
 /// in its C type, to the saved state `w` writes, in the form its type has
 /// there (`sce/saved_values.h`): a record and an enum by the functions their
-/// declarations name, every other value as a variable of its type is.
+/// declarations name, and so a map, a set and a list a map holds as its value
+/// (docs/adr/0108, D12; [`c11_map_saved_def`], [`c11_list_saved_def`]), every
+/// other value as a variable of its type is.
 fn c11_map_part_saved_write(
     part: (&str, &crate::forge::model::AlgorithmValueType),
     value: &str,
@@ -18285,7 +18682,10 @@ fn c11_map_part_saved_write(
         AlgorithmValueType::Scalar(scalar) => c_saved_write(scalar, None, value),
         AlgorithmValueType::Text { .. } => c_saved_write(&SceType::String, None, value),
         AlgorithmValueType::Bytes { .. } => c_saved_write(&SceType::Bytes, None, value),
-        AlgorithmValueType::Record { .. } => format!("{held}_saved_write(w, &({value}));"),
+        AlgorithmValueType::Record { .. }
+        | AlgorithmValueType::Map { .. }
+        | AlgorithmValueType::Set { .. }
+        | AlgorithmValueType::List { .. } => format!("{held}_saved_write(w, &({value}));"),
         _ => return None,
     })
 }
@@ -18293,7 +18693,12 @@ fn c11_map_part_saved_write(
 /// The C condition that reads the saved part `member`, which `what` names in a
 /// refusal, into `dest`, a key or a value of the part `part` held in its C type
 /// ([`c_saved_read`]); a record is read at the revision `at`, a C expression, of
-/// its schema (docs/adr/0044).
+/// its schema (docs/adr/0044). A map, a set and a list a map holds as its value
+/// (docs/adr/0108, D12) are read into `dest` where the map holds them: a map
+/// or a set by its type's own read, which keeps what it reads in `dest`, a
+/// record a map held at a key holds read at its schema's first revision, which
+/// the saved state names for no record a map holds at a key of another; and a
+/// list by its type's ([`c11_list_saved_def`]).
 fn c11_map_part_saved_read(
     part: (&str, &crate::forge::model::AlgorithmValueType),
     member: &str,
@@ -18327,8 +18732,67 @@ fn c11_map_part_saved_read(
         AlgorithmValueType::Record { .. } => {
             format!("{held}_saved_read({member}, {what}, {at}, &{dest}, err)")
         }
+        AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. } => {
+            format!("{held}_saved_read({member}, {what}, 1u, 1u, &{dest}, NULL, err)")
+        }
+        AlgorithmValueType::List { .. } => {
+            format!("{held}_saved_read({member}, {what}, &{dest}, err)")
+        }
         _ => return None,
     })
+}
+
+/// The element of a list whose saved form [`c11_list_saved_def`] declares.
+#[derive(Debug, Clone, Copy)]
+enum C11ListElem<'a> {
+    /// A number or a `bool`.
+    Scalar(&'a SceType),
+    /// A record, held in the C type named.
+    Record(&'a str),
+}
+
+/// The saved form of the C11 list type `ty` ([`c11_list_def`]) of `elem`,
+/// bounded by `capacity`, which a map holds as its value
+/// (docs/adr/0108, D12): the array of its elements, each written and read as
+/// an element of a list variable is (`c/saved.c.jinja2`), and read element by
+/// element into the list where the map holds it, so no copy of the list's
+/// bound is made in a frame. Under a guard of its own, so every map of a
+/// program that holds such a list declares it once.
+fn c11_list_saved_def(ty: &str, elem: C11ListElem<'_>, capacity: u32) -> String {
+    let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+    let (write, read) = match elem {
+        C11ListElem::Scalar(scalar) => (
+            c_saved_write(scalar, None, "value->data[at]"),
+            c_saved_read(scalar, None, None, "item", "element_what", "out->data[i]"),
+        ),
+        // A record a list at a key of a map holds is read at its schema's first
+        // revision, which the saved state names for no such record.
+        C11ListElem::Record(record) => (
+            format!("{record}_saved_write(w, &value->data[at]);"),
+            format!("{record}_saved_read(item, element_what, 1u, &out->data[i], err)"),
+        ),
+    };
+    format!(
+        "#ifndef {guard}_SAVED\n#define {guard}_SAVED\n\
+         /* The list as a saved state writes it: the array of its elements. */\n\
+         static inline void {ty}_saved_write(sce_jw_t *w, const {ty} *value) {{\n    \
+         sce_jw_begin_array(w);\n    \
+         for (size_t at = 0u; at < value->len; ++at) {{\n        \
+         sce_jw_element(w);\n        {write}\n    }}\n    \
+         sce_jw_end_array(w);\n}}\n\n\
+         /* The list a saved state holds, refused unless it is the array of at most {capacity} \
+         elements,\n   read an element at a time into `out` where it is kept. */\n\
+         static inline bool {ty}_saved_read(sce_jv_t v, const char *what, {ty} *out, \
+         sce_saved_error_t *err) {{\n    \
+         size_t count = 0u;\n    sce_jiter_t it;\n    sce_jv_t item;\n    \
+         char element_what[SCE_SAVED_AT_LEN];\n    \
+         if (!sce_saved_list(v, what, {capacity}u, &count, err)) {{\n        return false;\n    }}\n    \
+         (void)sce_jv_iter(v, &it);\n    \
+         for (size_t i = 0u; sce_jiter_element(&it, &item); ++i) {{\n        \
+         sce_saved_path_index(element_what, sizeof(element_what), what, i);\n        \
+         if (!{read}) {{\n            return false;\n        }}\n    }}\n    \
+         out->len = count;\n    return true;\n}}\n#endif"
+    )
 }
 
 /// The C11 map or set type `ty` ([`c11_map_type`]) of keys of the part `key`,
@@ -18346,11 +18810,35 @@ pub(crate) fn c11_map_type_decl(
     value: Option<&str>,
     capacity: u32,
 ) -> Option<String> {
+    c11_map_type_decl_holding(ty, key, value, false, capacity)
+}
+
+/// [`c11_map_type_decl`] of a map whose value, held in the C type `value`,
+/// is a map or a set where `holds_maps` (docs/adr/0108, D12): declared by
+/// `SCE_MAP_NESTED_DECLARE` over the prefix of the value's type, which starts
+/// each value where the map holds it under the seed drawn from the map's
+/// (`sce/forge/map.h`). A map of any other value is declared as
+/// [`c11_map_type_decl`] declares it, and compiles none of the nested map's
+/// functions.
+fn c11_map_type_decl_holding(
+    ty: &str,
+    key: (&str, &crate::forge::model::AlgorithmValueType),
+    value: Option<&str>,
+    holds_maps: bool,
+    capacity: u32,
+) -> Option<String> {
     let prefix = ty.trim_end_matches("_t");
     let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
     let held_key = key.0;
     let feed = c11_map_key_feed(key)?;
     let (declared, shape) = match value {
+        Some(value) if holds_maps => (
+            format!(
+                "SCE_MAP_NESTED_DECLARE({prefix}, {held_key}, {}, {capacity}u, {prefix}_key_feed)",
+                value.trim_end_matches("_t")
+            ),
+            "a `map` of",
+        ),
         Some(value) => (
             format!(
                 "SCE_MAP_DECLARE({prefix}, {held_key}, {value}, {capacity}u, {prefix}_key_feed)"
@@ -18393,20 +18881,80 @@ pub(crate) fn c11_map_type_decl(
 fn c11_map_saved_def(
     ty: &str,
     key: (&str, &crate::forge::model::AlgorithmValueType),
-    value: Option<(&str, &crate::forge::model::AlgorithmValueType)>,
+    value: Option<&MapSavedValue<'_>>,
     capacity: u32,
 ) -> Option<String> {
+    use crate::forge::model::AlgorithmValueType;
     let prefix = ty.trim_end_matches("_t");
     let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
     let held_key = key.0;
     // A part no map of C11 holds has no declaration, and so no saved form.
     c11_map_key_feed(key)?;
-    let (local_value, put_args, entry_write, value_read) = match value {
-        Some(part) => {
+    // The entry a saved entry's key is put as, refused where the map holds the
+    // key already.
+    let put_line = |put_args: &str| {
+        format!(
+            "        if ({prefix}_put(into, {put_args}) != SCE_MAP_PUT_INSERTED) {{\n            \
+             return sce_saved_refuse(err, \"'%s' holds a key an entry before it holds\", entry_what);\n        \
+             }}\n"
+        )
+    };
+    // A list a map holds is written and read by its own type's functions,
+    // declared before the map's (docs/adr/0108, D12).
+    let value_defs = match value.map(|value| (value, value.ty)) {
+        Some((saved, AlgorithmValueType::List { elem, max })) => {
+            let elem = match (elem.as_ref(), saved.elem) {
+                (AlgorithmValueType::Scalar(scalar), _) => C11ListElem::Scalar(scalar),
+                (AlgorithmValueType::Record { .. }, Some(record)) => C11ListElem::Record(record),
+                _ => return None,
+            };
+            format!(
+                "{}\n",
+                c11_list_saved_def(saved.held, elem, max.as_ref()?.max)
+            )
+        }
+        _ => String::new(),
+    };
+    let (local_value, entry_put, entry_write, value_read) = match value {
+        // A value held in place (docs/adr/0108, D12) is read where the map
+        // holds it, its entry put first: the value of a key put by
+        // `_put_entry` is the empty one, a map's started under the seed drawn
+        // from the map's, and no value of its bound passes through a frame.
+        Some(saved) if saved.in_place => {
+            let part = (saved.held, saved.ty);
+            let read = c11_map_part_saved_read(part, "part", "part_what", "(*value)", "value_at")?;
+            (
+                String::new(),
+                String::new(),
+                format!(
+                    "sce_jw_begin_array(w);\n        sce_jw_element(w);\n        {}\n        \
+                     sce_jw_element(w);\n        {}\n        sce_jw_end_array(w);",
+                    c11_map_part_saved_write(key, "slot->key")?,
+                    c11_map_part_saved_write(part, "slot->value")?
+                ),
+                format!(
+                    "        {{\n            sce_map_put_outcome_t outcome;\n            \
+                     {held} *value = {prefix}_put_entry(into, key, &outcome);\n            \
+                     sce_jiter_t pair;\n            sce_jv_t part;\n            \
+                     char part_what[SCE_SAVED_AT_LEN];\n            \
+                     if (value == NULL || outcome != SCE_MAP_PUT_INSERTED) {{\n                \
+                     return sce_saved_refuse(err, \"'%s' holds a key an entry before it holds\", \
+                     entry_what);\n            }}\n            \
+                     (void)sce_jv_iter(item, &pair);\n            \
+                     (void)sce_jiter_element(&pair, &part);\n            \
+                     (void)sce_jiter_element(&pair, &part);\n            \
+                     sce_saved_path_index(part_what, sizeof(part_what), entry_what, 1u);\n            \
+                     if (!{read}) {{\n                return false;\n            }}\n        }}\n",
+                    held = saved.held
+                ),
+            )
+        }
+        Some(saved) => {
+            let part = (saved.held, saved.ty);
             let read = c11_map_part_saved_read(part, "part", "part_what", "value", "value_at")?;
             (
                 format!("        {} value;\n", part.0),
-                "key, value",
+                put_line("key, value"),
                 format!(
                     "sce_jw_begin_array(w);\n        sce_jw_element(w);\n        {}\n        \
                      sce_jw_element(w);\n        {}\n        sce_jw_end_array(w);",
@@ -18427,7 +18975,7 @@ fn c11_map_saved_def(
         }
         None => (
             String::new(),
-            "key",
+            put_line("key"),
             c11_map_part_saved_write(key, "slot->key")?,
             String::new(),
         ),
@@ -18445,7 +18993,7 @@ fn c11_map_saved_def(
     };
     let read_key = c11_map_part_saved_read(key, "part", "part_what", "(*key)", "at")?;
     Some(format!(
-        "#ifndef {guard}_SAVED\n#define {guard}_SAVED\n\
+        "{value_defs}#ifndef {guard}_SAVED\n#define {guard}_SAVED\n\
          /* The map as a saved state writes it: the array of its entries in its order. */\n\
          static inline void {ty}_saved_write(sce_jw_t *w, const {ty} *map) {{\n    \
          sce_jw_begin_array(w);\n    \
@@ -18491,10 +19039,7 @@ fn c11_map_saved_def(
          char entry_what[SCE_SAVED_AT_LEN];\n        {held_key} key;\n{local_value}        \
          sce_saved_path_index(entry_what, sizeof(entry_what), what, i);\n        \
          if (!{ty}_saved_key(item, entry_what, key_at, &key, err)) {{\n            return false;\n        }}\n\
-         {value_read}        \
-         if ({prefix}_put(into, {put_args}) != SCE_MAP_PUT_INSERTED) {{\n            \
-         return sce_saved_refuse(err, \"'%s' holds a key an entry before it holds\", entry_what);\n        \
-         }}\n    }}\n    \
+         {value_read}{entry_put}    }}\n    \
          return true;\n}}\n#endif"
     ))
 }
@@ -20646,15 +21191,45 @@ impl StaticTarget for CTarget {
     }
     // The entries of the map taken whole, in its order, put into the variable's
     // own storage under its own seed, a text of a smaller bound into the
-    // place's larger buffer (`sce_map_assign`).
+    // place's larger buffer (`sce_map_assign`). A map whose value is a map or a
+    // set is taken by its type's `_assign`, which starts each value in the
+    // variable's storage under the seed drawn from the variable's
+    // (docs/adr/0108, D12 rules 6 and 7). A map read through a key is read
+    // first, in a block of its own, and a key that is absent ends the block
+    // before the variable is written.
     fn map_assign(
         &self,
         location: &str,
         value: &str,
         _from: &crate::forge::model::AlgorithmValueType,
-        _to: &crate::forge::model::AlgorithmValueType,
+        to: &crate::forge::model::AlgorithmValueType,
+        held: &str,
+        failed: Option<&str>,
     ) -> Option<String> {
-        Some(format!("sce_map_assign(&({location}), &({value}));"))
+        use crate::forge::model::AlgorithmValueType;
+        let holds_maps = matches!(
+            to.map_value(),
+            Some(AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. })
+        );
+        let assign = |from: &str| {
+            if holds_maps {
+                format!(
+                    "{}_assign(&({location}), {from});",
+                    held.trim_end_matches("_t")
+                )
+            } else {
+                format!("sce_map_assign(&({location}), {from});")
+            }
+        };
+        Some(match failed {
+            None => assign(&format!("&({value})")),
+            Some(failed) => format!(
+                "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; \
+                 __typeof__(&({value})) sce_from_ = &({value}); \
+                 if (sce_failure_.failed) {{ {failed} return; }} {} }}",
+                assign("sce_from_")
+            ),
+        })
     }
     // docs/adr/0108, D5: the call builds the map in the destination of the
     // machine's storage for its adapter and answers whether it did, its
@@ -20685,21 +21260,62 @@ impl StaticTarget for CTarget {
     // nothing of a key that is absent. A record key or value the map holds in
     // the type its unit declares (docs/adr/0108, D6 item 4) is handed already
     // built in it ([`map_part`]).
+    //
+    // A write through a map held at a key of another (docs/adr/0108, D12) first
+    // reaches that map where it stands ([`c11_nested_place`]), each key on the
+    // way read once and an absent one ending the block before anything is
+    // written, and then writes it as a map variable is written, by the
+    // functions of the map's own type. A value held in place, a list, a map or
+    // a record that holds a composition, is put where the map holds it: the
+    // key's value is started empty (`_put_entry`, rule 4) and the variable the
+    // put names, if any, is taken into it whole, a map's by its type's
+    // `_assign`, which draws each inner seed from the map's (rule 7).
     fn map_write(&self, write: &MapWrite<'_>) -> Option<String> {
-        // A write through a map held at a key of another is lowered by D12's
-        // own step on this lane (docs/adr/0108, D12), which the lane's row
-        // refuses before the walk.
-        if write.ty.is_empty() || !write.path.is_empty() {
+        if write.ty.is_empty() {
             return None;
         }
         let prefix = write.ty.trim_end_matches("_t");
-        let map = write.map;
         let key = c11_map_part_value(&write.place.map_key()?.ty, write.key);
-        let mut lines = vec![
-            "{ sce_forge_algorithm_failure_t sce_failure_ = {0};".to_string(),
-            format!("__typeof__(({map}).slots[0].key) sce_key = {key};"),
-        ];
+        let mut lines = vec!["{ sce_forge_algorithm_failure_t sce_failure_ = {0};".to_string()];
+        let reached;
+        let map = if write.path.is_empty() {
+            write.map
+        } else {
+            let (path, place) =
+                c11_nested_place(write.map, write.path, write.failed, write.absent)?;
+            lines.extend(path);
+            reached = place;
+            reached.as_str()
+        };
+        lines.push(format!("__typeof__(({map}).slots[0].key) sce_key = {key};"));
+        let failure = || format!("if (sce_failure_.failed) {{ {} return; }}", write.failed);
+        let mut failure_checked = false;
         let call = match write.op {
+            MapOp::Put { value: Some(value) } if write.in_place => {
+                lines.push(failure());
+                failure_checked = true;
+                lines.push("sce_map_put_outcome_t sce_put_;".to_string());
+                let entry = format!("{prefix}_put_entry(&({map}), sce_key, &sce_put_)");
+                // The empty value (rule 4) is the one `_put_entry` leaves; a
+                // variable named is taken into it whole.
+                if value.is_empty() {
+                    lines.push(format!("(void){entry};"));
+                } else {
+                    lines.push(format!(
+                        "__typeof__(&({map}).slots[0].value) sce_entry = {entry};"
+                    ));
+                    let taken = if write.value_ty.is_empty() {
+                        format!("*sce_entry = {value};")
+                    } else {
+                        format!(
+                            "{}_assign(sce_entry, &({value}));",
+                            write.value_ty.trim_end_matches("_t")
+                        )
+                    };
+                    lines.push(format!("if (sce_entry != NULL) {{ {taken} }}"));
+                }
+                "sce_put_".to_string()
+            }
             MapOp::Put { value: Some(value) } => {
                 let value = c11_map_part_value(&write.place.map_value()?.ty, value);
                 lines.push(format!(
@@ -20710,10 +21326,9 @@ impl StaticTarget for CTarget {
             MapOp::Put { value: None } => format!("{prefix}_put(&({map}), sce_key)"),
             MapOp::Remove => format!("{prefix}_remove(&({map}), sce_key)"),
         };
-        lines.push(format!(
-            "if (sce_failure_.failed) {{ {} return; }}",
-            write.failed
-        ));
+        if !failure_checked {
+            lines.push(failure());
+        }
         match (write.outcome, write.outcome_enum, &write.op) {
             (Some(outcome), Some((ty, document)), op) => {
                 let outcomes = match op {
@@ -20738,6 +21353,64 @@ impl StaticTarget for CTarget {
         }
         lines.push("}".to_string());
         Some(lines.join(" "))
+    }
+    // A list held at a key of a map, or in a field of a record held there, is
+    // reached where it stands ([`c11_nested_place`], docs/adr/0108, D12) and
+    // appended to as a list variable is, in a block of its own: a full list
+    // ends the block through `full`, and a value that fails through `failed`
+    // before the list's length moves.
+    fn nested_append(&self, at: &NestedWrite<'_>, capacity: u32, value: &str) -> Option<String> {
+        let (path, list) = c11_nested_place(at.root, at.path, at.failed, at.absent)?;
+        Some(format!(
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {} \
+             if ({list}.len >= {capacity}u) {{ {} return; }} {list}.data[{list}.len] = {value}; \
+             if (sce_failure_.failed) {{ {} return; }} {list}.len++; }}",
+            path.join(" "),
+            at.full,
+            at.failed
+        ))
+    }
+    // ... and emptied where it stands, a list as a list variable is and a map
+    // or a set as a map variable is.
+    fn nested_clear(&self, at: &NestedWrite<'_>) -> Option<String> {
+        let (path, held) = c11_nested_place(at.root, at.path, at.failed, at.absent)?;
+        let cleared = if at.place.is_keyed() {
+            self.map_clear(&held)
+        } else {
+            self.clear(&held)
+        };
+        Some(format!(
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {} {cleared} }}",
+            path.join(" ")
+        ))
+    }
+    // The place is read once, before the loop: the read records its failure
+    // in a record of the loop's own, which no statement of the body declares
+    // (each declares its own `sce_failure_`), and a key that is absent ends the
+    // block before the loop's head, as the read does elsewhere. The loop walks
+    // the value where the map holds it, through the address the read answers.
+    fn nested_walk(&self, read: &str, failed: &str) -> Option<NestedWalk> {
+        let n = self
+            .loops
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        let failure = format!("sce_walk_failure_{n}_");
+        let read = read.replace("&sce_failure_", &format!("&{failure}"));
+        let walked = format!("sce_walked_{n}_");
+        Some(NestedWalk {
+            head: format!(
+                "for (sce_forge_algorithm_failure_t {failure} = {{0}}, *sce_read_{n}_ = &{failure}; \
+                 sce_read_{n}_ != NULL; sce_read_{n}_ = NULL) \
+                 for (__typeof__(&({read})) {walked} = &({read}); {walked} != NULL; {walked} = NULL) \
+                 if ({failure}.failed) {{ {failed} return; }} else "
+            ),
+            walked: format!("(*{walked})"),
+        })
+    }
+    // A value held in place is named as it is read, and the empty one is
+    // nothing more than the entry `_put_entry` makes ([`Self::map_write`]).
+    fn nested_value(&self, named: Option<&str>) -> Option<String> {
+        Some(named.unwrap_or_default().to_string())
     }
     // A loop of its own over the map's positions in its order: a body that
     // writes the map walks a copy of it, held in the machine's `scratch` at the
@@ -20801,13 +21474,22 @@ impl StaticTarget for CTarget {
                 format!("__typeof__({slot}->{member}) {local} = {slot}->{member}; (void){local};")
             }
         };
+        // A list, a map or a set the map holds, or a record that holds one, is
+        // bound where the map holds it, through its address, and never copied
+        // (docs/adr/0108, D12 rule 8): the body reads it through the address.
+        let item = if walk.item_in_place && !walk.set {
+            format!(
+                "const __typeof__({slot}->value) *{item} = &{slot}->value; (void){item};",
+                item = walk.item
+            )
+        } else if walk.set {
+            bind(walk.item, "key", walk.item_is_text)
+        } else {
+            bind(walk.item, "value", walk.item_is_text)
+        };
         let mut prologue = vec![
             format!("const __typeof__({walked}.slots[0]) *{slot} = &{walked}.slots[{at} - 1u];"),
-            if walk.set {
-                bind(walk.item, "key", walk.item_is_text)
-            } else {
-                bind(walk.item, "value", walk.item_is_text)
-            },
+            item,
         ];
         if let Some((key, _)) = walk.key {
             prologue.push(bind(key, "key", walk.key_is_text));
@@ -20820,7 +21502,11 @@ impl StaticTarget for CTarget {
             prologue: prologue.join(" "),
             first: String::new(),
             entry: MapEntry {
-                value: walk.item.to_string(),
+                value: if walk.item_in_place && !walk.set {
+                    format!("(*{})", walk.item)
+                } else {
+                    walk.item.to_string()
+                },
                 key: walk
                     .key
                     .map_or_else(|| walk.item.to_string(), |(key, _)| key.to_string()),
@@ -20844,7 +21530,16 @@ impl StaticTarget for CTarget {
         value: Option<(&str, &crate::forge::model::AlgorithmValueType)>,
         capacity: u32,
     ) -> Option<String> {
-        c11_map_type_decl(ty, key, value.map(|part| part.0), capacity)
+        use crate::forge::model::AlgorithmValueType;
+        // A map whose value is a map or a set starts each value where it holds
+        // it (docs/adr/0108, D12, `SCE_MAP_NESTED_DECLARE`).
+        let holds_maps = value.is_some_and(|(_, part)| {
+            matches!(
+                part,
+                AlgorithmValueType::Map { .. } | AlgorithmValueType::Set { .. }
+            )
+        });
+        c11_map_type_decl_holding(ty, key, value.map(|part| part.0), holds_maps, capacity)
     }
     // The saved form of the map, under a guard of its own, in the machine's saved
     // unit ([`c11_map_saved_def`]).
@@ -20852,7 +21547,7 @@ impl StaticTarget for CTarget {
         &self,
         ty: &str,
         key: (&str, &crate::forge::model::AlgorithmValueType),
-        value: Option<(&str, &crate::forge::model::AlgorithmValueType)>,
+        value: Option<&MapSavedValue<'_>>,
         capacity: u32,
     ) -> Option<String> {
         c11_map_saved_def(ty, key, value, capacity)
@@ -24546,14 +25241,33 @@ fn lower_action(
                         .map(|_| to)
                         .ok_or_else(|| map_not_lowered(&element, lang))?,
                 };
+                // A map whose value is a map or a set, held in a type of the
+                // target's own, is taken whole only from a map of that type: a
+                // nested value widened between two bounds is not decided
+                // (docs/adr/0108, D12 rule 6).
+                let held = rewrites.held_map(location, 0);
+                if let Some((var, _)) = rewrites.scope.map_variable(&action.expr) {
+                    let holds_maps = to
+                        .map_value()
+                        .is_some_and(|value| value.map_key().is_some());
+                    if target.types_maps() && holds_maps && rewrites.held_map(&var.id, 0) != held {
+                        return Err(GenerateError::unsupported(format!(
+                            "{element}: `{}` is a map whose value is a map or a set, and \
+                             {lang} takes one whole only from a map of exactly its type \
+                             (docs/adr/0108, D12 rule 6)",
+                            action.expr.trim()
+                        )));
+                    }
+                }
                 let value = lower(&action.expr, InferredType::Unknown)?;
                 let copy = target
                     .map_copy(&value.text, from, to)
                     .ok_or_else(|| map_not_lowered(&element, lang))?;
                 rewrites.note(&action.expr, action.spellings.get("expr"), &copy);
                 let name = renames.get(location).copied().unwrap_or(location);
+                let value_failed = value.can_fail.then(|| failed(element.clone()));
                 action.native_code = target
-                    .map_assign(name, &value.text, from, to)
+                    .map_assign(name, &value.text, from, to, &held, value_failed.as_deref())
                     .ok_or_else(|| map_not_lowered(&element, lang))?;
                 action.native_fails = value.can_fail;
                 return Ok(reads_payload);
@@ -25527,16 +26241,25 @@ fn lower_action(
             } else {
                 String::new()
             };
-            let failed = failed(format!(
+            let construct = format!(
                 "<sce:{} target='{map}'>",
                 if put { "put" } else { "remove" }
-            ));
-            let held = rewrites
-                .map_types
-                .borrow()
-                .get(root)
-                .cloned()
-                .unwrap_or_default();
+            );
+            let failed = failed(construct.clone());
+            let absent = absent_key(rewrites, &construct);
+            // The map written, the variable's own or one held at a key of it
+            // (docs/adr/0108, D12), and a map or a set put whole into it.
+            let depth = key_depth(&written.steps);
+            let held = rewrites.held_map(root, depth);
+            let in_place = put
+                && place
+                    .map_value()
+                    .is_some_and(|value| held_whole_at_a_key(&value.ty, rewrites));
+            let value_ty = if in_place && place.map_value().is_some_and(|value| value.is_keyed()) {
+                rewrites.held_map(root, depth + 1)
+            } else {
+                String::new()
+            };
             let write = MapWrite {
                 map: renames.get(root).copied().unwrap_or(root),
                 path: &path,
@@ -25558,6 +26281,9 @@ fn lower_action(
                     .map(|(ty, document)| (ty.as_str(), document.as_str())),
                 full: &full,
                 failed: &failed,
+                absent: &absent,
+                in_place,
+                value_ty: &value_ty,
             };
             action.native_code = target
                 .map_write(&write)
@@ -25687,22 +26413,25 @@ fn lower_action(
             // ... and so is one held at a key of a map, and a list held there is
             // walked by its elements, each read through the place, which fails
             // for a key that is absent (docs/adr/0108, D12 rule 8).
+            let construct = format!("<foreach array=\"{list}\">");
             let nested = match rewrites.scope.map_place(&list) {
                 Some(Ok(written)) if !written.steps.is_empty() => {
                     let read = lower(&list, InferredType::Unknown)?;
-                    let walked = target.nested_walk(&read.text).ok_or_else(|| {
-                        nested_place_not_lowered(&format!("<foreach array=\"{list}\">"), lang)
-                    })?;
+                    let walked = target
+                        .nested_walk(&read.text, &failed(construct.clone()))
+                        .ok_or_else(|| nested_place_not_lowered(&construct, lang))?;
                     if written.place.is_keyed() {
                         let root = written.variable.id.clone();
-                        return lower_map_foreach(
+                        let lowered = lower_map_foreach(
                             action,
                             &list,
-                            Some((root.as_str(), walked.as_str())),
+                            Some((root.as_str(), walked.walked.as_str())),
                             ctx,
                             renames,
                             rewrites,
                         );
+                        action.native_loop.insert_str(0, &walked.head);
+                        return lowered;
                     }
                     Some(walked)
                 }
@@ -25746,7 +26475,13 @@ fn lower_action(
                 // A list no variable names is one a place holds, the payload's or
                 // an enclosing loop's item's, at any depth (docs/adr/0086, section
                 // 6.1), or a map's at a key (docs/adr/0108, D12 rule 8).
-                None => walked_place(&list, nested, ctx, renames, rewrites)?,
+                None => walked_place(
+                    &list,
+                    nested.as_ref().map(|walked| walked.walked.clone()),
+                    ctx,
+                    renames,
+                    rewrites,
+                )?,
             };
             // Where the list is written, for a target that runs the document's
             // own `<foreach>` (the Interpreter): the list as the walk reads it,
@@ -25814,7 +26549,12 @@ fn lower_action(
                 list_ty,
                 depth,
             ) {
-                action.native_loop = head;
+                // A list held at a key of a map is read once before the loop,
+                // which fails the block for a key that is absent (D12 rule 8).
+                action.native_loop = match &nested {
+                    Some(walked) => format!("{}{head}", walked.head),
+                    None => head,
+                };
                 action.native_loop_prologue = prologue;
                 action.native_loop_first = target
                     .foreach_first(name, &item_local, index_local.as_deref())
@@ -26227,12 +26967,16 @@ fn lower_map_foreach(
     // binds each entry where the walk holds it.
     let index_local = (!index.is_empty()).then(|| target.expr_target().local_spelling(&index));
     let key_local = (!key.is_empty()).then(|| target.expr_target().local_spelling(&key));
-    let held = rewrites
-        .map_types
-        .borrow()
-        .get(root)
-        .cloned()
-        .unwrap_or_default();
+    // The map walked, the variable's own or one held at a key of it, at the
+    // depth its place reaches (docs/adr/0108, D12 rule 8).
+    let depth = match nested {
+        Some(_) => match rewrites.scope.map_place(map) {
+            Some(Ok(written)) => key_depth(&written.steps),
+            _ => 0,
+        },
+        None => 0,
+    };
+    let held = rewrites.held_map(root, depth);
     let copies = Writes::of_block(&action.actions).reaches(root);
     // The copy a loop that writes its map walks is held where the copy of a
     // list a loop of the same depth walks is, for a target that holds those in
@@ -26254,6 +26998,7 @@ fn lower_map_foreach(
             .as_ref()
             .is_some_and(|at| matches!(at.ty, ValueType::Text { .. })),
         index: index_local.as_deref(),
+        item_in_place: !place.is_set() && held_whole_at_a_key(&element.ty, rewrites),
         set: place.is_set(),
         copies,
         depth: rewrites.loop_depth.get(),
@@ -28488,6 +29233,9 @@ mod tests {
                     outcome_enum: outcome.map(|_| ("put_outcome_enum_t", "put_outcome")),
                     full: "FULL();",
                     failed: "FAILED();",
+                    absent: "",
+                    in_place: false,
+                    value_ty: "",
                 })
                 .expect("C11 holds a map")
         };
@@ -28538,6 +29286,9 @@ mod tests {
                 outcome_enum: None,
                 full: "",
                 failed: "",
+                absent: "",
+                in_place: false,
+                value_ty: "",
             })
             .expect("C11 holds a set");
         assert!(
@@ -28562,6 +29313,9 @@ mod tests {
                 outcome_enum: None,
                 full: "",
                 failed: "",
+                absent: "",
+                in_place: false,
+                value_ty: "",
             })
             .is_none());
     }
@@ -28622,6 +29376,9 @@ mod tests {
                     outcome_enum: None,
                     full: "",
                     failed: "",
+                    absent: "",
+                    in_place: false,
+                    value_ty: "",
                 })
                 .expect("C11 holds a map of records")
         };
@@ -28659,6 +29416,7 @@ mod tests {
             item_is_text: true,
             key_is_text: false,
             index: Some("at"),
+            item_in_place: false,
             set: true,
             copies,
             depth: 1,
@@ -28691,6 +29449,395 @@ mod tests {
         );
         assert_eq!(copied.entry.value, "tag");
         assert_eq!(copied.entry.key, "tag");
+    }
+
+    /// docs/adr/0108, D12 rules 1 to 5 on C11: a put through the place `m[k]`
+    /// reads its key once into a local of the outer map's key type and reaches
+    /// the inner map where the outer one holds it (`sce_map_value_mut`), an
+    /// absent key ending the block before anything is written, and then writes
+    /// the inner map by its own type's functions; a put of a value held in place
+    /// makes its entry with `_put_entry`, the empty value with nothing more, a
+    /// map named taken whole by its type's `_assign` and any other value named
+    /// copied into the entry, never through a local of the value's type.
+    #[test]
+    fn a_c11_write_through_a_nested_place_reaches_the_inner_map_where_it_stands() {
+        let target = CTarget::new("m", "m", &std::collections::BTreeMap::new());
+        let outer = c11_place("map<uint32, map<uint32, int32>[2]>[2]");
+        let inner = c11_place("map<uint32, int32>[2]");
+        let outer_ty = "sce_static_map_uint32_sce_static_map_uint32_int32_2_2_t";
+        let inner_ty = "sce_static_map_uint32_int32_2_t";
+        let path = [MapPathStep::Key {
+            map: &outer,
+            key: "1",
+        }];
+        let write = |path: &[MapPathStep<'_>],
+                     ty: &str,
+                     place: &crate::forge::value_path::Place,
+                     value: Option<&str>,
+                     in_place: bool,
+                     value_ty: &str| {
+            target
+                .map_write(&MapWrite {
+                    map: "sm->policy.v_slots",
+                    path,
+                    ty,
+                    place,
+                    types: None,
+                    capacity: 2,
+                    key: "10",
+                    op: MapOp::Put { value },
+                    outcome: None,
+                    outcome_enum: None,
+                    full: "FULL();",
+                    failed: "FAILED();",
+                    absent: "ABSENT();",
+                    in_place,
+                    value_ty,
+                })
+                .expect("C11 writes through a nested place")
+        };
+        let through = write(&path, inner_ty, &inner, Some("5"), false, "");
+        let reached = [
+            "__typeof__((sm->policy.v_slots).slots[0].key) sce_key_0_ = 1;",
+            "if (sce_failure_.failed) { FAILED(); return; }",
+            "__typeof__(&(sm->policy.v_slots).slots[0].value) sce_held_0_ = \
+             sce_map_value_mut(&(sm->policy.v_slots), &sce_key_0_, NULL);",
+            "if (sce_held_0_ == NULL) { ABSENT(); return; }",
+            "__typeof__(((*sce_held_0_)).slots[0].key) sce_key = 10;",
+            "if (sce_static_map_uint32_int32_2_put(&((*sce_held_0_)), sce_key, sce_value) == \
+             SCE_MAP_PUT_FULL) { FULL(); return; }",
+        ];
+        let mut from = 0;
+        for part in reached {
+            let at = through[from..]
+                .find(part)
+                .unwrap_or_else(|| panic!("no `{part}`, in order, in:\n{through}"));
+            from += at + part.len();
+        }
+        // The empty value of a map whose value is a map: the entry `_put_entry`
+        // starts, and nothing else.
+        let empty = write(&[], outer_ty, &outer, Some(""), true, inner_ty);
+        assert!(
+            empty.contains(&format!(
+                "(void){}_put_entry(&(sm->policy.v_slots), sce_key, &sce_put_);",
+                outer_ty.trim_end_matches("_t")
+            )) && empty.contains("if (sce_put_ == SCE_MAP_PUT_FULL) { FULL(); return; }")
+                && !empty.contains("sce_value"),
+            "{empty}"
+        );
+        // A map named is taken whole by its own type's `_assign`.
+        let named = write(
+            &[],
+            outer_ty,
+            &outer,
+            Some("sm->policy.v_spare"),
+            true,
+            inner_ty,
+        );
+        assert!(
+            named.contains(
+                "if (sce_entry != NULL) { \
+                 sce_static_map_uint32_int32_2_assign(sce_entry, &(sm->policy.v_spare)); }"
+            ) && !named.contains("sce_value"),
+            "{named}"
+        );
+        // A list named is copied into the entry.
+        let samples = c11_place("map<uint32, list<uint16>[3]>[2]");
+        let list = write(
+            &[],
+            "sce_static_map_uint32_sce_static_list_uint16_3_2_t",
+            &samples,
+            Some("sm->policy.v_ring"),
+            true,
+            "",
+        );
+        assert!(
+            list.contains("if (sce_entry != NULL) { *sce_entry = sm->policy.v_ring; }")
+                && !list.contains("sce_value"),
+            "{list}"
+        );
+    }
+
+    /// docs/adr/0108, D12 rules 1 to 3 on C11: an append to a list in a field of
+    /// a record held at a key, and a clear of a list or a map held there, reach
+    /// the place where the map holds it, an absent key ending the block; the
+    /// append fails a full list as a list variable's does, and the clear empties
+    /// a list as a list's and a map as a map's.
+    #[test]
+    fn a_c11_append_and_clear_reach_a_nested_place_where_it_stands() {
+        let target = CTarget::new("m", "m", &std::collections::BTreeMap::new());
+        let rows = c11_place("map<uint32, record:Row>[2]");
+        let tags = c11_place("list<uint16>[2]");
+        let row_path = [
+            MapPathStep::Key {
+                map: &rows,
+                key: "1",
+            },
+            MapPathStep::Field("tags"),
+        ];
+        let appended = target
+            .nested_append(
+                &NestedWrite {
+                    root: "sm->policy.v_rows",
+                    path: &row_path,
+                    place: &tags,
+                    types: None,
+                    absent: "ABSENT();",
+                    failed: "FAILED();",
+                    full: "FULL();",
+                },
+                2,
+                "v",
+            )
+            .expect("C11 appends through a nested place");
+        for part in [
+            "sce_map_value_mut(&(sm->policy.v_rows), &sce_key_0_, NULL);",
+            "if (sce_held_0_ == NULL) { ABSENT(); return; }",
+            "if ((*sce_held_0_).tags.len >= 2u) { FULL(); return; } \
+             (*sce_held_0_).tags.data[(*sce_held_0_).tags.len] = v; \
+             if (sce_failure_.failed) { FAILED(); return; } (*sce_held_0_).tags.len++; }",
+        ] {
+            assert!(appended.contains(part), "no `{part}` in:\n{appended}");
+        }
+        let cleared = |path: &[MapPathStep<'_>], place: &crate::forge::value_path::Place| {
+            target
+                .nested_clear(&NestedWrite {
+                    root: "sm->policy.v_rows",
+                    path,
+                    place,
+                    types: None,
+                    absent: "ABSENT();",
+                    failed: "FAILED();",
+                    full: "",
+                })
+                .expect("C11 clears through a nested place")
+        };
+        let list = cleared(&row_path, &tags);
+        assert!(
+            list.contains("(*sce_held_0_).tags.len = 0;") && !list.contains("sce_map_clear"),
+            "{list}"
+        );
+        let slots = c11_place("map<uint32, map<uint32, uint8>[2]>[2]");
+        let inner = c11_place("map<uint32, uint8>[2]");
+        let slot_path = [MapPathStep::Key {
+            map: &slots,
+            key: "1",
+        }];
+        let map = cleared(&slot_path, &inner);
+        assert!(map.contains("sce_map_clear(&((*sce_held_0_)));"), "{map}");
+    }
+
+    /// docs/adr/0108, D12 rule 8 on C11: a walk of a place held at a key reads it
+    /// once, before the loop, into a failure record of the loop's own, so no
+    /// statement of the body, which declares its own `sce_failure_`, hides it,
+    /// and a key that is absent ends the block; a walk of a map whose value is a
+    /// map, a list or a record that holds one binds each item where the map
+    /// holds it, read through its address.
+    #[test]
+    fn a_c11_walk_reads_a_nested_place_once_and_binds_a_held_value_where_it_stands() {
+        let target = CTarget::new("m", "m", &std::collections::BTreeMap::new());
+        let read = "SCE_MAP_VALUE_OF(sm->policy.v_slots, sce_map_lookup_take(&sce_failure_, x))";
+        let walked = target
+            .nested_walk(read, "FAILED();")
+            .expect("C11 walks a nested place");
+        assert_eq!(walked.walked, "(*sce_walked_1_)");
+        assert!(
+            walked.head.contains(
+                "for (sce_forge_algorithm_failure_t sce_walk_failure_1_ = {0}, \
+                 *sce_read_1_ = &sce_walk_failure_1_;"
+            ) && walked
+                .head
+                .contains("sce_map_lookup_take(&sce_walk_failure_1_, x)")
+                && !walked.head.contains("&sce_failure_")
+                && walked
+                    .head
+                    .ends_with("if (sce_walk_failure_1_.failed) { FAILED(); return; } else "),
+            "{}",
+            walked.head
+        );
+        let walk = MapWalk {
+            map: "sm->policy.v_slots",
+            ty: "sce_static_map_uint32_sce_static_map_uint32_int32_2_2_t",
+            item: "inner",
+            item_copied: false,
+            key: None,
+            item_is_text: false,
+            key_is_text: false,
+            index: None,
+            item_in_place: true,
+            set: false,
+            copies: false,
+            depth: 0,
+            lends: true,
+        };
+        let held = target.map_loop(&walk).expect("C11 walks a map of maps");
+        assert!(
+            held.prologue
+                .contains("const __typeof__(sce_slot_2_->value) *inner = &sce_slot_2_->value;"),
+            "{}",
+            held.prologue
+        );
+        assert_eq!(held.entry.value, "(*inner)");
+    }
+
+    /// docs/adr/0108, D12 rules 6 and 7 on C11: a map whose value is a map is
+    /// declared by `SCE_MAP_NESTED_DECLARE` over the inner map's type and taken
+    /// whole by its own type's `_assign`; a map of any other value, a list among
+    /// them, keeps `SCE_MAP_DECLARE` and `sce_map_assign`; and a map read
+    /// through a key is read before the variable is written, in a block that
+    /// ends for a key that is absent.
+    #[test]
+    fn a_c11_map_of_maps_is_declared_and_taken_whole_by_its_own_type() {
+        use crate::forge::model::AlgorithmValueType;
+        let target = CTarget::new("m", "m", &std::collections::BTreeMap::new());
+        let uint32 = AlgorithmValueType::read("uint32").expect("a type");
+        let inner = AlgorithmValueType::read("map<uint32, int32>[2]").expect("a type");
+        let list = AlgorithmValueType::read("list<uint16>[3]").expect("a type");
+        let nested = target
+            .map_type_def(
+                "sce_static_map_uint32_sce_static_map_uint32_int32_2_2_t",
+                ("uint32_t", &uint32),
+                Some(("sce_static_map_uint32_int32_2_t", &inner)),
+                2,
+            )
+            .expect("C11 declares a map of maps");
+        assert!(
+            nested.contains(
+                "SCE_MAP_NESTED_DECLARE(sce_static_map_uint32_sce_static_map_uint32_int32_2_2, \
+                 uint32_t, sce_static_map_uint32_int32_2, 2u, "
+            ),
+            "{nested}"
+        );
+        let of_list = target
+            .map_type_def(
+                "sce_static_map_uint32_sce_static_list_uint16_3_2_t",
+                ("uint32_t", &uint32),
+                Some(("sce_static_list_uint16_3_t", &list)),
+                2,
+            )
+            .expect("C11 declares a map of lists");
+        assert!(
+            of_list.contains(
+                "SCE_MAP_DECLARE(sce_static_map_uint32_sce_static_list_uint16_3_2, uint32_t, \
+                 sce_static_list_uint16_3_t, 2u, "
+            ) && !of_list.contains("SCE_MAP_NESTED_DECLARE"),
+            "{of_list}"
+        );
+        let outer =
+            AlgorithmValueType::read("map<uint32, map<uint32, int32>[2]>[2]").expect("a type");
+        let held = "sce_static_map_uint32_sce_static_map_uint32_int32_2_2_t";
+        assert_eq!(
+            target
+                .map_assign(
+                    "sm->policy.v_a",
+                    "sm->policy.v_b",
+                    &outer,
+                    &outer,
+                    held,
+                    None
+                )
+                .as_deref(),
+            Some(
+                "sce_static_map_uint32_sce_static_map_uint32_int32_2_2_assign(&(sm->policy.v_a), \
+                 &(sm->policy.v_b));"
+            )
+        );
+        assert_eq!(
+            target
+                .map_assign(
+                    "sm->policy.v_a",
+                    "sm->policy.v_b",
+                    &inner,
+                    &inner,
+                    "sce_static_map_uint32_int32_2_t",
+                    None
+                )
+                .as_deref(),
+            Some("sce_map_assign(&(sm->policy.v_a), &(sm->policy.v_b));")
+        );
+        let read = target
+            .map_assign(
+                "sm->policy.v_a",
+                "READ",
+                &inner,
+                &inner,
+                "",
+                Some("FAILED();"),
+            )
+            .expect("C11 takes a map read through a key");
+        assert_eq!(
+            read,
+            "{ sce_forge_algorithm_failure_t sce_failure_ = {0}; \
+             __typeof__(&(READ)) sce_from_ = &(READ); \
+             if (sce_failure_.failed) { FAILED(); return; } \
+             sce_map_assign(&(sm->policy.v_a), sce_from_); }"
+        );
+    }
+
+    /// docs/adr/0108, D8 and D12 on C11: the saved form of a map whose value is
+    /// held in place reads each value where the map holds it, the entry made
+    /// first by `_put_entry` and a key held twice refused there: an inner map by
+    /// its own type's read into the entry, and a list by the functions its own
+    /// type's saved form declares, before the map's.
+    #[test]
+    fn a_c11_saved_map_reads_a_nested_value_where_the_map_holds_it() {
+        use crate::forge::model::AlgorithmValueType;
+        let uint32 = AlgorithmValueType::read("uint32").expect("a type");
+        let inner = AlgorithmValueType::read("map<uint32, int32>[2]").expect("a type");
+        let list = AlgorithmValueType::read("list<uint16>[3]").expect("a type");
+        let nested = c11_map_saved_def(
+            "sce_static_map_uint32_sce_static_map_uint32_int32_2_2_t",
+            ("uint32_t", &uint32),
+            Some(&MapSavedValue {
+                held: "sce_static_map_uint32_int32_2_t",
+                ty: &inner,
+                elem: None,
+                in_place: true,
+            }),
+            2,
+        )
+        .expect("C11 saves a map of maps");
+        for part in [
+            "sce_static_map_uint32_int32_2_t *value = \
+             sce_static_map_uint32_sce_static_map_uint32_int32_2_2_put_entry(into, key, &outcome);",
+            "if (value == NULL || outcome != SCE_MAP_PUT_INSERTED) {",
+            "if (!sce_static_map_uint32_int32_2_t_saved_read(part, part_what, 1u, 1u, &(*value), \
+             NULL, err)) {",
+            "sce_static_map_uint32_int32_2_t_saved_write(w, &(slot->value));",
+        ] {
+            assert!(nested.contains(part), "no `{part}` in:\n{nested}");
+        }
+        assert!(
+            !nested.contains("_put(into, key, value)"),
+            "a value held in place is put by no copy:\n{nested}"
+        );
+        let of_list = c11_map_saved_def(
+            "sce_static_map_uint32_sce_static_list_uint16_3_2_t",
+            ("uint32_t", &uint32),
+            Some(&MapSavedValue {
+                held: "sce_static_list_uint16_3_t",
+                ty: &list,
+                elem: None,
+                in_place: true,
+            }),
+            2,
+        )
+        .expect("C11 saves a map of lists");
+        let list_def = of_list
+            .find("static inline bool sce_static_list_uint16_3_t_saved_read(")
+            .expect("the list's saved form");
+        let map_def = of_list
+            .find("_saved_write(sce_jw_t *w, const sce_static_map_uint32_sce_static_list_uint16_3_2_t")
+            .expect("the map's saved form");
+        assert!(list_def < map_def, "{of_list}");
+        for part in [
+            "if (!sce_saved_list(v, what, 3u, &count, err)) {",
+            "if (!sce_saved_read_uint16(item, element_what, &out->data[i], err)) {",
+            "sce_saved_write_uint16(w, value->data[at]);",
+            "sce_static_list_uint16_3_t_saved_read(part, part_what, &(*value), err)",
+        ] {
+            assert!(of_list.contains(part), "no `{part}` in:\n{of_list}");
+        }
     }
 
     /// A `<sce:render>` is logged through each machine runtime that has a log
