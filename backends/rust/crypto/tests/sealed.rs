@@ -22,6 +22,7 @@ use sce_rust_crypto::wrap::KeyEncryptionKey;
 use sce_rust_session_store::audit_conformance::{self, AuditHarness};
 use sce_rust_session_store::conformance::{self, Harness};
 use sce_rust_session_store::credential_conformance::{self, CredentialHarness};
+use sce_rust_session_store::journal_conformance::{self, JournalHarness};
 use sce_rust_session_store::key_conformance::{self, KeyHarness};
 use sce_rust_session_store::kv_conformance::{self, KvHarness};
 use sce_rust_session_store::outbox_conformance;
@@ -354,6 +355,23 @@ impl AuditHarness for SealedOnSqlite {
     }
 }
 
+/// The journal is appended to by the sessions' writes: one store serves both kits.
+impl JournalHarness for SealedInMemory {
+    type Store = Sealed<MemoryStore>;
+
+    fn handle(&self) -> Sealed<MemoryStore> {
+        Sealed::new(self.sessions.clone(), first_keys())
+    }
+}
+
+impl JournalHarness for SealedOnSqlite {
+    type Store = Sealed<SqliteStore>;
+
+    fn handle(&self) -> Sealed<SqliteStore> {
+        self.sealed()
+    }
+}
+
 /// A test per function of a kit, each on a store of its own the harness `$made` makes.
 macro_rules! kit {
     ($kit:ident, $made:ident, [$($case:ident),* $(,)?]) => {
@@ -580,6 +598,269 @@ mod audit_on_sqlite {
             a_removal_of_a_session_deletes_its_identities_and_no_row,
         ]
     );
+}
+
+mod journal_in_memory {
+    use super::journal_conformance;
+    kit!(
+        journal_conformance,
+        in_memory,
+        [
+            an_entry_is_made_by_its_sessions_write_or_not_at_all,
+            a_batch_appends_item_by_item,
+            a_removed_session_keeps_its_journal,
+            an_input_makes_one_entry_and_a_reader_misses_none,
+            a_reader_waits_for_a_lower_number_still_open,
+            a_page_is_resumed_where_it_ended,
+            a_moment_is_never_below_the_one_before_it,
+            an_answer_as_of_a_position_does_not_change,
+            an_observed_entry_is_kept_once_for_its_origin,
+            a_session_and_an_observed_stream_share_no_name,
+            a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
+            a_fact_is_kept_with_the_bytes_made_for_its_position,
+            data_is_replaced_only_from_what_it_holds,
+            handles_share_the_journal,
+        ]
+    );
+}
+
+mod journal_on_sqlite {
+    use super::journal_conformance;
+    kit!(
+        journal_conformance,
+        on_sqlite,
+        [
+            an_entry_is_made_by_its_sessions_write_or_not_at_all,
+            a_batch_appends_item_by_item,
+            a_removed_session_keeps_its_journal,
+            an_input_makes_one_entry_and_a_reader_misses_none,
+            a_reader_waits_for_a_lower_number_still_open,
+            a_page_is_resumed_where_it_ended,
+            a_moment_is_never_below_the_one_before_it,
+            an_answer_as_of_a_position_does_not_change,
+            an_observed_entry_is_kept_once_for_its_origin,
+            a_session_and_an_observed_stream_share_no_name,
+            a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
+            a_fact_is_kept_with_the_bytes_made_for_its_position,
+            data_is_replaced_only_from_what_it_holds,
+            handles_share_the_journal,
+        ]
+    );
+}
+
+/// ADR 0114, D8: an entry is sealed for its stream and its position, its valid time inside; the
+/// file holds nothing a session or another system said in the clear; and a re-seal pass moves every
+/// entry to the active key and changes no answer.
+mod journal_sealed {
+    use sce_rust_crypto::sealed::{record_key_id, Resealed, Sealed};
+    use sce_rust_session_store::{
+        AsOf, AsOfCursor, Fact, FactData, Journal, JournalEntry, JournalStore, MemoryStore,
+        SessionStore, Stream, StreamName, Write, LATEST_MOMENT,
+    };
+
+    use super::{first_keys, keys_of, on_sqlite, ID_1, ID_2, KEY_1, KEY_2};
+
+    fn fact(data: &[u8], valid_ms: Option<i64>) -> Fact<'_> {
+        Fact {
+            schema: "account.opened",
+            revision: 4,
+            data: FactData::Bytes(data),
+            valid_ms,
+        }
+    }
+
+    /// A first write of the session `key` that appends `facts`.
+    fn written(store: &impl SessionStore, key: &str, facts: &[Fact<'_>]) {
+        let lease = store.acquire(key, "a", LATEST_MOMENT, 0).expect("a lease");
+        store
+            .write(
+                key,
+                &Write {
+                    journal: Some(Journal {
+                        machine: "ledger-of-alice",
+                        facts,
+                    }),
+                    now_ms: 1_000,
+                    ..Write::put(b"state", None, 0, lease.fence)
+                },
+            )
+            .expect("a write that appends");
+    }
+
+    fn all(store: &impl JournalStore) -> Vec<JournalEntry> {
+        store.after(0, 100).expect("the journal").entries
+    }
+
+    #[test]
+    fn a_file_read_without_the_key_holds_none_of_the_facts() {
+        let harness = on_sqlite("journal-medium");
+        let store = harness.sealed();
+        written(
+            &store,
+            "account-of-alice",
+            &[fact(b"the balance of alice", Some(-5))],
+        );
+        store
+            .observe(
+                "bank-of-alice",
+                "transfer-of-alice",
+                &fact(b"the bank said", None),
+                2_000,
+            )
+            .expect("an observation");
+        let kept = store.inner().after(0, 10).expect("the wrapped journal");
+        assert_eq!(kept.entries.len(), 2);
+        assert_eq!(
+            kept.entries[0].stream,
+            StreamName::Session {
+                machine: store.digest_of("ledger-of-alice"),
+                key: store.digest_of("account-of-alice"),
+            },
+            "a stream is kept under its entries"
+        );
+        assert_eq!(
+            kept.entries[1].origin,
+            Some(store.digest_of("transfer-of-alice"))
+        );
+        for entry in &kept.entries {
+            assert_eq!(
+                (entry.schema.as_str(), entry.revision, entry.valid_ms),
+                ("", 0, None),
+                "a schema, a revision and a valid time are inside the record"
+            );
+        }
+        assert_eq!(
+            (kept.entries[0].position, kept.entries[0].recorded_ms),
+            (1, 1_000),
+            "the position and the recorded moment are the wrapped store's"
+        );
+        drop(store);
+        let medium = harness.0.every_byte();
+        for clear in [
+            &b"ledger-of-alice"[..],
+            b"account-of-alice",
+            b"the balance of alice",
+            b"account.opened",
+            b"bank-of-alice",
+            b"transfer-of-alice",
+            b"the bank said",
+        ] {
+            assert!(
+                !medium.windows(clear.len()).any(|window| window == clear),
+                "{} is in the clear on the medium",
+                String::from_utf8_lossy(clear)
+            );
+        }
+        let entries = all(&harness.sealed());
+        assert_eq!(entries[0].data, b"the balance of alice".to_vec());
+        assert_eq!(
+            (entries[0].schema.as_str(), entries[0].revision),
+            ("account.opened", 4)
+        );
+        assert_eq!(entries[0].valid_ms, Some(-5));
+        assert_eq!(entries[1].origin.as_deref(), Some("transfer-of-alice"));
+    }
+
+    #[test]
+    fn an_entry_moved_to_another_position_or_stream_does_not_open() {
+        let store = Sealed::new(MemoryStore::new(), first_keys());
+        written(&store, "k", &[fact(b"one", None), fact(b"two", None)]);
+        let kept = store.inner().after(0, 10).expect("the wrapped journal");
+        let (one, two) = (&kept.entries[0], &kept.entries[1]);
+        assert!(store
+            .inner()
+            .reseal_journaled(two.position, &two.data, &one.data)
+            .expect("the record copied over another position of its stream"));
+        assert!(
+            store.after(one.position, 1).is_err(),
+            "a record moved to another position is refused"
+        );
+        assert!(
+            store.after(0, 1).is_ok(),
+            "the entry it came from still opens"
+        );
+
+        // The same position of another store's other stream.
+        let other = Sealed::new(MemoryStore::new(), first_keys());
+        written(&other, "o", &[fact(b"one", None)]);
+        let held = all(other.inner()).remove(0);
+        assert_eq!(held.position, one.position);
+        assert!(other
+            .inner()
+            .reseal_journaled(held.position, &held.data, &one.data)
+            .expect("the record copied to another stream at its position"));
+        assert!(
+            other.after(0, 1).is_err(),
+            "a record moved to another stream is refused"
+        );
+    }
+
+    #[test]
+    fn a_reseal_pass_moves_every_entry_to_the_active_key_and_changes_no_answer() {
+        let harness = on_sqlite("journal-reseal");
+        let first = harness.sealed();
+        written(
+            &first,
+            "k",
+            &[fact(b"late", None), fact(b"early", Some(-7))],
+        );
+        first
+            .observe("bank", "tx-1", &fact(b"observed", None), 2_000)
+            .expect("an observation");
+        let before = all(&first);
+        let asked = AsOf {
+            position: 3,
+            valid_ms: i64::MAX,
+        };
+        let stream = Stream::Session {
+            machine: "ledger-of-alice",
+            key: "k",
+        };
+        let answer = |store: &Sealed<sce_rust_session_store::SqliteStore>| {
+            store
+                .as_of(stream, &asked, AsOfCursor::START, 10)
+                .expect("an answer")
+                .entries
+                .into_iter()
+                .map(|entry| entry.data)
+                .collect::<Vec<_>>()
+        };
+        let given = answer(&first);
+        assert_eq!(given, vec![b"early".to_vec(), b"late".to_vec()]);
+        let stale = first
+            .inner()
+            .after(0, 1)
+            .expect("the wrapped journal")
+            .entries
+            .remove(0);
+
+        first.set_keys(keys_of(ID_2, &[(ID_1, KEY_1), (ID_2, KEY_2)]));
+        assert_eq!(
+            first.reseal_journal().expect("a pass"),
+            Resealed {
+                resealed: 3,
+                left: 0,
+                refused: 0,
+            }
+        );
+        for kept in all(first.inner()) {
+            assert_eq!(record_key_id(&kept.data).expect("a record"), ID_2);
+        }
+        assert!(
+            !first
+                .inner()
+                .reseal_journaled(stale.position, &stale.data, &stale.data)
+                .expect("a replacement from the bytes before the pass"),
+            "a change made in between is not overwritten"
+        );
+        assert_eq!(
+            first.reseal_journal().expect("a second pass"),
+            Resealed::default()
+        );
+        first.set_keys(keys_of(ID_2, &[(ID_2, KEY_2)]));
+        assert_eq!(all(&first), before, "the new key alone opens every entry");
+        assert_eq!(answer(&first), given, "a pass changes no answer");
+    }
 }
 
 /// ADR 0109, D14 under D8: a sealed audit log is verified through the sealing store as it is
