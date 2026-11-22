@@ -1,6 +1,8 @@
 # ADR 0114 — A keyed session's facts are kept in a journal written with its state, and a follower reads them in an order that misses nothing
 
-- Status: Accepted (2026-11-22, by the owner). Its model (D7) was written and checked before any code.
+- Status: Accepted (2026-11-22, by the owner). Its model (D7) was written and checked before any code. Amended
+  2026-11-22 by the owner: D1 (how an entry is typed, what its send does, deciding and applying, a variable held to the
+  facts) and D4 (a machine does not follow itself).
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: built on the backend a consumer needs, Rust first; the contract is
@@ -44,12 +46,31 @@ record kept beside it, by the same transaction.
 ### D1. A journal entry is made by a session, in the write that keeps its state
 
 A machine entry may carry `journal: true`. A document of a keyed pool makes an entry with
-`<send type="sce:journal" event="...">` of an event whose schema the document imports, its fields the entry's data
-(typed as `sce:request` types a request, ADR 0086). Such a send is not performed as it is executed: the entries one
-macrostep made are appended by the write that keeps the checkpoint that holds it (`Write::journal`, beside
-`Write::outbox`), so an entry exists exactly when the state that made it does. An entry is bytes: the record's
-deterministic CBOR with its schema's id and revision, so an entry of an earlier revision is read by the lineage of
-ADR 0044 and ADR 0112 D5.
+`<send type="sce:journal" event="...">` of an event whose schema the document imports, its fields the entry's data: a
+send of a declared schema's event, typed and lowered as one to another machine is, a list or a record given by the name
+of what holds it (ADR 0086 section 5; `docs/SCE_ACCEPTED_SUBSET.md`, "A `<send>` of the event of a schema whose field is
+composed"). (Amended 2026-11-22: it said "as `sce:request` types a request", which is text and holds neither a list nor
+an absent field.) Such a send is not performed as it is executed: the entries one macrostep made are appended by the
+write that keeps the checkpoint that holds it (`Write::journal`, beside `Write::outbox`), so an entry exists exactly
+when the state that made it does. An entry is bytes: the record's deterministic CBOR with its schema's id and revision,
+so an entry of an earlier revision is read by the lineage of ADR 0044 and ADR 0112 D5.
+
+**To say a fact is to take it.** The one send does both: it makes the entry, and puts the event with the entry's data on
+the session's internal queue, as `<raise>` does (§scxml-5.10.1 has its type `internal`), so the transitions that apply
+the fact run in the same macrostep, before the checkpoint that carries the entry. A document cannot then record one
+thing and apply another. The entry has no position until the write, so an applying transition reads none;
+`_event.origin` is empty there. A restore replays nothing: the state is the checkpoint.
+
+**Deciding is written twice, applying once.** A document that decides (it makes entries) and one that waits for an
+observed entry (D6) differ in what they ask and in what may fail, and no syntax hides it: one's own fact is final as it
+is said, another system's is not known until it comes. What they share is the transition that applies an event, which is
+the same text whether the event came from the session's own send, from a followed journal or from an observed stream.
+
+**A variable may be held to the facts.** A variable declared `sce:from="journal"` is assigned only in the initial data
+and in a transition whose event is an entry's; any other assignment is refused where the document is read (an
+algorithm's result as well, unless the call stands in such a transition). Its value is then a fold of the entries the
+session said or took in, in their order, and the property is one a scenario can check (ADR 0115 D15): the same entries
+given to a fresh session give the same value.
 
 ### D2. A stream is a session, and nobody else appends to it
 
@@ -82,12 +103,13 @@ two-transaction case and the writer that is gone; a store whose horizon is wrong
 A machine entry may carry `follows: [<machine>]`. The pool delivers the followed journal, in order, as an external event
 of the entry's name, its origin `journal://<machine>/<key>/<position>`, to the session that `key_from` names for it. An
 entry of an observed stream (D6) has the origin `journal://<stream>/<position>`, two parts where a session's has three;
-a stream and a machine of one deployment have different names. A session keeps the position it has taken in of each
-journal it follows in its checkpoint, written with what the entry did, and takes an entry at or below its position as a
-repeat and drops it. A delivery that is lost or repeated is delivered again or dropped, so each entry takes effect once.
-What a view computed is the checkpoint, so a view needs no other snapshot, and a view is rebuilt by following from
-position 0 under a new name. A follower that cannot keep up stops the reader at its inbox's bound (ADR 0109 D1) and
-nothing is dropped.
+a stream and a machine of one deployment have different names. A machine does not follow itself: its own entries were
+taken as they were said (D1), and would take effect twice; refused where the deployment is read. A session keeps the
+position it has taken in of each journal it follows in its checkpoint, written with what the entry did, and takes an
+entry at or below its position as a repeat and drops it. A delivery that is lost or repeated is delivered again or
+dropped, so each entry takes effect once. What a view computed is the checkpoint, so a view needs no other snapshot, and
+a view is rebuilt by following from position 0 under a new name. A follower that cannot keep up stops the reader at its
+inbox's bound (ADR 0109 D1) and nothing is dropped.
 
 ### D5. Two times, and reading as of
 
