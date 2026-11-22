@@ -7,6 +7,9 @@ configure, what a restart and a standby process do, what the clients need of the
 to tell a session that is stuck from one that is idle. Every key name and default below is taken from the code or
 from SCE_MESH.md, and each says where.
 
+Amended by ADR 0112 (`docs/adr/0112-a-generated-machine-is-served-as-a-pools-session-by-sces-adapter-and-one-kit-holds-every-session-machine-to-the-pools-contract.md`):
+a generated machine is served by SCE's adapter (section 1), and the upgrade in place is held under load (section 4.2).
+
 Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
 and brought to every step of it that landed by its step 15:
 
@@ -75,9 +78,6 @@ Not built, and a server must not count on them:
 - A store on media several machines share, and an exchange routed to the process that holds its key's lease (ADR
   0109, D18): its direction is decided and it is built only once a deployment measures one active process with a
   standby as not enough (section 6).
-- An upgrade under load in the server suite (ADR 0109, Conformance): a migration is held machine by machine
-  (`a_saved_state_is_migrated_into_the_next_version`, on Rust and C++), and no test stops a loaded server and
-  starts the next build on its store.
 - The Windows CI lane of ADR 0107 D11. The WinHTTP adapter is built and has its conformance test
   (`tests/cmake/mesh_https.cmake`), but no CI job runs it.
 - A durable receipt on any backend but Rust's: the generated C++ router, whose `https` client holds no envelope for a
@@ -96,7 +96,7 @@ Not built, and a server must not count on them:
 | The program supplies | To | Read in |
 |---|---|---|
 | The generated machine and its peer table (`sce-codegen generate --deploy`, `--lang rust`) | `Pool::new` | SCE_MESH.md section 19, "Peer table" |
-| How a session's machine is started and restored (`SessionFactory`, `SessionMachine`) | `Pool::new` | `pool.rs` |
+| How a session's machine is started and restored (`SessionFactory`, `SessionMachine`): for a generated machine, `sce_rust_mesh::served::Served` given a `SessionHost` (the policy of each session and the host operations it registers), which owns the engine's clock, registers the endpoint and the host before the first macrostep, and restores through the declared migration; for a machine written by hand, a factory of the program's own, held to the kit `sce_rust_mesh::session_conformance` | `Pool::new` | ADR 0112; `served.rs`, `pool.rs` |
 | For a machine that declares values its deployment supplies, those values: `<Machine>Deployment::read` of the `<machine>.config.json` the build wrote from `config:`, or of the file `config_file:` names, read once at start. A text that does not read is the lift's refusal and builds no machine | the `SessionFactory`, which builds every session's machine from it | section 2.4 |
 | Its name as the holder of leases, the lease's length and its renewal period (`PoolConfig`: `owner`, `lease_ttl_ms`, `renew_every_ms`) | `Pool::new` | section 4 |
 | The session store, opened on a file, sealed under the keys of its key ring | `Pool::new` | section 3 |
@@ -570,7 +570,10 @@ more (section 10.4).
 
 ADR 0109, D11; SCE Accepted Subset §2.15, "A declared migration". A server is upgraded by stopping it in order
 (section 4.1) and starting the next build on the same store; each session is migrated when it is loaded, at its next
-request or due, and saved under its new shape at its next checkpoint.
+request or due, and saved under its new shape at its next checkpoint. A server that serves its generated machine
+through `sce_rust_mesh::served` (section 1) restores each session through the migration by that adapter; the server
+suite holds the whole move under load, a SIGKILL partway through it and a rollback the old build refuses
+(`tests/server/tests/a_server_upgraded_in_place_under_load_loses_nothing.rs`; ADR 0112).
 
 - **What decides whether a session restores.** A saved state names the shape of the document that saved it: its
   states with their kinds and parents, its histories, invocations and variables with their types and bounds. A

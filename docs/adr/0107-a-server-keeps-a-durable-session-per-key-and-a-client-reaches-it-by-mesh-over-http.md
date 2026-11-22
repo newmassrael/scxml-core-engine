@@ -9,6 +9,9 @@
   work started, which accepts this record with the recommendation of each open question. Nothing of it has landed;
   "Order of work" lists the steps, each with the test that holds it.
 - Date: 2026-11-18
+- Amended by: ADR 0112 (D1 to D3): a server program is still each deployment's, its composition root; the adapter
+  that serves a generated machine as a keyed pool's session (`sce_rust_mesh::served`) is a part SCE publishes and
+  the program composes, given the deployment's policy and host operations (`SessionHost`).
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0107" line in the landing that moves it):
   - `SCE_MESH.md` §10.5 (a duplicate of a request is answered with the reply the first one produced, D4), §10.11
     (built in the Rust host core, D5), §14 (a keyed session pool on a host core, D3), §19 (the host core stops
