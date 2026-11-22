@@ -304,7 +304,8 @@ fn a_srcexpr_a_script_engine_computes_is_read_by_the_engine_when_the_invoke_star
         code,
         &[
             "guard let hostSrc = evaluateText(\"x\") else {",
-            "raiseExecutionError(\"<invoke> srcexpr failed to evaluate\", engine: engine)",
+            "raiseExecutionError(.expressionFailed, \"<invoke> srcexpr failed to evaluate\", \
+             engine: engine)",
             "src: hostSrc,",
         ],
     );
