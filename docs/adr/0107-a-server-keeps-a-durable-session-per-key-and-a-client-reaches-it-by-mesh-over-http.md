@@ -4,7 +4,7 @@
   2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. The owner chose the
   structure in conversation the same day: the programming model is Mesh, the transport that reaches a client on an
   unknown network is HTTP request and response, and every part is a general facility of SCE, not one shaped for the
-  application that asked for it ("제너럴한 형태로 받아서 구현해야해"). On review the same day the owner had the
+  application that asked for it. On review the same day the owner had the
   binding's transport made a port with adapters that follow each platform's HTTP stack (D2), and then ordered the
   work started, which accepts this record with the recommendation of each open question. Nothing of it has landed;
   "Order of work" lists the steps, each with the test that holds it.

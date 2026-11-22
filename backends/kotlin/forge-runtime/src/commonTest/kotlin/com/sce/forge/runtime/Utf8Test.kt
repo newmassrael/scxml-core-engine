@@ -25,7 +25,7 @@ class Utf8Test {
             "ࠀ" to 3,
             "￿" to 3,
             "😀" to 4,
-            "aé中😀" to 1 + 2 + 3 + 4,
+            "a\u00E9\u4E2D\uD83D\uDE00" to 1 + 2 + 3 + 4,
         )
         for ((text, size) in cases) {
             assertEquals(size, Utf8.size(text), "the UTF-8 size of ${text.length} UTF-16 units")
