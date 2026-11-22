@@ -3,8 +3,10 @@
 Status: `pre-release` (registered in `SCE_WIRE_CONTRACTS.md`). Decided by ADR 0109, D8
 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`).
 
+Amended by: ADR 0114 (D8): the event journal, its row in section 3 and its re-seal pass in section 4.
+
 A server keeps its sessions (ADR 0107) with its durable clients' outboxes (ADR 0109, D10), its credentials (D3), its
-keys (D7), its key-value feature's values (D13) and its audit log (D14) in a store. SCE_MESH.md
+keys (D7), its key-value feature's values (D13), its audit log (D14) and its event journal (ADR 0114) in a store. SCE_MESH.md
 section 10.11 asks a host to store a checkpoint encrypted at rest under its own key, since the saved state in it holds
 a document's values in the clear. A **sealing store** does that over any store: every value it writes is a sealed
 record, and every key it finds a row by is kept as a keyed digest of the key, its **entry**. This document fixes the
@@ -66,6 +68,11 @@ the store named in the second column with the row's entry:
 | Values of the key-value feature (`KvStore`, D13) | `kv_values` | the entry of the value's key | `[key: text, value: bytes]` | the version; a first result of a put-if is kept under its identity's session and invoke, each as its entry, its outcome and version in the clear |
 | Rows of an audit log (`AuditStore`, D14) | `audit_rows` | the entry of the stream's name, a colon and the row's sequence in decimal | `[stream: text, entry: bytes]` | the sequence, the moment, the chain (docs/SCE_AUDIT_LOG.md), which a reader verifies without the sealing keys; the head; an append's identity as a first result's is |
 | Checkpoints of an audit log (`AuditStore`, D14) | `audit_checkpoints` | as the row's | `[stream: text, signature: bytes]` | the sequence and the chain |
+| Entries of the event journal (`JournalStore`, ADR 0114) | `journal` | for a session's stream, the entry of its machine's name, a colon, the entry of its key, a colon and the position in decimal; for an observed stream, the entry of its name, a colon and the position | `[kind: uint, first: text, second: text, schema: text, revision: uint, data: bytes]`, and `valid_ms: int` as a seventh item for a fact with a valid time; `kind` is 0 for a session's entry, whose `first` and `second` are its machine and its key, and 1 for an observed one, whose are the stream's name and the origin id | the position and the recorded moment, the stream's entries and the entry of an origin id, and the horizon; the wrapped store's schema is empty, its revision 0, and it holds no valid time |
+
+A journal entry's position is given inside the transaction that writes it, so its record is made there. A store that
+holds no valid time cannot order by one: an answer as of a moment over a sealed journal opens every entry of the
+stream at or below the position asked, for each page (`backends/rust/crypto/src/sealed/journal.rs`).
 
 A generation of a key is kept under the entry of its identity, naming the entry of its key. What the wrapped store
 keeps in the clear is what it compares or sets: a write's version and fence, the index of dues, a revocation, a key's
@@ -88,10 +95,10 @@ at one moment).
 opens what it sealed. A store given the new keys writes under the new one, and a **re-seal pass** of each contract
 writes every row sealed under any other key again through the store's ordinary write: a session's versioned and
 fenced put, under a lease the pass takes and gives back (a session another process holds is left for a later pass;
-`Sealed::reseal_sessions`); a pin's, a token's, a value's, an outbox envelope's, a note's, an audit entry's or a
-checkpoint signature's replacement from the bytes it read, every other column kept, so a row another process changed
-in between is left (`reseal_credentials`, `reseal_values`, `reseal_outboxes`, `reseal_audit`); a key's rewrap
-(`reseal_keys`). An audit row keeps its chain, which is over the entry the record holds and not over the record, so a
+`Sealed::reseal_sessions`); a pin's, a token's, a value's, an outbox envelope's, a note's, an audit entry's, a
+checkpoint signature's or a journal entry's replacement from the bytes it read, every other column kept, so a row
+another process changed in between is left (`reseal_credentials`, `reseal_values`, `reseal_outboxes`,
+`reseal_audit`, `reseal_journal`); a key's rewrap (`reseal_keys`). An audit row keeps its chain, which is over the entry the record holds and not over the record, so a
 re-sealed stream verifies as before. Once every pass leaves nothing and refuses nothing, no row names the retired
 key, and it may be destroyed.
 
