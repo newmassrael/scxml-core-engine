@@ -3646,3 +3646,23 @@ Landing: the commit that adds this section.
   longer a static method of the codec class. The values a constructor gives are the same; only private names moved.
 - How to write it now: run `sce-codegen --error-format=json check <document> -l <language>` over each document, and
   rename each field the refusal names in the document. The other backends' code for the renamed field changes with it.
+
+## A session store keeps an event journal beside its sessions (ADR 0114 D1 to D3, D5, D6, D8)
+
+Landing: the commits that add this section. No generated tree changes; a consumer that writes a session store's
+`Write` field by field, implements or wraps a session store, or opens a store's file by an earlier build changes
+that. The document surface, the pool's use and the follower are later steps of ADR 0114: nothing of SCE appends to a
+journal yet.
+
+- `Write` has a field `journal: Option<Journal>`, the machine and the facts a write appends to its session's stream;
+  the constructors `Write::put` and `Write::delete` leave it `None`, and a `Write { .. }` written field by field adds
+  `journal: None`. A store of the consumer's own that keeps no journal fails a write that gives facts with
+  `NoJournal`; one that wraps another passes the field on.
+- `sce_rust_session_store::JournalStore` is the contract of the journal (`after`, `stream`, `position_at`, `as_of`,
+  `observe`, `reseal_journaled`), held to `journal_conformance`. A store over transactions that commit out of the
+  order of their numbers answers the kit's hook `JournalHarness::begin` and reports a horizon below what is open.
+- `MemoryStore` and `SqliteStore` implement it; `SqliteStore`'s layout is 8, and a file of layout 1 to 7 is brought
+  to it when opened; a build before this one refuses a file of layout 8. `Sealed<S>` implements it over a store that
+  does, with `Sealed::reseal_journal` for a rotation.
+- `Committer` carries a write's facts; one whose bytes are made at its position (`FactData::AtPosition`, which a
+  sealing store gives the store it wraps) is refused there.

@@ -270,7 +270,7 @@ with its first result whether the host stopped before or after its answer
 left. A store that is not durable forgets both when its host stops. The
 reference hosts take their store when they are built, in memory unless the
 embedding gives another (section 8); the reference durable store is the
-session store's SQLite file (`sce_rust_session_store::SqliteStore`, layout 7),
+session store's SQLite file (`sce_rust_session_store::SqliteStore`, layout 8),
 held with the store in memory to one contract (`KvStore`), and the removal of a
 session from it deletes the first results of that session's put-ifs in the same
 transaction. A server keeps it sealed at rest (`Sealed`,
@@ -734,7 +734,7 @@ These are not built, and nothing here stands in for them:
   health checks, and the metrics port (`sce-rust-metrics`). The reference host
   of these features serves such a program's machine as it serves any other:
   - **Its stores.** One SQLite file holds every store a server keeps
-    (`sce_rust_session_store::SqliteStore`, layout 7): the sessions the pool
+    (`sce_rust_session_store::SqliteStore`, layout 8): the sessions the pool
     keeps, and the host's key-value store (section 3), key ring (section 13),
     credentials (section 14) and audit log (section 15); `SqliteStore` is a
     `SessionStore`, a `KvStore`, a `KeyStore`, a `CredentialStore` and an
@@ -1273,7 +1273,7 @@ a debugger prints of the host's types. The Rust host keeps its key ring
 (`sce_rust_crypto::keyring::Keyring`) in a key store
 (`sce_rust_session_store::KeyStore`): in memory unless the embedding gives
 another with `ReferenceHost::set_keyring`; the reference durable store is the
-session store's SQLite file (`SqliteStore`, layout 7). Each key's material is
+session store's SQLite file (`SqliteStore`, layout 8). Each key's material is
 kept wrapped under a key-encryption key the store never holds, bound to the
 key's id and use, so a file read without that key holds no key and a row's
 material moved to another row does not unwrap. The program supplies the
@@ -1361,7 +1361,7 @@ the host that holds the store does (section 12).
 (`sce_rust_session_store::CredentialStore`): in memory (`MemoryCredentials`)
 unless the embedding gives another with `ReferenceHost::set_credentials`; the
 reference durable store is the session store's SQLite file (`SqliteStore`,
-layout 7), which the server's authenticator is given too. The C++ host keeps its
+layout 8), which the server's authenticator is given too. The C++ host keeps its
 tokens in memory, for its own life (`CredentialFeature`, host/CredentialHost.h).
 A token's text is written in time that does not depend on its bytes (`base64ct`
 in Rust, libsodium's `sodium_bin2base64` in C++), since a token is a secret.
@@ -1452,7 +1452,7 @@ Rust's `ReferenceHost::set_audit_streams`, C++'s `AuditFeature::setStreams`. The
 Rust host appends to the audit store it is given (`set_audit_store`, an
 `sce_rust_session_store::AuditStore`: in memory unless the embedding gives
 another; the reference durable store is the session store's SQLite file,
-`SqliteStore`, layout 7, which a server keeps sealed at rest), signs at its stop
+`SqliteStore`, layout 8, which a server keeps sealed at rest), signs at its stop
 with `audit_stop` and retains with `audit_retain`; a reader verifies a stream
 with `sce_rust_crypto::audit::verify`. The C++ host keeps its log in memory
 (`AuditFeature`, host/AuditHost.h; section 9).

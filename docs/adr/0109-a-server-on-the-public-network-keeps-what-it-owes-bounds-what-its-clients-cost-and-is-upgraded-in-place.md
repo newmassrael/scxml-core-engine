@@ -28,6 +28,9 @@
   (D18, on measured need); an in-place upgrade under load in the server suite ("Conformance"); Open questions 5, 7
   and 8; and the later backend steps of D0. Where a landing differs from the text of a decision, an "Amended on
   landing" note under it says what landed and why.
+- Amended by: ADR 0114 (D8, D10): a sealed store seals the event journal, with a re-seal pass of its own
+  (`Sealed::reseal_journal`), and the write that carries a session's outbox appends carries its facts too
+  (`Write::journal`); `sce-rust-session-store`'s layout is 8.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0109" line in the landing that moves it):
   - `SCE_MESH.md` §10.5 (the windows an endpoint keeps are bounded by its links, D1), §10.11 (`persistence:` and
