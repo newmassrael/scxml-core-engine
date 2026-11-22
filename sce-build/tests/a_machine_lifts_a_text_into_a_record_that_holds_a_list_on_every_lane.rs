@@ -179,7 +179,7 @@ fn a_swift_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
             "try SavedValues.list(try SavedValues.field(value, what, \"items\"), \
              \"\\(what).items\", least: 1, capacity: 3) { sceSaved0, sceWhat0 in try \
              StaticLiftListItemRecord.fromSaved(sceSaved0, sceWhat0) }",
-            "SavedValues.optional(answer) { $0.toSaved() }",
+            "SavedEntry(\"answer\", SavedValues.optional(vAnswer) { $0.toSaved() }),",
         ],
     );
     assert!(
