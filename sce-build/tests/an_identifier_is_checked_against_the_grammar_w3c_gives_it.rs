@@ -176,7 +176,7 @@ fn every_row_of_the_table_is_reachable_from_a_document() {
             Grammar::EventDescriptors | Grammar::EventName => "\"validation/event-name-grammar\"",
             // SCE's grammars have their own table and their own file,
             // `a_name_the_generated_code_spells_is_a_code_identifier.rs`.
-            Grammar::CodeIdentifier | Grammar::CodePath => {
+            Grammar::CodeIdentifier | Grammar::CodePath | Grammar::CodePlace => {
                 panic!("{element}@{attr}: W3C's table carries SCE's grammar {grammar:?}")
             }
         };
