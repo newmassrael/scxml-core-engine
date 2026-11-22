@@ -371,10 +371,14 @@ fn every_backend_writes_a_64_bit_result_field_as_the_text_of_its_digits() {
         let written = wide("c11", datamodel);
         holds(
             file(&written, "_sm.c"),
-            // A field that is never absent is written through the format of the
-            // record, an optional one through the wire writer.
+            // A field that is never absent is written by the record's text
+            // writer, its digits between the quotes of its text, and an optional
+            // one through the wire writer; the core calls no C library formatter
+            // (docs/adr/0110, D1).
             &[
-                "\\\"total\\\":\\\"%llu\\\"",
+                "\\\"total\\\":\\\"\");\n    \
+                 sce_text_put_u64(&_w, (uint64_t)result->total);\n    \
+                 SCE_TEXT_PUT_LITERAL(&_w, \"\\\"\");",
                 "sce_forge_wire_wide_int(result->due.value)",
             ],
             &format!("the C11 record ({datamodel})"),
