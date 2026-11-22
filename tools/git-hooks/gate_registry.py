@@ -475,10 +475,12 @@ PACE_NORMALISED: dict[str, str] = {
 # may claim `cache: True`, and its pass is kept only from a landing unit: a
 # unit without `--landing` could still have skipped (`plan_units`).
 #
-# `unit_requires` names what one gate's unit needs of a machine beyond bx.toml's
-# platform, as bx reads it on a plan line (bx RFC 0004, section 6): `needs`
-# (commands) and `packages`. A machine without them is not given the unit and
-# takes the others; the platform's own lists would refuse it for every job.
+# `needs` and `packages` name what one gate's unit needs of a machine beyond
+# bx.toml's platform, as bx reads them on a plan line (bx RFC 0004, section 6):
+# commands, and system packages. A machine without them is not given the unit
+# and takes the others; the platform's own lists would refuse it for every job.
+# What a gate may name in each is said beside `peak_gb` below (`packages`) and
+# in "Gates that run in an image" (`needs`, of which only docker is one today).
 #
 # The residue, stated rather than hidden: a tool bx.toml requires by name only
 # (`needs`, `packages`) is whatever version the machine carries, and a verdict
@@ -549,14 +551,14 @@ PACE_NORMALISED: dict[str, str] = {
 # on a machine that has them. It is for a program whose release the verdict
 # does not move with: one whose release it does move with is a tool of bx.toml
 # with pinned bytes (bx RFC 0009, section 4.8), as the ARM compiler is. Absent
-# is none (`gate_packages`), unlike `cache`, which nothing defaults, because the
+# is none, unlike `cache`, which nothing defaults, because the
 # two errors differ: a gate that needs a package it does not name is placed on
 # a machine without it and ends "could not run" (exit 3), which names the
 # machine and claims nothing about the tree, where an unsaid `cache` would keep
 # a pass it never earned.
 # `every-unit-names-the-packages-its-gates-need` in the self-test holds the
-# shape, and holds each name to the gate's own script, so a declaration cannot
-# outlive the program it was for.
+# shape, and holds each name to the gate's script or one it runs, so a
+# declaration cannot outlive the program it was for.
 PEAK_MEASURED: dict[str, str] = {
     "codegen-build": "4.98 GB at the peak of an sce-codegen build (bx, "
                      "2026-11-04)",
@@ -607,7 +609,8 @@ UNIT_EXCLUSIVE = "checkout"
 # The shape of a Rust release a plan may name (`rustc --version`'s second word).
 RUST_RELEASE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
-# The keys of `unit_requires`, as a plan line spells them for bx.
+# The keys of an entry that a plan line carries to bx as they are: what its
+# unit needs of a machine. Absent is none.
 UNIT_REQUIRES_KEYS = ("needs", "packages")
 
 # The shape of a full commit id a plan carries (SHA-1, or SHA-256).
@@ -714,7 +717,7 @@ BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 #
 # A build machine runs containers only under its run account's rootless Docker
 # (the registry's `containers = "rootless"`), so such a gate names
-# `unit_requires = {"needs": ["docker"]}` and bx gives its unit only to a
+# `needs = ["docker"]` and bx gives its unit only to a
 # machine that has one. `a-gate-in-an-image-says-so-everywhere` in the
 # self-test holds the three together: the file exists, an edit of it selects
 # the gate, and the unit asks for docker.
@@ -847,7 +850,7 @@ GATES: dict[str, dict] = {
         "kept_only_from_a_landing": "`scripts/test_emit_manifest_fail_fast.sh` "
                                 "skips and exits 0 on a machine without "
                                 "clang++-19",
-        "unit_requires": {"packages": ["clang-19"]},
+        "packages": ["clang-19"],
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
@@ -2448,9 +2451,9 @@ GATES: dict[str, dict] = {
         # and runs `scripts/gate cpp-interface-standard` inside it, generator
         # build included (see "Gates that run in an image"). A machine's own
         # GCC never judges it. A build machine takes the unit only where its
-        # run account has a rootless Docker (`unit_requires`).
+        # run account has a rootless Docker (`needs`).
         "container": "tools/interface-standard/Containerfile",
-        "unit_requires": {"needs": ["docker"]},
+        "needs": ["docker"],
         "cache": False,
         "no_cache_reason": "the image is built from a tag (gcc:15.3.0) and the "
                            "Debian archive, and neither is fixed by the tree: "
@@ -2956,7 +2959,7 @@ GATES: dict[str, dict] = {
         "cache": True,
         "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                                 "python3-config (python3-dev)",
-        "unit_requires": {"packages": ["python3-dev"]},
+        "packages": ["python3-dev"],
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
@@ -4372,15 +4375,6 @@ def head_commit(repo_root: Path):
     return commit if done.returncode == 0 and COMMIT_ID.match(commit) else None
 
 
-def gate_packages(spec: dict) -> list[str]:
-    """The system packages a gate's entry requires of its unit's machine.
-
-    An entry with no `packages` requires none (see `packages` beside
-    `peak_gb` above for why absence may mean none).
-    """
-    return list(spec.get("packages", []))
-
-
 def plan_units(selected, rust=None, tree_is_head=True, table=None,
                head=None, landing=False, changes=()) -> list[dict]:
     """The bx check units (bx RFC 0004, section 6) that verify `selected`.
@@ -4435,9 +4429,8 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     `exclusive` is `UNIT_EXCLUSIVE` for every unit. `secs` is the declared
     cost of everything the unit runs, a first estimate that bx replaces with
     its own timings, `mem_gb` the largest `peak_gb` among them, and `cores`
-    the largest `cores`. `needs` and `packages` are the union of the
-    `unit_requires` of what it runs, and the packages its gates name in
-    `packages` (`gate_packages`), sorted, and absent when there is none, as bx
+    the largest `cores`. `needs` and `packages` are the union of what the
+    gates it runs name in theirs, sorted, and absent when there is none, as bx
     reads an absent key.
     """
     table = GATES if table is None else table
@@ -4485,11 +4478,7 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
         unit["mem_gb"] = float(max(table[s]["peak_gb"] for s in closure))
         unit["cores"] = float(max(table[s]["cores"] for s in closure))
         for key in UNIT_REQUIRES_KEYS:
-            wanted = {item for s in closure
-                      for item in (table[s].get("unit_requires") or {})
-                      .get(key, [])}
-            if key == "packages":
-                wanted |= {p for s in closure for p in gate_packages(table[s])}
+            wanted = {item for s in closure for item in table[s].get(key, [])}
             if wanted:
                 unit[key] = sorted(wanted)
         inputs = unit_inputs(closure, table)
@@ -5945,7 +5934,7 @@ def self_test(repo_root: Path) -> int:
             failures.append(
                 f"container: {slug} runs in the image {containerfile} builds, "
                 f"and no trigger of its own selects an edit of that file")
-        if CONTAINER_NEED not in (spec.get("unit_requires") or {}).get("needs", []):
+        if CONTAINER_NEED not in spec.get("needs", []):
             failures.append(
                 f"container: {slug} runs in an image and its unit does not ask "
                 f"bx for {CONTAINER_NEED!r}, so it could go to a machine that "
@@ -7319,9 +7308,9 @@ def self_test(repo_root: Path) -> int:
 
     # every-unit-names-the-packages-its-gates-need. A gate's `packages` is
     # absent or a non-empty list of distinct package names, and each name is in
-    # the code of the gate's own script, which is what runs the package's
-    # program: a name the script no longer mentions would keep the unit off
-    # machines for nothing.
+    # the code of the gate's script or of a script it runs, which is what runs
+    # the package's program: a name neither mentions any longer would keep the
+    # unit off machines for nothing.
     cases += 1
     declaring = 0
     for slug, spec in sorted(GATES.items()):
@@ -7339,12 +7328,16 @@ def self_test(repo_root: Path) -> int:
             continue
         script = gate_script(repo_root, slug)
         code = script_code(script) if script.is_file() else ""
+        run = set().union(*script_read_paths(code, set(tracked_paths(
+            repo_root, "scripts/*.sh", "scripts/**/*.sh"))))
+        code += "\n".join(script_code(repo_root / path) for path in sorted(run))
         for package in packages:
             if package not in code:
                 failures.append(
                     f"packages: {slug} requires the package {package}, which "
-                    f"scripts/gates/{slug}.sh names nowhere in its code, so the "
-                    f"requirement keeps its unit off machines for nothing")
+                    f"neither scripts/gates/{slug}.sh nor a script it runs "
+                    f"names in its code, so the requirement keeps its unit "
+                    f"off machines for nothing")
     if declaring == 0:
         failures.append(
             "packages: no gate declares a package, so the check above read "
@@ -7576,8 +7569,7 @@ def self_test(repo_root: Path) -> int:
                     f"pass could be a skip")
             for key in UNIT_REQUIRES_KEYS:
                 wanted = sorted({item for s in closure
-                                 for item in (GATES[s].get("unit_requires") or {})
-                                 .get(key, [])})
+                                 for item in GATES[s].get(key, [])})
                 if unit.get(key, []) != wanted:
                     failures.append(
                         f"plan[{label}]: unit {unit['name']} asks bx for "
@@ -7599,12 +7591,6 @@ def self_test(repo_root: Path) -> int:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} may share a checkout "
                     f"with another unit ({unit['exclusive']})")
-            packages = sorted({p for s in closure for p in gate_packages(GATES[s])})
-            if unit.get("packages", []) != packages:
-                failures.append(
-                    f"plan[{label}]: unit {unit['name']} requires the packages "
-                    f"{unit.get('packages', [])}, and what it runs requires "
-                    f"{packages}")
             others = set(names) - {unit["name"]}
             if others & transitive_deps(unit["name"]):
                 failures.append(
@@ -7749,12 +7735,11 @@ def self_test(repo_root: Path) -> int:
     skip_fixture = {
         "prereq": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
                    "peak_gb": 1, "cores": 4,
-                   "unit_requires": {"packages": ["pkg-b"]}},
+                   "packages": ["pkg-b"]},
         "skipper": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
                     "peak_gb": 1, "cores": 1, "deps": ["prereq"],
                     "kept_only_from_a_landing": "x" * 40,
-                    "unit_requires": {"needs": ["tool-a"],
-                                      "packages": ["pkg-a"]}},
+                    "needs": ["tool-a"], "packages": ["pkg-a"]},
     }
     branch_unit = plan_units({"skipper"}, rust="1.0.0", table=skip_fixture)[0]
     landing_unit = plan_units({"skipper"}, rust="1.0.0", table=skip_fixture,
@@ -7782,8 +7767,8 @@ def self_test(repo_root: Path) -> int:
 
     # every-skip-and-requirement-is-declared-in-its-shape. A gate that can skip
     # names what it skips without, and claims `cache: True` (its pass is kept
-    # only from a landing, which `plan_units` decides); `unit_requires` holds
-    # only the keys a plan line gives bx, each a list of names.
+    # only from a landing, which `plan_units` decides); `needs` is a list of
+    # names, as `packages` is held to be above.
     cases += 1
     for slug, spec in sorted(GATES.items()):
         why = spec.get("kept_only_from_a_landing")
@@ -7797,20 +7782,12 @@ def self_test(repo_root: Path) -> int:
                     f"skip: {slug} can skip and is `cache: False`; a landing "
                     f"closes the skip, so say what else keeps the pass from "
                     f"being kept, or claim it")
-        wants = spec.get("unit_requires")
-        if wants is None:
-            continue
-        if not isinstance(wants, dict) or not wants \
-                or set(wants) - set(UNIT_REQUIRES_KEYS):
-            failures.append(
-                f"unit_requires: {slug} declares {wants!r}; it is a table of "
-                f"{', '.join(UNIT_REQUIRES_KEYS)}")
-            continue
-        for key, names in wants.items():
+        if "needs" in spec:
+            names = spec["needs"]
             if not isinstance(names, list) or not names \
                     or not all(isinstance(n, str) and n.strip() for n in names):
                 failures.append(
-                    f"unit_requires: {slug} declares {key}={names!r}; it is a "
+                    f"needs: {slug} declares needs={names!r}; it is a "
                     f"non-empty list of names")
 
     cases += 1
