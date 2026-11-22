@@ -1,7 +1,8 @@
 # ADR 0113 — A machine of a deployment may run as an open set of instances, and a server binds each as it arrives
 
 - Status: Accepted (2026-11-22, by the owner). Its model (D8) was written and checked the same day, before any code, and
-  amended D4 and D5. What TLC found and what was seen while writing the model are told apart in D8.
+  amended D4 and D5. What TLC found and what was seen while writing the model are told apart in D8. Amended 2026-11-22
+  by the owner: `if-match` in what a request signs (D4).
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,
@@ -105,6 +106,13 @@ stays refused.
   document decides whether to ask again (the end-to-end argument). `410` says a resource is gone for good and is
   cacheable by default; the resource here is named again by the next join, and `412` is what a false precondition
   answers.
+- **The incarnation a request stands on is signed.** Under the `key` authenticator (SCE_MESH.md §22.9) a request's
+  signature covers, after `sce-mesh-epoch` and when the request carries one, `if-match`. §22.9 has a verifier build the
+  list it expects from what the message carries and refuse a signature that covers another, so an intermediary that
+  reads the exchange can neither change the incarnation, take it off nor add one. The incarnation is a value the server
+  drew, so a request signed ahead of the offer is of no use under it: what RFC 9449 section 8 has a server's nonce for,
+  once per incarnation and not once per request. (Added at the owner's order of 2026-11-22, before step 4 is built,
+  which lands §22.9's change.)
 - **What is forgotten together is dropped together**: a member's records, window and outbox end with its lease, an
   outbox that still owes what `retain_ms` keeps ending first (ADR 0109 D10).
 
@@ -178,8 +186,9 @@ protocol without it passes `AtMostOnce` and `Answered`), only for not disturbing
 same incarnation, the second judgement in the session, the durable mark, and matching an offer to its join. That one
 mark per member cannot serve several sessions was read from RIFL, not run: no configuration models the single mark.
 
-The model is bounded: it does not cover the outbox direction (ADR 0109 D10), more than two
-requests in flight, or the cryptography of an authenticator.
+The model is bounded: it does not cover the outbox direction (ADR 0109 D10), more than two requests in flight, or the
+cryptography of an authenticator. Its messages are the parties' own: on a link an intermediary reads, that stands on
+what §22.9 signs (D4; open questions 3 and 4).
 
 ### Not in scope
 
@@ -221,3 +230,12 @@ Decided with the acceptance, each with its reason.
 
 1. The status of a fenced exchange: `412` with `If-Match` (D4).
 2. A host of one endpoint, not a pool, keeps the membership store too: the same contract, so one rule.
+
+Open to the owner, found while writing the signature of D4 (2026-11-22):
+
+3. Whether a request's signature covers D5's low-water mark too. Recommended: yes, where it is a header of its own. An
+   intermediary that raises an unsigned mark makes the server drop a completion record whose request may come again, and
+   it takes effect twice.
+4. Whether a response's signature, under `sign:`, covers `etag` when the response carries one. Recommended: yes. An
+   intermediary that changes it offers a client an incarnation the server never drew, whose first exchange is then
+   fenced.
