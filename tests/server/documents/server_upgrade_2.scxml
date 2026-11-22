@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The next version of server_upgrade_1.scxml, started by the next build on the
+  store the first version's server kept (docs/adr/0109, D11; tests/server,
+  a_server_upgraded_in_place_under_load_loses_nothing). It declares the step from
+  the first version's committed shape to its own:
+
+    active   renamed `serving`, which takes every request `active` took
+    ceiling  added, a session the first version saved holds 16
+    note, sealed_note  of the note's second revision (upgrade_note_2.scxml), a
+             schema grown by `rank` and `label` with defaults, which the restore
+             reads at those defaults and which needs no element
+
+  It answers `read` with what the first version answers and with the fields the
+  second revision of the note and `ceiling` add.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="fresh" datamodel="sce-static" name="server_upgrade_2">
+  <sce:migration from="shapes/server_upgrade_1.shape" to="shapes/server_upgrade_2.shape">
+    <sce:rename kind="state" from="active" to="serving"/>
+    <sce:add-data id="ceiling" expr="16"/>
+  </sce:migration>
+  <sce:import kind="event-schema" src="upgrade_take.scxml" as="Take"/>
+  <sce:import kind="event-schema" src="upgrade_taken.scxml" as="Taken"/>
+  <sce:import kind="event-schema" src="upgrade_reminded.scxml" as="Reminded"/>
+  <sce:import kind="event-schema" src="upgrade_signed.scxml" as="Signed"/>
+  <sce:import kind="event-schema" src="upgrade_sealed.scxml" as="Sealed"/>
+  <sce:import kind="event-schema" src="upgrade_read.scxml" as="Read"/>
+  <sce:import kind="event-schema" src="upgrade_note_2.scxml" as="Note"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_verify1_request.scxml" as="Verify1Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_verify1_result.scxml" as="Verify1Result"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_decrypt0_request.scxml" as="Decrypt0Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_decrypt0_result.scxml" as="Decrypt0Result"/>
+  <datamodel>
+    <data id="taken" sce:type="uint32" expr="0"/>
+    <data id="last_tag" sce:type="string[32]" expr="''"/>
+    <data id="signed" sce:type="bytes[cose_signed=4352]" expr="''"/>
+    <data id="sealed" sce:type="bytes[cose_sealed=4480]" expr="''"/>
+    <data id="verified" sce:type="bool" expr="false"/>
+    <data id="opened" sce:type="bool" expr="false"/>
+    <data id="failure" sce:type="string[24]" expr="''"/>
+    <data id="note" sce:type="optional&lt;record:Note&gt;" expr="null"/>
+    <data id="sealed_note" sce:type="optional&lt;record:Note&gt;" expr="null"/>
+    <data id="ceiling" sce:type="uint32" expr="16"/>
+  </datamodel>
+
+  <state id="fresh">
+    <!-- The client is told a session of its key was started; a restore enters no state, so it
+         is told once for each session. -->
+    <onentry>
+      <send target="#client" event="opened"/>
+    </onentry>
+    <transition event="service.request.take" target="serving">
+      <assign location="taken" expr="taken + 1"/>
+      <assign location="last_tag" expr="_event.data.tag"/>
+      <send target="#client" event="service.response.take">
+        <param name="tag" expr="_event.data.tag"/>
+        <param name="position" expr="taken"/>
+        <param name="state" expr="'serving'"/>
+      </send>
+      <send target="#client" event="reminded" delay="3s">
+        <param name="tag" expr="_event.data.tag"/>
+      </send>
+    </transition>
+    <transition event="service.request.read" type="internal">
+      <send target="#client" event="service.response.read">
+        <param name="state" expr="'fresh'"/>
+        <param name="taken" expr="taken"/>
+        <param name="last_tag" expr="last_tag"/>
+        <param name="verified" expr="verified"/>
+        <param name="serial" expr="note !== null ? note.value.serial : 0"/>
+        <param name="owner" expr="note !== null ? note.value.owner : ''"/>
+        <param name="rank" expr="note !== null ? note.value.rank : 0"/>
+        <param name="label" expr="note !== null ? note.value.label : ''"/>
+        <param name="opened" expr="opened"/>
+        <param name="sealed_serial" expr="sealed_note !== null ? sealed_note.value.serial : 0"/>
+        <param name="sealed_label" expr="sealed_note !== null ? sealed_note.value.label : ''"/>
+        <param name="ceiling" expr="ceiling"/>
+      </send>
+    </transition>
+  </state>
+
+  <state id="serving">
+    <transition event="service.request.take" type="internal">
+      <assign location="taken" expr="taken + 1"/>
+      <assign location="last_tag" expr="_event.data.tag"/>
+      <send target="#client" event="service.response.take">
+        <param name="tag" expr="_event.data.tag"/>
+        <param name="position" expr="taken"/>
+        <param name="state" expr="'serving'"/>
+      </send>
+      <send target="#client" event="reminded" delay="3s">
+        <param name="tag" expr="_event.data.tag"/>
+      </send>
+    </transition>
+    <transition event="service.request.note" target="verifying">
+      <assign location="signed" expr="_event.data.cose"/>
+      <send target="#client" event="service.response.note"/>
+    </transition>
+    <transition event="service.request.recheck" target="verifying">
+      <send target="#client" event="service.response.recheck"/>
+    </transition>
+    <transition event="service.request.seal" target="opening">
+      <assign location="sealed" expr="_event.data.cose"/>
+      <send target="#client" event="service.response.seal"/>
+    </transition>
+    <transition event="service.request.close" target="closed">
+      <send target="#client" event="service.response.close"/>
+    </transition>
+    <transition event="service.request.read" type="internal">
+      <send target="#client" event="service.response.read">
+        <param name="state" expr="'serving'"/>
+        <param name="taken" expr="taken"/>
+        <param name="last_tag" expr="last_tag"/>
+        <param name="verified" expr="verified"/>
+        <param name="serial" expr="note !== null ? note.value.serial : 0"/>
+        <param name="owner" expr="note !== null ? note.value.owner : ''"/>
+        <param name="rank" expr="note !== null ? note.value.rank : 0"/>
+        <param name="label" expr="note !== null ? note.value.label : ''"/>
+        <param name="opened" expr="opened"/>
+        <param name="sealed_serial" expr="sealed_note !== null ? sealed_note.value.serial : 0"/>
+        <param name="sealed_label" expr="sealed_note !== null ? sealed_note.value.label : ''"/>
+        <param name="ceiling" expr="ceiling"/>
+      </send>
+    </transition>
+  </state>
+
+  <!-- The kept object, verified by name: the note it holds is kept when it
+       verified, and a failure is kept as its code. -->
+  <state id="verifying">
+    <invoke type="sce-host-cose-verify1" id="verify" sce:request="Verify1Request" sce:result="Verify1Result" sce:payload="Note">
+      <param name="trust_set" expr="'devices'"/>
+      <param name="cose" expr="signed"/>
+      <param name="external_aad" expr="''"/>
+    </invoke>
+    <transition event="done.invoke.verify" cond="_event.data.error === ''" target="serving">
+      <assign location="note" expr="_event.data.payload"/>
+      <assign location="verified" expr="_event.data.valid"/>
+    </transition>
+    <transition event="done.invoke.verify" target="serving">
+      <assign location="verified" expr="false"/>
+      <assign location="failure" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="serving">
+      <assign location="failure" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <!-- The kept object, opened by name. -->
+  <state id="opening">
+    <invoke type="sce-host-cose-decrypt0" id="open" sce:request="Decrypt0Request" sce:result="Decrypt0Result" sce:payload="Note">
+      <param name="key_id" expr="'vault'"/>
+      <param name="cose" expr="sealed"/>
+      <param name="external_aad" expr="''"/>
+    </invoke>
+    <transition event="done.invoke.open" cond="_event.data.error === ''" target="serving">
+      <assign location="sealed_note" expr="_event.data.plaintext"/>
+      <assign location="opened" expr="_event.data.opened"/>
+    </transition>
+    <transition event="done.invoke.open" target="serving">
+      <assign location="opened" expr="false"/>
+      <assign location="failure" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="serving">
+      <assign location="failure" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <!-- Recording has stopped: a tag is answered and not recorded. -->
+  <state id="closed">
+    <transition event="service.request.take" type="internal">
+      <send target="#client" event="service.response.take">
+        <param name="tag" expr="_event.data.tag"/>
+        <param name="position" expr="taken"/>
+        <param name="state" expr="'closed'"/>
+      </send>
+    </transition>
+    <transition event="service.request.end" target="ended">
+      <send target="#client" event="service.response.end"/>
+    </transition>
+    <transition event="service.request.read" type="internal">
+      <send target="#client" event="service.response.read">
+        <param name="state" expr="'closed'"/>
+        <param name="taken" expr="taken"/>
+        <param name="last_tag" expr="last_tag"/>
+        <param name="verified" expr="verified"/>
+        <param name="serial" expr="note !== null ? note.value.serial : 0"/>
+        <param name="owner" expr="note !== null ? note.value.owner : ''"/>
+        <param name="rank" expr="note !== null ? note.value.rank : 0"/>
+        <param name="label" expr="note !== null ? note.value.label : ''"/>
+        <param name="opened" expr="opened"/>
+        <param name="sealed_serial" expr="sealed_note !== null ? sealed_note.value.serial : 0"/>
+        <param name="sealed_label" expr="sealed_note !== null ? sealed_note.value.label : ''"/>
+        <param name="ceiling" expr="ceiling"/>
+      </send>
+    </transition>
+  </state>
+
+  <final id="ended"/>
+</scxml>

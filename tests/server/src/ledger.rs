@@ -175,6 +175,19 @@ pub fn durable_https(mailbox: u32, retain_ms: u64) -> Binding {
 /// a keyed pool whose key is the `key` field of what the client sends, a session staying in
 /// memory for `idle_ms` after its last event.
 pub fn machine(binding: Binding, idle_ms: u64) -> Machine {
+    pooled(MACHINE_NAME, &[TAKEN, JOINED, CLAIMED], binding, idle_ms)
+}
+
+/// The machine `name` as deploy.yaml would declare the suite's every machine: one peer, the
+/// client, reached over `binding` and answered by `replies`, the reply events the deployment
+/// pairs with the client's requests; and a keyed pool whose key is the `key` field of what the
+/// client sends, a session staying in memory for `idle_ms` after its last event.
+pub fn pooled(
+    name: &'static str,
+    replies: &'static [&'static str],
+    binding: Binding,
+    idle_ms: u64,
+) -> Machine {
     let peers: &'static [Peer] = Box::leak(Box::new([Peer {
         name: CLIENT,
         config: PeerConfig {
@@ -188,13 +201,13 @@ pub fn machine(binding: Binding, idle_ms: u64) -> Machine {
             },
             responders: &[CLIENT],
             deadline_ms: None,
-            reply_events: &[TAKEN, JOINED, CLAIMED],
+            reply_events: replies,
             causal: None,
         },
         link: binding.link,
     }]));
     Machine {
-        name: MACHINE_NAME,
+        name,
         dedup_window: DEDUP_WINDOW,
         gap_timeout_ms: 50,
         peers,
@@ -407,8 +420,15 @@ pub struct Held {
 }
 
 impl Held {
-    /// What `state`, a ledger's saved state, holds.
+    /// What `state`, a ledger's saved state, holds; refused for a state of another machine,
+    /// which a ledger does not restore (docs/adr/0109, D11).
     pub fn from_state(state: &SavedState) -> Result<Held, String> {
+        if state.shape != MACHINE_NAME {
+            return Err(format!(
+                "a state of shape {} is not a ledger's, of shape {MACHINE_NAME}",
+                state.shape
+            ));
+        }
         let number = |name: &str| -> Result<u64, String> {
             match state.variable(name) {
                 Ok(Value::Number(digits)) => {
