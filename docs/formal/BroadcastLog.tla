@@ -43,6 +43,14 @@
 (* bound entry's slot is the one the next publish begins to write, and the *)
 (* reader is told of a loss nothing had caused,                            *)
 (* BroadcastLog_deferred_without_extra_slot.cfg).                          *)
+(*                                                                         *)
+(* Taken as given:                                                         *)
+(*   One producer. A step is one load or store, in the order written: the  *)
+(*     memory                                                              *)
+(*   order is GenMC's to judge (docs/adr/0062), and this model judges what *)
+(*     is left.                                                            *)
+(*   Numbers do not wrap (BroadcastLogWrapped judges that they do).        *)
+(*   LiveSpec: a reader that reads takes its steps.                        *)
 (***************************************************************************)
 EXTENDS Integers, TLC
 
@@ -215,6 +223,16 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
+(* A reader that has begun a read takes its steps; nothing is asked of the producer. *)
+Reading(r) ==
+    \/ RHead(r) \/ RStamp1(r)
+    \/ RCopy(r, 0, "c0", "c1") \/ RCopy(r, 1, "c1", "v2")
+    \/ RValidate(r) \/ RReload(r)
+
+Fair == \A r \in Readers : WF_vars(Reading(r)) /\ WF_vars(RStart(r))
+
+LiveSpec == Spec /\ Fair
+
 (* What the specification requires of an answer, given the head it was decided at. *)
 
 AnswerRefines ==
@@ -241,6 +259,12 @@ DeferredStart ==
             /\ (r \in DeferredReaders => origin[r] = Max0(ob[r] - R))
             /\ cur[r] >= origin[r]
             /\ lost[r] <= cur[r] - origin[r]
+
+(* A read that was begun ends, however the producer goes on: a reader waits for nobody. *)
+ReadEnds == \A r \in Readers : rpc[r] # "idle" ~> rpc[r] = "idle"
+
+(* Once nothing more is published, a reader that reads has been told of all there is. *)
+CatchesUp == \A r \in Readers : <>[](cur[r] = head)
 
 (* A deferred reader's first read answers Lagged only if the head had moved since the bind. *)
 FirstLagIsOvertaken ==
