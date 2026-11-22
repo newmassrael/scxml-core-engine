@@ -5736,8 +5736,10 @@ set_tests_properties(c11_unit_forge_optional PROPERTIES
 # A map and a set (docs/adr/0108, D8) as `sce/forge/map.h` holds them: SipHash-1-3
 # held to the reference vectors, keys equal by their canonical bytes, the order a
 # map's keys were first put kept through any sequence of puts, removes and clears,
-# a remove that moves no entry, a full map that answers `full` unchanged, and keys
-# chosen to collide under one seed spread under another. Header-only code.
+# a remove that moves no entry, a full map that answers `full` unchanged, keys
+# chosen to collide under one seed spread under another, and a map of maps or of
+# sets (D12) written in place, its inner maps and its absent value started under
+# seeds drawn per depth. Header-only code.
 add_executable(sce_c_forge_map_unit_test unit/forge_map_test.c)
 target_link_libraries(sce_c_forge_map_unit_test PRIVATE sce_c_runtime)
 target_include_directories(sce_c_forge_map_unit_test PRIVATE

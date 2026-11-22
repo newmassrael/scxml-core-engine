@@ -67,6 +67,13 @@ SCE_MAP_DECLARE(amount_map, uint32_t, int32_t, 3u, sce_map_key_uint32)
 SCE_MAP_DECLARE(narrow_map, sce_static_string_4_t, uint8_t, 2u, sce_map_key_text)
 SCE_MAP_DECLARE(wide_map, sce_static_string_8_t, uint8_t, 4u, sce_map_key_text)
 SCE_SET_DECLARE(tag_set, sce_static_string_8_t, 3u, sce_map_key_text)
+// docs/adr/0108, D12: a map of maps two deep (a region's table keyed again by a face), and a
+// map of sets.
+SCE_MAP_DECLARE(face_map, uint32_t, uint32_t, 3u, sce_map_key_uint32)
+SCE_MAP_NESTED_DECLARE(region_map, uint16_t, face_map, 2u, sce_map_key_uint16)
+SCE_MAP_NESTED_DECLARE(world_map, uint8_t, region_map, 2u, sce_map_key_uint8)
+SCE_SET_DECLARE(peer_set, uint32_t, 2u, sce_map_key_uint32)
+SCE_MAP_NESTED_DECLARE(peers_map, uint16_t, peer_set, 2u, sce_map_key_uint16)
 
 static int failures = 0;
 
@@ -539,6 +546,199 @@ static void the_seeds_of_a_machine_s_maps_are_drawn_apart(void) {
     expect(child.k0 != SEED.k0 || child.k1 != SEED.k1, "a child's seed is not its parent's");
 }
 
+static bool same_seed(sce_map_seed_t a, sce_map_seed_t b) {
+    return a.k0 == b.k0 && a.k1 == b.k1;
+}
+
+// docs/adr/0108, D12 item 2: a value written through `sce_map_value_mut` changes where it
+// stands. The index, the order and the free list are as they were, a key the map does not
+// hold answers NULL, and a probe of another width finds the key.
+static void a_value_written_in_place_keeps_the_order_and_the_index(void) {
+    static small_map_t map;
+    static small_map_t before;
+    uint8_t keys[3];
+    uint8_t values[3];
+    small_map_start(&map, SEED);
+    expect(small_map_put(&map, 1u, 10u) == SCE_MAP_PUT_INSERTED, "1 is inserted");
+    expect(small_map_put(&map, 2u, 20u) == SCE_MAP_PUT_INSERTED, "2 is inserted");
+    expect(small_map_put(&map, 3u, 30u) == SCE_MAP_PUT_INSERTED, "3 is inserted");
+    expect(small_map_remove(&map, 3u) == SCE_MAP_REMOVE_REMOVED, "3 is removed, its slot on the free list");
+    memcpy(&before, &map, sizeof(map));
+    const uint8_t two = 2u;
+    uint8_t *held = small_map_value_mut(&map, &two, NULL);
+    expect(held != NULL && *held == 20u, "the value of 2 is found to be written");
+    if (held != NULL) {
+        *held = 21u;
+    }
+    uint8_t *again = small_map_value_mut(&map, SCE_MAP_KEY_UINT(2), sce_map_key_uint64);
+    expect(again == held, "a probe of another width finds the same value");
+    expect(small_map_value_mut(&map, SCE_MAP_KEY_UINT(3), sce_map_key_uint64) == NULL, "a removed key answers NULL");
+    expect(small_map_value_mut(&map, SCE_MAP_KEY_UINT(9), sce_map_key_uint64) == NULL, "an absent key answers NULL");
+    expect(memcmp(&map.core, &before.core, sizeof(map.core)) == 0, "the order, the free list and the counts stay");
+    expect(memcmp(map.index, before.index, sizeof(map.index)) == 0, "the index stays");
+    expect(small_entries(&map, keys, values) == 2u && keys[0] == 1u && values[0] == 10u && keys[1] == 2u &&
+               values[1] == 21u,
+           "the written value is held where its key stands");
+}
+
+// docs/adr/0108, D2 and D12 item 4: `sce_map_put_entry` puts a key with the empty value and
+// answers where it is held. An absent key goes last, a present key keeps its place and its
+// value is made empty, and a full map answers `full`, NULL and is as it was.
+static void an_entry_put_in_place_answers_what_a_put_answers(void) {
+    static small_map_t map;
+    static small_map_t before;
+    uint8_t keys[3];
+    uint8_t values[3];
+    sce_map_put_outcome_t outcome = SCE_MAP_PUT_FULL;
+    small_map_start(&map, SEED);
+    expect(small_map_put(&map, 1u, 10u) == SCE_MAP_PUT_INSERTED, "1 is inserted");
+    uint8_t *fresh = small_map_put_entry(&map, 2u, &outcome);
+    expect(fresh != NULL && outcome == SCE_MAP_PUT_INSERTED && *fresh == 0u, "a new key holds the zero value");
+    if (fresh != NULL) {
+        *fresh = 20u;
+    }
+    expect(small_map_put(&map, 3u, 30u) == SCE_MAP_PUT_INSERTED, "3 is inserted");
+    outcome = SCE_MAP_PUT_FULL;
+    uint8_t *present = small_map_put_entry(&map, 1u, &outcome);
+    expect(present != NULL && outcome == SCE_MAP_PUT_REPLACED && *present == 0u,
+           "a present key is replaced by the zero value");
+    if (present != NULL) {
+        *present = 11u;
+    }
+    expect(small_entries(&map, keys, values) == 3u && keys[0] == 1u && values[0] == 11u && keys[1] == 2u &&
+               values[1] == 20u && keys[2] == 3u && values[2] == 30u,
+           "a key put in place goes last, and a replaced one keeps its place");
+    memcpy(&before, &map, sizeof(map));
+    outcome = SCE_MAP_PUT_INSERTED;
+    expect(small_map_put_entry(&map, 4u, &outcome) == NULL && outcome == SCE_MAP_PUT_FULL, "a fourth key is full");
+    expect(memcmp(&map, &before, sizeof(map)) == 0, "a full map is as it was");
+}
+
+// The value of `regions` at `region`, or NULL.
+static face_map_t *faces_of(region_map_t *regions, uint16_t region) {
+    return region_map_value_mut(regions, &region, NULL);
+}
+
+// The value of `faces` at `face`, read as an expression reads it: whether it is held, and
+// what it is.
+static bool face_holds(const face_map_t *faces, uint32_t face, uint32_t value) {
+    const sce_map_found_t found = sce_map_lookup(faces, SCE_MAP_KEY_UINT(face), sce_map_key_uint64);
+    return found.found && *(const uint32_t *)found.value == value;
+}
+
+// docs/adr/0108, D12: a map whose values are maps. An entry put in place holds a started
+// empty map under the seed drawn from the outer map's, a nested put writes it in place and
+// answers the inner map's outcome, the outer map's order and index stay, a present key is
+// replaced by the empty map, an absent outer key is no inner map, and the value a read at an
+// absent key gives is a started empty map, which a read through finds nothing in.
+static void a_map_of_maps_writes_its_inner_maps_in_place(void) {
+    static region_map_t regions;
+    static region_map_t before;
+    sce_map_put_outcome_t outcome = SCE_MAP_PUT_FULL;
+    region_map_start(&regions, SEED);
+    // The value a read at an absent key gives is started.
+    const sce_map_found_t missing = sce_map_lookup(&regions, SCE_MAP_KEY_UINT(5), sce_map_key_uint64);
+    expect(!missing.found && missing.value == (const void *)&regions.absent, "an absent region gives the absent map");
+    expect(regions.absent.core.layout == face_map_layout(), "the absent value is a started face map");
+    expect(!sce_map_holds(missing.value, SCE_MAP_KEY_UINT(1), sce_map_key_uint64) && sce_map_count(missing.value) == 0u,
+           "has and len through the absent value find nothing");
+    expect(same_seed(regions.absent.core.seed, sce_map_seed_of_inner(SEED)), "the absent map is seeded from the outer");
+    // An entry put in place.
+    face_map_t *faces = region_map_put_entry(&regions, 1u, &outcome);
+    expect(faces != NULL && outcome == SCE_MAP_PUT_INSERTED, "region 1 is inserted");
+    if (faces == NULL) {
+        return;
+    }
+    expect(faces->core.layout == face_map_layout() && sce_map_count(faces) == 0u, "region 1 holds a started empty map");
+    expect(same_seed(faces->core.seed, sce_map_seed_of_inner(SEED)), "region 1's map is seeded from the outer");
+    expect(!same_seed(faces->core.seed, SEED), "an inner seed is not the outer seed");
+    expect(face_map_put(faces, 10u, 100u) == SCE_MAP_PUT_INSERTED, "face 10 is put into region 1");
+    expect(region_map_put_entry(&regions, 2u, &outcome) != NULL && outcome == SCE_MAP_PUT_INSERTED,
+           "region 2 is inserted");
+    // A nested put through the mutable lookup leaves the outer map as it was.
+    memcpy(&before, &regions, sizeof(regions));
+    face_map_t *found = faces_of(&regions, 1u);
+    expect(found == faces, "the mutable lookup finds region 1's map where it stands");
+    expect(face_map_put(found, 11u, 110u) == SCE_MAP_PUT_INSERTED, "face 11 is put in place");
+    expect(face_map_put(found, 12u, 120u) == SCE_MAP_PUT_INSERTED, "face 12 is put in place");
+    expect(face_map_put(found, 13u, 130u) == SCE_MAP_PUT_FULL, "a fourth face answers the inner map's full");
+    expect(memcmp(&regions.core, &before.core, sizeof(regions.core)) == 0 &&
+               memcmp(regions.index, before.index, sizeof(regions.index)) == 0,
+           "a nested put leaves the outer order and index as they were");
+    const sce_map_found_t through = sce_map_lookup(&regions, SCE_MAP_KEY_UINT(1), sce_map_key_uint64);
+    expect(through.found && face_holds(through.value, 10u, 100u) && face_holds(through.value, 11u, 110u) &&
+               face_holds(through.value, 12u, 120u),
+           "a read through the outer map finds each face");
+    expect(faces_of(&regions, 3u) == NULL, "an absent region is no inner map to write");
+    // A full outer map refuses a third region and is as it was.
+    memcpy(&before, &regions, sizeof(regions));
+    expect(region_map_put_entry(&regions, 3u, &outcome) == NULL && outcome == SCE_MAP_PUT_FULL, "region 3 is full");
+    expect(memcmp(&regions, &before, sizeof(regions)) == 0, "a full map of maps is as it was");
+    // A present region put again holds the empty map, in its place.
+    face_map_t *emptied = region_map_put_entry(&regions, 1u, &outcome);
+    expect(emptied == faces && outcome == SCE_MAP_PUT_REPLACED, "region 1 again is replaced where it stands");
+    expect(sce_map_count(faces) == 0u && faces->core.layout == face_map_layout() &&
+               !sce_map_holds(faces, SCE_MAP_KEY_UINT(10), sce_map_key_uint64),
+           "a replaced region holds a started empty map");
+    expect(sce_map_first(&regions) != SCE_MAP_NO_ENTRY &&
+               *(const uint16_t *)sce_map_key_at(&regions, sce_map_first(&regions)) == 1u,
+           "the replaced region keeps its place first");
+}
+
+// docs/adr/0108, D12 items 4 and 7: a put of no value puts the empty map, a map of maps taken
+// whole keys each inner map from its own seed, and the absent value two levels down is
+// started under a seed drawn once per depth.
+static void a_map_of_maps_is_started_and_taken_whole_at_every_depth(void) {
+    static region_map_t regions;
+    static region_map_t copy;
+    static world_map_t world;
+    static peers_map_t peers;
+    sce_map_put_outcome_t outcome = SCE_MAP_PUT_FULL;
+    const uint16_t one = 1u;
+    region_map_start(&regions, SEED);
+    expect(sce_map_put(&regions, &one, sizeof(one), NULL, 0u) == SCE_MAP_PUT_INSERTED, "a put of no value inserts");
+    face_map_t *faces = faces_of(&regions, 1u);
+    expect(faces != NULL && faces->core.layout == face_map_layout() && sce_map_count(faces) == 0u,
+           "a put of no value holds the empty map");
+    if (faces == NULL) {
+        return;
+    }
+    expect(face_map_put(faces, 7u, 70u) == SCE_MAP_PUT_INSERTED, "face 7 is put");
+    region_map_start(&copy, OTHER_SEED);
+    sce_map_assign(&copy, &regions);
+    const face_map_t *copied = faces_of(&copy, 1u);
+    expect(copied != NULL && copied != faces && face_holds(copied, 7u, 70u), "the copy holds region 1's faces");
+    expect(copied != NULL && same_seed(copied->core.seed, sce_map_seed_of_inner(OTHER_SEED)),
+           "the copy's inner map is seeded from the copy");
+    // Two levels down.
+    world_map_start(&world, SEED);
+    const sce_map_seed_t depth1 = sce_map_seed_of_inner(SEED);
+    const sce_map_seed_t depth2 = sce_map_seed_of_inner(depth1);
+    expect(world.absent.core.layout == region_map_layout() && world.absent.absent.core.layout == face_map_layout(),
+           "the absent value is started at every depth");
+    expect(same_seed(world.absent.core.seed, depth1) && same_seed(world.absent.absent.core.seed, depth2),
+           "each depth's seed is drawn from the one above it");
+    expect(!same_seed(depth1, depth2), "two depths are keyed apart");
+    const sce_map_found_t region = sce_map_lookup(&world, SCE_MAP_KEY_UINT(4), sce_map_key_uint64);
+    const sce_map_found_t face = sce_map_lookup(region.value, SCE_MAP_KEY_UINT(9), sce_map_key_uint64);
+    expect(!region.found && !face.found && !sce_map_holds(face.value, SCE_MAP_KEY_UINT(1), sce_map_key_uint64),
+           "a read two levels through absent keys finds nothing");
+    region_map_t *inner = world_map_put_entry(&world, 1u, &outcome);
+    expect(inner != NULL && outcome == SCE_MAP_PUT_INSERTED && inner->absent.core.layout == face_map_layout(),
+           "a region put into the world holds its own started absent value");
+    // A map of sets.
+    peers_map_start(&peers, SEED);
+    expect(peers.absent.core.layout == peer_set_layout(), "the absent value of a map of sets is a started set");
+    peer_set_t *known = peers_map_put_entry(&peers, 3u, &outcome);
+    expect(known != NULL && outcome == SCE_MAP_PUT_INSERTED, "an entry of a map of sets is inserted");
+    if (known != NULL) {
+        expect(peer_set_put(known, 42u) == SCE_MAP_PUT_INSERTED, "a peer is put into the set in place");
+        expect(sce_map_holds(sce_map_lookup(&peers, SCE_MAP_KEY_UINT(3), sce_map_key_uint64).value,
+                             SCE_MAP_KEY_UINT(42), sce_map_key_uint64),
+               "a read through the map of sets finds the peer");
+    }
+}
+
 int main(void) {
     siphash_meets_the_reference_vectors();
     keys_are_equal_by_their_canonical_bytes();
@@ -553,6 +753,10 @@ int main(void) {
     a_map_assigned_into_a_larger_bound_keeps_its_entries_in_order();
     a_copy_for_a_walk_holds_the_map_as_it_was();
     the_seeds_of_a_machine_s_maps_are_drawn_apart();
+    a_value_written_in_place_keeps_the_order_and_the_index();
+    an_entry_put_in_place_answers_what_a_put_answers();
+    a_map_of_maps_writes_its_inner_maps_in_place();
+    a_map_of_maps_is_started_and_taken_whole_at_every_depth();
     if (failures != 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;
