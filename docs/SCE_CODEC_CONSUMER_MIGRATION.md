@@ -3674,3 +3674,46 @@ is regenerated; no committed generated tree holds one.
 - A byte string past `N` is no value of the unit any more, so a CBOR codec that holds the record no longer meets one:
   a test that built such a record and expected its encode to refuse it with `CborOutOfRange` builds the field
   instead and expects `CapacityExceeded` there.
+
+## A server serves a generated machine through `sce_rust_mesh::served`, and a record is named by its schema at every depth (ADR 0112)
+
+Landing: the commits that add this section. Every machine that holds a record whose first revision holds a list or
+a record, or a union, has a new shape, so the static-datamodel trees are regenerated; a consumer regenerates a
+machine that holds one.
+
+- **A Rust server that serves a generated machine from a keyed pool takes `sce_rust_mesh::served::Served<P, H>`**
+  as its `SessionFactory` and writes a `SessionHost<P>` (the policy of each session, the host operations it
+  registers) in place of a factory and a machine of its own. The adapter owns the engine's clock
+  (`SceClock::Manual`, moved to the pool's wall clock at every run), registers the endpoint and then the host's
+  operations before the first macrostep, restores through the declared migration, and saves at the engine's own
+  instant, so a pending delayed send is saved as the moment it comes due. A factory written by hand that saved at
+  the wall clock it was handed moved every pending send later at each stop by the time since the session last ran.
+- **Every generated Rust policy whose machine can be saved implements `sce_rust_runtime::saved_state::PersistentPolicy`**
+  (`SHAPE`, `save_at`, `judge`, `restore_with`), the functions of its `<Machine>Persist`. Code that names
+  `<Machine>Persist` is unchanged; code generic over the document names `PersistentPolicy`.
+- **`sce_rust_mesh::session_conformance`** (feature `conformance`) is the kit a session machine is held to: a
+  factory of the host's own runs its five functions over a `Subject`.
+- **A shape names a record by its schema, never by its file, and by its first revision at every depth.** The
+  `record` and `case` lines of a shape file name the event a record's schema declares and its first revision's
+  fields; a `union` line names the variable and its tag. A record whose first revision holds one entry per field
+  is named field by field wherever a variable or its elements hold it, as one of a schema of entries alone always
+  was. A shape file a build before this landing wrote (`sce-codegen shape`) that holds a `record`, `case` or
+  `union` line spells the shape the earlier build named its states by, and a step whose `from` file holds that
+  spelling is refused as a change of type. A release built before this landing is therefore upgraded in two
+  moves: its own document built with this landing first, which restores every state the release saved (below)
+  and saves each under this build's shape at its next checkpoint; then the next version, whose step starts from
+  the shape file `sce-codegen shape` writes for the first.
+- **A state saved before this landing restores.** The shape of a machine that holds such a record or a union moved,
+  and a generated Rust or C++ machine knows the shape the earlier build named it by (`SavedShape::legacy`): a state
+  of that shape restores as one of this build, each record the earlier build did not name in `revisions` read at
+  this build's revision, which is the revision that build saved it at. A Kotlin, Go, Python or Swift machine holds
+  no such list and refuses such a state by its shape, as it refuses any state of another shape.
+- **A record grows at every depth on Rust and C++.** A record held below a variable's value (a field of a record, a
+  list a record holds, the case of a union) is read at the defaults of the fields its schema's later revisions
+  added, as a record variable always was. The lineage of each record carries the steps to it
+  (`RecordHolder::path`, `HeldStep` in Rust and C++). Kotlin, Go, Python and Swift refuse a machine that holds
+  one by name (`generate/unsupported-feature`, docs/adr/0109 D0), and keep serving every record a variable or its
+  elements hold.
+- Rust code that writes a `SavedShape`, a `RecordLineage` or a `RecordHolder` by hand gives `legacy: &[]`,
+  `tracked_before` (true for a record of entries a variable or its elements hold) and `path: &[]`; C++ code that
+  builds a `RecordHolder` gives its `part` and `path`, or leaves them empty.
