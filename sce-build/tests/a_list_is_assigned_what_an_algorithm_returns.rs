@@ -202,3 +202,81 @@ fn a_returned_list_is_still_no_value_anywhere_but_a_whole_list_assignment() {
         assert!(!ok, "expected a refusal for {body}, got:\n{out}");
     }
 }
+
+/// The lines of two entries, or none: a list of records, from a truth value alone.
+const LINES: &str = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="algorithm" name="probe_lines">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="some" type="bool"/>
+    <sce:return type="list&lt;record:Entry&gt;" sce:returns-max-size="8" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="8"/>
+    <sce:if cond="some">
+      <sce:var name="line" type="record:Entry">
+        <sce:set name="id" expr="1"/>
+        <sce:set name="amount" expr="2"/>
+      </sce:var>
+      <sce:append target="out" expr="line"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"##;
+
+/// A list of records an algorithm returns is converted into the machine's own records
+/// whatever the algorithm takes: one that took no record and no list was called by its
+/// own name, as one that returns numbers is, and the check of C11 panicked on a value
+/// with no type of its own (SCE_ACCEPTED_SUBSET.md §2.15).
+#[test]
+fn a_list_of_records_is_assigned_from_an_algorithm_that_takes_a_truth_value() {
+    let dir = tempdir().expect("tempdir");
+    std::fs::copy(
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/schema_entry.scxml"),
+        dir.path().join("schema_entry.scxml"),
+    )
+    .expect("the schema of the fixtures");
+    std::fs::write(dir.path().join("probe_lines.scxml"), LINES).expect("write the algorithm");
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(
+        &path,
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="algorithm" src="probe_lines.scxml" as="Lines"/>
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <datamodel>
+    <data id="rows" sce:type="list&lt;record:Entry&gt;" sce:capacity="8"/>
+    <data id="some" sce:type="bool" expr="true"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal"><assign location="rows" expr="Lines(some)"/></transition>
+  </state>
+</scxml>
+"##,
+    )
+    .expect("write probe");
+    let mut wrong = Vec::new();
+    for lang in ["", "rust", "kotlin", "cpp", "go", "python", "c11", "swift"] {
+        let mut command = Command::new(sce_codegen_bin());
+        command
+            .arg("--workspace-root")
+            .arg(repo_root())
+            .arg("--error-format=json")
+            .arg("check");
+        if !lang.is_empty() {
+            command.args(["-l", lang, "--go-module-prefix", "example.com/generated"]);
+        }
+        let out = command.arg(&path).output().expect("invoke sce-codegen");
+        if !out.status.success() {
+            wrong.push(format!(
+                "[{lang}] {}\n{}",
+                String::from_utf8_lossy(&out.stderr),
+                String::from_utf8_lossy(&out.stdout)
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
