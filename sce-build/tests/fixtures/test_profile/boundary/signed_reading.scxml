@@ -7,7 +7,7 @@
        version="1.0" sce:kind="event-schema" name="signed_reading"
        sce:event-name="signed.reading">
   <datamodel>
-    <data id="delta" sce:type="int8" sce:direction="in"/>
+    <data id="change" sce:type="int8" sce:direction="in"/>
     <data id="offset" sce:type="int16" sce:direction="in"/>
     <data id="level" sce:type="int32" sce:direction="in"/>
     <data id="stamp" sce:type="int64" sce:direction="in"/>

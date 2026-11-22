@@ -14,7 +14,7 @@
        name="signed_reading_codec">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
-    <data id="delta" sce:type="int8" sce:property="DELTA"/>
+    <data id="change" sce:type="int8" sce:property="CHANGE"/>
     <data id="offset" sce:type="int16" sce:property="OFFSET"/>
     <data id="level" sce:type="int32" sce:property="LEVEL"/>
     <data id="stamp" sce:type="int64" sce:property="STAMP"/>
