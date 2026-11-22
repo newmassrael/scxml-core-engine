@@ -1,8 +1,8 @@
 {
   "machine": "static_map_nested",
-  "about": "A map whose value is a map (docs/adr/0108, D12): the empty inner map put at a key with no value, then written through the place `slots[1]`; a put, a remove, `len`, `has` and a read through that place; the inner map full, answered as its own outcome; a walk of the inner map; and a write through a key that is absent, which raises error.execution, ends its block and creates nothing. A map is stated as the array of its entries, each [key, value], the inner map as its own array. Expected values are derived from the document, not observed from a backend.",
+  "about": "A map whose value is a map (docs/adr/0108, D12): the empty inner map put at a key with no value, then written through the place `slots[1]`; a put, a remove, `len`, `has` and a read through that place; the inner map full, answered as its own outcome; a walk of the inner map; a write through a key that is absent, which raises error.execution, ends its block and creates nothing; the inner map taken whole into a variable of its type, which a key that is absent fails before the variable is written; and a walk of the outer map whose body asks has and len of each inner map it binds. A map is stated as the array of its entries, each [key, value], the inner map as its own array. Expected values are derived from the document, not observed from a backend.",
   "steps": [
-    { "expect": { "state": "holding", "variables": { "slots": [], "putResult": "inserted", "removeResult": "absent", "regions": 0, "held": 0, "found": false, "amount": 0, "total": 0, "after": 0, "errors": 0 } } },
+    { "expect": { "state": "holding", "variables": { "slots": [], "putResult": "inserted", "removeResult": "absent", "regions": 0, "held": 0, "found": false, "amount": 0, "total": 0, "after": 0, "errors": 0, "region": [], "taken": 0, "withTwenty": 0, "seen": 0 } } },
 
     { "note": "region 2 is absent: the put through it fails before anything is written, and the block ends before `after` counts it",
       "event": "stray",
@@ -24,17 +24,30 @@
     { "event": "sum",
       "expect": { "variables": { "total": 13 } } },
 
+    { "note": "the inner map at region 1 is taken whole into a variable of exactly its type",
+      "event": "take",
+      "expect": { "variables": { "region": [[10, 6], [20, 7]], "taken": 1, "errors": 1 } } },
+    { "note": "a walk of the outer map binds each inner map where it is held, and asks has and len of it",
+      "event": "scan",
+      "expect": { "variables": { "withTwenty": 1, "seen": 2, "errors": 1 } } },
+    { "note": "region 2 is absent: the take fails, error.execution is raised and the block ends before `region` or `taken` is written",
+      "event": "take.absent",
+      "expect": { "variables": { "region": [[10, 6], [20, 7]], "taken": 1, "errors": 2 } } },
+
     { "event": "drop",
       "expect": { "variables": { "slots": [[1, [[10, 6]]]], "removeResult": "removed", "held": 1 } } },
     { "note": "slot 20 is gone: the read of it fails, error.execution is raised and the block ends before `after` counts it",
       "event": "read",
-      "expect": { "variables": { "found": false, "amount": 7, "after": 1, "errors": 2 } } },
+      "expect": { "variables": { "found": false, "amount": 7, "after": 1, "errors": 3 } } },
     { "note": "region 2 is still absent, and the put through it creates nothing",
       "event": "stray",
-      "expect": { "variables": { "slots": [[1, [[10, 6]]]], "regions": 1, "after": 1, "errors": 3 } } },
+      "expect": { "variables": { "slots": [[1, [[10, 6]]]], "regions": 1, "after": 1, "errors": 4 } } },
 
     { "note": "a put that names no value at a key the map holds replaces its value with the empty one where it stands",
       "event": "reset",
-      "expect": { "variables": { "slots": [[1, []]], "held": 0, "errors": 3 } } }
+      "expect": { "variables": { "slots": [[1, []]], "held": 0, "errors": 4 } } },
+    { "note": "the inner map was emptied where it stands: no region holds slot 20, and none holds a slot",
+      "event": "scan",
+      "expect": { "variables": { "withTwenty": 0, "seen": 0, "region": [[10, 6], [20, 7]], "errors": 4 } } }
   ]
 }
