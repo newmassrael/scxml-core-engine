@@ -458,14 +458,23 @@ impl StaticValueSignature {
     /// so is a union returned, which the adapter maps case by case into the
     /// machine's own sum whatever the parameters are (docs/adr/0092, section 6.1
     /// item 7), and a map returned, which the adapter has the algorithm build in
-    /// a destination it holds (docs/adr/0108, D5).
+    /// a destination it holds (docs/adr/0108, D5). So is a record returned, present
+    /// or not, and a list of them, whose unit's type is not the machine's record's:
+    /// the adapter copies it into the machine's whatever the parameters are.
     pub fn adapted(&self) -> bool {
         self.params
             .iter()
             .any(|slot| slot.is_state() || slot.enum_alias().is_some())
             || self.ret.as_ref().is_some_and(|slot| {
                 slot.enum_alias().is_some()
-                    || matches!(slot, StaticSlot::Union(_) | StaticSlot::Map(_))
+                    || matches!(
+                        slot,
+                        StaticSlot::Record(_)
+                            | StaticSlot::OptionalRecord(_)
+                            | StaticSlot::RecordList(_)
+                            | StaticSlot::Union(_)
+                            | StaticSlot::Map(_)
+                    )
             })
     }
 
@@ -2082,10 +2091,11 @@ impl StaticScope {
             }
         }
         for callee in &self.callees {
-            // An algorithm that takes no record or list but returns one is called by
-            // its own alias, and the whole of the call is the right side of an
-            // assignment. One with a value of an enum in a slot is called through its
-            // adapter, by the name its rewrite gives it, as one with state is.
+            // An algorithm that takes no record or list and returns a list of scalars
+            // is called by its own alias, and the whole of the call is the right side
+            // of an assignment. One with state or a value of an enum in a slot, or
+            // that returns a record, is called through its adapter, by the name its
+            // rewrite gives it ([`StaticValueSignature::adapted`]).
             if callee.value.as_ref().is_some_and(|v| !v.adapted()) {
                 if let Some(sig) = value_func_sig(callee) {
                     ctx.insert_func(callee.alias.as_str(), sig);

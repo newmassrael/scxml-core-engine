@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The ledger line of an id and an amount: two numbers in, one record out, and no record
+  or list in the call but what it answers. A statechart holds the line it answers in a
+  record variable of its own.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_line"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="id" type="uint32"/>
+    <sce:param name="amount" type="int32"/>
+    <sce:return type="record:Entry"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="record:Entry">
+      <sce:set name="id" expr="id"/>
+      <sce:set name="amount" expr="amount"/>
+    </sce:var>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

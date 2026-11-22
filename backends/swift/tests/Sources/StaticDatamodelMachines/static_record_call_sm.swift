@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 755ec532fd2d5e3fc0e52d3c4cce81bb0ba91bab8dfc46ac168de8f610f03a6e
+// source-hash: 1c4345fd879065241c0c00b76f8e6b6a7a7f3f3f200f379431412a268aff8b25
 // source: static_record_call.scxml
 
 
@@ -20,7 +20,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: static_record_call.scxml:13 :: _machine
+// SCE-MAP: static_record_call.scxml:14 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -151,6 +151,11 @@ private func call_Larger__vp(_ p0: StaticRecordCallEntryRecord, _ p1: StaticReco
     return StaticRecordCallEntryRecord(id: r.id, amount: r.amount)
 }
 
+private func call_LineOf__(_ p0: UInt32, _ p1: Int32) -> StaticRecordCallEntryRecord {
+    let r = LedgerLine.ledgerLine(p0, p1)
+    return StaticRecordCallEntryRecord(id: r.id, amount: r.amount)
+}
+
 // ======================================================================
 // Policy
 // ======================================================================
@@ -178,6 +183,8 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `best` datamodel variable, published (`sce:direction="out"`).
     var vBest: StaticRecordCallEntryRecord
+    /// W3C SCXML 5.2: the `made` datamodel variable, published (`sce:direction="out"`).
+    var vMade: StaticRecordCallEntryRecord
     /// W3C SCXML 5.2: the `large` datamodel variable, published (`sce:direction="out"`).
     var vLarge: UInt32
     /// W3C SCXML 5.2: the `debts` datamodel variable, published (`sce:direction="out"`).
@@ -188,6 +195,10 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
     /// Reports what the published `best` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var best: StaticRecordCallEntryRecord { vBest }
+
+    /// Reports what the published `made` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var made: StaticRecordCallEntryRecord { vMade }
 
     /// Reports what the published `large` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -218,6 +229,7 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
     /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
         let vBest: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id: 0, amount: 0)
+        let vMade: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id: 0, amount: 0)
         let vLarge: UInt32
         if let handed = params.vLarge {
             vLarge = handed
@@ -237,6 +249,7 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
             vPeaks = 0
         }
         self.vBest = vBest
+        self.vMade = vMade
         self.vLarge = vLarge
         self.vDebts = vDebts
         self.vPeaks = vPeaks
@@ -244,10 +257,12 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
 
     public init() {
         let vBest: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id: 0, amount: 0)
+        let vMade: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id: 0, amount: 0)
         let vLarge: UInt32 = 0
         let vDebts: UInt32 = 0
         let vPeaks: UInt32 = 0
         self.vBest = vBest
+        self.vMade = vMade
         self.vLarge = vLarge
         self.vDebts = vDebts
         self.vPeaks = vPeaks
@@ -591,6 +606,10 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
 
                 }
 
+
+
+                self.vMade = call_LineOf__(self.vDebts, self.pendingLedgerEntryPayload.amount)
+
                 }
             default:
                 break
@@ -633,10 +652,10 @@ extension StaticRecordCallPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "dc127a7411589216f56f7e89ef942578e92878ca89a119099a7221bc3092f957",
-            revised: "8e7f755283cf3e3a2dc6d431941d678b939e964d88fffdd9bd9b317c46ed2832",
-            format2First: "dc127a7411589216f56f7e89ef942578e92878ca89a119099a7221bc3092f957",
-            format2Revised: "8e7f755283cf3e3a2dc6d431941d678b939e964d88fffdd9bd9b317c46ed2832",
+            first: "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
+            revised: "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
+            format2First: "f644fd40f1286b1783801ccbca302b6728befd039148dde88be280be8f98bc34",
+            format2Revised: "895843473df7dbd5b6d391fbf4ba2669ed7407165c2508593110e43e154072b9",
             records: [
                 SavedRecordLineage(
                     event: "ledger.entry", revision: 1,
@@ -647,6 +666,7 @@ extension StaticRecordCallPolicy: SavedPolicy {
                     ],
                     holders: [
                         SavedRecordHolder(variable: "best", list: false),
+                        SavedRecordHolder(variable: "made", list: false),
                     ]),
             ])
     }
@@ -656,6 +676,7 @@ extension StaticRecordCallPolicy: SavedPolicy {
     public func savedVariables() -> [SavedEntry<JSONValue>] {
         [
             SavedEntry("best", vBest.toSaved()),
+            SavedEntry("made", vMade.toSaved()),
             SavedEntry("large", SavedValues.of(vLarge)),
             SavedEntry("debts", SavedValues.of(vDebts)),
             SavedEntry("peaks", SavedValues.of(vPeaks)),
@@ -666,14 +687,16 @@ extension StaticRecordCallPolicy: SavedPolicy {
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
         let value0 = try StaticRecordCallEntryRecord.fromSaved(try saved.variable("best"), "best")
-        let value1 = try SavedValues.uint32(try saved.variable("large"), "large")
-        let value2 = try SavedValues.uint32(try saved.variable("debts"), "debts")
-        let value3 = try SavedValues.uint32(try saved.variable("peaks"), "peaks")
+        let value1 = try StaticRecordCallEntryRecord.fromSaved(try saved.variable("made"), "made")
+        let value2 = try SavedValues.uint32(try saved.variable("large"), "large")
+        let value3 = try SavedValues.uint32(try saved.variable("debts"), "debts")
+        let value4 = try SavedValues.uint32(try saved.variable("peaks"), "peaks")
         return { [self] in
             self.vBest = value0
-            self.vLarge = value1
-            self.vDebts = value2
-            self.vPeaks = value3
+            self.vMade = value1
+            self.vLarge = value2
+            self.vDebts = value3
+            self.vPeaks = value4
         }
     }
 }
