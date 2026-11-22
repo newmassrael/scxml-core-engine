@@ -43409,7 +43409,12 @@ fn declared_unread(
                     .then(|| format!("{pad}{KOTLIN_UNREAD}\n{declared}"))
             })
             .unwrap_or(declared),
-        lang => match unread_on_purpose(lang, &local) {
+        Language::Rust
+        | Language::Cpp
+        | Language::C11
+        | Language::Go
+        | Language::Python
+        | Language::Swift => match unread_on_purpose(ctx.lang, &local) {
             Some(said) => format!("{declared}{pad}{said}\n"),
             None => declared,
         },
