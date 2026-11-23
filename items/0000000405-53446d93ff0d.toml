@@ -6,3 +6,9 @@ commit = "d6ea33a5cffbc352fdf9f2bac8b0eac1ef4cd7e3"
 base = "51b7fa6347b69bfe6c673875004adfabd111ebe6"
 machine = "mf977c53d872e"
 at = 1795441689
+
+[return]
+reason = "conflict"
+detail = "tools/git-hooks/gate_registry.py"
+report = "mb2af4e1c456c:0000000405-53446d93ff0d/attempt-2.log"
+at = 1795444171
