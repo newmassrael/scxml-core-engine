@@ -203,6 +203,12 @@ scan_exclusions = [
     "backends/rust/probes/",
     "backends/rust/runtime/tests/",
     "backends/rust/tests/",
+    # Helpers the test files of several crates include by path (`#[path = ...]`), such as
+    # the one that asks cargo where a package's C ABI shared library was built. They
+    # implement no clause of the Recommendation. Measured 2026-11-23 over its 1 Rust
+    # source: it carries no `§` citation, so excluding the directory swallows no section
+    # from this gate.
+    "backends/rust/test-support/",
     # The Rust arm's scenario replay (`sce-rust-scenarios`), taken out of
     # `backends/rust/tests/` so the wasm32 build can run it without that crate's
     # Lua and HTTP dependencies. It is the same code under the same status: it
