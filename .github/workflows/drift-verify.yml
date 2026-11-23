@@ -39,7 +39,18 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
+      # The two test targets the gate runs, and the module they share.
+      - 'sce-build/tests/b9_drift_detection.rs'
+      - 'sce-build/tests/sourcemap_addr2sce.rs'
+      - 'sce-build/tests/common/**'
       - 'tools/codegen/templates/**'
       - 'tools/codegen/trees/**'
       - 'stdlib/**'
@@ -62,7 +73,18 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
+      # The two test targets the gate runs, and the module they share.
+      - 'sce-build/tests/b9_drift_detection.rs'
+      - 'sce-build/tests/sourcemap_addr2sce.rs'
+      - 'sce-build/tests/common/**'
       - 'tools/codegen/templates/**'
       - 'tools/codegen/trees/**'
       - 'stdlib/**'

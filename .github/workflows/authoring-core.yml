@@ -39,7 +39,14 @@ on:
       - 'scripts/gates/authoring-core.sh'
       - 'scripts/package_sce_author.sh'
       - 'sce-specs/**'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'tools/codegen/templates/**'
       - 'backends/python/runtime/**'
       - 'schemas/**'
@@ -55,7 +62,14 @@ on:
       - 'scripts/gates/authoring-core.sh'
       - 'scripts/package_sce_author.sh'
       - 'sce-specs/**'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'tools/codegen/templates/**'
       - 'backends/python/runtime/**'
       - 'schemas/**'

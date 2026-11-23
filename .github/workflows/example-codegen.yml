@@ -33,7 +33,14 @@ on:
       - 'examples/**'
       - 'integration_resources/*/*.scxml'
       - 'tools/codegen/templates/**'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/example-codegen.sh'
@@ -46,7 +53,14 @@ on:
       - 'examples/**'
       - 'integration_resources/*/*.scxml'
       - 'tools/codegen/templates/**'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/example-codegen.sh'

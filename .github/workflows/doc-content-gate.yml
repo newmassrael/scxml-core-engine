@@ -45,7 +45,16 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
+      # The library suite compiles the module its tests include by path.
+      - 'sce-build/tests/common/**'
       - 'SCE_ERROR_CONTRACT.md'
       - 'SCE_MESH.md'
       - 'docs/SCE_ACCEPTED_SUBSET.md'
@@ -62,7 +71,16 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
+      # The library suite compiles the module its tests include by path.
+      - 'sce-build/tests/common/**'
       - 'SCE_ERROR_CONTRACT.md'
       - 'SCE_MESH.md'
       - 'docs/SCE_ACCEPTED_SUBSET.md'

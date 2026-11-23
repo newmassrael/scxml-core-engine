@@ -33,7 +33,14 @@ on:
       - 'tools/codegen/templates/c/**'
       - 'tools/codegen/templates/forge/c/**'
       - 'tools/codegen/templates/_macros/**'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'tests/forge/resources/codec_cbor_map.scxml'
       - 'stdlib/**'
       - 'docs/adr/0110-a-c11-machine-core-is-freestanding-and-a-gate-weighs-and-runs-it-on-an-mcu.md'
@@ -56,7 +63,14 @@ on:
       - 'tools/codegen/templates/c/**'
       - 'tools/codegen/templates/forge/c/**'
       - 'tools/codegen/templates/_macros/**'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'tests/forge/resources/codec_cbor_map.scxml'
       - 'stdlib/**'
       - 'docs/adr/0110-a-c11-machine-core-is-freestanding-and-a-gate-weighs-and-runs-it-on-an-mcu.md'

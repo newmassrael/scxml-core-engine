@@ -24,7 +24,14 @@ on:
       # The standard library, whose algorithms the manifest names as fixtures
       # (`sce:std/...`): an edit of one alone changes what every arm runs.
       - 'stdlib/**'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/**'
       - 'tools/codegen/templates/_macros/**'
@@ -70,7 +77,14 @@ on:
       # The standard library, whose algorithms the manifest names as fixtures
       # (`sce:std/...`): an edit of one alone changes what every arm runs.
       - 'stdlib/**'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/**'
       - 'tools/codegen/templates/_macros/**'

@@ -46,6 +46,9 @@ on:
     paths:
       - 'backends/swift/**'
       - 'sce-build/src/**'
+      - 'sce-build/build.rs'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'sce-build/Cargo.toml'
       # The two equivalence tests the gate runs in Swift (`transition-outputs` in
       # `scripts/test_swift_backend.sh`), and the helpers they compile with.

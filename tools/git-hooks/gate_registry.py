@@ -1464,7 +1464,8 @@ GATES: dict[str, dict] = {
     # needs no fleet (two runs on one machine) is a test of the workspace
     # suite, `a_declared_tree_reproduces_its_committed_tree`.
     "generated-deterministic": {
-        "local": ["sce-build/**", "tools/codegen/**", "stdlib/**", "Cargo.lock"],
+        "local": ["tools/codegen/**", "stdlib/**"],
+        "builds": ["sce-codegen"],
         "no_ci_reason": "it compares against the fleet's action cache, which no "
                         "hosted runner reaches (a site's REAPI instance, read "
                         "through `bx-fleet site-tunnel`), and which does not "
@@ -6069,7 +6070,10 @@ def self_test(repo_root: Path) -> int:
     check("crate-test-landing", ["sce-build/tests/gate_registry_contract.rs"],
           want_full=False, want_has=["workspace-tests", "clippy"],
           want_lacks=["cpp-suite-wasm", "w3c-cpp", "cpp-suite", "w3c-c11",
-                      "w3c-wasm", "install-consumer", "cpp-interface-standard"],
+                      "w3c-wasm", "install-consumer", "cpp-interface-standard",
+                      "forge-rust", "drift-suites", "c11-mcu",
+                      "example-codegen", "targets", "doc-content",
+                      "generated-deterministic"],
           landing=True)
     # Rule 1 on an update to main: every gate the fleet can run, `ci_only`
     # included, and never a gate hosted CI audits in its place.
@@ -7726,6 +7730,38 @@ def self_test(repo_root: Path) -> int:
                         f"builds: {c} has a build script ({script}) and "
                         f"`{name}` compiles it, but only sce-build's reads are "
                         f"derived (the generator witness); name what it reads")
+
+    # a-workflow-that-follows-the-generator-holds-its-build. A workflow that
+    # starts for every source of the generator (`sce-build/src/**`) but not for
+    # the rest of what cargo reads to build it (its manifest, its build script,
+    # the trees the script digests, the files its sources include) runs the
+    # lane for some changes to the generator and not others. Measured
+    # 2026-11-24: three lanes named `sce-build/src/**` and none of the build
+    # script or `kind-examples/`. Compared over tracked files of the crate.
+    cases += 1
+    built_pats = [glob_to_regex(g) for g in built_inputs(repo_root, "sce-codegen")]
+    in_crate = [p for p in tracked_paths(repo_root, "sce-build")
+                if any(b.match(p) for b in built_pats)]
+    following = 0
+    for wf in sorted((repo_root / ".github" / "workflows").glob("*.yml")):
+        wf_globs = workflow_paths(repo_root, wf.name)
+        if "sce-build/src/**" not in wf_globs or "sce-build/**" in wf_globs:
+            continue
+        following += 1
+        wf_pats = [glob_to_regex(g) for g in wf_globs]
+        missing = [p for p in in_crate if not any(x.match(p) for x in wf_pats)]
+        if missing:
+            failures.append(
+                f"builds: {wf.name} starts for every source of the generator "
+                f"(sce-build/src/**) but not for {missing[0]!r}"
+                f"{f' and {len(missing) - 1} more' if len(missing) > 1 else ''}, "
+                f"which a build of it reads; name what `sce-codegen` reads of "
+                f"the crate")
+    if following < 10:
+        failures.append(
+            f"builds: {following} workflow(s) were found following the "
+            f"generator's sources, and sixteen did when this case was written; "
+            f"the case no longer reads them")
 
     # A measured peak names a gate that exists, so the note beside it cannot
     # outlive the gate it was read off.

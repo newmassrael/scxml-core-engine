@@ -39,7 +39,14 @@ on:
       - 'sce-build/src/forge/generator/**'
       - 'tests/forge/expected/codec_*.rs'
       - 'tests/forge/expected/views/*.rs'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'stdlib/**'
       - 'tools/codegen/templates/**'
       - 'tools/codegen/trees/rust-static-datamodel.toml'
@@ -61,7 +68,14 @@ on:
       - 'sce-build/src/forge/generator/**'
       - 'tests/forge/expected/codec_*.rs'
       - 'tests/forge/expected/views/*.rs'
-      - 'sce-build/**'
+      # What cargo reads of the generator crate to build it, and the fixtures
+      # it is run on (tools/git-hooks/gate_registry.py, "What a build reads";
+      # its self-test holds a narrowed list to the build's).
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/build.rs'
+      - 'sce-build/src/**'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'stdlib/**'
       - 'tools/codegen/templates/**'
       - 'tools/codegen/trees/rust-static-datamodel.toml'
