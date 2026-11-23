@@ -1827,6 +1827,8 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 8,
+        # TLC runs as many workers as the machine has cores (`-workers auto`).
+        "cores": CORES_COMPILE,
     },
     # The proofs of the host core under Verus, as docs/formal/proofs.json declares them
     # (docs/adr/0115, D13).
@@ -1848,6 +1850,7 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": [],
         "peak_gb": 2,
+        "cores": CORES_SCRIPT,
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs
@@ -3281,8 +3284,8 @@ INERT = [
     # `ci_only` gates: every one of them bought the whole table. The migration
     # guide alone was edited by 198 commits of main in the month before
     # 2026-11-22, and each landing of one would have held the queue for the
-    # whole table. What is under `docs/formal/` stays unclassified: no gate
-    # reads it, but `scripts/formal/check.sh` does, and it is in no lane.
+    # whole table. What is under `docs/formal/` is not here: `formal-models`
+    # and `formal-proofs` read it.
     "docs/EMBED_MANIFEST.md",
     "docs/MESH_SCXML_COMPATIBILITY.md",
     "docs/SCE_AUDIT_LOG.md",
