@@ -140,6 +140,9 @@ scan_exclusions = [
     "backends/rust/probes/",
     "backends/rust/runtime/tests/",
     "backends/rust/tests/",
+    # Helpers the test files of several crates include by path (`#[path = ...]`).
+    # Measured 2026-11-23 over its 1 Rust source: no citation of any ledger.
+    "backends/rust/test-support/",
     # The Rust arm's scenario replay (`sce-rust-scenarios`), taken out of
     # `backends/rust/tests/` so the wasm32 build can run it. Measured 2026-10-08:
     # no §bytesguard- cite in it; its one section citation is the SCXML ledger's.
