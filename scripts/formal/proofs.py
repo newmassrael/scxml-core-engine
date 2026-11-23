@@ -187,9 +187,53 @@ def verus(pin: dict) -> Path:
     return tool
 
 
+# A make-style jobserver named by the two descriptors a child inherits, and the variables
+# rustc looks for one in, in the order it reads them (the jobserver crate's from_env).
+JOBSERVER = re.compile(r"--jobserver-(?:auth|fds)=(\d+),(\d+)")
+JOBSERVER_VARIABLES = ("CARGO_MAKEFLAGS", "MAKEFLAGS", "MFLAGS")
+
+
+def descriptor_is_open(fd: int) -> bool:
+    try:
+        os.fstat(fd)
+    except OSError:
+        return False
+    return True
+
+
+def jobserver_handoff(environ: dict[str, str], is_open=descriptor_is_open) -> tuple[dict[str, str], tuple[int, ...]]:
+    """The environment Verus starts with and the descriptors it inherits, so that a
+    jobserver the environment names reaches it whole or not at all.
+
+    A build that shares its parallelism names its jobserver in MAKEFLAGS by two
+    descriptors a child is meant to inherit. `subprocess` closes every descriptor but the
+    standard three, so rustc inside Verus would find the name and not the descriptors,
+    warn that the build is misconfigured, and Verus reports that warning as an internal
+    error. A pair that is open here is handed on; one that is not is taken out of the
+    variable, since no child can inherit what this process does not hold. A jobserver
+    named by a fifo needs no descriptor and is left as it is.
+    """
+    env = dict(environ)
+    handed: set[int] = set()
+
+    def kept(found: re.Match[str]) -> str:
+        pair = (int(found.group(1)), int(found.group(2)))
+        if all(is_open(fd) for fd in pair):
+            handed.update(pair)
+            return found.group(0)
+        return ""
+
+    for name in JOBSERVER_VARIABLES:
+        if name in env:
+            env[name] = JOBSERVER.sub(kept, env[name])
+    return env, tuple(sorted(handed))
+
+
 def run_verus(tool: Path, file: Path) -> tuple[int, str]:
+    env, descriptors = jobserver_handoff(dict(os.environ))
     ran = subprocess.run(
-        [str(tool), "--crate-type=lib", str(file)], capture_output=True, text=True, check=False, cwd=file.parent,
+        [str(tool), "--crate-type=lib", str(file)],
+        capture_output=True, text=True, check=False, cwd=file.parent, env=env, pass_fds=descriptors,
     )
     return ran.returncode, ran.stdout + ran.stderr
 
@@ -292,6 +336,20 @@ class SelfTest(unittest.TestCase):
         self.assertIsNone(mutant_judged("verification results:: 2 verified, 1 errors"))
         self.assertIsNotNone(mutant_judged("verification results:: 3 verified, 0 errors"))
         self.assertIsNotNone(mutant_judged("error[E0308]: mismatched types"))
+
+    def test_an_open_jobserver_is_handed_on(self) -> None:
+        env, fds = jobserver_handoff({"MAKEFLAGS": " -j --jobserver-auth=3,4"}, lambda fd: True)
+        self.assertEqual((env["MAKEFLAGS"], fds), (" -j --jobserver-auth=3,4", (3, 4)))
+
+    def test_a_jobserver_whose_descriptors_are_closed_is_not_named(self) -> None:
+        env, fds = jobserver_handoff(
+            {"MAKEFLAGS": " -j --jobserver-auth=3,4", "CARGO_MAKEFLAGS": "--jobserver-fds=5,6"}, lambda fd: fd != 4
+        )
+        self.assertEqual((env["MAKEFLAGS"], env["CARGO_MAKEFLAGS"], fds), (" -j ", "--jobserver-fds=5,6", (5, 6)))
+
+    def test_a_fifo_jobserver_needs_no_descriptor(self) -> None:
+        env, fds = jobserver_handoff({"MAKEFLAGS": "-j --jobserver-auth=fifo:/run/js"}, lambda fd: False)
+        self.assertEqual((env["MAKEFLAGS"], fds), ("-j --jobserver-auth=fifo:/run/js", ()))
 
 
 def main() -> int:
