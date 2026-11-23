@@ -1979,6 +1979,29 @@ pub enum ValidationError {
         value: String,
     },
 
+    /// SCE_FORGE.md §4.12: a statement written after the `<sce:else>` of its
+    /// `<sce:if>`. The else branch is what `<sce:else>` contains; an
+    /// `<sce:if>` ends with it. `statement` and `else_tag` are the two tags
+    /// as the document spells them, `statement` the record's `actual`; the
+    /// record is placed on the statement and carries the `<sce:else>` as a
+    /// `must-follow` site.
+    ///
+    /// ⚠ Until 2026-11-23 such a statement was read into the then branch. An
+    /// author who wrote SCXML's separator form, `<sce:else/>` with the else
+    /// branch after it, got the else branch's statements run under the
+    /// condition and an empty else, and `check` said nothing.
+    ///
+    /// No `fix`: the statement may belong to either branch, and the record
+    /// cannot choose.
+    ///
+    /// Wire code: `algorithm/statement-after-else`.
+    #[error(
+        "<{statement}> is written after <{else_tag}> in the same <sce:if>: the else branch is \
+         what <{else_tag}> contains, not what follows it (unlike SCXML's <else/>, which \
+         separates the branches) — move the statement inside <{else_tag}>, or before it"
+    )]
+    AlgorithmStatementAfterElse { statement: String, else_tag: String },
+
     /// SCE_FORGE.md §4.6, docs/adr/0065 §3: a codec that does not declare
     /// `sce:encode-may-fail="true"` states that its encode is total, and the
     /// encode refuses a value its source admits at `element`. Reported once

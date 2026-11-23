@@ -2227,6 +2227,8 @@ private:
 
 A pure synchronous function — bounded loops, language-native locals, no I/O, no allocation on the no-alloc profile. An `<sce:signature>` declares the parameters and return type; an `<sce:body>` holds the statement list (`<sce:var>`, `<sce:assign>`, `<sce:append>`, `<sce:if>`/`<sce:else>`, `<sce:while>`, `<sce:foreach>`, `<sce:return>`, `<sce:call>`). The kind's full surface is specified by SCE Protocol-Synthesis RFC §synth-5-A; this section documents the SCE-owned **byte-buffer-build** primitive.
 
+**An `<sce:else>` contains its branch.** The statements of an `<sce:if>` before its `<sce:else>` are the then branch, and the statements inside the `<sce:else>` are the else branch: `<sce:if cond="…">S1<sce:else>S2</sce:else></sce:if>`. The `<sce:else>` is the last child of its `<sce:if>`, and a statement written after it is refused (`algorithm/statement-after-else`, placed on the statement, with the `<sce:else>` as a `must-follow` site). SCXML's `<else/>` separates the branches instead, and a document that wrote `<sce:else/>` that way was read with the else branch's statements in the then branch and an empty else until 2026-11-23.
+
 #### Byte-buffer-build
 
 Some transforms are runtime, data-dependent `bytes -> bytes` functions whose output length depends on the input values (framing, escaping, run-length encodings). They are not fixed-shape codecs. Byte-buffer-build expresses them with three primitives — a bounded growable output buffer, a forward-only append, and a fallible `bytes` return — and **no index writes** (`buf[i] = x` remains rejected; a byte buffer is built forward-only).

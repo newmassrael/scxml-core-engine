@@ -776,6 +776,7 @@ references against a real document and drift silently.
 | `algorithm/lvalue-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/require-without-may-fail` | `validation` | no | SCE Forge §3.4.1 |
 | `algorithm/return-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
+| `algorithm/statement-after-else` | `validation` | no | SCE Forge §4.12 |
 | `algorithm/test-vector-unsupported-kind` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `algorithm/undeclared-integer-failure` | `validation` | no | SCE Forge §3.4.1 |
 | `broadcast-log/deploy-limit-unresolved` | `validation` | `replace_one_of` |  |
