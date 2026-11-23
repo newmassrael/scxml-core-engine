@@ -1479,7 +1479,7 @@ func (p *StaticGrow1Policy) ExecuteTransitionContent(source StaticGrow1State, tr
 				}
 
 
-	p.vMaybe = append(p.pendingGrowMaybePayload.inner[:0:0], p.pendingGrowMaybePayload.inner...)
+	p.vMaybe = p.pendingGrowMaybePayload.inner
 
 			}()
 		case 4:

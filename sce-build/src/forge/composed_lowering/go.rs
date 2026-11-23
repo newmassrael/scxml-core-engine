@@ -797,9 +797,10 @@ impl ComposedSpelling for GoComposed<'_> {
     // never writes into one. The list a place holds is copied into a slice of
     // its own, since the variable it is copied into is appended to and
     // emptied in place: a place is copied whole into a list variable from a
-    // list (`whole_list_copy`) and into a union variable from a union, which
-    // the walk copies by [`Self::copy_union`], so a place that is not copied
-    // as it is read here is a list.
+    // list (`whole_list_copy`), into a union variable from a union and into a
+    // record variable from a record, which the walk copies by
+    // [`Self::copy_union`] and [`Self::copy_record`], so a place that is not
+    // copied as it is read here is a list.
     fn copy_whole(&self, held: &Held, plain: bool) -> String {
         if plain || held.by_reference {
             held.text.clone()
@@ -839,6 +840,12 @@ impl ComposedSpelling for GoComposed<'_> {
     // a proven read answers, never into a list a case holds, so the copy shares
     // nothing the machine writes into.
     fn copy_union(&self, held: &Held) -> String {
+        held.text.clone()
+    }
+    // A record is a value struct, and one that may be absent an
+    // `optional.Of` of it: the machine replaces a field of one and never writes
+    // into it, so the value read is the copy.
+    fn copy_record(&self, held: &Held) -> String {
         held.text.clone()
     }
 

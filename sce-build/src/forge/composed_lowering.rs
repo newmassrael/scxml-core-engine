@@ -543,6 +543,15 @@ pub trait ComposedSpelling {
     fn copy_union(&self, held: &Held) -> String {
         self.copy_whole(held, false)
     }
+    /// A copy of the record value `held`, or of a record that may be absent,
+    /// into a place of the same type: [`Self::copy_whole`] of a value not
+    /// copied as it is read, for a backend whose copy of such a value is one
+    /// spelling whatever its type; a backend that holds a record as a value the
+    /// machine replaces a field of and never writes into, and whose copy of a
+    /// list is not the copy of a record, spells it apart (Go).
+    fn copy_record(&self, held: &Held) -> String {
+        self.copy_whole(held, false)
+    }
     /// The copy `value`, of a value of the type held in `present`, lifted into
     /// a place that may hold it absent: [`Self::copy_present`] for a backend
     /// whose lifting names no type; a backend whose optional value of each
@@ -1154,13 +1163,15 @@ pub fn copier(
     let same = machine_type(from, from_within, records, enums, spelling)?
         == machine_type(to, to_within, records, enums, spelling)?;
     if same {
-        // A union, and one that may be absent, is copied as a union is.
-        let union = match from {
+        // A union and a record, and one that may be absent, are copied as a
+        // union and a record are.
+        let present = match from {
             ValueType::Optional { elem } => &**elem,
             other => other,
         };
-        return Ok(match union {
+        return Ok(match present {
             ValueType::Union { .. } => spelling.copy_union(held),
+            ValueType::Record { .. } => spelling.copy_record(held),
             _ => spelling.copy_whole(held, plain(from)),
         });
     }
