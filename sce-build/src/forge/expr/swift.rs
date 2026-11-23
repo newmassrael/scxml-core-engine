@@ -142,14 +142,14 @@ fn precedence(op: BinOp) -> u8 {
 ///
 /// The precedence table decides what it can; the rest is the two places Swift's
 /// differs. A bitwise or shift operator is at a level of its own, so one that is an
-/// operand or has one is parenthesised whatever sits beside it, and a comparison
-/// beside a comparison is, which Swift will not associate.
+/// operand or has one is parenthesised whatever sits beside it. A comparison beside
+/// a comparison, which Swift will not associate, is parenthesised by
+/// [`child_needs_parens`] for every backend.
 fn swift_operand(child: &TypedExpr, parent: BinOp, is_left: bool, text: String) -> String {
     let wrap = child_needs_parens(child, parent, is_left, precedence)
         || match &child.kind {
             ExprKind::Binary { op, .. } => {
-                (op.is_comparison() && parent.is_comparison())
-                    || (op.is_bitwise() && !parent.is_logical())
+                (op.is_bitwise() && !parent.is_logical())
                     || (parent.is_bitwise() && !op.is_logical())
             }
             _ => false,
