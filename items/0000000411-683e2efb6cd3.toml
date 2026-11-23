@@ -6,3 +6,7 @@ commit = "675ae31ca78569510dcd086425454a02df71783e"
 base = "d78731eff5889c59d2caac01eb7f26a9fe9f4ba1"
 machine = "mf977c53d872e"
 at = 1795474613
+
+[cancel]
+by = "mf977c53d872e"
+at = 1795474785
