@@ -7304,6 +7304,17 @@ fn python_precedence(op: BinOp) -> u8 {
     }
 }
 
+/// Whether `child`, an operand of `parent_op`, is parenthesised so that the target binds it
+/// as the document does.
+///
+/// Precedence decides, save for one thing a precedence table cannot say: how a comparison
+/// beside a comparison associates. ECMAScript reads `a === b === c` as `(a === b) === c`, and
+/// the targets do not agree: Rust refuses a chain of comparisons outright ("comparison
+/// operators cannot be chained"), Kotlin and Swift do not associate a relational one, Python
+/// reads `a == b == c` as `a == b and b == c`, and the C family warns under
+/// `-Wparentheses`, which a `-Werror` build refuses. So a comparison that is an operand of a
+/// comparison is parenthesised on every target, on either side, and means the same on all.
+/// Found 2026-11-23: `(o.kind === K.x) === p.flag` in an algorithm was emitted bare in Rust.
 fn child_needs_parens(
     child: &TypedExpr,
     parent_op: BinOp,
@@ -7311,6 +7322,11 @@ fn child_needs_parens(
     prec: fn(BinOp) -> u8,
 ) -> bool {
     match &child.kind {
+        ExprKind::Binary { op: child_op, .. }
+            if child_op.is_comparison() && parent_op.is_comparison() =>
+        {
+            true
+        }
         ExprKind::Binary { op: child_op, .. } => {
             let cp = prec(*child_op);
             let pp = prec(parent_op);
@@ -16560,6 +16576,28 @@ mod tests {
             ),
             "raw[2] shl 16 or (raw[3] shl 8) or raw[4]"
         );
+    }
+
+    /// A comparison that is an operand of a comparison is parenthesised on every target, on
+    /// either side: Rust refuses the chain, Python reads it as two comparisons joined by
+    /// `and`, Kotlin and Swift do not associate it, and the C family warns.
+    #[test]
+    fn a_comparison_of_a_comparison_is_parenthesised_on_every_target() {
+        for target in ExprTarget::ALL {
+            for (written, left) in [
+                ("(a === b) === c", true),
+                ("c === (a !== b)", false),
+                ("(a < b) === c", true),
+            ] {
+                let emitted = tp(written, target);
+                let wrapped = if left {
+                    emitted.starts_with('(')
+                } else {
+                    emitted.ends_with(')')
+                };
+                assert!(wrapped, "{target:?}: {written} was emitted as {emitted}");
+            }
+        }
     }
 
     #[test]
