@@ -215,7 +215,7 @@ pub fn write_null<S: SceSink + ?Sized>(w: &mut S) -> Result<(), S::Error> {
 // ── Reading ─────────────────────────────────────────────────────────────
 
 fn read_u8(c: &mut SceCursor<'_>) -> Result<u8, CodecError> {
-    let b = c.peek_slice(1)?[0];
+    let b = c.peek_u8()?;
     c.advance(1)?;
     Ok(b)
 }
@@ -460,7 +460,7 @@ pub fn read_empty_case(c: &mut SceCursor<'_>) -> Result<(), CodecError> {
 /// Any other item is left where it is, for the element's own read, which
 /// refuses what is no value of the element.
 pub fn take_null(c: &mut SceCursor<'_>) -> Result<bool, CodecError> {
-    if c.peek_slice(1)?[0] == NULL {
+    if c.peek_u8()? == NULL {
         c.advance(1)?;
         Ok(true)
     } else {

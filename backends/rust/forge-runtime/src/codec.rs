@@ -9,11 +9,11 @@
 //! caller resumes after additional bytes arrive (DMA boundary,
 //! fragmented network read).
 //!
-//! The cursor ships `peek_slice` (non-advancing), `advance`
-//! (post-success), `remaining`, plus the `read_vle_*` stream-style
-//! readers. Other stream-style readers (e.g. a dedicated `read_u8`,
-//! `read_tag`, `skip_field`) are not provided until a consumer needs
-//! them.
+//! The cursor ships `peek_slice`, `peek_array` and `peek_u8`
+//! (non-advancing), `advance` (post-success), `remaining`, plus the
+//! `read_vle_*` stream-style readers. Other stream-style readers (e.g. a
+//! dedicated `read_u8`, `read_tag`, `skip_field`) are not provided until a
+//! consumer needs them.
 //!
 //! Encode-side sink + `BufferOverflow` is the symmetric write half of
 //! the cursor contract: `SceSink` is the object-safe trait that codec
@@ -412,8 +412,9 @@ pub const fn widen_usize(n: usize) -> u64 {
 const ZINT_FLAGGED_BYTES: u32 = 8;
 
 /// Read-only cursor over a borrowed input slice. Decode bodies use
-/// `peek_slice` to bounds-check + read fixed-offset bytes positionally,
-/// then `advance` after the construction succeeds.
+/// `peek_array` to bounds-check + read fixed-offset bytes positionally
+/// (`peek_slice` where the count is known only at run time), then `advance`
+/// after the construction succeeds.
 #[derive(Debug, Clone, Copy)]
 pub struct SceCursor<'a> {
     buf: &'a [u8],
@@ -441,6 +442,36 @@ impl<'a> SceCursor<'a> {
         }
     }
 
+    /// The next `N` bytes as an array, without advancing. Returns
+    /// `NeedMoreBytes` when the cursor's tail is shorter than `N`, as
+    /// [`Self::peek_slice`] does.
+    ///
+    /// The count is in the type, so a read `raw[k]` of a constant `k` below
+    /// `N` is in bounds where it is compiled: it has no bounds check and no
+    /// panic path, and the one test of the length is this one, which refuses.
+    /// A read of a slice whose length the compiler does not know keeps a
+    /// bounds check, and with it a panic site naming the file of each read,
+    /// so two decodes of the same body in two generated files differ by that
+    /// site and are not merged into one function.
+    #[inline]
+    pub fn peek_array<const N: usize>(&self) -> Result<&'a [u8; N], CodecError> {
+        self.buf
+            .get(self.pos..)
+            .and_then(<[u8]>::first_chunk::<N>)
+            .ok_or(CodecError::NeedMoreBytes)
+    }
+
+    /// The next byte, without advancing. Returns `NeedMoreBytes` at the end
+    /// of the input. The byte a variant dispatches on before its arm reads it
+    /// as its own header, read with no index and so with no panic path.
+    #[inline]
+    pub fn peek_u8(&self) -> Result<u8, CodecError> {
+        self.buf
+            .get(self.pos)
+            .copied()
+            .ok_or(CodecError::NeedMoreBytes)
+    }
+
     /// Advance the cursor by `n` bytes. Decode bodies call this after
     /// the per-field expressions on the peeked slice have succeeded.
     /// Returns `NeedMoreBytes` if `n` would overrun the buffer (caller
@@ -465,14 +496,14 @@ impl<'a> SceCursor<'a> {
     fn read_zint(&mut self) -> Result<u64, CodecError> {
         let mut value: u64 = 0;
         for group in 0..ZINT_FLAGGED_BYTES {
-            let b = self.peek_slice(1)?[0];
+            let b = self.peek_u8()?;
             self.advance(1)?;
             value |= u64::from(b & 0x7F) << (7 * group);
             if (b & 0x80) == 0 {
                 return Ok(value);
             }
         }
-        let last = self.peek_slice(1)?[0];
+        let last = self.peek_u8()?;
         self.advance(1)?;
         Ok(value | (u64::from(last) << (7 * ZINT_FLAGGED_BYTES)))
     }
@@ -1322,6 +1353,52 @@ mod tests {
         let buf = [1, 2];
         let mut c = SceCursor::new(&buf);
         assert_eq!(c.advance(3), Err(CodecError::NeedMoreBytes));
+    }
+
+    #[test]
+    fn a_peeked_array_is_the_peeked_slice_at_every_offset_and_count() {
+        let buf = [10, 20, 30, 40];
+        for start in 0..=buf.len() {
+            let mut c = SceCursor::new(&buf);
+            c.advance(start).unwrap();
+            let left = buf.len() - start;
+            assert_eq!(c.peek_array::<0>().map(|a| &a[..]), c.peek_slice(0));
+            assert_eq!(c.peek_array::<1>().map(|a| &a[..]), c.peek_slice(1));
+            assert_eq!(c.peek_array::<2>().map(|a| &a[..]), c.peek_slice(2));
+            assert_eq!(c.peek_array::<4>().map(|a| &a[..]), c.peek_slice(4));
+            assert_eq!(c.peek_array::<5>(), Err(CodecError::NeedMoreBytes));
+            assert_eq!(c.peek_array::<1>().is_ok(), left >= 1, "offset {start}");
+            assert_eq!(c.remaining(), left, "a peek does not advance");
+        }
+    }
+
+    #[test]
+    fn a_peeked_array_is_the_next_bytes_and_one_past_the_tail_needs_more() {
+        let buf = [1, 2, 3];
+        let mut c = SceCursor::new(&buf);
+        c.advance(1).unwrap();
+        assert_eq!(c.peek_array::<2>(), Ok(&[2, 3]));
+        assert_eq!(c.peek_array::<3>(), Err(CodecError::NeedMoreBytes));
+        assert_eq!(
+            SceCursor::new(&[]).peek_array::<1>(),
+            Err(CodecError::NeedMoreBytes)
+        );
+    }
+
+    #[test]
+    fn a_peeked_byte_is_the_next_byte_and_the_end_needs_more() {
+        let buf = [7, 9];
+        let mut c = SceCursor::new(&buf);
+        assert_eq!(c.peek_u8(), Ok(7));
+        assert_eq!(c.peek_u8(), Ok(7), "a peek does not advance");
+        c.advance(1).unwrap();
+        assert_eq!(c.peek_u8(), Ok(9));
+        c.advance(1).unwrap();
+        assert_eq!(c.peek_u8(), Err(CodecError::NeedMoreBytes));
+        assert_eq!(
+            SceCursor::new(&[]).peek_u8(),
+            Err(CodecError::NeedMoreBytes)
+        );
     }
 
     // ── VLE round-trip oracle vectors (Zenoh ZInt) ───────────────
