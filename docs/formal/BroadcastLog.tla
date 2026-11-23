@@ -25,9 +25,10 @@
 (* cursor at head; Lagged must have the cursor outside the window, skip at *)
 (* least one entry, and put the cursor at the oldest retained.             *)
 (*                                                                         *)
-(* `Extra` is the slot beyond the retention (S = R + Extra) and            *)
-(* `Revalidate` the second stamp load. With either off the model is a      *)
-(* design the ADR rejects, and TLC finds the violation                     *)
+(* `Extra` is the slot beyond the retention (S = R + Extra), `Revalidate`  *)
+(* the second stamp load, `HeadFirst` the answer at the head before any    *)
+(* stamp and `BindOldest` where a deferred reader starts. With one off the *)
+(* model is a design the ADR rejects, and TLC finds the violation          *)
 (* (BroadcastLog_without_extra_slot.cfg, _without_revalidation.cfg).       *)
 (*                                                                         *)
 (* A reader of `DeferredReaders` is opened by `reader_deferred()`: it has  *)
@@ -59,10 +60,13 @@ CONSTANTS Readers,         \* the reader handles
           R,               \* the retention the specification promises
           Extra,           \* 1: S = R + 1 slots (the design); 0: S = R
           MaxPub,          \* the most entries the producer publishes
-          Revalidate       \* whether a reader loads the stamp again after the copy
+          Revalidate,      \* whether a reader loads the stamp again after the copy
+          HeadFirst,       \* whether a read at the head answers Empty, before any stamp is read
+          BindOldest       \* whether a deferred reader is bound at the oldest retained entry
 
 ASSUME DeferredReaders \subseteq Readers
 ASSUME R \in 1..4 /\ Extra \in {0, 1} /\ MaxPub \in Nat /\ Revalidate \in BOOLEAN
+ASSUME HeadFirst \in BOOLEAN /\ BindOldest \in BOOLEAN
 
 S == R + Extra
 Idx(n) == n % S
@@ -145,14 +149,14 @@ RStart(r) ==
 Bind(r) ==
     /\ ~bound[r]
     /\ bound'  = [bound  EXCEPT ![r] = TRUE]
-    /\ origin' = [origin EXCEPT ![r] = Max0(head - R)]
+    /\ origin' = [origin EXCEPT ![r] = IF BindOldest THEN Max0(head - R) ELSE 0]
     /\ ob'     = [ob     EXCEPT ![r] = head]
-    /\ cur'    = [cur    EXCEPT ![r] = Max0(head - R)]
+    /\ cur'    = [cur    EXCEPT ![r] = IF BindOldest THEN Max0(head - R) ELSE 0]
 
 RHead(r) ==
     /\ rpc[r] = "head1"
     /\ hl' = [hl EXCEPT ![r] = head]
-    /\ \/ /\ bound[r] /\ cur[r] = head
+    /\ \/ /\ bound[r] /\ cur[r] = head /\ HeadFirst
           /\ res' = [res EXCEPT ![r] = [k |-> "Empty"]]
           /\ rpc' = [rpc EXCEPT ![r] = "idle"]
           /\ fresh' = [fresh EXCEPT ![r] = FALSE]
@@ -165,7 +169,7 @@ RHead(r) ==
           /\ fl' = [fl EXCEPT ![r] = fresh[r]]
           /\ fresh' = [fresh EXCEPT ![r] = FALSE]
           /\ UNCHANGED <<bound, origin, ob>>
-       \/ /\ bound[r] /\ cur[r] # head /\ head - cur[r] < S
+       \/ /\ bound[r] /\ (HeadFirst => cur[r] # head) /\ head - cur[r] < S
           /\ rpc' = [rpc EXCEPT ![r] = "stamp1"]
           /\ UNCHANGED <<cur, lost, res, bvars>>
        \/ /\ Bind(r) /\ Max0(head - R) = head

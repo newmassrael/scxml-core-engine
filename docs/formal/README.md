@@ -41,6 +41,7 @@ a verdict about the models; exit 3 is "could not run".
 A configuration of its own is not enough: `models.json` must declare it, and the gate refuses
 
 - a configuration or a module that is not declared, and a part of a model that no run takes out;
+- a property a holding run checks and no run shows to fail: one nothing can break says nothing, however true it is;
 - a run that holds with another number of states than is recorded (a model that shrank still reports "no error");
 - a run that takes a part out and fails for another reason than it names;
 - a model that states no progress and gives no reason, and a progress no run shows to fail without what it stands on;

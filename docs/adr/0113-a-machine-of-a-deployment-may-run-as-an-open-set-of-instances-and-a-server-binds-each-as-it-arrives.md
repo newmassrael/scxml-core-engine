@@ -190,6 +190,7 @@ Each part is shown to be needed: with one of them taken out, TLC must find a vio
 | the signature over a request's mark | a request that never ends: the mark is raised past it |
 | the signature over the incarnation an offer names | an undisturbed instance that loses an outcome |
 | the signature over the answer that fences | an undisturbed instance that loses an outcome |
+| the refusal of a member past the bound | more members than the bound |
 
 **What TLC found** that the second draft did not have: an empty poll under an offer was fenced, and the request after it
 ended unknown. TLC also answered a question the draft did not ask: the handshake is not needed for at-most-once (the
