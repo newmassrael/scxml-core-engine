@@ -1554,10 +1554,19 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                 );
                 continue;
             }
-            let name = unit["name"]
-                .as_str()
-                .expect("a unit has a name")
-                .to_string();
+            let unit_name = unit["name"].as_str().expect("a unit has a name");
+            // A gate planned as shards is a unit per part, named
+            // `<slug>-shard-<k>-of-<N>` (the registry's "A gate planned as
+            // shards"); the gate it runs is the slug.
+            let shard = shard_of(unit_name);
+            let name = shard.map_or(unit_name, |(gate, _, _)| gate).to_string();
+            if shard.is_some() {
+                assert!(
+                    mapping[name.as_str()]["shard_env"].is_string(),
+                    "{changed:?}: unit {unit_name} is a shard of {name}, which \
+                     declares no shard_env"
+                );
+            }
             assert!(
                 selected.contains(&name),
                 "{changed:?}: the plan runs {name}, which the selection did not \
@@ -1600,6 +1609,19 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                  `--landing` exactly when the push updates main: {argv:?}"
             );
             let rest = if landing { &rest[1..] } else { rest };
+            let rest = match shard {
+                Some((_, part, count)) => {
+                    let (rest, asked) = rest.split_at(rest.len().saturating_sub(2));
+                    assert_eq!(
+                        asked,
+                        ["--shard", format!("{part}/{count}").as_str()],
+                        "{changed:?}: unit {unit_name} does not ask the runner \
+                         for its part: {argv:?}"
+                    );
+                    rest
+                }
+                None => rest,
+            };
             assert_eq!(
                 rest.len() == 2 && rest[0] == "--at" && rest[1].len() >= 40,
                 reads_head,
@@ -1642,6 +1664,13 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
             "{changed:?}: selected, and run by no unit of the plan: {missing:?}"
         );
     }
+}
+
+/// The gate and the part of a shard unit's name, `<slug>-shard-<k>-of-<N>`.
+fn shard_of(unit: &str) -> Option<(&str, usize, usize)> {
+    let (front, count) = unit.rsplit_once("-of-")?;
+    let (gate, part) = front.rsplit_once("-shard-")?;
+    Some((gate, part.parse().ok()?, count.parse().ok()?))
 }
 
 /// Build a throwaway git repository with `body` staged at `rel`.

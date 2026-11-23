@@ -19,6 +19,8 @@
 #                                     run named gates, handing them what A..B
 #                                     changes as the set they read
 #   scripts/gate --unit ...           run as a unit of a plan: no registry self-test
+#   scripts/gate --shard k/N <slug>   run part k of N of a gate that declares
+#                                     `shard_env`, as a plan's shard unit does
 #
 # The order is derived, never typed: `tools/git-hooks/gate_registry.py`
 # holds each gate's dependencies and measured cost, and the runner sorts by
@@ -75,6 +77,7 @@ RUST_WANT=""
 AT_WANT=""
 LANDING=0
 UNIT=0
+SHARD_WANT=""
 
 while (( $# )); do
     case "$1" in
@@ -89,6 +92,7 @@ while (( $# )); do
         --changed-from) MODE="changed"; CHANGED_FILE="$2"; shift ;;
         --changed-in)   MODE="changed"; CHANGED_RANGES+=("$2"); shift ;;
         --change-set)   CHANGE_SET_RANGES+=("${2:-}"); shift ;;
+        --shard)        SHARD_WANT="${2:-}"; shift ;;
         -h|--help)      sed -n '5,51p' "$0"; exit 0 ;;
         -*)             printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
         *)              SLUGS+=("$1"); MODE="${MODE:-named}" ;;
@@ -134,6 +138,31 @@ fi
 if (( ${#CHANGE_SET_RANGES[@]} )) && [[ $PLAN -eq 1 || "$MODE" != "named" ]]; then
     printf 'gate: --change-set hands named gates the set they read; it takes slugs, and not --plan, --all, --list or a selection by change\n' >&2
     exit 2
+fi
+
+# ── One part of a gate planned as shards ──────────────────────────────
+#
+# A plan runs a gate that declares `shard_env` as N units, each
+# `--shard k/N <slug>` ("A gate planned as shards" in the registry). The part
+# is handed to the gate in the variable its entry names, which its script
+# reads; a gate that names none has no parts, and asking for one is refused
+# rather than running the whole gate under a part's name.
+if [[ -n "$SHARD_WANT" ]]; then
+    if (( PLAN )) || [[ "$MODE" != "named" || ${#SLUGS[@]} -ne 1 ]]; then
+        printf 'gate: --shard runs one part of one named gate; it takes a single slug, and not --plan, --all, --list or a selection by change\n' >&2
+        exit 2
+    fi
+    if [[ ! "$SHARD_WANT" =~ ^([0-9]+)/([0-9]+)$ ]] \
+            || (( BASH_REMATCH[1] < 1 || BASH_REMATCH[1] > BASH_REMATCH[2] )); then
+        printf 'gate: --shard takes k/N with 1 <= k <= N, got %q\n' "$SHARD_WANT" >&2
+        exit 2
+    fi
+    SHARD_ENV="$(python3 "$REGISTRY" --shard-env "${SLUGS[0]}")" || exit 2
+    if [[ -z "$SHARD_ENV" ]]; then
+        printf 'gate: %s declares no shard_env, so it has no parts to run one of\n' "${SLUGS[0]}" >&2
+        exit 2
+    fi
+    export "$SHARD_ENV=$SHARD_WANT"
 fi
 
 # ── The commit a plan named, and no other ──────────────────────────────
@@ -575,6 +604,9 @@ gate_in_container() {
     for range in ${CHANGE_SET_RANGES[@]+"${CHANGE_SET_RANGES[@]}"}; do
         inner+=(--change-set "$range")
     done
+    if [[ -n "$SHARD_WANT" ]]; then
+        inner+=(--shard "$SHARD_WANT")
+    fi
     inner+=("$slug")
     printf '\ngate: %s runs in %s (%s) on Rust %s from %s: %s\n' \
         "$slug" "$tag" "${user[*]}" "$release" "$sysroot" "${inner[*]}" >&2

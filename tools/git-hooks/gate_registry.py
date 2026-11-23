@@ -1194,6 +1194,11 @@ GATES: dict[str, dict] = {
     # doc, the wire schemas, and the forge-AST export schema.
     "workspace-tests": {
         "workflows": ["rust-workspace-tests.yml"],
+        # Run whole it is the longest unit of a landing after cpp-suite-wasm
+        # (1363 s), and its script already runs one shard of itself when
+        # SCE_WORKSPACE_SHARD names `k/N`, as the lane's four jobs do. A plan
+        # makes one unit per shard of the lane's count (`shard_count`).
+        "shard_env": "SCE_WORKSPACE_SHARD",
         # The lane's one difference — `--no-fail-fast`, so a run nobody can
         # iterate on reports every failure — was a reporting choice by its own
         # description, which made it a switch rather than a reason to keep two
@@ -4715,8 +4720,48 @@ def head_commit(repo_root: Path):
     return commit if done.returncode == 0 and COMMIT_ID.match(commit) else None
 
 
+# ── A gate planned as shards ──────────────────────────────────────
+#
+# A gate whose script runs one part of itself when a variable names `k/N`
+# (`shard_env` in its entry) is planned as N units, one per part, so the parts
+# run on as many machines at once (ADR 0120, D3). N is read from the workflow
+# that runs the same parts as jobs (`<variable>: ${{ matrix.shard }}/N`), so
+# the lane and the landing split the gate one way. A shard's unit is named
+# `<slug>-shard-<k>-of-<N>` and runs `scripts/gate --shard k/N <slug>`, which
+# hands the gate the variable; its kept pass is that part's, under its argv.
+SHARD_UNIT = re.compile(r"^(?P<gate>.+)-shard-(?P<k>[0-9]+)-of-(?P<n>[0-9]+)$")
+
+
+def shard_count(repo_root: Path, slug: str, table=None) -> int:
+    """How many parts a plan runs `slug` in: 1 unless it declares
+    `shard_env` and a workflow it mirrors sets that variable per shard."""
+    spec = (GATES if table is None else table)[slug]
+    env = spec.get("shard_env")
+    if not env:
+        return 1
+    per_job = re.compile(r"^\s*" + re.escape(env)
+                         + r":\s*\$\{\{\s*matrix\.shard\s*\}\}/([0-9]+)\s*$",
+                         re.M)
+    for wf in spec.get("workflows", []):
+        try:
+            text = (repo_root / ".github" / "workflows" / wf).read_text(
+                encoding="utf-8")
+        except OSError:
+            continue
+        found = per_job.search(text)
+        if found:
+            return int(found.group(1))
+    return 1
+
+
+def unit_gate(name: str) -> str:
+    """The gate a unit of a plan runs: its name, less a shard's suffix."""
+    found = SHARD_UNIT.match(name)
+    return found.group("gate") if found else name
+
+
 def plan_units(selected, rust=None, tree_is_head=True, table=None,
-               head=None, landing=False, changes=()) -> list[dict]:
+               head=None, landing=False, changes=(), shards=None) -> list[dict]:
     """The bx check units (bx RFC 0004, section 6) that verify `selected`.
 
     `selected` is a set the registry already chose: `select` for a change,
@@ -4766,6 +4811,11 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     verdict may be kept"), and the flag is in the key, so a pass kept from a
     landing is never handed to a run that could have skipped, or back.
 
+    A GATE IN SHARDS IS N UNITS. `shards` maps a slug to its count
+    (`shard_count`); a gate counted above one is a unit per part, named and
+    run as "A gate planned as shards" says, its declared cost divided among
+    them.
+
     `exclusive` is `UNIT_EXCLUSIVE` for every unit. `secs` is the declared
     cost of everything the unit runs, a first estimate that bx replaces with
     its own timings, `mem_gb` the largest `peak_gb` among them, and `cores`
@@ -4804,31 +4854,35 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
         if reads_changes:
             for change in changes:
                 argv += ["--change-set", change]
-        argv.append(slug)
-        unit = {
-            "name": slug,
-            "argv": argv,
-            "exclusive": [UNIT_EXCLUSIVE],
-            "cache": kept,
-            "broke": f"gate {slug} FAILED: run just this one with "
-                     f"`scripts/gate {slug}`",
-            "blind": f"gate {slug} COULD NOT RUN on that machine: its own "
-                     f"tools or packages, or the Rust release the plan named, "
-                     f"are missing there. Nothing is claimed about the tree.",
-        }
+        count = (shards or {}).get(slug, 1)
         cost = sum(table[s].get("cost_s") or 0 for s in closure)
-        if cost > 0:
-            unit["secs"] = float(cost)
-        unit["mem_gb"] = float(max(table[s]["peak_gb"] for s in closure))
-        unit["cores"] = float(max(table[s]["cores"] for s in closure))
-        for key in UNIT_REQUIRES_KEYS:
-            wanted = {item for s in closure for item in table[s].get(key, [])}
-            if wanted:
-                unit[key] = sorted(wanted)
         inputs = unit_inputs(closure, table)
-        if kept and inputs:
-            unit["inputs"] = inputs
-        units.append(unit)
+        for part in range(1, count + 1):
+            name = slug if count == 1 else f"{slug}-shard-{part}-of-{count}"
+            own = argv + ([] if count == 1 else ["--shard", f"{part}/{count}"])
+            unit = {
+                "name": name,
+                "argv": own + [slug],
+                "exclusive": [UNIT_EXCLUSIVE],
+                "cache": kept,
+                "broke": f"gate {name} FAILED: run just this one with "
+                         f"`scripts/gate {' '.join(own[len(argv):] + [slug])}`",
+                "blind": f"gate {name} COULD NOT RUN on that machine: its own "
+                         f"tools or packages, or the Rust release the plan "
+                         f"named, are missing there. Nothing is claimed about "
+                         f"the tree.",
+            }
+            if cost > 0:
+                unit["secs"] = float(cost) / count
+            unit["mem_gb"] = float(max(table[s]["peak_gb"] for s in closure))
+            unit["cores"] = float(max(table[s]["cores"] for s in closure))
+            for key in UNIT_REQUIRES_KEYS:
+                wanted = {item for s in closure for item in table[s].get(key, [])}
+                if wanted:
+                    unit[key] = sorted(wanted)
+            if kept and inputs:
+                unit["inputs"] = inputs
+            units.append(unit)
     return units
 
 
@@ -8017,23 +8071,31 @@ def self_test(repo_root: Path) -> int:
     ):
         cases += 1
         head = "0" * 40
+        counts = {s: shard_count(repo_root, s) for s in selection}
         units = plan_units(set(selection), rust="1.0.0", head=head,
-                           landing=landing)
+                           landing=landing, shards=counts)
         names = [u["name"] for u in units]
+        parts: dict[str, list[int]] = {}
         if len(names) != len(set(names)):
             failures.append(f"plan[{label}]: a unit is named twice: {names}")
         covered: set[str] = set()
         for unit in units:
-            closure = {unit["name"]} | transitive_deps(unit["name"])
+            gate = unit_gate(unit["name"])
+            closure = {gate} | transitive_deps(gate)
             covered |= closure
-            if unit["name"] not in selection:
+            shard = SHARD_UNIT.match(unit["name"])
+            if shard:
+                parts.setdefault(gate, []).append(int(shard.group("k")))
+            if gate not in selection:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} is not in the "
                     f"selection {sorted(selection)}")
             reads_head = any("HEAD" in GATES[s]["commits"] for s in closure)
             want = (["bash", "scripts/gate", "--rust", "1.0.0", "--unit"]
                     + (["--landing"] if landing else [])
-                    + (["--at", head] if reads_head else []) + [unit["name"]])
+                    + (["--at", head] if reads_head else [])
+                    + (["--shard", f"{shard.group('k')}/{shard.group('n')}"]
+                       if shard else []) + [gate])
             if unit["argv"] != want:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} runs {unit['argv']}, "
@@ -8070,12 +8132,19 @@ def self_test(repo_root: Path) -> int:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} may share a checkout "
                     f"with another unit ({unit['exclusive']})")
-            others = set(names) - {unit["name"]}
-            if others & transitive_deps(unit["name"]):
+            others = {unit_gate(n) for n in names} - {gate}
+            if others & transitive_deps(gate):
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} runs "
-                    f"{sorted(others & transitive_deps(unit['name']))}, which "
+                    f"{sorted(others & transitive_deps(gate))}, which "
                     f"are units of their own as well")
+        # A gate in shards is every one of its parts, each once.
+        for gate in selection:
+            want = list(range(1, counts[gate] + 1)) if counts[gate] > 1 else []
+            if sorted(parts.get(gate, [])) != want:
+                failures.append(
+                    f"plan[{label}]: {gate} is planned in parts "
+                    f"{sorted(parts.get(gate, []))}, not 1..{counts[gate]}")
         missing = set(selection) - covered
         if missing:
             failures.append(
@@ -8083,6 +8152,31 @@ def self_test(repo_root: Path) -> int:
         if selection and not units:
             failures.append(f"plan[{label}]: a selection of "
                             f"{len(selection)} gate(s) planned no unit")
+
+    # a-sharded-gate-is-split-the-way-its-lane-splits-it. A gate that declares
+    # `shard_env` reads it in its script and has a lane that sets it per job
+    # with a count above one; otherwise the plan would run it whole while the
+    # entry says it is split, or split it on a variable the script ignores and
+    # run the whole suite N times.
+    cases += 1
+    sharded = 0
+    for slug, spec in sorted(GATES.items()):
+        env = spec.get("shard_env")
+        if not env:
+            continue
+        sharded += 1
+        if shard_count(repo_root, slug) < 2:
+            failures.append(
+                f"shards: {slug} reads its shard from {env}, and no workflow "
+                f"it mirrors sets {env}: ${{{{ matrix.shard }}}}/N with N above 1")
+        script = gate_script(repo_root, slug)
+        if not script.is_file() or env not in script_code(script):
+            failures.append(
+                f"shards: {slug} declares shard_env {env}, which "
+                f"scripts/gates/{slug}.sh does not read")
+    if sharded < 1:
+        failures.append("shards: no gate declares shard_env; the case read "
+                        "nothing")
 
     # a-kept-verdict-needs-a-release-a-clean-tree-and-a-kept-closure. Driven
     # from a fixture so that it keeps measuring whatever the live table
@@ -8562,7 +8656,8 @@ def print_plan(args, repo_root: Path) -> int:
     head = head_commit(repo_root)
     units = plan_units(selected, rust=args.rust, tree_is_head=tree_is_head,
                        head=head, landing=bool(args.landing),
-                       changes=tuple(args.changed_in or ()))
+                       changes=tuple(args.changed_in or ()),
+                       shards={s: shard_count(repo_root, s) for s in selected})
     print(f"  selection: {reason}", file=sys.stderr)
     for slug in off_fleet:
         print(f"  NOT JUDGED HERE, hosted CI audits it after landing: {slug} "
@@ -8636,9 +8731,20 @@ def main() -> int:
                     help="with --plan: the Rust release every unit runs, as "
                          "`rustc --version` prints it (1.91.0); without it no "
                          "unit's verdict is kept")
+    ap.add_argument("--shard-env", metavar="SLUG",
+                    help="print the variable SLUG's script reads its shard "
+                         "from (`shard_env`), or nothing when it has none")
     args = ap.parse_args()
 
     repo_root = args.repo_root.resolve()
+
+    if args.shard_env is not None:
+        if args.shard_env not in GATES:
+            print(f"gate_registry: unknown slug: {args.shard_env}",
+                  file=sys.stderr)
+            return 2
+        print(GATES[args.shard_env].get("shard_env", ""))
+        return 0
 
     if args.self_test:
         return self_test(repo_root)
