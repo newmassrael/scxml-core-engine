@@ -322,6 +322,13 @@ macro_rules! text_defaults_to_nuls {
 }
 
 bytes_default_to_zeros!(InlineBytes);
+
+impl<const CAP: usize> Fewest for crate::storage::ArrayBytes<CAP> {
+    /// `MIN` zeros, which the build admits only where `MIN` is at most `CAP`.
+    fn fewest<const MIN: usize>() -> Self {
+        Self::from_array([0u8; MIN])
+    }
+}
 text_defaults_to_nuls!(InlineStr);
 #[cfg(feature = "alloc")]
 bytes_default_to_zeros!(HeapBytes);
@@ -352,6 +359,12 @@ impl<T, const CAP: usize> FromEntries<T> for heapless::Vec<T, CAP> {
             }
         }
         list
+    }
+}
+
+impl<const CAP: usize> FromEntries<u8> for crate::storage::ArrayBytes<CAP> {
+    fn from_entries<const N: usize>(entries: [u8; N]) -> Self {
+        Self::from_array(entries)
     }
 }
 
@@ -567,6 +580,46 @@ impl<L, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
             )
         };
         Self(from.0)
+    }
+}
+
+impl<const CAP: usize, const MAX: usize, const MIN: usize>
+    Bounded<crate::storage::ArrayBytes<CAP>, MAX, MIN>
+{
+    /// The bytes of an array of `N`, held within the bounds, as a constant:
+    /// [`Self::proven`] for a buffer a `const fn` can build
+    /// ([`ArrayBytes`](crate::storage::ArrayBytes)), so a `const` or a
+    /// `static` can hold bytes of a bounded field. The build admits it only
+    /// where `N` lies between `MIN` and `MAX` and the buffer holds `N`.
+    ///
+    /// ```
+    /// use sce_forge_runtime::codec::{ArrayBytes, Bounded, Bytes};
+    /// const ZID: Bounded<ArrayBytes<16>, 16, 1> = Bounded::proven_const([0xA1, 0xB2, 0xC3]);
+    /// let zid = ZID;
+    /// let read: Bytes<'_, 16, 1> = zid.as_bytes();
+    /// assert_eq!(read, [0xA1, 0xB2, 0xC3]);
+    /// ```
+    ///
+    /// Bytes outside the bounds do not build:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::{ArrayBytes, Bounded};
+    /// const ZID: Bounded<ArrayBytes<16>, 16, 1> = Bounded::proven_const([]);
+    /// ```
+    pub const fn proven_const<const N: usize>(bytes: [u8; N]) -> Self {
+        const {
+            assert!(
+                N <= MAX,
+                "the array holds more bytes than the field's bound"
+            )
+        };
+        const {
+            assert!(
+                N >= MIN,
+                "the array holds fewer bytes than the field's bound"
+            )
+        };
+        Bounded(crate::storage::ArrayBytes::from_array(bytes))
     }
 }
 
@@ -1244,6 +1297,42 @@ mod tests {
         let chain = Bounded::<heapless::Vec<u8, 4>, 4, 1>::one(8);
         let wider: Bounded<heapless::Vec<u8, 4>, 8> = Bounded::widened(chain);
         assert_eq!(wider.as_slice(), &[8u8][..]);
+    }
+
+    #[test]
+    fn a_constant_holds_bytes_within_their_bounds_by_value() {
+        use crate::storage::ArrayBytes;
+        const ZID: Bounded<ArrayBytes<16>, 16, 1> = Bounded::proven_const([1, 2, 3, 4]);
+        let zid = ZID;
+        assert_eq!(*zid.as_bytes(), &[1u8, 2, 3, 4][..]);
+        // The same bytes read at run time are the same value: the bytes past
+        // the length are zeros in both.
+        let read = Bounded::<ArrayBytes<16>, 16, 1>::from_slice(&[1, 2, 3, 4]);
+        assert_eq!(read, Ok(ZID));
+        assert_ne!(
+            Bounded::<ArrayBytes<16>, 16, 1>::from_slice(&[1, 2, 3]),
+            Ok(ZID)
+        );
+        // A run-time read outside the bounds is refused, as a decode is.
+        assert_eq!(
+            Bounded::<ArrayBytes<16>, 16, 1>::from_slice(&[]),
+            Err(crate::codec::CodecError::LengthOutOfRange)
+        );
+        // Past the buffer's own capacity, the buffer refuses.
+        assert_eq!(
+            ArrayBytes::<2>::from_slice(&[1, 2, 3]),
+            Err(crate::codec::CodecError::CapacityExceeded)
+        );
+        // Its fewest is one zero byte, and a list of one entry is one byte.
+        assert_eq!(
+            *Bounded::<ArrayBytes<16>, 16, 1>::default().as_bytes(),
+            &[0u8][..]
+        );
+        assert_eq!(
+            *Bounded::<ArrayBytes<4>, 4, 1>::one(9).as_bytes(),
+            &[9u8][..]
+        );
+        assert!(ArrayBytes::<8>::EMPTY.as_slice().is_empty());
     }
 
     #[test]

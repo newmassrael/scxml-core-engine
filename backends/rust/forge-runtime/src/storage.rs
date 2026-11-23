@@ -650,6 +650,109 @@ macro_rules! byte_buf_impl {
 byte_buf_impl!(HeapBytes);
 byte_buf_impl!(InlineBytes);
 
+/// Bytes of at most `CAP`, held by value in an array of `CAP` and a length:
+/// a byte string a value holds as its own, as an identifier or a key is, which
+/// is `Copy`, compares and hashes by its bytes, and which a constant can be.
+///
+/// A constant names one through [`Self::from_array`], or held within bounds
+/// through [`crate::bounded::Bounded::proven_const`]: both are `const fn`,
+/// and the length they hold is the array's, which the build judges. Bytes
+/// read at run time come through [`Self::from_slice`], which refuses more
+/// than `CAP`.
+///
+/// The length is a byte, so `CAP` is at most 255, and a larger one is
+/// refused when the build reaches a constructor. The bytes past the length
+/// are zeros in every value, so two values are equal, and hash alike, exactly
+/// when the bytes they hold are.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ArrayBytes<const CAP: usize> {
+    bytes: [u8; CAP],
+    len: u8,
+}
+
+impl<const CAP: usize> ArrayBytes<CAP> {
+    /// No bytes.
+    pub const EMPTY: Self = Self::from_array([]);
+
+    /// The `N` bytes of `bytes`, which the build admits only where `N` is at
+    /// most `CAP` (and `CAP` at most 255): a constant expression, with no
+    /// check at run time.
+    ///
+    /// ```
+    /// use sce_forge_runtime::codec::ArrayBytes;
+    /// const ID: ArrayBytes<16> = ArrayBytes::from_array([0xA1, 0xB2]);
+    /// assert_eq!(ID.as_slice(), &[0xA1, 0xB2][..]);
+    /// ```
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::ArrayBytes;
+    /// const ID: ArrayBytes<2> = ArrayBytes::from_array([1, 2, 3]);
+    /// ```
+    pub const fn from_array<const N: usize>(bytes: [u8; N]) -> Self {
+        const {
+            assert!(
+                CAP <= u8::MAX as usize,
+                "an ArrayBytes holds at most 255 bytes"
+            )
+        };
+        const { assert!(N <= CAP, "the array holds more bytes than the buffer") };
+        let mut held = [0u8; CAP];
+        let mut at = 0;
+        // Both bounds are spelled so that neither index is ever out of range.
+        while at < N && at < CAP {
+            held[at] = bytes[at];
+            at += 1;
+        }
+        Self {
+            bytes: held,
+            len: N as u8,
+        }
+    }
+
+    /// `bytes` copied in, or `CapacityExceeded` where they are more than `CAP`.
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, CodecError> {
+        const {
+            assert!(
+                CAP <= u8::MAX as usize,
+                "an ArrayBytes holds at most 255 bytes"
+            )
+        };
+        if bytes.len() > CAP {
+            return Err(CodecError::CapacityExceeded);
+        }
+        let mut held = [0u8; CAP];
+        for (slot, byte) in held.iter_mut().zip(bytes) {
+            *slot = *byte;
+        }
+        Ok(Self {
+            bytes: held,
+            len: bytes.len() as u8,
+        })
+    }
+
+    /// The bytes held.
+    pub fn as_slice(&self) -> &[u8] {
+        self.bytes.get(..usize::from(self.len)).unwrap_or_default()
+    }
+}
+
+impl<const CAP: usize> core::fmt::Debug for ArrayBytes<CAP> {
+    /// The bytes held, as a slice prints: the capacity is the type's.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self.as_slice(), f)
+    }
+}
+
+impl<const CAP: usize> SceByteBuf for ArrayBytes<CAP> {
+    fn from_slice(b: &[u8]) -> Result<Self, CodecError> {
+        Self::from_slice(b)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        Self::as_slice(self)
+    }
+}
+
 // ── projections ──────────────────────────────────────────────────
 
 /// Build an owned list by projecting each element of a decoded borrowed list.
