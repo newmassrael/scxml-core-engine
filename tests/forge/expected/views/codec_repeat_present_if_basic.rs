@@ -142,13 +142,13 @@ impl<S: CodecRepeatPresentIfBasicStorage> CodecRepeatPresentIfBasicIn<S> {
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let carrier = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v
         };
         let num_elems = if (carrier & 0x01u8) != 0 {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             Some(_v)
@@ -438,13 +438,13 @@ impl<'a> CodecRepeatPresentIfBasicView<'a> {
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let carrier = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v
         };
         let num_elems = if (carrier & 0x01u8) != 0 {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             Some(_v)

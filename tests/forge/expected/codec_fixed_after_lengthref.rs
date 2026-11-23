@@ -139,13 +139,13 @@ impl<S: CodecFixedAfterLengthrefStorage> CodecFixedAfterLengthrefIn<S> {
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let header = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v
         };
         let payload_len = {
-            let raw = cursor.peek_slice(2)?;
+            let raw = cursor.peek_array::<2>()?;
             let _v = raw[0] as u16 | ((raw[1] as u16) << 8);
             cursor.advance(2)?;
             _v
@@ -164,7 +164,7 @@ impl<S: CodecFixedAfterLengthrefStorage> CodecFixedAfterLengthrefIn<S> {
         let payload = ::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange)?;
         let payload = ::sce_forge_runtime::codec::note_held(payload.store::<S, CodecFixedAfterLengthrefPayloadField>(), &mut _over)?;
         let crc32 = {
-            let raw = cursor.peek_slice(4)?;
+            let raw = cursor.peek_array::<4>()?;
             let _v = raw[0] as u32 | ((raw[1] as u32) << 8) | ((raw[2] as u32) << 16) | ((raw[3] as u32) << 24);
             cursor.advance(4)?;
             _v

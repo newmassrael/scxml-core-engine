@@ -86,13 +86,13 @@ impl CodecInitSynBody {
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let version = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v
         };
         let sn_res = if (s & 0x01u8) != 0 {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             Some(_v)
@@ -100,7 +100,7 @@ impl CodecInitSynBody {
             None
         };
         let batch_size = if (s & 0x01u8) != 0 {
-            let raw = cursor.peek_slice(2)?;
+            let raw = cursor.peek_array::<2>()?;
             let _v = ((raw[0] as u16) << 8) | raw[1] as u16;
             cursor.advance(2)?;
             Some(_v)

@@ -143,7 +143,7 @@ impl CodecVariantDispatch {
         let mut _over = false;
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_slice(1)?;
+        let raw = cursor.peek_array::<1>()?;
         let msg_id = raw[0];
         cursor.advance(1)?;
         // Dispatch on the tag field; each arm decodes its body codec
@@ -443,7 +443,7 @@ impl CodecVariantDispatchView {
     pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_slice(1)?;
+        let raw = cursor.peek_array::<1>()?;
         let msg_id = raw[0];
         cursor.advance(1)?;
         // Dispatch on the tag field; each arm decodes its body codec

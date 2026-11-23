@@ -139,7 +139,7 @@ impl<S: CodecZenohDeclQueryableStorage> CodecZenohDeclQueryableIn<S> {
         let id = cursor.read_vle_u32()?;
         ::sce_forge_runtime::codec::note_capacity(CodecZenohWireexprOwned::<S>::decode_into(cursor, &mut _out.wireexpr, n), &mut _over)?;
         let ext_type = if (z & 0x01u8) != 0 {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             Some(_v)
@@ -434,7 +434,7 @@ impl<'a> CodecZenohDeclQueryableView<'a> {
         let id = cursor.read_vle_u32()?;
         CodecZenohWireexprView::decode_into(cursor, &mut _out.wireexpr, n)?;
         let ext_type = if (z & 0x01u8) != 0 {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             Some(_v)

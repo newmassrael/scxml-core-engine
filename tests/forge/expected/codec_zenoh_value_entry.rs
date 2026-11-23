@@ -209,7 +209,7 @@ impl<S: CodecZenohValueEntryStorage> CodecZenohValueEntryIn<S> {
         let _ = after_shm;
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_slice(1)?;
+        let raw = cursor.peek_array::<1>()?;
         let header = raw[0];
         cursor.advance(1)?;
         // Dispatch on the tag field; each arm decodes its body codec
@@ -633,7 +633,7 @@ impl<'a> CodecZenohValueEntryView<'a> {
         let _ = after_shm;
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_slice(1)?;
+        let raw = cursor.peek_array::<1>()?;
         let header = raw[0];
         cursor.advance(1)?;
         // Dispatch on the tag field; each arm decodes its body codec

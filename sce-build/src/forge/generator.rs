@@ -16752,7 +16752,7 @@ fn render_codec(
         // variable `_peek` (the cursor's peeked next byte) instead of
         // `out->{field}` / `self.{field}` etc. The local-var name is
         // shared across all 6 backends — templates emit
-        // `let _peek = cursor.peek_slice(1)?[0];` (per-language idiom)
+        // `let _peek = cursor.peek_u8()?;` (per-language idiom)
         // before the dispatch when `variant.peek_byte` is set.
         let peek_mode = v.peek_byte.is_some();
         // RFC §synth-5-B parent-tag carriers: parent-scope variants read the carrier
@@ -16990,9 +16990,10 @@ fn render_codec(
         let peek_byte_decode_stmt = if peek_mode {
             match lang {
                 crate::generator::Language::Swift => no_swift_emitter("render_codec"),
-                crate::generator::Language::Rust => {
-                    "let _peek = cursor.peek_slice(1)?[0];".to_string()
-                }
+                // The byte itself, read with no index: an index of a peeked
+                // slice leaves a bounds check whose panic site names this
+                // codec's file, and keeps two variants of one body apart.
+                crate::generator::Language::Rust => "let _peek = cursor.peek_u8()?;".to_string(),
                 crate::generator::Language::Cpp => format!(
                     "const std::uint8_t* _peek_raw = cursor.peek_slice(1);\n        \
                      if (_peek_raw == nullptr) {CPP_NEED_MORE_BYTES}\n        \
@@ -22994,9 +22995,14 @@ fn present_if_decode_fixed(
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_decode_fixed"),
+        // Rust peeks the field's bytes as an array (`SceCursor::peek_array`):
+        // its length is in its type, so `raw[k]` has no bounds check and the
+        // read no panic site naming the codec's file. With one, two codecs whose
+        // decodes are the same body differ by that site alone, and are not
+        // merged into one function.
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
-                 let raw = cursor.peek_slice({n})?;\n            \
+                 let raw = cursor.peek_array::<{n}>()?;\n            \
                  {conv12}let _v = {body12};\n            \
                  cursor.advance({n})?;\n            \
                  _v\n        \
@@ -23006,7 +23012,7 @@ fn present_if_decode_fixed(
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
-                     let raw = cursor.peek_slice({n})?;\n            \
+                     let raw = cursor.peek_array::<{n}>()?;\n            \
                      {conv12}let _v = {body12};\n            \
                      cursor.advance({n})?;\n            \
                      Some(_v)\n        \

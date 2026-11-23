@@ -45,7 +45,7 @@ impl CodecVariantSessionOpen {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        let raw = cursor.peek_slice(2)?;
+        let raw = cursor.peek_array::<2>()?;
         let version = ((raw[0] as u16) << 8) | raw[1] as u16;
         let value = Self {
             version,

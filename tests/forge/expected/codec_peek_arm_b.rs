@@ -62,7 +62,7 @@ impl CodecPeekArmB {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        let raw = cursor.peek_slice(3)?;
+        let raw = cursor.peek_array::<3>()?;
         let header = raw[0];
         let payload = ((raw[1] as u16) << 8) | raw[2] as u16;
         let value = Self {

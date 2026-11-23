@@ -48,7 +48,7 @@ impl CodecSimpleFrame {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        let raw = cursor.peek_slice(4)?;
+        let raw = cursor.peek_array::<4>()?;
         let msg_id = raw[0];
         let length = raw[1];
         let payload = ((raw[2] as u16) << 8) | raw[3] as u16;

@@ -155,13 +155,13 @@ impl<S: CodecOriginEnvelopeStorage> CodecOriginEnvelopeIn<S> {
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let hdr = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v
         };
         let note_len = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v
@@ -181,7 +181,7 @@ impl<S: CodecOriginEnvelopeStorage> CodecOriginEnvelopeIn<S> {
         let note = ::sce_forge_runtime::codec::Bounded::new(note).ok_or(CodecError::LengthOutOfRange)?;
         let note = ::sce_forge_runtime::codec::note_held(note.store::<S, CodecOriginEnvelopeNoteField>(), &mut _over)?;
         let m = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v

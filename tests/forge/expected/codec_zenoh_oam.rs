@@ -226,7 +226,7 @@ impl<S: CodecZenohOamStorage> CodecZenohOamIn<S> {
         // byte as its own header byte (Zenoh response/request body MID
         // dispatch shape per network.c:347-364 + 220-235).
         let header = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v
@@ -684,7 +684,7 @@ impl<'a> CodecZenohOamView<'a> {
         // byte as its own header byte (Zenoh response/request body MID
         // dispatch shape per network.c:347-364 + 220-235).
         let header = {
-            let raw = cursor.peek_slice(1)?;
+            let raw = cursor.peek_array::<1>()?;
             let _v = raw[0];
             cursor.advance(1)?;
             _v

@@ -219,7 +219,7 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeIn<S> {
         // tag without advancing — the arm body decoder reads the peeked
         // byte as its own header byte (Zenoh response/request body MID
         // dispatch shape per network.c:347-364 + 220-235).
-        let _peek = cursor.peek_slice(1)?[0];
+        let _peek = cursor.peek_u8()?;
         // Dispatch on the tag field; each arm decodes its body codec
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
@@ -583,7 +583,7 @@ impl<'a> CodecZenohNetworkEnvelopeView<'a> {
         // tag without advancing — the arm body decoder reads the peeked
         // byte as its own header byte (Zenoh response/request body MID
         // dispatch shape per network.c:347-364 + 220-235).
-        let _peek = cursor.peek_slice(1)?[0];
+        let _peek = cursor.peek_u8()?;
         // Dispatch on the tag field; each arm decodes its body codec
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the

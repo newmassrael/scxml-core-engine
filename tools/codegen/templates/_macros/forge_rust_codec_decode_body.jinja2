@@ -121,7 +121,7 @@
 {% if fields %}
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
-        let raw = cursor.peek_slice({{ min_bytes }})?;
+        let raw = cursor.peek_array::<{{ min_bytes }}>()?;
 {% for field in fields %}
 {{ decode_field(field, view_decode) }}
 {% endfor %}
@@ -334,7 +334,10 @@
 {% endif %}
         Ok(value)
 {% else %}
-        let raw = cursor.peek_slice({{ min_bytes }})?;
+{# The frame is a fixed count of bytes, peeked as an array: its length is in
+   its type, so no read `raw[k]` below keeps a bounds check, nor a panic site
+   naming this codec's file that would keep two decodes of one body apart. #}
+        let raw = cursor.peek_array::<{{ min_bytes }}>()?;
 {% for field in fields %}
 {{ decode_field(field, view_decode) }}
 {% endfor %}

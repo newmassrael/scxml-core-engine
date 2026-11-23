@@ -11368,6 +11368,48 @@ fn forge_rust_codec_variant_peek_basic() {
     assert_standalone_forge_rust("codec_variant_peek_basic", "codec_variant_peek_basic.rs");
 }
 
+/// A Rust codec reads a fixed count of bytes as an array (`peek_array`) and the
+/// byte a variant dispatches on as a byte (`peek_u8`), never as a slice of a
+/// constant length it then indexes. An index of a slice keeps a bounds check
+/// whose panic site names the file of each read, so two codecs of one decode
+/// body would differ by that site and not be merged. Read over every Rust
+/// golden, eager and view, which the tests above hold to the generator.
+#[test]
+fn a_rust_codec_reads_a_fixed_count_of_bytes_with_no_index_that_can_panic() {
+    let (mut arrays, mut bytes) = (0usize, 0usize);
+    for dir in [expected_dir(), expected_dir().join("views")] {
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {e}", dir.display()));
+        for entry in entries {
+            let path = entry.expect("a directory entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("Cannot read {}: {e}", path.display()));
+            for (at, _) in text.match_indices("cursor.peek_slice(") {
+                let count = &text[at + "cursor.peek_slice(".len()..];
+                assert!(
+                    !count.starts_with(|c: char| c.is_ascii_digit()),
+                    "{} peeks a constant count of bytes as a slice: {}",
+                    path.display(),
+                    text[at..].lines().next().unwrap_or_default()
+                );
+            }
+            arrays += text.matches("cursor.peek_array::<").count();
+            bytes += text.matches("let _peek = cursor.peek_u8()?;").count();
+        }
+    }
+    assert!(
+        arrays > 0,
+        "no Rust golden peeks a fixed count of bytes as an array"
+    );
+    assert!(
+        bytes > 0,
+        "no Rust golden peeks a variant's byte with peek_u8"
+    );
+}
+
 #[test]
 fn forge_rust_codec_zenoh_response() {
     assert_standalone_forge_rust("codec_zenoh_response", "codec_zenoh_response.rs");
@@ -15607,7 +15649,7 @@ fn forge_parent_tag_round_trip_local_nonlocal_rust() {
     // would trip rustc's `unused_variables` lint. Negative assertion
     // mirrors the 11287248 / b35dbb66 substring-pattern.
     assert!(
-        !keyexpr_rust.contains("let raw = cursor.peek_slice(0)?;"),
+        !keyexpr_rust.contains("let raw = cursor.peek_array::<0>()?;"),
         "variant-only dispatcher must NOT emit dead prefix-decode `let raw`\n{keyexpr_rust}"
     );
     assert!(
