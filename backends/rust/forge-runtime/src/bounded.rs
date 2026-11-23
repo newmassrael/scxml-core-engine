@@ -328,6 +328,40 @@ bytes_default_to_zeros!(HeapBytes);
 #[cfg(feature = "alloc")]
 text_defaults_to_nuls!(HeapStr);
 
+/// A list that can be made of the entries of an array: what [`Bounded::proven`]
+/// and [`Bounded::one`] build a list of a known count in, so that the count is
+/// judged when the build reaches the call and nothing is checked at run time.
+///
+/// An implementation holds every entry it is handed, in order, and no other: the
+/// bounds [`Bounded::proven`] judges are the array's length, so a list that held
+/// fewer would be a `Bounded` outside them. A list that cannot hold `N` entries
+/// is refused when the build reaches it, as [`Fewest`] refuses its fewest.
+pub trait FromEntries<T>: Sized {
+    /// The list of `entries`, in order.
+    fn from_entries<const N: usize>(entries: [T; N]) -> Self;
+}
+
+impl<T, const CAP: usize> FromEntries<T> for heapless::Vec<T, CAP> {
+    fn from_entries<const N: usize>(entries: [T; N]) -> Self {
+        const { assert!(N <= CAP, "the list cannot hold the array's entries") };
+        let mut list = heapless::Vec::new();
+        for entry in entries {
+            // At most `CAP` entries, which the build checked, so no push is refused.
+            if list.push(entry).is_err() {
+                break;
+            }
+        }
+        list
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T> FromEntries<T> for alloc::vec::Vec<T> {
+    fn from_entries<const N: usize>(entries: [T; N]) -> Self {
+        alloc::vec::Vec::from(entries)
+    }
+}
+
 impl<L, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
     /// Fill the list in place: `fill` is handed it cleared, and the count it
     /// leaves is checked against the bounds, fewer than `MIN` being a frame cut
@@ -410,6 +444,129 @@ impl<T, const N: usize, const MAX: usize> From<heapless::Vec<T, N>>
     fn from(list: heapless::Vec<T, N>) -> Self {
         const { assert!(N <= MAX, "the list's capacity is past the list's bound") };
         Self(list)
+    }
+}
+
+impl<L, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
+    /// The list of the entries of an array of `N`, which the build admits only
+    /// where `N` lies between `MIN` and `MAX` and the list can hold `N`
+    /// entries ([`FromEntries`]): an owned list of a known count, made with no
+    /// check and no `Option`. A borrowed array converts the same way through
+    /// `From<&[T; N]>`.
+    ///
+    /// ```
+    /// use sce_forge_runtime::codec::Bounded;
+    /// use sce_forge_runtime::heapless::Vec;
+    /// let chain = Bounded::<Vec<u8, 4>, 4, 1>::proven([1, 2, 3]);
+    /// assert_eq!(chain.as_slice(), &[1, 2, 3][..]);
+    /// ```
+    ///
+    /// An array of fewer entries than the list's fewest does not build:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::Bounded;
+    /// use sce_forge_runtime::heapless::Vec;
+    /// let _ = Bounded::<Vec<u8, 4>, 4, 2>::proven([1]);
+    /// ```
+    ///
+    /// nor does one the list's capacity cannot hold, inside the bounds or not:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::Bounded;
+    /// use sce_forge_runtime::heapless::Vec;
+    /// let _ = Bounded::<Vec<u8, 2>, 4, 1>::proven([1, 2, 3]);
+    /// ```
+    pub fn proven<T, const N: usize>(entries: [T; N]) -> Self
+    where
+        L: FromEntries<T>,
+    {
+        const {
+            assert!(
+                N <= MAX,
+                "the array holds more entries than the list's bound"
+            )
+        };
+        const {
+            assert!(
+                N >= MIN,
+                "the array holds fewer entries than the list's bound"
+            )
+        };
+        Self(L::from_entries(entries))
+    }
+
+    /// The list of the one entry `entry`, which the build admits only where the
+    /// bounds hold one entry: a chain closed by an entry flag (`MIN` one) made of
+    /// its first entry, with no check ([`Self::proven`]).
+    ///
+    /// ```
+    /// use sce_forge_runtime::codec::Bounded;
+    /// use sce_forge_runtime::heapless::Vec;
+    /// let chain = Bounded::<Vec<u8, 4>, 4, 1>::one(7);
+    /// assert_eq!(chain.as_slice(), &[7][..]);
+    /// ```
+    ///
+    /// A list whose bound holds no entry has no list of one:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::Bounded;
+    /// use sce_forge_runtime::heapless::Vec;
+    /// let _ = Bounded::<Vec<u8, 4>, 0>::one(7);
+    /// ```
+    pub fn one<T>(entry: T) -> Self
+    where
+        L: FromEntries<T>,
+    {
+        Self::proven([entry])
+    }
+
+    /// A list held within bounds as narrow as these or narrower, held within
+    /// these: the build admits it only where `FROM_MAX` is at most `MAX` and
+    /// `FROM_MIN` at least `MIN`, so the count already checked is inside them
+    /// and nothing is checked again. The list is the same list; only the fact
+    /// held with it is weaker.
+    ///
+    /// ```
+    /// use sce_forge_runtime::codec::{Bounded, Bytes};
+    /// let id = [1u8, 2, 3, 4];
+    /// let held: Bytes<'_, 4, 4> = (&id).into();
+    /// let zid: Bytes<'_, 16, 1> = Bounded::widened(held);
+    /// assert_eq!(zid, id);
+    /// ```
+    ///
+    /// A list whose bound is past the target's does not build:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::{Bounded, Bytes};
+    /// let id = [1u8; 16];
+    /// let held: Bytes<'_, 16, 1> = (&id).into();
+    /// let _: Bytes<'_, 8, 1> = Bounded::widened(held);
+    /// ```
+    ///
+    /// nor does one whose fewest is below the target's:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::{Bounded, Bytes};
+    /// let id = [1u8; 4];
+    /// let held: Bytes<'_, 16> = (&id).into();
+    /// let _: Bytes<'_, 16, 1> = Bounded::widened(held);
+    /// ```
+    pub fn widened<const FROM_MAX: usize, const FROM_MIN: usize>(
+        from: Bounded<L, FROM_MAX, FROM_MIN>,
+    ) -> Self {
+        const {
+            assert!(
+                FROM_MAX <= MAX,
+                "the list's bound is past the target's bound"
+            )
+        };
+        const {
+            assert!(
+                FROM_MIN >= MIN,
+                "the list's fewest entries are below the target's"
+            )
+        };
+        Self(from.0)
     }
 }
 
@@ -1038,6 +1195,55 @@ mod tests {
         assert_eq!(*list.inner(), &[7u8, 8][..]);
         assert_eq!(list.get(1), Some(&8));
         assert_eq!(list.first(), Some(&7));
+    }
+
+    #[test]
+    fn an_owned_array_is_held_whole_where_its_length_lies_in_the_bounds() {
+        let three = Bounded::<heapless::Vec<u8, 4>, 4, 1>::proven([1, 2, 3]);
+        assert_eq!(three.as_slice(), &[1u8, 2, 3][..]);
+        assert_eq!(three.len(), 3);
+        // A list whose capacity is exactly the array's holds every entry.
+        let full = Bounded::<heapless::Vec<u8, 3>, 3, 3>::proven([4, 5, 6]);
+        assert_eq!(full.as_slice(), &[4u8, 5, 6][..]);
+        // A list of none, where the bounds admit none.
+        let none = Bounded::<heapless::Vec<u8, 2>, 2>::proven([0u8; 0]);
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn a_list_of_one_entry_is_made_without_a_check() {
+        let chain = Bounded::<heapless::Vec<u16, 4>, 4, 1>::one(7);
+        assert_eq!(chain.as_slice(), &[7u16][..]);
+        // A capacity and a bound of one hold it too.
+        let only = Bounded::<heapless::Vec<u16, 1>, 1, 1>::one(9);
+        assert_eq!(only.as_slice(), &[9u16][..]);
+        // A walk of it counts the one entry, as a codec writes it.
+        assert_eq!(chain.list_iter::<u16>().len(), 1);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn a_growable_list_is_made_of_an_array_and_of_one_entry() {
+        let one = Bounded::<alloc::vec::Vec<u8>, { usize::MAX }, 1>::one(5);
+        assert_eq!(one.as_slice(), &[5u8][..]);
+        let two = Bounded::<alloc::vec::Vec<u8>, 2>::proven([1, 2]);
+        assert_eq!(two.as_slice(), &[1u8, 2][..]);
+    }
+
+    #[test]
+    fn a_list_held_within_narrower_bounds_is_held_within_wider_ones_unchanged() {
+        let entries = [1u8, 2, 3];
+        let narrow = Bounded::<&[u8], 4, 2>::new(&entries[..]).expect("within the bounds");
+        let wide: Bounded<&[u8], 16, 1> = Bounded::widened(narrow);
+        assert_eq!(wide.len(), 3);
+        assert_eq!(*wide, &entries[..]);
+        // The same bounds are a conversion too, which changes nothing.
+        let same: Bounded<&[u8], 4, 2> = Bounded::widened(narrow);
+        assert_eq!(same, narrow);
+        // An owned list keeps its entries where they are.
+        let chain = Bounded::<heapless::Vec<u8, 4>, 4, 1>::one(8);
+        let wider: Bounded<heapless::Vec<u8, 4>, 8> = Bounded::widened(chain);
+        assert_eq!(wider.as_slice(), &[8u8][..]);
     }
 
     #[test]

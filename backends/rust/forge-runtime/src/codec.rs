@@ -281,7 +281,8 @@ pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
 // most theirs (docs/adr/0077 §3), and two lists of one count (docs/adr/0065 §6
 // R5), spelled from the same path.
 pub use crate::bounded::{
-    try_collect_bounded, Aligned, Bounded, BoundedIter, Bytes, Counted, Entries, Fewest, Text,
+    try_collect_bounded, Aligned, Bounded, BoundedIter, Bytes, Counted, Entries, Fewest,
+    FromEntries, Text,
 };
 pub use crate::membership::{
     place_first, place_first_in, Chain, Key, Kinds, OfKind, Placed, SkipAt, Slot, Slots, Without,
