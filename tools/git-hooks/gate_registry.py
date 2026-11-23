@@ -504,14 +504,21 @@ PACE_NORMALISED: dict[str, str] = {
 #
 # A gate's `inputs` names what its OWN script reads. `unit_inputs` adds what
 # every unit reads around it: `RUNNER_INPUTS`, the gate's script and the
-# workflows it mirrors (the runner reads them for the submodule question). Two
-# things the trace does not hold, so the entry has to:
+# workflows it mirrors (the runner reads them for the submodule question).
+# Beyond the files the gate opens, the entry has to name:
 #   * a directory the gate LISTS (`find`, a glob, cargo's discovery of
-#     `tests/`, `examples/` and `src/bin`). In the copy a listing sees only
-#     the inputs, so the run passes there over a tree that would fail. bx's
-#     `check learn` records reads of files only (measured 2026-11-23), so a
-#     listed directory is named by hand as `dir/**` or `dir/*`, and the entry
-#     says which listing each pattern covers;
+#     `tests/`, `examples/` and `src/bin`). bx keys a listing only when the
+#     inputs give it (bx RFC 0020 section 4.2, key format 3, bx 340e9f9e): a
+#     pattern that ends in `/` gives that directory's names (`third_party/`,
+#     `./` for the root), and `dir/**` gives every listing under `dir`. A
+#     listing the inputs do not give is "could not measure", and `check learn`
+#     proposes the pattern for it;
+#   * the paths a gate finds through git (`git ls-files`, `git grep`). The
+#     copy's index holds the inputs alone, and the trace does not see git read
+#     its objects, so the run in the copy searches a smaller tree and passes
+#     where the checkout would fail. Such a gate is narrowed only to patterns
+#     that cover every path its pathspec can name; one that searches the whole
+#     tree (`http-endpoint-ssot`) keeps `None`;
 #   * a commit. The copy's one commit is not HEAD, so a gate that reads HEAD
 #     or the change set keeps `inputs: None` until it is split (ADR 0120 D2).
 #     `a-narrowed-gate-reads-no-commit` in the self-test holds that.
@@ -867,7 +874,17 @@ GATES: dict[str, dict] = {
                                 "skips and exits 0 on a machine without "
                                 "clang++-19",
         "packages": ["clang-19"],
-        "inputs": None,
+        # Read by `check learn` (2026-11-24, bx 340e9f9e): the fail-fast case,
+        # the emitter it drives and the two Python modules the emitter runs.
+        # The run lists `scripts/`. The case writes its header tree under a
+        # temporary directory, so nothing of `sce/include` is read.
+        "inputs": [
+            "scripts/",
+            "scripts/_embed_manifest_filter.py",
+            "scripts/embed_manifest.py",
+            "scripts/emit_embed_manifest.sh",
+            "scripts/test_emit_manifest_fail_fast.sh",
+        ],
         "commits": [],
         "peak_gb": 1,
         "cores": CORES_SCRIPT,
@@ -2128,17 +2145,23 @@ GATES: dict[str, dict] = {
         # `package_embed.sh` writes `git describe` into the package's VERSION
         # file, which the licence check does not read.
         "cache": True,
-        # Read by `check learn` (2026-11-23): the SSOT, the licence texts and
-        # notices it names, and its checker. `third_party/**` because the
-        # checker LISTS `third_party/` and each dependency's directory (`find
-        # -maxdepth 2`) to find a dependency the SSOT does not name, which is
-        # the violation this gate exists for; `LICENSE*` covers the root's
-        # texts it opens.
+        # Read by `check learn` (2026-11-24, bx 340e9f9e): the SSOT, the
+        # licence texts it names, and its checker. The checker lists
+        # `third_party/` and each dependency's directory and looks at every
+        # file at depth two (`find -maxdepth 2 -type f`) to find a dependency
+        # the SSOT does not name, which is the violation this gate exists for:
+        # `third_party/` and `third_party/*/` are those listings and
+        # `third_party/*/*` those files. Two notices sit deeper and are opened
+        # by name (lua.h, json.hpp). `LICENSE*` covers the root's texts.
         "inputs": [
             "LICENSE*",
             "sce/sce_licenses.cmake",
             "scripts/verify_licenses.sh",
-            "third_party/**",
+            "third_party/",
+            "third_party/*/",
+            "third_party/*/*",
+            "third_party/lua/src/lua.h",
+            "third_party/nlohmann_json/include/nlohmann/json.hpp",
         ],
         "commits": [],
         "peak_gb": 1,
@@ -2171,13 +2194,15 @@ GATES: dict[str, dict] = {
         "cost_s": 0,
         "summary": "visualizer vendor libraries vs LICENSE-THIRD-PARTY.md",
         "cache": True,
-        # Read by `check learn` (2026-11-23): the registry of licences, each
-        # vendored library's texts and the pages that load them. The gate LISTS
-        # `web/visualizer/` and `web/visualizer/vendor/` to find a page or a
-        # library nobody registered, so both are named whole.
+        # Read by `check learn` (2026-11-24, bx 340e9f9e): the registry of
+        # licences, each vendored library's texts and the pages that load them
+        # (`web/visualizer/*.html`). It lists `web/visualizer/` for the pages
+        # and `web/visualizer/vendor/` for a library nobody registered; the
+        # vendor tree is named whole, which gives its listings too.
         "inputs": [
             "LICENSE-THIRD-PARTY.md",
-            "web/visualizer/*",
+            "web/visualizer/",
+            "web/visualizer/*.html",
             "web/visualizer/vendor/**",
         ],
         "commits": [],
@@ -2218,6 +2243,10 @@ GATES: dict[str, dict] = {
         "cost_s": 0.185,
         "summary": "BasicHTTP fixture endpoint has one owner",
         "cache": True,
+        # The whole tree, and it stays so: the scan finds its candidates with
+        # `git grep` over every tracked source, and in a narrowed unit's copy
+        # that search would see only the inputs, so a re-spelling in a file
+        # left out would pass.
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
@@ -4431,11 +4460,17 @@ def tracked_tree_is_head(repo_root: Path) -> bool:
 # script, read off `bx-fleet check learn` on 2026-11-23 for four gates, which
 # agreed on it: the runner and the library it sources, the toolchain selectors
 # (Rust's pin, Go's module for its release, the mesh transports' revision the
-# library reads), the submodule preflight, the registry, and `.cargo/`, whose
-# configuration every cargo run reads. bx's trace refuses a unit that reads a
-# file outside its inputs, so a runner that starts reading another file fails
-# the unit ("could not measure"), never passes it.
+# library reads), the submodule preflight and the `.gitmodules` it reads, the
+# registry, and `.cargo/`, whose configuration every cargo run reads. Read
+# again on 2026-11-24 with bx 340e9f9e, which traces listings: seven gates
+# agreed that every unit also lists the root (`./`) and `tools/git-hooks/`.
+# bx's trace refuses a unit that reads a file or lists a directory outside its
+# inputs, so a runner that starts reading another fails the unit ("could not
+# measure"), never passes it.
 RUNNER_INPUTS = (
+    "./",
+    ".gitmodules",
+    "tools/git-hooks/",
     "scripts/gate",
     "scripts/gates/lib.sh",
     "scripts/lib/rust_toolchains.sh",
