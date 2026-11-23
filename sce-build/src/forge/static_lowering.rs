@@ -9795,11 +9795,12 @@ pub fn lower(
                 .and_then(|data| data.source_location.clone());
             return Err(GenerateError::unsupported_at(
                 format!(
-                    "'{variable}' holds a record of '{event}' below its value whose schema grew by \
-                     revisions, which only the Rust and C++ restores grow there (docs/adr/0112, \
-                     D5; docs/adr/0109, D0): a {} restore would read it without the fields its \
-                     later revisions added",
-                    target.name()
+                    "a record held below a variable's value whose schema grew by revisions has \
+                     no {lang} lowering: '{variable}' holds a record of '{event}' there, which \
+                     only the Rust and C++ restores grow (docs/adr/0112, D5; docs/adr/0109, D0), \
+                     so the {lang} restore would read it without the fields its later revisions \
+                     added",
+                    lang = target.name()
                 ),
                 at,
             ));
