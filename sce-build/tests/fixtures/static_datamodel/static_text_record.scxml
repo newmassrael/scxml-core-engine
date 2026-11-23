@@ -4,13 +4,18 @@
   takes and gives back" and "A record's string field"): a statechart that keeps
   titled places hands the standard algorithms over `sce:std/text/text_slot.scxml`
   the records and the list of records it holds, whose `text` is bounded at 32 UTF-8
-  bytes, and takes back what they return, text included, on every backend.
+  bytes, and takes back what they return, text included, on every backend. It hands
+  `Titled` a text it holds, a parameter of its own beside the list of records, and
+  `Filled` the same text alone.
 
   A place that arrives is taken into `incoming` first, which is the assignment that
   holds the text it carries to the bound: `_event.data` is never handed to an
   algorithm itself, because no bound has judged its text (SCE_FORGE.md §4.12).
   `Latest` settles `held` on the later of two versions with its text, `Holds` asks
-  whether the list already has the place's slot and text, and `Retitled` gives an
+  whether the list already has the place's slot and text, `Titled` whether any place
+  of it carries the place's text and `Filled` whether that text is not empty
+  (both true wherever `Holds` is for a titled place, so `known` counts the same),
+  and `Retitled` gives an
   untitled place the title "untitled". A text one byte past the bound fails the
   assignment as any other does: nothing is written, error.execution is raised
   (`refusals` counts it) and the block ends (§scxml-4.9), so the algorithms are
@@ -22,6 +27,8 @@
   <sce:import kind="algorithm" src="sce:std/text/text_slot_latest.scxml" as="Latest"/>
   <sce:import kind="algorithm" src="sce:std/text/text_slot_retitled.scxml" as="Retitled"/>
   <sce:import kind="algorithm" src="sce:std/text/text_slot_holds.scxml" as="Holds"/>
+  <sce:import kind="algorithm" src="algorithm_slot_titled.scxml" as="Titled"/>
+  <sce:import kind="algorithm" src="algorithm_text_filled.scxml" as="Filled"/>
   <datamodel>
     <data id="slots" sce:type="list&lt;record:Slot&gt;[16]" sce:direction="out"/>
     <data id="held" sce:type="record:Slot" sce:direction="out">
@@ -41,7 +48,7 @@
     <transition event="text.slot" type="internal">
       <assign location="incoming" expr="_event.data"/>
       <assign location="held" expr="Latest(held, incoming)"/>
-      <if cond="Holds(slots, incoming)">
+      <if cond="Holds(slots, incoming) &amp;&amp; Titled(incoming.text, slots) &amp;&amp; Filled(incoming.text)">
         <assign location="known" expr="known + 1"/>
       </if>
       <sce:append target="slots" expr="incoming"/>

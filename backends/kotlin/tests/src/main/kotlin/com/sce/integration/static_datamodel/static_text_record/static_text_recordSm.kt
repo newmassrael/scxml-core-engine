@@ -1,15 +1,17 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9217dfff20277ab08732b26c8c296b58b442b891f5208046cced0b10b199fa76
+// source-hash: e6309856dfb19e76265eccd7b89c9e034bede12e4da20754f9c3f2284c9bf190
 // source: static_text_record.scxml
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_text_record.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_text_record.scxml:19 :: _machine
+// SCE-MAP: static_text_record.scxml:24 :: _machine
 
 package com.sce.integration.static_datamodel.static_text_record
 
 import com.sce.runtime.*
+import com.sce.generated.slot_titled.*
+import com.sce.generated.text_filled.*
 import com.sce.generated.text_slot.*
 import com.sce.generated.text_slot_holds.*
 import com.sce.generated.text_slot_latest.*
@@ -71,6 +73,10 @@ private fun call_Retitled__v(p0: List<StaticTextRecordSlotRecord>): com.sce.forg
         is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value.map { StaticTextRecordSlotRecord(slot = it.slot, version = it.version, text = it.text) })
         is com.sce.forge.runtime.AlgorithmResult.Failed -> r
     }
+private fun call_Titled__v(p0: String, p1: List<StaticTextRecordSlotRecord>): Boolean {
+    val r = slotTitled(p0, p1.map { TextSlotPayload(slot = it.slot, version = it.version, text = it.text) })
+    return r
+}
 
 // --- State Machine (W3C SCXML) ---
 
@@ -488,7 +494,7 @@ class StaticTextRecordStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_text_record.scxml:19 :: _machine
+    // SCE-MAP: static_text_record.scxml:24 :: _machine
     override fun onEntry(state: StaticTextRecordState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticTextRecordState.Open -> onEntryOfOpen()
@@ -497,11 +503,11 @@ class StaticTextRecordStateMachine(
 
 
     private fun onEntryOfOpen() {
-                // SCE-MAP: static_text_record.scxml:40 :: open :: _state_body
+                // SCE-MAP: static_text_record.scxml:47 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_text_record.scxml:19 :: _machine
+    // SCE-MAP: static_text_record.scxml:24 :: _machine
     override fun onExit(state: StaticTextRecordState) {
         when (state) {
             is StaticTextRecordState.Open -> onExitOfOpen()
@@ -510,13 +516,13 @@ class StaticTextRecordStateMachine(
 
 
     private fun onExitOfOpen() {
-                // SCE-MAP: static_text_record.scxml:40 :: open :: _state_body
+                // SCE-MAP: static_text_record.scxml:47 :: open :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_text_record.scxml:19 :: _machine
+    // SCE-MAP: static_text_record.scxml:24 :: _machine
     override fun executeTransitionContent(source: StaticTextRecordState, transitionIndex: Int) {
         when (source) {
             is StaticTextRecordState.Open -> transitionContentOfOpen(transitionIndex)
@@ -540,7 +546,7 @@ class StaticTextRecordStateMachine(
 
 
     private fun transitionContentOfOpenAt0() {
-                // SCE-MAP: static_text_record.scxml:41 :: open :: _transition_0
+                // SCE-MAP: static_text_record.scxml:48 :: open :: _transition_0
                 if (pendingTextSlotPayload == null) {
                     return
                 }
@@ -552,7 +558,7 @@ class StaticTextRecordStateMachine(
             vHeld = call_Latest__vv(vHeld, vIncoming)
 
 
-            if (call_Holds__vv(vSlots, vIncoming)) {
+            if (call_Holds__vv(vSlots, vIncoming) && call_Titled__v(vIncoming.text, vSlots) && textFilled(vIncoming.text)) {
 
             if (try { vKnown = com.sce.forge.runtime.SceChecked.add(vKnown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='known'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -565,7 +571,7 @@ class StaticTextRecordStateMachine(
     }
 
     private fun transitionContentOfOpenAt1() {
-                // SCE-MAP: static_text_record.scxml:49 :: open :: _transition_1
+                // SCE-MAP: static_text_record.scxml:56 :: open :: _transition_1
 
             if (try { vSlots = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_Retitled__v(vSlots)), 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='slots'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -573,7 +579,7 @@ class StaticTextRecordStateMachine(
     }
 
     private fun transitionContentOfOpenAt2() {
-                // SCE-MAP: static_text_record.scxml:52 :: open :: _transition_2
+                // SCE-MAP: static_text_record.scxml:59 :: open :: _transition_2
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

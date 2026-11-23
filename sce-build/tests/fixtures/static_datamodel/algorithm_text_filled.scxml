@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether a text is not empty: a text in, a truth value out, called by a statechart
+  directly, with no record or list beside it, on every backend
+  (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm takes and gives back").
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="text_filled"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="text" type="string"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="text !== ''"/>
+  </sce:body>
+</scxml>

@@ -2062,6 +2062,25 @@ pub(crate) fn host_param_type(lang: crate::generator::Language, ty: &EntryType) 
     }
 }
 
+/// The type an algorithm generated for `lang` declares its parameter of the scalar
+/// `ty` with: the one spelling [`algorithm_param_type`] gives every algorithm's
+/// signature, for a statechart's adapter that hands such a parameter on as it is
+/// (`forge::static_lowering`, an `AdapterParam::Scalar`). A text is the view
+/// the algorithm takes (`&str` in Rust, `const std::string&` in C++), so the
+/// argument the call site spells for the algorithm's own signature is the one
+/// the adapter takes. Not for a value of an enum, which an adapter crosses into
+/// the enum document's type.
+pub(crate) fn algorithm_scalar_param_type(
+    lang: crate::generator::Language,
+    ty: &SceType,
+) -> String {
+    debug_assert!(
+        !matches!(ty, SceType::Enum(_)),
+        "an adapter crosses a value of an enum; it does not hand it on as it is"
+    );
+    algorithm_param_type(&LangCtx::primitive(lang), ty)
+}
+
 /// Whether the backend `lang` spells a host method's parameter of `optional<elem>`
 /// (docs/adr/0055, step 10): the type [`host_param_type`] writes. Every element a
 /// host argument can be — a number, a `bool`, a text, a byte string — is one on

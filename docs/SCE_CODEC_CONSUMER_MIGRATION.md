@@ -3733,3 +3733,20 @@ Landing: the commits that add this section. Two defects found by a consumer, bot
   `a == b and b == c`, so it compiled and gave a different answer. C and C++ generated it with a `-Wparentheses`
   warning. A tree generated from such an expression changes only by the added parentheses. In Python the meaning
   also changes, to the one the document states.
+
+## A statechart hands an algorithm a text parameter, alone or beside a record or a list
+
+Landing: the commits that add this section. A `sce-static` statechart's machine that calls an algorithm with a
+text parameter changes where it is generated again; nothing else does.
+
+- A call of an algorithm that takes a text beside a record, a list or a value of an enum is generated on every
+  backend. Until now every backend refused it, with "an imported algorithm that takes or returns a record or a list
+  has no <language> lowering yet", which named the list. The statechart's adapter takes the text as the view the
+  algorithm's own parameter declares (`&str` in Rust, `const std::string&` in C++, `const char *` in C11) and hands
+  it on.
+- A Rust machine lends the text it holds to such a call, and to a call of an algorithm whose only slots are
+  scalars: `f(&(self.s))`. It handed its `SceString` where the algorithm takes `&str`, so a Rust machine that called
+  an algorithm with a text parameter did not compile, although `check` passed it.
+- What a call still cannot hand over is refused by the slot it is: a byte string parameter, a list of texts or byte
+  strings, or a text or a byte string the algorithm returns ("`F(…)`: the text it returns crosses no Rust adapter
+  yet").

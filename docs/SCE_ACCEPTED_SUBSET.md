@@ -6993,7 +6993,12 @@ the **name** of a variable that holds one — a record variable, a list variable
 item of a `<foreach>` over records, or `_event.data` for the payload of the event
 the transition is on — and not by an expression that computes one
 (`expression/unsupported-construct`, naming the call and what it was handed). The
-other slots are scalar expressions as in any call. What the algorithm returns is a
+other slots are scalar expressions as in any call, a text among them handed on as the
+view the algorithm's own parameter takes (`&str` in Rust, `const std::string&` in
+C++). A call of such an algorithm is refused for a backend, naming the slot, where the
+slot is a byte string parameter, a list of texts or byte strings, or a text or a byte
+string the algorithm returns; until 2026-11-23 a text parameter was refused too, under
+a message that named the list. What the algorithm returns is a
 number, or a record or a list that the call hands over whole: an `<assign>` to a
 variable of that record or list is the only place one is taken; it is no operand,
 no field read (`Bump(total, 1).count`), no host action's argument.
@@ -7032,7 +7037,8 @@ type already, and is the copy the call would have made. The refusal stands until
 payload struct holds the field's bounded text, as a composed payload's struct does,
 which turns the copy into a clone on every backend. `scenarios/static_text_record.json`
 runs the form the rule asks for — the payload taken into `incoming`, then handed to
-`Latest`, `Holds` and, through `slots`, `Retitled` — on every engine that runs the
+`Latest`, `Holds` and, through `slots`, `Retitled`, and its text handed to `Titled`
+beside `slots` and to `Filled` alone — on every engine that runs the
 model, with a text of exactly the bound, one byte past it that is refused with the
 state as it was, and a multi-byte text counted in bytes.
 

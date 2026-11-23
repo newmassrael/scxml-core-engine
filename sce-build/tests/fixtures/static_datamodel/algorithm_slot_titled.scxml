@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether a place of a list carries a title: a text and a list of records that hold
+  text in, a truth value out. The text is a parameter of its own beside the list,
+  which a statechart hands on as the view the algorithm takes, on every backend
+  (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm takes and gives back").
+  Texts are compared byte for byte, as a UTF-8 string is.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="slot_titled"
+       version="1.0">
+  <sce:import kind="event-schema" src="sce:std/text/text_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="title" type="string"/>
+    <sce:param name="slots" type="list&lt;record:Slot&gt;"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:foreach item="s" in="slots">
+      <sce:if cond="s.text === title">
+        <sce:assign target="found" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>
