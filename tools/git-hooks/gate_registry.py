@@ -4432,6 +4432,49 @@ RUNNER_INPUTS = (
 )
 
 
+def submodule_paths(repo_root: Path) -> list[str]:
+    """The paths of the submodules `.gitmodules` records, sorted."""
+    done = subprocess.run(
+        ["git", "config", "-f", str(repo_root / ".gitmodules"),
+         "--get-regexp", r"^submodule\..*\.path$"],
+        capture_output=True, text=True, check=False)
+    return sorted(line.split(None, 1)[1]
+                  for line in done.stdout.splitlines() if " " in line)
+
+
+def reaches_beneath(pattern: str, path: str) -> bool:
+    """Can input pattern `pattern` name a file beneath directory `path`?
+
+    Asked a segment at a time, so `third_party/*/*` reaches
+    `third_party/spdlog` and `web/visualizer/vendor/**` does not. A
+    pattern that ends in `/` gives a directory's names and nothing they
+    hold (bx RFC 0020, section 4.2), so it reaches nothing beneath them.
+    """
+    if pattern.endswith("/"):
+        return False
+    parts = path.split("/")
+    for i, seg in enumerate(pattern.split("/")):
+        if seg == "**" or i == len(parts):
+            return True
+        if not glob_to_regex(seg).match(parts[i]):
+            return False
+    return False
+
+
+def submodules_reached(patterns, paths) -> list[str]:
+    """Those of the submodules at `paths` beneath which `patterns` name a file.
+
+    A narrowed unit's copy holds a submodule checked out only when its
+    inputs give the submodule's `<path>/.git`, and holds every other one as
+    a bare gitlink (bx RFC 0026, section 4.1, 2026-11-23). So the submodule
+    preflight asks a narrowed gate for these alone
+    (`scripts/lib/require_submodules.sh`), and
+    `a-narrowed-gate-holds-the-submodules-it-reads` refuses an entry that
+    reaches one without its `.git`.
+    """
+    return [p for p in paths if any(reaches_beneath(g, p) for g in patterns)]
+
+
 def unit_inputs(closure, table=None):
     """The input patterns of a unit that runs every gate in `closure`.
 
@@ -7521,6 +7564,29 @@ def self_test(repo_root: Path) -> int:
                 f"narrowed: {slug} declares input patterns and reads "
                 f"{spec['commits']}; the copy bx runs a narrowed unit in has "
                 f"one commit, which is neither HEAD nor the change set")
+
+    # a-narrowed-gate-holds-the-submodules-it-reads. A narrowed unit's copy
+    # holds a submodule checked out only when the inputs give its
+    # `<path>/.git` (bx RFC 0026, section 4.1); a gate whose inputs reach
+    # files beneath one without it would find them in a submodule git calls
+    # not checked out, and the preflight would refuse the unit.
+    cases += 1
+    submodules_now = submodule_paths(repo_root)
+    if not submodules_now:
+        failures.append(
+            "submodules: .gitmodules records none, so the check below read "
+            "nothing; third_party/ holds four")
+    for slug, spec in sorted(GATES.items()):
+        own = spec.get("inputs")
+        if own is None:
+            continue
+        for sub in submodules_reached(own, submodules_now):
+            if not any(glob_to_regex(p).match(f"{sub}/.git")
+                       for p in own if not p.endswith("/")):
+                failures.append(
+                    f"narrowed: {slug} reads beneath the submodule {sub} and "
+                    f"its inputs do not give {sub}/.git, so its unit's copy "
+                    f"holds that submodule as not checked out")
 
     # The trees and triggers the two checks below read, as they stand.
     tracked_now = tracked_paths(repo_root)
