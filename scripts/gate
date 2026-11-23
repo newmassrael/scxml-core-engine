@@ -18,6 +18,7 @@
 #   scripts/gate --change-set A..B <slug>...
 #                                     run named gates, handing them what A..B
 #                                     changes as the set they read
+#   scripts/gate --unit ...           run as a unit of a plan: no registry self-test
 #
 # The order is derived, never typed: `tools/git-hooks/gate_registry.py`
 # holds each gate's dependencies and measured cost, and the runner sorts by
@@ -49,6 +50,12 @@
 # (`commits: ["CHANGES"]` in the registry) the push's ranges. It selects
 # nothing, unlike `--changed-in`: the plan already chose the gate, and the
 # ranges are only what the gate reads (`SCE_GATE_CHANGED_FILE`).
+#
+# `--unit` is how a plan's unit runs (`plan_units` puts it in every argv). The
+# plan ran the registry's self-test over the same tree before it named the
+# unit, and the self-test reads the whole repository (every workflow, hook and
+# gate script), so a unit that ran it again would read the whole tree whatever
+# its gate reads, and no narrowed key could hold it (ADR 0120, D2).
 
 set -euo pipefail
 
@@ -67,6 +74,7 @@ PLAN=0
 RUST_WANT=""
 AT_WANT=""
 LANDING=0
+UNIT=0
 
 while (( $# )); do
     case "$1" in
@@ -75,6 +83,7 @@ while (( $# )); do
         --measure)      MEASURE=1 ;;
         --plan)         PLAN=1 ;;
         --landing)      LANDING=1 ;;
+        --unit)         UNIT=1 ;;
         --rust)         RUST_WANT="${2:-}"; shift ;;
         --at)           AT_WANT="${2:-}"; shift ;;
         --changed-from) MODE="changed"; CHANGED_FILE="$2"; shift ;;
@@ -283,9 +292,9 @@ gate_select_rust() {
 
 # The registry decides what runs and in what order, so a broken registry is
 # a silent coverage loss rather than a loud failure. Exercise its own cases
-# first — milliseconds, and it is the only thing standing between a table
-# typo and a gate that quietly stops running.
-if ! python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+# first — it is the only thing standing between a table typo and a gate that
+# quietly stops running. A unit (`--unit`) skips it: its plan ran it.
+if (( ! UNIT )) && ! python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
     python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >&2 || true
     printf '\nERROR gate: registry self-test failed — refusing to run.\n' >&2
     exit 1

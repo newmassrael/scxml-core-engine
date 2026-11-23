@@ -1585,14 +1585,14 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                 "{changed:?}: unit {name} does not run the runner on its own gate"
             );
             assert_eq!(
-                head.get(..4),
-                Some(&["bash", "scripts/gate", "--rust", "1.0.0"][..]),
+                head.get(..5),
+                Some(&["bash", "scripts/gate", "--rust", "1.0.0", "--unit"][..]),
                 "{changed:?}: unit {name} does not run the runner at the planned \
-                 release: {argv:?}"
+                 release, as a unit of the plan: {argv:?}"
             );
-            // A landing's unit says so, right after the release; a unit of
-            // any other push does not.
-            let rest = &head[4..];
+            // A landing's unit says so, right after `--unit`; a unit of any
+            // other push does not.
+            let rest = &head[5..];
             assert_eq!(
                 rest.first() == Some(&"--landing"),
                 landing,
