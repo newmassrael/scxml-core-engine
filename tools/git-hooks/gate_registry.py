@@ -496,20 +496,31 @@ PACE_NORMALISED: dict[str, str] = {
 # `inputs` is the other half of the key. `None` is the whole tracked tree; a list
 # of patterns (bx RFC 0003, section 6) narrows the key to those files, and bx
 # then runs the unit in a copy of them alone, under strace, and calls a read
-# outside them "could not measure" (RFC 0020, section 5.2). Every gate is `None`
-# today, and not by default: that copy holds no `.git`, and the runner and the
-# gate library both ask git for the repository root before anything else, so a
-# narrowed unit could only ever end "could not measure".
-# `narrowed-units-need-a-git-free-root` in the self-test refuses a list until
-# that changes.
+# outside them "could not measure" (RFC 0020, section 5.2). The copy is a
+# repository of one commit whose tree is the inputs (bx RFC 0026, implemented
+# in bx 80cdd0de), so the runner and the gate library find their root in it as
+# they do in a checkout. ADR 0120 (D2) decides that every gate's key is to be
+# narrowed this way, a gate at a time.
+#
+# A gate's `inputs` names what its OWN script reads. `unit_inputs` adds what
+# every unit reads around it: `RUNNER_INPUTS`, the gate's script and the
+# workflows it mirrors (the runner reads them for the submodule question). Two
+# things the trace does not hold, so the entry has to:
+#   * a directory the gate LISTS (`find`, a glob, cargo's discovery of
+#     `tests/`, `examples/` and `src/bin`). In the copy a listing sees only
+#     the inputs, so the run passes there over a tree that would fail. bx's
+#     `check learn` records reads of files only (measured 2026-11-23), so a
+#     listed directory is named by hand as `dir/**` or `dir/*`, and the entry
+#     says which listing each pattern covers;
+#   * a commit. The copy's one commit is not HEAD, so a gate that reads HEAD
+#     or the change set keeps `inputs: None` until it is split (ADR 0120 D2).
+#     `a-narrowed-gate-reads-no-commit` in the self-test holds that.
 #
 # What whole-tree keys buy, measured against what was asked of them: one tree
 # is judged once (a push retried over the same commits, a full run after a
 # scoped one, two sessions verifying the same tree). A rebase over commits that
 # touch nothing a gate reads still moves the tree, so it is a new key for every
-# unit; that reuse needs narrowed inputs, which needs the root above. bx has
-# proposed making that copy a git repository whose HEAD holds the inputs (not
-# decided on 2026-11-04); this guard is the line to revisit when it is.
+# unit. A narrowed key survives every rebase that leaves its files alone.
 #
 # `commits` is what a verdict reads of git beyond the tree: the commits whose
 # ids, ancestry or objects it asks about. The key holds the tree's content and
@@ -2117,7 +2128,18 @@ GATES: dict[str, dict] = {
         # `package_embed.sh` writes `git describe` into the package's VERSION
         # file, which the licence check does not read.
         "cache": True,
-        "inputs": None,
+        # Read by `check learn` (2026-11-23): the SSOT, the licence texts and
+        # notices it names, and its checker. `third_party/**` because the
+        # checker LISTS `third_party/` and each dependency's directory (`find
+        # -maxdepth 2`) to find a dependency the SSOT does not name, which is
+        # the violation this gate exists for; `LICENSE*` covers the root's
+        # texts it opens.
+        "inputs": [
+            "LICENSE*",
+            "sce/sce_licenses.cmake",
+            "scripts/verify_licenses.sh",
+            "third_party/**",
+        ],
         "commits": [],
         "peak_gb": 1,
         "cores": CORES_SCRIPT,
@@ -2149,7 +2171,15 @@ GATES: dict[str, dict] = {
         "cost_s": 0,
         "summary": "visualizer vendor libraries vs LICENSE-THIRD-PARTY.md",
         "cache": True,
-        "inputs": None,
+        # Read by `check learn` (2026-11-23): the registry of licences, each
+        # vendored library's texts and the pages that load them. The gate LISTS
+        # `web/visualizer/` and `web/visualizer/vendor/` to find a page or a
+        # library nobody registered, so both are named whole.
+        "inputs": [
+            "LICENSE-THIRD-PARTY.md",
+            "web/visualizer/*",
+            "web/visualizer/vendor/**",
+        ],
         "commits": [],
         "peak_gb": 1,
         "cores": CORES_SCRIPT,
@@ -4397,21 +4427,47 @@ def tracked_tree_is_head(repo_root: Path) -> bool:
     return done.returncode == 0
 
 
+# What `bash scripts/gate --unit <slug>` reads before and around the gate's own
+# script, read off `bx-fleet check learn` on 2026-11-23 for four gates, which
+# agreed on it: the runner and the library it sources, the toolchain selectors
+# (Rust's pin, Go's module for its release, the mesh transports' revision the
+# library reads), the submodule preflight, the registry, and `.cargo/`, whose
+# configuration every cargo run reads. bx's trace refuses a unit that reads a
+# file outside its inputs, so a runner that starts reading another file fails
+# the unit ("could not measure"), never passes it.
+RUNNER_INPUTS = (
+    "scripts/gate",
+    "scripts/gates/lib.sh",
+    "scripts/lib/rust_toolchains.sh",
+    "scripts/lib/go_toolchain.sh",
+    "scripts/lib/require_submodules.sh",
+    "scripts/install_mesh_transports.sh",
+    "tools/git-hooks/gate_registry.py",
+    "rust-toolchain.toml",
+    "backends/go/forge-runtime/go.mod",
+    ".cargo/**",
+)
+
+
 def unit_inputs(closure, table=None):
     """The input patterns of a unit that runs every gate in `closure`.
 
     `None`, the whole tracked tree, as soon as one of them reads the whole
     tree: a key narrower than what the unit reads would let a pass outlive
     a change to the part left out. Otherwise the union of their patterns,
+    of `RUNNER_INPUTS`, and of each gate's script and mirrored workflows,
     sorted so that one closure always yields one key.
     """
     table = GATES if table is None else table
-    patterns: set[str] = set()
+    patterns: set[str] = set(RUNNER_INPUTS)
     for slug in closure:
         own = table[slug].get("inputs")
         if own is None:
             return None
         patterns.update(own)
+        patterns.add(f"scripts/gates/{slug}.sh")
+        patterns.update(f".github/workflows/{wf}"
+                        for wf in table[slug].get("workflows", []))
     return sorted(patterns)
 
 
@@ -4505,6 +4561,10 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
         argv = ["bash", "scripts/gate"]
         if rust is not None:
             argv += ["--rust", rust]
+        # A unit runs the gates the plan chose; the plan ran the registry's
+        # self-test over the same tree, so the unit does not run it again
+        # and its reads are the gates' own (see "--unit" in scripts/gate).
+        argv.append("--unit")
         if landing:
             argv.append("--landing")
         if reads_head and head is not None:
@@ -7488,26 +7548,19 @@ def self_test(repo_root: Path) -> int:
             "commits: no gate script reads SCE_GATE_CHANGED_FILE, so the scan "
             "above read nothing; `mutation-rounds` does")
 
-    # narrowed-units-need-a-git-free-root. bx runs a unit with input patterns
-    # in a copy of those files alone, with no `.git` (bx RFC 0020, section
-    # 5.2). A unit is the runner, and every gate sources its library; both
-    # ask git for the repository root before anything else, so a narrowed
-    # unit there would end "could not measure" on every push, and the push
-    # would fail on a property of the copy, not of the tree. Derived from
-    # the two files, so the refusal lifts the day neither asks git.
+    # a-narrowed-gate-reads-no-commit. bx runs a unit with input patterns in a
+    # repository of one commit that holds them (bx RFC 0026). That commit is
+    # not HEAD and carries no change set, so a gate that reads either would
+    # be refused by the runner (`--at`) or handed an empty set there. Such a
+    # gate keeps the whole tree until it is split into a part that reads the
+    # tree and a part that reads the commits (ADR 0120, D2).
     cases += 1
-    narrowed = sorted(s for s, spec in GATES.items() if spec.get("inputs"))
-    if narrowed:
-        asks_git = [rel for rel in ("scripts/gate", "scripts/gates/lib.sh")
-                    if "rev-parse --show-toplevel" in
-                    (repo_root / rel).read_text(encoding="utf-8",
-                                                errors="replace")]
-        if asks_git:
+    for slug, spec in sorted(GATES.items()):
+        if spec.get("inputs") is not None and spec.get("commits"):
             failures.append(
-                f"narrowed: {', '.join(narrowed)} declare input patterns, and "
-                f"{' and '.join(asks_git)} ask git for the repository root; "
-                f"bx runs a narrowed unit in a copy of its inputs that holds "
-                f"no .git, so the unit could only end 'could not measure'")
+                f"narrowed: {slug} declares input patterns and reads "
+                f"{spec['commits']}; the copy bx runs a narrowed unit in has "
+                f"one commit, which is neither HEAD nor the change set")
 
     # The trees and triggers the two checks below read, as they stand.
     tracked_now = tracked_paths(repo_root)
@@ -7638,7 +7691,7 @@ def self_test(repo_root: Path) -> int:
                     f"plan[{label}]: unit {unit['name']} is not in the "
                     f"selection {sorted(selection)}")
             reads_head = any("HEAD" in GATES[s]["commits"] for s in closure)
-            want = (["bash", "scripts/gate", "--rust", "1.0.0"]
+            want = (["bash", "scripts/gate", "--rust", "1.0.0", "--unit"]
                     + (["--landing"] if landing else [])
                     + (["--at", head] if reads_head else []) + [unit["name"]])
             if unit["argv"] != want:
@@ -7729,10 +7782,12 @@ def self_test(repo_root: Path) -> int:
             "plan-fixture: `child` runs `parent`, whose verdict is not kept, "
             "and its own unit kept a verdict anyway")
     elif by_name["alone"]["cache"] is not True \
-            or by_name["alone"].get("inputs") != ["docs/**"]:
+            or by_name["alone"].get("inputs") != sorted(
+                {"docs/**", "scripts/gates/alone.sh", *RUNNER_INPUTS}):
         failures.append(
-            f"plan-fixture: `alone` keeps its verdict over its own inputs and "
-            f"was planned as {by_name['alone']}")
+            f"plan-fixture: `alone` keeps its verdict over its own inputs, "
+            f"its script's and the runner's, and was planned as "
+            f"{by_name['alone']}")
     elif by_name["child"].get("secs") != 5.0:
         failures.append(
             f"plan-fixture: `child` runs 3s of its own and 2s of `parent`, "
@@ -7747,7 +7802,7 @@ def self_test(repo_root: Path) -> int:
     with_head = plan_units({"at-head"}, rust="1.0.0", table=fixture,
                            head=commit)
     without = plan_units({"at-head"}, rust="1.0.0", table=fixture, head=None)
-    if with_head[0]["argv"] != ["bash", "scripts/gate", "--rust", "1.0.0",
+    if with_head[0]["argv"] != ["bash", "scripts/gate", "--rust", "1.0.0", "--unit",
                                 "--at", commit, "at-head"] \
             or with_head[0]["cache"] is not True:
         failures.append(
@@ -7787,7 +7842,7 @@ def self_test(repo_root: Path) -> int:
     for slug in ("on-changes", "after-changes"):
         planned = plan_units({slug}, rust="1.0.0", table=fixture,
                              landing=True, changes=ranges)[0]
-        if planned["argv"] != ["bash", "scripts/gate", "--rust", "1.0.0",
+        if planned["argv"] != ["bash", "scripts/gate", "--rust", "1.0.0", "--unit",
                                "--landing", *carried, slug] \
                 or planned["cache"] is not True:
             failures.append(
@@ -7836,7 +7891,7 @@ def self_test(repo_root: Path) -> int:
             f"as {branch_unit}; its pass could be a skip and is not kept")
     if landing_unit["cache"] is not True \
             or landing_unit["argv"] != ["bash", "scripts/gate", "--rust",
-                                        "1.0.0", "--landing", "skipper"]:
+                                        "1.0.0", "--unit", "--landing", "skipper"]:
         failures.append(
             f"plan-fixture: a landing's unit of a gate that can skip was "
             f"planned as {landing_unit}, not with --landing and its pass kept")
