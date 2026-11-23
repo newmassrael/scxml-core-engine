@@ -1059,9 +1059,14 @@ collection's item has its element's fields, so `frame.msgIdd` is
 refused as `expression/unknown-member` with every declared member
 offered, as an enum's variants are. Two records are not judged, and
 say so rather than pass by accident: `_event`, whose members are the
-triggering event's and belong to its schema, and a collection item
-compiled without its element schema (a single document on its own),
-whose element type lives in a document that compile never reads.
+triggering event's and belong to its schema, and an item of a
+collection whose element document is not beside it. The element is
+read where the collection names it, the document `<element-type>.scxml`
+in the collection's directory, with the import that names the
+collection, so a document generated on its own and the same document
+in a document set judge its item alike: a document means what it and
+the documents its imports reach say, whichever route brings it to the
+generator.
 Measured 2026-09-21: the only member check ran on algorithms, where an
 import's alias is not a value at all, so a misspelled field of an
 import in a procedure generated with exit 0.

@@ -654,10 +654,16 @@ fn a_forge_name_refusal_is_fatal_with_or_without_a_named_backend() {
     }
 }
 
-/// An item of a bounded collection is a record, so `entry.callback_id` is
-/// a member read the name check must let through — on the single-document
-/// route too, where the element's field schema is not threaded and the
-/// member is therefore registered nowhere.
+/// An item of a bounded collection is a record whose members are the fields
+/// of the element the collection holds, on the single-document route as in a
+/// document set. A document's meaning is a function of the document and of
+/// what its imports reach: the element is read where the collection names it
+/// (`subscription_entry.scxml` beside `local_sub_table.scxml`), with the
+/// import that names the collection, so the route that brings the document to
+/// the generator does not change what `entry.callback_id` is. The fixture
+/// passes every backend, and the same document asking its item for a field
+/// the element does not declare is refused as a document's mistake, which an
+/// item whose members were registered nowhere would let through.
 ///
 /// ⚠ The item used to be typed a byte whatever it iterated. Nothing read
 /// that slot for a collection until members of a value were refused, and
@@ -693,6 +699,50 @@ fn a_bounded_collection_item_is_a_record_on_the_single_document_route() {
     {
         assert_eq!(v["status"], "ok", "{v}");
     }
+
+    // The negative control: the same document beside the same collection and
+    // element, its item asked for a field the element does not declare.
+    let staged = ScratchDir::new("check-collection-item-member");
+    for name in ["local_sub_table.scxml", "subscription_entry.scxml"] {
+        std::fs::copy(
+            repo_root().join("tests/forge/resources").join(name),
+            staged.path().join(name),
+        )
+        .expect("stage the collection and its element");
+    }
+    let text = std::fs::read_to_string(&doc).expect("read fixture");
+    assert!(
+        text.contains("entry.callback_id === target"),
+        "the fixture reads the element's field"
+    );
+    let misspelled = staged.path().join("algorithm_bc_iter_minimal.scxml");
+    std::fs::write(
+        &misspelled,
+        text.replace(
+            "entry.callback_id === target",
+            "entry.callback_idd === target",
+        ),
+    )
+    .expect("stage the misspelled document");
+    let (refused, stdout) = run(
+        &[
+            "check",
+            misspelled.to_str().unwrap(),
+            "--go-module-prefix",
+            "example.com/generated",
+        ],
+        &repo_root(),
+    );
+    assert_ne!(
+        refused.exit,
+        Some(0),
+        "a field the element does not declare must be refused"
+    );
+    assert_eq!(refused.code.as_deref(), Some("expression/unknown-member"));
+    assert!(
+        stdout.trim().is_empty(),
+        "stdout must stay empty on failure: {stdout}"
+    );
 }
 
 /// A document-axis refusal is fatal whether or not a backend was named

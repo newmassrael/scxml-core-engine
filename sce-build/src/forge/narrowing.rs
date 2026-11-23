@@ -719,9 +719,8 @@ pub fn after_algorithm_statement(before: &Facts, statement: &AlgorithmStmt) -> F
 pub(crate) fn check_algorithm(
     m: &crate::forge::model::AlgorithmModel,
     imports: &[crate::forge::generator::ImportContext],
-    options: &crate::ForgeCompileOptions,
 ) -> Result<(), crate::forge::error::ForgeError> {
-    let types = crate::forge::generator::AlgorithmTypes::collect(m, imports, options)?;
+    let types = crate::forge::generator::AlgorithmTypes::collect(m, imports)?;
     let returns_optional = m
         .signature
         .return_type

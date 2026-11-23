@@ -798,8 +798,9 @@ pub struct GeneratedOutput {
     /// On the statechart route these are the preprocessor inputs, from
     /// `Parser::preprocessor_deps()`. On the forge route they are the
     /// transitive `<sce:import>` closure, from the walk
-    /// `forge::cross_kind_check::check` already performs. Empty for
-    /// `from_string` / in-memory routes.
+    /// `forge::cross_kind_check::check` already performs, and the element
+    /// document of each bounded collection the document imports, which the
+    /// import enrichment reads. Empty for `from_string` / in-memory routes.
     pub deps: Vec<PathBuf>,
     /// What the machines of this output need linked beside them
     /// ([`RuntimeRequirement`]): the union over every machine it holds, a

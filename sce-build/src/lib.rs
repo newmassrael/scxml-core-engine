@@ -4687,31 +4687,15 @@ pub struct ForgeCompileOptions {
     /// sibling synthesized, no self-check — matching pre-C10 behavior
     /// verbatim.
     pub listener_links: Option<std::collections::BTreeSet<String>>,
-    /// Item C7 keyexpr-matching support: element-type `(field_id, SceType)`
-    /// schemas keyed by the element-type's **snake-cased name** (the same
-    /// form [`ImportContext::bc_element_snake`] carries —
-    /// `to_snake_case(BoundedCollectionModel.element_type)`). Populated by
-    /// [`compile_scxml_with_imports`] from `element_type_candidates` so an
-    /// algorithm iterating a BC (`<sce:foreach item="entry" in="keys">`)
-    /// can type each `entry.<field>` access — `entry.pattern` → `Str`,
-    /// `entry.callback_id` → `uint32`. That inference is what the
-    /// bounded-string-field → borrowed-`bytes`-view call-site projection
-    /// keys on. Keyed by element name (not BC name)
-    /// because `render_algorithm` recovers the element snake from the BC
-    /// import's `bc_element_snake`, whereas the BC's own model name is not
-    /// reliably reconstructible from the file-stem-derived import context.
-    /// `None` on deploy-unaware single-file paths (`sce_codegen` CLI,
-    /// `compile_forge_with_imports`); the projection then does not fire and
-    /// the arg falls through verbatim, exactly as before the projection
-    /// existed.
-    pub element_type_field_schemas: Option<std::collections::HashMap<String, ElementFieldSchema>>,
-
     /// docs/adr/0081 step 4: the element-type candidates the C++ backend
-    /// prints from their encode plan, by the snake element name of
-    /// [`Self::element_type_field_schemas`]. Such an element presents each
-    /// field through an accessor, so an algorithm iterating a collection of
-    /// it reads `entry.<field>` as a call. Populated with the schemas, on a
-    /// C++ compile only; `None` elsewhere, where no field is read by call.
+    /// prints from their encode plan, by the snake element name. Such an
+    /// element's encode reads each flag input its value says off the value
+    /// (docs/adr/0065 §6 R4a), so a broadcast log over it hands it only the
+    /// others. Populated on a C++ compile only; `None` elsewhere. What an
+    /// algorithm that walks a collection of an element reads it as is not
+    /// threaded here: it rides the collection's import
+    /// ([`forge::generator::ImportContext::bc_element`]), read from the
+    /// element's own document, so it is the same on every route.
     pub element_type_cpp_printed: Option<std::collections::HashSet<String>>,
 
     /// docs/adr/0081 step 5: the element-type candidates the Swift backend
@@ -4728,26 +4712,6 @@ pub struct ForgeCompileOptions {
     /// flag off the element. Populated on a Python compile only; `None`
     /// elsewhere.
     pub element_type_python_printed: Option<std::collections::HashSet<String>>,
-
-    /// docs/adr/0081 step 4: the element-type candidates the Kotlin backend
-    /// prints from their encode plan, by the snake element name of
-    /// [`Self::element_type_field_schemas`]. Such an element holds each byte
-    /// string and text in the value class of its bound, so an algorithm
-    /// iterating a collection of it reads `entry.<field>` through the class
-    /// (`.bytes`, `.text`). Populated with the schemas, on a Kotlin compile
-    /// only; `None` elsewhere.
-    pub element_type_kotlin_printed: Option<std::collections::HashSet<String>>,
-
-    /// docs/adr/0081 step 4: the element-type candidates the Go backend
-    /// prints from their encode plan, by the snake element name of
-    /// [`Self::element_type_field_schemas`], each with what a reader knows of
-    /// it (`PrintedCodec`). Such an element presents each field through its
-    /// method, so an algorithm iterating a collection of it reads each field
-    /// as the codec presents it, a byte string or a text as what its bounded
-    /// value holds and a number the encode derives by the method that derives
-    /// it. Populated with the schemas, on a Go compile only; `None` elsewhere.
-    pub element_type_go_printed:
-        Option<std::collections::HashMap<String, forge::generator::PrintedCodec>>,
 
     /// docs/adr/0081 step 4: the element-type candidates the C11 backend
     /// prints from their encode plan, by the snake element name. Such an
@@ -5209,7 +5173,7 @@ pub fn compile_forge_from_parsed(
     // for the reason the transform check above gives: the verdict must not
     // depend on which backend was asked for.
     if let forge::model::ForgeDocument::Algorithm(m) = &parsed.document {
-        judge_algorithm_body(m, &import_ctx, options)
+        judge_algorithm_body(m, &import_ctx)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     }
 
@@ -5579,6 +5543,17 @@ pub fn compile_forge_from_parsed(
     // the direct imports and miss everything below them.
     let mut output = output;
     output.deps = import_sources;
+    // The element of a collection this document imports is read with the
+    // import (`ImportContext::bc_element`), so it is an input of this compile
+    // as much as an imported document is.
+    output.deps.extend(
+        import_ctx
+            .iter()
+            .filter_map(|ctx| ctx.bc_element.as_ref())
+            .filter_map(|element| crate::confine::canonicalize(&element.path).ok()),
+    );
+    output.deps.sort();
+    output.deps.dedup();
     Ok(output)
 }
 
@@ -5591,20 +5566,19 @@ pub fn compile_forge_from_parsed(
 pub(crate) fn judge_algorithm_body(
     m: &forge::model::AlgorithmModel,
     imports: &[forge::generator::ImportContext],
-    options: &ForgeCompileOptions,
 ) -> Result<(), forge::error::ForgeError> {
     // A value that may be absent is read only where a test proves it present
     // (docs/adr/0055): the narrowing a statechart's judge keeps, over the body,
     // before its operations are judged by the values they read.
-    forge::narrowing::check_algorithm(m, imports, options)?;
+    forge::narrowing::check_algorithm(m, imports)?;
     // The integer arithmetic contract (SCE_FORGE.md §3.4.1).
-    forge::int_ranges::check(m, imports, options)?;
+    forge::int_ranges::check(m, imports)?;
     // An enum value stands where a value of its enum is declared, and a number
     // never does: the rule a statechart's expressions keep.
-    forge::static_enum::check_algorithm(m, imports, options)?;
+    forge::static_enum::check_algorithm(m, imports)?;
     // An optional record stands only where an optional record of its own schema
     // is declared: the identity its type does not carry.
-    forge::optional_record_call::check_algorithm(m, imports, options)
+    forge::optional_record_call::check_algorithm(m, imports)
 }
 
 /// Multi-doc compile entry point — SCE Protocol-Synthesis RFC §synth-5-D worker
@@ -5755,15 +5729,12 @@ fn compile_document_set(
     // element reads each flag input its value says off, as on a Swift compile
     // (docs/adr/0081 step 4).
     let mut element_type_python_printed: HashSet<String> = HashSet::new();
-    // Likewise on a Kotlin compile: a reader of such an element reads each
-    // byte string and text through the value class of its bound.
+    // Likewise on a Kotlin compile: a collection over such an element holds
+    // each byte string and text in the value class of its bound.
     let mut element_type_kotlin_printed: HashSet<String> = HashSet::new();
-    // Likewise on a Go compile, each with what a reader knows of it: a reader
-    // of such an element reads each field through its method.
-    let mut element_type_go_printed: std::collections::HashMap<
-        String,
-        forge::generator::PrintedCodec,
-    > = std::collections::HashMap::new();
+    // Likewise on a Go compile: a collection over such an element reads its
+    // index field through the element's method.
+    let mut element_type_go_printed: HashSet<String> = HashSet::new();
     // Likewise on a C11 compile: their encode reads the flag inputs the value
     // says off the value (docs/adr/0065 §6 R4a), so a log over such an element
     // reads those off it.
@@ -5913,48 +5884,33 @@ fn compile_document_set(
                     );
                     element_type_owned_mirrors
                         .insert(filters::to_snake_case(key.clone()), borrowed);
-                    if language == generator::Language::Cpp
-                        && cpp_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
-                    {
-                        element_type_cpp_printed.insert(filters::to_snake_case(key.clone()));
-                    }
-                    // What a reader knows of the printed element, which an
-                    // algorithm reads each of its fields through.
-                    if language == generator::Language::Go {
-                        let reads = read_codec_file_as(
-                            forge_path,
-                            &[],
-                            options,
-                            generator::Language::Go,
-                            |model, imports, _| {
-                                forge::generator::go_codec_printed_reads(&model, imports)
-                            },
-                        )?
-                        .flatten();
-                        if let Some(reads) = reads {
-                            element_type_go_printed
-                                .insert(filters::to_snake_case(key.clone()), reads);
+                    // Whether the backend of this compile prints the element
+                    // from its plan, decided as the import of a collection
+                    // decides it for an algorithm that walks the collection
+                    // (`printed_element`), so the two cannot answer apart.
+                    if printed_element(forge_path, language, options)?.printed {
+                        let snake = filters::to_snake_case(key.clone());
+                        match language {
+                            generator::Language::Cpp => {
+                                element_type_cpp_printed.insert(snake);
+                            }
+                            generator::Language::Go => {
+                                element_type_go_printed.insert(snake);
+                            }
+                            generator::Language::Swift => {
+                                element_type_swift_printed.insert(snake);
+                            }
+                            generator::Language::Python => {
+                                element_type_python_printed.insert(snake);
+                            }
+                            generator::Language::Kotlin => {
+                                element_type_kotlin_printed.insert(snake);
+                            }
+                            generator::Language::C11 => {
+                                element_type_c11_printed.insert(snake);
+                            }
+                            generator::Language::Rust => {}
                         }
-                    }
-                    if language == generator::Language::Swift
-                        && swift_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
-                    {
-                        element_type_swift_printed.insert(filters::to_snake_case(key.clone()));
-                    }
-                    if language == generator::Language::Python
-                        && python_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
-                    {
-                        element_type_python_printed.insert(filters::to_snake_case(key.clone()));
-                    }
-                    if language == generator::Language::Kotlin
-                        && kotlin_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
-                    {
-                        element_type_kotlin_printed.insert(filters::to_snake_case(key.clone()));
-                    }
-                    if language == generator::Language::C11
-                        && c11_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
-                    {
-                        element_type_c11_printed.insert(filters::to_snake_case(key.clone()));
                     }
                 }
                 element_type_candidates.insert(key, doc);
@@ -6426,30 +6382,10 @@ fn compile_document_set(
                 element_kotlin_printed: element_type_kotlin_printed
                     .contains(&filters::to_snake_case(bc.element_type.clone())),
                 element_go_printed: element_type_go_printed
-                    .contains_key(&filters::to_snake_case(bc.element_type.clone())),
+                    .contains(&filters::to_snake_case(bc.element_type.clone())),
             },
         );
     }
-    // Item C7 keyexpr support: element-type field schemas keyed by the
-    // element-type snake name, resolved from the same candidate map. An
-    // algorithm iterating a BC types each `entry.<field>` from this so the
-    // bounded-string-field → bytes-view projection can fire and so
-    // a mistyped argument (`entry.callback_id` into a `bytes` param) is
-    // caught rather than silently miscompiled. Independent of the
-    // `<sce:index-by>` / capacity resolution above (that map is keyed by
-    // BC name; this is keyed by element name to match what the BC import
-    // context carries — see `ForgeCompileOptions::element_type_field_schemas`).
-    let element_type_field_schemas: std::collections::HashMap<String, ElementFieldSchema> =
-        bounded_collections_for_xref
-            .iter()
-            .filter_map(|(_label, bc)| {
-                let element_doc = element_type_candidates.get(&bc.element_type)?;
-                Some((
-                    filters::to_snake_case(bc.element_type.clone()),
-                    extract_bounded_collection_element_field_sce_types(element_doc),
-                ))
-            })
-            .collect();
     // Thread the orchestrator-resolved listener-link set into
     // the per-doc ForgeCompileOptions so each `render_link_*` template
     // can synthesize the Sibling half + the post-render self-check
@@ -6524,12 +6460,9 @@ fn compile_document_set(
     };
     let needs_override = !bc_resolutions.is_empty()
         || listener_links_override.is_some()
-        || !element_type_field_schemas.is_empty()
         || !element_type_cpp_printed.is_empty()
         || !element_type_swift_printed.is_empty()
         || !element_type_python_printed.is_empty()
-        || !element_type_kotlin_printed.is_empty()
-        || !element_type_go_printed.is_empty()
         || !element_type_c11_printed.is_empty()
         || !element_type_owned_mirrors.is_empty()
         || queue_resolutions_override.is_some()
@@ -6550,9 +6483,6 @@ fn compile_document_set(
         if let Some(ll) = listener_links_override {
             overridden.listener_links = Some(ll);
         }
-        if !element_type_field_schemas.is_empty() {
-            overridden.element_type_field_schemas = Some(element_type_field_schemas);
-        }
         if !element_type_cpp_printed.is_empty() {
             overridden.element_type_cpp_printed = Some(element_type_cpp_printed);
         }
@@ -6561,12 +6491,6 @@ fn compile_document_set(
         }
         if !element_type_python_printed.is_empty() {
             overridden.element_type_python_printed = Some(element_type_python_printed);
-        }
-        if !element_type_kotlin_printed.is_empty() {
-            overridden.element_type_kotlin_printed = Some(element_type_kotlin_printed);
-        }
-        if !element_type_go_printed.is_empty() {
-            overridden.element_type_go_printed = Some(element_type_go_printed);
         }
         if !element_type_c11_printed.is_empty() {
             overridden.element_type_c11_printed = Some(element_type_c11_printed);
@@ -7943,6 +7867,11 @@ fn validate_and_enrich_imports(
             // contract).
             if let forge::model::ForgeDocument::BoundedCollection(bcm) = &doc {
                 ctx.bc_element_snake = Some(filters::to_snake_case(bcm.element_type.clone()));
+                // The element the collection holds, read where the collection
+                // names it: what an algorithm that walks the collection reads
+                // each item as, alike whichever route brought the algorithm
+                // here, a single document or a document set.
+                ctx.bc_element = collection_element(&source.path, bcm, *language, options)?;
             }
             // Enum import enrichment: capture the per-language
             // qualified type name of imported `sce:kind="enum"`
@@ -9364,6 +9293,110 @@ fn extract_bounded_collection_element_field_sce_types(
             .collect(),
         _ => Vec::new(),
     }
+}
+
+/// What the backend of a compile makes of a codec a document holds as its
+/// element: whether it prints the codec from its encode plan (docs/adr/0081),
+/// and on Go what a reader knows of the printed codec.
+struct PrintedElement {
+    printed: bool,
+    go: Option<forge::generator::PrintedCodec>,
+}
+
+/// [`PrintedElement`] of the codec at `path` on a `language` compile, read as
+/// `compile_forge_file` reads the codec, its imports resolved. The one decision
+/// a document set makes of each element it holds and the import of a
+/// collection makes of the element an algorithm walks ([`collection_element`]),
+/// so the two cannot answer apart. A document that is not a codec is printed by
+/// no backend.
+fn printed_element(
+    path: &Path,
+    language: generator::Language,
+    options: &ForgeCompileOptions,
+) -> Result<PrintedElement, CompileError> {
+    let go = if language == generator::Language::Go {
+        read_codec_file_as(
+            path,
+            &[],
+            options,
+            generator::Language::Go,
+            |model, imports, _| forge::generator::go_codec_printed_reads(&model, imports),
+        )?
+        .flatten()
+    } else {
+        None
+    };
+    let printed = match language {
+        generator::Language::Cpp => cpp_codec_printed_file(path, &[], options)?,
+        generator::Language::Swift => swift_codec_printed_file(path, &[], options)?,
+        generator::Language::Python => python_codec_printed_file(path, &[], options)?,
+        generator::Language::Kotlin => kotlin_codec_printed_file(path, &[], options)?,
+        generator::Language::C11 => c11_codec_printed_file(path, &[], options)?,
+        generator::Language::Go => Some(go.is_some()),
+        generator::Language::Rust => None,
+    }
+    .unwrap_or(false);
+    Ok(PrintedElement { printed, go })
+}
+
+/// The element the bounded collection `collection`, read from
+/// `collection_path`, holds, as an algorithm that walks it on a `language`
+/// compile reads each item: the element's own document, read where the
+/// collection names it ([`forge::import_source::ImportSource::read_element`]).
+///
+/// A document's generated code is a function of the document and of what its
+/// imports reach, and of nothing else, so the element is read here, at the
+/// import every route resolves the same way, and never taken from the other
+/// documents a run happens to be given: a single document and a document set
+/// that holds it read the same element and type each item alike.
+///
+/// `None` when no document is there, or the one there is not the codec or the
+/// procedure of that name a collection holds; an item over the collection is
+/// then an open record, on every route alike. A document set refuses such a
+/// collection itself (`collection/element-type-not-a-kind`).
+fn collection_element(
+    collection_path: &Path,
+    collection: &forge::model::BoundedCollectionModel,
+    language: generator::Language,
+    options: &ForgeCompileOptions,
+) -> Result<Option<forge::generator::CollectionElement>, CompileError> {
+    let dir = collection_path.parent().unwrap_or_else(|| Path::new("."));
+    let source = forge::import_source::ImportSource::read_element(dir, &collection.element_type)
+        .map_err(|e| {
+            forge::error::Located::new(
+                forge::error::ForgeError::from(e),
+                collection_path.display().to_string(),
+                None,
+                None,
+            )
+        })?;
+    let Some(source) = source else {
+        return Ok(None);
+    };
+    let Some(parsed) = source.parse()? else {
+        return Ok(None);
+    };
+    if parsed.document.name() != collection.element_type.as_str() {
+        return Ok(None);
+    }
+    let printed = match &parsed.document {
+        forge::model::ForgeDocument::Codec(_) => printed_element(&source.path, language, options)?,
+        forge::model::ForgeDocument::Procedure(_) => PrintedElement {
+            printed: false,
+            go: None,
+        },
+        _ => return Ok(None),
+    };
+    Ok(Some(forge::generator::CollectionElement {
+        fields: extract_bounded_collection_element_field_sce_types(&parsed.document),
+        by_accessor: printed.printed
+            && matches!(
+                language,
+                generator::Language::Cpp | generator::Language::Kotlin
+            ),
+        go: printed.go,
+        path: source.path,
+    }))
 }
 
 fn extract_bounded_collection_index_field_sce_type(
