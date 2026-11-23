@@ -2,7 +2,9 @@
 
 - Status: Accepted (2026-11-22, by the owner), in its third draft: D7 to D11 were added and D13 corrected at the owner's
   order, and the sources checked. D5's gate, and D1 and D2 for two models, were built before it was accepted, at the
-  owner's order. Amended 2026-11-22 by the owner: D15, with what it changes of D7 and D8.
+  owner's order. Amended 2026-11-22 by the owner: D15, with what it changes of D7 and D8. Amended 2026-11-23 by the
+  owner, at a consumer's requirements for a proof made at the level of a design: D7 takes a codec by its values and
+  refusals, a connector of every kind by its promise, and the faults of a channel as parameters; D8 gains its converse.
 - Date: 2026-11-22
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) at the owner's question whether TLA+ can be designed and applied so, and whether SCE can meet what a survey
@@ -137,9 +139,67 @@ D7 as far as D8 does not check it, the compilers, the operating system.
   of the module. The data of a document are unbounded in the model only where they are in the document, so a finite
   exploration needs **domains**: an exploration document (D15) names the values each input may take and the most events,
   and is no part of the machine's document; a build never reads it.
-- **The environment is a module too.** An event from outside is any event of the document's alphabet the domains allow.
-  A peer is the Mesh contract, `MeshChannel.tla`, with the attributes `deploy.yaml` gives the binding (order,
-  duplication, receipt, loss of a link), so a deployment's machines are composed into one model and checked together.
+- **A codec is a partial function of values** (amended 2026-11-23). The model holds values and never bytes. Of a codec
+  `C` it needs two things: which values its encode refuses, `Refuses_C(v)`, and the round trip of every other value
+  (ADR 0058 §5, law 1), so a receiver holds the value that was sent, and a frame stands in the model as the value it
+  carries. `sce-codegen model` writes `Refuses_C` from the one analysis of when an encode refuses
+  (`codec_totality::refusals`, ADR 0065 §2), one disjunct per refusal by its kind: a length, a count or a depth past
+  its bound (ADR 0077 §1), a value outside its `sce:range` or an all-zero `sce:nonzero` string (ADR 0100 §6), and
+  whatever kind the analysis names after this. A value that a type already rules out (ADR 0065 §6, and a tag that a
+  refusal covers, ADR 0100 §2.3) is no disjunct: it is not a value of the type, and an exploration that names one is
+  refused. What a refused encode does is the document's, as each lane runs it: the outcome `encode-refused` (ADR 0111
+  D3) or `error.communication` (§scxml-6.2).
+  - The receiving node has one refusal more, and it is the deployment's: a value inside the bound and past what a storing
+    form of that node holds is refused there with `CapacityExceeded` (ADR 0077 §7). `StoreRefuses_{C,n}(v)` is a
+    predicate of the node, from the deploy input's `capacity:`.
+  - A frame that a decode refuses for its bytes is no value. It enters only as a fault of the channel (`corruption`,
+    below), and its effect is what the receiving runtime does with a refused frame (ADR 0100 §8). A frame that decodes
+    as another value than the one sent is not modelled: a checksum and an authenticator are assumed, as cryptography is
+    (D6).
+- **Every connector enters by its promise** (amended 2026-11-23). An event from outside is any event of the document's
+  alphabet the domains allow. A machine meets another machine through a connector, and each kind of connector is one
+  module of `docs/formal/scxml/` that states what a user of it may rely on (D1), never how it is built:
+  - a Mesh binding: `MeshChannel.tla`, a channel per binding with the faults below;
+  - a link (ADR 0111): `LinkChannel.tla`. Per instance, its stages, each a queue of batches the driver takes in strict
+    priority and in the order they were armed (D3); its pool of `c` slots, lent and given back (D4); each operation's
+    outcome as the value D3 names, `encode-refused` included, from `Refuses_C`; the instance's opening and closing as
+    events of its driver, which is environment; and under it a channel with the faults below, which a stream transport
+    sets to none but loss of the whole link;
+  - a `queue`: its sequential specification, a first-in first-out list of capacity `c` that refuses a writer when full;
+  - a `broadcast-log`: the abstract data type of ADR 0062 §2, read by cursors its readers own, with `Lagged`.
+  A connector that two execution contexts share is used through its sequential specification, which is sound because
+  each implementation is linearizable and linearizability is local: "a system is linearizable if each individual object
+  is linearizable" (Herlihy and Wing 1990). That each one is linearizable is the connector's own obligation, judged
+  where it is built (ADR 0062 §6; RFC §synth-5-P under GenMC), and the README names it as an assumption of this level. A
+  kind of connector with no promise module is refused by name, as a construct with no translation is (below).
+  A deployment's machines and the connectors between them are composed into one model and checked together; a
+  macrostep is one step, as Appendix D runs it to completion, and the steps of machines that share no execution context
+  interleave.
+- **The faults of a channel are parameters** (amended 2026-11-23). A Mesh binding's channel, and the transport under a
+  link, are described by five, each with one meaning:
+  - `loss`: a message may be lost;
+  - `duplication`: a message may be delivered more than once;
+  - `reorder`: two messages may be delivered in another order than they were sent;
+  - `delay`: the moments between a send and its delivery, `[min, max]`, with `max` unbounded for an asynchronous
+    channel, and optionally a moment the environment chooses from which `max` holds, the second of Dwork, Lynch and
+    Stockmeyer's partial synchronies (1988: "the bounds are known, but are only guaranteed to hold starting at some
+    unknown time"); time is D15's;
+  - `corruption`: a frame may arrive that the decode refuses (above).
+  The default of each is what the deployment gives: the binding's `ordering:`, `delivery:` and `receipt:` and the
+  transport's own guarantees, so a deployment is modelled as it is deployed. A variant of a design sets them, and where
+  it sets one depends on what that does to a verdict:
+  - a fault a variant **adds** is set in its exploration (D15). The channel has more behaviours, a property that holds
+    of it holds of the deployed one, and nothing is claimed that was not judged;
+  - a fault a variant **takes away** from what the deployment gives is an assumption of the environment, set in the
+    properties document and listed with every verdict as *not discharged*, or as discharged by the transport's
+    conformance kit where one holds it;
+  - a limit on how many faults happen (at most `k` losses) cuts behaviours and is a bound: the exploration names it, and
+    a verdict that reached it says so (D15).
+  A channel that loses is **fair lossy** unless the properties document says otherwise: it creates no message, and "if
+  an infinite number of messages are sent, an infinite subset of these messages is received" (Basu, Charron-Bost and
+  Toueg 1996). It is the channel's fairness under D9, a strong fairness of its delivery, so a protocol that sends again
+  can be shown to progress and one that does not is shown not to. A channel that loses with no fairness has no progress
+  property, and the manifest says so.
 - **A kind with no translation is refused by name**, as a lane refuses a construct it does not lower. A refused document
   is recorded and has no model, never a partial one.
 - A document's properties are declared in SCE's own terms (D15), each named by the `sce:req` token it states, so a
@@ -162,6 +222,26 @@ is:
   any is edited.
 - Runs drawn at random over an exploration (D15) are runs the model accepts too, beside the scenarios.
 - It judges executions; D3 and the exploration of D7 judge the rest.
+
+**Its converse: a behaviour of the model is a run of every lane** (amended 2026-11-23). The theorem above says the code
+does nothing the model does not. The converse is conformance testing, in which tests are derived from the specification
+and run against the implementation (Tretmans 1996), and it shows that what the model found is what the code does. A
+machine is deterministic in its events, its moments and its host's answers (D15), and the choices of a generated model
+are its environment's alone, so one behaviour of the model fixes the inputs of a run and the observations it must make.
+- **What is replayed.** Every behaviour TLC reports of a generated model, before it is reported as a verdict: a
+  violation and a witness (D15), a run in which time stops, a macrostep that does not end; and behaviours drawn at random
+  from the model over its exploration (TLC's simulation), beside D8's runs drawn over the same exploration and given to
+  the code. A counterexample that no lane reproduces is a defect of the model, its generator or the lane, settled as
+  above, and is not reported as a verdict about the document.
+- **Where.** A behaviour of a composed model is replayed on every lane for each machine by its projection: the events
+  that cross that machine's boundary, with their moments and the host's answers, which is a scenario as every lane
+  replays one. It is replayed whole, the faults of its channels included, on a lane whose harness owns the network:
+  `backends/rust/world` first (D4). A lane with no such harness replays the projections and says that it does not
+  replay the whole.
+- **What it shows.** Tretmans calls a test suite sound when it "can only detect nonconformance", and exhaustive when
+  it can only assure conformance. These replays are sound in that sense: a lane that fails one does not conform, and a
+  lane that passes all of them conforms on the behaviours explored and no further, which the exploration's bounds name.
+  With the theorem above, the code and the model are shown to agree on those behaviours, in both directions.
 
 ### D9. Every model says what must happen, and what must stay possible
 
@@ -416,6 +496,13 @@ heuristically cacheable and `412` is not); Snodgrass 1999 (valid and transaction
 Konnov et al. 2019; Lattuada et al. (Verus) 2024 (its trusted base); Sun et al. (Anvil) 2024; Cirstea et al. 2024; Li et
 al. 2026 (for the figure about Lion); the Verus guide's feature list and the `vstd/future.rs` of its main branch.
 
+For the amendments of 2026-11-23, checked that day: Herlihy and Wing 1990 (linearizability is local, and a sequential
+specification is a prefix-closed set of sequential histories), from the TOPLAS text; Dwork, Lynch and Stockmeyer 1988
+(the bound on a message's time, and the two partial synchronies), from the JACM text; Basu, Charron-Bost and Toueg 1996
+(eventually reliable and fair lossy links, which create nothing), from their Cornell technical report of September 1996,
+"Solving Problems in the Presence of Process Crashes and Lossy Links", read in place of the WDAG paper, which was not
+reached; Tretmans 1996 (a test suite that is sound, exhaustive or complete, Definition 3.4), from the University of Twente
+text of "Conformance Testing with Labelled Transition Systems".
 For D15, checked on the same day: Alpern and Schneider 1985 (its theorem 1); Manna and Pnueli 1990 (the reactivity
 theorem and the correspondence with automata, as it states them; it gives the proof of the first elsewhere); Abadi and
 Lamport 1995 (the meaning of assumption and guarantee, and the composition of safety); Chockler, Kupferman and Vardi
@@ -430,7 +517,8 @@ itself.
 
 ## Not in scope
 
-Models of cryptography, of a transport's bytes (their conformance kits judge those), of the C++ Interpreter beyond D8's
+Models of cryptography, of a transport's or a codec's bytes (their conformance kits judge those; a codec is in the
+model by its values and its refusals, D7), of the C++ Interpreter beyond D8's
 use of it, a proof of the asynchronous shell (D13 says what judges it), strategic logics, a search of protocol variants
 (the parts of D5 are the variants a person means), and a playground for learning.
 
@@ -484,6 +572,14 @@ Each step lands with a test that fails without it.
    bound reached is named and its property is not told as holding; a vacuous property, a property no alteration breaks,
    an assumption about the machine itself and each refused construct are refused by name; a verdict of another digest is
    not read.
+   With them, the amendments of 2026-11-23: `Refuses_C` and `StoreRefuses_{C,n}` from the codec analysis and the
+   deploy input; `MeshChannel.tla`, `LinkChannel.tla` and the specifications of the queue and the log; the five faults,
+   their defaults from the deployment and where a variant sets each; D8's converse, by projection on every lane and
+   whole on `backends/rust/world`. Their tests: a value past each kind of bound takes the refusal path in the model and
+   on every lane; an exploration that names a value its type cannot hold is refused; a protocol correct over an ordered
+   channel is violated with `reorder` on, and one that sends again has its progress violated without fair loss; a fault
+   taken away outside the properties document is refused; a limit on faults that a search reached is named; a
+   counterexample is replayed on every lane before it is reported.
 5. D4, with the code of ADR 0113 steps 4 and 5 and of ADR 0114 step 4, so that each lands traced.
 6. D10's first algorithm. D13's first module. D3 with Apalache. D12.
 
