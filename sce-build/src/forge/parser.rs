@@ -11422,6 +11422,7 @@ fn parse_algorithm_stmt(
             let cond = require_attr(node, "cond", "<sce:if>", doc_name)?;
             let mut then_body = Vec::new();
             let mut else_body: Option<Vec<AlgorithmStmt>> = None;
+            let mut else_node: Option<roxmltree::Node> = None;
             // Every SCE child is judged below: the `<sce:else>` or a
             // statement, and every SCE child of the else a statement.
             read_ledger::closed(node);
@@ -11449,6 +11450,27 @@ fn parse_algorithm_stmt(
                         }
                     }
                     else_body = Some(else_stmts);
+                    else_node = Some(child);
+                } else if let Some(else_node) = else_node {
+                    // SCE_FORGE.md §4.12: the else branch is what
+                    // `<sce:else>` contains, and an `<sce:if>` ends with it.
+                    // A statement after it belongs to neither branch as
+                    // written, so it is refused rather than read into one.
+                    let else_tag = written_tag(&else_node);
+                    return Err(located(
+                        &child,
+                        doc_name,
+                        ValidationError::AlgorithmStatementAfterElse {
+                            statement: written_tag(&child),
+                            else_tag: else_tag.clone(),
+                        },
+                    )
+                    .related_to(related_at(
+                        &else_node,
+                        doc_name,
+                        crate::forge::error::RelatedRole::MustFollow,
+                        Some(else_tag),
+                    )));
                 } else {
                     then_body.push(parse_algorithm_stmt(&child, doc_name)?);
                 }

@@ -3717,3 +3717,19 @@ machine that holds one.
 - Rust code that writes a `SavedShape`, a `RecordLineage` or a `RecordHolder` by hand gives `legacy: &[]`,
   `tracked_before` (true for a record of entries a variable or its elements hold) and `path: &[]`; C++ code that
   builds a `RecordHolder` gives its `part` and `path`, or leaves them empty.
+
+## An algorithm's `<sce:else>` holds its branch, and a comparison under a comparison keeps its parentheses
+
+Landing: the commits that add this section. Two defects found by a consumer, both of which passed `check`.
+
+- A statement written after the `<sce:else>` of an algorithm's `<sce:if>` is refused with the new code
+  `algorithm/statement-after-else` (SCE_FORGE.md §4.12), placed on the statement, with the `<sce:else>` as a
+  `must-follow` site. Until now such a statement was read into the then branch, so SCXML's separator form,
+  `<sce:else/>` with the else branch after it, generated the else branch's statements under the condition and an
+  empty else. A document that wrote that form now gets the refusal: move the else branch inside
+  `<sce:else>…</sce:else>`. A `match` over `DiagnosticCode` names `AlgorithmStatementAfterElse`.
+- A comparison that is an operand of a comparison, such as `(a === b) === c`, keeps its parentheses on every backend.
+  Rust generated `a == b == c`, which rustc refuses. Python generated the same text, which Python runs as
+  `a == b and b == c`, so it compiled and gave a different answer. C and C++ generated it with a `-Wparentheses`
+  warning. A tree generated from such an expression changes only by the added parentheses. In Python the meaning
+  also changes, to the one the document states.

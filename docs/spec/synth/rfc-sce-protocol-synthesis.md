@@ -1568,8 +1568,8 @@ must be computed at build time so generated code carries a
     <sce:foreach times="8">
       <sce:if cond="(c &amp; 0x8000) != 0">
         <sce:assign target="c" expr="(c &lt;&lt; 1) ^ 0x1021"/>
-        <sce:else/>
-        <sce:assign target="c" expr="c &lt;&lt; 1"/>
+        <sce:else><sce:assign target="c" expr="c &lt;&lt; 1"/>
+        </sce:else>
       </sce:if>
     </sce:foreach>
     <sce:yield expr="c"/>

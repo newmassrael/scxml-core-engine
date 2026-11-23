@@ -1216,6 +1216,10 @@ pub enum DiagnosticCode {
     // written.
     #[serde(rename = "algorithm/inout-on-may-fail")]
     AlgorithmInoutOnMayFail,
+    // A statement written after the `<sce:else>` of its `<sce:if>`, which
+    // belongs to neither branch as written (SCE_FORGE.md §4.12).
+    #[serde(rename = "algorithm/statement-after-else")]
+    AlgorithmStatementAfterElse,
     // ── A codec's statement of its encode's totality (SCE_FORGE.md §4.6,
     //    docs/adr/0065): the statement disagrees with the refusals the
     //    build finds. ───────────────────────────────────────────────────
@@ -4187,6 +4191,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmRequireWithoutMayFail,
         // An inout slot only where nothing can fail (docs/adr/0108, D6)
         AlgorithmInoutOnMayFail,
+        // The shape of an algorithm's `<sce:if>` (SCE_FORGE.md §4.12)
+        AlgorithmStatementAfterElse,
         // A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065)
         CodecUndeclaredEncodeRefusal,
         CodecEncodeMayFailWithoutRefusal,
@@ -5141,6 +5147,9 @@ impl DiagnosticCode {
             // ── An inout slot of an algorithm (docs/adr/0108, D6) ──
             AlgorithmInoutOnMayFail => Some("ADR 0108 D6"),
 
+            // ── The shape of an algorithm's `<sce:if>` (SCE_FORGE.md §4.12) ──
+            AlgorithmStatementAfterElse => Some("SCE Forge §4.12"),
+
             // ── A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065) ──
             CodecCapacityInvalid => Some("ADR 0077 §7"),
             CodecUndeclaredEncodeRefusal
@@ -5995,6 +6004,7 @@ impl DiagnosticCode {
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
             | AlgorithmInoutOnMayFail
+            | AlgorithmStatementAfterElse
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid
@@ -6561,6 +6571,7 @@ impl DiagnosticCode {
             AlgorithmUndeclaredIntegerFailure => "algorithm/undeclared-integer-failure",
             AlgorithmRequireWithoutMayFail => "algorithm/require-without-may-fail",
             AlgorithmInoutOnMayFail => "algorithm/inout-on-may-fail",
+            AlgorithmStatementAfterElse => "algorithm/statement-after-else",
             CodecUndeclaredEncodeRefusal => "codec/undeclared-encode-refusal",
             CodecEncodeMayFailWithoutRefusal => "codec/encode-may-fail-without-refusal",
             CodecCapacityInvalid => "codec/capacity-invalid",
@@ -9447,6 +9458,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // neither.
             fix: None,
             key_fragments: vec![algorithm.clone(), param.clone()],
+        },
+        ValidationError::AlgorithmStatementAfterElse {
+            statement,
+            else_tag: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmStatementAfterElse,
+            stage: Stage::Validation,
+            expected: None,
+            // The stray statement's tag as written, on the row it begins.
+            actual: Some(statement.clone()),
+            // The statement may belong to either branch — inside the
+            // `<sce:else>` or before it — so the record names neither.
+            fix: None,
+            key_fragments: vec![statement.clone()],
         },
         ValidationError::CodecVariantArmUnreachable {
             codec,
@@ -17844,6 +17869,16 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:81e9bfbb8aab747e","code":"algorithm/inout-on-may-fail","stage":"validation","spec":"ADR 0108 D6","message":"algorithm 'take_generation': <sce:param name=\"resets\" inout=\"true\"> is written in place, and the algorithm declares <sce:return may-fail=\"true\"> — a failure would leave the map half written, so an inout slot is given only to an algorithm that cannot fail: drop may-fail, or return the new map instead (docs/adr/0108, D6)","actual":"true"}"#,
             ),
+            // ── The shape of an algorithm's `<sce:if>` (SCE_FORGE.md §4.12) ─
+            (
+                "forge/algorithm-statement-after-else",
+                ValidationError::AlgorithmStatementAfterElse {
+                    statement: "sce:if".into(),
+                    else_tag: "sce:else".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:46cfd23517249b45","code":"algorithm/statement-after-else","stage":"validation","spec":"SCE Forge §4.12","message":"<sce:if> is written after <sce:else> in the same <sce:if>: the else branch is what <sce:else> contains, not what follows it (unlike SCXML's <else/>, which separates the branches) — move the statement inside <sce:else>, or before it","actual":"sce:if"}"#,
+            ),
             // ── A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065) ─
             (
                 "forge/codec-undeclared-encode-refusal",
@@ -21554,6 +21589,7 @@ mod tests {
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
             | AlgorithmInoutOnMayFail
+            | AlgorithmStatementAfterElse
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid
@@ -22715,6 +22751,7 @@ mod tests {
                 | AlgorithmUndeclaredIntegerFailure
                 | AlgorithmRequireWithoutMayFail
                 | AlgorithmInoutOnMayFail
+                | AlgorithmStatementAfterElse
                 | CodecUndeclaredEncodeRefusal
                 | CodecEncodeMayFailWithoutRefusal
                 | CodecCapacityInvalid
@@ -23125,9 +23162,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            563,
+            564,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 563 distinct variants to match the DiagnosticCode \
+             expected 564 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23845,6 +23882,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
             | AlgorithmInoutOnMayFail
+            | AlgorithmStatementAfterElse
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid
