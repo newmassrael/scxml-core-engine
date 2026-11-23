@@ -11,7 +11,10 @@ on:
       # what the site ships. They were absent while the artifact was
       # committed, which meant a generator fix could not reach the page
       # even after someone rebuilt the binary by hand.
-      - 'sce-build/**'
+      - 'sce-build/src/**'
+      - 'sce-build/build.rs'
+      - 'sce-build/kind-examples/**'
+      - 'sce-build/tests/fixtures/**'
       - 'sce-build-wasm/**'
       - 'tests/w3c/InteractiveTestRunner.cpp'
       - 'examples/doom_wasm/**'
@@ -35,6 +38,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '**/Cargo.toml'
+      - '.cargo/**'
       - 'backends/rust/portable-bytes/**'
       - 'backends/rust/runtime/**'
       - 'backends/rust/tests/src/harness.rs'

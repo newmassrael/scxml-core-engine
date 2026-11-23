@@ -6,9 +6,9 @@
 #
 # The WASM builds behind the published visualizer. A deploy workflow reads as
 # "nothing to verify locally" and is not: three of its steps are builds, and a
-# build that fails is a verdict on the commit. Its trigger includes
-# `sce-build/**`, so a Rust change that every gate here passes can still turn
-# this lane red — which is only visible after the push.
+# build that fails is a verdict on the commit. Its trigger includes what
+# cargo compiles of `sce-build`, so a Rust change that every gate here
+# passes can still turn this lane red — which is only visible after the push.
 #
 # The codegen WASM is the part that has already failed this way. It used to be
 # a committed binary under `web/visualizer/wasm/` that nothing in the
