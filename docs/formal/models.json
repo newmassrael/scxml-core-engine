@@ -43,6 +43,12 @@
           "expect": "violates",
           "invariant": "Convergence",
           "without": "Evict"
+        },
+        {
+          "config": "SharedListConvergence_without_eviction_held.cfg",
+          "expect": "violates",
+          "invariant": "HeldValid",
+          "without": "Evict"
         }
       ],
       "progress": [
@@ -53,7 +59,8 @@
       "module": "SharedListConflicts",
       "decision": "docs/adr/0034",
       "parts": {
-        "Arrival": "FALSE"
+        "Arrival": "FALSE",
+        "Drop": "TRUE"
       },
       "runs": [
         {
@@ -77,6 +84,12 @@
           "expect": "violates",
           "invariant": "Convergence",
           "without": "Arrival"
+        },
+        {
+          "config": "SharedListConflicts_without_drop.cfg",
+          "expect": "violates",
+          "invariant": "HoldsWhatHolds",
+          "without": "Drop"
         }
       ],
       "progress": [
@@ -88,7 +101,9 @@
       "decision": "docs/adr/0062",
       "parts": {
         "Extra": "1",
-        "Revalidate": "TRUE"
+        "Revalidate": "TRUE",
+        "HeadFirst": "TRUE",
+        "BindOldest": "TRUE"
       },
       "runs": [
         {
@@ -140,6 +155,24 @@
           "expect": "violates",
           "invariant": "FirstLagIsOvertaken",
           "without": "Extra"
+        },
+        {
+          "config": "BroadcastLog_without_head_first.cfg",
+          "expect": "violates",
+          "invariant": "CursorNotPastHead",
+          "without": "HeadFirst"
+        },
+        {
+          "config": "BroadcastLog_without_head_first_lost.cfg",
+          "expect": "violates",
+          "invariant": "LostIsNonNegative",
+          "without": "HeadFirst"
+        },
+        {
+          "config": "BroadcastLog_without_bind_oldest.cfg",
+          "expect": "violates",
+          "invariant": "DeferredStart",
+          "without": "BindOldest"
         }
       ],
       "progress": [
@@ -151,7 +184,8 @@
       "module": "BroadcastLogWrapped",
       "decision": "docs/adr/0062",
       "parts": {
-        "EnforceBound": "TRUE"
+        "EnforceBound": "TRUE",
+        "LastSlot": "\"asked\""
       },
       "runs": [
         {
@@ -202,6 +236,24 @@
           "expect": "violates",
           "invariant": "SlotIndexContinuous",
           "against": "a slot count that does not divide the stamp space"
+        },
+        {
+          "config": "BroadcastLogWrapped_without_last_slot.cfg",
+          "expect": "violates",
+          "invariant": "OpenRefines",
+          "without": "LastSlot"
+        },
+        {
+          "config": "BroadcastLogWrapped_deferred_without_last_slot.cfg",
+          "expect": "violates",
+          "invariant": "FirstLagIsOvertaken",
+          "without": "LastSlot"
+        },
+        {
+          "config": "BroadcastLogWrapped_non_divisor_cursor.cfg",
+          "expect": "violates",
+          "invariant": "CursorNotPastHead",
+          "against": "a slot count that does not divide the stamp space"
         }
       ],
       "progress": [
@@ -223,7 +275,8 @@
         "SignInc": "TRUE",
         "SignMark": "TRUE",
         "SignOffer": "TRUE",
-        "SignFence": "TRUE"
+        "SignFence": "TRUE",
+        "Limit": "TRUE"
       },
       "runs": [
         {
@@ -333,6 +386,14 @@
           "invariant": "Undisturbed",
           "without": "SignFence",
           "promise": "broken"
+        },
+        {
+          "config": "OpenInstances_without_limit.cfg",
+          "expect": "violates",
+          "invariant": "Bounded",
+          "without": "Limit",
+          "promise": "kept",
+          "why": "a server that holds more members than its bound tells no client anything false; the bound is what its memory is promised"
         }
       ],
       "promise": "Refines",
@@ -525,6 +586,13 @@
           "expect": "violates",
           "invariant": "OnlyProved",
           "without": "Quoted",
+          "promise": "broken"
+        },
+        {
+          "config": "Principals_without_one_person_kept.cfg",
+          "expect": "violates",
+          "invariant": "OnePerson",
+          "without": "OnePerInc",
           "promise": "broken"
         }
       ],

@@ -75,7 +75,8 @@ CONSTANTS Readers,        \* the reader handles
           StampBits,      \* the width of the stamp in bits
           MaxPub,         \* the most entries the producer publishes
           EnforceBound,   \* whether the wrap bound is assumed
-          OpenMode        \* "head", "oldest" or "deferred": where a reader opens
+          OpenMode,       \* "head", "oldest" or "deferred": where a reader opens
+          LastSlot        \* "asked": whether the last slot was written is read; else it is taken as given
 
 M == 2 ^ StampBits
 K == M \div 2
@@ -84,6 +85,7 @@ S == R + 1
 ASSUME R \in 1..4 /\ StampBits \in 2..4 /\ MaxPub \in Nat
 ASSUME EnforceBound \in BOOLEAN /\ OpenMode \in {"head", "oldest", "deferred"}
 ASSUME S <= K
+ASSUME LastSlot \in {"asked", "written", "unwritten"}
 
 Idx(c) == c % S
 Busy(c) == (2 * c + 1) % M
@@ -122,6 +124,9 @@ Init ==
     /\ fresh = [r \in Readers |-> OpenMode = "deferred"]
     /\ fl    = [r \in Readers |-> FALSE]
     /\ ob    = [r \in Readers |-> 0]
+
+(* Whether the last slot was ever written, as a reader that opens takes it. *)
+Written == IF LastSlot = "asked" THEN stamp[S - 1] # Unwritten ELSE LastSlot = "written"
 
 (* The number of publishes begun: the busy stamp of the newest is stored. *)
 Begun == IF ppc \in {"idle", "busy"} THEN n ELSE n + 1
@@ -181,7 +186,7 @@ ROpen(r) ==
 
 ROpenStamp(r) ==
     /\ OpenMode = "oldest" /\ ~opened[r] /\ rpc[r] = "idle"
-    /\ tch' = [tch EXCEPT ![r] = stamp[S - 1] # Unwritten]
+    /\ tch' = [tch EXCEPT ![r] = Written]
     /\ ohl' = [ohl EXCEPT ![r] = n]
     /\ rpc' = [rpc EXCEPT ![r] = "open2"]
     /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, s1, cp, res, oab, dvars>>
@@ -245,7 +250,7 @@ RHead(r) ==
 
 RDStart(r) ==
     /\ OpenMode = "deferred" /\ ~opened[r] /\ rpc[r] = "idle"
-    /\ tch' = [tch EXCEPT ![r] = stamp[S - 1] # Unwritten]
+    /\ tch' = [tch EXCEPT ![r] = Written]
     /\ ohl' = [ohl EXCEPT ![r] = n]
     /\ ob' = [ob EXCEPT ![r] = n]
     /\ rpc' = [rpc EXCEPT ![r] = "dhead"]

@@ -110,7 +110,12 @@ answer and what each module refines; `scripts/formal/models.py` judges them and 
 gate, with a workflow of its own. Refused as a verdict: a module or configuration not declared; a part no run takes out;
 a violating run that takes out something else or finds another invariant; a holding run that does not check the promise,
 or whose count of distinct states moved; a run that takes a part out and does not say whether the promise is broken
-without it. "Could not run" (exit 3) is the answer without Java or TLC. TLC is a stable release pinned by its digest.
+without it; and a property a holding run checks that no run shows to fail. The last is the owner's order of 2026-11-23:
+an always-true property passes every model, so what is shown is not that a property can be altered to fail (Spencer et
+al., TLA-Prover, 2026, alter the property) but which part of the protocol it stands on. Applied to the models of that
+day, twelve properties had no such run: ten have one now, each by taking one part out or going against one assumption,
+and two of `BroadcastLogWrapped` were arithmetic and were taken out. "Could not run" (exit 3) is the answer without Java
+or TLC. TLC is a stable release pinned by its digest.
 
 ### D6. Assumptions are named
 

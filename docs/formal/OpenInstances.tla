@@ -49,6 +49,7 @@ CONSTANTS NInst, NSess, MaxK,         \* instances, sessions, requests of an ins
           SignMark,                   \* a request's low-water mark is signed
           SignOffer,                  \* the incarnation an offer names is signed
           SignFence,                  \* the answer that fences is signed
+          Limit,                      \* no member is taken past the bound
           MaxForge                    \* messages an intermediary changes or makes
 
 Inst == 1..NInst
@@ -171,7 +172,7 @@ SJoin(m) ==
                    /\ UNCHANGED <<offer, ofor>>
     /\ UNCHANGED <<rec, inbox, effects, cli, cnt>>
 
-Room(i) == member[i] # 0 \/ Cardinality(Members) < MaxMembers
+Room(i) == ~Limit \/ member[i] # 0 \/ Cardinality(Members) < MaxMembers
 
 \* The edge: judge the incarnation, take the mark, hand the request to its session.
 SEdge(m) ==

@@ -29,8 +29,9 @@
 #     D9). TLA+ cannot say it, so the gate decides it over the whole graph TLC writes.
 #
 # The manifest is complete in both directions: every configuration and module
-# under docs/formal is declared, and every PART of a model (a constant whose
-# value switches a piece of the protocol) has a run that takes it out. Exit 1 is a
+# under docs/formal is declared, every PART of a model (a constant whose value
+# switches a piece of the protocol) has a run that takes it out, and everything a
+# holding run checks has a run that shows it can fail. Exit 1 is a
 # verdict about the models, exit 3 is "could not run" (no Java, no TLC).
 #
 # Usage: models.py [--self-test | --record] [--only <module>] [--workers N]
@@ -106,6 +107,41 @@ def properties_of(config: Path) -> set[str]:
         elif inside and line:
             found.update(line.split())
     return found
+
+
+def invariants_of(config: Path) -> set[str]:
+    """The names listed under a .cfg's INVARIANTS."""
+    found: set[str] = set()
+    inside = False
+    for line in config.read_text(encoding="utf-8").splitlines():
+        line = line.split("\\*")[0].strip()
+        if re.match(r"^INVARIANTS?\b", line):
+            inside = True
+            found.update(line.split()[1:])
+        elif re.match(SECTION, line):
+            inside = False
+        elif inside and line:
+            found.update(line.split())
+    return found
+
+
+def unshown(model: dict, formal: Path) -> list[str]:
+    """What a holding run checks and no run shows can fail.
+
+    A check that nothing can break says nothing, however true it is (an always-true
+    invariant passes every model). Each part taken out shows what it breaks, so a name
+    nothing breaks is one no part of the protocol stands behind: it is given a run that
+    does, or it is taken out of the module.
+    """
+    present = [run for run in model["runs"] if (formal / run["config"]).is_file()]
+    checked: set[str] = set()
+    for run in present:
+        if run["expect"] == "holds":
+            checked |= invariants_of(formal / run["config"]) | properties_of(formal / run["config"])
+    shown = {run[key] for run in present for key in ("invariant", "property", "possible") if key in run}
+    if any(run.get("promise") == "broken" for run in present):
+        shown.add(model.get("promise"))
+    return sorted(checked - shown)
 
 
 def reductions_of(config: Path) -> set[str]:
@@ -256,6 +292,8 @@ def declared(manifest: dict, formal: Path) -> list[str]:
                         problems.append(f"{name}: the promise is kept without the part, and the run says why it is there")
             else:
                 problems.append(f"{name}: expect is 'holds' or 'violates', not {run['expect']!r}")
+        for name in unshown(model, formal):
+            problems.append(f"{model['module']}: checks {name}, and no run shows that it can fail")
         present = [run for run in model["runs"] if (formal / run["config"]).is_file()]
         if not model.get("abstract") and bool(model.get("progress")) == bool(model.get("no_progress")):
             problems.append(f"{model['module']}: states its progress, or says why it has none")
@@ -457,6 +495,16 @@ class SelfTest(unittest.TestCase):
     def test_a_whole_declaration_is_clean(self) -> None:
         self.assertEqual(declared(self.manifest(), self.formal), [])
 
+    def test_a_check_no_run_shows_to_fail_is_found(self) -> None:
+        config = self.formal / "M.cfg"
+        config.write_text(config.read_text() + "    Always\n")
+        self.assertTrue(any("checks Always, and no run shows" in p for p in declared(self.manifest(), self.formal)))
+
+    def test_a_property_no_run_shows_to_fail_is_found(self) -> None:
+        config = self.formal / "M.cfg"
+        config.write_text(config.read_text() + "PROPERTIES\n    Lives\n")
+        self.assertTrue(any("checks Lives, and no run shows" in p for p in declared(self.manifest(), self.formal)))
+
     def test_a_configuration_nobody_declared_is_found(self) -> None:
         self.write("M_stray.cfg", Part="TRUE")
         self.assertTrue(any("does not declare" in p for p in declared(self.manifest(), self.formal)))
@@ -579,12 +627,12 @@ class SelfTest(unittest.TestCase):
         manifest["models"][0]["possible"] = ["Reset"]
         found = declared(manifest, self.formal)
         self.assertTrue(any("always possible" in p for p in found) and any("lost" in p for p in found))
-        holds, lost = manifest["models"][0]["runs"]
-        holds["possible"] = "Reset"
-        lost["possible"] = "Reset"
-        del lost["invariant"]
+        runs = manifest["models"][0]["runs"]
+        runs[0]["possible"] = "Reset"
+        self.write("M_lost.cfg", Part="FALSE")
+        runs.append({"config": "M_lost.cfg", "expect": "violates", "possible": "Reset", "without": "Part"})
         self.assertEqual(declared(manifest, self.formal), [])
-        holds["possible"] = "Other"
+        runs[0]["possible"] = "Other"
         self.assertTrue(any("not declared possible" in p for p in declared(manifest, self.formal)))
 
     def test_a_graph_is_read_and_its_possibility_decided(self) -> None:

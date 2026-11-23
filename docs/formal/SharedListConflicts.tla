@@ -38,7 +38,8 @@ CONSTANTS Devices,      \* the devices that write
           Hosts,        \* every host, the devices' own included
           MaxSeq,       \* the most operations a device makes
           MaxRemovals,  \* the most entries that take a device off
-          Arrival       \* whether a host refuses at the door what conflicts with what it holds
+          Arrival,      \* whether a host refuses at the door what conflicts with what it holds
+          Drop          \* whether a host drops what an entry puts past a cutoff
 
 ASSUME Devices \subseteq Hosts
 
@@ -124,7 +125,7 @@ GiveEntry(h) ==
     /\ known[h] < Len(log)
     /\ known' = [known EXCEPT ![h] = @ + 1]
     /\ store' = [store EXCEPT ![h] = [d \in Devices |->
-                    {x \in store[h][d] : Holds(known[h] + 1, frozen[h][d], d, x[1])}]]
+                    {x \in store[h][d] : Drop => Holds(known[h] + 1, frozen[h][d], d, x[1])}]]
     /\ UNCHANGED <<made, named, twin, back, log, given, frozen>>
 
 \* A host is given an operation whose entry it has.
