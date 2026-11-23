@@ -2287,6 +2287,61 @@ impl StaticScope {
                     .insert(callee.alias.as_str(), CallCrossing { params, ret });
             }
         }
+        // ... and an algorithm's text parameter, which takes the view its
+        // signature declares (`&str` in Rust) of the text the machine holds, lent as
+        // a function of another kind is lent one: called by its alias, or through
+        // its adapter by the name each rewrite of a call gives it, whose parameter
+        // is the same view ([`crate::forge::generator::algorithm_scalar_param_type`]).
+        //
+        // ⚠ Until 2026-11-23 no algorithm's text was lent, and a Rust machine
+        // handed its `SceString` where the algorithm takes `&str`: every call of an
+        // algorithm with a text parameter generated a Rust machine that did not
+        // compile, and `check` said nothing.
+        let lent = |texts: Vec<bool>| CallCrossing {
+            params: texts
+                .into_iter()
+                .map(|text| {
+                    if text {
+                        SlotCrossing::Text
+                    } else {
+                        SlotCrossing::AsIs
+                    }
+                })
+                .collect(),
+            ret: None,
+        };
+        for callee in self.callees.iter().filter(|c| c.kind.is_algorithm()) {
+            match callee.value.as_ref() {
+                None => {
+                    let texts: Vec<bool> = callee
+                        .params
+                        .iter()
+                        .map(|ty| matches!(ty, SceType::String))
+                        .collect();
+                    if texts.contains(&true) {
+                        ctx.crossings.insert(callee.alias.as_str(), lent(texts));
+                    }
+                }
+                Some(value) => {
+                    let texts: Vec<bool> = value
+                        .params
+                        .iter()
+                        .map(|slot| matches!(slot, StaticSlot::Scalar(SceType::String)))
+                        .collect();
+                    if !texts.contains(&true) {
+                        continue;
+                    }
+                    if !value.adapted() {
+                        ctx.crossings
+                            .insert(callee.alias.as_str(), lent(texts.clone()));
+                    }
+                    for call in self.state_calls.iter().filter(|c| c.alias == callee.alias) {
+                        ctx.crossings
+                            .insert(call.name.as_str(), lent(texts.clone()));
+                    }
+                }
+            }
+        }
         // E12 D5: a machine receives the failures of what it runs — an
         // integer operation that overflows, a call of a callee that declares
         // `may-fail` — as `error.execution`, so every integer operation is
