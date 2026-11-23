@@ -1445,14 +1445,13 @@ impl HazardKind {
 pub(crate) fn check(
     m: &crate::forge::model::AlgorithmModel,
     imports: &[crate::forge::generator::ImportContext],
-    options: &crate::ForgeCompileOptions,
 ) -> Result<(), crate::forge::error::ForgeError> {
     use crate::forge::error::ValidationError;
     use crate::forge::expression_site::ExpressionSite;
     if m.signature.may_fail {
         return Ok(());
     }
-    let types = crate::forge::generator::AlgorithmTypes::collect(m, imports, options)?;
+    let types = crate::forge::generator::AlgorithmTypes::collect(m, imports)?;
     let ctx = types.type_ctx(m, imports);
     let params: Vec<(String, AlgorithmValueType)> = m
         .signature

@@ -1341,7 +1341,7 @@ fn holds_optional(elem: &AlgorithmValueType) -> bool {
 /// optional record of another schema are each refused with the judge's own
 /// diagnostic, in the document. The lowering reads the body as they admitted it.
 pub(crate) fn judge(m: &AlgorithmModel, imports: &Imports) -> Result<(), ForgeError> {
-    crate::judge_algorithm_body(m, &imports.contexts, &crate::ForgeCompileOptions::default())
+    crate::judge_algorithm_body(m, &imports.contexts)
 }
 
 /// The ECMAScript function `m` lowers to, as an expression —
@@ -1463,8 +1463,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, For
             .map(|(name, _)| *name),
     );
 
-    let options = crate::ForgeCompileOptions::default();
-    let types = AlgorithmTypes::collect(m, &imports.contexts, &options)
+    let types = AlgorithmTypes::collect(m, &imports.contexts)
         .map_err(|e| GenerateError::unsupported(format!("the algorithm `{}`: {e}", m.name)))?;
     types.refuse_optional(LOWERED_DATAMODEL, &holds_optional)?;
     let mut ctx = types.type_ctx(m, &imports.contexts);

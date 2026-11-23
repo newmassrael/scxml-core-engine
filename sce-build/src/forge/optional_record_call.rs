@@ -30,7 +30,6 @@ use crate::forge::types::RecordId;
 pub(crate) fn check_algorithm(
     m: &AlgorithmModel,
     imports: &[ImportContext],
-    options: &crate::ForgeCompileOptions,
 ) -> Result<(), ForgeError> {
     let takes_one = imports.iter().any(|import| {
         import.kind == "algorithm"
@@ -45,7 +44,7 @@ pub(crate) fn check_algorithm(
     if !takes_one {
         return Ok(());
     }
-    let types = AlgorithmTypes::collect(m, imports, options)?;
+    let types = AlgorithmTypes::collect(m, imports)?;
     // The schema this body's own return is declared as, when it is an optional
     // record: what a `<sce:return>` of a call answers into.
     let returned = m

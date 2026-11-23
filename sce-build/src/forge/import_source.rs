@@ -82,6 +82,24 @@ impl ImportSource {
         Ok(Self { path, content })
     }
 
+    /// The document the `<sce:element-type>` of a bounded collection, a queue
+    /// or a broadcast log names, read from `base_dir`, the directory of the
+    /// document that names it: the document of that name there
+    /// ([`element_src`]), read as an import of it written in that document
+    /// is read ([`Self::read_src`]). `Ok(None)` when there is no such
+    /// document.
+    ///
+    /// The one place an element is resolved from the document that names it,
+    /// so the import enrichment, the walk of a run's documents and the input
+    /// closure a generated file's digest covers all reach the same document.
+    pub fn read_element(base_dir: &Path, element_type: &str) -> Result<Option<Self>, ImportError> {
+        match Self::read_src(base_dir, &element_src(element_type)) {
+            Ok(source) => Ok(Some(source)),
+            Err(ImportError::FileNotFound { .. }) => Ok(None),
+            Err(other) => Err(other),
+        }
+    }
+
     /// The label the document parses under: its file stem identifies it,
     /// and its path labels its diagnostics.
     pub fn label(&self) -> DocumentLabel<'_> {
@@ -130,6 +148,12 @@ impl ImportSource {
             .parse_file(&self.path.to_string_lossy())
             .map(Some)
     }
+}
+
+/// The `src` an element type is read from, beside the document that names
+/// it: the element is the document whose file is named for it.
+pub fn element_src(element_type: &str) -> String {
+    format!("{element_type}.scxml")
 }
 
 /// The document `import` names, parsed — or `None` when it cannot be

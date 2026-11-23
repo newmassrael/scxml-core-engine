@@ -305,6 +305,26 @@ fn cpp_last_held_alternative(v: &CodecVariant) -> usize {
         .unwrap_or_else(|| v.arms.len().saturating_sub(1))
 }
 
+/// The element a bounded collection holds, as an algorithm that walks the
+/// collection reads each item: read from the element's own document, once,
+/// where the collection is imported.
+#[derive(Debug, Clone)]
+pub struct CollectionElement {
+    /// The file the element document was read from: an input of every compile
+    /// that reads the element, listed among its dependencies.
+    pub path: std::path::PathBuf,
+    /// Each field of the element: its id, its type and its C11 length sibling.
+    pub fields: crate::ElementFieldSchema,
+    /// Whether the backend of the compile presents each field through an
+    /// accessor: a codec the C++ or the Kotlin backend prints from its plan
+    /// (docs/adr/0081 step 4).
+    pub by_accessor: bool,
+    /// On a Go compile, what a reader knows of an element the Go backend prints
+    /// from its plan, which reads each field as the codec presents it; `None`
+    /// on any other backend and for an element Go does not print.
+    pub go: Option<PrintedCodec>,
+}
+
 /// Template-ready import context for a single `<sce:import>`.
 /// Per-language data is computed here; templates consume it directly.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -726,6 +746,17 @@ pub struct ImportContext {
     /// [`BoundedCollectionModel`]: crate::forge::model::BoundedCollectionModel
     #[serde(skip)]
     pub bc_element_snake: Option<String>,
+
+    /// For bounded-collection imports: the element the collection holds, read
+    /// from the element's own document where the collection's
+    /// `<sce:element-type>` names it (`ImportSource::read_element`). What an
+    /// algorithm that walks the collection reads each item as, carried on the
+    /// import as every other fact of an imported document is, so an item is
+    /// typed alike whichever route brought the algorithm to the generator.
+    /// `None` for any other import, and for a collection whose element
+    /// document is not there: an item over it is then an open record.
+    #[serde(skip)]
+    pub bc_element: Option<CollectionElement>,
 
     /// RFC §synth-5-B parent-side variant-dispatch — mirrors the
     /// parent codec's `<sce:variant-dispatch>` declaration on this
@@ -1729,6 +1760,7 @@ fn resolve_single_import(
         buffer_pool_slot_size: None,
         queue_consumers_many: false,
         bc_element_snake: None,
+        bc_element: None,
         embed_dispatch: imp.embed_dispatch.clone(),
         codec_variant_arms_for_inversion: None,
         codec_variant_has_default_arm: None,
@@ -42492,46 +42524,36 @@ struct MemberAccessor {
     go: Option<PrintedCodec>,
 }
 
-/// The element types the backend of a compile prints from their plan, by
-/// snake element name: on a C++ or a Kotlin compile their names
-/// (`ForgeCompileOptions::element_type_cpp_printed`,
-/// `ForgeCompileOptions::element_type_kotlin_printed`), and on a Go compile
-/// what a reader knows of each (`ForgeCompileOptions::element_type_go_printed`).
-#[derive(Clone, Copy)]
-struct PrintedElements<'a> {
-    names: Option<&'a std::collections::HashSet<String>>,
-    go: Option<&'a std::collections::HashMap<String, PrintedCodec>>,
-}
-
 /// RFC c7-wildcard W-project: collect `("<item>.<field>", SceType)` pairs
 /// for every `<sce:foreach item="entry" in="<bc-alias>">` whose source is
-/// a bounded-collection import with a resolved element-type schema. These
-/// register the foreach item's element fields in the algorithm TypeCtx so
-/// the typed-expression pipeline infers `entry.pattern` as `Str` (and
-/// `entry.callback_id` as `uint32`) — the inference the bounded-string-
-/// field → borrowed-`bytes`-view call-site projection
-/// keys on. `schemas` is keyed by element-type snake name, matching
-/// [`ImportContext::bc_element_snake`]; an absent entry (deploy-key path,
-/// CLI single-file path) simply contributes nothing and the projection
-/// does not fire.
+/// a bounded-collection import that carries its element
+/// ([`ImportContext::bc_element`]). These register the foreach item's element
+/// fields in the algorithm TypeCtx so the typed-expression pipeline infers
+/// `entry.pattern` as `Str` (and `entry.callback_id` as `uint32`) — the
+/// inference the bounded-string-field → borrowed-`bytes`-view call-site
+/// projection keys on. A collection whose element document was not read
+/// contributes nothing, and its item stays an open record.
+///
+/// The element is read at the import, from the documents the import reaches,
+/// so what an item is does not depend on the route that brought the algorithm
+/// to the generator: a single document and a document set read the same
+/// element and register the same members.
 ///
 /// For each byte-addressable (`bytes` / `String`) field it also records a
-/// `("<item>.<field>", "<len_member>")` pair in `out_len`: the C11 length
+/// `("<item>.<field>", "<len_member>")` pair in `out.lens`: the C11 length
 /// sibling member, taken from the codec SSOT — the explicit `length_field`
 /// when present, else the `<field>_len` the codec emit auto-names for a
 /// tail/fixed `bytes` field. The projection reads this so the borrowed
 /// view carries the *actual* length sibling, never a `_len` guess.
 ///
-/// Where the element is a codec the C++ or the Go backend prints from its
-/// plan (`printed`, docs/adr/0081 step 4), it records the field in
+/// Where the element is a codec the backend of the compile prints from its
+/// plan (C++, Kotlin and Go, docs/adr/0081 step 4), it records the field in
 /// `accessors`: such an element presents each field through an accessor, so
 /// the backend reads the path as a call. Walks the same nested-block
 /// structure as [`crate::forge::model::AlgorithmModel::body_bindings`].
 fn collect_bc_foreach_member_types(
     stmts: &[AlgorithmStmt],
     imports: &[ImportContext],
-    schemas: &std::collections::HashMap<String, crate::ElementFieldSchema>,
-    printed: PrintedElements<'_>,
     out: &mut ForeachMembers,
 ) {
     for s in stmts {
@@ -42539,53 +42561,50 @@ fn collect_bc_foreach_member_types(
             AlgorithmStmt::Foreach {
                 item, source, body, ..
             } => {
-                if let Some(imp) = bounded_collection_import(imports, source) {
-                    if let Some(elem_snake) = imp.bc_element_snake.as_ref() {
-                        let go = printed.go.and_then(|reads| reads.get(elem_snake));
-                        let by_accessor =
-                            printed.names.is_some_and(|p| p.contains(elem_snake)) || go.is_some();
-                        if let Some(fields) = schemas.get(elem_snake) {
-                            for (fname, fty, len_field) in fields {
-                                // A field a printed Go element answers no
-                                // reader, as a number only the inputs its
-                                // encode is handed answer, is no member of
-                                // the item (`PrintedCodec::reads`).
-                                if go.is_some_and(|printed| !printed.reads(fname)) {
-                                    continue;
-                                }
-                                let path = format!("{item}.{fname}");
-                                out.types.push((path.clone(), fty.clone()));
-                                if by_accessor {
-                                    out.accessors.push(MemberAccessor {
-                                        path: path.clone(),
-                                        item: item.clone(),
-                                        field: fname.clone(),
-                                        go: go.cloned(),
-                                    });
-                                }
-                                if matches!(fty, SceType::Bytes | SceType::String) {
-                                    let len_member =
-                                        len_field.clone().unwrap_or_else(|| format!("{fname}_len"));
-                                    out.lens.push((path, len_member));
-                                }
-                            }
+                if let Some(element) = bounded_collection_import(imports, source)
+                    .and_then(|imp| imp.bc_element.as_ref())
+                {
+                    let go = element.go.as_ref();
+                    let by_accessor = element.by_accessor || go.is_some();
+                    for (fname, fty, len_field) in &element.fields {
+                        // A field a printed Go element answers no
+                        // reader, as a number only the inputs its
+                        // encode is handed answer, is no member of
+                        // the item (`PrintedCodec::reads`).
+                        if go.is_some_and(|printed| !printed.reads(fname)) {
+                            continue;
+                        }
+                        let path = format!("{item}.{fname}");
+                        out.types.push((path.clone(), fty.clone()));
+                        if by_accessor {
+                            out.accessors.push(MemberAccessor {
+                                path: path.clone(),
+                                item: item.clone(),
+                                field: fname.clone(),
+                                go: go.cloned(),
+                            });
+                        }
+                        if matches!(fty, SceType::Bytes | SceType::String) {
+                            let len_member =
+                                len_field.clone().unwrap_or_else(|| format!("{fname}_len"));
+                            out.lens.push((path, len_member));
                         }
                     }
                 }
-                collect_bc_foreach_member_types(body, imports, schemas, printed, out);
+                collect_bc_foreach_member_types(body, imports, out);
             }
             AlgorithmStmt::If {
                 then_body,
                 else_body,
                 ..
             } => {
-                collect_bc_foreach_member_types(then_body, imports, schemas, printed, out);
+                collect_bc_foreach_member_types(then_body, imports, out);
                 if let Some(eb) = else_body {
-                    collect_bc_foreach_member_types(eb, imports, schemas, printed, out);
+                    collect_bc_foreach_member_types(eb, imports, out);
                 }
             }
             AlgorithmStmt::While { body, .. } => {
-                collect_bc_foreach_member_types(body, imports, schemas, printed, out);
+                collect_bc_foreach_member_types(body, imports, out);
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
@@ -48050,7 +48069,6 @@ impl<'a> AlgorithmTypes<'a> {
     pub(crate) fn collect(
         m: &'a AlgorithmModel,
         imports: &'a [ImportContext],
-        options: &crate::ForgeCompileOptions,
     ) -> Result<Self, ForgeError> {
         use crate::forge::types::RecordShape;
         // A scalar parameter is a value; a `list<T>` one is a read-only
@@ -48100,10 +48118,10 @@ impl<'a> AlgorithmTypes<'a> {
         // typed by its schema below, as a record parameter is.
         let mut record_list_items: Vec<(&str, &str, String)> = Vec::new();
         // An item over a bounded collection is an element — a record whose
-        // fields `members` below registers when the element schema was
-        // threaded. Only then are its members known: on a single-file path
-        // the element type is a name in another document this compile never
-        // reads, so the item is an open record there.
+        // fields `members` below registers from the element the collection
+        // import carries (`ImportContext::bc_element`). Only then are its
+        // members known: a collection whose element document was not read
+        // leaves the item an open record, on every route alike.
         //
         // ⚠ This used to type EVERY foreach item a byte. Nothing read the slot
         // for a collection item, so nothing noticed until a value's members
@@ -48238,12 +48256,7 @@ impl<'a> AlgorithmTypes<'a> {
                 }
                 crate::forge::model::AlgorithmBinding::ForeachItem { name, source } => {
                     if let Some(imp) = bounded_collection_import(imports, source) {
-                        let schema_known = imp
-                            .bc_element_snake
-                            .as_ref()
-                            .zip(options.element_type_field_schemas.as_ref())
-                            .is_some_and(|(element, schemas)| schemas.contains_key(element));
-                        let shape = if schema_known {
+                        let shape = if imp.bc_element.is_some() {
                             RecordShape::Closed
                         } else {
                             RecordShape::Open
@@ -48295,30 +48308,14 @@ impl<'a> AlgorithmTypes<'a> {
         // RFC c7-wildcard W-project: register element fields of every
         // `<sce:foreach item in="<bc>">` as `"<item>.<field>"` so
         // `infer_types` types `entry.pattern` (Str) / `entry.callback_id`
-        // (uint32). Empty when the element schema was not threaded (deploy /
-        // CLI single-file path) — the byte-view projection then does not
-        // fire and args fall through verbatim, exactly as in pre-W-project
-        // C7 cross-algo dispatch. `member_lens` carries each field's C11
-        // length sibling from the codec SSOT rather than a `<field>_len`
-        // guess (borrowed-view projection fix).
+        // (uint32), from the element each collection import carries. Empty for
+        // a collection whose element document was not read — the byte-view
+        // projection then does not fire and args fall through verbatim.
+        // `member_lens` carries each field's C11 length sibling from the codec
+        // SSOT rather than a `<field>_len` guess (borrowed-view projection
+        // fix).
         let mut foreach_members = ForeachMembers::default();
-        if let Some(schemas) = options.element_type_field_schemas.as_ref() {
-            collect_bc_foreach_member_types(
-                &m.body,
-                imports,
-                schemas,
-                // One of them is populated, for the backend the algorithm is
-                // generated for.
-                PrintedElements {
-                    names: options
-                        .element_type_cpp_printed
-                        .as_ref()
-                        .or(options.element_type_kotlin_printed.as_ref()),
-                    go: options.element_type_go_printed.as_ref(),
-                },
-                &mut foreach_members,
-            );
-        }
+        collect_bc_foreach_member_types(&m.body, imports, &mut foreach_members);
         let ForeachMembers {
             types: members,
             lens: member_lens,
@@ -48967,7 +48964,7 @@ fn render_algorithm(
 
     // The names the body's expressions are typed against — collected once,
     // for the renderer and the integer arithmetic contract alike.
-    let types = AlgorithmTypes::collect(m, imports, options)?;
+    let types = AlgorithmTypes::collect(m, imports)?;
     types.refuse_optional(lang.canonical_name(), &|elem| {
         algorithm_optional_spelled(lang, elem)
     })?;
@@ -52000,6 +51997,7 @@ mod tests {
             buffer_pool_slot_size: None,
             queue_consumers_many: false,
             bc_element_snake: None,
+            bc_element: None,
             embed_dispatch: None,
             codec_variant_arms_for_inversion: None,
             codec_variant_has_default_arm: None,
@@ -52935,6 +52933,7 @@ mod tests {
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,
                 bc_element_snake: None,
+                bc_element: None,
                 embed_dispatch: None,
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
@@ -53013,6 +53012,7 @@ mod tests {
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,
                 bc_element_snake: None,
+                bc_element: None,
                 embed_dispatch: None,
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,

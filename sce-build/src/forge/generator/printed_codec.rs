@@ -24,7 +24,8 @@ use crate::forge::encode_plan::Value;
 /// What a reader in another document knows of a codec a backend prints from
 /// its plan: the parts its constructor takes and the numbers its encode
 /// derives. Held by an import of the codec ([`super::ImportContext::printed`])
-/// and by a compile's options for the element types an algorithm iterates.
+/// and by the element of a collection an import carries
+/// ([`super::CollectionElement::go`]), which an algorithm walks.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PrintedCodec {
     /// What the constructor takes, in its order.

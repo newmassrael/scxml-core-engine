@@ -20,6 +20,11 @@
 //!   document ([`stdlib::resolve`]). A statechart's imports are read wherever
 //!   they are written, an in-line child's among them, since the statechart's
 //!   own run generates its in-line children and so has to find theirs;
+//! * the element a bounded collection, a queue or a broadcast log names by its
+//!   `<sce:element-type>`, the document of that name beside it, as the import
+//!   enrichment reads it ([`ImportSource::read_element`]): the holder's
+//!   generated code names it by package, and an algorithm that walks a
+//!   collection reads each item as it. One that is not there is no unit;
 //! * every `<invoke src="sce:std/...">`: a standard statechart a statechart
 //!   starts is generated in-line by its parent's own run, so it is not a unit
 //!   here, but what it imports is;
@@ -41,7 +46,7 @@ use crate::forge::error::{
     ForgeError, ImportError, Located, RelatedRole, RelatedSite, SourceLocation, ValidationError,
     XmlError,
 };
-use crate::forge::import_source::ImportSource;
+use crate::forge::import_source::{element_src, ImportSource};
 use crate::forge::stdlib;
 use crate::generator::Language;
 use crate::DocumentLabel;
@@ -221,6 +226,7 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
                         by: By::Import,
                         read: None,
                     })
+                    .chain(element_references(text))
                     .collect();
                 (
                     UnitKind::Forge,
@@ -279,6 +285,15 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
                     }
                     (as_generated(&source.path), PendingRole::Imported)
                 }
+                // The element a collection, a queue or a log holds is a unit of
+                // its own, which the holder's generated code names by package.
+                // One that is not beside the holder is no unit of the run: a
+                // document set that holds it elsewhere names it itself.
+                By::Element => match ImportSource::read_element(&base, &reference.src) {
+                    Ok(Some(source)) => (as_generated(&source.path), PendingRole::Imported),
+                    Ok(None) => continue,
+                    Err(error) => return Err(at_site(error.into())),
+                },
                 By::StandardChild => {
                     let path = stdlib::resolve(&base, &reference.src);
                     if stdlib::lookup(&path).is_none() {
@@ -425,7 +440,10 @@ pub fn reads(seeds: &[PathBuf], options: WalkOptions<'_>) -> Vec<PathBuf> {
                 found.push(shape);
             }
         }
-        for reference in statechart_references(loaded.text()) {
+        for reference in statechart_references(loaded.text())
+            .into_iter()
+            .chain(element_references(loaded.text()))
+        {
             if let Some(next) = read_of(&base, options.input_root, &reference) {
                 pending.push_back(next);
             }
@@ -484,6 +502,7 @@ fn migration_shapes(text: &str, base: &Path, input_root: Option<&Path>) -> Vec<P
 fn read_of(base: &Path, input_root: Option<&Path>, reference: &Reference) -> Option<PathBuf> {
     let path = match reference.by {
         By::Import | By::StandardChild => stdlib::resolve(base, &reference.src),
+        By::Element => stdlib::resolve(base, &element_src(&reference.src)),
         By::Candidate => candidate_document(base, input_root, &reference.src)?,
         By::FileChild => {
             let roots: Vec<PathBuf> = input_root.map(Path::to_path_buf).into_iter().collect();
@@ -532,6 +551,9 @@ fn package_of(role: &PendingRole) -> Option<String> {
 enum By {
     /// `<sce:import src>`.
     Import,
+    /// `<sce:element-type>`, its `src` the element type it names: the
+    /// document read beside the holder (`ImportSource::read_element`).
+    Element,
     /// `<invoke src="sce:std/...">`.
     StandardChild,
     /// An entry of `<invoke sce:candidates>`.
@@ -553,6 +575,38 @@ struct Reference {
     /// `<stem>.scxml` (`model::ScxmlInvokeInfo::child_document_path`), which
     /// [`reads`] follows. `None` for every other reference.
     read: Option<PathBuf>,
+}
+
+/// The element a bounded collection, a queue or a broadcast log holds, which
+/// its `<sce:element-type>` names ([`By::Element`]): a document the holder's
+/// generation reads, and the one an algorithm that walks a collection reads
+/// each item as. Read from the root's own elements, as the forge parse reads
+/// it; a text that is not well-formed, and any other kind, names none.
+fn element_references(text: &str) -> Vec<Reference> {
+    let Ok(document) = roxmltree::Document::parse(text) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for node in document.root_element().children() {
+        let tag = node.tag_name();
+        if !node.is_element()
+            || tag.name() != "element-type"
+            || tag.namespace() != Some(crate::template::SCE_EXT_NS)
+        {
+            continue;
+        }
+        let element_type = node.text().unwrap_or("").trim();
+        if element_type.is_empty() {
+            continue;
+        }
+        found.push(Reference {
+            src: element_type.to_string(),
+            line: Some(document.text_pos_at(node.range().start).row),
+            by: By::Element,
+            read: None,
+        });
+    }
+    found
 }
 
 /// Every reference a statechart's text makes, in document order: each
@@ -1258,5 +1312,64 @@ mod tests {
             lexically_folded(Path::new("/p/a/../b.scxml")),
             Path::new("/p/b.scxml")
         );
+    }
+
+    /// A bounded collection named `table` whose `<sce:element-type>` names
+    /// `element`.
+    fn collection(element: &str) -> String {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{SCXML_HEAD} \
+             sce:kind=\"bounded-collection\" name=\"table\" version=\"1.0\">\n  \
+             <sce:element-type>{element}</sce:element-type>\n  \
+             <sce:capacity const=\"8\"/>\n</scxml>\n"
+        )
+    }
+
+    /// A codec named `entry` with one field, an element a collection holds.
+    fn element_codec() -> String {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{SCXML_HEAD} sce:kind=\"codec\" \
+             name=\"entry\" version=\"1.0\">\n  <datamodel>\n    <sce:field \
+             id=\"callback_id\" sce:type=\"uint32\" sce:byte=\"4\" sce:bit-size=\"32\"/>\n  \
+             </datamodel>\n</scxml>\n"
+        )
+    }
+
+    /// The element a collection names is a unit of the run, reached from the
+    /// collection, and a file the generation of the collection reads: the
+    /// document of that name beside it, which the import enrichment reads too.
+    #[test]
+    fn the_element_a_collection_names_is_a_unit_and_an_input() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let element = write(dir.path(), "entry.scxml", &element_codec());
+        let table = write(dir.path(), "table.scxml", &collection("entry"));
+
+        let units = walked(std::slice::from_ref(&table));
+        let names: Vec<(&str, &Role)> = units
+            .iter()
+            .map(|unit| (unit.name.as_str(), &unit.role))
+            .collect();
+        assert_eq!(names, [("table", &Role::Named), ("entry", &Role::Imported)]);
+        assert_eq!(units[1].document, element);
+        assert_eq!(units[1].kind, UnitKind::Forge);
+
+        let read = reads(&[PathBuf::from(&table)], WalkOptions::default());
+        assert_eq!(read, [PathBuf::from(&table), PathBuf::from(&element)]);
+    }
+
+    /// An element that is not beside the collection is no unit and reads
+    /// nothing: a document set that holds it elsewhere names it itself, and
+    /// the walk is not refused for it.
+    #[test]
+    fn an_element_not_beside_its_collection_is_no_unit() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let table = write(dir.path(), "table.scxml", &collection("entry"));
+
+        let units = walked(std::slice::from_ref(&table));
+        let names: Vec<&str> = units.iter().map(|unit| unit.name.as_str()).collect();
+        assert_eq!(names, ["table"]);
+
+        let read = reads(&[PathBuf::from(&table)], WalkOptions::default());
+        assert_eq!(read, [PathBuf::from(&table)]);
     }
 }

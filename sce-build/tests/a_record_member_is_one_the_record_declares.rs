@@ -17,10 +17,7 @@
 // is registered as a function, not a field, and is the likeliest thing a
 // field-only check would refuse.
 
-use std::collections::HashMap;
-
 use sce_build::forge::error::{ExprError, ForgeError};
-use sce_build::forge::model::SceType;
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
@@ -130,48 +127,44 @@ fn collection_scan(member: &str) -> String {
     )
 }
 
-/// The options a multi-document build passes: the element schema of every
-/// collection's element type, keyed by its snake-cased name.
-fn with_element_schema() -> ForgeCompileOptions {
-    let mut schemas = HashMap::new();
-    schemas.insert(
-        "subscription_entry".to_string(),
-        vec![("callback_id".to_string(), SceType::Uint32, None)],
-    );
-    ForgeCompileOptions {
-        element_type_field_schemas: Some(schemas),
-        ..ForgeCompileOptions::default()
-    }
-}
-
+/// A single document compiled on its own reads its collection's element
+/// where the collection names it, as a document set that holds all three
+/// does, so the item's members are judged on either route: the element's
+/// schema declares `callback_id` and nothing else.
 #[test]
-fn a_misspelled_field_of_a_collection_item_is_refused_when_its_element_is_known() {
+fn a_misspelled_field_of_a_collection_item_is_refused_on_a_single_document() {
     compile(
         "item_ok",
         &collection_scan("callback_id"),
-        &with_element_schema(),
+        &ForgeCompileOptions::default(),
     )
     .expect("a declared element field generates");
     let (record, member, declared) = unknown_member(
         "item_typo",
         &collection_scan("callback_idd"),
-        &with_element_schema(),
+        &ForgeCompileOptions::default(),
     );
     assert_eq!(record, "entry");
     assert_eq!(member, "callback_idd");
     assert_eq!(declared, ["callback_id"]);
 }
 
-/// A single document compiled on its own does not carry its collection's
-/// element schema — the element type is a name in a document that compile
-/// never reads — so the item's members are not judged there. This pins the
-/// stated limit rather than letting it pass by accident.
+/// A collection whose element document is not beside it carries no element:
+/// its item is an open record, whose members nothing judges, on every route
+/// alike. This pins that branch rather than letting it pass by accident.
 #[test]
-fn a_collection_items_members_are_not_judged_without_its_element_schema() {
-    compile(
-        "item_open",
+fn a_collection_whose_element_is_not_beside_it_leaves_its_item_open() {
+    let staged = tempfile::tempdir().expect("tempdir");
+    let collection =
+        std::fs::read_to_string(resource_dir().join("local_sub_table.scxml")).expect("fixture");
+    std::fs::write(staged.path().join("local_sub_table.scxml"), collection).expect("stage");
+    assert!(!staged.path().join("subscription_entry.scxml").exists());
+    sce_build::compile_forge_with_imports(
         &collection_scan("callback_idd"),
+        DocumentLabel::symmetric("item_open"),
+        Language::Rust,
+        staged.path(),
         &ForgeCompileOptions::default(),
     )
-    .expect("an item whose element schema is absent is an open record");
+    .expect("an item whose element document is absent is an open record");
 }

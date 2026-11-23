@@ -608,9 +608,8 @@ impl Slot {
 pub(crate) fn check_algorithm(
     m: &AlgorithmModel,
     imports: &[ImportContext],
-    options: &crate::ForgeCompileOptions,
 ) -> Result<(), ForgeError> {
-    let types = AlgorithmTypes::collect(m, imports, options)?;
+    let types = AlgorithmTypes::collect(m, imports)?;
     let ctx = types.type_ctx(m, imports);
     let var_alias = |path: &str| types.enum_at(path).map(str::to_string);
     let calls = |name: &str| callee_enums(imports, name);
