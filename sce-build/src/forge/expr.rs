@@ -7225,6 +7225,23 @@ fn child_needs_parens(
     prec: fn(BinOp) -> u8,
 ) -> bool {
     match &child.kind {
+        // A comparison that is an operand of a comparison is parenthesised
+        // whatever the table says, on either side: `(a === b) === c` is a
+        // test of a truth value against `c`, and no backend but ECMAScript
+        // and Go reads `a == b == c` that way. Rust and Swift refuse it
+        // ("comparison operators cannot be chained"), Python reads it as
+        // `a == b and b == c`, Kotlin will not chain `<`, and GCC flags it
+        // under `-Wparentheses`. Where it does associate, the parentheses
+        // change nothing.
+        //
+        // ⚠ Until 2026-11-23 a left operand at the same level was left bare,
+        // as an associative operator's is: Rust refused the generated file,
+        // and Python ran it and answered something else than the document.
+        ExprKind::Binary { op: child_op, .. }
+            if child_op.is_comparison() && parent_op.is_comparison() =>
+        {
+            true
+        }
         ExprKind::Binary { op: child_op, .. } => {
             let cp = prec(*child_op);
             let pp = prec(parent_op);
@@ -16341,6 +16358,24 @@ mod tests {
         );
     }
 
+    /// A comparison that is an operand of a comparison keeps its parentheses
+    /// on every backend. Found by a consumer whose
+    /// `(o.kind === WhoKind.of_department) === p.ofDepartment` passed `check`
+    /// and was generated as `a == b == c`, which rustc refuses; Python ran the
+    /// same text as a chained comparison and answered something else.
+    #[test]
+    fn a_comparison_under_a_comparison_keeps_its_parentheses() {
+        for target in ExprTarget::ALL {
+            assert_eq!(tp("(a === b) === c", target), "(a == b) == c", "{target:?}");
+            assert_eq!(tp("a === (b === c)", target), "a == (b == c)", "{target:?}");
+            assert_eq!(
+                tp("(a < b) === (c > d)", target),
+                "(a < b) == (c > d)",
+                "{target:?}"
+            );
+        }
+    }
+
     #[test]
     fn cpp_precedence_bitwise_vs_comparison() {
         // `===` binds tighter than `&` in both languages, so the parens change
@@ -18136,6 +18171,9 @@ mod tests {
             "ready ? (ready ? 1 : 2) : 3"
         );
         assert_eq!(js("!(level === 1)"), "!(level === 1)");
+        // A comparison under a comparison keeps its parentheses here too,
+        // where they change nothing (`child_needs_parens`).
+        assert_eq!(js("(level === 1) === ready"), "(level === 1) === ready");
     }
 
     /// A sign in front of a sign is one token, `--`, in ECMAScript.
