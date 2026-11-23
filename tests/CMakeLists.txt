@@ -817,11 +817,19 @@ foreach(_EVENT_DOCUMENT event_occurrence event_schedule event_later event_latest
     )
 endforeach()
 # static_text_record's: the standard text rules over a record that holds text, and
-# the record's own event-schema, which each rule's header includes.
+# the record's own event-schema, which each rule's header includes; and
+# `slot_titled` and `text_filled`, of the machine's own directory, which take a text
+# beside the list and alone.
 foreach(_STD_TEXT_DOCUMENT text_slot text_slot_latest text_slot_retitled text_slot_holds)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/text/${_STD_TEXT_DOCUMENT}.scxml
+    )
+endforeach()
+foreach(_TEXT_ALGORITHM slot_titled text_filled)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_TEXT_ALGORITHM}.scxml
     )
 endforeach()
 # static_forge_calls's: a condition, a transform, two lookups, an interpolation and a

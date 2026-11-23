@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9217dfff20277ab08732b26c8c296b58b442b891f5208046cced0b10b199fa76
+// source-hash: e6309856dfb19e76265eccd7b89c9e034bede12e4da20754f9c3f2284c9bf190
 // source: static_text_record.scxml
 
 
@@ -21,7 +21,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_text_record.scxml:19 :: _machine
+// SCE-MAP: static_text_record.scxml:24 :: _machine
 
 package static_text_record
 
@@ -34,6 +34,8 @@ import (
 	sce "github.com/newmassrael/sce-go-runtime"
 	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	sce_slot_titled "github.com/newmassrael/sce-go-tests/integration/static_datamodel/slot_titled"
+	sce_text_filled "github.com/newmassrael/sce-go-tests/integration/static_datamodel/text_filled"
 	sce_text_slot "github.com/newmassrael/sce-go-tests/integration/static_datamodel/text_slot"
 	sce_text_slot_holds "github.com/newmassrael/sce-go-tests/integration/static_datamodel/text_slot_holds"
 	sce_text_slot_latest "github.com/newmassrael/sce-go-tests/integration/static_datamodel/text_slot_latest"
@@ -571,6 +573,14 @@ func sceAdapt_StaticTextRecord_Retitled__v(p0 []StaticTextRecordSlotRecord) scea
 	return scealgorithm.Outcome[[]StaticTextRecordSlotRecord]{Value: out}
 }
 
+func sceAdapt_StaticTextRecord_Titled__v(p0 string, p1 []StaticTextRecordSlotRecord) bool {
+	a1 := make([]sce_text_slot.TextSlotPayload, len(p1))
+	for i, e := range p1 {
+		a1[i] = sce_text_slot.TextSlotPayload{Slot: e.slot, Version: e.version, Text: e.text}
+	}
+	return sce_slot_titled.SlotTitled(p0, a1)
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -985,7 +995,7 @@ func (p *StaticTextRecordPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_text_record.scxml:19
+//line static_text_record.scxml:24
 func (p *StaticTextRecordPolicy) ExecuteEntryActions(state StaticTextRecordState, engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -998,7 +1008,7 @@ func (p *StaticTextRecordPolicy) ExecuteEntryActions(state StaticTextRecordState
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_text_record.scxml:19
+//line static_text_record.scxml:24
 func (p *StaticTextRecordPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1006,7 +1016,7 @@ func (p *StaticTextRecordPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_text_record.scxml:19
+//line static_text_record.scxml:24
 func (p *StaticTextRecordPolicy) ExecuteExitActions(state StaticTextRecordState, engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent], configurationBeforeExit []StaticTextRecordState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1023,7 +1033,7 @@ func (p *StaticTextRecordPolicy) ExecuteExitActions(state StaticTextRecordState,
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_text_record.scxml:19
+//line static_text_record.scxml:24
 func (p *StaticTextRecordPolicy) BindCurrentEvent(event StaticTextRecordEvent, engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1033,7 +1043,7 @@ func (p *StaticTextRecordPolicy) BindCurrentEvent(event StaticTextRecordEvent, e
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_text_record.scxml:19
+//line static_text_record.scxml:24
 func (p *StaticTextRecordPolicy) FirstEnabledTransition(state StaticTextRecordState, event StaticTextRecordEvent, engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent]) (sce.EnabledTransition[StaticTextRecordState, sce.HistoryID], bool) {
 	switch state {
 	case StaticTextRecordStateOpen:
@@ -1073,13 +1083,13 @@ func (p *StaticTextRecordPolicy) FirstEnabledTransition(state StaticTextRecordSt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_text_record.scxml:19
+//line static_text_record.scxml:24
 func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecordState, transitionIndex int, engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent]) {
 	switch source {
 	case StaticTextRecordStateOpen:
 		switch transitionIndex {
 		case 0:
-//line static_text_record.scxml:41
+//line static_text_record.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticTextRecordPayloadTagTextSlot {
@@ -1096,7 +1106,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 	p.vHeld = sceAdapt_StaticTextRecord_Latest__vv(p.vHeld, p.vIncoming)
 
 
-	if sceAdapt_StaticTextRecord_Holds__vv(p.vSlots, p.vIncoming) {
+	if sceAdapt_StaticTextRecord_Holds__vv(p.vSlots, p.vIncoming) && sceAdapt_StaticTextRecord_Titled__v(p.vIncoming.text, p.vSlots) && sce_text_filled.TextFilled(p.vIncoming.text) {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vKnown, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='known'>: an integer operation overflowed or failed")); return true }; p.vKnown = sceValue; return false }() {
@@ -1114,7 +1124,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 
 			}()
 		case 1:
-//line static_text_record.scxml:49
+//line static_text_record.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1125,7 +1135,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 
 			}()
 		case 2:
-//line static_text_record.scxml:52
+//line static_text_record.scxml:59
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

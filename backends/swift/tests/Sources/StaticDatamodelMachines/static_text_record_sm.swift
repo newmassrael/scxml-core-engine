@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9217dfff20277ab08732b26c8c296b58b442b891f5208046cced0b10b199fa76
+// source-hash: e6309856dfb19e76265eccd7b89c9e034bede12e4da20754f9c3f2284c9bf190
 // source: static_text_record.scxml
 
 
@@ -20,7 +20,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: static_text_record.scxml:19 :: _machine
+// SCE-MAP: static_text_record.scxml:24 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -156,6 +156,11 @@ private func call_Latest__vv(_ p0: StaticTextRecordSlotRecord, _ p1: StaticTextR
 private func call_Retitled__v(_ p0: [StaticTextRecordSlotRecord]) throws(AlgorithmError) -> [StaticTextRecordSlotRecord] {
     let r = try TextSlotRetitled.textSlotRetitled(p0.map { TextSlotPayload(slot: $0.slot, version: $0.version, text: $0.text) })
     return r.map { StaticTextRecordSlotRecord(slot: $0.slot, version: $0.version, text: $0.text) }
+}
+
+private func call_Titled__v(_ p0: String, _ p1: [StaticTextRecordSlotRecord]) -> Bool {
+    let r = SlotTitled.slotTitled(p0, p1.map { TextSlotPayload(slot: $0.slot, version: $0.version, text: $0.text) })
+    return r
 }
 
 // ======================================================================
@@ -610,7 +615,7 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
                 self.vHeld = call_Latest__vv(self.vHeld, self.vIncoming)
 
 
-                if (call_Holds__vv(self.vSlots, self.vIncoming)) {
+                if (call_Holds__vv(self.vSlots, self.vIncoming) && call_Titled__v(self.vIncoming.text, self.vSlots) && TextFilled.textFilled(self.vIncoming.text)) {
 
 
                 if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vKnown, 1)); self.vKnown = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='known'>: an integer operation overflowed or failed")); return true }; return false }()) {

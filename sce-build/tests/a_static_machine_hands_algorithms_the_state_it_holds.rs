@@ -286,6 +286,101 @@ fn a_record_that_holds_text_is_handed_to_an_algorithm_by_every_backend() {
     }
 }
 
+/// [`TEXT_MACHINE`], whose question of the list also asks `Titled`, an algorithm that
+/// takes a text beside the list of records (the fixture's `slot_titled`).
+fn text_beside_list_machine() -> String {
+    TEXT_MACHINE
+        .replace(
+            r#"<sce:import kind="algorithm" src="sce:std/text/text_slot_holds.scxml" as="Holds"/>"#,
+            r#"<sce:import kind="algorithm" src="sce:std/text/text_slot_holds.scxml" as="Holds"/>
+  <sce:import kind="algorithm" src="algorithm_slot_titled.scxml" as="Titled"/>"#,
+        )
+        .replace(
+            r#"<if cond="Holds(slots, incoming)">"#,
+            r#"<if cond="Holds(slots, incoming) &amp;&amp; Titled(incoming.text, slots)">"#,
+        )
+}
+
+/// A text handed to an algorithm that also takes a list is handed on as the view the
+/// algorithm's own parameter takes. Reported by a consumer on 2026-11-23: every backend
+/// refused such a call, and the refusal said the list had no lowering.
+#[test]
+fn a_text_beside_a_list_is_handed_to_an_algorithm_by_every_backend() {
+    let machine = text_beside_list_machine();
+    assert!(
+        machine.contains("Titled(incoming.text, slots)"),
+        "the probe calls Titled"
+    );
+    let titled = std::fs::read_to_string(fixtures().join("algorithm_slot_titled.scxml"))
+        .expect("the fixture algorithm");
+    for args in [
+        vec!["check", "-l", "rust"],
+        vec!["check", "-l", "kotlin"],
+        vec!["check", "-l", "python"],
+        vec!["check", "-l", "c"],
+        vec!["check", "-l", "cpp"],
+        vec!["check", "-l", "swift"],
+        vec![
+            "check",
+            "-l",
+            "go",
+            "--go-module-prefix",
+            "example.test/generated",
+        ],
+    ] {
+        let (ok, out) = run_beside(
+            &[],
+            &args,
+            &machine,
+            &[("algorithm_slot_titled.scxml", &titled)],
+        );
+        assert!(ok, "{args:?} must lower the machine:\n{out}");
+    }
+}
+
+/// What no adapter hands over is refused by the slot it is, not as the list or the
+/// record beside it: a text an algorithm returns beside a list it takes.
+#[test]
+fn a_text_an_algorithm_returns_beside_a_list_is_refused_by_name() {
+    let returns_text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="named_by" version="1.0">
+  <sce:signature>
+    <sce:param name="ids" type="list&lt;uint32&gt;"/>
+    <sce:return type="string[16]"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="len(ids) &gt; 0"><sce:return expr="'some'"/></sce:if>
+    <sce:return expr="'none'"/>
+  </sce:body>
+</scxml>
+"#;
+    let machine = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="sce-static" name="probe" initial="idle">
+  <sce:import kind="algorithm" src="algorithm_named_by.scxml" as="NamedBy"/>
+  <datamodel>
+    <data id="ids" sce:type="list&lt;uint32&gt;[4]"/>
+    <data id="name" sce:type="string[16]" expr="''"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go"><assign location="name" expr="NamedBy(ids)"/></transition>
+  </state>
+</scxml>
+"#;
+    let (ok, out) = run_beside(
+        &[],
+        &["check", "-l", "rust"],
+        machine,
+        &[("algorithm_named_by.scxml", returns_text)],
+    );
+    assert!(!ok, "a text returned beside a list is refused:\n{out}");
+    assert!(
+        out.contains("`NamedBy(…)`: the text it returns crosses no Rust adapter yet"),
+        "the refusal names the slot:\n{out}"
+    );
+}
+
 #[test]
 fn the_interpreter_holds_the_text_an_algorithm_writes_to_its_bound() {
     let dir = tempdir().expect("tempdir");

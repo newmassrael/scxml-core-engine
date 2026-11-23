@@ -2958,15 +2958,23 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     endforeach()
     # A machine that hands the standard text rules a record and a list of records
     # that hold text: each rule's header, and the header of the schema they take
-    # and give back, is generated once beside the machine that includes them.
+    # and give back, is generated once beside the machine that includes them. So is
+    # the headers of `slot_titled` and `text_filled`, of the machine's own directory,
+    # which take a text beside the list and alone.
     set(_STATIC_TEXT_HEADERS "")
     foreach(_TEXT_HEADER text_slot text_slot_latest text_slot_retitled text_slot_holds)
         sce_c_integration_generation(_TEXT_ONE "sce:std/text/${_TEXT_HEADER}.scxml")
         list(APPEND _STATIC_TEXT_HEADERS ${_TEXT_ONE_HEADERS})
     endforeach()
+    foreach(_TEXT_HEADER slot_titled text_filled)
+        sce_c_integration_generation(_TEXT_ONE
+            "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_TEXT_HEADER}.scxml")
+        list(APPEND _STATIC_TEXT_HEADERS ${_TEXT_ONE_HEADERS})
+    endforeach()
     sce_generate_static_integration_c_test(static_text_record
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_text_record.scxml"
+        STAGE_ALSO algorithm_slot_titled.scxml algorithm_text_filled.scxml
     )
     # A `<sce:lift>` reads a text into a record of the schema the machine imports, with
     # the enum that schema's field holds, and keeps why not as the standard refusal

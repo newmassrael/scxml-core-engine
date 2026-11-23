@@ -1098,6 +1098,46 @@ pub(crate) fn plain_scalar(ty: &SceType) -> bool {
     !matches!(ty, SceType::Enum(_) | SceType::String | SceType::Bytes)
 }
 
+/// The slot of an algorithm's signature that no backend's adapter hands over,
+/// named as the refusal of the call says it: a byte string parameter, a list of
+/// texts or byte strings either way, and a text or a byte string the algorithm
+/// returns. A text parameter is handed on as the view the algorithm takes, and
+/// every other slot an adapter refuses is refused for a reason of its backend,
+/// which the generic refusal covers.
+///
+/// ⚠ Until 2026-11-23 every refused call read "an imported algorithm that takes
+/// or returns a record or a list has no Rust lowering yet", which a consumer
+/// read as the list being refused when its text parameter was.
+fn unhanded_slot(value: &crate::forge::type_ctx::StaticValueSignature) -> Option<String> {
+    let texts = |ty: &SceType| matches!(ty, SceType::String | SceType::Bytes);
+    let what = |ty: &SceType| match ty {
+        SceType::Bytes => "byte string",
+        _ => "text",
+    };
+    value
+        .params
+        .iter()
+        .enumerate()
+        .find_map(|(index, slot)| match slot {
+            StaticSlot::Scalar(SceType::Bytes) => {
+                Some(format!("its parameter {} (a byte string)", index + 1))
+            }
+            StaticSlot::ScalarList(ty) if texts(ty) => Some(format!(
+                "its parameter {} (a list of {}s)",
+                index + 1,
+                what(ty)
+            )),
+            _ => None,
+        })
+        .or_else(|| match value.ret.as_ref()? {
+            StaticSlot::Scalar(ty) if texts(ty) => Some(format!("the {} it returns", what(ty))),
+            StaticSlot::ScalarList(ty) if texts(ty) => {
+                Some(format!("the list of {}s it returns", what(ty)))
+            }
+            _ => None,
+        })
+}
+
 /// Whether a field of a record handed to an algorithm, and back, is one an adapter
 /// copies: a number or a truth value as it is, a string the schema bounds as the
 /// text the algorithm's record holds within the same bound (SCE_FORGE.md §4.12), and
@@ -4250,6 +4290,19 @@ impl StaticTarget for KotlinTarget {
                         Crossing::ToAlgorithm,
                     )?);
                 }
+                // A text is handed on as the view the algorithm's own parameter takes
+                // ([`crate::forge::generator::algorithm_scalar_param_type`]): the call is typed
+                // by the algorithm's signature, so its argument is spelled for that type.
+                AdapterParam::Scalar(SceType::String) => {
+                    declarations.push(format!(
+                        "{name}: {}",
+                        crate::forge::generator::algorithm_scalar_param_type(
+                            Language::Kotlin,
+                            &SceType::String,
+                        )
+                    ));
+                    arguments.push(name);
+                }
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -5855,6 +5908,19 @@ impl StaticTarget for RustTarget {
                         &name,
                         Crossing::ToAlgorithm,
                     )?);
+                }
+                // A text is handed on as the view the algorithm's own parameter takes
+                // ([`crate::forge::generator::algorithm_scalar_param_type`]): the call is typed
+                // by the algorithm's signature, so its argument is spelled for that type.
+                AdapterParam::Scalar(SceType::String) => {
+                    declarations.push(format!(
+                        "{name}: {}",
+                        crate::forge::generator::algorithm_scalar_param_type(
+                            Language::Rust,
+                            &SceType::String,
+                        )
+                    ));
+                    arguments.push(name);
                 }
                 AdapterParam::Scalar(ty) => {
                     if !scalar_ok(ty) {
@@ -10944,11 +11010,17 @@ pub fn lower(
             scratch_imports.extend(callee_import(callee));
         }
         adapter_defs.push(target.state_adapter(&spec).ok_or_else(|| {
-            GenerateError::unsupported(format!(
-                "`{}(…)`: an imported algorithm that takes or returns a record or a list has \
-                 no {lang} lowering yet",
-                callee.alias
-            ))
+            GenerateError::unsupported(match unhanded_slot(value) {
+                Some(slot) => format!(
+                    "`{}(…)`: {slot} crosses no {lang} adapter yet",
+                    callee.alias
+                ),
+                None => format!(
+                    "`{}(…)`: an imported algorithm that takes or returns a record or a list \
+                     has no {lang} lowering yet",
+                    callee.alias
+                ),
+            })
         })?);
         let returned = value
             .ret
@@ -14361,6 +14433,19 @@ impl StaticTarget for CppTarget {
                         Crossing::ToAlgorithm,
                     )?);
                 }
+                // A text is handed on as the view the algorithm's own parameter takes
+                // ([`crate::forge::generator::algorithm_scalar_param_type`]): the call is typed
+                // by the algorithm's signature, so its argument is spelled for that type.
+                AdapterParam::Scalar(SceType::String) => {
+                    declarations.push(format!(
+                        "{} {name}",
+                        crate::forge::generator::algorithm_scalar_param_type(
+                            Language::Cpp,
+                            &SceType::String,
+                        )
+                    ));
+                    arguments.push(name);
+                }
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -16172,6 +16257,19 @@ impl StaticTarget for GoTarget<'_> {
                         Crossing::ToAlgorithm,
                     )?);
                 }
+                // A text is handed on as the view the algorithm's own parameter takes
+                // ([`crate::forge::generator::algorithm_scalar_param_type`]): the call is typed
+                // by the algorithm's signature, so its argument is spelled for that type.
+                AdapterParam::Scalar(SceType::String) => {
+                    declarations.push(format!(
+                        "{name} {}",
+                        crate::forge::generator::algorithm_scalar_param_type(
+                            Language::Go,
+                            &SceType::String,
+                        )
+                    ));
+                    arguments.push(name);
+                }
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -17827,6 +17925,8 @@ impl StaticTarget for PythonTarget {
                 AdapterParam::Scalar(SceType::Enum(reference)) => arguments.push(
                     spec.enum_crossing(self, &reference.alias, &name, Crossing::ToAlgorithm)?,
                 ),
+                // A text is handed on as it is, the `str` the algorithm takes.
+                AdapterParam::Scalar(SceType::String) => arguments.push(name.clone()),
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -20289,6 +20389,19 @@ impl StaticTarget for CTarget {
                         &p,
                         Crossing::ToAlgorithm,
                     )?);
+                }
+                // A text is handed on as the view the algorithm's own parameter takes
+                // ([`crate::forge::generator::algorithm_scalar_param_type`]): the call is typed
+                // by the algorithm's signature, so its argument is spelled for that type.
+                AdapterParam::Scalar(SceType::String) => {
+                    declarations.push(format!(
+                        "{} {p}",
+                        crate::forge::generator::algorithm_scalar_param_type(
+                            Language::C11,
+                            &SceType::String,
+                        )
+                    ));
+                    arguments.push(p);
                 }
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
@@ -23930,6 +24043,19 @@ impl StaticTarget for SwiftTarget {
                         &name,
                         Crossing::ToAlgorithm,
                     )?);
+                }
+                // A text is handed on as the view the algorithm's own parameter takes
+                // ([`crate::forge::generator::algorithm_scalar_param_type`]): the call is typed
+                // by the algorithm's signature, so its argument is spelled for that type.
+                AdapterParam::Scalar(SceType::String) => {
+                    declarations.push(format!(
+                        "_ {name}: {}",
+                        crate::forge::generator::algorithm_scalar_param_type(
+                            Language::Swift,
+                            &SceType::String,
+                        )
+                    ));
+                    arguments.push(name);
                 }
                 AdapterParam::Scalar(ty) if plain_scalar(ty) => {
                     declarations.push(format!("_ {name}: {}", self.scalar_type(ty)));
