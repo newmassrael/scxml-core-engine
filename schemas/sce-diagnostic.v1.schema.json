@@ -167,6 +167,7 @@
         "algorithm/undeclared-integer-failure",
         "algorithm/require-without-may-fail",
         "algorithm/inout-on-may-fail",
+        "algorithm/statement-after-else",
         "codec/undeclared-encode-refusal",
         "codec/encode-may-fail-without-refusal",
         "codec/capacity-invalid",
