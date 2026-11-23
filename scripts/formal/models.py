@@ -125,6 +125,19 @@ def invariants_of(config: Path) -> set[str]:
     return found
 
 
+# What leaves a step of a proof out, or takes a formula as true.
+TRUSTED = re.compile(r"\b(OMITTED|AXIOM)\b")
+
+
+def taken_on_trust(module: Path) -> list[str]:
+    """The lines of a module, its comments left out, that take something on trust."""
+    text = re.sub(r"\(\*.*?\*\)", lambda found: "\n" * found.group(0).count("\n"), module.read_text(encoding="utf-8"), flags=re.DOTALL)
+    return [
+        f"{module.name}:{number}: taken on trust: {line.strip()}"
+        for number, line in enumerate(text.splitlines(), 1) if TRUSTED.search(line.split("\\*")[0])
+    ]
+
+
 def unshown(model: dict, formal: Path) -> list[str]:
     """What a holding run checks and no run shows can fail.
 
@@ -229,6 +242,8 @@ def declared(manifest: dict, formal: Path) -> list[str]:
     problems: list[str] = []
     configs: list[str] = []
     modules = [m["module"] for m in manifest["models"]]
+    for module in sorted(formal.glob("*.tla")):
+        problems += taken_on_trust(module)
     for model in manifest["models"]:
         unknown = set(model) - MODULE_KEYS
         if unknown:
@@ -494,6 +509,13 @@ class SelfTest(unittest.TestCase):
 
     def test_a_whole_declaration_is_clean(self) -> None:
         self.assertEqual(declared(self.manifest(), self.formal), [])
+
+    def test_what_is_taken_on_trust_is_found(self) -> None:
+        for line in ("<1>1. OMITTED", "AXIOM Good == TRUE"):
+            (self.formal / "M.tla").write_text(f"(* no\nOMITTED step *)\n\\* AXIOM none\n{line}\n")
+            found = [p for p in declared(self.manifest(), self.formal) if "taken on trust" in p]
+            self.assertEqual(len(found), 1, line)
+            self.assertIn("M.tla:4", found[0])
 
     def test_a_check_no_run_shows_to_fail_is_found(self) -> None:
         config = self.formal / "M.cfg"

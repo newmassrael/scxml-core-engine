@@ -208,6 +208,19 @@ An agent or a person that is asked to make a check green must not be able to do 
 - A check judged by an agent is judged again by another that reads the specification and the verdict and not the first
   agent's account.
 
+**As landed (2026-11-23).** `tools/git-hooks/spec_isolation.py` judges each commit of a push, as `pre-push` and so the
+landing queue asks it. What a check says is read out of the commit's parent: a promise module whole; in another module
+the properties a holding run checks and what only they are made of; the checks of a configuration; in the manifests a
+model, run, part, progress, proof or mutant, and what a run must answer; the contracts and checked callers of a proved
+file. A commit that changes one of these changes documents beside it and nothing else, not the rest of the module, a
+count, a bound, the proved file's code, a judge or any other file, and names its reason in a bullet (`- Spec: <why>`).
+What is added is no change. `models.py` refuses `OMITTED` and `AXIOM`, as `proofs.py` refuses what Verus would take on
+trust. It was found the day it was written, by its first case: the commit that took two properties out of a model and
+gave the rest their runs was one, and is two. What it does not see: a definition the protocol's steps and a property
+both use is the model's, so a check made hollow through it is seen by the runs that must fail (D5) and not here; a rule
+that is itself changed, which is a commit of its own and a person's to read. D10's `<sce:ensure>` joins it when it is
+built, and the second judgement (the last bullet) is not a gate's: it is asked of whoever runs two agents.
+
 ### D12. The composition
 
 The modules meet in the checkpoint: a session's state, its outbox, its journal and a member's records are one write. A
@@ -461,7 +474,7 @@ Each step lands with a test that fails without it.
 2. (2026-11-22) D9's progress for every model of today, and `AG EF` with its first use (a journal's follower can always
    come to have taken in all there is); D6's README and the assumptions. The first use found a condition ADR 0114 had
    not stated: a store ends the transactions of a writer that is gone.
-3. D11's refusals in the gate.
+3. (2026-11-23) D11's refusals, in the gate and before a push.
 4. D7: `AppendixD.tla`, accepted against the W3C corpus by the Interpreter's traces (D8's second bullet); then
    `sce-codegen model` for one machine, then for every document that has no refused construct, and D8 lane by lane. Then
    D15, for one machine and then for every document that has a model: the two kinds, observers, and the verdicts with
