@@ -792,7 +792,7 @@ TEST(SavedState, AnUpgradeGivesARecordTheDefaultsOfTheFieldsALaterRevisionAdded)
     record.revision = 2;
     record.revisions = {digest};
     record.added = {AddedField{"weekday", 2, "0"}};
-    record.holders = {RecordHolder{"one", false}, RecordHolder{"many", true}};
+    record.holders = {RecordHolder{"one", false, std::nullopt, {}}, RecordHolder{"many", true, std::nullopt, {}}};
     shape.records = {record};
 
     const std::string given = R"({"one":{"year":2027},"many":[{"year":1},{"year":2}]})";
@@ -854,7 +854,7 @@ TEST(SavedState, ANullSavedBeforeAFieldWasWidenedIsRefused) {
     record.revisions = {second, third};
     record.added = {AddedField{"weekday", 2, "0"}};
     record.widened = {WidenedField{"year", 1, 3}, WidenedField{"weekday", 2, 3}};
-    record.holders = {RecordHolder{"one", false}, RecordHolder{"many", true}};
+    record.holders = {RecordHolder{"one", false, std::nullopt, {}}, RecordHolder{"many", true, std::nullopt, {}}};
     shape.records = {record};
 
     const auto savedAt = [&](int revision, const std::string &one, const std::string &many) {
