@@ -3673,14 +3673,22 @@ def _read_enrolled(repo_root: Path, configs: str):
 # or a new compiled-in file joins every such gate on the commit that adds it:
 #   * the workspace: the root `Cargo.toml`, `Cargo.lock`, and every member's
 #     manifest (`**/Cargo.toml`), which cargo reads to load the workspace;
+#   * `.cargo/`, whose configuration every cargo run reads;
 #   * each crate the build compiles: the crate named and its path
 #     dependencies (`[dependencies]`, `[build-dependencies]` and their target
-#     forms, never `[dev-dependencies]`), each as `<dir>/**`;
+#     forms, never `[dev-dependencies]`), each as its `src/**`, its build
+#     script and the roots its manifest declares (`cargo_build_targets`).
+#     Not the whole directory: `tests/`, `benches/` and `examples/` are
+#     compiled by `cargo test` or `--all-targets`, which a gate runs as its
+#     own command and names its own trigger for. Taken whole, one integration
+#     test of `sce-build` selected 39 gates of a landing (2026-11-24);
+#   * every file a compiled module names by path, found by walking the module
+#     tree as rustc does (`rust_module_closure`): a `#[path]` module and the
+#     directory it owns, and each `include_str!` / `include_bytes!` /
+#     `include!` target. A module behind `#[cfg(test)]` is not walked;
 #   * what `sce-build`'s build script reads: the generator witness (its
 #     WITNESS_FILES, WITNESS_TREES and RUN_TIME_TREE, in
 #     sce-build/src/generator_witness.rs, which the script digests and embeds);
-#   * every `include_str!` / `include_bytes!` target a compiled crate's
-#     sources name outside those directories.
 # `MAIN_TREE_CONFIGURE` is the CMake half: what the root CMakeLists.txt
 # configures for every tree. A subdirectory a gate turns on with an option of
 # its own (`tests/`, the examples, the Python bindings) stays in its `extra`.
@@ -3708,7 +3716,18 @@ _CARGO_DEP_TABLE = re.compile(
     r"^\[(?:target\.[^\]]+\.)?(?:dependencies|build-dependencies)"
     r"(?:\.[A-Za-z0-9_-]+)?\]\s*$")
 _CARGO_PATH_VALUE = re.compile(r'\bpath\s*=\s*"([^"]+)"')
-_RUST_INCLUDE = re.compile(r'include_(?:str|bytes)!\(\s*"([^"]+)"\s*\)')
+# A compiled-in file (`include_str!`, `include_bytes!`, `include!`) and a
+# module whose file a `#[path]` names, each by a literal path relative to the
+# source file that names it.
+_RUST_INCLUDE = re.compile(r'include(?:_str|_bytes)?!\(\s*"([^"]+)"\s*\)')
+_RUST_PATH_ATTR = re.compile(r'^\s*#\[path\s*=\s*"([^"]+)"\s*\]')
+_RUST_MOD_DECL = re.compile(
+    r'^(\s*)(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;')
+_RUST_TEST_ONLY = re.compile(r'^\s*#\[cfg\(test\)\]\s*$')
+_RUST_ATTRIBUTE = re.compile(r'^\s*(?:#\[|///|//!)')
+_CARGO_TABLE = re.compile(r'^\[\[?\s*([A-Za-z0-9_.-]+)\s*\]\]?\s*$')
+_CARGO_STRING_VALUE = re.compile(r'^\s*(path|build)\s*=\s*"([^"]+)"')
+_CARGO_BUILD_OFF = re.compile(r'^\s*build\s*=\s*false\b')
 
 
 def cargo_path_deps(repo_root: Path, crate: str) -> list[str]:
@@ -3760,6 +3779,135 @@ def generator_witness_globs(repo_root: Path) -> list[str]:
     return globs
 
 
+def cargo_build_targets(repo_root: Path, crate: str):
+    """`(build script or None, [lib and bin roots it declares])` of `crate`.
+
+    Cargo's own target rules (the Cargo Book, "Target auto-discovery" and
+    "Configuring a target"): the build script is `build.rs` unless
+    `[package] build` names another file or turns it off, and a `[lib]` or
+    `[[bin]]` table may name its root with `path`. The roots cargo finds by
+    itself (`src/lib.rs`, `src/main.rs`, `src/bin/`) are not listed here.
+    `[[test]]`, `[[bench]]` and `[[example]]` roots are never among these:
+    `cargo build` compiles none of them, and `cargo test` or `--all-targets`
+    is a gate's own command. Read by its lines, as the registry reads every
+    TOML file. Paths are from the repository root.
+    """
+    try:
+        text = (repo_root / crate / "Cargo.toml").read_text(encoding="utf-8")
+    except OSError:
+        return None, []
+    table = ""
+    script = "build.rs"
+    declared: list[str] = []
+    for line in text.splitlines():
+        header = _CARGO_TABLE.match(line.strip())
+        if header:
+            table = header.group(1)
+            continue
+        if table == "package" and _CARGO_BUILD_OFF.match(line):
+            script = None
+            continue
+        value = _CARGO_STRING_VALUE.match(line)
+        if not value:
+            continue
+        key, rel = value.groups()
+        if table == "package" and key == "build":
+            script = rel
+        elif table in ("lib", "bin") and key == "path":
+            declared.append(posixpath.normpath(f"{crate}/{rel}"))
+    if script is not None:
+        script = posixpath.normpath(f"{crate}/{script}")
+        if not (repo_root / script).is_file():
+            script = None
+    return script, declared
+
+
+def rust_module_closure(repo_root: Path, roots) -> tuple[list[str], list[str]]:
+    """What a build that is not a test compiles from `roots`, by path.
+
+    Walks the module tree the way rustc resolves it (the Rust Reference,
+    "Modules"): `mod x;` in a crate root or a `mod.rs` is `x.rs` or
+    `x/mod.rs` beside it, in any other file `f.rs` it is under `f/`, and a
+    `#[path]` names the file relative to the directory of the file that
+    declares it. A module whose attributes say `#[cfg(test)]` is not walked:
+    a build that is not a test compiles none of it. Every file walked is read
+    for the literal paths of `include_str!`, `include_bytes!` and `include!`,
+    which resolve against that file's directory. A declaration that is
+    indented sits in an inline module, whose files this does not place, so
+    the walk takes every source below the directory instead.
+
+    Returns the files named by path (`#[path]` and include targets, which
+    may lie outside `src/`) and the directories a `#[path]` module owns.
+    """
+    root = repo_root.resolve()
+    named: list[str] = []
+    trees: list[str] = []
+    pending = [(r, [posixpath.dirname(r)]) for r in roots]
+    seen: set[str] = set()
+
+    def resolved(base, rel):
+        try:
+            return (repo_root / base).joinpath(rel).resolve() \
+                .relative_to(root).as_posix()
+        except ValueError:
+            return None
+
+    def sources_below(folder):
+        return [p for p in tracked_paths(repo_root, folder) if p.endswith(".rs")]
+
+    while pending:
+        source, owns = pending.pop()
+        if source in seen:
+            continue
+        seen.add(source)
+        try:
+            text = (repo_root / source).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        here = posixpath.dirname(source)
+        # Over the whole text: rustfmt breaks a long call over three lines.
+        for rel in _RUST_INCLUDE.findall(text):
+            if (path := resolved(here, rel)) is not None:
+                named.append(path)
+                if path.endswith(".rs"):
+                    pending.append((path, owns))
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            decl = _RUST_MOD_DECL.match(line)
+            if not decl:
+                continue
+            indent, name = decl.groups()
+            above, test_only, path_attr = i - 1, False, None
+            while above >= 0 and _RUST_ATTRIBUTE.match(lines[above]):
+                test_only |= bool(_RUST_TEST_ONLY.match(lines[above]))
+                if (attr := _RUST_PATH_ATTR.match(lines[above])):
+                    path_attr = attr.group(1)
+                above -= 1
+            if test_only:
+                continue
+            if indent:
+                for folder in owns:
+                    pending.extend((p, [p[:-3]]) for p in sources_below(folder))
+                continue
+            if path_attr is not None:
+                if (path := resolved(here, path_attr)) is None:
+                    continue
+                folder = posixpath.dirname(path)
+                named.append(path)
+                trees.append(f"{folder}/**")
+                pending.append((path, [folder, path[:-3]]))
+                pending.extend((p, [p[:-3]]) for p in sources_below(folder))
+                continue
+            for folder in owns:
+                flat = f"{folder}/{name}.rs"
+                nested = f"{folder}/{name}/mod.rs"
+                if (repo_root / flat).is_file():
+                    pending.append((flat, [f"{folder}/{name}"]))
+                elif (repo_root / nested).is_file():
+                    pending.append((nested, [f"{folder}/{name}"]))
+    return named, trees
+
+
 def cargo_build_globs(repo_root: Path, crates) -> list[str]:
     """What a cargo build of `crates` in this workspace reads, as globs.
 
@@ -3774,27 +3922,32 @@ def cargo_build_globs(repo_root: Path, crates) -> list[str]:
             continue
         closure.append(crate)
         pending.extend(cargo_path_deps(repo_root, crate))
-    globs = ["Cargo.toml", "Cargo.lock", "**/Cargo.toml"]
-    globs.extend(f"{crate}/**" for crate in sorted(closure))
+    globs = ["Cargo.toml", "Cargo.lock", "**/Cargo.toml", ".cargo/**"]
     named: list[str] = []
     if "sce-build" in closure:
         named.extend(generator_witness_globs(repo_root))
+    trees: list[str] = []
+    roots: list[str] = []
     for crate in sorted(closure):
-        for src in tracked_paths(repo_root, f"{crate}/src", f"{crate}/build.rs"):
-            if not src.endswith(".rs"):
-                continue
-            try:
-                text = (repo_root / src).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            for rel in _RUST_INCLUDE.findall(text):
-                target = (repo_root / src).parent.joinpath(rel).resolve()
-                try:
-                    named.append(target.relative_to(repo_root.resolve()).as_posix())
-                except ValueError:
-                    continue
-    trees = [g for g in globs + named if "*" in g]
-    covered = [glob_to_regex(g) for g in trees]
+        trees.append(f"{crate}/src/**")
+        script, declared = cargo_build_targets(repo_root, crate)
+        declared = declared + ([script] if script else [])
+        named.extend(declared)
+        roots.extend(declared)
+        roots.extend(p for p in ([f"{crate}/src/lib.rs", f"{crate}/src/main.rs"]
+                                 + tracked_paths(repo_root, f"{crate}/src/bin"))
+                     if p.endswith(".rs") and p not in declared
+                     and (repo_root / p).is_file())
+    reached, owned = rust_module_closure(repo_root, roots)
+    named.extend(reached)
+    trees.extend(owned)
+    for tree in dict.fromkeys(trees):
+        # A tree beneath another one adds nothing to it.
+        if not any(other != tree and glob_to_regex(other).match(tree[:-3])
+                   for other in trees):
+            globs.append(tree)
+    wide = [g for g in globs + named if "*" in g]
+    covered = [glob_to_regex(g) for g in wide]
     out = list(globs)
     for g in named:
         if "*" in g or not any(p.match(g) for p in covered):
@@ -5836,6 +5989,13 @@ def self_test(repo_root: Path) -> int:
     check("rust-landing", ["sce-build/src/mesh/deploy.rs"], want_full=False,
           want_has=["codegen-build", "workspace-tests", "clippy"],
           landing=True)
+    # An integration test of the generator crate is compiled by the workspace
+    # suite and clippy, and by no build of the generator or the C++ tree.
+    check("crate-test-landing", ["sce-build/tests/gate_registry_contract.rs"],
+          want_full=False, want_has=["workspace-tests", "clippy"],
+          want_lacks=["cpp-suite-wasm", "w3c-cpp", "cpp-suite", "w3c-c11",
+                      "w3c-wasm", "install-consumer", "cpp-interface-standard"],
+          landing=True)
     # Rule 1 on an update to main: every gate the fleet can run, `ci_only`
     # included, and never a gate hosted CI audits in its place.
     check("unclassified-landing", ["some_new_top_level_dir/thing.txt"],
@@ -7429,8 +7589,9 @@ def self_test(repo_root: Path) -> int:
     # here rather than narrowing every key built on it.
     cases += 1
     main_tree = built_inputs(repo_root, "main-tree")
-    expected = ["Cargo.toml", "Cargo.lock", "**/Cargo.toml", "sce-build/**"]
-    expected += [f"{d}/**" for d in cargo_path_deps(repo_root, "sce-build")]
+    expected = ["Cargo.toml", "Cargo.lock", "**/Cargo.toml", ".cargo/**",
+                "sce-build/src/**", "sce-build/build.rs"]
+    expected += [f"{d}/src/**" for d in cargo_path_deps(repo_root, "sce-build")]
     witness = generator_witness_globs(repo_root)
     if not cargo_path_deps(repo_root, "sce-build"):
         failures.append(
@@ -7448,6 +7609,48 @@ def self_test(repo_root: Path) -> int:
             failures.append(
                 f"builds: `main-tree` does not hold {want!r}, which a build "
                 f"of the tree reads")
+
+    # What a build does not read stays out. A crate's `tests/`, `benches/`
+    # and `examples/` are compiled by `cargo test` or `--all-targets`, never
+    # by the build these gates share, and a module behind `#[cfg(test)]` is
+    # no part of it either. Measured 2026-11-24: with each crate taken whole,
+    # an edit to one integration test of `sce-build` selected 39 gates of a
+    # landing, 9536 s by their declared costs, `cpp-suite-wasm` (3353 s) among
+    # them. A module named by `#[path]` and a file named by an `include_str!`
+    # broken over lines are what the walk has to keep finding.
+    for want in ("backends/rust/runtime/generated/mod.rs",
+                 "backends/swift/forge-runtime/Sources/SceForgeRuntime/Codec.swift"):
+        if not any(glob_to_regex(g).match(want) for g in main_tree):
+            failures.append(
+                f"builds: `main-tree` does not hold {want!r}, which the crate "
+                f"compiles in by path; the module walk no longer finds it")
+    for unread in ("sce-build/tests/gate_registry_contract.rs",
+                   "sce-build/examples/gen_any.rs",
+                   "sce-build/tests/common/executable.rs",
+                   "tests/forge/expected/views/codec_tlv_entry.rs"):
+        if any(glob_to_regex(g).match(unread) for g in main_tree):
+            failures.append(
+                f"builds: `main-tree` holds {unread!r}, which only a test "
+                f"build compiles, so editing it selects every gate that builds "
+                f"the tree")
+    # The one build script whose reads are derived is `sce-build`'s (the
+    # generator witness). Another crate the shared builds compile growing one
+    # would read files nothing here names.
+    for name, (_, crates) in BUILT_INPUTS.items():
+        for crate in crates:
+            closure, pending = [], [crate]
+            while pending:
+                c = pending.pop()
+                if c not in closure:
+                    closure.append(c)
+                    pending.extend(cargo_path_deps(repo_root, c))
+            for c in closure:
+                script, _ = cargo_build_targets(repo_root, c)
+                if script and c != "sce-build":
+                    failures.append(
+                        f"builds: {c} has a build script ({script}) and "
+                        f"`{name}` compiles it, but only sce-build's reads are "
+                        f"derived (the generator witness); name what it reads")
 
     # A measured peak names a gate that exists, so the note beside it cannot
     # outlive the gate it was read off.
