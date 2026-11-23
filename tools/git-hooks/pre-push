@@ -143,6 +143,26 @@ if (( guide_push_failed )); then
     exit 1
 fi
 
+# What a formal check says is changed by a commit of its own, with its reason
+# (docs/adr/0115, D11), so that no check is made to pass by changing the check.
+# shellcheck source=tools/git-hooks/spec-isolation-gate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/spec-isolation-gate.sh"
+spec_push_failed=0
+while read -r _sref slocal _srref sremote; do
+    [[ -z "${slocal:-}" ]] && continue
+    [[ "$slocal" =~ ^0+$ ]] && continue   # a deletion publishes nothing
+    if [[ -z "${sremote:-}" || "$sremote" =~ ^0+$ ]]; then
+        sbase="$(git merge-base "$slocal" origin/HEAD 2>/dev/null || true)"
+        [[ -z "$sbase" ]] && continue      # no base to compare a new ref with
+    else
+        sbase="$sremote"
+    fi
+    spec_isolation_gate_range "${sbase}..${slocal}" || spec_push_failed=1
+done <<<"$PUBLISHED_REFS"
+if (( spec_push_failed )); then
+    exit 1
+fi
+
 RUNNER="$REPO_ROOT/scripts/gate"
 [[ -x "$RUNNER" ]] || {
     printf '\nERROR pre-push: gate runner missing at %s\n' "$RUNNER" >&2

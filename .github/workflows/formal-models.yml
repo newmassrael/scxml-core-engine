@@ -21,6 +21,7 @@ on:
     paths:
       - 'docs/formal/**'
       - 'scripts/formal/**'
+      - 'tools/git-hooks/spec_isolation.py'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-models.sh'
@@ -30,6 +31,7 @@ on:
     paths:
       - 'docs/formal/**'
       - 'scripts/formal/**'
+      - 'tools/git-hooks/spec_isolation.py'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/formal-models.sh'

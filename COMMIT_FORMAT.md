@@ -31,6 +31,8 @@
     commit-audit hook rejects as a non-contiguous body.
 - **1-3 items** - focus on key changes (fewer is better)
 - Be specific and technical
+- A commit that changes what a formal check says (docs/adr/0115, D11) changes nothing
+  else but documents, and one bullet names why: `- Spec: <why>`
 - Reference W3C SCXML sections when applicable (e.g., "W3C SCXML 3.12.1")
 
 ### 3. Style

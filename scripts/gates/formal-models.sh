@@ -22,6 +22,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 python3 scripts/formal/models.py --self-test \
     || sce_gate_fail "the judge of the models is wrong (scripts/formal/models.py --self-test)"
+# What `pre-push` judges the commits of a push by (docs/adr/0115, D11); its tests run here.
+python3 tools/git-hooks/spec_isolation.py --self-test \
+    || sce_gate_fail "the judge of what changes a check is wrong (tools/git-hooks/spec_isolation.py --self-test)"
 
 status=0
 python3 scripts/formal/models.py || status=$?

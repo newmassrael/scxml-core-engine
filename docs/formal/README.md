@@ -51,6 +51,9 @@ A configuration of its own is not enough: `models.json` must declare it, and the
 The proofs are `proofs.json`'s, judged by `python3 scripts/formal/proofs.py` (the gate is `formal-proofs`): each file verified
 whole, nothing taken on trust, and each change that breaks what it promises refused.
 
+What a check says (a promise, a property, a contract, what a run must answer) is changed by a commit of its own with its
+reason; `pre-push` refuses another (`tools/git-hooks/spec_isolation.py`, ADR 0115 D11).
+
 After a change that moves a count on purpose, `--record` writes the counts TLC found, and the diff is read.
 
 ## What all of this stands on
