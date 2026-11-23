@@ -55,11 +55,24 @@
 # refuse rather than let a build die deep with a message naming neither the
 # submodule nor the repair — which is the defect this whole file exists for.
 #
+# ── A narrowed gate needs only the submodules its inputs reach ────
+#
+# A gate whose registry entry declares `inputs` runs, as a unit of a plan, in
+# a copy bx makes of those inputs alone, and the copy holds every submodule
+# the inputs do not reach as a gitlink that is not checked out (bx RFC 0026,
+# section 4.1, 2026-11-23). `license-verify.yml` checks submodules out for
+# `license-ssot`, which reads them; `web-vendor-licenses` runs in the same
+# job and reads none. Asked of every submodule, the preflight refused that
+# gate in every copy (measured 2026-11-24, bx 340e9f9e). So for a narrowed
+# gate the refusal counts only the submodules its inputs reach
+# (`submodules_reached` in the registry), and a gate that reads none is
+# refused for none of them. `--which` still answers the workflow's question.
+#
 # ── Usage ─────────────────────────────────────────────────────────
 #
 #   scripts/lib/require_submodules.sh <slug>...
-#       Refuse (exit 1) if any named gate needs submodules and any submodule
-#       is not checked out. Silent otherwise.
+#       Refuse (exit 1) if any named gate needs submodules and a submodule it
+#       needs is not checked out. Silent otherwise.
 #
 #   scripts/lib/require_submodules.sh --which <slug>...
 #       Print, one per line, those of the named gates that need submodules.
@@ -81,7 +94,9 @@ fi
 (( $# )) || exit 0
 
 # Which of the named gates mirror a workflow that asks CI for submodules.
-mapfile -t NEEDING < <(python3 - "$REGISTRY" "$WORKFLOW_DIR" "$@" <<'PYEOF'
+# In --which mode one slug a line; otherwise `slug<TAB>scope`, the scope being
+# `*` (every submodule) or the paths of those the gate's inputs reach.
+mapfile -t NEEDING < <(python3 - "$REGISTRY" "$WORKFLOW_DIR" "$REPO_ROOT" "$MODE" "$@" <<'PYEOF'
 import runpy
 import sys
 from pathlib import Path
@@ -90,6 +105,8 @@ import re
 
 mod = runpy.run_path(sys.argv[1])
 workflow_dir = Path(sys.argv[2])
+repo_root = Path(sys.argv[3])
+mode = sys.argv[4]
 
 
 def declares_submodules(text):
@@ -149,7 +166,8 @@ def runs_slug(body, slug):
     return re.search(r"\bgate\s+" + re.escape(slug) + r"(?![\w.-])", body) is not None
 
 
-for slug in sys.argv[3:]:
+submodules = None
+for slug in sys.argv[5:]:
     entry = mod["GATES"].get(slug)
     if not entry:
         continue
@@ -167,8 +185,18 @@ for slug in sys.argv[3:]:
         # No job names it — fall back to the file, which refuses rather than
         # guessing that a gate it cannot place needs nothing.
         needs = any(declares_submodules(text) for text in texts)
-    if needs:
+    if not needs:
+        continue
+    if mode == "which":
         print(slug)
+        continue
+    own = entry.get("inputs")
+    if own is None:
+        print(f"{slug}\t*")
+        continue
+    if submodules is None:
+        submodules = mod["submodule_paths"](repo_root)
+    print(f"{slug}\t" + " ".join(mod["submodules_reached"](own, submodules)))
 PYEOF
 )
 
@@ -179,10 +207,30 @@ fi
 
 (( ${#NEEDING[@]} )) || exit 0
 
+SLUGS=()
+EVERY=0
+declare -A WANTED=()
+for line in "${NEEDING[@]}"; do
+    SLUGS+=("${line%%$'\t'*}")
+    scope="${line#*$'\t'}"
+    if [[ "$scope" == "*" ]]; then
+        EVERY=1
+    else
+        for path in $scope; do
+            WANTED["$path"]=1
+        done
+    fi
+done
+
 # `-<sha> <path>` is git's spelling for "recorded, not checked out". An
 # initialised submodule leads with a space or a `+`, so this collects exactly
-# the ones that would fail a build.
-mapfile -t MISSING < <(git -C "$REPO_ROOT" submodule status | awk '/^-/ { print $2 }')
+# the ones that would fail a build, of those the named gates need.
+MISSING=()
+while read -r path; do
+    if (( EVERY )) || [[ -n "${WANTED[$path]:-}" ]]; then
+        MISSING+=("$path")
+    fi
+done < <(git -C "$REPO_ROOT" submodule status | awk '/^-/ { print $2 }')
 
 (( ${#MISSING[@]} )) || exit 0
 
@@ -190,7 +238,7 @@ mapfile -t MISSING < <(git -C "$REPO_ROOT" submodule status | awk '/^-/ { print 
     printf '\nERROR gate: %d submodule(s) are recorded but not checked out, so nothing can be claimed:\n' \
         "${#MISSING[@]}"
     printf '  %s\n' "${MISSING[@]}"
-    printf '\nThese gate(s) build against them: %s\n' "${NEEDING[*]}"
+    printf '\nThese gate(s) build against them: %s\n' "${SLUGS[*]}"
     printf 'A new `git worktree` and a plain `git clone` both start this way.\n'
     printf '\nRepair, from %s:\n' "$REPO_ROOT"
     printf '  git submodule update --init --recursive\n\n'
