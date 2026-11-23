@@ -49,8 +49,12 @@
 (* of the reader's first read (RDStart, RDHead): it binds its cursor to    *)
 (* the oldest retained entry of the head it loads and goes on from there,  *)
 (* so a reader that waited is told of nothing, and one that was overtaken  *)
-(* inside that first read is told as any reader is. DeferredStart and      *)
-(* FirstLagIsOvertaken are what is checked of it.                          *)
+(* inside that first read is told as any reader is. OpenRefines (where it  *)
+(* starts) and FirstLagIsOvertaken are what is checked of it. That it does *)
+(* not go below its start, and that what it was told it lost lies after    *)
+(* it, are not properties here: every loss counted is at least 1 and moves *)
+(* the count by as much, so no part of the protocol could break them, and  *)
+(* AnswerRefines holds each loss to the true counts.                       *)
 (*                                                                         *)
 (* Each shared access is one step, so the model is sequentially consistent: *)
 (* it proves the arithmetic of the wrap, and the memory ordering is the    *)
@@ -360,8 +364,6 @@ AnswerRefines ==
 
 CursorNotPastHead == \A r \in Readers : opened[r] => ab[r] <= n
 
-LostIsNonNegative == \A r \in Readers : lost[r] >= 0
-
 (* The cursor is the count modulo M, and names the slot the count's entry is in. *)
 (* It is so exactly when S divides M. *)
 SlotIndexContinuous ==
@@ -376,12 +378,6 @@ OpenRefines ==
             IF OpenMode = "head"
                THEN oab[r] = ohl[r]
                ELSE oab[r] = IF ohl[r] > R THEN ohl[r] - R ELSE 0
-
-(* A deferred reader never goes below its start, and what it was told it lost lies at or *)
-(* after it: every entry it was told it missed advanced its count. *)
-DeferredStart ==
-    \A r \in Readers :
-        opened[r] => (ab[r] >= oab[r] /\ lost[r] <= ab[r] - oab[r])
 
 (* An opening and a read that were begun end, however the producer goes on. *)
 ReadEnds == \A r \in Readers : rpc[r] # "idle" ~> rpc[r] = "idle"

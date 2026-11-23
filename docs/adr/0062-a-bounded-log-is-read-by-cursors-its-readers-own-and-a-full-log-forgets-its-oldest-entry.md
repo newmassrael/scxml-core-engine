@@ -1046,7 +1046,10 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   it further past the cursor of a reader inside a read: the theorem's hypothesis, at every instant. A reader opens at
   the head or, with `OpenMode = "oldest"`, by the two reads of the last slot and the head. The invariants are the
   existing model's (`AnswerRefines` with the exact gap added, `CursorNotPastHead`, `LostIsNonNegative`) and two more:
-  `SlotIndexContinuous` and `OpenRefines`. `scripts/formal/check.sh` runs five configurations. Expected outcomes
+  `SlotIndexContinuous` and `OpenRefines`. (Amended 2026-11-23, with ADR 0115 D5's rule that every property is shown to
+  fail: `LostIsNonNegative` and `DeferredStart` are taken out of the wrapped model, where no part of the protocol could
+  break them, each loss counted being at least 1 and moving the count by as much; `AnswerRefines` and `OpenRefines`
+  hold what they were to say. In `BroadcastLog.tla` both fail with a part taken out, and stay.) `scripts/formal/check.sh` runs five configurations. Expected outcomes
   (not observed by the author, who could not run TLC): `BroadcastLogWrapped.cfg` (2 slots), `_r3.cfg` (4 slots, as many
   as `K`) and `_oldest.cfg` hold every invariant, with an *estimate* of 10^5 to 10^6 distinct states each and a run of
   seconds to a few minutes; `BroadcastLogWrapped_without_bound.cfg` (the bound switched off) violates `AnswerRefines`,
