@@ -54,18 +54,18 @@ fun eventSelects(s: EventSchedulePayload, d: Long, startDay: Long): com.sce.forg
             var hasDay: Boolean = s.days or s.op0 or s.op1 or s.op2 or s.op3 or s.op4 or s.op5 or s.op6 or s.on0 or s.on1 or s.on2 or s.on3 or s.on4 or s.on5 or s.on6 != 0L
             var hasWN: Boolean = s.wnPos or s.wnNeg != 0L
             var hasYD: Boolean = s.yd0 or s.yd1 or s.yd2 or s.yd3 or s.yd4 or s.yd5 or s.ydn0 or s.ydn1 or s.ydn2 or s.ydn3 or s.ydn4 or s.ydn5 != 0L
-            var mdMatch: Boolean = s.mdPos shr dom.toInt() and 1 == 1L || s.mdNeg shr com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(last, dom), 1).toInt() and 1 == 1L
-            var plainDay: Boolean = s.days shr wd.toInt() and 1 == 1L
+            var mdMatch: Boolean = com.sce.forge.runtime.SceChecked.shr(s.mdPos, dom) and 1 == 1L || com.sce.forge.runtime.SceChecked.shr(s.mdNeg, com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(last, dom), 1)) and 1 == 1L
+            var plainDay: Boolean = com.sce.forge.runtime.SceChecked.shr(s.days, wd) and 1 == 1L
             var inMonth: Boolean = freq == 3L || hasMonth
             var ordPos: Long = if (inMonth) com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.div(com.sce.forge.runtime.SceChecked.sub(dom, 1), 7), 1) else com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.div(com.sce.forge.runtime.SceChecked.sub(yday, 1), 7), 1)
             var ordNeg: Long = if (inMonth) com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.div(com.sce.forge.runtime.SceChecked.sub(last, dom), 7), 1) else com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.div(com.sce.forge.runtime.SceChecked.sub(ylen, yday), 7), 1)
             var wordFirst: Long = if (wd == 0L) s.op0 else if (wd == 1L) s.op1 else if (wd == 2L) s.op2 else if (wd == 3L) s.op3 else if (wd == 4L) s.op4 else if (wd == 5L) s.op5 else s.op6
             var wordLast: Long = if (wd == 0L) s.on0 else if (wd == 1L) s.on1 else if (wd == 2L) s.on2 else if (wd == 3L) s.on3 else if (wd == 4L) s.on4 else if (wd == 5L) s.on5 else s.on6
-            var ordFirst: Boolean = ordPos <= 53 && wordFirst shr com.sce.forge.runtime.SceChecked.sub(ordPos, 1).toInt() and 1 == 1L
-            var ordLast: Boolean = ordNeg <= 53 && wordLast shr com.sce.forge.runtime.SceChecked.sub(ordNeg, 1).toInt() and 1 == 1L
+            var ordFirst: Boolean = ordPos <= 53 && com.sce.forge.runtime.SceChecked.shr(wordFirst, com.sce.forge.runtime.SceChecked.sub(ordPos, 1)) and 1 == 1L
+            var ordLast: Boolean = ordNeg <= 53 && com.sce.forge.runtime.SceChecked.shr(wordLast, com.sce.forge.runtime.SceChecked.sub(ordNeg, 1)) and 1 == 1L
             var dayMatch: Boolean = plainDay || ordFirst || ordLast
             var clamped: Boolean = if (s.invalid == 1L) dom == dom0 else dom == (if (dom0 < last) dom0 else last)
-            ok = !hasMonth || s.bymonth shr mon.toInt() and 1 == 1L
+            ok = !hasMonth || com.sce.forge.runtime.SceChecked.shr(s.bymonth, mon) and 1 == 1L
             if (freq == 1L) {
                 if (hasMD) {
                     ok = ok && mdMatch
@@ -96,7 +96,7 @@ fun eventSelects(s: EventSchedulePayload, d: Long, startDay: Long): com.sce.forg
                     var wd28: Long = com.sce.forge.runtime.SceChecked.rem(com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(com.sce.forge.runtime.SceChecked.sub(com.sce.forge.runtime.SceChecked.add(wd, ylen), 3), yday), 7), 7)
                     var wi28: Long = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.rem(com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(wd28, wkst), 7), 7), 1)
                     var wks: Long = com.sce.forge.runtime.SceChecked.div(com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(com.sce.forge.runtime.SceChecked.sub(ylen, 3), wi28), 10), 7)
-                    var wkOk: Boolean = wk >= 1 && wk <= wks && (s.wnPos shr wk.toInt() and 1 == 1L || s.wnNeg shr com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(wks, wk), 1).toInt() and 1 == 1L)
+                    var wkOk: Boolean = wk >= 1 && wk <= wks && (com.sce.forge.runtime.SceChecked.shr(s.wnPos, wk) and 1 == 1L || com.sce.forge.runtime.SceChecked.shr(s.wnNeg, com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(wks, wk), 1)) and 1 == 1L)
                     ok = ok && wkOk
                 }
                 if (hasYD) {
@@ -106,7 +106,7 @@ fun eventSelects(s: EventSchedulePayload, d: Long, startDay: Long): com.sce.forg
                     var jn: Long = com.sce.forge.runtime.SceChecked.div(yn, 61)
                     var wordPos: Long = if (jp == 0L) s.yd0 else if (jp == 1L) s.yd1 else if (jp == 2L) s.yd2 else if (jp == 3L) s.yd3 else if (jp == 4L) s.yd4 else s.yd5
                     var wordNeg: Long = if (jn == 0L) s.ydn0 else if (jn == 1L) s.ydn1 else if (jn == 2L) s.ydn2 else if (jn == 3L) s.ydn3 else if (jn == 4L) s.ydn4 else s.ydn5
-                    var ydOk: Boolean = wordPos shr com.sce.forge.runtime.SceChecked.rem(yp, 61).toInt() and 1 == 1L || wordNeg shr com.sce.forge.runtime.SceChecked.rem(yn, 61).toInt() and 1 == 1L
+                    var ydOk: Boolean = com.sce.forge.runtime.SceChecked.shr(wordPos, com.sce.forge.runtime.SceChecked.rem(yp, 61)) and 1 == 1L || com.sce.forge.runtime.SceChecked.shr(wordNeg, com.sce.forge.runtime.SceChecked.rem(yn, 61)) and 1 == 1L
                     ok = ok && ydOk
                 }
                 if (hasMD) {

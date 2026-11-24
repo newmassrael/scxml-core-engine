@@ -300,7 +300,7 @@ func EventAgenda(s sce_event_schedule.EventSchedulePayload, values []sce_mv_valu
                         if sceCond6 := hasSP; sceFailure.Failed() {
                             return sceValue, sceFailure.Err()
                         } else if sceCond6 {
-                            keep = rank <= 62 && s.SpPos >> rank & 1 == 1 || scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, n, rank), 1) <= 62 && s.SpNeg >> scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, n, rank), 1) & 1 == 1;
+                            keep = rank <= 62 && scealgorithm.ShrInt64(&sceFailure, s.SpPos, int64(rank)) & 1 == 1 || scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, n, rank), 1) <= 62 && scealgorithm.ShrInt64(&sceFailure, s.SpNeg, int64(scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, n, rank), 1))) & 1 == 1;
                             if sceFailure.Failed() {
                                 return sceValue, sceFailure.Err()
                             }

@@ -90,7 +90,7 @@ public enum EventAgenda {
                             rank = (try Checked.add(rank, 1))
                             var keep: Bool = true
                             if hasSP {
-                                keep = (try Checked.or(rank <= 62 && ((s.spPos >> rank) & 1) == 1, { () throws(AlgorithmError) -> Bool in (try Checked.and((try Checked.add((try Checked.sub(n, rank)), 1)) <= 62, { () throws(AlgorithmError) -> Bool in ((s.spNeg >> (try Checked.add((try Checked.sub(n, rank)), 1))) & 1) == 1 })) }))
+                                keep = (try Checked.or((try Checked.and(rank <= 62, { () throws(AlgorithmError) -> Bool in ((try Checked.shr(s.spPos, rank)) & 1) == 1 })), { () throws(AlgorithmError) -> Bool in (try Checked.and((try Checked.add((try Checked.sub(n, rank)), 1)) <= 62, { () throws(AlgorithmError) -> Bool in ((try Checked.shr(s.spNeg, (try Checked.add((try Checked.sub(n, rank)), 1)))) & 1) == 1 })) }))
                             }
                             if keep && dd >= startDay {
                                 let occStart: Int64 = (try Checked.add((try Checked.mul(dd, day)), timeOfDay))
