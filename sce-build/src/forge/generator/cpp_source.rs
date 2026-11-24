@@ -4029,7 +4029,10 @@ pub(super) fn render(
             // The tag of the arm each embedded body's variant holds, masked to
             // the flag's bits, the catch-all's the tag it holds; nothing where
             // a gate leaves the body out. The arms are in the order the body's
-            // variant holds them, the catch-all last.
+            // variant holds them, the catch-all last. Where every body is one a
+            // gate may leave out and none is there, nothing says the flag, and
+            // the carrier keeps the bits the value presents (docs/adr/0065 §6
+            // R4a), as a decode that read the frame left them.
             (ElementId::Flag { field, flag }, Derive::ParentTag(tag)) => {
                 let local = format!(
                     "_p_{}_{}",
@@ -4037,6 +4040,7 @@ pub(super) fn render(
                     filters::to_snake_case(flag.clone())
                 );
                 before.push_str(&format!("        std::uint64_t {local} = 0;\n"));
+                let mut said: Option<Vec<String>> = Some(Vec::new());
                 for term in &tag.terms {
                     let e = element(term.body)
                         .expect("a parent tag is filled by a body the value presents");
@@ -4072,11 +4076,13 @@ pub(super) fn render(
                         ));
                     }
                     let (open, read) = if e.optional {
-                        (
-                            format!("if ({}.has_value()) ", e.local()),
-                            format!("*{}", e.local()),
-                        )
+                        let there = format!("{}.has_value()", e.local());
+                        if let Some(said) = said.as_mut() {
+                            said.push(there.clone());
+                        }
+                        (format!("if ({there}) "), format!("*{}", e.local()))
                     } else {
+                        said = None;
                         (String::new(), e.local())
                     };
                     before.push_str(&format!(
@@ -4093,7 +4099,7 @@ pub(super) fn render(
                 folds.entry(field.as_str()).or_default().push(Fold {
                     flag: flag.clone(),
                     bits: local,
-                    present: None,
+                    present: said.map(|there| there.join(" || ")),
                 });
             }
             // Set by the walk of the chain that holds the entry, not here.

@@ -849,6 +849,37 @@ fn parent_tag_bits(
     out
 }
 
+/// Where every body that fills the flag of `tag` is one a gate may leave out,
+/// the test that one of them is there, each read off `owner` by its method:
+/// with none there, nothing says the flag, and the carrier keeps the bits the
+/// value presents (docs/adr/0065 §6 R4a), as a decode that read the frame left
+/// them. `None` where a body is always there.
+fn parent_tag_said(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    tag: &ParentTag<'_>,
+    owner: &str,
+) -> Option<String> {
+    tag.terms
+        .iter()
+        .map(|term| {
+            element_of(plan, &term.body.id)
+                .is_some_and(|e| e.presence.optional())
+                .then(|| format!("{owner}.{}().IsPresent()", l.codec_field_id(&term.body.id)))
+        })
+        .collect::<Option<Vec<String>>>()
+        .map(|there| there.join(" || "))
+}
+
+/// The statement `fold`, unindented, run only where `said`, when there is a
+/// test of it.
+fn fold_where_said(said: Option<String>, fold: &str) -> String {
+    match said {
+        None => fold.to_string(),
+        Some(there) => format!("if {there} {{\n{}}}\n", indented(fold)),
+    }
+}
+
 /// The statement, unindented, that folds `bits`, a `uint64`, masked to the
 /// bits of the flag `flag` of the carrier `carrier` of `plan`, into `local`,
 /// the carrier as the encode writes it, in place of the bits it held there.
@@ -1184,13 +1215,17 @@ fn wire_carrier(
                     "_c",
                 )));
             }
-            // The bits the arm of each embedded body's variant fills.
+            // The bits the arm of each embedded body's variant fills, or the
+            // value's where no body is there to fill them.
             Derive::ParentTag(tag) => {
                 let local = format!("_p{}", derived_local(l, &derived.element));
                 body.push_str(&indented(&parent_tag_bits(
                     plan, l, imports, tag, &local, "s",
                 )));
-                body.push_str(&indented(&fold_bits(plan, l, carrier, flag, &local, "_c")));
+                body.push_str(&indented(&fold_where_said(
+                    parent_tag_said(plan, l, tag, "s"),
+                    &fold_bits(plan, l, carrier, flag, &local, "_c"),
+                )));
             }
             // What the arm of the group the value holds gives a flag of the
             // disjunction that decides it.
@@ -3070,7 +3105,8 @@ fn encode_source(
             }
             // The tag of the arm each embedded body's variant holds, masked to
             // the flag's bits, the catch-all's the tag it holds; nothing where
-            // a gate leaves the body out.
+            // a gate leaves the body out, and the bits the value presents where
+            // no body is there to fill them.
             (ElementId::Flag { field, flag }, Derive::ParentTag(tag)) => {
                 let local = format!("_p{}", derived_local(l, &derived.element));
                 out.push_str(&indented(&parent_tag_bits(
@@ -3080,7 +3116,10 @@ fn encode_source(
                 folds
                     .entry(field.clone())
                     .or_default()
-                    .push(format!("\t{}", fold_bits(plan, l, field, flag, &local, &c)));
+                    .push(indented(&fold_where_said(
+                        parent_tag_said(plan, l, tag, "src"),
+                        &fold_bits(plan, l, field, flag, &local, &c),
+                    )));
             }
             // A flag of a disjunction that decides a group: what the arm the
             // value holds gives it, or what the gates hold while it holds none

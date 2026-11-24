@@ -2110,7 +2110,8 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             }
             // The tag of the arm each body that fills the flag holds, masked
             // to the flag's bits, the catch-all's the tag it holds; nothing
-            // from a body a gate leaves out.
+            // from a body a gate leaves out, and where every body is gated
+            // and none is there, the bits the value presents.
             (ElementId::Flag { field, flag }, Derive::ParentTag(tag)) => {
                 let local = format!("_p_{}", override_member(l, field, flag));
                 out.push_str(&format!("    uint64_t {local} = 0;\n"));
@@ -2120,7 +2121,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     named: derived.element.to_string(),
                     bits: local,
                     count: None,
-                    present: None,
+                    present: parent_tag_said(plan, l, tag),
                 });
             }
             // A flag of a disjunction that decides a group: what the arm of the
@@ -2894,6 +2895,22 @@ fn parent_tag(plan: &EncodePlan<'_>, l: &LangCtx, tag: &ParentTag<'_>, local: &s
         ));
     }
     out
+}
+
+/// Where every body that fills the flag of `tag` is one a gate may leave out,
+/// the test that one of them is there: with none there, nothing says the flag,
+/// and the carrier keeps the bits the value presents (docs/adr/0065 §6 R4a), as
+/// a decode that read the frame left them. `None` where a body is always
+/// there.
+fn parent_tag_said(plan: &EncodePlan<'_>, l: &LangCtx, tag: &ParentTag<'_>) -> Option<String> {
+    tag.terms
+        .iter()
+        .map(|term| {
+            (plan.presence(term.body) == Presence::Gated)
+                .then(|| format!("{}.present", element_local(l, &term.body.id)))
+        })
+        .collect::<Option<Vec<String>>>()
+        .map(|there| there.join(" || "))
 }
 
 /// `{snake}_overrides_t`, the one-bit flags of the codec a parent may set in

@@ -2398,10 +2398,14 @@ fn encode_source(
             // fills: the tag of the arm the body holds, read through its
             // codec's own `tag`, which a variant whose caller hands its tag
             // has, masked to the bits; nothing where a gate leaves the body
-            // out.
+            // out. Where every body is one a gate may leave out and none is
+            // there, nothing says the flag, and the carrier keeps the bits the
+            // value presents (docs/adr/0065 §6 R4a), as a decode that read the
+            // frame left them.
             (ElementId::Flag { field, flag }, Derive::ParentTag(tag)) => {
                 let local = format!("_p_{}", derived_local(l, &derived.element));
                 out.push_str(&format!("    {local} = 0\n"));
+                let mut said: Option<Vec<String>> = Some(Vec::new());
                 for term in &tag.terms {
                     let import = printed_import(imports, &term.codec)
                         .expect("`unlowered` prints a body of a printed codec only");
@@ -2414,19 +2418,25 @@ fn encode_source(
                     if term.body.present_if.is_some()
                         || plan.roles.group_of(&term.body.id).is_some()
                     {
-                        out.push_str(&indented(&format!(
-                            "if {body} is not None:\n{}",
-                            indented(&fill)
-                        )));
+                        let there = format!("{body} is not None");
+                        out.push_str(&indented(&format!("if {there}:\n{}", indented(&fill))));
+                        if let Some(said) = said.as_mut() {
+                            said.push(there);
+                        }
                     } else {
                         out.push_str(&indented(&fill));
+                        said = None;
                     }
                 }
                 let (mask, width_mask, bit) = flag_masks(plan, field, flag);
                 let c = format!("_c_{}", l.codec_field_id(field));
-                folds.entry(field.clone()).or_default().push(format!(
+                let fold = format!(
                     "{c} = ({c} & ~0x{mask:X}) | (({local} & 0x{width_mask:X}) << {bit})\n"
-                ));
+                );
+                folds.entry(field.clone()).or_default().push(match said {
+                    None => fold,
+                    Some(there) => format!("if {}:\n{}", there.join(" or "), indented(&fold)),
+                });
             }
             // Set by the walk of the chain that holds the entry, not here.
             (ElementId::Flag { .. }, Derive::ChainContinuation) => {}

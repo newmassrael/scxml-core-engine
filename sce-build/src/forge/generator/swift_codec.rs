@@ -1151,7 +1151,8 @@ fn variant_context(
 /// flag. Each embedded variant is read by the arm it holds, as every backend reads it, so a
 /// variant that finds its own tag on the wire is driven as one whose caller hands it the tag, and
 /// a body held by the catch-all presents the tag it was read for. The shifted tags are the locals
-/// [`parent_tag_locals`] declares, which an embed that is absent leaves at zero. `null` for a
+/// [`parent_tag_locals`] declares, which an embed that is absent leaves at zero, or at the bits
+/// the stored carrier holds in the flag where no embed says it. `null` for a
 /// carrier no embedded variant fills.
 fn parent_tag_derived(derivations: &[ParentTagDerivation], carrier: &str) -> serde_json::Value {
     let mut keep: u64 = 0xFF;
@@ -1180,11 +1181,17 @@ fn parent_tag_local(index: usize) -> String {
 
 /// The lines an encode opens with, one per derivation: the bits of the flag the arm that the
 /// embedded variant holds names, in place in the carrier's byte, and zero for an embed a gate leaves
-/// off the wire. A switch over the variant's arms declares the local without a value first, so the
-/// compiler holds every arm to give it one.
+/// off the wire, or, where no embed that fills the flag is there, the bits the stored carrier holds
+/// in it (`parent_tag_unsaid_with`), as a decode that read the frame left them. A switch over the
+/// variant's arms declares the local without a value first, so the compiler holds every arm to give
+/// it one.
 fn parent_tag_locals(derivations: &[ParentTagDerivation]) -> Vec<String> {
     let mut lines = Vec::new();
     for (index, d) in derivations.iter().enumerate() {
+        let carrier_items: Vec<&ParentTagDerivation> = derivations
+            .iter()
+            .filter(|o| o.carrier_field_id == d.carrier_field_id)
+            .collect();
         let local = parent_tag_local(index);
         let mask = (1u64 << d.width) - 1;
         let embed = &d.embed_field_id;
@@ -1219,8 +1226,24 @@ fn parent_tag_locals(derivations: &[ParentTagDerivation]) -> Vec<String> {
         }
         lines.push(format!("{pad}        }}"));
         if d.present_if.is_some() {
+            let absent = match parent_tag_unsaid_with(d, &carrier_items) {
+                None => "0".to_string(),
+                Some(others) => {
+                    let kept = format!("self.{} & 0x{:02X}", d.carrier_field_id, d.filled());
+                    if others.is_empty() {
+                        kept
+                    } else {
+                        let none = others
+                            .iter()
+                            .map(|o| format!("self.{} == nil", o.embed_field_id))
+                            .collect::<Vec<_>>()
+                            .join(" && ");
+                        format!("({none}) ? ({kept}) : 0")
+                    }
+                }
+            };
             lines.push("        } else {".to_string());
-            lines.push(format!("            {local} = 0"));
+            lines.push(format!("            {local} = {absent}"));
             lines.push("        }".to_string());
         }
     }

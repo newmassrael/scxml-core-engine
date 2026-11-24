@@ -2507,6 +2507,9 @@ pub(super) fn context(
     }
     // The bits of a carrier the arm of each embedded body's variant fills: the tag of the arm the
     // body holds, masked to the bits, joined bit by bit; nothing where a gate leaves the body out.
+    // Where every body is one a gate may leave out and none is there, nothing says the flag, and
+    // the carrier keeps the bits the value presents (docs/adr/0065 §6 R4a), as a decode that read
+    // the frame left them.
     for derived in &plan.derivations {
         let (ElementId::Flag { field, flag }, Derive::ParentTag(parent)) =
             (&derived.element, &derived.by)
@@ -2515,6 +2518,7 @@ pub(super) fn context(
         };
         let local = format!("{field}_{flag}_filled");
         body.push(format!("var {local}: UInt64 = 0"));
+        let mut said: Option<Vec<String>> = Some(Vec::new());
         for term in &parent.terms {
             let id = &term.body.id;
             let fill = |body: &str| {
@@ -2528,12 +2532,20 @@ pub(super) fn context(
             let read = presented_read(plan, id);
             if presented_optional(plan, id) {
                 body.push(format!("if let {HELD} = {read} {{ {} }}", fill(HELD)));
+                if let Some(said) = said.as_mut() {
+                    said.push(format!("{read} != nil"));
+                }
             } else {
                 body.push(fill(&read));
+                said = None;
             }
         }
         let carrier = fold(field, &mut body);
-        body.push(flag_set(field, flag, &carrier, &local));
+        let set = flag_set(field, flag, &carrier, &local);
+        body.push(match said {
+            None => set,
+            Some(there) => format!("if {} {{ {set} }}", there.join(" || ")),
+        });
     }
     // The one-bit flags a parent may set in place of the ones the value presents (the flag a chain's
     // entries end on), each a member of `Overrides`: what the parent says is what the wire holds.
