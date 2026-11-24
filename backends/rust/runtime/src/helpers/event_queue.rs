@@ -208,6 +208,14 @@ impl EventQueueMut<'_> {
     }
 
     /// Take the event at the front of the queue, `None` when it is empty.
+    ///
+    /// Out of line: the main loop every machine shares takes an event off a
+    /// queue in three places (the internal queue, the external queue, and what
+    /// the external queue still holds when a run ends), and under `no_std`
+    /// each is the ring's index arithmetic, its division by the capacity and
+    /// the check that the capacity is not zero. One copy and three calls are
+    /// smaller than three copies.
+    #[inline(never)]
     pub fn pop(&mut self) -> Option<QueuedEvent> {
         #[cfg(feature = "std")]
         {
