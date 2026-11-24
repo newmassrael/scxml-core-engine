@@ -6373,10 +6373,9 @@ impl Turn<'_> {
     /// leaf to walk down to. The configuration starts empty.
     fn enter_initial_configuration(&mut self) {
         self.host.behaviour().store().configuration().clear();
-        let entered = microstep::enter_states(
+        let entered = microstep::enter_initial_configuration(
             self.tables,
             self.host.behaviour(),
-            &[self.tables.initial],
             self.scratch.reborrow(),
         );
         self.host.core().settle(entered);

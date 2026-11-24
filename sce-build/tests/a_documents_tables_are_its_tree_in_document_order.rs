@@ -462,6 +462,10 @@ fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables<'static> {
         default_state: rt::StateId(0),
         null_event: rt::EventId(0),
         error_events: &[],
+        // The general walk, which serves every document (docs/adr/0125).
+        walk: &sce_rust_runtime::GENERAL_WALK,
+        entry_rows: &[],
+        entry_paths: &[],
         // The feature procedures exactly when the document uses the feature,
         // as the generator writes them (docs/adr/0066).
         history: tables.uses_history().then_some(&sce_rust_runtime::HISTORY),

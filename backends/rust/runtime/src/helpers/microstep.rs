@@ -23,6 +23,19 @@
 //! entering a state DO. So a program that holds two machines holds one copy of
 //! this module. A procedure that only reads takes the store alone.
 //!
+//! # Two walks of one microstep
+//!
+//! How a microstep's exit and entry sets are formed is the document's, carried
+//! by its tables as [`DocumentTables::walk`] (docs/adr/0125). The general walk
+//! ([`GENERAL_WALK`]) computes them as the appendix writes them, from the tree,
+//! the configuration and what each `<history>` recorded. A document with no
+//! `<history>`, no `<parallel>` and no transition of more than one target fixes
+//! them itself: what a transition enters depends on the transition alone, and
+//! what it exits is every active state below its domain. The generator ran the
+//! appendix's procedures for each of its transitions when it was built, and the
+//! row walk ([`ROW_WALK`]) reads their answers from the tables. The selection,
+//! the transitions' content and the main loop are the same for both.
+//!
 //! # Capacity
 //!
 //! Every set a procedure builds is a [`SliceVec`] over the [`Scratch`] the
@@ -33,7 +46,8 @@
 //! sum the generator can write: [`state_scratch`] states, the enabled set, the
 //! walk's steps and the history defaults. No capacity constant is introduced
 //! here, and a push past a buffer's end stops the program with the generator's
-//! name on it.
+//! name on it. The row walk builds no set and borrows none of the scratch, so
+//! the workspace of a document it walks holds the enabled set alone.
 
 use core::mem::MaybeUninit;
 
@@ -536,6 +550,79 @@ fn procedures_missing() -> ! {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// How a microstep's sets are formed
+// ════════════════════════════════════════════════════════════════════════
+
+/// Appendix D's exitStates over a microstep's transitions, as a walk forms it.
+type ExitStates = fn(&DocumentTables<'_>, &mut dyn Behaviour, &[TransitionId], Scratch<'_>);
+
+/// Appendix D's enterStates over a microstep's transitions, as a walk forms it.
+type EnterStates =
+    fn(&DocumentTables<'_>, &mut dyn Behaviour, &[TransitionId], Scratch<'_>) -> Entered;
+
+/// How a microstep's exit and entry sets are formed, carried by every
+/// document's tables ([`DocumentTables::walk`]) and reached through them alone
+/// (docs/adr/0125): the general walk ([`GENERAL_WALK`]) or the row walk
+/// ([`ROW_WALK`]).
+///
+/// Two procedures, the two of the appendix whose sets a document can fix:
+/// exitStates and enterStates. A microstep runs exitStates, then
+/// executeTransitionContent, then enterStates, and the entry into the initial
+/// configuration runs enterStates alone ([`enter_initial_configuration`]).
+///
+/// A program none of whose documents carries the general walk references
+/// neither [`GENERAL_WALK`] nor any function only it names, and the link drops
+/// them, as it drops [`HISTORY`] and [`PARALLEL`] (docs/adr/0066). The fields
+/// are private, so the two constants are the only values there are.
+pub struct WalkProcedures {
+    /// Whether the procedures read the tables' entry rows.
+    reads_rows: bool,
+    /// exitStates.
+    exit_states: ExitStates,
+    /// enterStates.
+    enter_states: EnterStates,
+}
+
+/// The general walk, the value a generated table writes as
+/// `walk: &GENERAL_WALK`: the appendix's exitStates and enterStates
+/// ([`exit_states`], [`enter_states`]), which compute the sets from the tree,
+/// the configuration and the histories' records, for any document. A constant
+/// for the reason [`HISTORY`] is one.
+pub const GENERAL_WALK: WalkProcedures = WalkProcedures {
+    reads_rows: false,
+    exit_states,
+    enter_states,
+};
+
+/// The row walk, the value a generated table writes as `walk: &ROW_WALK` for a
+/// document with no `<history>`, no `<parallel>` and no transition of more
+/// than one target: the sets read from the entry rows the generator computed
+/// by the appendix's procedures (docs/adr/0125).
+pub const ROW_WALK: WalkProcedures = WalkProcedures {
+    reads_rows: true,
+    exit_states: exit_states_from_rows,
+    enter_states: enter_states_from_rows,
+};
+
+impl WalkProcedures {
+    /// Whether these are the row walk's, which read a document's entry rows.
+    #[inline]
+    pub const fn reads_rows(&self) -> bool {
+        self.reads_rows
+    }
+}
+
+impl core::fmt::Debug for WalkProcedures {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(if self.reads_rows {
+            "ROW_WALK"
+        } else {
+            "GENERAL_WALK"
+        })
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // Selection
 // ════════════════════════════════════════════════════════════════════════
 
@@ -923,9 +1010,23 @@ pub fn microstep(
     // §scxml-D-microstepProcedure: every exit, then every transition's
     // content, then every entry — for the whole set at once, which is what lets
     // the regions of a `<parallel>` each take their own transition in one step.
-    exit_states(tables, machine, transitions, scratch.reborrow());
+    // How the exit and entry sets are formed is the walk the document's
+    // tables carry (docs/adr/0125).
+    (tables.walk.exit_states)(tables, machine, transitions, scratch.reborrow());
     execute_transition_content(tables, machine, transitions);
-    enter_states(tables, machine, transitions, scratch)
+    (tables.walk.enter_states)(tables, machine, transitions, scratch)
+}
+
+/// The entry into the initial configuration: enterStates of the document's
+/// own initial transition alone, which is the whole of the appendix's entry
+/// ([`enter_states`]), by the walk the document's tables carry
+/// (docs/adr/0125). The configuration is empty when it is called.
+pub fn enter_initial_configuration(
+    tables: &DocumentTables<'_>,
+    machine: &mut dyn Behaviour,
+    scratch: Scratch<'_>,
+) -> Entered {
+    (tables.walk.enter_states)(tables, machine, &[tables.initial], scratch)
 }
 
 /// Appendix D's computeExitSet over the microstep's transitions — the states
@@ -973,7 +1074,9 @@ pub fn take_transitions(machine: &mut dyn Behaviour, transitions: &[TransitionId
     }
 }
 
-/// Appendix D's exitStates.
+/// Appendix D's exitStates, the general walk's ([`GENERAL_WALK`]): it computes
+/// the exit set from the transitions' domains and the configuration, and
+/// records the histories of the states it exits.
 ///
 /// Out of line, so its frame is on the stack only while the states exit. A
 /// microstep exits, then runs the content, then enters, and the entry is the
@@ -1005,10 +1108,34 @@ pub fn exit_states(
     // their ancestors and reverse document order among the rest, which
     // together are exactly reverse document order.
     for state in states_to_exit.as_ref().iter_rev() {
-        // §scxml-D-exitStates: onexit, then cancelInvoke, then
-        // configuration.delete(s), so `In(s)` inside s's own handler is true.
-        machine.exit_state(state);
-        machine.store().remove(state);
+        exit_one(machine, state);
+    }
+}
+
+/// One state exited, the way exitStates and exitInterpreter exit each,
+/// whichever walk formed the set.
+#[inline]
+fn exit_one(machine: &mut dyn Behaviour, state: StateId) {
+    // Onexit, then cancelInvoke, then
+    // configuration.delete(s), so `In(s)` inside s's own handler is true.
+    machine.exit_state(state);
+    machine.store().remove(state);
+}
+
+/// Every active state from `from` to `to` exited, last first, each as
+/// [`exit_one`] exits it. A range of ids is a subtree, or the whole document,
+/// so last first is exit order. The last active state of the range is asked
+/// for again after each exit, so the configuration is read as it shrinks and
+/// never copied.
+fn exit_active(machine: &mut dyn Behaviour, from: StateId, to: StateId) {
+    while let Some(state) = machine
+        .store()
+        .as_ref()
+        .configuration()
+        .last_to(to)
+        .filter(|&state| state >= from)
+    {
+        exit_one(machine, state);
     }
 }
 
@@ -1026,12 +1153,10 @@ pub fn exit_states(
 ///
 /// The configuration's last state in document order is the first in
 /// exitOrder, and it leaves the configuration before the next is asked for,
-/// so the set is read as it shrinks and never copied.
+/// so the set is read as it shrinks and never copied: every active state of
+/// the whole range of ids, as the row walk exits those below a domain.
 pub fn exit_interpreter(machine: &mut dyn Behaviour) {
-    while let Some(state) = machine.store().as_ref().configuration().last() {
-        machine.exit_state(state);
-        machine.store().remove(state);
-    }
+    exit_active(machine, StateId(0), StateId(u16::MAX));
 }
 
 /// Appendix D's executeTransitionContent.
@@ -1053,6 +1178,9 @@ pub fn execute_transition_content(
 /// Appendix D's enterStates, for the transitions a selection enabled or for
 /// the document's initial transition alone, which is the whole of the
 /// appendix's entry into the initial configuration (§scxml-D-interpret).
+///
+/// The general walk's ([`GENERAL_WALK`]): it computes the entry set from the
+/// tree and the histories' records.
 pub fn enter_states(
     tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
@@ -1098,11 +1226,9 @@ fn enter_entry_set(
         // owed to it. A state already active is not entered twice. Entering a
         // `<final>` whose parent is the `<scxml>` element ends the run, which
         // the tables answer and no machine's hook is asked.
-        if machine.store().add(state) {
-            machine.enter_state(state, entry.states_for_default_entry.contains(state));
-            if tables.is_final(state) && tables.parent(state).is_none() {
-                ended_in = Some(state);
-            }
+        let is_default_entry = entry.states_for_default_entry.contains(state);
+        if let Some(end) = enter_one(tables, machine, state, is_default_entry) {
+            ended_in = Some(end);
         }
         if let Some(history) = entry.default_history_content_of(state) {
             machine.execute_history_default_content(history);
@@ -1133,6 +1259,103 @@ fn current_state(tables: &DocumentTables<'_>, store: RunStoreRef<'_>, target: St
         }
     }
     current
+}
+
+/// One state of an entry set entered, whichever walk formed the set: added to
+/// the configuration and, unless it was active already, entered (its onentry,
+/// then its initial transition's content when `is_default_entry`). Returns
+/// the state when it is a `<final>` child of the `<scxml>` element, whose
+/// entry ends the run: the tables answer that, and no machine's hook is asked
+/// (docs/adr/0123).
+#[inline]
+fn enter_one(
+    tables: &DocumentTables<'_>,
+    machine: &mut dyn Behaviour,
+    state: StateId,
+    is_default_entry: bool,
+) -> Option<StateId> {
+    if !machine.store().add(state) {
+        return None;
+    }
+    machine.enter_state(state, is_default_entry);
+    (tables.is_final(state) && tables.parent(state).is_none()).then_some(state)
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// The row walk
+// ════════════════════════════════════════════════════════════════════════
+//
+// A document with no `<history>`, no `<parallel>` and no transition of more
+// than one target fixes its microsteps' sets itself (docs/adr/0125). With no
+// `<history>`, a transition's effective targets are its targets, so its domain
+// and everything computeEntrySet adds are the transition's alone. With one
+// target and no `<parallel>`, what it enters is one path down the tree: from
+// the child of the domain on the way to the target, through the target, down
+// its initial transitions to an atomic state. The generator computed that path
+// for each transition by the appendix's own procedures when the document was
+// built (`sce_build::document_tables`), and the tables hold it as the
+// transition's entry row. What the transition exits is every active state
+// below the domain, which is the parent of the path's first state; the
+// configuration says which those are, as it says for exitInterpreter.
+
+/// Appendix D's exitStates for a document of the row walk: for each
+/// transition, every active state below its domain, the parent of the first
+/// state its entry path enters, last first. A transition with no target has
+/// no path and exits nothing; a document with no `<history>` records nothing.
+///
+/// Such a document has no `<parallel>`, so a configuration holds one atomic
+/// state and a microstep takes one transition at most.
+fn exit_states_from_rows(
+    tables: &DocumentTables<'_>,
+    machine: &mut dyn Behaviour,
+    transitions: &[TransitionId],
+    _scratch: Scratch<'_>,
+) {
+    for &transition in transitions {
+        let Some(first) = tables.entry_path(transition).first() else {
+            continue;
+        };
+        match tables.parent(first.state()) {
+            Some(domain) => exit_active(
+                machine,
+                StateId(domain.0 + 1),
+                tables.last_descendant(domain),
+            ),
+            None => exit_active(machine, StateId(0), StateId(u16::MAX)),
+        }
+    }
+}
+
+/// Appendix D's enterStates for a document of the row walk: each transition's
+/// entry path entered in order, each state as [`enter_one`] enters it. A path
+/// ends at the atomic state the transition brings the machine into, which is
+/// the machine's current state: the general walk reads the same state down
+/// the configuration from the transition's target, through the states the
+/// path entered.
+fn enter_states_from_rows(
+    tables: &DocumentTables<'_>,
+    machine: &mut dyn Behaviour,
+    transitions: &[TransitionId],
+    _scratch: Scratch<'_>,
+) -> Entered {
+    let mut entered = Entered {
+        states: 0,
+        current: None,
+        ended_in: None,
+    };
+    for &transition in transitions {
+        let path = tables.entry_path(transition);
+        for step in path {
+            if let Some(end) = enter_one(tables, machine, step.state(), step.by_default()) {
+                entered.ended_in = Some(end);
+            }
+        }
+        if let Some(last) = path.last() {
+            entered.current = Some(last.state());
+        }
+        entered.states += path.len();
+    }
+    entered
 }
 
 // ════════════════════════════════════════════════════════════════════════

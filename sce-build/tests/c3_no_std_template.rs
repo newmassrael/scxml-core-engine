@@ -795,8 +795,13 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             // No transition has more than one target, so the pool is empty.
             "targets: &[],",
             // The document has a `<history>` and a `<parallel>`, so its tables
-            // carry the procedures of both (docs/adr/0066).
-            "history: Some(&::sce_rust_runtime::HISTORY),\n        \
+            // carry the procedures of both (docs/adr/0066), and its microsteps'
+            // sets are computed by the general walk, with no entry rows
+            // (docs/adr/0125).
+            "walk: &::sce_rust_runtime::GENERAL_WALK,\n        \
+             entry_rows: &[],\n        \
+             entry_paths: &[],\n        \
+             history: Some(&::sce_rust_runtime::HISTORY),\n        \
              parallel: Some(&::sce_rust_runtime::PARALLEL),\n    }\n};",
             "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables<'static> \
              = {",

@@ -301,6 +301,11 @@ pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables<'static> = {
    main loop counts an unanswered one and bounds a chain of them by these
    numbers (docs/adr/0068). #}
         error_events: &[{% for event_name in model.events | sort %}{% if event_name is startingwith("error.") %}::sce_rust_runtime::EventId({{ loop.index0 }}),{% endif %}{% endfor %}],
+{# How the microsteps form their exit and entry sets (docs/adr/0125): the
+   general walk, which serves every document, and no entry rows. #}
+        walk: &::sce_rust_runtime::GENERAL_WALK,
+        entry_rows: &[],
+        entry_paths: &[],
         history: {% if tables.history %}Some(&::sce_rust_runtime::HISTORY){% else %}None{% endif %},
         parallel: {% if tables.parallel %}Some(&::sce_rust_runtime::PARALLEL){% else %}None{% endif %},
     }

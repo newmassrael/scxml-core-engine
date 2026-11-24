@@ -13,12 +13,14 @@
 # fixture's own driver goes red.
 #
 # Since docs/adr/0064 the configuration is the engine's, and the order is the
-# runtime's: `exit_states` in `helpers/microstep.rs` calls the machine's exit
-# hook, then removes the state from the run store. The anchor is a literal
+# runtime's: `exit_one` in `helpers/microstep.rs` calls the machine's exit
+# hook, then removes the state from the run store. Every exit goes through it
+# (docs/adr/0125): exitStates of the general walk and of the row walk, and
+# exitInterpreter. The fixture's document has no <history>, no <parallel> and
+# no transition of more than one target, so its machine runs on the row walk,
+# and the case breaks the one site both walks share. The anchor is a literal
 # slice of that procedure; `scripts/mutate --check` reports it when the
-# procedure changes. `exit_interpreter` exits each remaining state the same
-# way, and the anchor keeps the `exit_states` comment line so it names one
-# site.
+# procedure changes.
 
 mutation_tests -p sce-rust-tests --test onexit_runs_before_the_state_leaves
 mutation_targets backends/rust/runtime/src/helpers/microstep.rs
@@ -32,10 +34,10 @@ mutation_oracles backends/rust/tests/tests/onexit_runs_before_the_state_leaves.r
 
 mutation_case "the state leaves the configuration before its own onexit runs" <<'PY'
 edit("backends/rust/runtime/src/helpers/microstep.rs",
-     """        // configuration.delete(s), so `In(s)` inside s's own handler is true.
-        machine.exit_state(state);
-        machine.store().remove(state);""",
-     """        // configuration.delete(s), so `In(s)` inside s's own handler is true.
-        machine.store().remove(state);
-        machine.exit_state(state);""")
+     """    // configuration.delete(s), so `In(s)` inside s's own handler is true.
+    machine.exit_state(state);
+    machine.store().remove(state);""",
+     """    // configuration.delete(s), so `In(s)` inside s's own handler is true.
+    machine.store().remove(state);
+    machine.exit_state(state);""")
 PY

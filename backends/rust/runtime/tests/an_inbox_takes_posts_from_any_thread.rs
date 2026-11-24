@@ -159,6 +159,11 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
         default_state: StateId(St::S as u16),
         null_event: EventId(0),
         error_events: &[],
+        // Appendix D's sets computed as the appendix writes them, which serves
+        // any document (docs/adr/0125).
+        walk: &sce_rust_runtime::GENERAL_WALK,
+        entry_rows: &[],
+        entry_paths: &[],
         history: None,
         parallel: None,
     };

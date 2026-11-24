@@ -185,6 +185,12 @@ impl CoreRows {
             default_state: StateId(0),
             null_event: EventId(0),
             error_events: &[],
+            // The sets computed by the general walk, which serves every
+            // document (docs/adr/0125): the order the core takes them in is
+            // the same whichever walk a generated machine carries.
+            walk: &sce_rust_runtime::GENERAL_WALK,
+            entry_rows: &[],
+            entry_paths: &[],
             history: None,
             parallel: None,
         }

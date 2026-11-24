@@ -34,11 +34,18 @@
 //! - a transition holds its only target itself, and the pool holds only lists
 //!   of more than one.
 //!
+//! A document whose microsteps' sets the document itself fixes (no
+//! `<history>`, no `<parallel>`, no transition of more than one target) also
+//! carries, for each transition, the states it enters as one more row: its
+//! entry path, which Appendix D's procedures computed when the document was
+//! built, and which the row walk reads instead of computing it again
+//! (docs/adr/0125).
+//!
 //! `sce_build::document_tables` computes the rows from the document, and the
 //! generator writes them. A table written by hand states the same rows, and
 //! [`DocumentTables::check`] says whether they keep the rules above.
 
-use crate::helpers::microstep::{HistoryProcedures, ParallelProcedures};
+use crate::helpers::microstep::{HistoryProcedures, ParallelProcedures, WalkProcedures};
 
 /// A state: `<state>`, `<parallel>` or `<final>`, by its position in document
 /// order.
@@ -240,6 +247,8 @@ const _: () = assert!(core::mem::size_of::<StateRow>() == 6);
 const _: () = assert!(core::mem::size_of::<TransitionRow>() == 4);
 const _: () = assert!(core::mem::size_of::<HistoryRow>() == 4);
 const _: () = assert!(core::mem::size_of::<Target>() == 2);
+const _: () = assert!(core::mem::size_of::<EntryRow>() == 2);
+const _: () = assert!(core::mem::size_of::<EntryStep>() == 2);
 
 /// The bit of a [`HistoryRow`]'s parent field that says it is deep.
 const DEEP_BIT: u16 = 1 << 15;
@@ -436,6 +445,81 @@ impl Target {
     }
 }
 
+/// What one transition enters, as the row walk reads it (docs/adr/0125): the
+/// position of its entry path in [`DocumentTables::entry_paths`], or
+/// [`EntryRow::NONE`] for a transition with no target, which exits and enters
+/// nothing.
+///
+/// Transitions that enter the same states in the same way, which is every
+/// transition to one target from under one domain, name one list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct EntryRow(u16);
+
+impl EntryRow {
+    /// The row of a transition with no target.
+    pub const NONE: Self = Self(ABSENT);
+
+    /// The row of a transition whose entry path is the list at `position` of
+    /// [`DocumentTables::entry_paths`].
+    #[inline]
+    pub const fn at(position: u16) -> Self {
+        Self(position)
+    }
+
+    /// The position of its list, or `None` for a transition with no target.
+    #[inline]
+    const fn position(self) -> Option<usize> {
+        match id_of(self.0) {
+            Some(position) => Some(position as usize),
+            None => None,
+        }
+    }
+}
+
+/// The bit of an [`EntryStep`] that says its state is entered by default.
+const DEFAULT_ENTRY_BIT: u16 = 1 << 15;
+
+/// One entry of a list of [`DocumentTables::entry_paths`] (docs/adr/0125): the
+/// first entry of a list is its length ([`EntryStep::count`]), and each one
+/// after it a state the transition enters, in entry order, with whether it is
+/// entered by default, Appendix D's statesForDefaultEntry, so its initial
+/// transition's content runs after its onentry. The state is the 14 bits of
+/// an id and the flag the top bit (docs/adr/0067).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct EntryStep(u16);
+
+impl EntryStep {
+    /// A state of an entry path, entered by default when `by_default`.
+    #[inline]
+    pub const fn new(state: StateId, by_default: bool) -> Self {
+        if by_default {
+            Self(state.0 | DEFAULT_ENTRY_BIT)
+        } else {
+            Self(state.0)
+        }
+    }
+
+    /// The first entry of a list: how many states follow it.
+    #[inline]
+    pub const fn count(len: u16) -> Self {
+        Self(len)
+    }
+
+    /// The state it enters.
+    #[inline]
+    pub const fn state(self) -> StateId {
+        StateId(self.0 & ID_BITS)
+    }
+
+    /// Whether the state is entered by default.
+    #[inline]
+    pub const fn by_default(self) -> bool {
+        self.0 & DEFAULT_ENTRY_BIT != 0
+    }
+}
+
 /// A document's tables, their rows borrowed for `'t`.
 ///
 /// A generated machine's rows are constants of its program,
@@ -443,8 +527,9 @@ impl Target {
 /// that builds the rows of a document it reads, and asks the procedures about
 /// it, lends rows it owns for the length of the question, and leaves nothing
 /// behind. The procedures a document is given by these rows,
-/// [`history`](Self::history) and [`parallel`](Self::parallel), are the
-/// runtime's own constants, so they are `'static` whoever owns the rows.
+/// [`walk`](Self::walk), [`history`](Self::history) and
+/// [`parallel`](Self::parallel), are the runtime's own constants, so they are
+/// `'static` whoever owns the rows.
 #[derive(Debug)]
 pub struct DocumentTables<'t> {
     /// One row for each state, by [`StateId`].
@@ -474,6 +559,20 @@ pub struct DocumentTables<'t> {
     /// another (docs/adr/0068). Written by the generator from the names, so
     /// the loop compares numbers and no machine carries a copy of the test.
     pub error_events: &'t [EventId],
+    /// How the document's microsteps form their exit and entry sets
+    /// (docs/adr/0125): `&GENERAL_WALK`, Appendix D's procedures computing them
+    /// from the tree and the configuration, which serves every document; or
+    /// `&ROW_WALK`, which reads them from [`entry_rows`](Self::entry_rows), for
+    /// a document with no `<history>`, no `<parallel>` and no transition of more
+    /// than one target. A program none of whose documents carries the general
+    /// walk links none of it.
+    pub walk: &'static WalkProcedures,
+    /// For each transition, by [`TransitionId`], what it enters: one row each
+    /// when [`walk`](Self::walk) is the row walk, none otherwise.
+    pub entry_rows: &'t [EntryRow],
+    /// The entry paths the rows name, each its length
+    /// ([`EntryStep::count`]) followed by the states it enters in entry order.
+    pub entry_paths: &'t [EntryStep],
     /// The procedures only a `<history>` reaches, `Some(&HISTORY)` exactly
     /// when the document has one (docs/adr/0066).
     pub history: Option<&'static HistoryProcedures>,
@@ -505,6 +604,16 @@ pub enum TablesFault {
     /// [`DocumentTables::history`], or a `<parallel>` and no
     /// [`DocumentTables::parallel`].
     ProceduresMissing,
+    /// The tables carry the row walk, and the document has a `<history>`, a
+    /// `<parallel>` or a transition of more than one target, whose sets its
+    /// rows do not fix (docs/adr/0125).
+    RowWalkOutsideClass,
+    /// The row walk without one entry row for each transition, or entry rows
+    /// in tables whose walk reads none.
+    EntryRows,
+    /// A transition's entry row breaks a rule of an entry path
+    /// ([`DocumentTables::check`]).
+    EntryRow(TransitionId),
 }
 
 impl DocumentTables<'_> {
@@ -618,6 +727,26 @@ impl DocumentTables<'_> {
         }
     }
 
+    /// `transition`'s entry path (docs/adr/0125): the states it enters, in entry
+    /// order, each with whether it is entered by default. Empty for a
+    /// transition with no target, and for every transition of tables whose walk
+    /// reads no rows.
+    ///
+    /// Out of line, for the reason [`targets`](Self::targets) is: the row walk
+    /// asks it as it exits and as it enters.
+    #[inline(never)]
+    pub fn entry_path(&self, transition: TransitionId) -> &[EntryStep] {
+        let Some(position) = self
+            .entry_rows
+            .get(transition.index())
+            .and_then(|row| row.position())
+        else {
+            return &[];
+        };
+        let len = usize::from(self.entry_paths[position].0);
+        &self.entry_paths[position + 1..position + 1 + len]
+    }
+
     /// A written transition as the emitted transition table names its row: its
     /// source, and its position among the source's own transitions in document
     /// order (the row's `index`, docs/SCE_TRANSITION_TABLE.md).
@@ -656,9 +785,11 @@ impl DocumentTables<'_> {
     /// [`MAX_IDS`], every parent before its child, every subtree the range of
     /// ids its children's subtrees fill, every list of targets inside the pool,
     /// an initial transition for exactly the compound states, every id a row
-    /// names a row of its table, and the procedures of each feature the
-    /// document uses carried. The procedures assume all of them; a debug build
-    /// checks a machine's tables when it is built.
+    /// names a row of its table, the procedures of each feature the
+    /// document uses carried, and for the row walk one entry row for each
+    /// transition that keeps the rules of an entry path (docs/adr/0125). The
+    /// procedures assume all of them; a debug build checks a machine's tables
+    /// when it is built.
     pub fn check(&self) -> Result<(), TablesFault> {
         let states = self.states.len();
         if states > MAX_IDS
@@ -758,7 +889,109 @@ impl DocumentTables<'_> {
         {
             return Err(TablesFault::ProceduresMissing);
         }
+        self.check_entry_rows(has_parallel)
+    }
+
+    /// The part of [`check`](Self::check) the entry rows answer
+    /// (docs/adr/0125): tables state rows exactly when their walk reads them,
+    /// and the row walk only for a document whose sets the rows fix.
+    fn check_entry_rows(&self, has_parallel: bool) -> Result<(), TablesFault> {
+        if !self.walk.reads_rows() {
+            if self.entry_rows.is_empty() && self.entry_paths.is_empty() {
+                return Ok(());
+            }
+            return Err(TablesFault::EntryRows);
+        }
+        // A `<history>` makes what a transition enters depend on what it
+        // recorded, a `<parallel>` makes a configuration more than one path
+        // down the tree, and a transition of several targets enters more than
+        // one: none of their sets is one row.
+        let one_target = (0..self.transitions.len())
+            .all(|index| self.targets(TransitionId(index as u16)).len() <= 1);
+        if !self.histories.is_empty() || has_parallel || !one_target {
+            return Err(TablesFault::RowWalkOutsideClass);
+        }
+        if self.entry_rows.len() != self.transitions.len() {
+            return Err(TablesFault::EntryRows);
+        }
+        for (index, row) in self.entry_rows.iter().enumerate() {
+            let transition = TransitionId(index as u16);
+            let fits = match row.position() {
+                Some(position) => self
+                    .entry_paths
+                    .get(position)
+                    .is_some_and(|len| position + 1 + usize::from(len.0) <= self.entry_paths.len()),
+                None => true,
+            };
+            if !fits || !self.entry_path_holds(transition) {
+                return Err(TablesFault::EntryRow(transition));
+            }
+        }
         Ok(())
+    }
+
+    /// Whether `transition`'s entry path is one the row walk can take for it
+    /// (docs/adr/0125). None for a compound state's initial transition, which
+    /// no microstep takes (what it enters is part of the path of whatever
+    /// enters its state), and none for a transition with no target. For one
+    /// with a target, a path down the tree, each state a child of the one before,
+    /// that holds the target and ends in an atomic state; that enters by
+    /// default no state above the target, the target exactly when it is a
+    /// compound state, and below it only compound states; and whose first
+    /// state's parent, the transition's domain, below which the row walk exits
+    /// the active states, is the source or one of its ancestors.
+    fn entry_path_holds(&self, transition: TransitionId) -> bool {
+        let path = self.entry_path(transition);
+        if self
+            .states
+            .iter()
+            .any(|row| row.initial() == Some(transition))
+        {
+            return path.is_empty();
+        }
+        let target = match self.targets(transition).first() {
+            None => return path.is_empty(),
+            Some(target) => match target.named() {
+                Named::State(state) => state,
+                Named::History(_) => return false,
+            },
+        };
+        if path
+            .iter()
+            .any(|step| step.state().index() >= self.states.len())
+        {
+            return false;
+        }
+        let Some((first, rest)) = path.split_first() else {
+            return false;
+        };
+        let mut last = first.state();
+        for step in rest {
+            if self.parent(step.state()) != Some(last) {
+                return false;
+            }
+            last = step.state();
+        }
+        let Some(at_target) = path.iter().position(|step| step.state() == target) else {
+            return false;
+        };
+        let defaults_hold = path.iter().enumerate().all(|(index, step)| {
+            let compound = self.is_compound(step.state());
+            match index.cmp(&at_target) {
+                core::cmp::Ordering::Less => !step.by_default(),
+                core::cmp::Ordering::Equal => step.by_default() == compound,
+                core::cmp::Ordering::Greater => !step.by_default() || compound,
+            }
+        });
+        let domain_holds = match (
+            self.parent(first.state()),
+            self.transition(transition).source(),
+        ) {
+            (None, _) => true,
+            (Some(domain), Some(source)) => domain == source || self.is_descendant(source, domain),
+            (Some(_), None) => false,
+        };
+        self.is_atomic(last) && defaults_hold && domain_holds
     }
 }
 

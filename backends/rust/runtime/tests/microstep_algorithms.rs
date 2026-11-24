@@ -53,15 +53,17 @@ use std::sync::OnceLock;
 
 use sce_rust_runtime::helpers::microstep::{
     compute_entry_set, compute_exit_set, compute_states_to_exit, effective_target_states_on,
-    enter_states, is_in_final_state, microstep, select_transitions, transition_domain, Behaviour,
-    Buffers, Entered, ExitScope, Scratch, SliceVec, WalkStep,
+    enter_initial_configuration, exit_interpreter, is_in_final_state, microstep,
+    select_transitions, transition_domain, Behaviour, Buffers, Entered, ExitScope, Scratch,
+    SliceVec, WalkStep,
 };
 use sce_rust_runtime::helpers::run_store::{RunStoreMut, RunStoreRef};
 use sce_rust_runtime::helpers::state_set::{StateSet, StateSetRef, Word};
 use sce_rust_runtime::helpers::tables::TablesFault;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, EventId, HistoryId, HistoryRow, StateId, StateKind,
-    StateRow, Target, TransitionId, TransitionRow, Workspace, HISTORY, PARALLEL,
+    state_scratch, state_words, DocumentTables, EntryRow, EntryStep, EventId, HistoryId,
+    HistoryRow, StateId, StateKind, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    GENERAL_WALK, HISTORY, PARALLEL, ROW_WALK,
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -183,6 +185,12 @@ fn tables_of(doc: &Plain) -> &'static DocumentTables<'static> {
     let tables = DocumentTables {
         history: (!histories.is_empty()).then_some(&HISTORY),
         parallel: has_parallel.then_some(&PARALLEL),
+        // The sets computed by the general walk, which serves every document
+        // and is what the procedures under test are (docs/adr/0125);
+        // `row_tables_of` gives a document that fixes its sets the row walk.
+        walk: &GENERAL_WALK,
+        entry_rows: &[],
+        entry_paths: &[],
         states: leak(states),
         histories: leak(histories),
         transitions: leak(transitions),
@@ -199,6 +207,59 @@ fn tables_of(doc: &Plain) -> &'static DocumentTables<'static> {
         tables.check(),
         Ok(()),
         "the test wrote tables that break the rules `helpers::tables` states"
+    );
+    Box::leak(Box::new(tables))
+}
+
+/// The tables of `doc`, a document with no `<history>`, no `<parallel>` and no
+/// transition of more than one target, walked from rows (docs/adr/0125): the
+/// rows of [`tables_of`], and for each transition its entry path, the states
+/// the reference recursion's computeEntrySet enters for it in entry order,
+/// each with whether it is entered by default. That is what the generator
+/// writes, computed here by the recursion the runtime's general walk is held
+/// to rather than by the generator's own code. A compound state's initial
+/// transition has no path: no microstep takes it.
+fn row_tables_of(doc: &Plain) -> &'static DocumentTables<'static> {
+    let general = tables_of(doc);
+    let initials: Vec<TransitionId> = general
+        .states
+        .iter()
+        .filter_map(|row| row.initial())
+        .collect();
+    let mut paths: Vec<EntryStep> = Vec::new();
+    let mut rows: Vec<EntryRow> = Vec::new();
+    for index in 0..general.transitions.len() {
+        let transition = TransitionId(index as u16);
+        let row = general.transition(transition);
+        let written = Written {
+            source: row.source(),
+            targets: general.targets(transition).to_vec(),
+            internal: row.internal(),
+            has_content: row.has_content(),
+        };
+        // No `<history>`, so nothing recorded is read.
+        let entry = reference::entry_set_of(doc, &[], &written);
+        if initials.contains(&transition) || entry.states_to_enter.is_empty() {
+            rows.push(EntryRow::NONE);
+            continue;
+        }
+        rows.push(EntryRow::at(paths.len() as u16));
+        paths.push(EntryStep::count(entry.states_to_enter.len() as u16));
+        for &state in &entry.states_to_enter {
+            let by_default = entry.states_for_default_entry.contains(&state);
+            paths.push(EntryStep::new(state, by_default));
+        }
+    }
+    let tables = DocumentTables {
+        walk: &ROW_WALK,
+        entry_rows: leak(rows),
+        entry_paths: leak(paths),
+        ..*general
+    };
+    assert_eq!(
+        tables.check(),
+        Ok(()),
+        "the reference's entry sets of a document that fixes its sets are paths the row walk takes"
     );
     Box::leak(Box::new(tables))
 }
@@ -615,6 +676,9 @@ fn a_row_reads_back_what_it_holds_and_a_list_past_the_pool_is_refused() {
         default_state: StateId(0),
         null_event: EventId(0),
         error_events: &[],
+        walk: &GENERAL_WALK,
+        entry_rows: &[],
+        entry_paths: &[],
         history: None,
         parallel: None,
     };
@@ -1520,15 +1584,23 @@ const ENDING_DONE: StateId = StateId(3);
 const ENDING_STATES: usize = 4;
 
 /// The document above as tables, its own initial transition naming
-/// `document_initial`.
-fn ending_tables(document_initial: StateId) -> &'static DocumentTables<'static> {
+/// `document_initial`, once with the general walk and once with the row walk:
+/// it has no `<history>`, no `<parallel>` and no transition of more than one
+/// target, so it fixes its sets (docs/adr/0125), and both walks are asked.
+fn ending_tables(document_initial: StateId) -> [&'static DocumentTables<'static>; 2] {
+    let doc = ending_document(document_initial);
+    [tables_of(&doc), row_tables_of(&doc)]
+}
+
+/// The document above, its own initial transition naming `document_initial`.
+fn ending_document(document_initial: StateId) -> Plain {
     let to = |target: StateId| Written {
         source: Some(ENDING_S1),
         targets: vec![Target::state(target)],
         internal: false,
         has_content: false,
     };
-    tables_of(&Plain {
+    Plain {
         parent: vec![None, Some(ENDING_S), Some(ENDING_S), None],
         kind: vec![
             StateKind::Compound,
@@ -1547,7 +1619,7 @@ fn ending_tables(document_initial: StateId) -> &'static DocumentTables<'static> 
         history_defaults: Vec::new(),
         written: vec![to(ENDING_SF), to(ENDING_DONE)],
         document_initial: vec![Target::state(document_initial)],
-    })
+    }
 }
 
 type EndingWorkspace = Workspace<{ state_scratch(ENDING_STATES) }, 1, 20, 1>;
@@ -1597,7 +1669,7 @@ impl Ending {
         let mut run = Ending::default();
         let mut workspace = EndingWorkspace::new();
         let (_, scratch) = workspace.split();
-        let entered = enter_states(tables, &mut run, &[tables.initial], scratch);
+        let entered = enter_initial_configuration(tables, &mut run, scratch);
         (run, entered)
     }
 
@@ -1611,37 +1683,220 @@ impl Ending {
 
 #[test]
 fn entering_a_final_child_of_the_scxml_element_ends_the_run() {
-    let tables = ending_tables(ENDING_S);
-    let (mut run, started) = Ending::started(tables);
-    assert_eq!(run.entered, vec![ENDING_S, ENDING_S1]);
-    assert_eq!(started.ended_in, None, "a run that starts in `s1` goes on");
+    for tables in ending_tables(ENDING_S) {
+        let walk = tables.walk;
+        let (mut run, started) = Ending::started(tables);
+        assert_eq!(run.entered, vec![ENDING_S, ENDING_S1], "{walk:?}");
+        assert_eq!(
+            started.ended_in, None,
+            "{walk:?}: a run that starts in `s1` goes on"
+        );
 
-    let entered = run.take(tables, TransitionId(1));
-    assert_eq!(run.entered, vec![ENDING_S, ENDING_S1, ENDING_DONE]);
-    assert_eq!(entered.current, Some(ENDING_DONE));
-    assert_eq!(entered.ended_in, Some(ENDING_DONE));
+        let entered = run.take(tables, TransitionId(1));
+        assert_eq!(
+            run.entered,
+            vec![ENDING_S, ENDING_S1, ENDING_DONE],
+            "{walk:?}"
+        );
+        assert_eq!(entered.current, Some(ENDING_DONE), "{walk:?}");
+        assert_eq!(entered.ended_in, Some(ENDING_DONE), "{walk:?}");
+    }
 }
 
 #[test]
 fn entering_a_final_inside_a_state_does_not_end_the_run() {
-    let tables = ending_tables(ENDING_S);
-    let (mut run, _) = Ending::started(tables);
+    for tables in ending_tables(ENDING_S) {
+        let walk = tables.walk;
+        let (mut run, _) = Ending::started(tables);
 
-    let entered = run.take(tables, TransitionId(0));
-    assert_eq!(run.entered, vec![ENDING_S, ENDING_S1, ENDING_SF]);
-    assert_eq!(entered.current, Some(ENDING_SF));
-    assert_eq!(
-        entered.ended_in, None,
-        "`sf` completes `s`, which the document answers with done.state.s"
-    );
+        let entered = run.take(tables, TransitionId(0));
+        assert_eq!(
+            run.entered,
+            vec![ENDING_S, ENDING_S1, ENDING_SF],
+            "{walk:?}"
+        );
+        assert_eq!(entered.current, Some(ENDING_SF), "{walk:?}");
+        assert_eq!(
+            entered.ended_in, None,
+            "{walk:?}: `sf` completes `s`, which the document answers with done.state.s"
+        );
+    }
 }
 
 #[test]
 fn a_run_whose_initial_transition_names_a_top_level_final_ends_as_it_starts() {
-    let tables = ending_tables(ENDING_DONE);
-    let (run, started) = Ending::started(tables);
-    assert_eq!(run.entered, vec![ENDING_DONE]);
-    assert_eq!(started.ended_in, Some(ENDING_DONE));
+    for tables in ending_tables(ENDING_DONE) {
+        let walk = tables.walk;
+        let (run, started) = Ending::started(tables);
+        assert_eq!(run.entered, vec![ENDING_DONE], "{walk:?}");
+        assert_eq!(started.ended_in, Some(ENDING_DONE), "{walk:?}");
+    }
+}
+
+/// The ending document's tables as the row walk reads them (docs/adr/0125):
+/// `s1`'s transitions enter `sf` below `s` and `done` below the `<scxml>`
+/// element, `s`'s initial transition enters nothing of its own, and the
+/// document's enters `s` by default, then `s1`.
+#[test]
+fn a_document_that_fixes_its_sets_has_one_entry_path_for_each_transition() {
+    let [_, tables] = ending_tables(ENDING_S);
+    let path = |transition: u16| -> Vec<(StateId, bool)> {
+        tables
+            .entry_path(TransitionId(transition))
+            .iter()
+            .map(|step| (step.state(), step.by_default()))
+            .collect()
+    };
+    assert_eq!(path(0), [(ENDING_SF, false)]);
+    assert_eq!(path(1), [(ENDING_DONE, false)]);
+    assert!(
+        path(2).is_empty(),
+        "`s`'s initial transition, which no microstep takes"
+    );
+    assert_eq!(path(3), [(ENDING_S, true), (ENDING_S1, false)]);
+    assert_eq!(tables.initial, TransitionId(3));
+}
+
+/// What `DocumentTables::check` refuses of the row walk (docs/adr/0125): a
+/// document whose sets its rows do not fix, rows the walk would not read or
+/// would not find, and a path the walk cannot take.
+#[test]
+fn tables_whose_entry_rows_the_row_walk_cannot_take_are_refused() {
+    let [general, rows] = ending_tables(ENDING_S);
+
+    // The chart has a `<history>` and a `<parallel>`.
+    let outside = DocumentTables {
+        walk: &ROW_WALK,
+        ..*chart_tables()
+    };
+    assert_eq!(outside.check(), Err(TablesFault::RowWalkOutsideClass));
+
+    // Rows the general walk does not read, and the row walk short of a row.
+    let unread = DocumentTables {
+        walk: &GENERAL_WALK,
+        ..*rows
+    };
+    assert_eq!(unread.check(), Err(TablesFault::EntryRows));
+    let short = DocumentTables {
+        entry_rows: &rows.entry_rows[..3],
+        ..*rows
+    };
+    assert_eq!(short.check(), Err(TablesFault::EntryRows));
+    let none = DocumentTables {
+        walk: &ROW_WALK,
+        ..*general
+    };
+    assert_eq!(none.check(), Err(TablesFault::EntryRows));
+
+    // The document's initial transition, entering `s` and `s1`, given paths
+    // the walk cannot take.
+    const ROWS: &[EntryRow] = &[
+        EntryRow::at(0),
+        EntryRow::at(2),
+        EntryRow::NONE,
+        EntryRow::at(4),
+    ];
+    let with_path = |path: &'static [EntryStep]| DocumentTables {
+        entry_rows: ROWS,
+        entry_paths: path,
+        ..*rows
+    };
+    const SF: EntryStep = EntryStep::new(ENDING_SF, false);
+    const DONE: EntryStep = EntryStep::new(ENDING_DONE, false);
+    let as_written = with_path(leak(vec![
+        EntryStep::count(1),
+        SF,
+        EntryStep::count(1),
+        DONE,
+        EntryStep::count(2),
+        EntryStep::new(ENDING_S, true),
+        EntryStep::new(ENDING_S1, false),
+    ]));
+    assert_eq!(
+        as_written.check(),
+        Ok(()),
+        "the path the reference computes"
+    );
+    let refused = TablesFault::EntryRow(TransitionId(3));
+    for (path, why) in [
+        (
+            &[
+                EntryStep::count(1),
+                SF,
+                EntryStep::count(1),
+                DONE,
+                EntryStep::count(1),
+                EntryStep::new(ENDING_S, true),
+            ][..],
+            "a path that ends above an atomic state",
+        ),
+        (
+            &[
+                EntryStep::count(1),
+                SF,
+                EntryStep::count(1),
+                DONE,
+                EntryStep::count(2),
+                EntryStep::new(ENDING_S, false),
+                EntryStep::new(ENDING_S1, false),
+            ][..],
+            "a compound target not entered by default",
+        ),
+        (
+            &[
+                EntryStep::count(1),
+                SF,
+                EntryStep::count(1),
+                DONE,
+                EntryStep::count(2),
+                EntryStep::new(ENDING_S, true),
+                EntryStep::new(ENDING_S1, true),
+            ][..],
+            "an atomic state entered by default",
+        ),
+        (
+            &[
+                EntryStep::count(1),
+                SF,
+                EntryStep::count(1),
+                DONE,
+                EntryStep::count(2),
+                EntryStep::new(ENDING_S, true),
+                EntryStep::new(ENDING_DONE, false),
+            ][..],
+            "a state that is not a child of the one before",
+        ),
+        (
+            &[
+                EntryStep::count(1),
+                SF,
+                EntryStep::count(1),
+                DONE,
+                EntryStep::count(3),
+                EntryStep::new(ENDING_S, true),
+                EntryStep::new(ENDING_S1, false),
+            ][..],
+            "a list longer than the pool",
+        ),
+    ] {
+        let leaked: &'static [EntryStep] = leak(path.to_vec());
+        assert_eq!(with_path(leaked).check(), Err(refused), "{why}");
+    }
+
+    // A path for `s`'s initial transition, which no microstep takes.
+    let initial_with_path = DocumentTables {
+        entry_rows: &[
+            EntryRow::at(0),
+            EntryRow::at(2),
+            EntryRow::at(4),
+            EntryRow::at(4),
+        ],
+        ..as_written
+    };
+    assert_eq!(
+        initial_with_path.check(),
+        Err(TablesFault::EntryRow(TransitionId(2)))
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1878,7 +2133,7 @@ mod reference {
     use sce_rust_runtime::helpers::microstep::ExitScope;
     use sce_rust_runtime::{HistoryId, Named, StateId, StateKind, Target, TransitionId};
 
-    use super::Plain;
+    use super::{Plain, Written};
 
     /// What each `<history>` recorded, by `HistoryId`.
     pub type Records = [Option<Vec<StateId>>];
@@ -2029,28 +2284,40 @@ mod reference {
             default_history_content: Vec::new(),
         };
         for &transition in transitions {
-            let written = &doc.written[transition.index()];
-            for &target in &written.targets {
-                add_descendant_states_to_enter(doc, records, target, &mut entry);
-            }
-            let effective = effective_target_states(doc, records, &written.targets);
-            if effective.is_empty() {
-                continue;
-            }
-            let domain = transition_domain(doc, written.source, &effective, written.internal);
-            for &state in &effective {
-                add_ancestor_states_to_enter(
-                    doc,
-                    records,
-                    Target::state(state),
-                    domain,
-                    &mut entry,
-                );
-            }
+            add_transition(doc, records, &doc.written[transition.index()], &mut entry);
         }
         // Document order is the order of the ids.
         entry.states_to_enter.sort();
         entry
+    }
+
+    /// computeEntrySet of the one transition `written`, which need not be a
+    /// written row of the document: its own initial transition is asked this
+    /// way.
+    pub fn entry_set_of(doc: &Plain, records: &Records, written: &Written) -> EntrySet {
+        let mut entry = EntrySet {
+            states_to_enter: Vec::new(),
+            states_for_default_entry: Vec::new(),
+            default_history_content: Vec::new(),
+        };
+        add_transition(doc, records, written, &mut entry);
+        entry.states_to_enter.sort();
+        entry
+    }
+
+    /// One transition's part of computeEntrySet.
+    fn add_transition(doc: &Plain, records: &Records, written: &Written, entry: &mut EntrySet) {
+        for &target in &written.targets {
+            add_descendant_states_to_enter(doc, records, target, entry);
+        }
+        let effective = effective_target_states(doc, records, &written.targets);
+        if effective.is_empty() {
+            return;
+        }
+        let domain = transition_domain(doc, written.source, &effective, written.internal);
+        for &state in &effective {
+            add_ancestor_states_to_enter(doc, records, Target::state(state), domain, entry);
+        }
     }
 
     fn add_descendant_states_to_enter(
@@ -2804,5 +3071,352 @@ fn two_exit_scopes_meet_exactly_when_the_exit_sets_listed_off_a_configuration_in
     assert!(
         met > 100 && apart > 100,
         "the pairs met {met} times and stayed apart {apart} times"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// The row walk, held to the general walk and the reference
+// ════════════════════════════════════════════════════════════════════════
+//
+// A document with no `<history>`, no `<parallel>` and no transition of more
+// than one target fixes its microsteps' sets (docs/adr/0125), and its tables
+// may carry the row walk, which reads what each transition enters from an entry
+// row and exits every active state below the domain that row starts under.
+// Random documents of that class are run both ways from their initial
+// configuration through random transitions whose source is active: every
+// exit, content and entry, in order, every configuration and every `Entered`
+// must be the same, the exits must be the reference's exit set in exit order
+// and the entries the reference's entry set in entry order. The configurations
+// are paths down the tree, which is what lets one row say what a transition
+// enters. The row walk is lent an empty workspace: it builds no set.
+
+/// A machine that records what a walk asks of it, in a run store of its own,
+/// for a document with no `<history>`.
+struct Recording {
+    configuration: Vec<Word>,
+    records: Vec<Word>,
+    recorded: Vec<bool>,
+    log: Vec<String>,
+}
+
+impl Recording {
+    fn new(states: usize) -> Self {
+        Recording {
+            configuration: vec![0; state_words(states)],
+            records: Vec::new(),
+            recorded: Vec::new(),
+            log: Vec::new(),
+        }
+    }
+
+    fn view(&self) -> RunStoreRef<'_> {
+        RunStoreRef::new(&self.configuration, &self.records, &self.recorded)
+    }
+
+    fn active(&self) -> Vec<StateId> {
+        self.view().configuration().iter().collect()
+    }
+}
+
+impl Behaviour for Recording {
+    fn store(&mut self) -> RunStoreMut<'_> {
+        RunStoreMut::new(
+            &mut self.configuration,
+            &mut self.records,
+            &mut self.recorded,
+        )
+    }
+
+    // The cases hand the walks their transitions: nothing is selected.
+    fn first_enabled_transition(
+        &mut self,
+        _state: StateId,
+        _event: EventId,
+    ) -> Option<TransitionId> {
+        None
+    }
+
+    fn exit_state(&mut self, state: StateId) {
+        let active = self.view().is_active(state);
+        self.log.push(format!("exit {} (active {active})", state.0));
+    }
+
+    fn execute_transition_content(&mut self, transition: TransitionId) {
+        self.log.push(format!("content {}", transition.0));
+    }
+
+    fn enter_state(&mut self, state: StateId, is_default_entry: bool) {
+        self.log
+            .push(format!("enter {} (default {is_default_entry})", state.0));
+    }
+
+    fn execute_history_default_content(&mut self, history: HistoryId) {
+        self.log.push(format!("history default {}", history.0));
+    }
+}
+
+/// A forest of up to twelve compound, atomic and final states drawn at random,
+/// numbered in document order, with no `<history>` and no `<parallel>`: each
+/// compound state's initial transition names one state anywhere below it, the
+/// document's initial transition one state anywhere, and each of the written
+/// transitions, two for each state, a random source and one random target or
+/// none, internal or not, with content or not.
+fn random_document_that_fixes_its_sets(rng: &mut Rng) -> Plain {
+    let n = 1 + rng.below(12);
+    let mut drawn_parent: Vec<Option<usize>> = Vec::new();
+    for i in 0..n {
+        drawn_parent.push(if i == 0 || rng.chance(4) {
+            None
+        } else {
+            Some(rng.below(i))
+        });
+    }
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, p) in drawn_parent.iter().enumerate() {
+        if let Some(p) = p {
+            children[*p].push(i);
+        }
+    }
+    let below = |state: usize| -> Vec<usize> {
+        let mut found = Vec::new();
+        let mut frontier = children[state].clone();
+        while let Some(next) = frontier.pop() {
+            found.push(next);
+            frontier.extend(children[next].iter().copied());
+        }
+        found
+    };
+
+    // Document order: the roots in the order drawn, each followed by its
+    // subtree, children in the order drawn.
+    let mut order = Vec::with_capacity(n);
+    let mut pending: Vec<usize> = (0..n)
+        .rev()
+        .filter(|&i| drawn_parent[i].is_none())
+        .collect();
+    while let Some(next) = pending.pop() {
+        order.push(next);
+        pending.extend(children[next].iter().rev());
+    }
+    let mut number = vec![StateId(0); n];
+    for (position, &drawn) in order.iter().enumerate() {
+        number[drawn] = StateId(position as u16);
+    }
+
+    let mut parent = vec![None; n];
+    let mut kind = vec![StateKind::Atomic; n];
+    let mut initial: Vec<Vec<Target>> = vec![Vec::new(); n];
+    for (drawn, kids) in children.iter().enumerate() {
+        let state = number[drawn].index();
+        parent[state] = drawn_parent[drawn].map(|p| number[p]);
+        kind[state] = if !kids.is_empty() {
+            let inside = below(drawn);
+            initial[state] = vec![Target::state(number[inside[rng.below(inside.len())]])];
+            StateKind::Compound
+        } else if rng.chance(3) {
+            StateKind::Final
+        } else {
+            StateKind::Atomic
+        };
+    }
+
+    let written = (0..2 * n)
+        .map(|_| Written {
+            source: Some(StateId(rng.below(n) as u16)),
+            targets: if rng.chance(5) {
+                Vec::new()
+            } else {
+                vec![Target::state(StateId(rng.below(n) as u16))]
+            },
+            internal: rng.chance(2),
+            has_content: rng.chance(2),
+        })
+        .collect();
+    Plain {
+        parent,
+        kind,
+        initial,
+        history_parent: Vec::new(),
+        history_deep: Vec::new(),
+        history_defaults: Vec::new(),
+        written,
+        document_initial: vec![Target::state(StateId(rng.below(n) as u16))],
+    }
+}
+
+/// Whether `configuration` is one path down the tree: every state's parent in
+/// it, and one atomic state at most.
+fn is_one_path(doc: &Plain, configuration: &[StateId]) -> bool {
+    let parents_in = configuration
+        .iter()
+        .all(|state| match doc.parent[state.index()] {
+            Some(parent) => configuration.contains(&parent),
+            None => true,
+        });
+    let atomic = configuration
+        .iter()
+        .filter(|state| {
+            matches!(
+                doc.kind[state.index()],
+                StateKind::Atomic | StateKind::Final
+            )
+        })
+        .count();
+    parents_in && atomic <= 1
+}
+
+#[test]
+fn the_row_walk_takes_every_microstep_as_the_general_walk_does_for_any_document_that_fixes_its_sets(
+) {
+    let (mut taken, mut by_default, mut below_a_compound_source) = (0usize, 0usize, 0usize);
+    for seed in 1..=2000u64 {
+        let _seed = Seed(seed);
+        let mut rng = Rng(seed.wrapping_mul(0xA24B_AED4_963E_E407) | 1);
+        let doc = random_document_that_fixes_its_sets(&mut rng);
+        let states = doc.parent.len();
+        let general = tables_of(&doc);
+        let rows = row_tables_of(&doc);
+        assert!(
+            rows.walk.reads_rows() && !general.walk.reads_rows(),
+            "seed {seed}: the two tables carry the two walks"
+        );
+        let mut by_general = Recording::new(states);
+        let mut by_rows = Recording::new(states);
+        // The general walk is lent the workspace the generator sizes for it;
+        // the row walk an empty one, as the generator writes for a document
+        // it walks.
+        let mut sets: Vec<Word> = vec![0; state_scratch(states)];
+        let mut walk: Vec<MaybeUninit<WalkStep>> = vec![MaybeUninit::uninit(); 2 * states + 3];
+        let mut defaults: Vec<MaybeUninit<(StateId, HistoryId)>> = Vec::new();
+        let mut empty = Workspace::<0, 1, 0, 0>::new();
+
+        let from_general = enter_initial_configuration(
+            general,
+            &mut by_general,
+            Scratch {
+                sets: &mut sets,
+                walk: &mut walk,
+                history_defaults: &mut defaults,
+            },
+        );
+        let from_rows = enter_initial_configuration(rows, &mut by_rows, empty.split().1);
+        let mut ended = from_general.ended_in.is_some();
+        assert_eq!(from_rows, from_general, "seed {seed}: the initial entry");
+        assert_eq!(
+            by_rows.log, by_general.log,
+            "seed {seed}: the initial entry"
+        );
+        assert_eq!(
+            by_rows.active(),
+            by_general.active(),
+            "seed {seed}: the initial configuration"
+        );
+
+        for step in 0..12 {
+            if ended {
+                break;
+            }
+            let before = by_general.active();
+            assert!(
+                is_one_path(&doc, &before),
+                "seed {seed}, step {step}: {before:?} is one path down the tree"
+            );
+            let enabled: Vec<TransitionId> = (0..doc.written.len())
+                .filter(|&index| {
+                    doc.written[index]
+                        .source
+                        .is_some_and(|source| before.contains(&source))
+                })
+                .map(|index| TransitionId(index as u16))
+                .collect();
+            if enabled.is_empty() {
+                break;
+            }
+            let transition = enabled[rng.below(enabled.len())];
+            let written = &doc.written[transition.index()];
+            let logged = by_general.log.len();
+
+            let from_general = microstep(
+                general,
+                &mut by_general,
+                &[transition],
+                Scratch {
+                    sets: &mut sets,
+                    walk: &mut walk,
+                    history_defaults: &mut defaults,
+                },
+            );
+            let from_rows = microstep(rows, &mut by_rows, &[transition], empty.split().1);
+            let at = || format!("seed {seed}, step {step}: {written:?} from {before:?}");
+            assert_eq!(from_rows, from_general, "{}", at());
+            assert_eq!(by_rows.log, by_general.log, "{}", at());
+            assert_eq!(by_rows.active(), by_general.active(), "{}", at());
+
+            // The exits are the reference's exit set, last first, each while it
+            // is still active; the entries its entry set, in document order.
+            let mut exits = reference::exit_set(&doc, &[], transition, &before);
+            exits.reverse();
+            let entry = reference::compute_entry_set(&doc, &[], &[transition]);
+            let mut expected: Vec<String> = exits
+                .iter()
+                .map(|state| format!("exit {} (active true)", state.0))
+                .collect();
+            if written.has_content {
+                expected.push(format!("content {}", transition.0));
+            }
+            let after_exit: Vec<StateId> = before
+                .iter()
+                .copied()
+                .filter(|state| !exits.contains(state))
+                .collect();
+            for state in &entry.states_to_enter {
+                if !after_exit.contains(state) {
+                    let default = entry.states_for_default_entry.contains(state);
+                    expected.push(format!("enter {} (default {default})", state.0));
+                }
+            }
+            assert_eq!(by_rows.log[logged..], expected[..], "{}", at());
+
+            taken += 1;
+            by_default += entry.states_for_default_entry.len();
+            if written
+                .source
+                .is_some_and(|source| doc.kind[source.index()] == StateKind::Compound)
+                && !exits.is_empty()
+            {
+                below_a_compound_source += 1;
+            }
+            ended = from_general.ended_in.is_some();
+        }
+
+        // And the run's end exits what is left the same way.
+        let logged = by_general.log.len();
+        exit_interpreter(&mut by_general);
+        exit_interpreter(&mut by_rows);
+        assert_eq!(by_rows.log, by_general.log, "seed {seed}: exitInterpreter");
+        assert!(
+            by_rows.active().is_empty(),
+            "seed {seed}: exitInterpreter leaves nothing active"
+        );
+        let mut remaining: Vec<String> = by_general.log[logged..].to_vec();
+        remaining.sort();
+        remaining.dedup();
+        assert_eq!(
+            remaining.len(),
+            by_general.log.len() - logged,
+            "seed {seed}: exitInterpreter exits each state once"
+        );
+    }
+    // The cases asked real questions: many microsteps, states entered by
+    // default, and transitions whose exit set reached below a compound source,
+    // where it depends on the configuration rather than on the transition.
+    assert!(taken >= 1000, "{taken} microsteps were taken");
+    assert!(
+        by_default >= 50,
+        "{by_default} states were entered by default"
+    );
+    assert!(
+        below_a_compound_source >= 50,
+        "{below_a_compound_source} microsteps exited from below a compound source"
     );
 }
