@@ -31,6 +31,8 @@ on:
     paths:
       - 'backends/*/forge-runtime/**'
       - 'backends/rust/portable-bytes/**'
+      - 'Cargo.toml'
+      - '.cargo/**'
       - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
       - 'tools/codegen/templates/_macros/forge_rust_flag_accessors.jinja2'
       - 'tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2'
@@ -60,6 +62,8 @@ on:
     paths:
       - 'backends/*/forge-runtime/**'
       - 'backends/rust/portable-bytes/**'
+      - 'Cargo.toml'
+      - '.cargo/**'
       - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
       - 'tools/codegen/templates/_macros/forge_rust_flag_accessors.jinja2'
       - 'tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2'

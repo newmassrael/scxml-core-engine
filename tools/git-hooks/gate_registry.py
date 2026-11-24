@@ -2282,12 +2282,22 @@ GATES: dict[str, dict] = {
     "codec-clippy": {
         "workflows": ["sce-forge-codec-clippy.yml"],
         "runner_workflow": True,
+        # The goldens compile against the Rust forge runtime and what cargo
+        # builds for it (its path dependencies, the workspace manifests). The
+        # workflow named the runtime's directory alone, so an edit of
+        # `backends/rust/portable-bytes` selected nothing that lints codecs.
+        "builds": ["forge-runtime-rust"],
         "ci_only": "106s linting 95 generated codec goldens. "
                    "sce-forge-codec-clippy.yml runs it.",
         "cost_s": 106,
         "summary": "clippy generated codecs, alloc on",
         "cache": True,
-        "inputs": None,
+        # Keyed on its triggers and the two directories the script lists for
+        # `codec_*.rs`. `bx --checks prepush --learn codec-clippy` (pc2,
+        # 2026-11-24): 206 reads and 5 listings, every one inside these once
+        # the runtime's cargo build is among the triggers.
+        "inputs": INPUTS_ARE_TRIGGERS,
+        "lists": ["tests/forge/expected/", "tests/forge/expected/views/"],
         "commits": [],
         "peak_gb": 5,
         "parallelism": PARALLELISM_COMPILE,
@@ -2295,6 +2305,8 @@ GATES: dict[str, dict] = {
     "codec-no-alloc": {
         "workflows": ["sce-forge-codec-no-alloc.yml"],
         "runner_workflow": True,
+        # As `codec-clippy`: the goldens compile against the runtime's build.
+        "builds": ["forge-runtime-rust"],
         "ci_only": "90s. sce-forge-codec-no-alloc.yml runs it, next to its "
                    "alloc-on sibling.",
         # The text algorithms it compiles are read from a materialization of
@@ -3746,7 +3758,9 @@ def _read_enrolled(repo_root: Path, configs: str):
 # cargo and the crate itself declare, so a new path dependency, a new member
 # or a new compiled-in file joins every such gate on the commit that adds it:
 #   * the workspace: the root `Cargo.toml`, `Cargo.lock`, and every member's
-#     manifest (`**/Cargo.toml`), which cargo reads to load the workspace;
+#     manifest (`cargo_workspace_manifests`), which cargo reads to load the
+#     workspace; a build from a crate outside it reads the root's and those
+#     of the crates it builds;
 #   * `.cargo/`, whose configuration every cargo run reads;
 #   * each crate the build compiles: the crate named and its path
 #     dependencies (`[dependencies]`, `[build-dependencies]` and their target
@@ -3778,10 +3792,19 @@ MAIN_TREE_CONFIGURE = (
 )
 # Each shared build: the CMake globs it configures, and the crates cargo
 # builds for it.
-BUILT_INPUTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "sce-codegen": ((), ("sce-build",)),
-    "main-tree": (MAIN_TREE_CONFIGURE, ("sce-build",)),
-    "codegen-wasm": ((), ("sce-build-wasm",)),
+# The third field says whether cargo builds the crates as members of this
+# workspace (`cargo build -p`), which loads every member's manifest, or from a
+# crate of the gate's own that names them as path dependencies, which reads
+# their manifests and the root's (the fields they inherit) and no other.
+BUILT_INPUTS: dict[str, tuple[tuple[str, ...], tuple[str, ...], bool]] = {
+    "sce-codegen": ((), ("sce-build",), True),
+    "main-tree": (MAIN_TREE_CONFIGURE, ("sce-build",), True),
+    "codegen-wasm": ((), ("sce-build-wasm",), True),
+    # The Rust forge runtime a generated Rust codec compiles against, built
+    # by the codec gates in a crate of their own (scripts/check_*_codec.sh).
+    # `bx --checks prepush --learn codec-clippy` (2026-11-24) read the root
+    # manifest and the runtime's, and no other member's.
+    "forge-runtime-rust": ((), ("backends/rust/forge-runtime",), False),
 }
 # The file whose constants name what `sce-build`'s build script reads.
 GENERATOR_WITNESS = "sce-build/src/generator_witness.rs"
@@ -3982,8 +4005,40 @@ def rust_module_closure(repo_root: Path, roots) -> tuple[list[str], list[str]]:
     return named, trees
 
 
-def cargo_build_globs(repo_root: Path, crates) -> list[str]:
-    """What a cargo build of `crates` in this workspace reads, as globs.
+_CARGO_MEMBERS = re.compile(r"^\s*members\s*=\s*\[(.*?)\]", re.S | re.M)
+
+
+def cargo_workspace_manifests(repo_root: Path) -> list[str]:
+    """The manifests cargo reads to load this workspace: the root's and each
+    member's (`[workspace] members`, its globs expanded), sorted.
+
+    A build of any member loads them all, and a crate outside the workspace
+    that names a member as a path dependency reads the member's and, for the
+    fields the member inherits, the root's. Named one by one rather than as
+    `**/Cargo.toml`, which also names the manifests of crates no build here
+    loads (a probe with a workspace of its own, a submodule's)."""
+    root = repo_root / "Cargo.toml"
+    try:
+        text = root.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    section = text.split("[workspace]", 1)[1] if "[workspace]" in text else ""
+    section = re.split(r"^\[(?!workspace\])", section, maxsplit=1, flags=re.M)[0]
+    found = _CARGO_MEMBERS.search(section)
+    members = re.findall(r'"([^"]+)"', re.sub(r"#[^\n]*", "", found.group(1))) \
+        if found else []
+    manifests = ["Cargo.toml"]
+    for member in members:
+        for path in sorted(repo_root.glob(member)) if "*" in member \
+                else [repo_root / member]:
+            if (path / "Cargo.toml").is_file():
+                manifests.append(f"{path.relative_to(repo_root)}/Cargo.toml")
+    return sorted(dict.fromkeys(manifests))
+
+
+def cargo_build_globs(repo_root: Path, crates, in_workspace=True) -> list[str]:
+    """What a cargo build of `crates` reads, as globs: as members of this
+    workspace (`in_workspace`), or as path dependencies of a crate outside it.
 
     See "What a build reads". Exact paths a directory glob already covers
     are left out, so each file is named once.
@@ -3996,8 +4051,10 @@ def cargo_build_globs(repo_root: Path, crates) -> list[str]:
             continue
         closure.append(crate)
         pending.extend(cargo_path_deps(repo_root, crate))
-    globs = ["Cargo.toml", "Cargo.lock", "**/Cargo.toml", ".cargo/**"]
-    named: list[str] = []
+    globs = [".cargo/**"] + (["Cargo.lock"] if in_workspace else [])
+    named: list[str] = (cargo_workspace_manifests(repo_root) if in_workspace
+                        else ["Cargo.toml"]) + [
+        f"{crate}/Cargo.toml" for crate in sorted(closure)]
     if "sce-build" in closure:
         named.extend(generator_witness_globs(repo_root))
     trees: list[str] = []
@@ -4036,9 +4093,9 @@ def built_inputs(repo_root: Path, name: str) -> list[str]:
     """The globs a gate that `builds` `name` reads for it (`BUILT_INPUTS`)."""
     key = (str(repo_root.resolve()), name)
     if key not in _BUILT_CACHE:
-        configure, crates = BUILT_INPUTS[name]
+        configure, crates, in_workspace = BUILT_INPUTS[name]
         joined = list(dict.fromkeys(
-            list(configure) + (cargo_build_globs(repo_root, crates)
+            list(configure) + (cargo_build_globs(repo_root, crates, in_workspace)
                                if crates else [])))
         # An exact path a tree of the other half already covers is named once.
         trees = [glob_to_regex(g) for g in joined if "*" in g]
@@ -4707,14 +4764,19 @@ def gate_inputs(slug, table=None, triggers=None):
     """What `slug`'s OWN script reads, as its key names it: `None` for the
     whole tracked tree, or a sorted list of patterns. A declared list is
     itself; `INPUTS_ARE_TRIGGERS` is the gate's trigger globs from
-    `triggers` (`gate_triggers`), which a caller computes once per plan."""
+    `triggers` (`gate_triggers`), which a caller computes once per plan,
+    and the listing patterns in its `lists` (a directory the script lists,
+    whose names bx keys and whose contents it does not: bx RFC 0020, 4.2).
+    A listing is no trigger: a name new in such a directory is selected by
+    the glob that matches it, or reads nothing the verdict depends on."""
     table = GATES if table is None else table
     own = table[slug].get("inputs")
     if own != INPUTS_ARE_TRIGGERS:
         return own
     if triggers is None:
         raise ValueError(f"{slug} is keyed on its triggers and none were given")
-    return sorted(dict.fromkeys(triggers[slug]))
+    return sorted(dict.fromkeys(list(triggers[slug])
+                                + list(table[slug].get("lists", []))))
 
 
 def unit_inputs(closure, table=None, triggers=None):
@@ -7695,6 +7757,17 @@ def self_test(repo_root: Path) -> int:
         inputs = spec["inputs"]
         if inputs is None:
             continue
+        lists = spec.get("lists", [])
+        if lists and inputs != INPUTS_ARE_TRIGGERS:
+            failures.append(
+                f"verdict: {slug} declares lists and is not keyed on its "
+                f"triggers; a declared list of inputs names its listings itself")
+        if not isinstance(lists, list) or any(
+                not isinstance(p, str) or not p.endswith("/") or p.startswith("/")
+                or ".." in p.split("/") for p in lists):
+            failures.append(
+                f"verdict: {slug} declares lists={lists!r}; each is a directory "
+                f"under the root ending in `/`")
         if inputs == INPUTS_ARE_TRIGGERS:
             if spec.get("cache") is not True:
                 failures.append(
@@ -7768,8 +7841,12 @@ def self_test(repo_root: Path) -> int:
     # here rather than narrowing every key built on it.
     cases += 1
     main_tree = built_inputs(repo_root, "main-tree")
-    expected = ["Cargo.toml", "Cargo.lock", "**/Cargo.toml", ".cargo/**",
-                "sce-build/src/**", "sce-build/build.rs"]
+    expected = ["Cargo.lock", ".cargo/**", "sce-build/src/**",
+                "sce-build/build.rs"] + cargo_workspace_manifests(repo_root)
+    if len(cargo_workspace_manifests(repo_root)) < 10:
+        failures.append(
+            f"builds: the workspace manifests read as "
+            f"{cargo_workspace_manifests(repo_root)}; the root lists 32 members")
     expected += [f"{d}/src/**" for d in cargo_path_deps(repo_root, "sce-build")]
     witness = generator_witness_globs(repo_root)
     if not cargo_path_deps(repo_root, "sce-build"):
@@ -7815,7 +7892,7 @@ def self_test(repo_root: Path) -> int:
     # The one build script whose reads are derived is `sce-build`'s (the
     # generator witness). Another crate the shared builds compile growing one
     # would read files nothing here names.
-    for name, (_, crates) in BUILT_INPUTS.items():
+    for name, (_, crates, _) in BUILT_INPUTS.items():
         for crate in crates:
             closure, pending = [], [crate]
             while pending:
