@@ -8555,7 +8555,10 @@ which fails `unrepresentable` for one — the statement is skipped and
 statechart therefore holds ±2^53, and what a statechart computes on the way to
 it is exact. The bitwise operators and shifts are the library's, at the width of
 the operation, and wrap there (SCE_FORGE.md §3.4.1); a Number's own are 32-bit
-and signed. Two defects of the QuickJS the Interpreter embeds are routed round,
+and signed. A shift by a count at or past the width is its exact result reduced
+to the width, as on every generated backend, and one by a count below 0 has no
+exact result: it fails `out-of-range` and `error.execution` is raised
+(SCE_FORGE.md §3.4.1, "The width of a shift"). Two defects of the QuickJS the Interpreter embeds are routed round,
 and both are measured against Node on the same cases: it orders a BigInt against
 a Number wrongly when both are negative, so two integers one of which may be a
 BigInt are ordered as BigInts, and `BigInt.asUintN` gives a negative result for
