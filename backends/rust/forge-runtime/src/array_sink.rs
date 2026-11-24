@@ -168,13 +168,20 @@ impl SceSink for sealed::Fill<'_> {
         // most the array's length, which `ArraySink::written` asserts when the
         // build reaches it, and each part puts no more than its constant says.
         // The range is still spelled so that no write can leave the array.
+        // A part whose constant understated what it puts would lose bytes
+        // here, so a build with debug assertions (every test of this crate)
+        // stops on it rather than keep a short write.
         let start = self.len;
-        let Some(end) = start.checked_add(bytes.len()) else {
-            return Ok(());
-        };
-        if let Some(dst) = self.buf.get_mut(start..end) {
+        let dst = start
+            .checked_add(bytes.len())
+            .and_then(|end| self.buf.get_mut(start..end));
+        debug_assert!(
+            dst.is_some(),
+            "a bounded write put more bytes than its MAX_BYTES"
+        );
+        if let Some(dst) = dst {
             dst.copy_from_slice(bytes);
-            self.len = end;
+            self.len = start + bytes.len();
         }
         Ok(())
     }
