@@ -145,16 +145,28 @@ JUNIT="$SCRATCH/ctest.xml"
 # `-V` rather than `--output-on-failure`: the suite prints a census line naming
 # what it measured, and a number that only exists on a red run is a number
 # nobody can cite from a green one.
+#
+# `--fixture-exclude-setup sce_built`: every test of tests/CMakeLists.txt
+# requires that fixture, whose setup is `cmake --build` of the WHOLE tree (the
+# staleness guard there), so a run of this one case built every target the
+# tree declares. Measured on ecma262-lowered-cpp.yml run 45288023561
+# (2026-11-23): the targeted build above took 7.5 minutes, the fixture's then
+# went past 860 of 3648 edges (the C11 W3C fixtures among them) and the job
+# hit its 80-minute limit. The guard's precondition, that the program run is
+# not older than its sources, is what the targeted build just made true for
+# the one program this case runs, so the setup is excluded by name here and
+# nowhere else; the case still runs through ctest, with its registered
+# command, environment and timeout.
 ctest --test-dir "$BUILD_DIR" -R '^LoweredEcma262$' \
+      --fixture-exclude-setup '^sce_built$' \
       --verbose --no-tests=error --output-junit "$JUNIT" 2>&1 | tee "$LOG"
 ctest_status="${PIPESTATUS[0]}"
 (( ctest_status == 0 )) || sce_gate_fail "the lowered C++ artifact did not answer ECMA-262 through the build-time lowering"
 
 # `--no-tests=error` covers the zero case and the exit status covers a failing
-# one. What neither covers is the case being SKIPPED while its fixture passes:
-# `LoweredEcma262` declares `sce_build_is_current` as a required fixture, so a
-# run of this regex is two ctest entries, and a run where only the fixture
-# executed would exit 0 over a suite that never asked anything.
+# one. What neither covers is the case being SKIPPED: a skip keeps the exit
+# status at 0 while asking nothing, and a report that names only some other
+# entry (the fixture's setup, were its exclusion above ever dropped) would too.
 #
 # ⚠ This is asked of ctest's JUNIT XML, not of its summary line, and the reason
 # is measured rather than stylistic. The summary line's WORDING differs between
