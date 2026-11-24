@@ -79,6 +79,8 @@ impl StatePolicy for ParallelPolicy {
     type Event = PEvent;
     type History = NoHistory;
     type Payload = ();
+    // docs/adr/0124: its events carry no data.
+    type EventData<'e> = ();
     type Hal = sce_rust_runtime::StdHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -212,9 +214,15 @@ impl StatePolicy for ParallelPolicy {
     // Mirrors the generated shape: one state's onentry, and nothing below it —
     // the engine's Appendix D entry set enters every region and initial child,
     // one state at a time, and keeps the configuration itself.
+    fn event_data<'a>(
+        _held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+    }
+
     fn execute_entry_actions(
         &mut self,
         state: StateId,
+        _event_data: Self::EventData<'_>,
         engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
@@ -225,12 +233,19 @@ impl StatePolicy for ParallelPolicy {
         }
     }
 
-    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(
+        &mut self,
+        _state: StateId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     fn first_enabled_transition(
         &mut self,
         state: StateId,
         event: EventId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
@@ -242,6 +257,7 @@ impl StatePolicy for ParallelPolicy {
     fn execute_transition_content(
         &mut self,
         _transition: TransitionId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) {
     }
@@ -286,6 +302,8 @@ impl StatePolicy for LinearPolicy {
     type Event = LEvent;
     type History = NoHistory;
     type Payload = ();
+    // docs/adr/0124: its events carry no data.
+    type EventData<'e> = ();
     type Hal = sce_rust_runtime::StdHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -384,9 +402,15 @@ impl StatePolicy for LinearPolicy {
         LEvent::None
     }
 
+    fn event_data<'a>(
+        _held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+    }
+
     fn execute_entry_actions(
         &mut self,
         state: StateId,
+        _event_data: Self::EventData<'_>,
         engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
@@ -396,12 +420,19 @@ impl StatePolicy for LinearPolicy {
         }
     }
 
-    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(
+        &mut self,
+        _state: StateId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     fn first_enabled_transition(
         &mut self,
         state: StateId,
         event: EventId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
@@ -413,6 +444,7 @@ impl StatePolicy for LinearPolicy {
     fn execute_transition_content(
         &mut self,
         _transition: TransitionId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) {
     }

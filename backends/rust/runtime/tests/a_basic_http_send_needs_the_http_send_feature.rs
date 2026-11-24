@@ -47,6 +47,8 @@ impl StatePolicy for HttpPolicy {
     type Event = HttpEvent;
     type History = NoHistory;
     type Payload = ();
+    // docs/adr/0124: its events carry no data.
+    type EventData<'e> = ();
     type Hal = sce_rust_runtime::StdHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -125,20 +127,33 @@ impl StatePolicy for HttpPolicy {
         HttpEvent::Null
     }
 
+    fn event_data<'a>(
+        _held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+    }
+
     fn execute_entry_actions(
         &mut self,
         _state: StateId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
     }
 
-    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(
+        &mut self,
+        _state: StateId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     fn first_enabled_transition(
         &mut self,
         _state: StateId,
         _event: EventId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         None
@@ -147,6 +162,7 @@ impl StatePolicy for HttpPolicy {
     fn execute_transition_content(
         &mut self,
         _transition: TransitionId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) {
     }

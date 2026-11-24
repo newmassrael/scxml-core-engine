@@ -55,6 +55,8 @@ impl StatePolicy for HwPolicy {
     type Event = HwEvent;
     type History = NoHistory;
     type Payload = ();
+    // docs/adr/0124: its events carry no data.
+    type EventData<'e> = ();
     type Hal = sce_rust_runtime::StdHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -158,16 +160,27 @@ impl StatePolicy for HwPolicy {
 
     // `_is_default_entry` is unused: this policy has no compound states, so no
     // state has an initial transition whose content could run.
+    fn event_data<'a>(
+        _held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+    }
+
     fn execute_entry_actions(
         &mut self,
         _state: StateId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
         // No entry actions in this minimal test
     }
 
-    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {
+    fn execute_exit_actions(
+        &mut self,
+        _state: StateId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
         // No exit actions
     }
 
@@ -175,6 +188,7 @@ impl StatePolicy for HwPolicy {
         &mut self,
         state: StateId,
         event: EventId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
@@ -188,6 +202,7 @@ impl StatePolicy for HwPolicy {
     fn execute_transition_content(
         &mut self,
         _transition: TransitionId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) {
         // No transition actions

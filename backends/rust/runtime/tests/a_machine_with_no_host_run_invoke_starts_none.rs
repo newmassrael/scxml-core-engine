@@ -59,6 +59,8 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
     type Event = Ev;
     type History = NoHistory;
     type Payload = ();
+    // docs/adr/0124: its events carry no data.
+    type EventData<'e> = ();
     type Hal = sce_rust_runtime::StdHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -139,20 +141,33 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
     }
 
     // `_is_default_entry` is unused: this policy has no compound states.
+    fn event_data<'a>(
+        _held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+    }
+
     fn execute_entry_actions(
         &mut self,
         _state: StateId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
     }
 
-    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(
+        &mut self,
+        _state: StateId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     fn first_enabled_transition(
         &mut self,
         state: StateId,
         event: EventId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
@@ -161,7 +176,12 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
         }
     }
 
-    fn execute_transition_content(&mut self, transition: TransitionId, _engine: &mut Engine<Self>) {
+    fn execute_transition_content(
+        &mut self,
+        transition: TransitionId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
         if transition == S_DONE {
             self.taken += 1;
         }

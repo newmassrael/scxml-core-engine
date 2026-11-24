@@ -91,6 +91,8 @@ impl StatePolicy for SessionPolicy {
     type Event = Ev;
     type History = NoHistory;
     type Payload = ();
+    // docs/adr/0124: its events carry no data.
+    type EventData<'e> = ();
     type Hal = sce_rust_runtime::StdHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -187,9 +189,15 @@ impl StatePolicy for SessionPolicy {
         Ev::None
     }
 
+    fn event_data<'a>(
+        _held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+    }
+
     fn execute_entry_actions(
         &mut self,
         state: StateId,
+        _event_data: Self::EventData<'_>,
         engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
@@ -199,12 +207,19 @@ impl StatePolicy for SessionPolicy {
         }
     }
 
-    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(
+        &mut self,
+        _state: StateId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     fn first_enabled_transition(
         &mut self,
         state: StateId,
         event: EventId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
@@ -216,6 +231,7 @@ impl StatePolicy for SessionPolicy {
     fn execute_transition_content(
         &mut self,
         _transition: TransitionId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) {
         self.transitions += 1;

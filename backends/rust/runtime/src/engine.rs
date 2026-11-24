@@ -96,7 +96,7 @@ use crate::scheduler_storage::sealed::SchedulerOps;
 // engine's HTTP callback is only ever reached with the feature on.
 #[cfg(feature = "http-send")]
 use crate::http::{HttpSendOutcome, HttpSendRequest};
-use crate::policy::StatePolicy;
+use crate::policy::{CurrentEventData, StatePolicy};
 #[cfg(not(feature = "std"))]
 use crate::MAX_SCHEDULED_EVENTS;
 use crate::{sce_log_debug, sce_log_error, BoundedPush, SceString};
@@ -1835,7 +1835,9 @@ impl<P: StatePolicy> Engine<P> {
     /// ends because the run entered a top-level `<final>`, or the host stops
     /// a run that has not ended. Runs once per run.
     pub(crate) fn exit_interpreter(&mut self) {
-        exit_interpreter(&mut EngineHost { engine: self });
+        // Called outside a turn, where no event is being processed: the exits
+        // are handed no data (docs/adr/0124).
+        exit_interpreter(&mut EngineHost::new(self, None));
     }
 
     /// Execute the policy's `initialize_data_model`, which establishes the
@@ -1933,7 +1935,7 @@ impl<P: StatePolicy> Engine<P> {
         // The entry and the main event loop after it are one turn of the loop,
         // over one workspace (`Turn::enter_initial_configuration`).
         sce_log_debug!("Engine::initialize: entering the initial configuration");
-        self.run_turn(true);
+        self.run_turn(true, None);
         sce_log_debug!("Engine::initialize: main event loop settled");
 
         // §scxml-6.4: Fire completion callback if we reached a final state during init.
@@ -2092,11 +2094,14 @@ impl<P: StatePolicy> Engine<P> {
         // they are one instant's worth of executable content however long the
         // host takes to run them — see `begin_turn`.
         let opened = self.begin_turn();
-        self.step_in_turn();
+        self.step_in_turn(None);
         self.end_turn(opened);
     }
 
-    fn step_in_turn(&mut self) {
+    /// The macrostep `step` runs, lending `lend` when
+    /// [`process_event_with`](Self::process_event_with) is the caller
+    /// (docs/adr/0124).
+    fn step_in_turn(&mut self, lend: Option<Lend<'_, P>>) {
         // A machine with delayed sends hands `step` a queue it cannot reach:
         // `run_main_event_loop` never consults the scheduler, so the event is
         // neither delivered nor refused. Say it once — the host is driving with
@@ -2107,7 +2112,7 @@ impl<P: StatePolicy> Engine<P> {
             self.core.note_unattended_step();
         }
 
-        self.run_main_event_loop();
+        self.run_turn(false, lend);
 
         #[cfg(feature = "std")]
         if self.is_in_final_state() && self.completion_callback.is_some() {
@@ -2980,7 +2985,17 @@ impl<P: StatePolicy> Engine<P> {
     /// [`raise_external`](Self::raise_external) for an event that arrived under
     /// `arrival_name` (§scxml-5.10): empty when the member's own name is the name.
     fn raise_external_arrived_as(&mut self, event: P::Event, event_data: &str, arrival_name: &str) {
-        let meta = EventWithMetadata {
+        self.enqueue_external(Self::external_arrived_as(event, event_data, arrival_name));
+    }
+
+    /// The external event [`raise_external_arrived_as`](Self::raise_external_arrived_as)
+    /// queues: `event`, carrying `event_data`, arrived under `arrival_name`.
+    fn external_arrived_as(
+        event: P::Event,
+        event_data: &str,
+        arrival_name: &str,
+    ) -> EventWithMetadata<P::Event, P::Payload> {
+        EventWithMetadata {
             event,
             payload: P::Payload::default(),
             // no_std elides the `_event` string metadata (no script reader).
@@ -3006,8 +3021,7 @@ impl<P: StatePolicy> Engine<P> {
             },
             #[cfg(feature = "std")]
             target: SceString::new(),
-        };
-        self.enqueue_external(meta);
+        }
     }
 
     /// EventSchema native lowering: raise an external event carrying a
@@ -3016,13 +3030,12 @@ impl<P: StatePolicy> Engine<P> {
     /// This is the single typed-inject seam: it pairs an event with its
     /// `Self::Payload` value so the name ↔ payload-type invariant is established
     /// in exactly one place (illegal pairings can't be constructed elsewhere).
-    /// The payload rides with the event through the external queue and is bound
-    /// to the policy at dispatch via
-    /// [`StatePolicy::populate_event_payload`], where `_event.data.<field>`
-    /// guards read it natively — no script engine, no string serialization, so
-    /// the value path holds on no_std MCU. A consumer
-    /// decodes its wire bytes into the payload struct and calls this; everything
-    /// inside is SCE's.
+    /// The payload rides with the event through the external queue, and the
+    /// engine holds it while the event is `_event`, where `_event.data.<field>`
+    /// guards read it natively through [`StatePolicy::EventData`] — no script
+    /// engine, no string serialization, so the value path holds on no_std MCU.
+    /// A consumer decodes its wire bytes into the payload struct and calls this;
+    /// everything inside is SCE's.
     pub fn raise_external_typed(&mut self, event: P::Event, payload: P::Payload) {
         let meta = EventWithMetadata {
             event,
@@ -3235,6 +3248,76 @@ impl<P: StatePolicy> Engine<P> {
         }
         self.raise_external(event, "");
         self.step();
+    }
+
+    /// Process the external event `event` as
+    /// [`process_event`](Self::process_event) does, with `event_data`, its data,
+    /// lent rather than queued (docs/adr/0124).
+    ///
+    /// `event_data` is the event's data as the host holds it, such as a view
+    /// over the bytes it received, read through the schema's read interface.
+    /// Every guard, `<sce:arg>` and transition content that reads `_event.data`
+    /// while `event` is `_event` reads it in place, as it reads the payload of
+    /// a queued event: nothing is copied into the engine, and nothing it keeps
+    /// can hold the borrow past this call.
+    ///
+    /// It is lent from the moment the engine takes `event` off the external
+    /// queue to the moment it takes the next event, internal or external. An
+    /// external event queued ahead of `event` (what other threads posted
+    /// joins the queue ahead of it, as [`raise_external`](Self::raise_external)
+    /// puts it), an internal event raised while `event` is processed and the
+    /// entry into a configuration are lent nothing. An `event` refused where
+    /// it is taken opens nothing. When the call's budget of external events
+    /// ends the turn before `event` is taken, it stays queued, and the turn
+    /// that takes it takes it as a delivery that carries no data.
+    ///
+    /// A generated machine pairs each event with its data in one call
+    /// (`process_<event>_with`), so an event cannot be lent another's data.
+    pub fn process_event_with(&mut self, event: P::Event, event_data: P::EventData<'_>) {
+        self.lend_event(event, event_data, "");
+    }
+
+    /// [`process_event_with`](Self::process_event_with) for a machine whose
+    /// document also reads `_event.data` from the wire, a script engine or an
+    /// autoforwarded child, which keep their own copy: `wire` is that data's
+    /// JSON, which the generated `process_<event>_with` writes from the lent
+    /// data as the inject seam writes it from a payload (docs/adr/0124).
+    #[cfg(feature = "std")]
+    pub fn process_event_with_wire(
+        &mut self,
+        event: P::Event,
+        event_data: P::EventData<'_>,
+        wire: &str,
+    ) {
+        self.lend_event(event, event_data, wire);
+    }
+
+    /// The one body of [`process_event_with`](Self::process_event_with) and
+    /// its wire twin.
+    fn lend_event(&mut self, event: P::Event, event_data: P::EventData<'_>, wire: &str) {
+        if !self.core.main_loop.is_running {
+            // Refused as `process_event` refuses it, and counted the same way.
+            self.core.note_unseen_event(P::event_id(event));
+            return;
+        }
+        // What other threads posted joins the queue ahead of `event`, as
+        // `raise_external` puts it there. Applied first, so the events counted
+        // here are the external events the turn takes before `event`.
+        #[cfg(any(feature = "std", feature = "bounded-inbox"))]
+        self.drain_inbox();
+        let ahead = self.external_queue.queued().count();
+        // Queued behind them with no drain of its own: a post applied between
+        // the count and the push would stand ahead of `event` uncounted.
+        Self::enqueue(
+            &mut self.external_queue,
+            Self::external_arrived_as(event, wire, ""),
+        );
+        let opened = self.begin_turn();
+        self.step_in_turn(Some(Lend {
+            data: event_data,
+            ahead,
+        }));
+        self.end_turn(opened);
     }
 
     /// §scxml-5.10: Process an external event with metadata.
@@ -3718,8 +3801,7 @@ impl<P: StatePolicy> Engine<P> {
     /// 4.2): bind its typed `_event.data` view from the data it carries, and
     /// answer what is taken in its place when that data does not fit its type.
     ///
-    /// The typed payload [`StatePolicy::populate_event_payload`] binds is
-    /// filled by ONE producer, the generated `raise_<event>` inject seam; every
+    /// A typed `payload` is filled by ONE producer, the generated `raise_<event>` inject seam; every
     /// other producer fills `metadata.data`, so the fields are lifted out of
     /// that instead when no payload rode with the event. A delivery that does
     /// not fit is refused whole: it is never offered to the configuration, and
@@ -3727,8 +3809,12 @@ impl<P: StatePolicy> Engine<P> {
     /// The verdict lives here rather than in each generated policy so every
     /// machine answers a payload it cannot read the same way.
     #[cfg(feature = "std")]
-    fn bind_lifted_payload(&mut self, event: P::Event, data: &str) -> Admission<P::Event> {
-        let Err(refusal) = self.policy.lift_event_payload(event, data) else {
+    fn bind_lifted_payload(
+        event: P::Event,
+        data: &str,
+        payload: &mut P::Payload,
+    ) -> Admission<P::Event> {
+        let Err(refusal) = P::lift_event_payload(event, data, payload) else {
             return Admission::Admitted;
         };
         // §scxml-3.12.2 leaves a document that declares no `error.execution`
@@ -3745,17 +3831,18 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Bind `error`, the `error.execution` a door put in a refused delivery's
     /// place, as `_event`, carrying `refusal` and no typed payload: it is the
-    /// engine's own error, so no `<finalize>` or autoforward runs for it.
+    /// engine's own error, so no `<finalize>` or autoforward runs for it. The
+    /// payload answered is the one it carries, which the turn holds as its
+    /// data (docs/adr/0124).
     #[cfg(feature = "std")]
-    fn bind_in_place(&mut self, error: P::Event, refusal: &str) -> Bound {
+    fn bind_in_place(&mut self, error: P::Event, refusal: &str) -> (Bound, P::Payload) {
         let replacement = EventWithMetadata::<P::Event, P::Payload>::platform_error(
             error,
             crate::ErrorReason::PayloadRefused,
             refusal,
         );
         self.policy.populate_event_metadata(&replacement.metadata);
-        self.policy.populate_event_payload(&replacement.payload);
-        Bound::InPlace(P::event_id(error))
+        (Bound::InPlace(P::event_id(error)), replacement.payload)
     }
 
     /// Cancel a previously scheduled event by send ID.
@@ -5320,7 +5407,7 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     pub(crate) fn run_main_event_loop(&mut self) {
-        self.run_turn(false);
+        self.run_turn(false, None);
     }
 
     /// One turn of the loop over this machine: lend it the workspace, sized by
@@ -5348,12 +5435,17 @@ impl<P: StatePolicy> Engine<P> {
     /// as long as that frame lives, rather than for the turn. A consumer
     /// reported its task setup's frame about 4 KB larger at ADR 0064, where two
     /// workspaces were built in functions that inline (2026-10-30).
+    ///
+    /// `lend` is the data [`process_event_with`](Self::process_event_with)
+    /// lends with its event, `None` from every other caller. The turn holds
+    /// the data of the event being processed beside the engine, never in it
+    /// (docs/adr/0124).
     #[inline(never)]
-    fn run_turn(&mut self, initial: bool) {
+    fn run_turn(&mut self, initial: bool, lend: Option<Lend<'_, P>>) {
         let mut workspace = <P::Workspace as Buffers>::EMPTY;
         let (enabled, scratch) = workspace.split();
         Turn {
-            host: &mut EngineHost { engine: self },
+            host: &mut EngineHost::new(self, lend),
             tables: P::TABLES,
             enabled,
             scratch,
@@ -5399,10 +5491,22 @@ impl<P: StatePolicy> Engine<P> {
     /// nothing is taken in its place. For an admitted external event, the
     /// preliminary `<finalize>` and autoforward step of §scxml-D-mainEventLoop
     /// runs before it is bound.
-    fn bind_queued(&mut self, queued: QueuedEvent, external: bool) -> Bound {
+    ///
+    /// The payload the event carried is answered beside what was bound, and
+    /// the turn holds it while the event is `_event`: the policy is handed it
+    /// by every hook, and keeps none of it (docs/adr/0124). An event its host
+    /// `lent` data with ([`process_event_with`](Self::process_event_with))
+    /// carries it in the lend and not on the wire, so its door reads nothing
+    /// there: it is admitted.
+    fn bind_queued(
+        &mut self,
+        queued: QueuedEvent,
+        external: bool,
+        lent: bool,
+    ) -> (Bound, P::Payload) {
         // The two queues are of two types (docs/adr/0076), so each is asked
         // for its own payload rather than one chosen by reference.
-        let payload = if core::mem::size_of::<P::Payload>() != 0 {
+        let mut payload = if core::mem::size_of::<P::Payload>() != 0 {
             if external {
                 self.external_queue.pop_payload()
             } else {
@@ -5418,22 +5522,22 @@ impl<P: StatePolicy> Engine<P> {
         // (docs/adr/0123).
         let delivered = queued.event;
         let mut metadata = queued.metadata;
-        // EventSchema native lowering: bind the typed payload that rode with
-        // this event so `_event.data.<field>` guards read it natively. No-op
-        // for schemaless policies (`Payload = ()`).
-        self.policy.populate_event_payload(&payload);
-        // …and when no typed payload rode with it, read that view out of the
-        // `data` every other producer fills, at the door.
+        // EventSchema native lowering: when no typed payload rode with this
+        // event, read it out of the `data` every other producer fills, at the
+        // door. An event whose data is lent is read where it is lent.
         #[cfg(feature = "std")]
-        {
-            match self.bind_lifted_payload(Self::event_of(delivered), &metadata.data) {
+        if !lent {
+            match Self::bind_lifted_payload(Self::event_of(delivered), &metadata.data, &mut payload)
+            {
                 Admission::Admitted => {}
                 Admission::Replaced { error, refusal } => {
                     return self.bind_in_place(error, &refusal);
                 }
-                Admission::Refused => return Bound::Refused,
+                Admission::Refused => return (Bound::Refused, payload),
             }
         }
+        #[cfg(not(feature = "std"))]
+        let _ = lent;
         if external {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
@@ -5448,6 +5552,7 @@ impl<P: StatePolicy> Engine<P> {
                     policy.execute_finalize_for_child_event(&event_with_meta, engine)
                 });
                 metadata = event_with_meta.metadata;
+                payload = event_with_meta.payload;
             }
             // §scxml-D-mainEventLoop: autoforward belongs to the same
             // preliminary step as `<finalize>` above — both run against the
@@ -5490,7 +5595,7 @@ impl<P: StatePolicy> Engine<P> {
         }
         // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
         self.policy.populate_event_metadata(&metadata);
-        Bound::Delivered(delivered)
+        (Bound::Delivered(delivered), payload)
     }
 }
 
@@ -5544,18 +5649,67 @@ enum Admission<E> {
 /// no view can be held across them for the length of a turn; `behaviour` is
 /// the coercion to the second trait object, which trait upcasting would
 /// replace and the crate's MSRV does not have.
-struct EngineHost<'e, P: StatePolicy> {
+///
+/// The data of the event being processed is held here, beside the engine and
+/// not in it (docs/adr/0124): a hook is handed `&mut Engine<P>`, so data held
+/// in the engine could not be lent to the same call. `current` is moved in
+/// when an event is taken and stays until the next one is taken, and
+/// `lend` is what [`Engine::process_event_with`] lends until its event is
+/// taken.
+struct EngineHost<'e, 'd, P: StatePolicy> {
     engine: &'e mut Engine<P>,
+    /// The data of the event being processed: what every hook is handed.
+    current: CurrentEventData<'d, P>,
+    /// The data lent with an event not yet taken, and how many external
+    /// events are taken before it.
+    lend: Option<Lend<'d, P>>,
 }
 
-impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
+/// The data [`Engine::process_event_with`] lends with its event, until the
+/// turn takes that event (docs/adr/0124).
+struct Lend<'d, P: StatePolicy> {
+    /// The event's data, as the host holds it.
+    data: P::EventData<'d>,
+    /// The external events queued ahead of the lent one, each taken before it.
+    ahead: usize,
+}
+
+impl<'e, 'd, P: StatePolicy> EngineHost<'e, 'd, P> {
+    /// A turn of `engine`, with no event taken yet. What a hook is handed
+    /// before an event is taken is the data of none: no reader of
+    /// `_event.data` runs before the event it reads is taken
+    /// (docs/adr/0124, D5).
+    fn new(engine: &'e mut Engine<P>, lend: Option<Lend<'d, P>>) -> Self {
+        Self {
+            engine,
+            current: CurrentEventData::Queued(P::Payload::default()),
+            lend,
+        }
+    }
+
+    /// The data lent with the external event just taken, if it is the lent
+    /// one: each external event taken before it counts one off `ahead`, and
+    /// the lent one takes the lend.
+    fn take_lent(&mut self) -> Option<P::EventData<'d>> {
+        let lend = self.lend.as_mut()?;
+        if lend.ahead > 0 {
+            lend.ahead -= 1;
+            return None;
+        }
+        self.lend.take().map(|lend| lend.data)
+    }
+}
+
+impl<P: StatePolicy> Behaviour for EngineHost<'_, '_, P> {
     fn store(&mut self) -> RunStoreMut<'_> {
         self.engine.run_store.view_mut()
     }
 
     fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId> {
-        self.engine
-            .with_policy(|policy, engine| policy.first_enabled_transition(state, event, engine))
+        let event_data = P::event_data(&self.current);
+        self.engine.with_policy(|policy, engine| {
+            policy.first_enabled_transition(state, event, event_data, engine)
+        })
     }
 
     // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1): only a policy whose document
@@ -5571,13 +5725,16 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
     }
 
     fn exit_state(&mut self, state: StateId) {
+        let event_data = P::event_data(&self.current);
         self.engine
-            .with_policy(|policy, engine| policy.execute_exit_actions(state, engine));
+            .with_policy(|policy, engine| policy.execute_exit_actions(state, event_data, engine));
     }
 
     fn execute_transition_content(&mut self, transition: TransitionId) {
-        self.engine
-            .with_policy(|policy, engine| policy.execute_transition_content(transition, engine));
+        let event_data = P::event_data(&self.current);
+        self.engine.with_policy(|policy, engine| {
+            policy.execute_transition_content(transition, event_data, engine)
+        });
     }
 
     fn enter_state(&mut self, state: StateId, is_default_entry: bool) {
@@ -5585,14 +5742,17 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
         // transition's content when it is entered by default. Whether the
         // state ends the run is the core's answer from the tables
         // (`Entered::ended_in`), not this machine's.
+        let event_data = P::event_data(&self.current);
         self.engine.with_policy(|policy, engine| {
-            policy.execute_entry_actions(state, engine, is_default_entry)
+            policy.execute_entry_actions(state, event_data, engine, is_default_entry)
         });
     }
 
     fn execute_history_default_content(&mut self, history: HistoryId) {
-        self.engine
-            .with_policy(|policy, engine| policy.execute_history_default_content(history, engine));
+        let event_data = P::event_data(&self.current);
+        self.engine.with_policy(|policy, engine| {
+            policy.execute_history_default_content(history, event_data, engine)
+        });
     }
 }
 
@@ -6054,7 +6214,7 @@ trait MainLoop {
     fn observe_transitions(&mut self, enabled: &[TransitionId]);
 }
 
-impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
+impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
     fn behaviour(&mut self) -> &mut dyn Behaviour {
         self
     }
@@ -6077,12 +6237,29 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
     }
 
     fn bind_queued(&mut self, queued: QueuedEvent, external: bool) -> Bound {
-        self.engine.bind_queued(queued, external)
+        // docs/adr/0124: the event taken now is `_event` until the next one
+        // is, so its data is what the hooks are handed from here: the data
+        // lent with it, when it is the event `process_event_with` lent data
+        // with, and the payload its queue handed over otherwise.
+        let lent = if external { self.take_lent() } else { None };
+        let (bound, payload) = self.engine.bind_queued(queued, external, lent.is_some());
+        self.current = match lent {
+            Some(data) => CurrentEventData::Lent(data),
+            None => CurrentEventData::Queued(payload),
+        };
+        bound
     }
 
     #[cfg(feature = "std")]
     fn admit_external(&mut self, queued: &QueuedEvent) -> bool {
-        self.engine.admit_external(queued)
+        let admitted = self.engine.admit_external(queued);
+        if !admitted {
+            // Taken off the queue and never bound: a late reply refused here is
+            // an event the turn has taken, and `_event` stays what it was. Were
+            // it the lent one, its lend opens nothing (docs/adr/0124).
+            let _ = self.take_lent();
+        }
+        admitted
     }
 
     fn end_event(&mut self) {

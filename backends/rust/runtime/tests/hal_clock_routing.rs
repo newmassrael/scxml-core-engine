@@ -101,6 +101,8 @@ impl StatePolicy for MockPolicy {
     type Event = Ev;
     type History = NoHistory;
     type Payload = ();
+    // docs/adr/0124: its events carry no data.
+    type EventData<'e> = ();
     type Hal = MockHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -174,23 +176,42 @@ impl StatePolicy for MockPolicy {
     }
 
     // `_is_default_entry` is unused: this policy has no compound states.
+    fn event_data<'a>(
+        _held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+    }
+
     fn execute_entry_actions(
         &mut self,
         _s: StateId,
+        _event_data: Self::EventData<'_>,
         _eng: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
     }
-    fn execute_exit_actions(&mut self, _s: StateId, _eng: &mut Engine<Self>) {}
+    fn execute_exit_actions(
+        &mut self,
+        _s: StateId,
+        _event_data: Self::EventData<'_>,
+        _eng: &mut Engine<Self>,
+    ) {
+    }
     fn first_enabled_transition(
         &mut self,
         _s: StateId,
         _e: EventId,
+        _event_data: Self::EventData<'_>,
         _eng: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         None
     }
-    fn execute_transition_content(&mut self, _t: TransitionId, _eng: &mut Engine<Self>) {}
+    fn execute_transition_content(
+        &mut self,
+        _t: TransitionId,
+        _event_data: Self::EventData<'_>,
+        _eng: &mut Engine<Self>,
+    ) {
+    }
 }
 
 // ─────────────────────────────────────────────────────────────

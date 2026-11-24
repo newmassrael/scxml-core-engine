@@ -3892,6 +3892,49 @@ regenerates every Rust machine it generates.
   hand-written `helpers::microstep::Behaviour` needs nothing; `helpers::microstep::Entered` has a new field,
   `ended_in`; only the runtime builds one, and code that reads its other fields is unchanged.
 
+## A Rust policy's hooks are handed the data of the event being processed (ADR 0124)
+
+Landing: the commits that add this section. The committed Rust machines under `sce-specs` change; a consumer
+regenerates every Rust machine it generates.
+
+- **A generated machine** is regenerated. What a host calls is unchanged, and three things are added:
+  - `<Machine>EventData<'e>` (or `<Machine>EventData` when nothing in it borrows), the data of the event being
+    processed as every guard, `<sce:arg>` and transition content reads it, with a `None` and one variant per event
+    that carries a typed payload. `<Machine>Payload::data()` reads an owned payload as one.
+  - For each such event of a schema of entries, `<Machine><Event>Ref<'e>`: one public member per field, a text as
+    `&'e str`, a byte string as `&'e [u8]`, an optional one as the optional of that, every other value as the
+    payload struct holds it. `<Machine><Event>Payload::data()` reads the payload as one. An event whose schema holds
+    a composition is read through `&'e <Machine><Event>Payload`.
+  - On `<Machine>Inject`, beside `raise_<event>(payload)`, `process_<event>_with(event_data)`, which processes the
+    event now with its data lent for that call alone.
+- **A host that decoded a received message into a view** (ADR 0049) lends it instead of copying it into its own
+  state: it fills the event's `Ref` from the view's accessors, which borrows the view's bytes, and calls
+  `engine.process_<event>_with(...)`. Every guard, act and transition content that reads `_event.data` while the
+  event is `_event` reads those bytes in place; the borrow ends when the call returns, which the compiler holds. An
+  event queued ahead of it, an internal event it raises, and an event the call's budget of external events leaves
+  queued are handed their own data, the last as a delivery that carries none.
+- **A hand-written `StatePolicy`** fails to compile once: it names two new items, and five hooks take one more
+  parameter.
+
+  | item | add |
+  |---|---|
+  | `type EventData<'e>` | `type EventData<'e> = ();` for a policy whose events carry no data |
+  | `fn event_data` | `fn event_data<'a>(_held: &'a CurrentEventData<'_, Self>) -> Self::EventData<'a> {}` |
+  | `first_enabled_transition` | `event_data: Self::EventData<'_>` after `event` |
+  | `execute_transition_content` | `event_data: Self::EventData<'_>` after `transition` |
+  | `execute_entry_actions` | `event_data: Self::EventData<'_>` after `state` |
+  | `execute_exit_actions` | `event_data: Self::EventData<'_>` after `state` |
+  | `execute_history_default_content` | `event_data: Self::EventData<'_>` after `history`, where it is overridden |
+
+  `CurrentEventData` is `sce_rust_runtime`'s. A policy whose events carry a payload names how its hooks read it:
+  `type EventData<'e> = &'e MyPayload;` (or a type of borrowed parts) and
+  `match held { CurrentEventData::Queued(payload) => payload, CurrentEventData::Lent(data) => *data }`.
+- **`populate_event_payload` is gone.** The engine no longer copies a payload into the policy; a hook reads it from
+  its `event_data`. A policy that stored the payload in a field reads the argument instead.
+- **`lift_event_payload` takes the payload it fills** and no `self`:
+  `fn lift_event_payload(event: Self::Event, data: &str, payload: &mut Self::Payload) -> Result<(), PayloadRefusal>`.
+  A caller that asked a policy for a refusal calls `MyPolicy::lift_event_payload(event, data, &mut Default::default())`.
+
 ## A shift is its exact result reduced to its width for every count, and a count below 0 fails
 
 Landing: the commits that add this section. The committed generated trees and the goldens of every backend whose
