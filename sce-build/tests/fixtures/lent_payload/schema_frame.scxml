@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A frame: a tag and at most eight bytes, whose bound docs/adr/0124, D2 holds
+  alike whether a wire carries the byte string or a host lends it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_frame"
+       sce:event-name="frame.received">
+  <datamodel>
+    <data id="tag" sce:type="uint32" sce:direction="in"/>
+    <data id="raw" sce:type="bytes[8]" sce:direction="in"/>
+  </datamodel>
+</scxml>

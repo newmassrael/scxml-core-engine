@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A tally: an amount. A payload a statechart hands whole to an imported
+  algorithm (docs/adr/0124).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_tally"
+       sce:event-name="tally.received">
+  <datamodel>
+    <data id="amount" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

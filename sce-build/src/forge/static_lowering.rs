@@ -5441,9 +5441,13 @@ impl RustHeld {
 
 /// The record the unit of the schema `alias` declares
 /// ([`crate::forge::generator::event_schema_payload_type`]), built field by field
-/// from `from`, a record the machine holds, or (`payload`) the payload struct of
-/// the event a transition is on, held as `held` says. A payload is the schema's
-/// own struct, so its fields are named as the unit's are; a record the machine
+/// from `from`, a record the machine holds, or (`payload`) the parts a reader
+/// holds the payload of the event a transition is on as (docs/adr/0124), held as
+/// `held` says. A payload's parts name its fields as the unit's struct does, and
+/// hold each as a value of the type the unit holds it in: a record handed to an
+/// algorithm holds numbers, truth values, bounded strings and enums alone, which
+/// the check of the call holds, and a payload that holds text is refused there
+/// too (see [`RustHeld::field`]); a record the machine
 /// declares names them as the machine does. A value of an enum crosses by its
 /// declared name ([`UnitCrossing::record_field_crossing`]). `None` for a record
 /// whose fields do not cross ([`UnitCrossing::plain_schema`]). What a call's
@@ -5460,18 +5464,6 @@ fn rust_record_to_unit(
 ) -> Option<String> {
     use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
     let schema = crossing.plain_schema(alias)?;
-    // A payload is read through its parts (docs/adr/0124), whose byte string is
-    // a borrow: the algorithm's record holds one only by a copy that can fail,
-    // and an adapter has no failure to answer with, so the crossing is refused
-    // on this target, as an optional byte string is.
-    if payload
-        && schema
-            .fields
-            .iter()
-            .any(|f| matches!(f.sce_type.present_type(), SceType::Bytes))
-    {
-        return None;
-    }
     let fields = schema
         .fields
         .iter()

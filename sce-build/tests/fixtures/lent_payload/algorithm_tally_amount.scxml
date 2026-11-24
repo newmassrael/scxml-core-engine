@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The amount of a tally: a record in, a number out.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="tally_amount"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_tally.scxml" as="Tally"/>
+  <sce:signature>
+    <sce:param name="tally" type="record:Tally"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="tally.amount"/>
+  </sce:body>
+</scxml>
