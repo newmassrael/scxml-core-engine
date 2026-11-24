@@ -379,13 +379,15 @@ XIncludeExpandResult expandImpl(std::string_view content, const std::filesystem:
             map.push_entry(outStart, out.size(), FileOrigin{contentFile, cursor});
         }
 
-        // Every failure raised while processing this element points at
-        // the element itself — including one raised inside the nested
-        // expansion, whose own coordinates reference the included file
-        // rather than the document the operator would edit. Mirrors
-        // Rust's `expand_impl`, which threads one `loc` through every
-        // `Err` in this loop and drops `nested_loc`.
-        const auto includePos = offsetPosition(content, contentFile, range.start);
+        // Every failure raised while processing this element stands on the
+        // element: where the token it reports as `actual` is written
+        // (SCE_ERROR_CONTRACT.md §2.2, `tokenOffset`), the element's start
+        // when it reports none. One raised inside the nested expansion stands
+        // at this element's href, not at its own coordinates in the included
+        // file the operator does not edit here. Mirrors Rust's `expand_impl`
+        // (`include_site`, `at_href`) in sce-build/src/xinclude.rs.
+        bool nestedFailure = false;
+        std::string writtenHref;
         try {
             // href validation comes before unsupported-feature rejection
             // so the diagnostic can name the href in its message even
@@ -396,6 +398,7 @@ XIncludeExpandResult expandImpl(std::string_view content, const std::filesystem:
             if (href.empty()) {
                 throw XIncludeMissingHref();
             }
+            writtenHref = href;
 
             rejectUnsupportedFeatures(node, href);
 
@@ -435,6 +438,7 @@ XIncludeExpandResult expandImpl(std::string_view content, const std::filesystem:
                 nested = expandImpl(raw, resolved, nestedBase, includeDirs, depth + 1, stack);
             } catch (const XIncludeExpansionError &nestedErr) {
                 stack.pop_back();
+                nestedFailure = true;
                 // Re-attribute to the `<xi:include>` the operator sees.
                 // Without this the record names a transitive href — or,
                 // for a malformed fragment, no href at all — and the
@@ -457,7 +461,12 @@ XIncludeExpandResult expandImpl(std::string_view content, const std::filesystem:
             // shift them so they land at `spliceStart` in the outer map.
             map.append_mapped_substring(nested.positions, rendered.start, rendered.end, spliceStart);
         } catch (XIncludeExpansionError &err) {
-            err.setPosition(includePos.row, includePos.col);
+            const auto &actual = err.actual();
+            const std::optional<std::string_view> token = nestedFailure ? std::optional<std::string_view>(writtenHref)
+                                                          : actual      ? std::optional<std::string_view>(*actual)
+                                                                        : std::nullopt;
+            const auto at = offsetPosition(content, contentFile, detail::tokenOffset(content, range.start, token));
+            err.setPosition(at.row, at.col);
             throw;
         }
 

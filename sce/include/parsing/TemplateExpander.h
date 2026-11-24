@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -210,6 +211,21 @@ SubstituteIntoTemplateResult substituteIntoTemplateWithMap(std::string_view temp
 // site surface a `TemplateMalformed` instead of this scanner
 // asserting.
 std::size_t findElementEnd(std::string_view source, std::size_t start, std::string_view tagName);
+
+// Where on the element whose `<` is at `elementStart` in `source` the token
+// `actual` begins: the byte offset a refusal that reports `actual` stands
+// at (SCE_ERROR_CONTRACT.md §2.2). The one rule the Rust producer places
+// every node-placed refusal by (`token_place` in sce-build/src/forge/
+// parser.rs), so the two producers agree on a column:
+//   * the attribute that holds `actual` is the one whose value decodes to
+//     it, else whose value is written as it, else whose name is it, else
+//     whose decoded value contains it;
+//   * on that attribute, where `actual` is written in the value, else in
+//     the whole attribute (a refusal that reports the name), else where
+//     the attribute begins;
+//   * with no such attribute, where `actual` is written in the start tag;
+//   * with no `actual`, or nothing found, where the element begins.
+std::size_t tokenOffset(std::string_view source, std::size_t elementStart, std::optional<std::string_view> actual);
 
 // Collect byte ranges of every top-level `<sce:use>` element in
 // `source`. Top-level means "not nested inside another `<sce:use>`"

@@ -101,6 +101,183 @@ std::size_t consumeOpenTag(std::string_view source, std::size_t afterTagName, bo
 
 }  // namespace
 
+namespace {
+
+// One attribute of a start tag, as byte offsets into the source.
+struct WrittenAttribute {
+    std::size_t start;       // the name's first byte
+    std::size_t valueStart;  // the first byte inside the quotes
+    std::size_t valueEnd;    // the closing quote
+    std::string_view name;
+    std::string_view raw;  // the value as written
+};
+
+// The attributes of the start tag whose `<` is at `elementStart`, in the
+// order they are written. The document was parsed by pugixml before any
+// refusal is placed, so the tag is well-formed and this reads it without
+// validating it again.
+std::vector<WrittenAttribute> writtenAttributes(std::string_view source, std::size_t elementStart) {
+    std::vector<WrittenAttribute> out;
+    auto isSpace = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
+    std::size_t pos = elementStart + 1;
+    while (pos < source.size() && !isSpace(source[pos]) && source[pos] != '>' && source[pos] != '/') {
+        ++pos;
+    }
+    while (pos < source.size()) {
+        while (pos < source.size() && isSpace(source[pos])) {
+            ++pos;
+        }
+        if (pos >= source.size() || source[pos] == '>' || source[pos] == '/') {
+            break;
+        }
+        const std::size_t nameStart = pos;
+        while (pos < source.size() && !isSpace(source[pos]) && source[pos] != '=') {
+            ++pos;
+        }
+        const std::string_view name = source.substr(nameStart, pos - nameStart);
+        while (pos < source.size() && (isSpace(source[pos]) || source[pos] == '=')) {
+            ++pos;
+        }
+        if (pos >= source.size() || (source[pos] != '"' && source[pos] != '\'')) {
+            break;
+        }
+        const char quote = source[pos];
+        const std::size_t valueStart = pos + 1;
+        const std::size_t valueEnd = source.find(quote, valueStart);
+        if (valueEnd == std::string_view::npos) {
+            break;
+        }
+        out.push_back(
+            WrittenAttribute{nameStart, valueStart, valueEnd, name, source.substr(valueStart, valueEnd - valueStart)});
+        pos = valueEnd + 1;
+    }
+    return out;
+}
+
+// An attribute value as XML decodes it (XML 1.0 §4.6 and §4.1): the five
+// predefined entities and character references. Attribute-value
+// normalization of white space is not applied; a value that relies on it
+// falls to the later rules of `tokenOffset`.
+std::string decodedValue(std::string_view raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (std::size_t i = 0; i < raw.size(); ++i) {
+        if (raw[i] != '&') {
+            out.push_back(raw[i]);
+            continue;
+        }
+        const std::size_t semi = raw.find(';', i);
+        if (semi == std::string_view::npos) {
+            out.push_back(raw[i]);
+            continue;
+        }
+        const std::string_view ref = raw.substr(i + 1, semi - i - 1);
+        if (ref == "lt") {
+            out.push_back('<');
+        } else if (ref == "gt") {
+            out.push_back('>');
+        } else if (ref == "amp") {
+            out.push_back('&');
+        } else if (ref == "quot") {
+            out.push_back('"');
+        } else if (ref == "apos") {
+            out.push_back('\'');
+        } else if (!ref.empty() && ref[0] == '#') {
+            const bool hex = ref.size() > 1 && (ref[1] == 'x' || ref[1] == 'X');
+            const std::string digits(ref.substr(hex ? 2 : 1));
+            char32_t cp = 0;
+            try {
+                cp = static_cast<char32_t>(std::stoul(digits, nullptr, hex ? 16 : 10));
+            } catch (...) {
+                out.append(raw.substr(i, semi - i + 1));
+                i = semi;
+                continue;
+            }
+            if (cp < 0x80) {
+                out.push_back(static_cast<char>(cp));
+            } else if (cp < 0x800) {
+                out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else if (cp < 0x10000) {
+                out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else {
+                out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            }
+        } else {
+            out.append(raw.substr(i, semi - i + 1));
+        }
+        i = semi;
+    }
+    return out;
+}
+
+}  // namespace
+
+std::size_t tokenOffset(std::string_view source, std::size_t elementStart, std::optional<std::string_view> actual) {
+    if (!actual.has_value() || actual->empty()) {
+        return elementStart;
+    }
+    const std::string_view token = *actual;
+    const auto attributes = writtenAttributes(source, elementStart);
+    const WrittenAttribute *observed = nullptr;
+    for (const auto &a : attributes) {
+        if (decodedValue(a.raw) == token) {
+            observed = &a;
+            break;
+        }
+    }
+    if (observed == nullptr) {
+        for (const auto &a : attributes) {
+            if (a.raw == token) {
+                observed = &a;
+                break;
+            }
+        }
+    }
+    if (observed == nullptr) {
+        for (const auto &a : attributes) {
+            if (a.name == token) {
+                observed = &a;
+                break;
+            }
+        }
+    }
+    if (observed == nullptr) {
+        for (const auto &a : attributes) {
+            if (decodedValue(a.raw).find(token) != std::string::npos) {
+                observed = &a;
+                break;
+            }
+        }
+    }
+    if (observed != nullptr) {
+        // The value as written when the document escapes the token it decodes
+        // to: that text is what the author sees at the column.
+        const std::string_view written =
+            (decodedValue(observed->raw) == token && observed->raw != token) ? observed->raw : token;
+        if (const auto at = observed->raw.find(written); at != std::string_view::npos) {
+            return observed->valueStart + at;
+        }
+        const std::string_view whole = source.substr(observed->start, observed->valueEnd + 1 - observed->start);
+        if (const auto at = whole.find(written); at != std::string_view::npos) {
+            return observed->start + at;
+        }
+        return observed->start;
+    }
+    const std::size_t tagEnd = source.find('>', elementStart);
+    const std::string_view tag = source.substr(
+        elementStart, tagEnd == std::string_view::npos ? std::string_view::npos : tagEnd + 1 - elementStart);
+    if (const auto at = tag.find(token); at != std::string_view::npos) {
+        return elementStart + at;
+    }
+    return elementStart;
+}
+
 std::size_t findElementEnd(std::string_view source, std::size_t start, std::string_view tagName) {
     // Open-tag scan: skip past attributes to the `>` or `/>`.
     const std::size_t afterTagName = start + 1 + tagName.size();
@@ -687,6 +864,18 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
         // is what the record carries, where they are optional. Built
         // once here because every throw in this loop stamps it.
         const DiagnosticLocation useDiagLocation{useLocation.file.string(), useLocation.row, useLocation.col};
+        // Where a refusal of this `<sce:use>` stands: where the token it
+        // reports as `actual` is written on the element (SCE_ERROR_CONTRACT.md
+        // §2.2), the element's start when it reports none. Mirrors Rust
+        // `use_site` in sce-build/src/template.rs.
+        const auto locationOf = [&](std::optional<std::string_view> actual) {
+            const SourcePos at = inputMap.lookup(tokenOffset(content, useRange.start, actual));
+            return DiagnosticLocation{at.file.string(), at.row, at.col};
+        };
+        const auto placed = [&](const TemplateError &e) {
+            const auto &actual = e.actual();
+            return locationOf(actual ? std::optional<std::string_view>(*actual) : std::nullopt);
+        };
 
         const auto templateAttr = useNode.attribute("template");
         const std::string templateHref = templateAttr ? templateAttr.value() : std::string();
@@ -707,7 +896,7 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
                 trail.append(entry);
             }
             TemplateNotFound err(templateHref, trail);
-            err.setLocation(useDiagLocation);
+            err.setLocation(placed(err));
             throw err;
         }
 
@@ -715,7 +904,7 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
         for (const auto &entry : stack) {
             if (entry == canon) {
                 TemplateCycle err(templateHref, renderChain(stack, canon));
-                err.setLocation(useDiagLocation);
+                err.setLocation(placed(err));
                 throw err;
             }
         }
@@ -724,7 +913,7 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
         try {
             templateText = readTemplateText(resolvedPath, templateHref);
         } catch (TemplateReadError &e) {
-            e.setLocation(useDiagLocation);
+            e.setLocation(placed(e));
             throw;
         }
         const auto bindings = collectUseBindings(useNode);
@@ -740,7 +929,7 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
             // RFC §6.3 Q3 depth-1 rule so the operator sees which
             // `<sce:use>` to fix first.
             if (!e.location().has_value()) {
-                e.setLocation(useDiagLocation);
+                e.setLocation(placed(e));
             }
             throw;
         }
@@ -766,7 +955,10 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
             try {
                 e.rethrowAttributedTo(templateHref);
             } catch (TemplateError &attributed) {
-                attributed.setLocation(useDiagLocation);
+                // At the href the operator wrote, whatever the inner record
+                // reports as `actual`: Rust places a nested failure at
+                // `at_href` after `remap_nested`.
+                attributed.setLocation(locationOf(std::string_view(templateHref)));
                 throw;
             }
         } catch (...) {
@@ -775,7 +967,15 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
         }
         stack.pop_back();
 
-        const auto bodyRanges = extractTemplateBodyRanges(nested.expanded_text, templateHref);
+        std::vector<ByteRange> bodyRanges;
+        try {
+            bodyRanges = extractTemplateBodyRanges(nested.expanded_text, templateHref);
+        } catch (TemplateError &e) {
+            if (!e.location().has_value()) {
+                e.setLocation(locationOf(std::string_view(templateHref)));
+            }
+            throw;
+        }
         for (const auto &range : bodyRanges) {
             const std::size_t segStart = out.size();
             out.append(nested.expanded_text.substr(range.start, range.end - range.start));

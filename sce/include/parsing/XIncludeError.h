@@ -94,6 +94,12 @@ protected:
     // and `fix` empty mean different things to a consumer.
     virtual void appendFix(nlohmann::ordered_json &out) const;
 
+    // The token the record reports as `actual`, which is also where it stands
+    // on the element it refuses (SCE_ERROR_CONTRACT.md §2.2, `tokenOffset`).
+    const std::optional<std::string> &actual() const noexcept {
+        return actual_;
+    }
+
 private:
     std::optional<std::string> actual_;
 };
