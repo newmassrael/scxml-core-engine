@@ -51,7 +51,7 @@ use sce_forge_runtime::codec::VecSink;
 {% if emit_views %}
 
 {% if has_view_lists %}
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 {% endif %}
 {% for stmt in view_imports %}
 {{ stmt }}
@@ -546,6 +546,9 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% if emit_views %}
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+{% if view_entry_walk %}
+{{ view_entry_walk }}
+{% endif %}
 {% if view_is_alias %}
 // `{{ struct_name }}` holds no bounded list, embedded body or variant, so a
 // view of it would hold what it holds. Its view is the codec itself under the
@@ -628,9 +631,11 @@ impl{{ view_variant_lifetime }} Default for {{ struct_name }}ViewVariant{{ view_
 }
 
 {% endif %}
-{# How each list of the view reads its entries: one marker type for each, which the
-   list names by type (`ListWalk`) so that it holds no function over the lifetime of
-   the bytes and stays covariant in it. #}
+{# How each list of the view reads its entries: a marker type the list names by type
+   (`ListWalk`) so that it holds no function over the lifetime of the bytes and stays
+   covariant in it. A list that carries a value from one entry to the next has its own;
+   one that carries nothing names the walk of its entry's module, and its own name is an
+   alias of that walk. #}
 {% for field in wire_fields %}
 {% if field.view_walk_item is defined %}
 {{ field.view_walk_item }}

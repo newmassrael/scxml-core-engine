@@ -84,8 +84,8 @@ reading of the grammar"), present again between SCE and its consumer.
   (`forge_views_are_not_rendered_unless_asked_for`). It is a property of a set of documents: a parent's view names the
   view of each codec it embeds, lists or dispatches to.
 - **The word "walk" is taken twice.** ADR 0058 presents a list "by walking it", and ADR 0049's view reads a list
-  through `ListWalk` and a marker type `{Codec}{Field}Walk`. The walk of a frame here is a third, distinct thing, and
-  its generated names avoid the `Walk` suffix (§6).
+  through `ListWalk` and the marker types `{Codec}{Field}Walk` and `{Codec}Walk` (its amendment of 2026-11-25). The
+  walk of a frame here is a third, distinct thing, and its generated names avoid the `Walk` suffix (§6).
 - **The Go modules declare `go 1.22`.** The `iter` package and range over a function arrive in Go 1.23, so a Go walk
   is spelled as the function type `iter.Seq` names, not as `iter.Seq` itself (§6). The Go printer's list landing
   (docs/adr/0081 step 4) has since raised every Go module to `go 1.23`, as its `codec.List` is read through an
@@ -325,7 +325,8 @@ visitor.
 On the heap-free tiers no event allocates. The Rust walk lives in `sce_forge_runtime::walk`, behind no feature (ADR
 0053), uses only `core`, and its event is a value: the path a fixed array, the raw value a number or a span, the
 descriptor a `&'static` reference. The C11 walk keeps its path on its own stack and hands the visitor a pointer for the
-call's duration. A Rust walker's type does not end in `Walk`, so it cannot meet the view's `{Codec}{Field}Walk`.
+call's duration. A Rust walker's type does not end in `Walk`, so it cannot meet the view's `{Codec}Walk` or
+`{Codec}{Field}Walk`.
 
 ### 7. The three encodings walk, each at the level of its own elements
 

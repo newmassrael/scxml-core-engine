@@ -14611,25 +14611,25 @@ fn render_codec(
                             .into(),
                         );
                         let entry = format!("{body_type}View");
-                        // How the list reads an entry: a marker type of its own,
-                        // so the list holds no function over the bytes' lifetime.
-                        let walk = rust_view::walk_name(&m.name, &f.id);
-                        obj.insert(
-                            "view_walk_item".into(),
-                            rust_view::walk_item(
-                                &walk,
-                                &entry,
-                                &rust_view::view_type(imports, alias, &body_type)
-                                    .replace("<'a>", "<'b>"),
-                                repeat_thread.inputs.len(),
-                                &[],
-                            )
-                            .into(),
+                        // How the list reads an entry: a marker type, so the list
+                        // holds no function over the bytes' lifetime. A repeat
+                        // carries nothing from one entry to the next, so it reads
+                        // by the walk its entry's module writes.
+                        let walk = rust_view::list_walk(
+                            &m.name,
+                            &f.id,
+                            &entry,
+                            &rust_view::view_type(imports, alias, &body_type)
+                                .replace("<'a>", "<'b>"),
+                            imports.iter().find(|i| i.alias == alias),
+                            repeat_thread.inputs.len(),
+                            &[],
                         );
+                        obj.insert("view_walk_item".into(), walk.item.into());
                         obj.insert(
                             "view_rs_type".into(),
                             rust_view::list_type(
-                                &walk,
+                                &walk.ty,
                                 repeat_thread.inputs.len(),
                                 f,
                                 &m.fields,
@@ -14880,25 +14880,24 @@ fn render_codec(
                             law_start: law_start.as_deref(),
                         };
                         // How the list reads an entry, and what it carries from
-                        // one to the next: a marker type of its own, so the list
-                        // holds no function over the bytes' lifetime.
-                        let walk = rust_view::walk_name(&m.name, &f.id);
-                        obj.insert(
-                            "view_walk_item".into(),
-                            rust_view::walk_item(
-                                &walk,
-                                &entry,
-                                &rust_view::view_type(imports, alias, &body_type)
-                                    .replace("<'a>", "<'b>"),
-                                entry_thread.inputs.len(),
-                                &rust_view::chain_advance(&view_list, &entry_binds),
-                            )
-                            .into(),
+                        // one to the next: a marker type, so the list holds no
+                        // function over the bytes' lifetime. A chain that carries
+                        // nothing reads by the walk its entry's module writes.
+                        let walk = rust_view::list_walk(
+                            &m.name,
+                            &f.id,
+                            &entry,
+                            &rust_view::view_type(imports, alias, &body_type)
+                                .replace("<'a>", "<'b>"),
+                            imports.iter().find(|i| i.alias == alias),
+                            entry_thread.inputs.len(),
+                            &rust_view::chain_advance(&view_list, &entry_binds),
                         );
+                        obj.insert("view_walk_item".into(), walk.item.into());
                         obj.insert(
                             "view_rs_type".into(),
                             rust_view::list_type(
-                                &walk,
+                                &walk.ty,
                                 entry_thread.inputs.len(),
                                 f,
                                 &m.fields,
@@ -17314,6 +17313,24 @@ fn render_codec(
             ctx.insert(
                 "view_variant_lifetime".into(),
                 rust_view::view_lifetime(view_variant_borrowed).into(),
+            );
+            // The one walk every list of this codec that carries nothing from
+            // one entry to the next reads it by, whichever codec holds the list
+            // (`rust_view::list_walk`). A codec whose variant takes its tag from
+            // its caller is decoded with that tag, which no list hands it.
+            let caller_tag = m.variant.as_ref().is_some_and(|v| v.tag_field.is_none());
+            ctx.insert(
+                "view_entry_walk".into(),
+                if caller_tag {
+                    String::new()
+                } else {
+                    rust_view::entry_walk_item(
+                        &filters::to_pascal_case(m.name.clone()),
+                        view_borrowed,
+                        m.flag_inputs.len(),
+                    )
+                }
+                .into(),
             );
             ctx.insert(
                 "has_view_lists".into(),

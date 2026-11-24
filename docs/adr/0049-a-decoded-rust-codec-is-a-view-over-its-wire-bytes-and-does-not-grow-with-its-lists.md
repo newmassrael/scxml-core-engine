@@ -265,3 +265,20 @@ flag) as modules of the runtime crate and asks each, over 40,000 frames from a f
 eager decode answer alike: the same error, or the same value, the same bytes consumed and a builder equal to the eager
 value. Before it the goldens were held to their text and to compiling, and nothing ran a view; a golden whose
 `advance` tests the wrong value fails it at its first accepted frame.
+
+## Amendment, 2026-11-25: a list that carries nothing reads its entries by its entry's walk
+
+A marker type for each list made one `ListWalk::decode` for each list, and most lists read their entries alike: a
+repeat carries nothing from one entry to the next, and neither does a chain whose entries bind nothing, so the decode
+of every such list of one entry is the entry's view decoded with the inputs the entry declares, in the order it
+declares them. A consumer that walks the extensions of every Zenoh message measured the result in a release build:
+one copy of the same decode for each of 23 lists of the one extension entry, and one copy of its own walk loop for
+each of them in turn.
+
+Each codec's module now writes one walk of its own, `{Codec}Walk`, whose entry is its view and whose `advance` is
+empty, unless its variant takes its tag from its caller, which no list hands it. A list that carries nothing and hands
+its entry every input the entry declares names that walk (`ListView<'a, super::codec_x::CodecXWalk, K>`), and its own
+name `{Codec}{Field}Walk` stays, as an alias of it, so a consumer that named the list's walk names the same type. A
+list that carries a value from one entry to the next keeps a marker type of its own, since what it carries is its own.
+`ListWalk` is named by its path in generated code, so a module whose every list shares its entry's walk imports
+nothing it does not use. The views stay Rust's alone (open question 3): no other backend has a walk to share.

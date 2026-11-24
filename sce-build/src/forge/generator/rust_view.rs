@@ -38,7 +38,7 @@ pub(super) fn view_lifetime(borrowed: bool) -> &'static str {
 }
 
 /// The type of a list field of a view: a [`ListView`](sce_forge_runtime::view::ListView) read by
-/// the marker type `walk` ([`walk_item`]), `K` being how many flag inputs an entry's decode
+/// the marker type `walk` ([`list_walk`]), `K` being how many flag inputs an entry's decode
 /// takes, held as a list inside the bounds of list field `field` of the codec
 /// whose fields are `fields` (`rust_list_bound_args`; docs/adr/0065
 /// §6 R2, R7).
@@ -84,6 +84,98 @@ pub(super) fn walk_name(codec: &str, field: &str) -> String {
     )
 }
 
+/// The name of the walk a codec's module writes for the lists whose entries are that codec
+/// ([`entry_walk_item`]): `{Codec}Walk`, `type_name` being the codec's type name.
+pub(super) fn entry_walk_name(type_name: &str) -> String {
+    format!("{type_name}Walk")
+}
+
+/// How one list of a view reads its entries: the marker type its field names, and the item
+/// that stands for it in the parent's module.
+pub(super) struct ListWalkOf {
+    /// The type the list's field names as its `W` ([`list_type`]).
+    pub ty: String,
+    /// The definition of the list's own marker type, or the alias that keeps its name for the
+    /// walk it shares.
+    pub item: String,
+}
+
+/// How list field `field` of codec `codec` reads its entries, which are the codec imported as
+/// `import`: `entry`, `entry_ty`, `inputs` and `advance` as [`walk_item`] takes them.
+///
+/// A list that carries nothing from one entry to the next (`advance` empty) and hands its
+/// entry every input the entry declares reads an entry exactly as every other such list of the
+/// same entry does: the entry's view decoded with the inputs in the order the entry declares
+/// them. Such a list names the one walk the entry's module writes ([`entry_walk_item`]), so a
+/// program that walks lists of one entry from several codecs holds one walk and not one per
+/// list. Its own name, `{Codec}{Field}Walk`, stays as an alias of that walk, so a consumer
+/// that named it names the same type. A list that carries a value, or whose entry takes its
+/// tag from its caller, has a walk of its own.
+pub(super) fn list_walk(
+    codec: &str,
+    field: &str,
+    entry: &str,
+    entry_ty: &str,
+    import: Option<&ImportContext>,
+    inputs: usize,
+    advance: &[String],
+) -> ListWalkOf {
+    let own = walk_name(codec, field);
+    let shared = import.filter(|imp| {
+        advance.is_empty()
+            && !imp.codec_variant_is_caller_tag
+            && imp.codec_flag_inputs.len() == inputs
+    });
+    match shared {
+        Some(imp) => {
+            let ty = format!(
+                "super::{}::{}",
+                imp.namespace,
+                entry_walk_name(&imp.type_name)
+            );
+            ListWalkOf {
+                item: format!(
+                    "/// How `{own_list}` reads its entries: the walk of every list of `{entry}` that\n\
+                     /// carries nothing from one entry to the next.\n\
+                     #[allow(dead_code)]\n\
+                     pub type {own} = {ty};\n",
+                    own_list = field,
+                ),
+                ty,
+            }
+        }
+        None => ListWalkOf {
+            item: walk_item(&own, entry, entry_ty, inputs, advance),
+            ty: own,
+        },
+    }
+}
+
+/// The walk a codec's module writes for every list whose entries are that codec and that
+/// carries nothing from one entry to the next ([`list_walk`]): `{Codec}Walk`, whose entry is
+/// the codec's view, read with the `inputs` flag inputs the codec declares. `struct_name` is
+/// the codec's type name and `view_borrowed` whether its view carries a lifetime.
+pub(super) fn entry_walk_item(struct_name: &str, view_borrowed: bool, inputs: usize) -> String {
+    let entry = format!("{struct_name}View");
+    let entry_ty = if view_borrowed {
+        format!("{entry}<'b>")
+    } else {
+        entry.clone()
+    };
+    format!(
+        "/// How a list of `{struct_name}` reads its entries when it carries nothing from one\n\
+         /// entry to the next: one walk for every such list of every codec.\n\
+         {}",
+        walk_item(
+            &entry_walk_name(struct_name),
+            &entry,
+            &entry_ty,
+            inputs,
+            &[]
+        )
+    )
+}
+
 /// The marker type of one list and how it reads an entry
 /// ([`ListWalk`](sce_forge_runtime::view::ListWalk)): the item a view's list names by type, in
 /// place of the two function pointers it used to hold.
@@ -110,7 +202,7 @@ pub(super) fn walk_item(
         "#[allow(dead_code)]\n\
          pub struct {walk};\n\
          \n\
-         impl ListWalk<{inputs}> for {walk} {{\n    \
+         impl {RUNTIME_CODEC}::ListWalk<{inputs}> for {walk} {{\n    \
              type Entry<'b> = {entry_ty};\n\
          \n    \
              fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; {inputs}]) -> Result<Self::Entry<'b>, CodecError> {{\n        \
