@@ -460,6 +460,50 @@ void aCheckedUint32ProductPastInt64IsReported() {
     EXPECT(g.error() == SCE::Forge::AlgorithmError::Overflow, true);
 }
 
+// A shift (SCE_FORGE.md §3.4.1, "The width of a shift"): the exact result
+// reduced to the width for every count at least 0, so 0, or -1 for a `>>` of a
+// negative value, from a count at the width; and, checked, a count below 0
+// recorded as out of range. Every 8-bit value is shifted by every count up to 10
+// and compared with the definition, made by multiplying and flooring.
+void aShiftIsItsExactResultReducedToItsWidth() {
+    for (int a = -128; a <= 127; ++a) {
+        for (int n = 0; n <= 10; ++n) {
+            const std::int64_t scale = std::int64_t{1} << n;
+            const std::int64_t low = ((a * scale) % 256 + 256) % 256;
+            const std::int64_t floorQ = a >= 0 ? a / scale : -((-a + scale - 1) / scale);
+            const std::int64_t pattern = (a + 256) % 256;
+            const std::int64_t logical = pattern / scale;
+            const auto i8 = static_cast<std::int8_t>(a);
+            const auto u8 = static_cast<std::uint8_t>(pattern);
+            gridCase("shl", "int8", a, n, Wrapping::shl<std::int8_t>(i8, n), low >= 128 ? low - 256 : low);
+            gridCase("shr", "int8", a, n, Wrapping::shr<std::int8_t>(i8, n), floorQ);
+            gridCase("ushr", "int8", a, n, Wrapping::ushr<std::int8_t>(i8, n),
+                     logical >= 128 ? logical - 256 : logical);
+            gridCase("shl", "uint8", pattern, n, Wrapping::shl<std::uint8_t>(u8, n), (pattern * scale) % 256);
+            gridCase("shr", "uint8", pattern, n, Wrapping::shr<std::uint8_t>(u8, n), logical);
+        }
+    }
+    static_assert(Wrapping::shl<std::uint64_t>(std::uint64_t{1}, std::uint8_t{64}) == 0);
+    EXPECT(Wrapping::shl<std::uint64_t>(1u, 63), std::uint64_t{1} << 63);
+    EXPECT(Wrapping::shl<std::uint32_t>(1u, 200), 0u);
+    EXPECT(Wrapping::shl<std::int32_t>(1, 31), kMin<std::int32_t>);
+    EXPECT(Wrapping::shl<std::int64_t>(-1, 63), kMin<std::int64_t>);
+    EXPECT(Wrapping::shr<std::int64_t>(kMin<std::int64_t>, 64), -1);
+    EXPECT(Wrapping::shr<std::int32_t>(-5, 1), -3);
+    EXPECT(Wrapping::shr<std::int16_t>(32767, 16), 0);
+    EXPECT(Wrapping::shr<std::uint64_t>(std::numeric_limits<std::uint64_t>::max(), 64), 0u);
+    EXPECT(Wrapping::ushr<std::int32_t>(-1, 28), 15);
+    EXPECT(Wrapping::ushr<std::int64_t>(-1, std::uint64_t{64}), 0);
+    EXPECT(Wrapping::ushr<std::int16_t>(kMin<std::int16_t>, 15), 1);
+    SCE::Forge::AlgorithmFailure f;
+    EXPECT(SCE::Forge::Checked::shr<std::int32_t>(f, -1, 40), -1);
+    EXPECT(SCE::Forge::Checked::shl<std::uint8_t>(f, std::uint8_t{1}, 7), 128u);
+    EXPECT(f.failed(), false);
+    EXPECT(SCE::Forge::Checked::shl<std::int32_t>(f, 1, -1), 0);
+    EXPECT(f.failed(), true);
+    EXPECT(f.error() == SCE::Forge::AlgorithmError::OutOfRange, true);
+}
+
 }  // namespace
 
 int main() {
@@ -468,6 +512,7 @@ int main() {
     theUnsignedWidthsWrapAndSaturateAtTheirBounds();
     theSignedWidthsWrapAndSaturateAtTheirBounds();
     aCheckedUint32ProductPastInt64IsReported();
+    aShiftIsItsExactResultReducedToItsWidth();
     if (failures != 0) {
         std::fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

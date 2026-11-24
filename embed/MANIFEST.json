@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "c08a6d5",
+  "embed_version": "3265158",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 802,
+  "symbol_count": 810,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -4005,6 +4005,12 @@
     {
       "header": "sce/forge/algorithm.h",
       "kind": "function",
+      "name": "SCE::Forge::Checked::Detail::belowZero<T>",
+      "signature": "bool SCE::Forge::Checked::Detail::belowZero<T>(AlgorithmFailure &, C) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
       "name": "SCE::Forge::Checked::Detail::fit<T>",
       "signature": "T SCE::Forge::Checked::Detail::fit<T>(AlgorithmFailure &, std::int64_t) noexcept"
     },
@@ -4083,6 +4089,18 @@
     {
       "header": "sce/forge/algorithm.h",
       "kind": "function",
+      "name": "SCE::Forge::Checked::shl<T>",
+      "signature": "T SCE::Forge::Checked::shl<T>(AlgorithmFailure &, T, C) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::shr<T>",
+      "signature": "T SCE::Forge::Checked::shr<T>(AlgorithmFailure &, T, C) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
       "name": "SCE::Forge::Checked::sub<T>",
       "signature": "T SCE::Forge::Checked::sub<T>(AlgorithmFailure &, T, T) noexcept"
     },
@@ -4095,8 +4113,20 @@
     {
       "header": "sce/forge/algorithm.h",
       "kind": "function",
+      "name": "SCE::Forge::Checked::ushr<T>",
+      "signature": "T SCE::Forge::Checked::ushr<T>(AlgorithmFailure &, T, C) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
       "name": "SCE::Forge::Detail::fromRing<T>",
       "signature": "T SCE::Forge::Detail::fromRing<T>(Ring<T>) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Detail::places<T>",
+      "signature": "std::uint64_t SCE::Forge::Detail::places<T>(C) noexcept"
     },
     {
       "header": "sce/forge/algorithm.h",
@@ -4149,8 +4179,26 @@
     {
       "header": "sce/forge/algorithm.h",
       "kind": "function",
+      "name": "SCE::Forge::Wrapping::shl<T>",
+      "signature": "T SCE::Forge::Wrapping::shl<T>(T, C) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Wrapping::shr<T>",
+      "signature": "T SCE::Forge::Wrapping::shr<T>(T, C) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
       "name": "SCE::Forge::Wrapping::sub<T>",
       "signature": "T SCE::Forge::Wrapping::sub<T>(T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Wrapping::ushr<T>",
+      "signature": "T SCE::Forge::Wrapping::ushr<T>(T, C) noexcept"
     },
     {
       "header": "sce/forge/algorithm.h",
