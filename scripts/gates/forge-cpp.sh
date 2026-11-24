@@ -19,8 +19,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CODEGEN="$(sce_gate_codegen)"
 
-BUILD_DIR="$(mktemp -d)"
-sce_gate_on_exit "rm -rf '$BUILD_DIR'"
+# The tree the conformance CMakeLists.txt names for a person's build, kept and
+# tagged as a cache (lib.sh, "A gate's build tree is a build cache").
+BUILD_DIR="build_conformance_cpp"
 
 # Build configuration mirrors the lane, because a gate that builds a different
 # binary is not checking the one CI ships a verdict on: RelWithDebInfo turns on
@@ -28,20 +29,11 @@ sce_gate_on_exit "rm -rf '$BUILD_DIR'"
 # neither. The generator is a speed choice rather than a semantic one, so Ninja
 # is used when it is installed and the platform default otherwise — a developer
 # without ninja still runs the gate, on the same build type.
-GENERATOR=()
-if command -v ninja >/dev/null 2>&1; then
-    GENERATOR=(-G Ninja)
-else
-    sce_gate_step "ninja not installed; using the default generator (same build type)"
-fi
-
-cmake -S backends/cpp/forge-runtime/tests/conformance \
-      -B "$BUILD_DIR" \
-      ${GENERATOR+"${GENERATOR[@]}"} \
+sce_gate_configure_tree backends/cpp/forge-runtime/tests/conformance "$BUILD_DIR" \
       -DCMAKE_BUILD_TYPE=RelWithDebInfo \
       -DSCE_CODEGEN="$CODEGEN" \
-      -Wno-dev >/dev/null \
-    || sce_gate_fail "C++ forge conformance configure"
+      -Wno-dev \
+    || { tail -n 40 "$BUILD_DIR/sce_gate_configure.log" >&2; sce_gate_fail "C++ forge conformance configure"; }
 sce_gate_build "$BUILD_DIR" \
     || sce_gate_fail "C++ forge conformance build"
 ctest --test-dir "$BUILD_DIR" --output-on-failure \
