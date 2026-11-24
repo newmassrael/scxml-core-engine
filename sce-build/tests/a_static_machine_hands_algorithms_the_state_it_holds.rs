@@ -213,13 +213,25 @@ fn a_record_or_list_the_algorithm_returns_is_taken_whole_and_not_read_into() {
 
 #[test]
 fn a_payload_is_no_record_on_an_event_that_declares_none() {
-    // `bump` carries no schema, so `_event.data` is nothing an algorithm takes.
-    assert_refused(
+    // `bump` carries no schema, so no payload is in scope on its transition:
+    // the read is refused where it stands, before any algorithm is asked to
+    // take it (tests/a_payload_is_read_only_where_a_schema_declares_it.rs).
+    let (ok, out) = run(
+        &["check", "-l", "rust"],
         &machine(Some((
             r#"<assign location="total" expr="Bump(total, 1)"/>"#,
             r#"<assign location="idsum" expr="AmountOf(_event.data)"/>"#,
         ))),
-        "the event this transition is on carries no schema",
+        &[],
+    );
+    assert!(!ok, "expected the payload read to be refused:\n{out}");
+    assert!(
+        out.contains("\"code\":\"scxml/static-datamodel-rule\""),
+        "expected scxml/static-datamodel-rule:\n{out}"
+    );
+    assert!(
+        out.contains("no payload is in scope"),
+        "expected the reason in:\n{out}"
     );
 }
 

@@ -742,32 +742,32 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
     );
 }
 
-/// The names Go predeclares, read from the toolchain: `go doc -all builtin`
-/// prints every function, type, variable and constant of the universe scope.
+/// The names Go predeclares, read from the toolchain's own type checker:
+/// `go/types` holds the universe scope the compiler resolves every name
+/// against, so its list is the language's and not a rendering of it. (The
+/// documentation of package `builtin` was read here before; under Go 1.26.11
+/// that reading found one name, the placeholder `TypeOrExpr`.)
 fn go_universe() -> BTreeSet<String> {
+    const PROGRAM: &str = "package main\n\nimport (\n\t\"fmt\"\n\t\"go/types\"\n)\n\nfunc main() {\n\tfor _, name := range types.Universe.Names() {\n\t\tfmt.Println(name)\n\t}\n}\n";
+    let dir = tempfile::tempdir().expect("tempdir");
+    let program = dir.path().join("universe.go");
+    std::fs::write(&program, PROGRAM).expect("write the universe program");
     let out = Command::new("go")
-        .args(["doc", "-all", "builtin"])
+        .arg("run")
+        .arg(&program)
+        .current_dir(dir.path())
         .output()
-        .expect("go doc prints the universe scope");
+        .expect("go runs the universe program");
     assert!(
         out.status.success(),
-        "`go doc -all builtin` failed:\n{}",
+        "`go run` of the universe program failed:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let text = String::from_utf8_lossy(&out.stdout);
-    let declared =
-        Regex::new(r"(?m)^(?:func|type|var|const) ([A-Za-z_][A-Za-z0-9_]*)").expect("regex");
-    // `true` and `false` are one constant block, which the documentation
-    // prints as `\ttrue  = 0 == 0`.
-    let grouped = Regex::new(r"(?m)^\t([a-z][A-Za-z0-9_]*)\s+= ").expect("regex");
-    // The documentation names the arguments of a generic builtin with types of
-    // its own (`func len(v Type) int`); they are not declared names.
-    const PLACEHOLDERS: &[&str] = &["Type", "Type1", "IntegerType", "FloatType", "ComplexType"];
-    declared
-        .captures_iter(&text)
-        .chain(grouped.captures_iter(&text))
-        .map(|c| c[1].to_string())
-        .filter(|n| !PLACEHOLDERS.contains(&n.as_str()))
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
         .collect()
 }
 
