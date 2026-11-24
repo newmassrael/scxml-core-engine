@@ -256,6 +256,13 @@ host is the arrangement measured above to fail.
   refused when it is posted, and the refusal is counted where the runtime counts refusals.
 - A post returns whether the inbox took it. A bounded inbox (C11 and `no_std` Rust, whose capacity the deployment
   declares) refuses a post when full and says so; nothing is dropped silently. A hosted runtime's inbox is unbounded.
+  Amended 2026-11-24: a bare-metal Rust deployment that declares no inbox has none, as a C11 deployment that declares
+  no capacity has none (Open questions). `BoundedInbox`, `Engine::attach_inbox` and the drain of an attached inbox
+  are the runtime's `bounded-inbox` feature, which only adds (docs/adr/0053) and which `std` asks for, so the `std`
+  profile keeps its inbox and a bare-metal crate that attaches one names the feature. Without it and without `std`,
+  an engine keeps no field for an inbox and makes no drain, at a macrostep boundary or before an external enqueue.
+  It was present on every target with compare-and-swap of a byte and of a pointer, and a program that never posted
+  paid for the drain in each machine's enqueue and in the shared main loop.
 - A post wakes the owner through a waker the host installs (`wakeWith` and its spellings; a runtime with its own loop,
   such as Kotlin's coroutine mode or the Interpreter's worker, wakes itself). Amended at step 4: Rust's generated
   machines fix their HAL, so `Hal::wake` alone is no waker a host installs. A `std` post calls the HAL's wake and then
