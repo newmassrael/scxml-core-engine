@@ -212,6 +212,74 @@ fn an_undeclared_operation_that_can_fail_is_refused_where_it_is_written() {
     }
 }
 
+/// A shift by a count below 0 has no exact result (SCE_FORGE.md §3.4.1, "The
+/// width of a shift"): an algorithm that does not declare `may-fail` is refused
+/// at a shift whose count the analysis cannot prove at least 0, on every backend
+/// alike, and accepted once a guard bounds the count or its type is unsigned.
+#[test]
+fn an_undeclared_shift_by_a_count_that_can_be_below_zero_is_refused() {
+    let shifting = |count_type: &str, body: &str| {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_shift" version="1.0">
+  <sce:signature>
+    <sce:param name="x" type="uint32"/>
+    <sce:param name="k" type="{count_type}"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    {body}
+  </sce:body>
+</scxml>
+"#
+        )
+    };
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("probe_shift.scxml");
+    std::fs::write(
+        &path,
+        shifting("int32", r#"<sce:return expr="x &lt;&lt; k"/>"#),
+    )
+    .expect("write document");
+    for &lang in Language::ALL {
+        let err = sce_build::compile_forge_file(&path, lang, &[], &ForgeCompileOptions::default())
+            .err()
+            .unwrap_or_else(|| {
+                panic!("{lang:?} accepted a shift by an int32 count without may-fail")
+            });
+        let text = err.to_string();
+        assert!(
+            text.contains("`x << k` can shift by a count below 0 (int32)")
+                && text.contains("may-fail"),
+            "{lang:?}: {text}"
+        );
+        assert_eq!(
+            err.location.line,
+            Some(9),
+            "{lang:?}: placed at the body's <sce:return>: {text}"
+        );
+    }
+    for accepted in [
+        shifting(
+            "int32",
+            r#"<sce:if cond="k &gt;= 0">
+      <sce:return expr="x &lt;&lt; k"/>
+    </sce:if>
+    <sce:return expr="x"/>"#,
+        ),
+        shifting("uint8", r#"<sce:return expr="x &gt;&gt; k"/>"#),
+    ] {
+        std::fs::write(&path, accepted).expect("write document");
+        for lang in emitting(ForgeKind::Algorithm) {
+            if let Err(err) =
+                sce_build::compile_forge_file(&path, lang, &[], &ForgeCompileOptions::default())
+            {
+                panic!("{lang:?} refused a shift by a count proven at least 0: {err}");
+            }
+        }
+    }
+}
+
 /// Rust checks every integer operation at its declared width and returns
 /// the value inside the `Result` the checks `?` out of; the same document
 /// without the declaration, its operation proven, emits the proven operation

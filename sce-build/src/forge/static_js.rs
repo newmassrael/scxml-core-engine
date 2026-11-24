@@ -2984,13 +2984,16 @@ mod tests {
             | CheckedOp::Div
             | CheckedOp::Rem
             | CheckedOp::Neg
-            | CheckedOp::Narrow => true,
+            | CheckedOp::Narrow
+            | CheckedOp::Shl
+            | CheckedOp::Shr
+            | CheckedOp::UShr => true,
             // A read of a collection, not of an integer type.
             CheckedOp::Index => false,
         }
     }
 
-    const EVERY_OP: [CheckedOp; 8] = [
+    const EVERY_OP: [CheckedOp; 11] = [
         CheckedOp::Add,
         CheckedOp::Sub,
         CheckedOp::Mul,
@@ -2999,6 +3002,9 @@ mod tests {
         CheckedOp::Neg,
         CheckedOp::Narrow,
         CheckedOp::Index,
+        CheckedOp::Shl,
+        CheckedOp::Shr,
+        CheckedOp::UShr,
     ];
 
     /// The emitter and the library are two halves of one contract: every name

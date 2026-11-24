@@ -49272,6 +49272,16 @@ fn render_algorithm(
         }
     }
     let mut type_ctx = types.type_ctx(m, imports);
+    // SCE_FORGE.md §3.4.1, "The width of a shift": what the interval analysis
+    // proved of each shift's count, judged in the scope `int_ranges::check`
+    // judged the body in, so a shift whose count is proven below its width is
+    // the language's own operator and every other one the total shift. A
+    // `may-fail` body is not judged, and checks every count its type does not
+    // prove at least 0.
+    if !m.signature.may_fail {
+        type_ctx.shift_counts =
+            crate::forge::int_ranges::shift_counts(m, &types.type_ctx(m, imports));
+    }
     // docs/adr/0092, Landing order step 5: a union the algorithm holds is the
     // type its own unit declares, which a read of its member is spelled on.
     for &(_, alias) in &types.unions {
