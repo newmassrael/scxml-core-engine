@@ -62,7 +62,7 @@ use crate::forge::error::{ExprError, Spanned};
 use crate::forge::ring_ops::{self, OverflowRule, RingOp};
 use crate::forge::rust_optional;
 use crate::forge::types::{
-    join_arith, join_int, join_shift, CallReading, InferredType, OptionalElem, TypeCtx,
+    join_arith, join_int, join_shift, CallReading, InferredType, OptionalElem, ShiftCount, TypeCtx,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -552,6 +552,12 @@ fn lower_at(
     if matches!(target, ExprTarget::Js) && !ctx.exact_integers {
         bytes_literals_as_text(&mut ast);
     }
+    // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is not
+    // known below its width is the total shift, or a checked one. The
+    // Interpreter's library settles every shift itself (`SceStatic.U8.shl`).
+    if !matches!(target, ExprTarget::Js) {
+        settle_shifts(&mut ast, ctx, expr);
+    }
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected, Discharge::AtRun);
         check_integer_indexing(&mut ast, Discharge::AtRun);
@@ -820,6 +826,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
     let mut ast = parse_to_ast(expr)?;
     resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, lowerings, expr)?;
     judge_value(&mut ast, expected, expr)?;
+    settle_shifts(&mut ast, ctx, expr);
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected.ty(), Discharge::AtRun);
         check_integer_indexing(&mut ast, Discharge::AtRun);
@@ -4083,6 +4090,25 @@ pub(crate) enum CheckedOp {
     /// the node's `ty` the element's — which fails out of range rather than
     /// reading past the end ([`check_integer_indexing`]).
     Index,
+    /// `left << right` where the count `right` is not known to be at least 0
+    /// and below the width of `left`, the node's `ty` ([`settle_shifts`]): the
+    /// exact result reduced to that width for a count at least 0, a count at
+    /// or past the width included, and an out-of-range failure for one below 0
+    /// (SCE_FORGE.md §3.4.1, "The width of a shift"). The node's discharge says
+    /// which: [`Discharge::AtRun`] checks the count when it runs;
+    /// [`Discharge::Total`] is the total shift, whose count the build knows
+    /// is at least 0, or, outside the bodies the contract covers, leaves to the
+    /// caller as it leaves a divisor of 0; [`Discharge::AtBuild`] is one whose
+    /// count is proven below the width, which Rust alone is handed.
+    Shl,
+    /// `left >> right`, the arithmetic shift of a signed `left`, settled as
+    /// [`CheckedOp::Shl`] is.
+    Shr,
+    /// `left >>> right`, the logical shift of `left`'s bits at its width,
+    /// settled as [`CheckedOp::Shl`] is; also one whose count is below the
+    /// width, where `left` is signed, since no C-family, Rust, Go or Python
+    /// operator shifts a signed value's bits logically.
+    UShr,
 }
 
 impl CheckedOp {
@@ -4109,6 +4135,30 @@ impl CheckedOp {
             Self::Neg => "neg",
             Self::Narrow => "narrow",
             Self::Index => "at",
+            Self::Shl => "shl",
+            Self::Shr => "shr",
+            Self::UShr => "ushr",
+        }
+    }
+
+    /// The shift a shift operator is, or `None` for any other operator.
+    fn of_shift(op: BinOp) -> Option<Self> {
+        Some(match op {
+            BinOp::Shl => Self::Shl,
+            BinOp::Shr => Self::Shr,
+            BinOp::UShr => Self::UShr,
+            _ => return None,
+        })
+    }
+
+    /// The shift operator this operation is, or `None` for one that is not a
+    /// shift.
+    pub(crate) fn shift(self) -> Option<BinOp> {
+        match self {
+            Self::Shl => Some(BinOp::Shl),
+            Self::Shr => Some(BinOp::Shr),
+            Self::UShr => Some(BinOp::UShr),
+            _ => None,
         }
     }
 }
@@ -4127,7 +4177,20 @@ pub(crate) enum Discharge {
     /// forge runtime's `algorithm::proven`, so the crate a generated file is
     /// compiled in holds no operator and no index of its own; every other
     /// backend prints the operator, and is never handed this node.
+    ///
+    /// A shift ([`CheckedOp::Shl`], [`CheckedOp::Shr`], [`CheckedOp::UShr`]) is
+    /// marked so only where its count is proven at least 0 and below the width
+    /// and is not a literal ([`prove_integer_operations`]): Rust prints it through
+    /// `algorithm::proven::shl` or `shr`.
     AtBuild,
+    /// Never: the operation has a value for every input it can be handed. A
+    /// shift ([`CheckedOp::Shl`], [`CheckedOp::Shr`], [`CheckedOp::UShr`]) whose
+    /// count is known at least 0 but not known below the width, or one outside
+    /// the bodies the contract covers ([`settle_shifts`]): its exact result
+    /// reduced to the width, a count at or past the width included, which every
+    /// backend prints as its total shift. No operation of the contract is ever
+    /// marked so.
+    Total,
 }
 
 /// The refusal of a backend other than Rust handed an operation proven at build
@@ -4319,6 +4382,136 @@ pub(crate) fn check_integer_arithmetic(
 pub(crate) fn prove_integer_operations(node: &mut TypedExpr, expected: InferredType) {
     check_integer_arithmetic(node, expected, Discharge::AtBuild);
     check_integer_indexing(node, Discharge::AtBuild);
+    prove_shifts(node);
+}
+
+/// Mark every shift of `node` that [`settle_shifts`] left the operator it is,
+/// whose count is therefore proven at least 0 and below the width, as proven
+/// ([`Discharge::AtBuild`]), for the Rust emitter: `clippy::arithmetic_side_effects`
+/// reads a shift by a count that is not a literal as one that can overflow, so
+/// it is printed through the runtime's `algorithm::proven` as the other proven
+/// operations are. A literal count is left the operator, which the lint passes.
+fn prove_shifts(node: &mut TypedExpr) {
+    for child in node.children_mut() {
+        prove_shifts(child);
+    }
+    let ExprKind::Binary { op, right, .. } = &node.kind else {
+        return;
+    };
+    let Some(shift) = CheckedOp::of_shift(*op) else {
+        return;
+    };
+    if !matches!(node.ty, InferredType::Int { .. }) || integer_literal_parts(right).is_some() {
+        return;
+    }
+    let placeholder = ExprKind::NullLit;
+    if let ExprKind::Binary { left, right, .. } = std::mem::replace(&mut node.kind, placeholder) {
+        node.kind = ExprKind::Checked {
+            op: shift,
+            left,
+            right: Some(right),
+            discharge: Discharge::AtBuild,
+        };
+    }
+}
+
+/// Settle every integer shift of `node`, read from `source`, by what the build
+/// knows of its count (SCE_FORGE.md §3.4.1, "The width of a shift"). A shift is
+/// its exact result reduced to the width `W` of what it shifts for every count
+/// at least 0, and has no value for a count below 0, which fails `out-of-range`:
+///
+/// - a count known to be at least 0 and below `W` is left the operator it is,
+///   which every language computes there; but for a `>>>` of a signed value,
+///   which no C-family, Rust, Go or Python operator shifts logically;
+/// - a count known to be at least 0, and every count outside the bodies the
+///   contract covers, is the total shift ([`Discharge::Total`]): the value
+///   for a count at or past `W`, and nothing checked, as a divisor of 0 is
+///   not checked there (SCE_FORGE.md §6.5, "Error Model");
+/// - any other count, in a body that receives failures (`may-fail`, or a
+///   `sce-static` statechart), is checked when it runs ([`Discharge::AtRun`]).
+///
+/// What is known of a count is its spelling (a literal), its type (an unsigned
+/// count is at least 0), and, in the body of an algorithm that does not declare
+/// `may-fail`, what the interval analysis proved of it
+/// ([`TypeCtx::shift_counts`]); that analysis refused the algorithm unless
+/// every count is at least 0 ([`TypeCtx::integers_proven`]). A `may-fail`
+/// body checks every count its type does not prove, as it checks every
+/// operation of the contract and not only those the analysis flags.
+///
+/// [`TypeCtx::shift_counts`]: crate::forge::types::TypeCtx::shift_counts
+/// [`TypeCtx::integers_proven`]: crate::forge::types::TypeCtx::integers_proven
+pub(crate) fn settle_shifts(node: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) {
+    for child in node.children_mut() {
+        settle_shifts(child, ctx, source);
+    }
+    let ExprKind::Binary { op, right, .. } = &node.kind else {
+        return;
+    };
+    let Some(shift) = CheckedOp::of_shift(*op) else {
+        return;
+    };
+    let InferredType::Int { signed, bits } = node.ty else {
+        return;
+    };
+    let proved = node.span.as_ref().and_then(|span| {
+        ctx.shift_counts
+            .get(&(source.to_string(), span.start, span.end))
+            .copied()
+    });
+    let mut known =
+        shift_count_written(right, bits).max(proved.unwrap_or(ShiftCount::MayBeNegative));
+    if ctx.integers_proven {
+        known = known.max(ShiftCount::NonNegative);
+    }
+    let logical_of_signed = shift == CheckedOp::UShr && signed;
+    if known == ShiftCount::BelowWidth && !logical_of_signed {
+        return;
+    }
+    let discharge = if known == ShiftCount::MayBeNegative && ctx.receives_failures {
+        Discharge::AtRun
+    } else {
+        Discharge::Total
+    };
+    let placeholder = ExprKind::NullLit;
+    if let ExprKind::Binary { left, right, .. } = std::mem::replace(&mut node.kind, placeholder) {
+        node.kind = ExprKind::Checked {
+            op: shift,
+            left,
+            right: Some(right),
+            discharge,
+        };
+    }
+}
+
+/// What a shift's count `count` is known to be against the width `bits` from
+/// how it is written alone: a literal by its value, a value of an unsigned
+/// type as at least 0, and anything else as a count that may be below 0.
+fn shift_count_written(count: &TypedExpr, bits: u8) -> ShiftCount {
+    if let Some((text, negated)) = integer_literal_parts(count) {
+        return match integer_literal_value(&text) {
+            Some(0) => ShiftCount::BelowWidth,
+            Some(_) if negated => ShiftCount::MayBeNegative,
+            Some(value) if value < u64::from(bits) => ShiftCount::BelowWidth,
+            Some(_) => ShiftCount::NonNegative,
+            None => ShiftCount::MayBeNegative,
+        };
+    }
+    match count.ty.strip_quantity() {
+        InferredType::Int { signed: false, .. } => ShiftCount::NonNegative,
+        _ => ShiftCount::MayBeNegative,
+    }
+}
+
+/// The sign and width of a shift the build settled ([`settle_shifts`]): its
+/// node's type, which is the type of what it shifts.
+fn settled_shift_width(expr: &TypedExpr) -> Result<(bool, u8), ExprError> {
+    match expr.ty {
+        InferredType::Int { signed, bits } => Ok((signed, bits)),
+        other => Err(ExprError::UnsupportedConstruct {
+            construct: format!("a shift of type {other:?}"),
+            observed: None,
+        }),
+    }
 }
 
 /// `call` as the operation it names when its callee is a name of the
@@ -4585,7 +4778,7 @@ impl BinOp {
     }
     /// `<<`, `>>` and `>>>`: typed by the left operand alone ([`join_shift`]),
     /// the count an integer of its own.
-    fn is_shift(self) -> bool {
+    pub(crate) fn is_shift(self) -> bool {
         matches!(self, Self::Shl | Self::Shr | Self::UShr)
     }
 }
@@ -10170,6 +10363,14 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 "{CPP_SPAN}<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
             )
         }
+        // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
+        // not known below its width ([`settle_shifts`]).
+        ExprKind::Checked {
+            op,
+            left,
+            right: Some(count),
+            discharge,
+        } if op.shift().is_some() => cpp_settled_shift(expr, *op, left, count, *discharge)?,
         // SCE_FORGE.md §3.4.1: an index read that records an out-of-range
         // failure instead of reading past the end.
         ExprKind::Checked {
@@ -10230,6 +10431,36 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 operands.join(", ")
             )
         }
+    })
+}
+
+/// A shift the build settled ([`settle_shifts`]), in C++: the runtime's total
+/// shift (`SCE::Forge::Wrapping::shl<std::uint32_t>(x, n)`), which is the exact
+/// result reduced to the width for every count at least 0, or its checked one,
+/// which records an out-of-range failure in the body's `sce_failure_` for a
+/// count below 0 and yields 0. The language's own operator is undefined for a
+/// count at or past the width. The width is explicit, as a checked operation's
+/// is, so a literal operand converts to it; the count is taken at its own type.
+fn cpp_settled_shift(
+    expr: &TypedExpr,
+    op: CheckedOp,
+    left: &TypedExpr,
+    count: &TypedExpr,
+    discharge: Discharge,
+) -> Result<String, ExprError> {
+    let (signed, bits) = settled_shift_width(expr)?;
+    let ty = format!("std::{}int{bits}_t", if signed { "" } else { "u" });
+    let value = emit_cpp(left, expr.ty)?;
+    let places = emit_cpp(count, InferredType::Unknown)?;
+    Ok(match discharge {
+        Discharge::AtBuild | Discharge::Total => format!(
+            "SCE::Forge::Wrapping::{}<{ty}>({value}, {places})",
+            op.helper()
+        ),
+        Discharge::AtRun => format!(
+            "SCE::Forge::Checked::{}<{ty}>(sce_failure_, {value}, {places})",
+            op.helper()
+        ),
     })
 }
 
@@ -10782,7 +11013,13 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             } else {
                 r_raw
             };
-            format!("{l} {} {r}", kotlin_binop(*op))
+            // `UInt` and `ULong` have no `ushr`: their `shr` is the logical
+            // shift `>>>` is (SCE_FORGE.md §3.4.1, "The width of a shift").
+            let spelled = match (op, operand_ty) {
+                (BinOp::UShr, InferredType::Int { signed: false, .. }) => "shr",
+                _ => kotlin_binop(*op),
+            };
+            format!("{l} {spelled} {r}")
         }
         // `Byte` and `Short` have no `inv()` of their own (only
         // `kotlin.experimental`'s), so their complement is made in `Int` and
@@ -10976,6 +11213,14 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_kotlin(source, InferredType::Unknown)?
             )
         }
+        // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
+        // not known below its width ([`settle_shifts`]).
+        ExprKind::Checked {
+            op,
+            left,
+            right: Some(count),
+            discharge,
+        } if op.shift().is_some() => kotlin_settled_shift(expr, *op, left, count, *discharge)?,
         // SCE_FORGE.md §3.4.1: the runtime's overload for the operation's own
         // width, each operand spelled at that width so the overload resolves
         // (Kotlin gives a bare literal no unsigned or narrow type). A failure
@@ -11076,6 +11321,46 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
     })
+}
+
+/// A shift the build settled ([`settle_shifts`]), in Kotlin: the runtime's
+/// total shift (`SceWrapping.shl(x, n)`), which is the exact result reduced to
+/// the width for every count at least 0, or its checked one (`SceChecked.shl`),
+/// which throws an out-of-range failure for a count below 0. Kotlin's own `shl`,
+/// `shr` and `ushr` take the count modulo the width, so `x shl 33` of an `Int`
+/// is `x shl 1`. One overload per width, picked by what is shifted, spelled at
+/// its own type; the count is written as the `ULong` the total shift takes, or
+/// the `Long` the checked one does.
+fn kotlin_settled_shift(
+    expr: &TypedExpr,
+    op: CheckedOp,
+    left: &TypedExpr,
+    count: &TypedExpr,
+    discharge: Discharge,
+) -> Result<String, ExprError> {
+    settled_shift_width(expr)?;
+    let value = emit_kotlin(left, expr.ty)?;
+    let (family, count_ty) = match discharge {
+        Discharge::AtBuild | Discharge::Total => (
+            "SceWrapping",
+            InferredType::Int {
+                signed: false,
+                bits: 64,
+            },
+        ),
+        Discharge::AtRun => (
+            "SceChecked",
+            InferredType::Int {
+                signed: true,
+                bits: 64,
+            },
+        ),
+    };
+    let places = emit_kotlin(count, count_ty)?;
+    Ok(format!(
+        "com.sce.forge.runtime.{family}.{}({value}, {places})",
+        op.helper()
+    ))
 }
 
 /// The Kotlin spelling of each construct of an optional value (docs/adr/0055,
@@ -12127,6 +12412,14 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             // algorithm `bytes` param type (`&[u8]`) via `.as_bytes()`.
             format!("{}.as_bytes()", emit_rust(source, InferredType::Unknown)?)
         }
+        // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
+        // not known below its width ([`settle_shifts`]).
+        ExprKind::Checked {
+            op,
+            left,
+            right: Some(count),
+            discharge,
+        } if op.shift().is_some() => rust_settled_shift(expr, *op, left, count, *discharge)?,
         // SCE_FORGE.md §3.4.1: an index read through the runtime's `at`,
         // which takes the index at its own type and fails out of range
         // instead of panicking.
@@ -12209,6 +12502,95 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
     })
 }
 
+/// A shift the build settled ([`settle_shifts`]), in Rust. Rust's own `<<` and
+/// `>>` panic in a build that checks overflow at a count at or past the width,
+/// and mask the count in one that does not, so neither is written there:
+///
+/// - the total shift is the standard library's own `checked_shl` and
+///   `checked_shr` at the shift's type, the count as the `u32` they take, and
+///   the value for a count at or past the width where they answer none: 0, or
+///   for a signed `>>` the sign, which `wrapping_shr` by a count held at
+///   `W - 1` leaves. A count past `u32` is past every width. A `>>>` of a
+///   signed value is made in the unsigned type of its width. None panics; each
+///   is fully qualified, as a wrapping operation is, so a literal operand takes
+///   the type; and none names the runtime, so a kind that depends on none still
+///   depends on none;
+/// - the checked shift is the forge runtime's `algorithm::shl`, `shr` and
+///   `ushr`, whose out-of-range failure for a count below 0 `?` hands on, the
+///   count taken at its own type.
+fn rust_settled_shift(
+    expr: &TypedExpr,
+    op: CheckedOp,
+    left: &TypedExpr,
+    count: &TypedExpr,
+    discharge: Discharge,
+) -> Result<String, Refusal> {
+    let (signed, bits) = settled_shift_width(expr).map_err(|e| e.at(expr.span.clone()))?;
+    let ty = rust_int_type(signed, bits);
+    let value = emit_rust(left, expr.ty)?;
+    let written = emit_rust(count, InferredType::Unknown)?;
+    match discharge {
+        Discharge::AtRun => {
+            return Ok(format!(
+                "sce_forge_runtime::algorithm::{}::<{ty}, _>({value}, {written})?",
+                op.helper()
+            ))
+        }
+        // Proven below the width ([`prove_integer_operations`]): the operator
+        // itself, in the runtime, so the crate the file is compiled in holds no
+        // shift operator of its own. A `>>>` proven so is of an unsigned value,
+        // where it is `>>`.
+        Discharge::AtBuild => {
+            let helper = if op == CheckedOp::Shl { "shl" } else { "shr" };
+            return Ok(format!(
+                "sce_forge_runtime::algorithm::proven::{helper}::<{ty}, _>({value}, {written})"
+            ));
+        }
+        Discharge::Total => {}
+    }
+    let places = rust_shift_places(count, written);
+    Ok(match op {
+        CheckedOp::Shl => format!("{ty}::checked_shl({value}, {places}).unwrap_or(0)"),
+        CheckedOp::Shr if signed => format!(
+            "{ty}::wrapping_shr({value}, u32::min({places}, {}))",
+            bits - 1
+        ),
+        CheckedOp::UShr if signed => {
+            let unsigned = rust_int_type(false, bits);
+            format!(
+                "({unsigned}::checked_shr({}, {places}).unwrap_or(0) as {ty})",
+                rust_cast(value, left, unsigned)
+            )
+        }
+        _ => format!("{ty}::checked_shr({value}, {places}).unwrap_or(0)"),
+    })
+}
+
+/// A shift's count `count`, written `written`, as the `u32` number of places the
+/// standard library's shifts take: a literal as its value, an unsigned count of
+/// at most 32 bits widened, and any other held to `u32::MAX` where `u32` cannot
+/// hold it, which is past every width. A count below 0 reaches a total shift
+/// only outside the bodies the contract covers, where it is the caller's to rule
+/// out (SCE_FORGE.md §3.4.1), and is past the width there too.
+fn rust_shift_places(count: &TypedExpr, written: String) -> String {
+    if let Some((text, false)) = integer_literal_parts(count) {
+        if let Some(value) = integer_literal_value(&text) {
+            return u32::try_from(value).map_or_else(|_| "u32::MAX".to_string(), |v| v.to_string());
+        }
+    }
+    match count.ty.strip_quantity() {
+        InferredType::Int {
+            signed: false,
+            bits: 32,
+        } => written,
+        InferredType::Int {
+            signed: false,
+            bits,
+        } if bits < 32 => format!("u32::from({written})"),
+        _ => format!("u32::try_from({written}).unwrap_or(u32::MAX)"),
+    }
+}
+
 /// Where a Rust integer operation of the contract (SCE_FORGE.md §3.4.1) is
 /// printed from, and what follows the call: the runtime's checked helper and
 /// `?`, which hands a failure to the caller of a `may-fail` body, or the
@@ -12219,7 +12601,9 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
 fn rust_contract(discharge: Discharge) -> (&'static str, &'static str) {
     match discharge {
         Discharge::AtRun => ("sce_forge_runtime::algorithm", "?"),
-        Discharge::AtBuild => ("sce_forge_runtime::algorithm::proven", ""),
+        // A total operation is a shift's alone, which [`rust_settled_shift`]
+        // prints; no operation of the contract reaches here so marked.
+        Discharge::AtBuild | Discharge::Total => ("sce_forge_runtime::algorithm::proven", ""),
     }
 }
 
@@ -12684,6 +13068,14 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             // the algorithm `bytes` param type (`[]byte`).
             format!("[]byte({})", emit_go(source, InferredType::Unknown)?)
         }
+        // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
+        // not known below its width ([`settle_shifts`]).
+        ExprKind::Checked {
+            op,
+            left,
+            right: Some(count),
+            discharge,
+        } if op.shift().is_some() => go_settled_shift(expr, *op, left, count, *discharge)?,
         // SCE_FORGE.md §3.4.1: an index read through `At` (a signed index,
         // widened to `int64`) or `AtU` (an unsigned one, to `uint64`), over
         // the collection's slice so a fixed array passes too.
@@ -12758,6 +13150,83 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             )
         }
     })
+}
+
+/// A shift the build settled ([`settle_shifts`]), in Go.
+///
+/// Go's own `<<` and `>>` are the total shift already: a count of any integer
+/// type at or past the width shifts every bit out, leaving 0, or the sign for a
+/// signed `>>` (The Go Programming Language Specification, "Arithmetic
+/// operators"), so the total shift is the operator, parenthesised so it binds as
+/// one operand, and a `>>>` of a signed value is made in the unsigned type of
+/// its width. Go panics on a count below 0, which reaches a total shift only
+/// outside the bodies the contract covers, where it is the caller's to rule out,
+/// as a divisor of 0 is. A literal count at or past the width goes through the
+/// runtime's `WrappingShl` and `WrappingShr` instead, which compute the same:
+/// written as the operator, `go vet` reports the shift as too large for its type.
+///
+/// The checked shift is the runtime's helper for the width, which records an
+/// out-of-range failure in the body's `sceFailure` for a count below 0 and
+/// yields 0; the count is widened to the `int64` it takes.
+fn go_settled_shift(
+    expr: &TypedExpr,
+    op: CheckedOp,
+    left: &TypedExpr,
+    count: &TypedExpr,
+    discharge: Discharge,
+) -> Result<String, Refusal> {
+    let (signed, bits) = settled_shift_width(expr).map_err(|e| e.at(expr.span.clone()))?;
+    let Some(operator) = op.shift() else {
+        unreachable!("only a shift is settled as one");
+    };
+    let value = emit_go(left, expr.ty)?;
+    let written = emit_go(count, InferredType::Unknown)?;
+    let helper = op.helper();
+    if discharge == Discharge::AtRun {
+        return Ok(format!(
+            "scealgorithm.{}{}{}{bits}(&sceFailure, {value}, int64({written}))",
+            helper[..1].to_ascii_uppercase(),
+            &helper[1..],
+            if signed { "Int" } else { "Uint" },
+        ));
+    }
+    let literal = integer_literal_parts(count).is_some();
+    let logical_of_signed = op == CheckedOp::UShr && signed;
+    if logical_of_signed {
+        let shifted = if literal {
+            format!("scealgorithm.WrappingShr(uint{bits}({value}), {written})")
+        } else {
+            format!(
+                "uint{bits}({value}) >> {}",
+                go_operand(count, operator, false, written)
+            )
+        };
+        return Ok(format!("int{bits}({shifted})"));
+    }
+    if literal {
+        let family = if op == CheckedOp::Shl {
+            "WrappingShl"
+        } else {
+            "WrappingShr"
+        };
+        return Ok(format!("scealgorithm.{family}({value}, {written})"));
+    }
+    Ok(format!(
+        "({} {} {})",
+        go_operand(left, operator, true, value),
+        go_binop(operator),
+        go_operand(count, operator, false, written)
+    ))
+}
+
+/// `text`, the Go spelling of `child`, an operand of `op`, parenthesised where Go
+/// would bind it to something else than the document does.
+fn go_operand(child: &TypedExpr, op: BinOp, is_left: bool, text: String) -> String {
+    if child_needs_parens(child, op, is_left, go_precedence) {
+        format!("({text})")
+    } else {
+        text
+    }
 }
 
 fn go_binop(op: BinOp) -> &'static str {
@@ -13411,6 +13880,14 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_python(source, InferredType::Unknown)?
             )
         }
+        // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
+        // not known below its width ([`settle_shifts`]).
+        ExprKind::Checked {
+            op,
+            left,
+            right: Some(count),
+            discharge,
+        } if op.shift().is_some() => python_settled_shift(expr, *op, left, count, *discharge)?,
         // SCE_FORGE.md §3.4.1: an index read through the runtime's `at`, which
         // refuses a negative index Python would otherwise read from the end.
         ExprKind::Checked {
@@ -13457,6 +13934,57 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 op.helper(),
                 operands.join(", ")
             )
+        }
+    })
+}
+
+/// A shift the build settled ([`settle_shifts`]), in Python.
+///
+/// Python's own `>>` is the total right shift already: `x >> n` is the floor of
+/// `x / 2**n` for every `n` at least 0, so a count at or past the width leaves 0,
+/// or -1 for a negative value, and the value of a width is held reduced to it.
+/// It is written as the operator, parenthesised so it binds as one operand, for
+/// a `>>` and for a `>>>` of an unsigned value. A left shift is the runtime's
+/// `wrapping_shl` of the width, which is 0 for a count at or past the width: the
+/// operator would compute `x * 2**n` whole before reducing it, a number of `n`
+/// bits for a count as large as an unsigned type holds. A `>>>` of a signed
+/// value is the runtime's `wrapping_ushr`, which shifts the bits of its width.
+/// Python raises `ValueError` on a count below 0, which reaches a total shift
+/// only outside the bodies the contract covers, where it is the caller's to rule
+/// out, as a divisor of 0 is.
+///
+/// The checked shift is the runtime's `shl`, `shr` or `ushr` of the width,
+/// which raises `AlgorithmFailure` with `out-of-range` for a count below 0.
+fn python_settled_shift(
+    expr: &TypedExpr,
+    op: CheckedOp,
+    left: &TypedExpr,
+    count: &TypedExpr,
+    discharge: Discharge,
+) -> Result<String, ExprError> {
+    let (signed, bits) = settled_shift_width(expr)?;
+    let width = format!("sce_algorithm.{}{bits}", if signed { "I" } else { "U" });
+    let value = emit_python(left, expr.ty)?;
+    let places = emit_python(count, InferredType::Unknown)?;
+    let native = op == CheckedOp::Shr || (op == CheckedOp::UShr && !signed);
+    Ok(match discharge {
+        Discharge::AtRun => format!("{width}.{}({value}, {places})", op.helper()),
+        Discharge::AtBuild | Discharge::Total if native => {
+            let parenthesised = |child: &TypedExpr, is_left: bool, text: String| {
+                if child_needs_parens(child, BinOp::Shr, is_left, python_precedence) {
+                    format!("({text})")
+                } else {
+                    text
+                }
+            };
+            format!(
+                "({} >> {})",
+                parenthesised(left, true, value),
+                parenthesised(count, false, places)
+            )
+        }
+        Discharge::AtBuild | Discharge::Total => {
+            format!("{width}.wrapping_{}({value}, {places})", op.helper())
         }
     })
 }
@@ -14645,6 +15173,14 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             };
             format!("(sce_forge_bytes_view_t){{ (const uint8_t *){s}, {len_expr} }}")
         }
+        // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is
+        // not known below its width ([`settle_shifts`]).
+        ExprKind::Checked {
+            op,
+            left,
+            right: Some(count),
+            discharge,
+        } if op.shift().is_some() => c_settled_shift(expr, *op, left, count, *discharge)?,
         // SCE_FORGE.md §3.4.1: an index read behind a range test, which
         // records an out-of-range failure and yields 0 instead of reading:
         // `(inside ? xs[i] : 0)`. The index is written twice — algorithm
@@ -14717,6 +15253,38 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 operands.join(", ")
             )
         }
+    })
+}
+
+/// A shift the build settled ([`settle_shifts`]), in C: the runtime's total
+/// shift of the width (`sce_forge_wrapping_shl_u32(x, n)`), which is the exact
+/// result reduced to the width for every count at least 0, or its checked one
+/// (`sce_forge_checked_shl_u32(&sce_failure_, x, n)`), which records an
+/// out-of-range failure for a count below 0 and yields 0. C's own operator is
+/// undefined for a count at or past the width, and for a left shift of a
+/// negative value. C has no overloading, so the width is in the name, and the
+/// count is converted to the `uint64_t` the total shift takes, or the `int64_t`
+/// the checked one does, which holds every count either is handed.
+fn c_settled_shift(
+    expr: &TypedExpr,
+    op: CheckedOp,
+    left: &TypedExpr,
+    count: &TypedExpr,
+    discharge: Discharge,
+) -> Result<String, ExprError> {
+    let (signed, bits) = settled_shift_width(expr)?;
+    let width = format!("{}{bits}", if signed { "i" } else { "u" });
+    let value = emit_c(left, expr.ty)?;
+    let places = emit_c(count, InferredType::Unknown)?;
+    Ok(match discharge {
+        Discharge::AtBuild | Discharge::Total => format!(
+            "sce_forge_wrapping_{}_{width}({value}, (uint64_t)({places}))",
+            op.helper()
+        ),
+        Discharge::AtRun => format!(
+            "sce_forge_checked_{}_{width}(&sce_failure_, {value}, (int64_t)({places}))",
+            op.helper()
+        ),
     })
 }
 
@@ -16223,13 +16791,22 @@ mod tests {
     /// so a count is an `Int` whatever it shifts — a 64-bit or 32-bit
     /// unsigned value included, where the count used to be converted to the
     /// shifted type and kotlinc refused it (`k shl 15.toULong()`, in
-    /// sce:std/hash/murmur3_32 and sce:std/merge/hlc_text).
+    /// sce:std/hash/murmur3_32 and sce:std/merge/hlc_text). `UInt` and `ULong`
+    /// have no `ushr`: their `shr` is the logical shift. The operator is written
+    /// where the count is known below the width, here proven so
+    /// ([`TypeCtx::shift_counts`]).
     #[test]
     fn kotlin_shift_count_is_an_int_whatever_it_shifts() {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("k", int(false, 64));
         ctx.insert_var("c", int(false, 32));
         ctx.insert_var("s", int(false, 32));
+        for source in ["k >> s", "c >>> s"] {
+            ctx.shift_counts.insert(
+                (source.to_string(), 0, source.len()),
+                ShiftCount::BelowWidth,
+            );
+        }
         assert_eq!(tp_with("k << 15", ExprTarget::Kotlin, &ctx), "k shl 15");
         assert_eq!(
             tp_with("k >> s", ExprTarget::Kotlin, &ctx),
@@ -16237,7 +16814,7 @@ mod tests {
         );
         assert_eq!(
             tp_with("c >>> s", ExprTarget::Kotlin, &ctx),
-            "c ushr s.toInt()"
+            "c shr s.toInt()"
         );
     }
 
@@ -16265,35 +16842,42 @@ mod tests {
     ///
     /// Before the rule the shift took `m`'s `uint8`, and Rust wrote
     /// `prev | (1 << m) as u64`, an `i32` shift.
+    ///
+    /// The count `m` is known at least 0 by its type and not below the width,
+    /// so the shift is the total one: the operator where the language's own is
+    /// that (Go, Swift), and elsewhere the standard library's or the runtime's.
     #[test]
     fn a_shifted_literal_is_written_in_the_type_its_context_gives_it() {
         let u64t = int(false, 64);
         let source = "prev | (1 << m)";
-        assert_eq!(landed(source, ExprTarget::Rust, u64t), "prev | 1u64 << m");
+        assert_eq!(
+            landed(source, ExprTarget::Rust, u64t),
+            "prev | u64::checked_shl(1u64, u32::from(m)).unwrap_or(0)"
+        );
         assert_eq!(
             landed(source, ExprTarget::C, u64t),
-            "prev | UINT64_C(1) << m"
+            "prev | sce_forge_wrapping_shl_u64(UINT64_C(1), (uint64_t)(m))"
         );
         assert_eq!(
             landed(source, ExprTarget::Cpp, u64t),
-            "prev | std::uint64_t{1} << m"
+            "prev | SCE::Forge::Wrapping::shl<std::uint64_t>(std::uint64_t{1}, m)"
         );
         assert_eq!(
             landed(source, ExprTarget::Go, u64t),
-            "prev | uint64(1) << m"
+            "prev | (uint64(1) << m)"
         );
         assert_eq!(
             landed(source, ExprTarget::Kotlin, u64t),
-            "prev or (1uL shl m.toInt())"
+            "prev or com.sce.forge.runtime.SceWrapping.shl(1uL, m.toULong())"
         );
         assert_eq!(
             landed(source, ExprTarget::Swift, u64t),
             "prev | (UInt64(1) << m)"
         );
-        // Python's literal has no width; the shift is reduced to its 64 bits.
+        // Python's left shift would make `1 * 2**m` whole before it is reduced.
         assert_eq!(
             landed(source, ExprTarget::Python, u64t),
-            "prev | ((1 << m) & 0xFFFFFFFFFFFFFFFF)"
+            "prev | sce_algorithm.U64.wrapping_shl(1, m)"
         );
         // The Interpreter's library takes the width from the operation.
         let js = landed(source, ExprTarget::Js, u64t);
@@ -16305,16 +16889,188 @@ mod tests {
 
     /// A shift with a declared left operand is that operand's width, and its
     /// count is written at its own type: converting it to the type it shifts
-    /// (`prev >> m as u64`, `uint64(m)`) makes no shift right.
+    /// (`prev >> m as u64`, `uint64(m)`) makes no shift right. A count proven
+    /// below the width ([`TypeCtx::shift_counts`]) is the language's own
+    /// operator.
     #[test]
     fn a_shift_count_is_written_at_its_own_type() {
         let u64t = int(false, 64);
-        assert_eq!(landed("prev >> m", ExprTarget::Rust, u64t), "prev >> m");
-        assert_eq!(landed("prev >> m", ExprTarget::Go, u64t), "prev >> m");
-        assert_eq!(landed("prev >> m", ExprTarget::C, u64t), "prev >> m");
+        let mut ctx = literal_width_ctx();
+        ctx.shift_counts
+            .insert(("prev >> m".to_string(), 0, 9), ShiftCount::BelowWidth);
+        let proven = |target| {
+            transpile_into("prev >> m", target, &ctx, &empty_renames(), u64t)
+                .unwrap_or_else(|e| panic!("prev >> m lowers for {target:?}: {e:?}"))
+        };
+        assert_eq!(proven(ExprTarget::Rust), "prev >> m");
+        assert_eq!(proven(ExprTarget::Go), "prev >> m");
+        assert_eq!(proven(ExprTarget::C), "prev >> m");
+        assert_eq!(proven(ExprTarget::Kotlin), "prev shr m.toInt()");
+    }
+
+    /// SCE_FORGE.md §3.4.1, "The width of a shift": a count at least 0 but not
+    /// known below the width is the total shift, its exact result reduced to the
+    /// width — 0, or the sign of a signed `>>` — written as the language's own
+    /// operator only where that operator is it (Go, Swift, Python's `>>`).
+    #[test]
+    fn a_count_not_known_below_the_width_is_the_total_shift() {
+        let u64t = int(false, 64);
+        let i16t = int(true, 16);
+        for (target, source, slot, want) in [
+            (
+                ExprTarget::Rust,
+                "prev >> m",
+                u64t,
+                "u64::checked_shr(prev, u32::from(m)).unwrap_or(0)",
+            ),
+            (
+                ExprTarget::Rust,
+                "h >> m",
+                i16t,
+                "i16::wrapping_shr(h, u32::min(u32::from(m), 15))",
+            ),
+            (
+                ExprTarget::Rust,
+                "h >>> m",
+                i16t,
+                "(u16::checked_shr(h as u16, u32::from(m)).unwrap_or(0) as i16)",
+            ),
+            (
+                ExprTarget::Rust,
+                "h << 20",
+                i16t,
+                "i16::checked_shl(h, 20).unwrap_or(0)",
+            ),
+            (
+                ExprTarget::C,
+                "h >> m",
+                i16t,
+                "sce_forge_wrapping_shr_i16(h, (uint64_t)(m))",
+            ),
+            (
+                ExprTarget::Cpp,
+                "h >>> m",
+                i16t,
+                "SCE::Forge::Wrapping::ushr<std::int16_t>(h, m)",
+            ),
+            (ExprTarget::Go, "prev >> m", u64t, "(prev >> m)"),
+            (ExprTarget::Go, "h >>> m", i16t, "int16(uint16(h) >> m)"),
+            (
+                ExprTarget::Go,
+                "h << 20",
+                i16t,
+                "scealgorithm.WrappingShl(h, 20)",
+            ),
+            (
+                ExprTarget::Kotlin,
+                "h >> m",
+                i16t,
+                "com.sce.forge.runtime.SceWrapping.shr(h, m.toULong())",
+            ),
+            (ExprTarget::Python, "h >> m", i16t, "(h >> m)"),
+            (
+                ExprTarget::Python,
+                "h >>> m",
+                i16t,
+                "sce_algorithm.I16.wrapping_ushr(h, m)",
+            ),
+            (
+                ExprTarget::Python,
+                "prev << m",
+                u64t,
+                "sce_algorithm.U64.wrapping_shl(prev, m)",
+            ),
+            (ExprTarget::Swift, "h >> m", i16t, "(h >> m)"),
+        ] {
+            assert_eq!(landed(source, target, slot), want, "{target:?}: {source}");
+        }
+    }
+
+    /// A `>>>` of a signed value shifts its bits at its width logically, which no
+    /// C-family, Rust, Go or Python operator does, so even a count known below the
+    /// width is written as the total shift there.
+    #[test]
+    fn a_logical_shift_of_a_signed_value_is_made_on_its_bits() {
+        let i32t = int(true, 32);
         assert_eq!(
-            landed("prev >> m", ExprTarget::Kotlin, u64t),
-            "prev shr m.toInt()"
+            landed("s >>> 3", ExprTarget::C, i32t),
+            "sce_forge_wrapping_ushr_i32(s, (uint64_t)(3))"
+        );
+        assert_eq!(
+            landed("s >>> 3", ExprTarget::Rust, i32t),
+            "(u32::checked_shr(s as u32, 3).unwrap_or(0) as i32)"
+        );
+        assert_eq!(
+            landed("s >>> 3", ExprTarget::Go, i32t),
+            "int32(uint32(s) >> 3)"
+        );
+        assert_eq!(
+            landed("s >>> 3", ExprTarget::Kotlin, i32t),
+            "com.sce.forge.runtime.SceWrapping.ushr(s, 3.toULong())"
+        );
+    }
+
+    /// A count that may be below 0, in a body that receives failures, is checked
+    /// when it runs: below 0 it fails `out-of-range` (SCE_FORGE.md §3.4.1).
+    /// Outside such a body it is the total shift, the count unchecked, as a
+    /// divisor of 0 is unchecked there (SCE_FORGE.md §6.5).
+    #[test]
+    fn a_count_that_may_be_below_zero_is_checked_where_failures_are_received() {
+        let i32t = int(true, 32);
+        let mut ctx = literal_width_ctx();
+        ctx.receives_failures = true;
+        let checked = |target| {
+            transpile_into("s << s", target, &ctx, &empty_renames(), i32t)
+                .unwrap_or_else(|e| panic!("s << s lowers for {target:?}: {e:?}"))
+        };
+        assert_eq!(
+            checked(ExprTarget::Rust),
+            "sce_forge_runtime::algorithm::shl::<i32, _>(s, s)?"
+        );
+        assert_eq!(
+            checked(ExprTarget::C),
+            "sce_forge_checked_shl_i32(&sce_failure_, s, (int64_t)(s))"
+        );
+        assert_eq!(
+            checked(ExprTarget::Cpp),
+            "SCE::Forge::Checked::shl<std::int32_t>(sce_failure_, s, s)"
+        );
+        assert_eq!(
+            checked(ExprTarget::Go),
+            "scealgorithm.ShlInt32(&sceFailure, s, int64(s))"
+        );
+        assert_eq!(
+            checked(ExprTarget::Kotlin),
+            "com.sce.forge.runtime.SceChecked.shl(s, s.toLong())"
+        );
+        assert_eq!(checked(ExprTarget::Python), "sce_algorithm.I32.shl(s, s)");
+        assert_eq!(checked(ExprTarget::Swift), "(try Checked.shl(s, s))");
+        assert_eq!(
+            landed("s << s", ExprTarget::C, i32t),
+            "sce_forge_wrapping_shl_i32(s, (uint64_t)(s))"
+        );
+        // An unsigned count is at least 0 by its type, and never checked.
+        assert_eq!(
+            transpile_into("s << m", ExprTarget::Rust, &ctx, &empty_renames(), i32t).unwrap(),
+            "i32::checked_shl(s, u32::from(m)).unwrap_or(0)"
+        );
+    }
+
+    /// In the body of an algorithm that does not declare `may-fail`, the
+    /// analysis refused every count that may be below 0, so a signed count is
+    /// the total shift there, never the checked one.
+    #[test]
+    fn a_proven_body_never_checks_a_count() {
+        let i32t = int(true, 32);
+        let mut ctx = literal_width_ctx();
+        ctx.integers_proven = true;
+        assert_eq!(
+            transpile_into("s >> s", ExprTarget::Go, &ctx, &empty_renames(), i32t).unwrap(),
+            "(s >> s)"
+        );
+        assert_eq!(
+            transpile_into("s >> s", ExprTarget::C, &ctx, &empty_renames(), i32t).unwrap(),
+            "sce_forge_wrapping_shr_i32(s, (uint64_t)(s))"
         );
     }
 
@@ -16356,7 +17112,7 @@ mod tests {
         );
         assert_eq!(
             landed("~(1 << m)", ExprTarget::Python, int(false, 64)),
-            "((~(((1 << m) & 0xFFFFFFFFFFFFFFFF))) & 0xFFFFFFFFFFFFFFFF)"
+            "((~sce_algorithm.U64.wrapping_shl(1, m)) & 0xFFFFFFFFFFFFFFFF)"
         );
     }
 
@@ -16370,7 +17126,7 @@ mod tests {
     fn a_python_reduction_binds_as_one_operand() {
         assert_eq!(
             landed("((1 << m) >> 1) + 1", ExprTarget::Python, int(false, 64)),
-            "(((1 << m) & 0xFFFFFFFFFFFFFFFF) >> 1) + 1"
+            "(sce_algorithm.U64.wrapping_shl(1, m) >> 1) + 1"
         );
         assert_eq!(
             landed("(m << 4) >> 4", ExprTarget::Python, int(false, 8)),
@@ -16414,10 +17170,11 @@ mod tests {
             landed("~m", ExprTarget::Cpp, u32t),
             "static_cast<std::uint8_t>(~m)"
         );
-        // A shift of a 32-bit unsigned value is made at its width already.
+        // A shift of a 64-bit unsigned value by a count not known below the
+        // width is the runtime's total shift, which is made at its width.
         assert_eq!(
             landed("prev << m", ExprTarget::C, int(false, 64)),
-            "prev << m"
+            "sce_forge_wrapping_shl_u64(prev, (uint64_t)(m))"
         );
         assert_eq!(
             landed("m << 4", ExprTarget::Kotlin, u32t),
@@ -16458,7 +17215,7 @@ mod tests {
         // Compared with a declared value, the shift takes its type.
         assert_eq!(
             landed("prev === (1 << m)", ExprTarget::Rust, InferredType::Bool),
-            "prev == 1u64 << m"
+            "prev == u64::checked_shl(1u64, u32::from(m)).unwrap_or(0)"
         );
     }
 

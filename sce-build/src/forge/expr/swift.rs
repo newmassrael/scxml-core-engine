@@ -485,7 +485,16 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         // out-of-range failure rather than trap, and answers nothing in its place, so
         // an element of any type is read alike (docs/adr/0099, section 5).
         // An operation proven at build time is printed apart from its operator by
-        // the Rust emitter alone, and is never handed here.
+        // the Rust emitter alone, and is never handed here, but for a shift.
+        //
+        // SCE_FORGE.md §3.4.1, "The width of a shift": a shift whose count is not
+        // known below its width ([`settle_shifts`]).
+        ExprKind::Checked {
+            op,
+            left,
+            right: Some(count),
+            discharge,
+        } if op.shift().is_some() => settled_shift(expr, *op, left, count, *discharge)?,
         ExprKind::Checked {
             discharge: Discharge::AtBuild,
             ..
@@ -539,6 +548,41 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             }
             throwing(&format!("Checked.{}({})", op.helper(), operands.join(", ")))
         }
+    })
+}
+
+/// A shift the build settled ([`settle_shifts`]), in Swift.
+///
+/// Swift's own `<<` and `>>` are the total shift already: a "smart shift" of a
+/// fixed-width integer by a count of any integer type at or past the width
+/// shifts every bit out, leaving 0, or the sign for a signed `>>` (the Swift
+/// standard library, `BinaryInteger.<<` and `>>`). The total shift is the
+/// operator, as [`binary`] writes it (a `>>>` of a signed value in the unsigned
+/// type of its width), parenthesised so it binds as one operand. A smart shift
+/// by a count below 0 shifts the other way; such a count reaches a total shift
+/// only outside the bodies the contract covers, where it is the caller's to rule
+/// out, as a divisor of 0 is.
+///
+/// The checked shift is the runtime's `Checked.shl`, `shr` or `ushr`, generic in
+/// the width and the count, which throws `outOfRange` for a count below 0.
+fn settled_shift(
+    expr: &TypedExpr,
+    op: CheckedOp,
+    left: &TypedExpr,
+    count: &TypedExpr,
+    discharge: Discharge,
+) -> Result<String, Refusal> {
+    let Some(operator) = op.shift() else {
+        unreachable!("only a shift is settled as one");
+    };
+    Ok(match discharge {
+        Discharge::AtBuild | Discharge::Total => format!("({})", binary(operator, left, count)?),
+        Discharge::AtRun => throwing(&format!(
+            "Checked.{}({}, {})",
+            op.helper(),
+            emit(left, expr.ty)?,
+            emit(count, InferredType::Unknown)?
+        )),
     })
 }
 
@@ -776,7 +820,8 @@ mod tests {
     }
 
     /// `>>>` shifts the bits of the unsigned type of the width, which is what Swift's
-    /// own `>>` is on one.
+    /// own `>>` is on one. A `>>>` of a signed value is settled as a shift by a count
+    /// not known below the width is ([`settle_shifts`]), so it binds as one operand.
     #[test]
     fn a_logical_shift_is_made_in_the_unsigned_type_of_the_width() {
         let mut ctx = TypeCtx::new();
@@ -784,9 +829,27 @@ mod tests {
         ctx.insert_var("bits", int(false, 32));
         assert_eq!(
             spell("word >>> 3", &ctx),
-            "Int32(truncatingIfNeeded: UInt32(truncatingIfNeeded: word) >> 3)"
+            "(Int32(truncatingIfNeeded: UInt32(truncatingIfNeeded: word) >> 3))"
         );
         assert_eq!(spell("bits >>> 3", &ctx), "bits >> 3");
+    }
+
+    /// SCE_FORGE.md §3.4.1, "The width of a shift": Swift's own shift is the total
+    /// one, 0 or the sign for a count at or past the width, so a count at least 0
+    /// is the operator whatever it is known to be; a count that may be below 0,
+    /// where failures are received, is the runtime's `Checked` shift, which throws
+    /// `outOfRange` there.
+    #[test]
+    fn a_count_not_known_below_the_width_is_the_operator_or_the_checked_shift() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("word", int(true, 32));
+        ctx.insert_var("n", int(false, 8));
+        ctx.insert_var("k", int(true, 32));
+        assert_eq!(spell("word << n", &ctx), "(word << n)");
+        assert_eq!(spell("word >> 40", &ctx), "(word >> 40)");
+        ctx.receives_failures = true;
+        assert_eq!(spell("word >> n", &ctx), "(word >> n)");
+        assert_eq!(spell("word >>> k", &ctx), "(try Checked.ushr(word, k))");
     }
 
     /// An integer operation of a body that receives failures is a `Checked` helper

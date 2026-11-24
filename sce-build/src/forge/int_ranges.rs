@@ -10,9 +10,11 @@
 // call's argument of a narrower integer type — and a read `xs[i]` whose
 // index is below 0 or not below the collection's length, are failures of the
 // algorithm, not values: a wrapped result is a wrong answer delivered in
-// silence, which is the one outcome the contract exists to end. Bitwise
-// operations and shifts keep the declared width's two's-complement meaning
-// and never fail.
+// silence, which is the one outcome the contract exists to end. So is a shift
+// by a count below 0, which has no exact result. Bitwise operations, and a
+// shift by any count at least 0, keep the declared width's two's-complement
+// meaning and never fail: a shift is its exact result reduced to the width of
+// what it shifts, a count at or past the width included.
 //
 // An algorithm that can reach such an operation must say so in its
 // signature; one that cannot keeps an API that does not fail. Which is which
@@ -41,7 +43,7 @@ use crate::forge::narrowing::{
     after_algorithm_statement, loop_entry, proves_written, Chain, Facts,
 };
 use crate::forge::ring_ops::{self, RingOp};
-use crate::forge::types::{InferredType, TypeCtx};
+use crate::forge::types::{InferredType, ShiftCount, ShiftCounts, TypeCtx};
 
 /// Why an operation can fail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +61,10 @@ pub enum HazardKind {
     /// An index that can fall outside its collection: below 0, or not below
     /// the collection's length — the index's type is the hazard's `ty`.
     IndexOutOfRange,
+    /// A shift whose count can be below 0, where it has no exact result and
+    /// fails `out-of-range` (SCE_FORGE.md §3.4.1, "The width of a shift") —
+    /// the count's type is the hazard's `ty`.
+    NegativeShiftCount,
 }
 
 /// One operation the analysis could not prove safe.
@@ -73,8 +79,18 @@ pub struct IntHazard {
     pub spelling: Option<AttributeSpelling>,
     pub kind: HazardKind,
     /// The type the operation computes in; for [`HazardKind::DoesNotFit`],
-    /// the type of the place the value is stored in.
+    /// the type of the place the value is stored in, and for
+    /// [`HazardKind::IndexOutOfRange`] and [`HazardKind::NegativeShiftCount`]
+    /// the type of the index or the count.
     pub ty: InferredType,
+}
+
+/// What the analysis found in a body: every operation it could not prove
+/// safe, and what it proved of each shift's count.
+#[derive(Debug)]
+pub(crate) struct Judgement {
+    pub(crate) hazards: Vec<IntHazard>,
+    pub(crate) shifts: ShiftCounts,
 }
 
 /// Every operation of `body` that can fail, given `params` (name and type),
@@ -93,6 +109,19 @@ pub fn hazards(
     ctx: &TypeCtx<'_>,
     arrays: &BTreeMap<String, i128>,
 ) -> Option<Vec<IntHazard>> {
+    judge(params, ret, body, ctx, arrays).map(|judgement| judgement.hazards)
+}
+
+/// The analysis of `body` whole, as [`hazards`] runs it: the hazards it
+/// found and what it proved of each shift's count ([`ShiftCounts`]). `None`
+/// where [`hazards`] is.
+pub(crate) fn judge(
+    params: &[(String, AlgorithmValueType)],
+    ret: Option<&AlgorithmValueType>,
+    body: &[AlgorithmStmt],
+    ctx: &TypeCtx<'_>,
+    arrays: &BTreeMap<String, i128>,
+) -> Option<Judgement> {
     // Every name a length can be taken of: a `bytes` or `list<T>` parameter
     // or buffer. A build-time array's length is its declared one instead.
     let mut collections: Vec<String> = ctx
@@ -118,6 +147,7 @@ pub fn hazards(
         collections,
         arrays: arrays.clone(),
         found: Vec::new(),
+        shifts: ShiftCounts::new(),
         recording: true,
         untyped: std::cell::Cell::new(false),
         proven: Facts::none(),
@@ -129,7 +159,10 @@ pub fn hazards(
         }
     }
     analysis.block(body, &mut env);
-    (!analysis.untyped.get()).then_some(analysis.found)
+    (!analysis.untyped.get()).then_some(Judgement {
+        hazards: analysis.found,
+        shifts: analysis.shifts,
+    })
 }
 
 /// A closed integer range. Every width SCE declares fits in `i128`, and so
@@ -330,6 +363,9 @@ struct Analysis<'c, 'a> {
     /// Each build-time array's declared length.
     arrays: BTreeMap<String, i128>,
     found: Vec<IntHazard>,
+    /// What each shift's count is proven to be, at every point the body
+    /// reaches it ([`Self::record_shift`]).
+    shifts: ShiftCounts,
     /// Off while a loop is iterated towards its fixed point, whose early
     /// rounds see narrower ranges than the loop really reaches; on for the
     /// one pass over the stable ranges, which is the one that reports.
@@ -839,6 +875,34 @@ impl Analysis<'_, '_> {
         }
     }
 
+    /// Record what `count`, the range of the count of the shift `node`,
+    /// proves of it against the width of what it shifts — the least of what
+    /// every pass over the stable ranges proved, as a hazard is recorded only
+    /// on that pass. A shift the parser placed nowhere is not recorded: the
+    /// emitters cannot find it, and judge it by its count's type.
+    fn record_shift(&mut self, node: &TypedExpr, expr: &str, count: Interval) {
+        if !self.recording {
+            return;
+        }
+        let (Some(span), InferredType::Int { bits, .. }) =
+            (node.span.clone(), node.ty.strip_quantity())
+        else {
+            return;
+        };
+        let known = if count.lo < 0 {
+            ShiftCount::MayBeNegative
+        } else if count.hi < i128::from(bits) {
+            ShiftCount::BelowWidth
+        } else {
+            ShiftCount::NonNegative
+        };
+        let held = self
+            .shifts
+            .entry((expr.trim().to_string(), span.start, span.end))
+            .or_insert(known);
+        *held = (*held).min(known);
+    }
+
     /// The range of `node`'s value when it is an integer, recording every
     /// hazard in it.
     fn eval(
@@ -945,8 +1009,28 @@ impl Analysis<'_, '_> {
                         };
                         Some(Interval { lo: 0, hi }.clamp(own))
                     }
-                    // Bitwise operations and shifts keep the declared width's
-                    // meaning and never fail; their value is the whole type.
+                    // A shift by a count at least 0 is its exact result
+                    // reduced to the width of what it shifts and never fails
+                    // (SCE_FORGE.md §3.4.1, "The width of a shift"); a count
+                    // below 0 has no exact result, and fails as a divisor of
+                    // 0 does. What the count is proven to be is kept for the
+                    // emitters, which print the language's own operator only
+                    // where it is proven below the width.
+                    BinOp::Shl | BinOp::Shr | BinOp::UShr => {
+                        if r.lo < 0 {
+                            self.hazard_in(
+                                node,
+                                expr,
+                                spelling,
+                                HazardKind::NegativeShiftCount,
+                                right.ty,
+                            );
+                        }
+                        self.record_shift(node, expr, r);
+                        Some(own)
+                    }
+                    // Bitwise operations keep the declared width's meaning and
+                    // never fail; their value is the whole type.
                     _ => Some(own),
                 }
             }
@@ -1429,6 +1513,7 @@ impl HazardKind {
             HazardKind::MinDividedByMinusOne => "divide the minimum by -1",
             HazardKind::DoesNotFit => "leave the type it is stored in",
             HazardKind::IndexOutOfRange => "read outside its collection",
+            HazardKind::NegativeShiftCount => "shift by a count below 0",
         }
     }
 }
@@ -1453,32 +1538,10 @@ pub(crate) fn check(
     }
     let types = crate::forge::generator::AlgorithmTypes::collect(m, imports)?;
     let ctx = types.type_ctx(m, imports);
-    let params: Vec<(String, AlgorithmValueType)> = m
-        .signature
-        .params
-        .iter()
-        .map(|p| (p.name.clone(), p.sce_type.clone()))
-        .collect();
     // A body the typed pipeline refuses somewhere is not judged here: its
     // refusal is raised where that expression is lowered.
-    let arrays: BTreeMap<String, i128> = m
-        .consts
-        .iter()
-        .filter_map(|c| match c.sce_type {
-            crate::forge::model::AlgorithmConstType::Array { len, .. } => {
-                Some((c.name.clone(), i128::from(len)))
-            }
-            crate::forge::model::AlgorithmConstType::Scalar(_) => None,
-        })
-        .collect();
-    let Some(first) = hazards(
-        &params,
-        m.signature.return_type.as_ref(),
-        &m.body,
-        &ctx,
-        &arrays,
-    )
-    .and_then(|found| found.into_iter().next()) else {
+    let Some(first) = judge_algorithm(m, &ctx).and_then(|found| found.hazards.into_iter().next())
+    else {
         return Ok(());
     };
     let at = ExpressionSite::new(&first.expr, first.spelling.as_ref()).locate(first.span.clone());
@@ -1504,6 +1567,56 @@ pub(crate) fn check(
         }
         .into();
     Err(at.place(refusal))
+}
+
+/// The analysis of the algorithm `m`'s body, in `ctx`, the scope its
+/// renderer lowers it in: its parameters at their declared ranges, its
+/// build-time arrays at their declared lengths.
+fn judge_algorithm(
+    m: &crate::forge::model::AlgorithmModel,
+    ctx: &TypeCtx<'_>,
+) -> Option<Judgement> {
+    let params: Vec<(String, AlgorithmValueType)> = m
+        .signature
+        .params
+        .iter()
+        .map(|p| (p.name.clone(), p.sce_type.clone()))
+        .collect();
+    let arrays: BTreeMap<String, i128> = m
+        .consts
+        .iter()
+        .filter_map(|c| match c.sce_type {
+            crate::forge::model::AlgorithmConstType::Array { len, .. } => {
+                Some((c.name.clone(), i128::from(len)))
+            }
+            crate::forge::model::AlgorithmConstType::Scalar(_) => None,
+        })
+        .collect();
+    judge(
+        &params,
+        m.signature.return_type.as_ref(),
+        &m.body,
+        ctx,
+        &arrays,
+    )
+}
+
+/// What the analysis proved of each shift's count in the body of `m`, an
+/// algorithm that does not declare `may-fail`, judged in `ctx`, the scope its
+/// renderer lowers it in ([`TypeCtx::shift_counts`]). Empty for a body the
+/// typed pipeline refuses somewhere, whose refusal is raised where that
+/// expression is lowered.
+///
+/// Every count of such a body is proven at least 0, or the algorithm was
+/// refused (`check`); what this adds is which counts are proven below the
+/// width, where every language's own operator computes the shift.
+pub(crate) fn shift_counts(
+    m: &crate::forge::model::AlgorithmModel,
+    ctx: &TypeCtx<'_>,
+) -> ShiftCounts {
+    judge_algorithm(m, ctx)
+        .map(|judgement| judgement.shifts)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -2001,6 +2114,88 @@ mod tests {
         // width's meaning, not an overflow.
         let body = [ret("(crc << 1) ^ 4129")];
         assert!(analyse(&[("crc", SceType::Uint16)], &[], &body).is_empty());
+    }
+
+    /// A shift by a count at least 0 is its exact result reduced to its width,
+    /// a count at or past the width included, and never fails; a count below 0
+    /// has no exact result (SCE_FORGE.md §3.4.1, "The width of a shift"). A
+    /// count of an unsigned type is at least 0 by its type, a signed one by a
+    /// guard the analysis reads.
+    #[test]
+    fn a_shift_by_a_count_that_can_be_below_zero_is_a_hazard() {
+        let params = [
+            ("x", SceType::Uint32),
+            ("n", SceType::Uint8),
+            ("k", SceType::Int32),
+        ];
+        assert!(analyse(&params, &[], &[ret("x << n")]).is_empty());
+        assert_eq!(
+            analyse(&params, &[], &[ret("x << k")]),
+            vec![("x << k".to_string(), HazardKind::NegativeShiftCount)]
+        );
+        assert_eq!(
+            analyse(&params, &[], &[ret("x >> -1")]),
+            vec![("x >> -1".to_string(), HazardKind::NegativeShiftCount)]
+        );
+        let guarded = [if_("k >= 0", vec![ret("x >>> k")]), ret("0")];
+        assert!(analyse(&params, &[], &guarded).is_empty());
+    }
+
+    /// The shifts of `body` and what the analysis proved of each count, by the
+    /// expression each is written in.
+    fn shift_counts_of(
+        params: &[(&str, SceType)],
+        body: &[AlgorithmStmt],
+    ) -> Vec<(String, ShiftCount)> {
+        let mut ctx = TypeCtx::new();
+        for (n, t) in params {
+            ctx.insert_var(n, InferredType::from_sce_type(t));
+        }
+        let params: Vec<(String, AlgorithmValueType)> = params
+            .iter()
+            .map(|(n, t)| (n.to_string(), AlgorithmValueType::of_scalar(t.clone())))
+            .collect();
+        let ret = AlgorithmValueType::of_scalar(SceType::Uint32);
+        judge(&params, Some(&ret), body, &ctx, &BTreeMap::new())
+            .expect("every expression of a unit-test body types")
+            .shifts
+            .into_iter()
+            .map(|((expr, _, _), known)| (expr, known))
+            .collect()
+    }
+
+    /// Each shift's count is recorded against the width of what it shifts, so
+    /// an emitter prints the language's own operator only where the count is
+    /// proven below it; a shift reached at several points holds the least any
+    /// of them proved.
+    #[test]
+    fn the_count_of_each_shift_is_judged_against_its_width() {
+        let params = [("x", SceType::Uint32), ("n", SceType::Uint8)];
+        let body = [if_("n < 32", vec![ret("x << n")]), ret("x >> n")];
+        assert_eq!(
+            shift_counts_of(&params, &body),
+            vec![
+                ("x << n".to_string(), ShiftCount::BelowWidth),
+                ("x >> n".to_string(), ShiftCount::NonNegative),
+            ]
+        );
+        let twice = [
+            if_("n < 8", vec![ret("x << n")]),
+            if_("n < 200", vec![ret("x << n")]),
+            ret("x << 31"),
+        ];
+        assert_eq!(
+            shift_counts_of(&params, &twice),
+            vec![
+                ("x << 31".to_string(), ShiftCount::BelowWidth),
+                ("x << n".to_string(), ShiftCount::NonNegative),
+            ]
+        );
+        let signed = [("x", SceType::Uint32), ("k", SceType::Int32)];
+        assert_eq!(
+            shift_counts_of(&signed, &[ret("x << k")]),
+            vec![("x << k".to_string(), ShiftCount::MayBeNegative)]
+        );
     }
 
     /// An operation of literals is judged at the type of the place it is

@@ -33,6 +33,34 @@ use crate::forge::value_type::ValueType;
 use std::collections::HashMap;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// What a shift's count is known to be
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// What the build knows of a shift's count against the width `W` of what it
+/// shifts (SCE_FORGE.md §3.4.1, "The width of a shift"), from the least known
+/// to the most. A shift by a count `n` at least 0 is its exact result reduced
+/// to `W`, which never fails; one by a count below 0 has no exact result and
+/// fails `out-of-range`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ShiftCount {
+    /// The count may be below 0.
+    MayBeNegative,
+    /// The count is at least 0, and may be `W` or more.
+    NonNegative,
+    /// The count is at least 0 and below `W`, where every language's own
+    /// operator computes the shift.
+    BelowWidth,
+}
+
+/// What the interval analysis proved of each shift's count in a body
+/// ([`crate::forge::int_ranges::shift_counts`]): keyed by the expression as
+/// written, trimmed, and the start and end of the shift in it, which is where
+/// the expression pipeline finds the same shift when it lowers the same text. A
+/// shift written once and judged at several points of the body holds the least
+/// any of them proved.
+pub type ShiftCounts = std::collections::BTreeMap<(String, usize, usize), ShiftCount>;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Inferred type lattice
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1402,6 +1430,14 @@ pub struct TypeCtx<'a> {
     ///
     /// [`prove_integer_operations`]: crate::forge::expr::prove_integer_operations
     pub integers_proven: bool,
+    /// What the interval analysis proved of each shift's count in the body of
+    /// an algorithm that does not declare `may-fail` ([`ShiftCounts`]), set by
+    /// the algorithm renderer and empty everywhere else. A shift it holds is
+    /// printed as the language's own operator where the count is proven below
+    /// the width, and as the total shift otherwise (SCE_FORGE.md §3.4.1, "The
+    /// width of a shift"); a shift it does not hold is judged by its count's
+    /// type and spelling alone.
+    pub shift_counts: ShiftCounts,
     /// Whether `len(x)` is a `uint32` here rather than an untyped integer that
     /// takes the width of what it meets. Set for a `sce-static` statechart,
     /// whose accepted subset says a length is a `uint32` (docs/SCE_ACCEPTED_SUBSET.md
@@ -1776,6 +1812,7 @@ impl<'a> TypeCtx<'a> {
             project_str_args_as_bytes_view: false,
             receives_failures: false,
             integers_proven: false,
+            shift_counts: ShiftCounts::new(),
             lengths_are_uint32: false,
             exact_integers: false,
             reject_unknown_callees: false,

@@ -31,7 +31,9 @@
 //   caller to hand a failure to.
 // - Bitwise operations and shifts wrap at the width — which is what keeps
 //   CRC-class tables, whose canonical form shifts bits out of the top,
-//   byte-equivalent to a hand-coded reference.
+//   byte-equivalent to a hand-coded reference. A shift is its exact result
+//   reduced to the width for every count at least 0, a count at or past the
+//   width included; a count below 0 refuses the build, as the runtime fails it.
 // - An operation on literals alone has no width until it lands, and is
 //   computed exactly.
 //
@@ -859,6 +861,42 @@ impl<'t> IntWidth<'t> {
         }
     }
 
+    /// `a op n`, a shift, at this width (SCE_FORGE.md §3.4.1, "The width of a
+    /// shift"): `a`, read at the width, shifted by `n` places and reduced to
+    /// the width — `a * 2^n` for `<<`, the floor of `a / 2^n` for `>>`, and
+    /// the floor of the width's unsigned bits of `a` over `2^n` for `>>>` —
+    /// so a count at or past the width leaves 0, or -1 for a `>>` of a negative
+    /// value. A count below 0 has no exact result and refuses the build, as the
+    /// runtime fails it `out-of-range`.
+    fn shift(&self, op: BinOp, a: i128, n: i128) -> Result<i128, ConstFoldKind> {
+        if n < 0 {
+            return Err(self.fail(
+                HazardKind::NegativeShiftCount,
+                format!("{a} {} {n}", op.token()),
+            ));
+        }
+        let span = self.hi - self.lo + 1;
+        let bits = i128::from(span.trailing_zeros());
+        let a = self.wrap(a);
+        let exact = if n >= bits {
+            if op == BinOp::Shr && a < 0 {
+                -1
+            } else {
+                0
+            }
+        } else {
+            // `n` is below the width, at most 63, and `a` within 64 bits, so
+            // no shift leaves `i128`.
+            match op {
+                BinOp::Shl => a << n,
+                BinOp::Shr => a >> n,
+                BinOp::UShr => a.rem_euclid(span) >> n,
+                _ => unreachable!("non-shift op routed to IntWidth::shift: {op:?}"),
+            }
+        };
+        Ok(self.wrap(exact))
+    }
+
     /// `a op b` at this width, or the failure the contract names for it.
     fn arith(&self, op: BinOp, a: i128, b: i128) -> Result<i128, ConstFoldKind> {
         let observed = || format!("{a} {} {b}", op.token());
@@ -1033,12 +1071,10 @@ fn eval_binop(
         BinOp::And => Ok(V::Bool(l.to_bool()? && r.to_bool()?)),
         BinOp::Or => Ok(V::Bool(l.to_bool()? || r.to_bool()?)),
         BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr | BinOp::UShr => {
-            let mut a = require_int(l)?;
+            let a = require_int(l)?;
             let b = require_int(r)?;
-            // A logical shift reads the operand's bits at its width, so a
-            // negative one enters as the unsigned value of those bits.
-            if let (BinOp::UShr, Some(w)) = (op, width) {
-                a = a.rem_euclid(w.hi - w.lo + 1);
+            if let (true, Some(w)) = (op.is_shift(), width) {
+                return Ok(V::Int(w.shift(op, a, b)?));
             }
             let v = bitwise_int(op, a, b)?;
             Ok(V::Int(width.map_or(v, |w| w.wrap(v))))
@@ -1668,6 +1704,51 @@ mod tests {
             out,
             vec![ConstValue::I8(0x0F)],
             "`>>>` shifts the width's bits"
+        );
+    }
+
+    /// A shift by a count at or past its width is its exact result reduced to
+    /// the width (SCE_FORGE.md §3.4.1, "The width of a shift"): 0, or -1 for a
+    /// `>>` of a negative value, as every backend computes it at runtime.
+    #[test]
+    fn a_count_past_the_width_folds_to_the_reduced_exact_result() {
+        let fold = |elem: SceType, init: &str| {
+            evaluate_fold(&fold_of(elem, 10, init), &mut Budget::default(), TEST_SITE)
+                .unwrap_or_else(|e| panic!("{init} folds: {e:?}"))
+        };
+        assert_eq!(
+            fold(SceType::Uint8, "255 << i"),
+            [255, 254, 252, 248, 240, 224, 192, 128, 0, 0]
+                .map(ConstValue::U8)
+                .to_vec()
+        );
+        assert_eq!(
+            fold(SceType::Int8, "-128 >> i"),
+            [-128, -64, -32, -16, -8, -4, -2, -1, -1, -1]
+                .map(ConstValue::I8)
+                .to_vec()
+        );
+        assert_eq!(
+            fold(SceType::Int8, "-128 >>> i"),
+            [-128, 64, 32, 16, 8, 4, 2, 1, 0, 0]
+                .map(ConstValue::I8)
+                .to_vec()
+        );
+    }
+
+    /// A shift by a count below 0 has no exact result: the fold is refused at
+    /// the shift, naming the count it met, where the runtime fails it
+    /// `out-of-range`.
+    #[test]
+    fn a_shift_by_a_count_below_zero_refuses_the_fold() {
+        assert_eq!(
+            integer_failure(&fold_of(SceType::Int8, 1, "1 << (i - 1)")),
+            failure(
+                "1 << (i - 1)",
+                "shift by a count below 0",
+                "int8",
+                "1 << -1"
+            )
         );
     }
 
