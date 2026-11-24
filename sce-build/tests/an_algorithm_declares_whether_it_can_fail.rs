@@ -249,7 +249,8 @@ fn an_undeclared_shift_by_a_count_that_can_be_below_zero_is_refused() {
             });
         let text = err.to_string();
         assert!(
-            text.contains("`x << k` can shift by a count below 0 (int32)")
+            // The operation as the attribute writes it (`AttributeSpelling`).
+            text.contains("`x &lt;&lt; k` can shift by a count below 0 (int32)")
                 && text.contains("may-fail"),
             "{lang:?}: {text}"
         );
