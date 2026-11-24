@@ -18,7 +18,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-{% if needs_string_h %}#include "sce/text.h"  /* a record's text is compared with sce_text_compare */
+{% if needs_string_h %}#include "sce/text.h"  /* text is compared and copied with its routines */
 {% endif %}{% if needs_span %}#include "sce/forge/bytes.h"  /* sce_forge_bytes_view_t */
 {% endif %}{% if needs_list_view %}#include "sce/forge/list_view.h"  /* read-only list<T> parameters */
 {% endif %}{% if may_fail or uses_forge_algorithm %}#include "sce/forge/algorithm.h"  /* integer operations, SCE_FORGE.md §3.4.1 and §3.4.2 */

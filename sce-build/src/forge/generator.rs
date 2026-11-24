@@ -50111,14 +50111,19 @@ fn render_algorithm(
     // `sce/forge/map.h` (docs/adr/0108, D8), the header the core it is lent by
     // and the seed it derives one from are declared in.
     ctx.insert("needs_map".into(), c11_maps.is_some().into());
-    // C11 compares a record's text with `strcmp`.
+    // C11 compares and copies text with the routines of `sce/text.h`: a record's
+    // text field, and a text parameter, local or literal the body compares
+    // directly (`text !== ''` with no record beside it). Read off the body
+    // that calls them, as the Python and Swift runtime imports above are, so
+    // a new site of a text routine cannot leave the header out.
     ctx.insert(
         "needs_string_h".into(),
-        types
+        (types
             .records
             .iter()
             .any(|(_, _, record)| record.holds_text())
-            .into(),
+            || (lang == Language::C11 && body.contains("sce_text_")))
+        .into(),
     );
     // A value that may be absent (docs/adr/0055) — a parameter, the return, a
     // local or a field of a record the body holds — is C11's struct of the
