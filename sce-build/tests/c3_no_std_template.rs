@@ -341,7 +341,8 @@ fn rust_template_leaves_the_microstep_to_the_runtime() {
             "return Some(::sce_rust_runtime::TransitionId(0));",
             "return Some(::sce_rust_runtime::TransitionId(1));",
             "transition: ::sce_rust_runtime::TransitionId,",
-            "fn execute_exit_actions(\n        &mut self,\n        state: Self::State,\n        \
+            "fn execute_exit_actions(\n        &mut self,\n        \
+             state: ::sce_rust_runtime::StateId,\n        \
              engine: &mut sce_rust_runtime::Engine<Self>,\n    ) {",
         ] {
             assert!(
@@ -378,6 +379,82 @@ fn rust_template_leaves_the_microstep_to_the_runtime() {
             assert!(
                 !code.contains(procedure),
                 "emit (no_std={no_std}) must not carry `{procedure}` — the microstep is the runtime's"
+            );
+        }
+    }
+}
+
+/// A document with entry, exit and history default content, so every behaviour
+/// hook the runtime's procedures call is emitted. Sorted, its events are
+/// `back`, `go` and `left`, then the null event.
+const HOOK_NUMBERS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0" name="hook_numbers">
+  <state id="s0">
+    <onentry><raise event="go"/></onentry>
+    <onexit><raise event="left"/></onexit>
+    <transition event="go" target="p"/>
+  </state>
+  <state id="p">
+    <history id="h">
+      <transition target="s1"><raise event="back"/></transition>
+    </history>
+    <state id="s1">
+      <transition event="left" target="s0"/>
+    </state>
+  </state>
+</scxml>
+"#;
+
+/// The behaviour hooks are handed the numbers the tables are indexed by, and
+/// match on the constants written beside each enum from its discriminant
+/// (docs/adr/0123): structure and behaviour are one numbering, so the engine
+/// converts nothing to call them. The enums stay the machine's names.
+#[test]
+fn rust_template_hooks_match_on_the_numbers_the_tables_are_indexed_by() {
+    // Analysed, as the command line does before it renders: the analysis is
+    // what resolves a transition's descriptor to the events it matches.
+    let mut model = parse(HOOK_NUMBERS, "hook_numbers");
+    sce_build::analyzer::analyze(&mut model, "hook_numbers");
+    for no_std in [false, true] {
+        let code = generate(&model, &template_dir(), no_std).expect("render");
+        for expected in [
+            // One constant for each variant, written from the variant.
+            "pub const ID_S0: ::sce_rust_runtime::StateId = \
+             ::sce_rust_runtime::StateId(Self::S0 as u16);",
+            "pub const ID_S1: ::sce_rust_runtime::StateId = \
+             ::sce_rust_runtime::StateId(Self::S1 as u16);",
+            "pub const ID_H: ::sce_rust_runtime::HistoryId = \
+             ::sce_rust_runtime::HistoryId(Self::H as u16);",
+            "pub const ID_Go: ::sce_rust_runtime::EventId = \
+             ::sce_rust_runtime::EventId(Self::Go as u16);",
+            "pub const ID_Null: ::sce_rust_runtime::EventId = \
+             ::sce_rust_runtime::EventId(Self::Null as u16);",
+            // The hooks take the numbers.
+            "fn execute_entry_actions(&mut self, state: ::sce_rust_runtime::StateId,",
+            "fn execute_history_default_content(&mut self, history: ::sce_rust_runtime::HistoryId,",
+            "        state: ::sce_rust_runtime::StateId,\n        \
+             event: ::sce_rust_runtime::EventId,\n",
+            // And match on them.
+            "HookNumbersState::ID_S0 => {",
+            "HookNumbersHistory::ID_H => {",
+            "event == HookNumbersEvent::ID_Go",
+            "event == HookNumbersEvent::ID_Left",
+        ] {
+            assert!(
+                code.contains(expected),
+                "emit (no_std={no_std}) must carry `{expected}`:\n{code}"
+            );
+        }
+        for typed in [
+            "HookNumbersState::S0 => {",
+            "HookNumbersHistory::H => {",
+            "event == HookNumbersEvent::Go",
+            "event == HookNumbersEvent::Left",
+        ] {
+            assert!(
+                !code.contains(typed),
+                "emit (no_std={no_std}) must not match a hook's argument as the enum \
+                 (`{typed}`)"
             );
         }
     }

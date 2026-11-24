@@ -176,16 +176,16 @@ impl StatePolicy for MockPolicy {
     // `_is_default_entry` is unused: this policy has no compound states.
     fn execute_entry_actions(
         &mut self,
-        _s: Self::State,
+        _s: StateId,
         _eng: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
     }
-    fn execute_exit_actions(&mut self, _s: Self::State, _eng: &mut Engine<Self>) {}
+    fn execute_exit_actions(&mut self, _s: StateId, _eng: &mut Engine<Self>) {}
     fn first_enabled_transition(
         &mut self,
-        _s: Self::State,
-        _e: Self::Event,
+        _s: StateId,
+        _e: EventId,
         _eng: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         None

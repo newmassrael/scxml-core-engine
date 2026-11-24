@@ -127,18 +127,18 @@ impl StatePolicy for HttpPolicy {
 
     fn execute_entry_actions(
         &mut self,
-        _state: Self::State,
+        _state: StateId,
         _engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
     }
 
-    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
 
     fn first_enabled_transition(
         &mut self,
-        _state: Self::State,
-        _event: Self::Event,
+        _state: StateId,
+        _event: EventId,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         None

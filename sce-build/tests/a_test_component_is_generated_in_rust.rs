@@ -173,14 +173,14 @@ fn each_branch_is_a_transition_on_the_snapshot_event_guarded_by_its_match() {
         receive < timeout,
         "the branches are tried in document order"
     );
-    assert!(asker.contains("event == AskerEvent::SceTestSnapshot"));
+    assert!(asker.contains("event == AskerEvent::ID_SceTestSnapshot"));
     assert!(asker.contains("use super::reply_ok;"));
     assert!(asker.contains("use super::request_of;"));
 
     let coordinator = text("coordinator");
     assert!(coordinator.contains("self.test_context().done(\"answerer\")"));
     assert!(
-        !coordinator.contains("event == CoordinatorEvent::DoneInvokeAnswerer"),
+        !coordinator.contains("event == CoordinatorEvent::ID_DoneInvokeAnswerer"),
         "a done branch is read from the snapshot, not from a completion"
     );
     assert!(coordinator.contains(

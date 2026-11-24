@@ -145,6 +145,23 @@ pub enum {{ machine_name }}State {
     {{ row.id | to_state_variant }} = {{ loop.index0 }},
 {% endfor %}
 }
+
+{# docs/adr/0123: the policy's behaviour hooks are handed the numbers the
+   runtime's tables are indexed by, and match on these. Each is written from
+   its variant's discriminant, so a state's two names cannot disagree, and is
+   named after its variant, so the names are as distinct as the variants are:
+   a variant holds no `_` but where an escape puts one at its edge, so
+   `ID_<variant>` is never another variant's name nor another constant's. #}
+/// Each state's number, as the document's tables and the policy's behaviour
+/// hooks know it: `ID_<variant>` is the variant's discriminant. The hooks
+/// match on these, and the variants stay the machine's names in its API.
+// Named after the variant each one numbers, which is not upper case.
+#[allow(non_upper_case_globals)]
+impl {{ machine_name }}State {
+{% for row in tables.states %}
+    pub const ID_{{ row.id | to_state_variant }}: ::sce_rust_runtime::StateId = ::sce_rust_runtime::StateId(Self::{{ row.id | to_state_variant }} as u16);
+{% endfor %}
+}
 {% if model.history_states %}
 
 // ======================================================================
@@ -161,6 +178,16 @@ pub enum {{ machine_name }}State {
 pub enum {{ machine_name }}History {
 {% for row in tables.histories %}
     {{ row.id | to_state_variant }} = {{ loop.index0 }},
+{% endfor %}
+}
+
+/// Each `<history>`'s number, as the document's tables and the policy's
+/// behaviour hooks know it: `ID_<variant>` is the variant's discriminant.
+// Named after the variant each one numbers, which is not upper case.
+#[allow(non_upper_case_globals)]
+impl {{ machine_name }}History {
+{% for row in tables.histories %}
+    pub const ID_{{ row.id | to_state_variant }}: ::sce_rust_runtime::HistoryId = ::sce_rust_runtime::HistoryId(Self::{{ row.id | to_state_variant }} as u16);
 {% endfor %}
 }
 {% endif %}
@@ -180,6 +207,19 @@ pub enum {{ machine_name }}Event {
 {% endfor %}
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null = {{ model.events | length }},
+}
+
+/// Each event's number, as the runtime's queues and the policy's behaviour
+/// hooks know it: `ID_<variant>` is the variant's discriminant, and
+/// `ID_Null` is the tables' `null_event`, which asks for eventless
+/// transitions.
+// Named after the variant each one numbers, which is not upper case.
+#[allow(non_upper_case_globals)]
+impl {{ machine_name }}Event {
+{% for event_name in model.events | sort %}
+    pub const ID_{{ event_name | to_event_variant }}: ::sce_rust_runtime::EventId = ::sce_rust_runtime::EventId(Self::{{ event_name | to_event_variant }} as u16);
+{% endfor %}
+    pub const ID_Null: ::sce_rust_runtime::EventId = ::sce_rust_runtime::EventId(Self::Null as u16);
 }
 
 // ======================================================================

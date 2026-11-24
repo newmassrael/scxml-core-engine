@@ -110,6 +110,33 @@ pub enum RequestLifeState {
     Superseded = 9,
 }
 
+/// Each state's number, as the document's tables and the policy's behaviour
+/// hooks know it: `ID_<variant>` is the variant's discriminant. The hooks
+/// match on these, and the variants stay the machine's names in its API.
+// Named after the variant each one numbers, which is not upper case.
+#[allow(non_upper_case_globals)]
+impl RequestLifeState {
+    pub const ID_Request: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Request as u16);
+    pub const ID_Open: ::sce_rust_runtime::StateId = ::sce_rust_runtime::StateId(Self::Open as u16);
+    pub const ID_Queued: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Queued as u16);
+    pub const ID_Running: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Running as u16);
+    pub const ID_Interrupted: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Interrupted as u16);
+    pub const ID_Ended: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Ended as u16);
+    pub const ID_Completed: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Completed as u16);
+    pub const ID_Failed: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Failed as u16);
+    pub const ID_Cancelled: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Cancelled as u16);
+    pub const ID_Superseded: ::sce_rust_runtime::StateId =
+        ::sce_rust_runtime::StateId(Self::Superseded as u16);
+}
+
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
@@ -130,6 +157,31 @@ pub enum RequestLifeEvent {
     Write = 7,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null = 8,
+}
+
+/// Each event's number, as the runtime's queues and the policy's behaviour
+/// hooks know it: `ID_<variant>` is the variant's discriminant, and
+/// `ID_Null` is the tables' `null_event`, which asks for eventless
+/// transitions.
+// Named after the variant each one numbers, which is not upper case.
+#[allow(non_upper_case_globals)]
+impl RequestLifeEvent {
+    pub const ID_Cancel: ::sce_rust_runtime::EventId =
+        ::sce_rust_runtime::EventId(Self::Cancel as u16);
+    pub const ID_Claim: ::sce_rust_runtime::EventId =
+        ::sce_rust_runtime::EventId(Self::Claim as u16);
+    pub const ID_Fail: ::sce_rust_runtime::EventId = ::sce_rust_runtime::EventId(Self::Fail as u16);
+    pub const ID_Heartbeat: ::sce_rust_runtime::EventId =
+        ::sce_rust_runtime::EventId(Self::Heartbeat as u16);
+    pub const ID_Normalize: ::sce_rust_runtime::EventId =
+        ::sce_rust_runtime::EventId(Self::Normalize as u16);
+    pub const ID_Publish: ::sce_rust_runtime::EventId =
+        ::sce_rust_runtime::EventId(Self::Publish as u16);
+    pub const ID_Supersede: ::sce_rust_runtime::EventId =
+        ::sce_rust_runtime::EventId(Self::Supersede as u16);
+    pub const ID_Write: ::sce_rust_runtime::EventId =
+        ::sce_rust_runtime::EventId(Self::Write as u16);
+    pub const ID_Null: ::sce_rust_runtime::EventId = ::sce_rust_runtime::EventId(Self::Null as u16);
 }
 
 // ======================================================================
@@ -1467,7 +1519,7 @@ impl StatePolicy for RequestLifePolicy {
     // SCE-MAP: request_life.scxml:25 :: _machine
     fn execute_entry_actions(
         &mut self,
-        state: Self::State,
+        state: ::sce_rust_runtime::StateId,
         engine: &mut sce_rust_runtime::Engine<Self>,
         is_default_entry: bool,
     ) {
@@ -1484,7 +1536,7 @@ impl StatePolicy for RequestLifePolicy {
     // SCE-MAP: request_life.scxml:25 :: _machine
     fn execute_exit_actions(
         &mut self,
-        state: Self::State,
+        state: ::sce_rust_runtime::StateId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1498,18 +1550,20 @@ impl StatePolicy for RequestLifePolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
-    // the ordered set. `Event::Null` asks for eventless transitions.
+    // the ordered set. `Event::ID_Null` asks for eventless transitions. The
+    // state and the event are the numbers the tables are indexed by
+    // (docs/adr/0123).
     #[doc = "SCE-MAP: request_life.scxml:25 :: _machine"]
     // SCE-MAP: request_life.scxml:25 :: _machine
     fn first_enabled_transition(
         &mut self,
-        state: Self::State,
-        event: Self::Event,
+        state: ::sce_rust_runtime::StateId,
+        event: ::sce_rust_runtime::EventId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
-            RequestLifeState::Cancelled => {
-                if event == RequestLifeEvent::Cancel {
+            RequestLifeState::ID_Cancelled => {
+                if event == RequestLifeEvent::ID_Cancel {
                     {
                         // cancelled, transition 0
                         return Some(::sce_rust_runtime::TransitionId(33));
@@ -1517,8 +1571,8 @@ impl StatePolicy for RequestLifePolicy {
                 }
                 None
             }
-            RequestLifeState::Completed => {
-                if event == RequestLifeEvent::Publish {
+            RequestLifeState::ID_Completed => {
+                if event == RequestLifeEvent::ID_Publish {
                     if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt && ev.bundle == self.outcome)
                     {
                         // completed, transition 0
@@ -1527,38 +1581,38 @@ impl StatePolicy for RequestLifePolicy {
                 }
                 None
             }
-            RequestLifeState::Ended => {
-                if event == RequestLifeEvent::Heartbeat {
+            RequestLifeState::ID_Ended => {
+                if event == RequestLifeEvent::ID_Heartbeat {
                     {
                         // ended, transition 0
                         return Some(::sce_rust_runtime::TransitionId(25));
                     }
                 }
-                if event == RequestLifeEvent::Publish {
+                if event == RequestLifeEvent::ID_Publish {
                     {
                         // ended, transition 1
                         return Some(::sce_rust_runtime::TransitionId(26));
                     }
                 }
-                if event == RequestLifeEvent::Fail {
+                if event == RequestLifeEvent::ID_Fail {
                     {
                         // ended, transition 2
                         return Some(::sce_rust_runtime::TransitionId(27));
                     }
                 }
-                if event == RequestLifeEvent::Write {
+                if event == RequestLifeEvent::ID_Write {
                     {
                         // ended, transition 3
                         return Some(::sce_rust_runtime::TransitionId(28));
                     }
                 }
-                if event == RequestLifeEvent::Cancel {
+                if event == RequestLifeEvent::ID_Cancel {
                     {
                         // ended, transition 4
                         return Some(::sce_rust_runtime::TransitionId(29));
                     }
                 }
-                if event == RequestLifeEvent::Supersede {
+                if event == RequestLifeEvent::ID_Supersede {
                     {
                         // ended, transition 5
                         return Some(::sce_rust_runtime::TransitionId(30));
@@ -1566,8 +1620,8 @@ impl StatePolicy for RequestLifePolicy {
                 }
                 None
             }
-            RequestLifeState::Failed => {
-                if event == RequestLifeEvent::Fail {
+            RequestLifeState::ID_Failed => {
+                if event == RequestLifeEvent::ID_Fail {
                     if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // failed, transition 0
@@ -1576,29 +1630,29 @@ impl StatePolicy for RequestLifePolicy {
                 }
                 None
             }
-            RequestLifeState::Interrupted => {
-                if event == RequestLifeEvent::Heartbeat {
+            RequestLifeState::ID_Interrupted => {
+                if event == RequestLifeEvent::ID_Heartbeat {
                     if matches!(&self.pending_payload, RequestLifePayload::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // interrupted, transition 0
                         return Some(::sce_rust_runtime::TransitionId(21));
                     }
                 }
-                if event == RequestLifeEvent::Publish {
+                if event == RequestLifeEvent::ID_Publish {
                     if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // interrupted, transition 1
                         return Some(::sce_rust_runtime::TransitionId(22));
                     }
                 }
-                if event == RequestLifeEvent::Fail {
+                if event == RequestLifeEvent::ID_Fail {
                     if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // interrupted, transition 2
                         return Some(::sce_rust_runtime::TransitionId(23));
                     }
                 }
-                if event == RequestLifeEvent::Write {
+                if event == RequestLifeEvent::ID_Write {
                     if matches!(&self.pending_payload, RequestLifePayload::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // interrupted, transition 3
@@ -1607,38 +1661,38 @@ impl StatePolicy for RequestLifePolicy {
                 }
                 None
             }
-            RequestLifeState::Open => {
-                if event == RequestLifeEvent::Heartbeat {
+            RequestLifeState::ID_Open => {
+                if event == RequestLifeEvent::ID_Heartbeat {
                     {
                         // open, transition 0
                         return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
-                if event == RequestLifeEvent::Publish {
+                if event == RequestLifeEvent::ID_Publish {
                     {
                         // open, transition 1
                         return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
-                if event == RequestLifeEvent::Fail {
+                if event == RequestLifeEvent::ID_Fail {
                     {
                         // open, transition 2
                         return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
-                if event == RequestLifeEvent::Write {
+                if event == RequestLifeEvent::ID_Write {
                     {
                         // open, transition 3
                         return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
-                if event == RequestLifeEvent::Cancel {
+                if event == RequestLifeEvent::ID_Cancel {
                     {
                         // open, transition 4
                         return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
-                if event == RequestLifeEvent::Supersede {
+                if event == RequestLifeEvent::ID_Supersede {
                     {
                         // open, transition 5
                         return Some(::sce_rust_runtime::TransitionId(15));
@@ -1646,67 +1700,67 @@ impl StatePolicy for RequestLifePolicy {
                 }
                 None
             }
-            RequestLifeState::Request => {
-                if event == RequestLifeEvent::Claim {
+            RequestLifeState::ID_Request => {
+                if event == RequestLifeEvent::ID_Claim {
                     if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if !ev.offeredMatches)
                     {
                         // request, transition 0
                         return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
-                if event == RequestLifeEvent::Claim {
+                if event == RequestLifeEvent::ID_Claim {
                     if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if !ev.laneOpen && (engine.is_active(RequestLifeState::Queued) || engine.is_active(RequestLifeState::Interrupted) && ev.resume || engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume))
                     {
                         // request, transition 1
                         return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
-                if event == RequestLifeEvent::Claim {
+                if event == RequestLifeEvent::ID_Claim {
                     if engine.is_active(RequestLifeState::Queued) {
                         // request, transition 2
                         return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
-                if event == RequestLifeEvent::Claim {
+                if event == RequestLifeEvent::ID_Claim {
                     if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Interrupted) && ev.resume)
                     {
                         // request, transition 3
                         return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
-                if event == RequestLifeEvent::Claim {
+                if event == RequestLifeEvent::ID_Claim {
                     if engine.is_active(RequestLifeState::Interrupted) {
                         // request, transition 4
                         return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
-                if event == RequestLifeEvent::Claim {
+                if event == RequestLifeEvent::ID_Claim {
                     if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume)
                     {
                         // request, transition 5
                         return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
-                if event == RequestLifeEvent::Claim {
+                if event == RequestLifeEvent::ID_Claim {
                     if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now)
                     {
                         // request, transition 6
                         return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
-                if event == RequestLifeEvent::Claim {
+                if event == RequestLifeEvent::ID_Claim {
                     if engine.is_active(RequestLifeState::Running) {
                         // request, transition 7
                         return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
-                if event == RequestLifeEvent::Claim {
+                if event == RequestLifeEvent::ID_Claim {
                     {
                         // request, transition 8
                         return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
-                if event == RequestLifeEvent::Normalize {
+                if event == RequestLifeEvent::ID_Normalize {
                     {
                         // request, transition 9
                         return Some(::sce_rust_runtime::TransitionId(9));
@@ -1714,36 +1768,36 @@ impl StatePolicy for RequestLifePolicy {
                 }
                 None
             }
-            RequestLifeState::Running => {
-                if event == RequestLifeEvent::Heartbeat {
+            RequestLifeState::ID_Running => {
+                if event == RequestLifeEvent::ID_Heartbeat {
                     if matches!(&self.pending_payload, RequestLifePayload::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // running, transition 0
                         return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
-                if event == RequestLifeEvent::Publish {
+                if event == RequestLifeEvent::ID_Publish {
                     if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // running, transition 1
                         return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
-                if event == RequestLifeEvent::Fail {
+                if event == RequestLifeEvent::ID_Fail {
                     if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // running, transition 2
                         return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
-                if event == RequestLifeEvent::Write {
+                if event == RequestLifeEvent::ID_Write {
                     if matches!(&self.pending_payload, RequestLifePayload::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
                         // running, transition 3
                         return Some(::sce_rust_runtime::TransitionId(19));
                     }
                 }
-                if event == RequestLifeEvent::Normalize {
+                if event == RequestLifeEvent::ID_Normalize {
                     if matches!(&self.pending_payload, RequestLifePayload::Normalize(ev) if self.expires_at <= ev.now)
                     {
                         // running, transition 4

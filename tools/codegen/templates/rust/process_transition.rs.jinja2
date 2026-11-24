@@ -28,7 +28,9 @@
     A transition reaches the engine as its number in the document's tables
     (docs/adr/0064), the row that holds its source, its targets and its type:
     `tables.written[state][index]` is the number of the `index`-th transition
-    written in `state`.
+    written in `state`. The state and the event come in as the numbers of the
+    same tables (docs/adr/0123), matched through the `ID_<variant>` constants
+    state_machine.rs.jinja2 writes beside each enum.
 
     The Rust twin of C++ process_transition.jinja2.
 #}
@@ -51,10 +53,13 @@
 {# Whether `trans` answers `event`: an eventless transition only an eventless
    selection, a transition with an event descriptor only a named event —
    §scxml-3.13 selects the two kinds in separate passes. #}
+{# `event` is the event's number (docs/adr/0123), compared with the numbers
+   the event type names (`ID_<variant>`). A descriptor matched by its name
+   reads the name, and only it turns the number into the event. #}
 {% macro event_match(trans) -%}
-{%- if not trans.event -%}event == {{ machine_name }}Event::Null
-{%- elif trans.needs_string_matching -%}event != {{ machine_name }}Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(Self::get_event_name(event), "{{ trans.event }}")
-{%- elif trans.matching_enum_values | length > 0 -%}{% for ev in trans.matching_enum_values %}event == {{ machine_name }}Event::{{ ev | to_event_variant }}{{ ' || ' if not loop.last }}{% endfor %}
+{%- if not trans.event -%}event == {{ machine_name }}Event::ID_Null
+{%- elif trans.needs_string_matching -%}event != {{ machine_name }}Event::ID_Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(Self::get_event_name(Self::event_of(event)), "{{ trans.event }}")
+{%- elif trans.matching_enum_values | length > 0 -%}{% for ev in trans.matching_enum_values %}event == {{ machine_name }}Event::ID_{{ ev | to_event_variant }}{{ ' || ' if not loop.last }}{% endfor %}
 {%- else -%}false
 {%- endif -%}
 {%- endmacro %}
@@ -66,7 +71,7 @@
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above each function this template emits. #}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn bind_current_event(&mut self, event: Self::Event, engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn bind_current_event(&mut self, event: ::sce_rust_runtime::EventId, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 5.10: set _event for guard evaluation, in the session the
         // start established (docs/adr/0096)
         self.assert_script_session();
@@ -76,13 +81,13 @@
         self.publish_in_predicate_states(engine);
 {% endif %}
 {% if model.needs_event_name %}
-        if event != Self::null_event() {
+        if event != {{ machine_name }}Event::ID_Null {
             // §scxml-5.10: the name the event ARRIVED under, which is longer than
             // its member's when a name the document does not write was matched
             // through a prefix (§scxml-3.12.1).
             let arrival = self.pending_event_arrival_name.clone();
             let event_name: &str = if arrival.is_empty() {
-                Self::get_event_name(event)
+                Self::get_event_name(Self::event_of(event))
             } else {
                 arrival.as_str()
             };
@@ -135,18 +140,20 @@
     // the first of `state`'s own transitions, in document order, that `event`
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
-    // the ordered set. `Event::Null` asks for eventless transitions.
+    // the ordered set. `Event::ID_Null` asks for eventless transitions. The
+    // state and the event are the numbers the tables are indexed by
+    // (docs/adr/0123).
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn first_enabled_transition(
         &mut self,
-        state: Self::State,
-        event: Self::Event,
+        state: ::sce_rust_runtime::StateId,
+        event: ::sce_rust_runtime::EventId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => {
+            {{ machine_name }}State::ID_{{ state_id | to_state_variant }} => {
 {% for trans in state.transitions %}
                 if {{ event_match(trans) }} {
 {# A guard lowered with no `cond` written is a branch of a test component's

@@ -195,11 +195,11 @@ impl StatePolicy for Test144Policy {
     // no compound state whose initial content could run.
     fn execute_entry_actions(
         &mut self,
-        state: Self::State,
+        state: StateId,
         engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
-        match state {
+        match Self::state_of(state) {
             Test144State::S0 => {
                 // C++ onentry: raise(Foo); raise(Bar)
                 engine.raise(EventWithMetadata::new(Test144Event::Foo));
@@ -209,7 +209,7 @@ impl StatePolicy for Test144Policy {
         }
     }
 
-    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {
+    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {
         // C++ executeExitActions: empty body
     }
 
@@ -219,11 +219,11 @@ impl StatePolicy for Test144Policy {
 
     fn first_enabled_transition(
         &mut self,
-        state: Self::State,
-        event: Self::Event,
+        state: StateId,
+        event: EventId,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
-        match (state, event) {
+        match (Self::state_of(state), Self::event_of(event)) {
             // S0 on Foo → S1
             (Test144State::S0, Test144Event::Foo) => Some(S0_ON_FOO),
             // S1 on Bar → Pass

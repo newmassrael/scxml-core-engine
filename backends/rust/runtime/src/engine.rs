@@ -1795,11 +1795,6 @@ impl<P: StatePolicy> Engine<P> {
         });
     }
 
-    /// Execute the policy's `execute_exit_actions` for one state.
-    pub(crate) fn execute_on_exit(&mut self, state: P::State) {
-        self.with_policy(|policy, engine| policy.execute_exit_actions(state, engine));
-    }
-
     /// Appendix D's exitInterpreter (§scxml-D-exitInterpreter): exit every
     /// state still in the configuration, innermost first, each as exitStates
     /// exits one — its `<onexit>`, then its invocations cancelled, then it
@@ -2359,8 +2354,12 @@ impl<P: StatePolicy> Engine<P> {
     /// [`PayloadReading`](crate::PayloadReading). Four of the five readings are
     /// the ladder working and are recorded by being ignored; the fifth is the
     /// one a host is wrong about.
-    pub fn note_payload_reading(&mut self, event: P::Event, reading: crate::PayloadReading) {
-        self.core.note_payload_reading(P::event_id(event), reading);
+    ///
+    /// `event` is the event's number, as
+    /// [`bind_current_event`](StatePolicy::bind_current_event) is handed it
+    /// (docs/adr/0123).
+    pub fn note_payload_reading(&mut self, event: EventId, reading: crate::PayloadReading) {
+        self.core.note_payload_reading(event, reading);
     }
 
     /// How many events arrived carrying a payload that announced itself as
@@ -5286,7 +5285,7 @@ impl<P: StatePolicy> Engine<P> {
     /// The event of this machine a queued number names.
     #[inline]
     fn event_of(event: EventId) -> P::Event {
-        P::EVENTS[usize::from(event.0)]
+        P::event_of(event)
     }
 
     pub(crate) fn run_main_event_loop(&mut self) {
@@ -5382,23 +5381,21 @@ impl<P: StatePolicy> Engine<P> {
         } else {
             P::Payload::default()
         };
+        // The event is a number from here on, and becomes this machine's own
+        // value only where a step below reads it as one: the door, `<finalize>`
+        // and autoforward. A machine with none of them converts nothing
+        // (docs/adr/0123).
         let delivered = queued.event;
-        let event_with_meta = EventWithMetadata {
-            event: Self::event_of(delivered),
-            payload,
-            metadata: queued.metadata,
-            #[cfg(feature = "std")]
-            target: queued.target,
-        };
+        let mut metadata = queued.metadata;
         // EventSchema native lowering: bind the typed payload that rode with
         // this event so `_event.data.<field>` guards read it natively. No-op
         // for schemaless policies (`Payload = ()`).
-        self.policy.populate_event_payload(&event_with_meta.payload);
+        self.policy.populate_event_payload(&payload);
         // …and when no typed payload rode with it, read that view out of the
         // `data` every other producer fills, at the door.
         #[cfg(feature = "std")]
         {
-            match self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data) {
+            match self.bind_lifted_payload(Self::event_of(delivered), &metadata.data) {
                 Admission::Admitted => {}
                 Admission::Replaced { error, refusal } => {
                     return self.bind_in_place(error, &refusal);
@@ -5409,9 +5406,17 @@ impl<P: StatePolicy> Engine<P> {
         if external {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
+                let event_with_meta = EventWithMetadata {
+                    event: Self::event_of(delivered),
+                    payload,
+                    metadata,
+                    #[cfg(feature = "std")]
+                    target: queued.target,
+                };
                 self.with_policy(|policy, engine| {
                     policy.execute_finalize_for_child_event(&event_with_meta, engine)
                 });
+                metadata = event_with_meta.metadata;
             }
             // §scxml-D-mainEventLoop: autoforward belongs to the same
             // preliminary step as `<finalize>` above — both run against the
@@ -5440,22 +5445,20 @@ impl<P: StatePolicy> Engine<P> {
                 // §scxml-5.10: under the name the event arrived under, which is
                 // the member's own unless a door cut a longer one back to it.
                 #[cfg(feature = "std")]
-                let name = if event_with_meta.metadata.name.is_empty() {
-                    P::get_event_name(event_with_meta.event)
+                let name = if metadata.name.is_empty() {
+                    P::get_event_name(Self::event_of(delivered))
                 } else {
-                    event_with_meta.metadata.name.as_str()
+                    metadata.name.as_str()
                 };
                 #[cfg(not(feature = "std"))]
-                let name = P::get_event_name(event_with_meta.event);
-                let metadata = event_with_meta.metadata.clone();
+                let name = P::get_event_name(Self::event_of(delivered));
                 self.with_policy(|policy, engine| {
                     policy.forward_to_autoforward_children(name, &metadata, engine)
                 });
             }
         }
         // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
-        self.policy
-            .populate_event_metadata(&event_with_meta.metadata);
+        self.policy.populate_event_metadata(&metadata);
         Bound::Delivered(delivered)
     }
 }
@@ -5492,13 +5495,24 @@ enum Admission<E> {
 // how many targets a transition has — both kept only the first.
 // ════════════════════════════════════════
 
-/// This engine as [`helpers::microstep`](crate::helpers::microstep) drives it:
-/// the one place the numbers the procedures speak in become this machine's
-/// own states, histories and events, and back.
+/// This engine as [`helpers::microstep`](crate::helpers::microstep) drives it.
 ///
 /// The document is the policy's static tables; the history values and the
 /// configuration are the engine's run store. Every hook is dispatched through
-/// [`Engine::with_policy`].
+/// [`Engine::with_policy`], with the numbers the procedures speak: the
+/// policy's hooks are indexed by the same numbers as its tables, so nothing is
+/// converted here and no machine compiles a lookup of its own for it
+/// (docs/adr/0123).
+///
+/// What each hook of [`Behaviour`] and [`MainLoop`] still is for every
+/// machine, and why (docs/adr/0123, decision 3): `store`, `queue` and `core`
+/// hand out views of storage sized by the machine's document, and the hooks
+/// that run the machine's executable content borrow the whole engine
+/// mutably — an In() reads the configuration, a `<raise>` or a `<send>`
+/// writes a queue, a raise reads and counts the error chain in the core — so
+/// no view can be held across them for the length of a turn; `behaviour` is
+/// the coercion to the second trait object, which trait upcasting would
+/// replace and the crate's MSRV does not have.
 struct EngineHost<'e, P: StatePolicy> {
     engine: &'e mut Engine<P>,
 }
@@ -5509,7 +5523,6 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
     }
 
     fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId> {
-        let (state, event) = (P::state_of(state), P::EVENTS[usize::from(event.0)]);
         self.engine
             .with_policy(|policy, engine| policy.first_enabled_transition(state, event, engine))
     }
@@ -5527,7 +5540,8 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
     }
 
     fn exit_state(&mut self, state: StateId) {
-        self.engine.execute_on_exit(P::state_of(state));
+        self.engine
+            .with_policy(|policy, engine| policy.execute_exit_actions(state, engine));
     }
 
     fn execute_transition_content(&mut self, transition: TransitionId) {
@@ -5535,23 +5549,17 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
             .with_policy(|policy, engine| policy.execute_transition_content(transition, engine));
     }
 
-    fn enter_state(&mut self, id: StateId, is_default_entry: bool) {
-        let state = P::state_of(id);
+    fn enter_state(&mut self, state: StateId, is_default_entry: bool) {
+        // §scxml-D-enterStates: the state's onentry, and its initial
+        // transition's content when it is entered by default. Whether the
+        // state ends the run is the core's answer from the tables
+        // (`Entered::ended_in`), not this machine's.
         self.engine.with_policy(|policy, engine| {
             policy.execute_entry_actions(state, engine, is_default_entry)
         });
-        // §scxml-D-enterStates: a `<final>` whose parent is the `<scxml>`
-        // element ends the run. Recorded as the run's terminal state, so
-        // "where did it end" is a fact the engine keeps rather than a reading
-        // of the configuration.
-        let row = P::TABLES.state(id);
-        if row.kind() == crate::helpers::tables::StateKind::Final && row.parent().is_none() {
-            self.engine.core.main_loop.terminal_state = Some(id);
-        }
     }
 
     fn execute_history_default_content(&mut self, history: HistoryId) {
-        let history = P::HISTORIES[history.index()];
         self.engine
             .with_policy(|policy, engine| policy.execute_history_default_content(history, engine));
     }
@@ -5576,7 +5584,8 @@ pub(crate) struct LoopState {
     /// `stop()`.
     pub(crate) is_running: bool,
     /// The top-level `<final>` the run ended in, as Appendix D's enterStates
-    /// ends a run — set on entering it, cleared when a run starts. See
+    /// ends a run — set from the entry set that entered it
+    /// ([`EngineCore::settle`]), cleared when a run starts. See
     /// [`Engine::terminal_state`].
     pub(crate) terminal_state: Option<StateId>,
     /// Microsteps taken by the macrostep now in progress, against
@@ -5859,9 +5868,17 @@ impl EngineCore {
     /// Point `current_state` at the atomic state the last targeted transition
     /// brought the machine into ([`Entered::current`]). A microstep of
     /// targetless transitions entered nothing and moves nothing.
+    ///
+    /// And record the top-level `<final>` the entry set entered as the run's
+    /// end ([`Entered::ended_in`]), so "where did it end" is a fact the
+    /// engine keeps rather than a reading of the configuration, decided once
+    /// for every machine from the tables (docs/adr/0123).
     pub(crate) fn settle(&mut self, entered: Entered) {
         if let Some(current) = entered.current {
             self.current_state = current;
+        }
+        if let Some(ended_in) = entered.ended_in {
+            self.main_loop.terminal_state = Some(ended_in);
         }
     }
 
@@ -6022,7 +6039,6 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
     }
 
     fn bind_current_event(&mut self, event: EventId) {
-        let event = P::EVENTS[usize::from(event.0)];
         self.engine
             .with_policy(|policy, engine| policy.bind_current_event(event, engine));
     }

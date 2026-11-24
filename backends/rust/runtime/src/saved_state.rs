@@ -2703,7 +2703,7 @@ pub fn save<P: StatePolicy>(
                 // §scxml-5.10: a queued event is saved under the name it ARRIVED
                 // under, so a restore gives the machine the same `_event.name`.
                 name: if queued.metadata.name.is_empty() {
-                    P::get_event_name(P::EVENTS[usize::from(queued.event.0)]).to_string()
+                    P::get_event_name(P::event_of(queued.event)).to_string()
                 } else {
                     queued.metadata.name.to_string()
                 },
@@ -2781,7 +2781,7 @@ fn save_pending<P: StatePolicy>(
     use crate::ScheduledRoute;
 
     let now = engine.now_ms();
-    let name = |event: &EventId| P::get_event_name(P::EVENTS[usize::from(event.0)]).to_string();
+    let name = |event: &EventId| P::get_event_name(P::event_of(*event)).to_string();
     let sends = engine
         .scheduler
         .pending()

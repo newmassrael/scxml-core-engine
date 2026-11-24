@@ -3845,3 +3845,49 @@ algorithm goldens and the Rust buffer pool's output do. A consumer regenerates i
   (at most 255) held by value, `Copy`, made by the `const fn from_array` or the checked `from_slice`. A list type
   that `proven` builds implements the new `FromEntries` (`heapless::Vec`, `ArrayBytes`, and `Vec` with `alloc`).
   Nothing existing changed; a call outside its bounds does not build (`E0080`).
+
+## A Rust policy's behaviour hooks take the numbers its tables are indexed by (ADR 0123)
+
+Landing: the commits that add this section. The committed Rust machines under `sce-specs` change; a consumer
+regenerates every Rust machine it generates.
+
+- **A generated machine** is regenerated, and nothing a host calls changes. Its hooks take numbers and match on
+  constants the generator now writes beside each enum: `<Machine>State::ID_<variant>`, `<Machine>History::ID_<variant>`
+  and `<Machine>Event::ID_<variant>` (with `<Machine>Event::ID_Null`), each the variant's discriminant as a
+  `StateId`, `HistoryId` or `EventId`. The enums, their variants and discriminants, and every method of `Engine<P>`
+  that takes or returns them are unchanged.
+- **A hand-written `StatePolicy`** fails to compile once, with `E0053` (an incompatible type for the trait) at each of
+  five hooks. Each takes the number the engine's tables use, where it took the machine's enum:
+
+  | hook | was | is |
+  |---|---|---|
+  | `bind_current_event` | `event: Self::Event` | `event: EventId` |
+  | `first_enabled_transition` | `state: Self::State, event: Self::Event` | `state: StateId, event: EventId` |
+  | `execute_entry_actions` | `state: Self::State` | `state: StateId` |
+  | `execute_exit_actions` | `state: Self::State` | `state: StateId` |
+  | `execute_history_default_content` | `history: Self::History` | `history: HistoryId` |
+
+  The other parameters, the return types and every other item of the trait are unchanged. `StateId`, `EventId` and
+  `HistoryId` are `sce_rust_runtime`'s, which a hand-written policy already imports for `state_id` and `event_id`.
+- **The body of a changed hook** is written one of two ways:
+  - The smallest change converts at the top of the hook and keeps the `match` as it was:
+    `let state = Self::state_of(state);`, `let event = Self::event_of(event);`,
+    `let history = Self::history_of(history);`. `event_of` and `history_of` are new provided methods beside
+    `state_of`, reading the policy's `EVENTS` and `HISTORIES`. This keeps one indexed load for each call, now in the
+    policy where the engine used to make it.
+  - The form the generator writes matches on the numbers and converts nothing. The policy's enums are `#[repr(u16)]`
+    with each discriminant the number `state_id` and `event_id` already answer, so a constant per variant,
+    `const ID_IDLE: StateId = StateId(MyState::Idle as u16);` in an `impl MyState` block, is the number, and
+    `match state { MyState::ID_IDLE => ..., _ => None }` and `event == MyEvent::ID_GO` read as before. A hook that needs
+    the enum somewhere (a name to log, a typed payload) converts there.
+- **The null event** reaches `bind_current_event` and `first_enabled_transition` as its number, the tables'
+  `null_event`. A comparison with `Self::null_event()` becomes one with that number: `Self::TABLES.null_event`, or the
+  policy's own constant for its null variant.
+- **`Engine::note_payload_reading(event, reading)` takes an `EventId`**: the number `bind_current_event` is handed,
+  passed on as it is.
+- A policy type that has an inherent associated function named `event_of` or `history_of` keeps it, and inside the
+  policy `Self::event_of` names that one; the trait's is `<Self as StatePolicy>::event_of`.
+- Where a run ends is decided by the runtime from the tables: entering a `<final>` child of `<scxml>` ends the run
+  whatever a policy's entry hook does, and `Engine::terminal_state` and `is_in_final_state` answer as before. A
+  hand-written `helpers::microstep::Behaviour` needs nothing; `helpers::microstep::Entered` has a new field,
+  `ended_in`; only the runtime builds one, and code that reads its other fields is unchanged.
