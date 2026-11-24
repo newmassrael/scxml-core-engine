@@ -13190,10 +13190,14 @@ fn go_settled_shift(
             if signed { "Int" } else { "Uint" },
         ));
     }
-    let literal = integer_literal_parts(count).is_some();
+    // Only a literal count at or past the width is one `go vet` reports; a
+    // negative literal never reaches a total shift (the analysis refuses it).
+    let vet_refuses = integer_literal_parts(count).is_some_and(|(text, negated)| {
+        !negated && integer_literal_value(&text).is_none_or(|n| n >= u64::from(bits))
+    });
     let logical_of_signed = op == CheckedOp::UShr && signed;
     if logical_of_signed {
-        let shifted = if literal {
+        let shifted = if vet_refuses {
             format!("scealgorithm.WrappingShr(uint{bits}({value}), {written})")
         } else {
             format!(
@@ -13203,7 +13207,7 @@ fn go_settled_shift(
         };
         return Ok(format!("int{bits}({shifted})"));
     }
-    if literal {
+    if vet_refuses {
         let family = if op == CheckedOp::Shl {
             "WrappingShl"
         } else {
