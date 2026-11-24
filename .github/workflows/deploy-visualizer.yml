@@ -210,8 +210,14 @@ jobs:
       # a structure through `gui_structure()` in the codegen WASM — the same
       # call the page makes — and compares it with the engine's through
       # `visualizer.js`. Before the deploy, because a drawing whose edges
-      # reach nothing should not be published.
-      run: scripts/gate visualizer-layout
+      # reach nothing should not be published. It runs `visualizer.js` on
+      # the node the SDK ships (`em-config NODE_JS`), so the step has the
+      # SDK as the build step has it; the gate refuses to run without one.
+      env:
+        SCE_REQUIRE_TOOLS: 1
+      run: |
+        source emsdk/emsdk_env.sh
+        scripts/gate visualizer-layout
 
     - name: Prepare Deployment Directory
       run: |
