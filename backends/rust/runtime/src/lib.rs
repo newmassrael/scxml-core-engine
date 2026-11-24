@@ -40,7 +40,8 @@
 //! to its owner thread by the type system; its owner-thread operations are
 //! listed on [`engine`]. Another thread posts to its inbox ([`inbox`]):
 //! `Engine::inbox` in the `std` profile, and a `BoundedInbox` the deployment
-//! declares and attaches in the bare-metal one.
+//! declares and attaches in the bare-metal one, with the `bounded-inbox`
+//! feature.
 //!
 //! ## Script Engine Access
 //!
@@ -631,8 +632,13 @@ pub use host_processor::{
 #[cfg(feature = "http-send")]
 pub use http::{HttpSendFailure, HttpSendOutcome, HttpSendRequest, HttpSendResponse};
 /// docs/adr/0084: the bare-metal profile's inbox, which a deployment declares
-/// in a `static` and hands to [`Engine::attach_inbox`].
-#[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
+/// in a `static` and hands to [`Engine::attach_inbox`]; with the
+/// `bounded-inbox` feature, which `std` asks for.
+#[cfg(all(
+    feature = "bounded-inbox",
+    target_has_atomic = "8",
+    target_has_atomic = "ptr"
+))]
 pub use inbox::BoundedInbox;
 /// docs/adr/0084: the `std` profile's inbox handle (`Engine::inbox`), the
 /// waker a host installs on it, and the inboxes of a tree of sessions that a
