@@ -1060,8 +1060,7 @@ pub fn enter_states(
     scratch: Scratch<'_>,
 ) -> Entered {
     let entry = compute_entry_set(tables, machine.store().as_ref(), transitions, scratch);
-    let ended_in = enter_entry_set(tables, machine, &entry);
-    let entered = entry.states_to_enter.as_ref().len();
+    let (entered, ended_in) = enter_entry_set(tables, machine, &entry);
     Entered {
         ended_in,
         states: entered,
@@ -1076,13 +1075,21 @@ pub fn enter_states(
 }
 
 /// The second half of Appendix D's enterStates: every state of an entry set
-/// entered, in entry order, which is document order. Answers the top-level
-/// `<final>` it entered, if any ([`Entered::ended_in`]).
+/// entered, in entry order, which is document order. Returns how many states
+/// the set held, and the top-level `<final>` it entered, if any
+/// ([`Entered::ended_in`]).
+///
+/// The count is taken as the loop goes, one state at a time, rather than read
+/// off the set afterwards: counting a set's bits is a population count over
+/// every word, which a target without an instruction for it (the baseline of
+/// x86-64, Cortex-M4) spells out as code, and the walk over the set is already
+/// made.
 fn enter_entry_set(
     tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     entry: &EntrySet<'_>,
-) -> Option<StateId> {
+) -> (usize, Option<StateId>) {
+    let mut entered = 0;
     let mut ended_in = None;
     for state in entry.states_to_enter.as_ref().iter() {
         // §scxml-D-enterStates: configuration.add(s), then onentry, then the
@@ -1100,8 +1107,9 @@ fn enter_entry_set(
         if let Some(history) = entry.default_history_content_of(state) {
             machine.execute_history_default_content(history);
         }
+        entered += 1;
     }
-    ended_in
+    (entered, ended_in)
 }
 
 /// The atomic state the last targeted transition brought the machine into:
