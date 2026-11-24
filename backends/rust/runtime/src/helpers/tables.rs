@@ -509,21 +509,39 @@ pub enum TablesFault {
 
 impl DocumentTables<'_> {
     /// The row of `state`.
+    ///
+    /// The procedures read a row at almost every step, and each read is
+    /// inlined where it is made. An id past the table is a generator fault
+    /// that [`check`](Self::check) refuses, so every read stops at one shared
+    /// cold call that takes no argument (`row_missing`) rather than at a
+    /// bounds check of its own that loads the index, the length and a location
+    /// for the formatting machinery: the read is a compare and a branch.
     #[inline]
     pub fn state(&self, state: StateId) -> &StateRow {
-        &self.states[state.index()]
+        match self.states.get(state.index()) {
+            Some(row) => row,
+            None => row_missing(),
+        }
     }
 
-    /// The row of `history`.
+    /// The row of `history`; see [`state`](Self::state) for how a missing
+    /// one stops.
     #[inline]
     pub fn history(&self, history: HistoryId) -> &HistoryRow {
-        &self.histories[history.index()]
+        match self.histories.get(history.index()) {
+            Some(row) => row,
+            None => row_missing(),
+        }
     }
 
-    /// The row of `transition`.
+    /// The row of `transition`; see [`state`](Self::state) for how a missing
+    /// one stops.
     #[inline]
     pub fn transition(&self, transition: TransitionId) -> &TransitionRow {
-        &self.transitions[transition.index()]
+        match self.transitions.get(transition.index()) {
+            Some(row) => row,
+            None => row_missing(),
+        }
     }
 
     /// `state`'s parent; `None` when it is the `<scxml>` element.
@@ -742,6 +760,17 @@ impl DocumentTables<'_> {
         }
         Ok(())
     }
+}
+
+/// A row read past the end of its table: the generator wrote an id the tables
+/// do not hold, which [`DocumentTables::check`] refuses. No formatted message
+/// and no argument, so every read of a row shares this one call and a
+/// bare-metal image does not carry the formatting machinery for a branch a
+/// correct generator never reaches.
+#[cold]
+#[inline(never)]
+fn row_missing() -> ! {
+    panic!("a document's tables name a row they do not hold: sce-codegen wrote them wrong")
 }
 
 /// The child states of one state, in document order: [`DocumentTables::children`].
