@@ -135,11 +135,10 @@ pub(super) fn list_walk(
             );
             ListWalkOf {
                 item: format!(
-                    "/// How `{own_list}` reads its entries: the walk of every list of `{entry}` that\n\
+                    "/// How `{field}` reads its entries: the walk of every list of `{entry}` that\n\
                      /// carries nothing from one entry to the next.\n\
                      #[allow(dead_code)]\n\
-                     pub type {own} = {ty};\n",
-                    own_list = field,
+                     pub type {own} = {ty};\n"
                 ),
                 ty,
             }
