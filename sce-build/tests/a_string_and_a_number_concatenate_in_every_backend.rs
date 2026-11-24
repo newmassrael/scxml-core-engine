@@ -233,7 +233,12 @@ fn each_backend_converts_the_integer_to_its_decimal_digits() {
     let spellings: &[(Language, &str)] = &[
         (Language::Cpp, "std::string(\"E\")+std::to_string(7300+n)"),
         (Language::Kotlin, "\"E\"+(7300+n).toString()"),
-        (Language::Rust, "format!(\"{}{}\",\"E\",7300+n)"),
+        // The sum is one the interval analysis proved, which Rust computes through the
+        // runtime's proven operation (`sce_forge_runtime::algorithm::proven`).
+        (
+            Language::Rust,
+            "format!(\"{}{}\",\"E\",sce_forge_runtime::algorithm::proven::add::<i32>(7300,n))",
+        ),
         (Language::Go, "\"E\"+strconv.FormatInt(int64(7300+n),10)"),
         (Language::Python, "\"E\"+str(7300+n)"),
     ];
@@ -533,7 +538,9 @@ fn the_generated_cpp_compiles_and_returns_the_identifier() {
 
 /// Rust refused `&str + i64` outright, so what is run here is also what
 /// compiles. The generated file is a free function; it is built as a module of
-/// a one-file program, with `format!` taking the integer and the string alike.
+/// a one-file program, with `format!` taking the integer and the string alike,
+/// against the runtime crates a generated file names (the proven sum is the
+/// runtime's), built from this tree.
 #[test]
 fn the_generated_rust_compiles_and_returns_the_identifier() {
     if !tool_present("rustc", "--version") {
@@ -558,6 +565,7 @@ fn the_generated_rust_compiles_and_returns_the_identifier() {
     let mut compile = Command::new("rustc");
     compile
         .args(["--edition", "2021", "main.rs", "-o", "probe"])
+        .args(common::rust_runtime::rustc_flags(&dir.join("runtime")))
         .current_dir(&dir);
     run(compile, "rustc");
     let mut probe = Command::new(dir.join("probe"));
