@@ -219,7 +219,8 @@ fn rust_holds_each_list_of_enum_values_in_the_enums_own_type() {
     holds(&any, "use super::probe_status;\n");
     holds(&any, "xs: &[probe_status::ProbeStatus]");
     holds(&any, "for &s in xs.iter() {");
-    holds(&any, "xs[(i) as usize]");
+    // A proven read of the list, through the runtime (SCE_FORGE.md §3.4.1).
+    holds(&any, "sce_forge_runtime::algorithm::proven::at(&xs, i)");
     holds(&any, "probe_status::ProbeStatus::Open");
 
     let kept = rust_unit("status_kept", &status_kept());

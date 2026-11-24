@@ -507,11 +507,15 @@ struct Lowered {
 }
 
 /// Whether `node` or anything under it can record a failure: a checked
-/// integer operation, or a call of a callee that declares `may-fail`.
+/// integer operation, or a call of a callee that declares `may-fail`. An
+/// operation proven at build time ([`Discharge::AtBuild`]) records none.
 fn can_fail(node: &TypedExpr) -> bool {
     matches!(
         node.kind,
-        ExprKind::Checked { .. } | ExprKind::Call { fails: true, .. }
+        ExprKind::Checked {
+            discharge: Discharge::AtRun,
+            ..
+        } | ExprKind::Call { fails: true, .. }
     ) || node.children().into_iter().any(can_fail)
 }
 
@@ -549,12 +553,14 @@ fn lower_at(
         bytes_literals_as_text(&mut ast);
     }
     if ctx.receives_failures {
-        check_integer_arithmetic(&mut ast, expected);
-        check_integer_indexing(&mut ast);
+        check_integer_arithmetic(&mut ast, expected, Discharge::AtRun);
+        check_integer_indexing(&mut ast, Discharge::AtRun);
         check_integer_narrowing(&mut ast, slot_type(slot));
         if matches!(target, ExprTarget::C) {
             views_for_bytes_equality(&mut ast);
         }
+    } else if ctx.integers_proven && matches!(target, ExprTarget::Rust) {
+        prove_integer_operations(&mut ast, expected);
     }
     if ctx.rounds_to_single {
         round_to_single(&mut ast, target, expected);
@@ -815,8 +821,8 @@ pub(crate) fn transpile_typed_with_import_lowering(
     resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, lowerings, expr)?;
     judge_value(&mut ast, expected, expr)?;
     if ctx.receives_failures {
-        check_integer_arithmetic(&mut ast, expected.ty());
-        check_integer_indexing(&mut ast);
+        check_integer_arithmetic(&mut ast, expected.ty(), Discharge::AtRun);
+        check_integer_indexing(&mut ast, Discharge::AtRun);
         check_integer_narrowing(&mut ast, slot_type(expected));
     }
     Ok(emit_c(&ast, expected.ty())?)
@@ -4029,10 +4035,15 @@ pub(crate) enum ExprKind {
     /// [`crate::forge::int_ranges`], the literal checks — sees the operators
     /// the author wrote. The node's `ty` is the integer type the operation
     /// is checked at; `right` is `None` for a negation.
+    ///
+    /// The same rewrite marks the operations of an algorithm that does not
+    /// declare `may-fail` for the Rust emitter, whose interval analysis proved
+    /// that none fails ([`Discharge::AtBuild`], [`prove_integer_operations`]).
     Checked {
         op: CheckedOp,
         left: Box<TypedExpr>,
         right: Option<Box<TypedExpr>>,
+        discharge: Discharge,
     },
     /// A ring operation the author wrote under a rule that makes it total —
     /// `wrappingSub(now, last)`, `saturatingAdd(level, 3)` (docs/adr/0063):
@@ -4102,13 +4113,42 @@ impl CheckedOp {
     }
 }
 
+/// When the integer arithmetic contract (SCE_FORGE.md §3.4.1) is discharged
+/// for an [`ExprKind::Checked`] operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Discharge {
+    /// When the operation runs, in an algorithm that declares `may-fail`: a
+    /// failure is handed to the caller in place of a value.
+    AtRun,
+    /// When the document is built: the interval analysis proved that the
+    /// operation, in an algorithm that does not declare `may-fail`, never
+    /// fails, and the algorithm was refused had it not
+    /// (`algorithm/undeclared-integer-failure`). Rust prints it through the
+    /// forge runtime's `algorithm::proven`, so the crate a generated file is
+    /// compiled in holds no operator and no index of its own; every other
+    /// backend prints the operator, and is never handed this node.
+    AtBuild,
+}
+
+/// The refusal of a backend other than Rust handed an operation proven at build
+/// time ([`Discharge::AtBuild`]), which only the Rust emitter prints apart from
+/// the operator it stands for ([`prove_integer_operations`]).
+fn proven_operation_outside_rust() -> ExprError {
+    ExprError::UnsupportedConstruct {
+        construct: "an integer operation proven at build time, which only Rust prints \
+                    apart from its operator"
+            .to_string(),
+        observed: None,
+    }
+}
+
 /// Rewrite every index read of `node` into a [`CheckedOp::Index`] node
 /// (SCE_FORGE.md §3.4.1): in a `may-fail` body an index below 0 or not below
 /// its collection's length is a failure, as an overflow is, and every
 /// backend spells the read so it cannot run past the end.
-pub(crate) fn check_integer_indexing(node: &mut TypedExpr) {
+pub(crate) fn check_integer_indexing(node: &mut TypedExpr, discharge: Discharge) {
     for child in node.children_mut() {
-        check_integer_indexing(child);
+        check_integer_indexing(child, discharge);
     }
     if !matches!(node.kind, ExprKind::Index { .. }) {
         return;
@@ -4119,6 +4159,7 @@ pub(crate) fn check_integer_indexing(node: &mut TypedExpr) {
             op: CheckedOp::Index,
             left: object,
             right: Some(index),
+            discharge,
         };
     }
 }
@@ -4161,6 +4202,7 @@ pub(crate) fn check_integer_narrowing(node: &mut TypedExpr, place: Option<Inferr
             op: CheckedOp::Narrow,
             left: Box::new(value),
             right: None,
+            discharge: Discharge::AtRun,
         },
         ty: place,
         span,
@@ -4184,7 +4226,11 @@ fn integer_can_leave(from: InferredType, to: InferredType) -> bool {
 /// a string operation has no failure to check. Nor is one in float context
 /// — `expected` a real, pushed down through arithmetic as every emitter
 /// pushes it — which divides and multiplies as reals (§3.4.1's table).
-pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredType) {
+pub(crate) fn check_integer_arithmetic(
+    node: &mut TypedExpr,
+    expected: InferredType,
+    discharge: Discharge,
+) {
     let float_context = matches!(expected, InferredType::Float { .. });
     match &mut node.kind {
         ExprKind::Binary { op, left, right } => {
@@ -4193,8 +4239,8 @@ pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredT
             } else {
                 InferredType::Unknown
             };
-            check_integer_arithmetic(left, inner);
-            check_integer_arithmetic(right, inner);
+            check_integer_arithmetic(left, inner, discharge);
+            check_integer_arithmetic(right, inner, discharge);
         }
         ExprKind::Unary { op, operand } => {
             let inner = if float_context && matches!(op, UnaryOp::Neg | UnaryOp::Pos) {
@@ -4202,7 +4248,7 @@ pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredT
             } else {
                 InferredType::Unknown
             };
-            check_integer_arithmetic(operand, inner);
+            check_integer_arithmetic(operand, inner, discharge);
         }
         // Every other child is emitted at its own type, whatever the
         // enclosing context expects.
@@ -4221,7 +4267,7 @@ pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredT
         | ExprKind::Ident(_)
         | ExprKind::Raw(_) => {
             for child in node.children_mut() {
-                check_integer_arithmetic(child, InferredType::Unknown);
+                check_integer_arithmetic(child, InferredType::Unknown, discharge);
             }
         }
     }
@@ -4241,6 +4287,7 @@ pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredT
                 op,
                 left,
                 right: Some(right),
+                discharge,
             },
             None => ExprKind::Binary { op, left, right },
         },
@@ -4251,9 +4298,27 @@ pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredT
             op: CheckedOp::Neg,
             left: operand,
             right: None,
+            discharge,
         },
         other => other,
     };
+}
+
+/// Mark every integer `+ - * / %`, unary `-` and index read of `node` as an
+/// operation the interval analysis proved never fails ([`Discharge::AtBuild`]),
+/// for the Rust emitter: the body of an algorithm that does not declare
+/// `may-fail` ([`TypeCtx::integers_proven`]), which the analysis refuses
+/// unless every such operation is proven (SCE_FORGE.md §3.4.1, "Enforced").
+///
+/// The rewrite is [`check_integer_arithmetic`]'s and [`check_integer_indexing`]'s,
+/// so the operations marked are exactly those a `may-fail` body checks. A store
+/// into a narrower type is not marked: the analysis proved it fits, and Rust
+/// stores it with a cast, which neither fails nor panics.
+///
+/// [`TypeCtx::integers_proven`]: crate::forge::types::TypeCtx::integers_proven
+pub(crate) fn prove_integer_operations(node: &mut TypedExpr, expected: InferredType) {
+    check_integer_arithmetic(node, expected, Discharge::AtBuild);
+    check_integer_indexing(node, Discharge::AtBuild);
 }
 
 /// `call` as the operation it names when its callee is a name of the
@@ -10108,9 +10173,14 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // SCE_FORGE.md §3.4.1: an index read that records an out-of-range
         // failure instead of reading past the end.
         ExprKind::Checked {
+            discharge: Discharge::AtBuild,
+            ..
+        } => return Err(proven_operation_outside_rust()),
+        ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
+            ..
         } => format!(
             "SCE::Forge::Checked::at(sce_failure_, {}, {})",
             emit_cpp(left, InferredType::Unknown)?,
@@ -10121,7 +10191,9 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // yields 0; the statement around it returns that failure. The width
         // is explicit so an operand of another type converts to it rather
         // than choosing the instantiation.
-        ExprKind::Checked { op, left, right } => {
+        ExprKind::Checked {
+            op, left, right, ..
+        } => {
             let InferredType::Int { signed, bits } = expr.ty else {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("a checked operation of type {:?}", expr.ty),
@@ -10914,9 +10986,14 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // index widened to `Long`; a `bytes` element is normalized to `UByte`
         // as the unchecked read's is.
         ExprKind::Checked {
+            discharge: Discharge::AtBuild,
+            ..
+        } => return Err(proven_operation_outside_rust()),
+        ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
+            ..
         } => {
             // A buffer checks the index against its size, then reads with
             // its reader.
@@ -10985,7 +11062,9 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             };
             format!("com.sce.forge.runtime.SceChecked.narrowTo{target}({widened})")
         }
-        ExprKind::Checked { op, left, right } => {
+        ExprKind::Checked {
+            op, left, right, ..
+        } => {
             let mut operands = vec![emit_kotlin(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit_kotlin(right, expr.ty)?);
@@ -11957,13 +12036,15 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             let ExprKind::Checked {
                 left,
                 right: Some(index),
+                discharge,
                 ..
             } = &object.kind
             else {
                 unreachable!("guarded by the match above")
             };
+            let (helpers, then) = rust_contract(*discharge);
             format!(
-                "sce_forge_runtime::algorithm::at_ref({}, {})?.{property}",
+                "{helpers}::at_ref({}, {}){then}.{property}",
                 rust_list_operand(left)?,
                 emit_rust(index, InferredType::Unknown)?,
             )
@@ -12058,7 +12139,9 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             op: CheckedOp::Index,
             left,
             right: Some(index),
+            discharge,
         } => {
+            let (helpers, then) = rust_contract(*discharge);
             let list = rust_list_operand(left)?;
             let index = emit_rust(index, InferredType::Unknown)?;
             // A union, typed by no operand type, is no `Copy` value either: the
@@ -12067,12 +12150,10 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             let element = rust_element_by_reference(expr.ty)
                 .or_else(|| listed_union(left.ty).map(|_| RustElement::Owned));
             match element {
-                None => format!("sce_forge_runtime::algorithm::at({list}, {index})?"),
-                Some(RustElement::Operand) => {
-                    format!("sce_forge_runtime::algorithm::at_ref({list}, {index})?")
-                }
+                None => format!("{helpers}::at({list}, {index}){then}"),
+                Some(RustElement::Operand) => format!("{helpers}::at_ref({list}, {index}){then}"),
                 Some(RustElement::Owned) => {
-                    format!("sce_forge_runtime::algorithm::at_ref({list}, {index})?.clone()")
+                    format!("{helpers}::at_ref({list}, {index}){then}.clone()")
                 }
             }
         }
@@ -12080,7 +12161,12 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
         // own width, its failure returned through the algorithm's `Result`
         // by `?`. The width rides as a turbofish so a literal operand takes
         // it too, where a method call on the literal would be ambiguous.
-        ExprKind::Checked { op, left, right } => {
+        ExprKind::Checked {
+            op,
+            left,
+            right,
+            discharge,
+        } => {
             let InferredType::Int { signed, bits } = expr.ty else {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("a checked operation of type {:?}", expr.ty),
@@ -12112,14 +12198,29 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             if let Some(right) = right {
                 operands.push(emit_rust(right, expr.ty)?);
             }
+            let (helpers, then) = rust_contract(*discharge);
             format!(
-                "sce_forge_runtime::algorithm::{}::<{}>({})?",
+                "{helpers}::{}::<{}>({}){then}",
                 op.helper(),
                 rust_int_type(signed, bits),
                 operands.join(", ")
             )
         }
     })
+}
+
+/// Where a Rust integer operation of the contract (SCE_FORGE.md §3.4.1) is
+/// printed from, and what follows the call: the runtime's checked helper and
+/// `?`, which hands a failure to the caller of a `may-fail` body, or the
+/// runtime's `proven` function and nothing, for an operation the interval
+/// analysis proved ([`Discharge::AtBuild`]). Either way the operation is a
+/// call, so the crate the file is compiled in holds no operator and no index
+/// of its own for it.
+fn rust_contract(discharge: Discharge) -> (&'static str, &'static str) {
+    match discharge {
+        Discharge::AtRun => ("sce_forge_runtime::algorithm", "?"),
+        Discharge::AtBuild => ("sce_forge_runtime::algorithm::proven", ""),
+    }
 }
 
 fn rust_binop(op: BinOp) -> &'static str {
@@ -12587,9 +12688,14 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         // widened to `int64`) or `AtU` (an unsigned one, to `uint64`), over
         // the collection's slice so a fixed array passes too.
         ExprKind::Checked {
+            discharge: Discharge::AtBuild,
+            ..
+        } => return Err(proven_operation_outside_rust().at(expr.span.clone())),
+        ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
+            ..
         } => {
             let (helper, wide) = match index.ty {
                 InferredType::Int { signed: false, .. } => ("AtU", "uint64"),
@@ -12606,7 +12712,9 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         // yields 0; the statement around it returns that failure. Go has no
         // overloading, so the width is in the helper's name, and each operand
         // is spelled at that width so the call type-checks.
-        ExprKind::Checked { op, left, right } => {
+        ExprKind::Checked {
+            op, left, right, ..
+        } => {
             let InferredType::Int { signed, bits } = expr.ty else {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("a checked operation of type {:?}", expr.ty),
@@ -13306,9 +13414,14 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // SCE_FORGE.md §3.4.1: an index read through the runtime's `at`, which
         // refuses a negative index Python would otherwise read from the end.
         ExprKind::Checked {
+            discharge: Discharge::AtBuild,
+            ..
+        } => return Err(proven_operation_outside_rust()),
+        ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
+            ..
         } => format!(
             "sce_algorithm.at({}, {})",
             emit_python(left, InferredType::Unknown)?,
@@ -13318,7 +13431,9 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // width, which computes exactly and raises `AlgorithmFailure` for a
         // result the width does not hold. Python's integers never overflow,
         // so this is the one place its `int32` is held to 32 bits.
-        ExprKind::Checked { op, left, right } => {
+        ExprKind::Checked {
+            op, left, right, ..
+        } => {
             let InferredType::Int { signed, bits } = expr.ty else {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("a checked operation of type {:?}", expr.ty),
@@ -13957,9 +14072,14 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         // refuses an index outside the collection where a bare read would give
         // `undefined`.
         ExprKind::Checked {
+            discharge: Discharge::AtBuild,
+            ..
+        } => return Err(proven_operation_outside_rust()),
+        ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
+            ..
         } => format!(
             "{RUNTIME_GLOBAL}.at({}, {})",
             emit_js(left, InferredType::Unknown)?,
@@ -13968,7 +14088,9 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         // SCE_FORGE.md §3.4.1: the library's method for the operation's own
         // width, which computes exactly and throws for a result the width does
         // not hold.
-        ExprKind::Checked { op, left, right } => {
+        ExprKind::Checked {
+            op, left, right, ..
+        } => {
             let InferredType::Int { signed, bits } = expr.ty else {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("a checked operation of type {:?}", expr.ty),
@@ -14404,6 +14526,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 ExprKind::Checked {
                     op: CheckedOp::Index,
                     right: Some(_),
+                    discharge: Discharge::AtRun,
                     ..
                 }
             ) =>
@@ -14533,9 +14656,14 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // (docs/adr/0099, section 5.2), is a struct the expression types by no
         // operand type: its filler is the struct's own zero.
         ExprKind::Checked {
+            discharge: Discharge::AtBuild,
+            ..
+        } => return Err(proven_operation_outside_rust()),
+        ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
+            ..
         } => {
             let failed = if listed_union(left.ty).is_some() {
                 CFailedRead::Whole
@@ -14548,7 +14676,9 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // width, which records a failure in the body's `sce_failure_` and
         // yields 0; the statement around it returns that failure. C has no
         // overloading, so the width is in the helper's name.
-        ExprKind::Checked { op, left, right } => {
+        ExprKind::Checked {
+            op, left, right, ..
+        } => {
             let InferredType::Int { signed, bits } = expr.ty else {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("a checked operation of type {:?}", expr.ty),

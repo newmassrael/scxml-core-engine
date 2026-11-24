@@ -1391,6 +1391,17 @@ pub struct TypeCtx<'a> {
     ///
     /// [`ExprKind::Checked`]: crate::forge::expr::ExprKind::Checked
     pub receives_failures: bool,
+    /// Whether the expression sits in the body of an algorithm that does not
+    /// declare `may-fail`, whose integer operations and index reads the
+    /// interval analysis proved never fail (SCE_FORGE.md §3.4.1, "Enforced"),
+    /// set by the algorithm renderer and nowhere else. There the Rust emitter
+    /// prints each such operation through the forge runtime's
+    /// `algorithm::proven` rather than as its operator or index
+    /// ([`prove_integer_operations`]); every other backend prints the
+    /// operator.
+    ///
+    /// [`prove_integer_operations`]: crate::forge::expr::prove_integer_operations
+    pub integers_proven: bool,
     /// Whether `len(x)` is a `uint32` here rather than an untyped integer that
     /// takes the width of what it meets. Set for a `sce-static` statechart,
     /// whose accepted subset says a length is a `uint32` (docs/SCE_ACCEPTED_SUBSET.md
@@ -1764,6 +1775,7 @@ impl<'a> TypeCtx<'a> {
             array_elems: HashMap::new(),
             project_str_args_as_bytes_view: false,
             receives_failures: false,
+            integers_proven: false,
             lengths_are_uint32: false,
             exact_integers: false,
             reject_unknown_callees: false,

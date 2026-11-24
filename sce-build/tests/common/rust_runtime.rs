@@ -6,8 +6,9 @@
 //!
 //! A unit names `sce_portable_bytes` wherever its type is a key of a map
 //! (docs/adr/0108, D6 item 4) or holds a bounded text, and an algorithm names
-//! `sce_forge_runtime` wherever it can fail, so a crate of generated files is
-//! compiled against both, at the versions the workspace tests.
+//! `sce_forge_runtime` wherever it can fail or computes an integer operation the
+//! interval analysis proved, so a crate of generated files is compiled against
+//! both, at the versions the workspace tests.
 
 #![allow(dead_code)]
 

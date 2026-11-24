@@ -2,7 +2,7 @@
 // SCE-MAP: algorithm_crc16_table:20 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
-// Runtime: none
+// Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.
 //
 // RFC §synth-5-A: pure synchronous function with bounded loops. Free
@@ -17,7 +17,7 @@ pub fn algorithm_crc16_table(data: &[u8]) -> u16 {
     let mut crc: u16 = 0xFFFF;
     for &b in data.iter() {
         let idx: u16 = (crc >> 8 ^ b as u16) & 0xFF;
-        crc = crc << 8 ^ CRC16_TABLE[(idx) as usize];
+        crc = crc << 8 ^ sce_forge_runtime::algorithm::proven::at(&CRC16_TABLE, idx);
     }
     return crc;
 }

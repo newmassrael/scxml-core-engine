@@ -2,7 +2,7 @@
 // SCE-MAP: algorithm_lcg_table:13 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
-// Runtime: none
+// Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.
 //
 // RFC §synth-5-A: pure synchronous function with bounded loops. Free
@@ -14,5 +14,5 @@ pub static LCG_TABLE: [u32; 16] = [12345, 87628868, 71072467, 2332836374, 272689
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
 pub fn algorithm_lcg_table(n: u8) -> u32 {
-    return LCG_TABLE[(n & 15) as usize];
+    return sce_forge_runtime::algorithm::proven::at(&LCG_TABLE, n & 15);
 }

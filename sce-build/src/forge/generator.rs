@@ -48955,6 +48955,10 @@ impl<'a> AlgorithmTypes<'a> {
         // SCE_FORGE.md §3.4.1: a `may-fail` algorithm checks every integer
         // operation it emits, not only the ones the range analysis flags.
         type_ctx.receives_failures = m.signature.may_fail;
+        // An algorithm that does not declare `may-fail` was refused unless the
+        // analysis proved each of its integer operations and index reads: Rust
+        // prints those through the forge runtime's `algorithm::proven`.
+        type_ctx.integers_proven = !m.signature.may_fail;
         crate::forge::type_ctx::insert_enum_imports(&mut type_ctx, imports);
         type_ctx.reject_unknown_identifiers = true;
         // RFC §synth-5-F `<sce:const name="X" type="array<elem, N>">` registers
@@ -50068,6 +50072,19 @@ fn render_algorithm(
     // that does not declare `may-fail` reaches too (docs/adr/0055): whether the
     // module is imported is read off the body that names it.
     let python_uses_runtime = lang == Language::Python && body.contains("sce_algorithm.");
+    // A Rust body that names the forge runtime depends on it whether or not it
+    // may fail: an operation the interval analysis proved is printed through
+    // the runtime's `algorithm::proven` in a body that declares no `may-fail`.
+    // The header states the dependency the file has, which the document's tier
+    // (`runtime_dep`, read off its `may-fail`) does not see.
+    if lang == Language::Rust && body.contains("sce_forge_runtime::") {
+        ctx.insert(
+            "runtime_dep".into(),
+            crate::forge::model::RuntimeDep::ForgeRuntime
+                .to_string()
+                .into(),
+        );
+    }
     // Swift's forge runtime is named the same way: a real turned into an integer
     // is `Real.round`/`Real.floor` of `SceForgeRuntime`, which saturates, a value
     // proven present is read by its `SceOptional.proven`, and an operation that wraps or

@@ -433,11 +433,16 @@ fn rust_cross_doc_algorithm_compiles() {
     let lib_rs = out_dir.join("lib.rs");
     fs::write(&lib_rs, lib).expect("write lib.rs");
 
+    // `bytes_equal` reads a byte at an index and steps its counter, both proven,
+    // through the forge runtime's `algorithm::proven`, so the crate links the
+    // runtime.
+    let runtime = tempdir().expect("a scratch directory for the runtime");
     let output = Command::new(&rustc)
         .args(["--edition", "2021", "--crate-type=lib"])
         .arg("-o")
         .arg(out_dir.join("libxdoc.rlib"))
         .arg(&lib_rs)
+        .args(common::rust_runtime::rustc_flags(runtime.path()))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()

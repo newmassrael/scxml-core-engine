@@ -135,6 +135,94 @@ pub fn at_ref<T, I: TryInto<usize>>(xs: &[T], i: I) -> Result<&T, AlgorithmError
         .ok_or(AlgorithmError::OutOfRange)
 }
 
+/// The operations of an algorithm that does not declare `may-fail`, whose
+/// interval analysis proved, while the document was built, that none of them
+/// reaches a failure of the integer arithmetic contract (SCE_FORGE.md §3.4.1):
+/// no integer `+ - * / %` or unary `-` leaves its width or divides by zero,
+/// and no index is below 0 or not below its collection's length.
+///
+/// The generator lowers each such operation of a Rust body to a function here
+/// rather than to the operator or the index it stands for, so that the crate
+/// a generated file is compiled in holds no arithmetic operator and no index
+/// of its own: a crate that denies `clippy::arithmetic_side_effects` and
+/// `clippy::indexing_slicing` compiles the file as it is, with no `allow`.
+/// What is left of each operation's failure is the proof's, and it is here,
+/// once, in the runtime that owns the proof.
+///
+/// Each function computes what the operator computes. An arithmetic operation
+/// is the operator itself, so a build that checks overflow
+/// (`overflow-checks`) asserts the proof as it asserted it at the operator,
+/// and one that does not computes what it computed there; nothing changes
+/// meaning. An index read takes the element where it is, and panics past the
+/// end as the index panics, from one cold site for every read of every
+/// algorithm: a broken proof stops the program, as it did, and never reads
+/// past the end.
+pub mod proven {
+    use super::CheckedInt;
+
+    /// `a + b`, proven in range.
+    #[inline(always)]
+    pub fn add<T: CheckedInt + core::ops::Add<Output = T>>(a: T, b: T) -> T {
+        a + b
+    }
+
+    /// `a - b`, proven in range.
+    #[inline(always)]
+    pub fn sub<T: CheckedInt + core::ops::Sub<Output = T>>(a: T, b: T) -> T {
+        a - b
+    }
+
+    /// `a * b`, proven in range.
+    #[inline(always)]
+    pub fn mul<T: CheckedInt + core::ops::Mul<Output = T>>(a: T, b: T) -> T {
+        a * b
+    }
+
+    /// `a / b`, truncated toward zero, `b` proven not zero and the quotient
+    /// proven in range.
+    #[inline(always)]
+    pub fn div<T: CheckedInt + core::ops::Div<Output = T>>(a: T, b: T) -> T {
+        a / b
+    }
+
+    /// `a % b`, of the dividend's sign, `b` proven not zero.
+    #[inline(always)]
+    pub fn rem<T: CheckedInt + core::ops::Rem<Output = T>>(a: T, b: T) -> T {
+        a % b
+    }
+
+    /// `-a`, proven in range.
+    #[inline(always)]
+    pub fn neg<T: CheckedInt + core::ops::Neg<Output = T>>(a: T) -> T {
+        -a
+    }
+
+    /// The element of `xs` at `i`, `i` proven at least 0 and below the
+    /// length. The index is taken at its own type, as [`super::at`] takes it.
+    #[inline(always)]
+    pub fn at<T: Copy, I: TryInto<usize>>(xs: &[T], i: I) -> T {
+        *at_ref(xs, i)
+    }
+
+    /// [`at`] for an element that is not `Copy`, handed back by reference.
+    #[inline(always)]
+    pub fn at_ref<T, I: TryInto<usize>>(xs: &[T], i: I) -> &T {
+        match i.try_into().ok().and_then(|i| xs.get(i)) {
+            Some(element) => element,
+            None => index_proven_in_range_was_not(),
+        }
+    }
+
+    /// The panic of [`at_ref`], out of line and cold, so that each read
+    /// inlines a test and a call that takes no argument, and a build holds one
+    /// panic site and one file name for every proven read of every algorithm.
+    #[cold]
+    #[inline(never)]
+    fn index_proven_in_range_was_not() -> ! {
+        panic!("an index SCE's interval analysis proved in range was not (SCE_FORGE.md §3.4.1)")
+    }
+}
+
 /// A value of type `S` stored where a `T` is declared: the same value, or an
 /// overflow when `T` cannot hold it — never a wrapped one.
 pub fn narrow<T: CheckedInt + TryFrom<S>, S: CheckedInt>(v: S) -> Result<T, AlgorithmError> {
@@ -167,6 +255,34 @@ pub fn holds_at_least(held: usize, least: u32) -> Result<(), AlgorithmError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_proven_operation_is_the_operation_it_stands_for() {
+        assert_eq!(proven::add(u32::MAX - 1, 1), u32::MAX);
+        assert_eq!(proven::sub(0i8, i8::MAX), -i8::MAX);
+        assert_eq!(proven::mul(16u8, 15), 240);
+        assert_eq!(proven::div(-7i32, 2), -3);
+        assert_eq!(proven::rem(-7i32, 3), -1);
+        assert_eq!(proven::neg(5i64), -5);
+        let bytes = [3u8, 5, 7];
+        for (i, b) in bytes.iter().enumerate() {
+            assert_eq!(proven::at(&bytes, i), *b);
+            assert_eq!(proven::at(&bytes, i as u32), *b);
+            assert_eq!(proven::at_ref(&bytes, i as u8), b);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "proved in range was not")]
+    fn a_proven_index_at_the_length_panics() {
+        let _ = proven::at(&[3u8, 5, 7], 3u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "proved in range was not")]
+    fn a_proven_index_below_zero_panics_and_reads_nothing_from_the_end() {
+        let _ = proven::at_ref(&[3u8, 5, 7], -1i32);
+    }
 
     #[test]
     fn a_list_sent_short_of_its_fields_lower_count_fails_as_a_precondition() {

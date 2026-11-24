@@ -112,7 +112,10 @@ pub(crate) fn holds_throwing(text: &str) -> bool {
 /// only where the analysis proved it.
 fn throws(expr: &TypedExpr) -> bool {
     match &expr.kind {
-        ExprKind::Checked { .. } => true,
+        ExprKind::Checked {
+            discharge: Discharge::AtRun,
+            ..
+        } => true,
         ExprKind::Call { fails: true, .. } => true,
         _ => expr.children().into_iter().any(throws),
     }
@@ -481,10 +484,24 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         // SCE_FORGE.md §3.4.1: an index read through `Checked.at`, which throws an
         // out-of-range failure rather than trap, and answers nothing in its place, so
         // an element of any type is read alike (docs/adr/0099, section 5).
+        // An operation proven at build time is printed apart from its operator by
+        // the Rust emitter alone, and is never handed here.
+        ExprKind::Checked {
+            discharge: Discharge::AtBuild,
+            ..
+        } => {
+            return Err(unsupported(
+                "an integer operation proven at build time, which only Rust prints apart \
+                 from its operator"
+                    .to_string(),
+                expr,
+            ))
+        }
         ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
+            ..
         } => throwing(&format!(
             "Checked.at({}, {})",
             emit(left, InferredType::Unknown)?,
@@ -513,7 +530,9 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         // literals alone has its literals named at its type already: its context
         // gave them that type (`land_integers`), which `typed_integer_literal`
         // writes.
-        ExprKind::Checked { op, left, right } => {
+        ExprKind::Checked {
+            op, left, right, ..
+        } => {
             let mut operands = vec![emit(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit(right, expr.ty)?);
