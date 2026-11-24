@@ -22,8 +22,13 @@
 
     Generates:
     - bind_current_event(event, engine)             §scxml-5.10 `_event` for the guards
-    - first_enabled_transition(state, event, engine)  the per-state half of selection
-    - execute_transition_content(transition, engine)
+    - first_enabled_transition(state, event, sce_event_data, engine)  the per-state half of selection
+    - execute_transition_content(transition, sce_event_data, engine)
+
+    `sce_event_data` is the data of the event being processed, the machine's
+    `EventData`, handed to each hook by the engine whether a queue owned it or
+    a host lent it; a guard or content that reads `_event.data` reads it there,
+    and nothing here keeps it (docs/adr/0124).
 
     A transition reaches the engine as its number in the document's tables
     (docs/adr/0064), the row that holds its source, its targets and its type:
@@ -148,6 +153,7 @@
         &mut self,
         state: ::sce_rust_runtime::StateId,
         event: ::sce_rust_runtime::EventId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
@@ -180,8 +186,8 @@
     // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
     // is taken before the microstep exits anything: it removes what it matched
     // from the round's snapshot, writes its record in the test log, and holds
-    // a message its content reads in the payload channel, which the content
-    // binds as its `_event.data` (`Transition::native_take`). Both items are
+    // a message its content reads in `taken_message`, which the content binds
+    // as its `_event.data` (`Transition::native_take`). Both items are
     // the runtime's `test-component` feature, which the crate that compiles a
     // test component names: a build without it has no take step.
     const TAKES_TRANSITIONS: bool = true; // sce-rust-runtime's `test-component` feature
@@ -214,6 +220,7 @@
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
 {% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
@@ -232,8 +239,8 @@
                 // W3C SCXML 3.13: Transition {{ trans.transition_index }} actions
 {#  docs/SCE_TEST_PROFILE.md §12.3: a branch of a test component took its
     message before the microstep exited anything (`take_transition`), and
-    held it in the payload channel; content that reads it binds it as `ev`,
-    its `_event.data` (`Transition::native_prelude`). #}
+    held it in `taken_message`; content that reads it binds it as `ev`, its
+    `_event.data` (`Transition::native_prelude`). #}
 {% if trans.native_prelude %}
 {{ trans.native_prelude }}
 {% endif %}
@@ -244,11 +251,12 @@
     (docs/adr/0086, section 4.2); the binding fails here only for an event of
     another name the transition's descriptor also matches, which carries no
     payload of this event, or, on a `no_std` build, which lifts no wire, for
-    one sent without its typed payload; nothing is raised. The binding is
-    owned, so the statements after it may write the machine's fields. #}
+    one sent without its typed payload; nothing is raised. The binding borrows
+    the event's data, an argument of this hook and no field of the machine,
+    so the statements after it may write the machine's fields (docs/adr/0124). #}
 {% if trans.content_reads_payload %}
-                let ev = match &self.pending_payload {
-                    {{ machine_name }}Payload::{{ trans.event | to_event_variant }}(ev) => ev.clone(),
+                let ev = match sce_event_data {
+                    {{ machine_name }}EventData::{{ trans.event | to_event_variant }}(ev) => ev,
                     _ => return,
                 };
 {% endif %}

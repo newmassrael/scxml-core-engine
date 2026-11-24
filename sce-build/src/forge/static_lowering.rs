@@ -5460,6 +5460,18 @@ fn rust_record_to_unit(
 ) -> Option<String> {
     use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
     let schema = crossing.plain_schema(alias)?;
+    // A payload is read through its parts (docs/adr/0124), whose byte string is
+    // a borrow: the algorithm's record holds one only by a copy that can fail,
+    // and an adapter has no failure to answer with, so the crossing is refused
+    // on this target, as an optional byte string is.
+    if payload
+        && schema
+            .fields
+            .iter()
+            .any(|f| matches!(f.sce_type.present_type(), SceType::Bytes))
+    {
+        return None;
+    }
     let fields = schema
         .fields
         .iter()
@@ -5915,15 +5927,15 @@ impl StaticTarget for RustTarget {
             plain(alias).map(|schema| event_schema_payload_type(&schema.name, Language::Rust))
         };
         // What a record that crosses a call is held as where the call is: the
-        // machine's own record, or the payload struct of the event the transition
-        // is on.
+        // machine's own record, or the parts a reader holds the payload of the
+        // event the transition is on as (docs/adr/0124).
         let held_record = |alias: &str, code: char| -> Option<String> {
             if code == 'p' {
                 let event = spec.payload_events.get(alias)?;
-                Some(format!(
-                    "{}{}Payload",
+                Some(crate::forge::generator::rust_data_type(
                     spec.machine,
-                    filters::to_event_variant(event.to_string())
+                    event,
+                    plain(alias)?,
                 ))
             } else {
                 Some(machine_record(alias))
@@ -7387,13 +7399,14 @@ impl StaticTarget for RustTarget {
             ),
         })
     }
-    // The payload struct the typed channel holds the event's payload in, whose
+    // The parts a reader holds the event's payload as (docs/adr/0124), whose
     // fields are the schema's, named as written
-    // (`forge::generator::rust_entry_payload`), as a record's are.
+    // (`forge::generator::rust_entry_payload`), as a record's are: a text and a
+    // byte string are fed as the `str` and `[u8]` they borrow, as a record's are.
     fn payload_key_def(&self, machine: &str, event: &str, schema: &EntrySchema) -> Option<String> {
         let fields: Vec<String> = schema.fields.iter().map(|f| f.id.clone()).collect();
         self.map_key_record_def(
-            &crate::forge::generator::rust_payload_struct(machine, event),
+            &crate::forge::generator::rust_data_type(machine, event, schema),
             &fields,
             schema,
         )
@@ -7510,10 +7523,12 @@ impl StaticTarget for RustTarget {
         "ev".to_string()
     }
     // The shape the typed-payload guard already takes on this backend
-    // (`forge::generator::build_rust_event_payload`), binding the same `ev`.
+    // (`forge::generator::build_rust_event_payload`), binding the same `ev`
+    // out of the data the hook is handed (docs/adr/0124).
     fn payload_guard(&self, machine: &str, event: &str, lowered: &str) -> String {
         format!(
-            "matches!(&self.pending_payload, {machine}Payload::{}(ev) if {lowered})",
+            "matches!(sce_event_data, {}::{}(ev) if {lowered})",
+            crate::forge::generator::rust_event_data_enum(machine),
             filters::to_event_variant(event.to_string())
         )
     }
@@ -7589,7 +7604,7 @@ impl StaticTarget for RustTarget {
     }
     // A message a receive branch's content reads is copied, field by field,
     // into the payload struct the machine's channel holds its record's event
-    // in, and held in that channel, which the content binds as `ev`
+    // in, and held in the policy's `taken_message`, which the content binds as `ev`
     // ([`Self::taken_binding`]): the schema unit's type and the
     // machine's are two declarations of one record. The two spell a number and
     // a `bool` alike. They do not spell a text, a byte string or an enum alike:
@@ -7650,7 +7665,7 @@ impl StaticTarget for RustTarget {
                     "let sce_message = {RUST_TEST_CONTEXT}.receive({});\n\
                      let {RUST_RECEIVED_VALUE} = sce_message.value_as::<{unit}::Value>().expect(\
                      \"a receive branch takes the message its guard matched\");\n\
-                     self.pending_payload = {machine}Payload::{}({});",
+                     self.taken_message = {machine}Payload::{}({});",
                     rust_text(port),
                     filters::to_event_variant(template.event.clone()),
                     self.record_value(
@@ -7678,13 +7693,12 @@ impl StaticTarget for RustTarget {
         Some(RUST_RECEIVED_VALUE)
     }
     // The content reads `_event.data` through `ev` ([`Self::payload_accessor`]),
-    // bound from the channel the take held the message in, owned as the
-    // binding of any delivery's payload is (`rust/process_transition.rs.jinja2`).
-    // The take ran in the same microstep, before the exits, so the channel
-    // holds the message.
+    // bound from the member the take held the message in, owned, so the
+    // statements after it may write the machine's fields. The take ran in the
+    // same microstep, before the exits, so the member holds the message.
     fn taken_binding(&self, machine: &str, event: &str) -> String {
         format!(
-            "let ev = match &self.pending_payload {{ {machine}Payload::{}(ev) => ev.clone(), _ => \
+            "let ev = match &self.taken_message {{ {machine}Payload::{}(ev) => ev.clone(), _ => \
              unreachable!(\"a receive branch holds the message it took before its content \
              runs\") }};",
             filters::to_event_variant(event.to_string())

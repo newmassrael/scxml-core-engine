@@ -27,7 +27,8 @@ use std::rc::Rc;
 
 use sce_rust_tests::integration::native_action::{
     StatechartNativeActionActions, StatechartNativeActionFragmentReceivedPayload,
-    StatechartNativeActionInject, StatechartNativeActionPolicy, StatechartNativeActionState,
+    StatechartNativeActionFragmentReceivedRef, StatechartNativeActionInject,
+    StatechartNativeActionPolicy, StatechartNativeActionState,
 };
 
 #[derive(Default)]
@@ -120,6 +121,52 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
         log.borrow().idle_entries,
         2,
         "on_idle_entry must fire again on re-entry to idle (entry effect, not per-transition)"
+    );
+}
+
+/// docs/adr/0124: an act reads a view the host lends for one call as it reads
+/// the payload a queue owned. One engine is fed through the queue, the other
+/// is lent the bytes as the host received them, from a buffer that is dropped
+/// right after the call: the same arguments reach the host in both, and the
+/// borrow checker holds that nothing the machine keeps outlives the lend.
+#[test]
+fn an_act_reads_a_lent_view_as_it_reads_a_queued_payload() {
+    let queued_log = Rc::new(RefCell::new(Log::default()));
+    let mut queued = sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(
+        queued_log.clone(),
+    )));
+    let Ok(()) = queued.initialize();
+    queued.raise_fragment_received(StatechartNativeActionFragmentReceivedPayload {
+        payload: ::sce_rust_runtime::SceBytes::from_slice(b"abc").unwrap(),
+        offset: 7,
+    });
+    queued.step();
+
+    let lent_log = Rc::new(RefCell::new(Log::default()));
+    let mut lent = sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(
+        lent_log.clone(),
+    )));
+    let Ok(()) = lent.initialize();
+    let received = b"abc".to_vec();
+    lent.process_fragment_received_with(StatechartNativeActionFragmentReceivedRef {
+        payload: &received,
+        offset: 7,
+    });
+    drop(received);
+
+    assert_eq!(
+        lent.get_current_state(),
+        StatechartNativeActionState::Assembling
+    );
+    assert_eq!(
+        lent_log.borrow().appended,
+        vec![(b"abc".to_vec(), 7)],
+        "append_fragment_payload must read the lent view's fields"
+    );
+    assert_eq!(
+        lent_log.borrow().appended,
+        queued_log.borrow().appended,
+        "a lent view and a queued payload must reach the act alike"
     );
 }
 

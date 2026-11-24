@@ -146,7 +146,7 @@ fn expectations() -> Vec<Expectation> {
             // "the host was supplied" is a fact the compiler already holds.
             host_seam: "pub fn new(actions: A)",
             receiver: "self.actions.",
-            payload_guard: "match &self.pending_payload {",
+            payload_guard: "match sce_event_data {",
             error_arm: "_ => { engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(\
                         StatechartNativeActionEvent::ErrorExecution,",
             method: snake,

@@ -1418,6 +1418,13 @@ name = "rust_derive_ssot"
 path = "tests/rust_derive_ssot.rs"
 required-features = ["cli"]
 
+# docs/adr/0124: one hook signature for every Rust machine. Spawns sce-codegen,
+# so it declares the feature as the targets above do.
+[[test]]
+name = "every_rust_machine_is_handed_its_event_data_through_one_hook_signature"
+path = "tests/every_rust_machine_is_handed_its_event_data_through_one_hook_signature.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "sourcemap_ownership_walker"
 path = "tests/sourcemap_ownership_walker.rs"

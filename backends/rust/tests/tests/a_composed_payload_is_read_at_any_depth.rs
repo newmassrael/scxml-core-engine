@@ -93,10 +93,12 @@ fn a_list_past_its_bound_at_depth_two_is_refused_whole() {
 
 #[test]
 fn the_refusal_names_the_path_to_the_place() {
-    let mut policy = StaticComposedPayloadPolicy::new();
-    let refusal = policy
-        .lift_event_payload(StaticComposedPayloadEvent::BatchSent, &batch(5))
-        .expect_err("a list past its bound at depth two");
+    let refusal = StaticComposedPayloadPolicy::lift_event_payload(
+        StaticComposedPayloadEvent::BatchSent,
+        &batch(5),
+        &mut Default::default(),
+    )
+    .expect_err("a list past its bound at depth two");
     assert_eq!(
         refusal.reason(),
         "'items/1/tags' holds 5 elements, past the 4 its type declares"
@@ -130,10 +132,12 @@ fn every_bound_of_the_schema_is_held_where_the_delivery_is_read() {
     ];
     for (delivery, reason) in &cases {
         assert_ne!(delivery, &full, "the case changes the delivery: {reason}");
-        let mut policy = StaticComposedPayloadPolicy::new();
-        let refusal = policy
-            .lift_event_payload(StaticComposedPayloadEvent::BatchSent, delivery)
-            .expect_err(reason);
+        let refusal = StaticComposedPayloadPolicy::lift_event_payload(
+            StaticComposedPayloadEvent::BatchSent,
+            delivery,
+            &mut Default::default(),
+        )
+        .expect_err(reason);
         assert_eq!(refusal.reason(), *reason);
         // Refused whole: the machine runs none of the content.
         let mut engine = machine();

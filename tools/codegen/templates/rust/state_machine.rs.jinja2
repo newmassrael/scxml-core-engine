@@ -1088,11 +1088,12 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // typed path reads the Payload sum, not this field — so needs_script_engine).
     pending_event_data: ::sce_rust_runtime::SceString,
 {% endif %}
-{% if event_payload_type != '()' %}
-    // NL→IR Item C1 Path A: typed `_event.data` payload for the current
-    // event, stored by `populate_event_payload` and read by native
-    // transition guards (`matches!(&self.pending_payload, …)`).
-    pending_payload: {{ event_payload_type }},
+{% if event_payload_type != '()' and model.test_component %}
+    // docs/SCE_TEST_PROFILE.md §12.3: the message a branch took from the
+    // round's snapshot, which its content reads as `_event.data`. The data of
+    // the event being processed is no field: every hook is handed it
+    // (docs/adr/0124).
+    taken_message: {{ event_payload_type }},
 {% endif %}
 {% if model.needs_event_type %}
     // W3C SCXML 5.10.1: Event type for _event.type binding
@@ -1435,8 +1436,8 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% if model.needs_event_data and model.needs_script_engine %}
             pending_event_data: ::sce_rust_runtime::SceString::new(),
 {% endif %}
-{% if event_payload_type != '()' %}
-            pending_payload: {{ event_payload_type }}::default(),
+{% if event_payload_type != '()' and model.test_component %}
+            taken_message: {{ event_payload_type }}::default(),
 {% endif %}
 {% if model.needs_event_type %}
             pending_event_type: ::sce_rust_runtime::SceString::new(),
@@ -1787,6 +1788,9 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = {{ event_payload_type }};
+    // docs/adr/0124: the data of the event being processed, as every guard,
+    // `<sce:arg>` and transition content reads it, queued or lent alike.
+    type EventData<'e> = {{ event_data_type }};
 {% if no_std %}
     // SCE Protocol-Synthesis RFC §synth-5-J-2: under no_std the std-backed `StdHal`
     // (`std::time::Instant` / `OnceLock`) does not implement `Hal`. The
@@ -2048,13 +2052,15 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     }
 
 {% if event_payload_type != '()' %}
-    // NL→IR Item C1 Path A: store the current event's typed `_event.data`
-    // payload so native transition guards can read it without a script
-    // engine. Called by the engine's pop loop for every dequeued event;
-    // events injected without a typed payload carry the `#[default] None`
-    // variant, against which the variant-specific guards simply fail.
-    fn populate_event_payload(&mut self, payload: &Self::Payload) {
-        self.pending_payload = payload.clone();
+    // docs/adr/0124: the data the engine holds for the event being processed,
+    // read as `{{ machine_name }}EventData`: a payload a queue owned, read in
+    // place, or the data a host lent, as it is. Events injected without a typed
+    // payload read as `None`, against which the variant-specific guards fail.
+    fn event_data<'a>(held: &'a ::sce_rust_runtime::CurrentEventData<'_, Self>) -> Self::EventData<'a> {
+        match held {
+            ::sce_rust_runtime::CurrentEventData::Queued(payload) => payload.data(),
+            ::sce_rust_runtime::CurrentEventData::Lent(event_data) => *event_data,
+        }
     }
 {% if event_payload_lift %}
 
@@ -2066,6 +2072,9 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // `error.execution` in its place (docs/adr/0086, section 4.2).
 {{ event_payload_lift }}
 {% endif %}
+{% else %}
+    // docs/adr/0124: this document's events carry no typed data.
+    fn event_data<'a>(_held: &'a ::sce_rust_runtime::CurrentEventData<'_, Self>) -> Self::EventData<'a> {}
 {% endif %}
 {# The pending_event_* fields are the script `_event.*` baseline (read only by
    the needs_script_engine-gated binding in process_transition). `data` is the

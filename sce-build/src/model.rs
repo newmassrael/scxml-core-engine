@@ -585,7 +585,7 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub native_action_released_by: String,
     /// Codegen-internal: the fully-rendered backend call site for this
-    /// `<sce:action>` (e.g. the Rust `self.actions.op(&ev.field);` wrapped
+    /// `<sce:action>` (e.g. the Rust `self.actions.op(ev.field);` wrapped
     /// in its payload-variant binding). Computed by the per-backend native
     /// lowering pass on the cloned codegen model and read by the
     /// `actions/native_action` template. Never set on the parsed model, so
