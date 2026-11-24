@@ -85,6 +85,11 @@ impl<'a> StateSetRef<'a> {
     }
 
     /// The last state it holds at `to` or before, in document order.
+    ///
+    /// Every word it reads is one it holds, and each is read with `get` as
+    /// [`first_from`](Self::first_from) reads them: a read past the end ends
+    /// the search as running out of words does, so this inlined search carries
+    /// no bounds check that loads a location for the formatting machinery.
     pub fn last_to(self, to: StateId) -> Option<StateId> {
         let mut word = to.index() / WORD_BITS;
         let shift = WORD_BITS - 1 - to.index() % WORD_BITS;
@@ -92,7 +97,7 @@ impl<'a> StateSetRef<'a> {
             Some(&w) => w & (Word::MAX >> shift),
             None => {
                 word = self.words.len().checked_sub(1)?;
-                self.words[word]
+                *self.words.get(word)?
             }
         };
         loop {
@@ -101,7 +106,7 @@ impl<'a> StateSetRef<'a> {
                 return Some(StateId((word * WORD_BITS + top) as u16));
             }
             word = word.checked_sub(1)?;
-            bits = self.words[word];
+            bits = *self.words.get(word)?;
         }
     }
 

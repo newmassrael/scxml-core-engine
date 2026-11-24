@@ -911,6 +911,31 @@ fn a_push_past_the_last_slot_stops_the_program() {
     buffer.push(TransitionId(2));
 }
 
+// A row read past the end of its table stops the program with the one message
+// every read of a row shares, whichever table it is read from: the generator
+// wrote an id the tables do not hold.
+
+#[test]
+#[should_panic(expected = "a document's tables name a row they do not hold")]
+fn a_state_past_the_end_of_its_table_stops_the_program() {
+    let tables = chart_tables();
+    let _ = tables.state(StateId(tables.states.len() as u16));
+}
+
+#[test]
+#[should_panic(expected = "a document's tables name a row they do not hold")]
+fn a_history_past_the_end_of_its_table_stops_the_program() {
+    let tables = chart_tables();
+    let _ = tables.history(HistoryId(tables.histories.len() as u16));
+}
+
+#[test]
+#[should_panic(expected = "a document's tables name a row they do not hold")]
+fn a_transition_past_the_end_of_its_table_stops_the_program() {
+    let tables = chart_tables();
+    let _ = tables.transition(TransitionId(tables.transitions.len() as u16));
+}
+
 #[test]
 fn the_empty_workspace_lends_empty_buffers_over_zeroed_sets() {
     let mut workspace = <ChartWorkspace as Buffers>::EMPTY;
