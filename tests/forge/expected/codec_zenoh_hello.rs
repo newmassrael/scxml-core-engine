@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_zenoh_locator::CodecZenohLocatorView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -449,6 +449,21 @@ impl CodecZenohHelloWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohHello` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohHelloWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<1> for CodecZenohHelloWalk {
+    type Entry<'b> = CodecZenohHelloView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 1]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohHelloView::decode(_c, _a[0])
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) {  }
+}
+
 // `CodecZenohHelloView` is what a decode of `CodecZenohHello` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohHello` holds it, an embedded body or a variant arm as its
@@ -458,18 +473,10 @@ impl CodecZenohHelloWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecZenohHello::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `locators` reads its entries: the walk of every list of `CodecZenohLocatorView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecZenohHelloLocatorsWalk;
-
-impl ListWalk<0> for CodecZenohHelloLocatorsWalk {
-    type Entry<'b> = CodecZenohLocatorView<'b>;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecZenohLocatorView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecZenohHelloLocatorsWalk = super::codec_zenoh_locator::CodecZenohLocatorWalk;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -478,7 +485,7 @@ pub struct CodecZenohHelloView<'a> {
     pub cbyte: u8,
     pub zid: ::sce_forge_runtime::codec::Bytes<'a, 16, 1>,
     pub num_locators: Option<u64>,
-    pub locators: Option<Bounded<ListView<'a, CodecZenohHelloLocatorsWalk, 0>, { usize::MAX }>>,
+    pub locators: Option<Bounded<ListView<'a, super::codec_zenoh_locator::CodecZenohLocatorWalk, 0>, { usize::MAX }>>,
 }
 
 #[allow(dead_code)]

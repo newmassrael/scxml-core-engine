@@ -19,7 +19,7 @@ use sce_forge_runtime::codec::VecSink;
 
 use super::codec_chain_prev_entry::CodecChainPrevEntry;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_chain_prev_entry::CodecChainPrevEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -428,6 +428,21 @@ impl CodecChainPrevGatedWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecChainPrevGated` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecChainPrevGatedWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecChainPrevGatedWalk {
+    type Entry<'b> = CodecChainPrevGatedView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecChainPrevGatedView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecChainPrevGatedView` is what a decode of `CodecChainPrevGated` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecChainPrevGated` holds it, an embedded body or a variant arm as its
@@ -440,7 +455,7 @@ impl CodecChainPrevGatedWire {
 #[allow(dead_code)]
 pub struct CodecChainPrevGatedEntriesWalk;
 
-impl ListWalk<2> for CodecChainPrevGatedEntriesWalk {
+impl ::sce_forge_runtime::codec::ListWalk<2> for CodecChainPrevGatedEntriesWalk {
     type Entry<'b> = CodecChainPrevEntryView;
 
     fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 2]) -> Result<Self::Entry<'b>, CodecError> {

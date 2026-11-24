@@ -375,6 +375,21 @@ impl CodecZenohDeclQueryableWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohDeclQueryable` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohDeclQueryableWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<2> for CodecZenohDeclQueryableWalk {
+    type Entry<'b> = CodecZenohDeclQueryableView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 2]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohDeclQueryableView::decode(_c, _a[0], _a[1])
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 2]) {  }
+}
+
 // `CodecZenohDeclQueryableView` is what a decode of `CodecZenohDeclQueryable` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohDeclQueryable` holds it, an embedded body or a variant arm as its

@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryView;
 use super::codec_zenoh_interest_body::CodecZenohInterestBodyView;
 
@@ -489,6 +489,21 @@ impl CodecZenohInterestWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohInterest` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohInterestWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohInterestWalk {
+    type Entry<'b> = CodecZenohInterestView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohInterestView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecZenohInterestView` is what a decode of `CodecZenohInterest` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohInterest` holds it, an embedded body or a variant arm as its
@@ -498,18 +513,10 @@ impl CodecZenohInterestWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecZenohInterest::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `extensions` reads its entries: the walk of every list of `CodecZenohExtEntryView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecZenohInterestExtensionsWalk;
-
-impl ListWalk<0> for CodecZenohInterestExtensionsWalk {
-    type Entry<'b> = CodecZenohExtEntryView<'b>;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecZenohExtEntryView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecZenohInterestExtensionsWalk = super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk;
 
 /// The group `CodecZenohInterestHeaderCurrentOrFuture` as `CodecZenohInterestView` holds it.
 #[allow(dead_code)]
@@ -521,7 +528,7 @@ pub struct CodecZenohInterestView<'a> {
     pub header: u8,
     pub id: u64,
     pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFutureView<'a>>,
-    pub extensions: Option<Bounded<ListView<'a, CodecZenohInterestExtensionsWalk, 0>, { usize::MAX }, 1>>,
+    pub extensions: Option<Bounded<ListView<'a, super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, 0>, { usize::MAX }, 1>>,
 }
 
 impl<'a> Default for CodecZenohInterestView<'a> {

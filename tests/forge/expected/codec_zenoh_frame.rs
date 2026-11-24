@@ -231,6 +231,20 @@ impl<'a> CodecZenohFrameSource for CodecZenohFrameParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecZenohFrameParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecZenohFrameSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecZenohFrameSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            sn: src.sn(),
+            payload: src.payload(),
+        }
+    }
+}
+
 impl<S: CodecZenohFrameStorage> CodecZenohFrameSource for CodecZenohFrameOwned<S> {
     fn sn(&self) -> u64 {
         self.sn

@@ -352,6 +352,21 @@ impl CodecZenohEncodingWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohEncoding` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohEncodingWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohEncodingWalk {
+    type Entry<'b> = CodecZenohEncodingView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohEncodingView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecZenohEncoding` holds no bounded list, embedded body or variant, so a
 // view of it would hold what it holds. Its view is the codec itself under the
 // name every codec's view has, which lets a codec that embeds, lists or

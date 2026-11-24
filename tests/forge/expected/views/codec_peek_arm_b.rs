@@ -196,6 +196,20 @@ impl CodecPeekArmBSource for CodecPeekArmBParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecPeekArmBParts {
+    /// The parts of what `src` says, each accessor of [`CodecPeekArmBSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecPeekArmBSource + ?Sized>(src: &S) -> Self {
+        Self {
+            header: src.header(),
+            payload: src.payload(),
+        }
+    }
+}
+
 impl CodecPeekArmBSource for CodecPeekArmB {
     fn header(&self) -> u8 {
         self.header
@@ -230,9 +244,19 @@ impl CodecPeekArmBWire {
     }
 
     /// [`Self::write_source`] with the flags a parent sets in place of the
-    /// ones `src` presents.
+    /// ones `src` presents. `src` is read once into `CodecPeekArmBParts`, whatever form
+    /// it is in, and the wire is written from that one form (`write_parts_in`).
     #[doc(hidden)]
     pub fn write_source_in<S: CodecPeekArmBSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecPeekArmBOverrides) -> Result<(), K::Error> {
+        Self::write_parts_in(&CodecPeekArmBParts::of(src), w, over)
+    }
+
+    /// The wire of `src`, the one form every source of this codec is read
+    /// into: one writer for each sink, however many forms are written. It is
+    /// out of line unless every write is asked inlined (`--inline-encode`):
+    /// inlined into `write_source_in`, it is copied into each form.
+    #[inline(never)]
+    fn write_parts_in<K: SceSink>(src: &CodecPeekArmBParts, w: &mut K, over: &CodecPeekArmBOverrides) -> Result<(), K::Error> {
         let mut _c_header: u8 = src.header();
         if let Some(_o) = over.header_kind {
             _c_header = (_c_header & !0x1) | u8::from(_o);
@@ -284,6 +308,21 @@ impl CodecPeekArmBWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecPeekArmB` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecPeekArmBWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecPeekArmBWalk {
+    type Entry<'b> = CodecPeekArmBView;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecPeekArmBView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecPeekArmB` holds no bounded list, embedded body or variant, so a
 // view of it would hold what it holds. Its view is the codec itself under the
 // name every codec's view has, which lets a codec that embeds, lists or

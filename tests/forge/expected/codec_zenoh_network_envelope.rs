@@ -518,6 +518,21 @@ impl CodecZenohNetworkEnvelopeWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohNetworkEnvelope` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohNetworkEnvelopeWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohNetworkEnvelopeWalk {
+    type Entry<'b> = CodecZenohNetworkEnvelopeView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohNetworkEnvelopeView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecZenohNetworkEnvelopeView` is what a decode of `CodecZenohNetworkEnvelope` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohNetworkEnvelope` holds it, an embedded body or a variant arm as its

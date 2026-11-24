@@ -224,6 +224,19 @@ impl<'a> CodecExtAttachmentSource for CodecExtAttachmentParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecExtAttachmentParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecExtAttachmentSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecExtAttachmentSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            body: src.body(),
+        }
+    }
+}
+
 impl<S: CodecExtAttachmentStorage> CodecExtAttachmentSource for CodecExtAttachmentOwned<S> {
     fn body(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 64> {
         self.body.as_bytes()

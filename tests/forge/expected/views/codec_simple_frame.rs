@@ -156,6 +156,21 @@ impl CodecSimpleFrameSource for CodecSimpleFrameParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecSimpleFrameParts {
+    /// The parts of what `src` says, each accessor of [`CodecSimpleFrameSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecSimpleFrameSource + ?Sized>(src: &S) -> Self {
+        Self {
+            msg_id: src.msg_id(),
+            length: src.length(),
+            payload: src.payload(),
+        }
+    }
+}
+
 impl CodecSimpleFrameSource for CodecSimpleFrame {
     fn msg_id(&self) -> u8 {
         self.msg_id
@@ -237,6 +252,21 @@ impl CodecSimpleFrameWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecSimpleFrame` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecSimpleFrameWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecSimpleFrameWalk {
+    type Entry<'b> = CodecSimpleFrameView;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecSimpleFrameView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecSimpleFrame` holds no bounded list, embedded body or variant, so a
 // view of it would hold what it holds. Its view is the codec itself under the
 // name every codec's view has, which lets a codec that embeds, lists or

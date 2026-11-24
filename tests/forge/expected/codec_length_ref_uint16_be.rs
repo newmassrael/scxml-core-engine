@@ -224,6 +224,19 @@ impl<'a> CodecLengthRefUint16BeSource for CodecLengthRefUint16BeParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecLengthRefUint16BeParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecLengthRefUint16BeSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecLengthRefUint16BeSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            payload: src.payload(),
+        }
+    }
+}
+
 impl<S: CodecLengthRefUint16BeStorage> CodecLengthRefUint16BeSource for CodecLengthRefUint16BeOwned<S> {
     fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 1024> {
         self.payload.as_bytes()

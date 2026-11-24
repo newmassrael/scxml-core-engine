@@ -155,6 +155,21 @@ impl CodecSubbyteSource for CodecSubbyteParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecSubbyteParts {
+    /// The parts of what `src` says, each accessor of [`CodecSubbyteSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecSubbyteSource + ?Sized>(src: &S) -> Self {
+        Self {
+            priority: src.priority(),
+            channel: src.channel(),
+            direction: src.direction(),
+        }
+    }
+}
+
 impl CodecSubbyteSource for CodecSubbyte {
     fn priority(&self) -> u8 {
         self.priority

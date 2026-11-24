@@ -129,6 +129,19 @@ impl CodecVariantSessionCloseSource for CodecVariantSessionCloseParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecVariantSessionCloseParts {
+    /// The parts of what `src` says, each accessor of [`CodecVariantSessionCloseSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecVariantSessionCloseSource + ?Sized>(src: &S) -> Self {
+        Self {
+            reason: src.reason(),
+        }
+    }
+}
+
 impl CodecVariantSessionCloseSource for CodecVariantSessionClose {
     fn reason(&self) -> u8 {
         self.reason

@@ -19,7 +19,7 @@ use sce_forge_runtime::codec::VecSink;
 
 use super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntry;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -597,6 +597,21 @@ impl CodecChainHasTaggedWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecChainHasTagged` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecChainHasTaggedWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecChainHasTaggedWalk {
+    type Entry<'b> = CodecChainHasTaggedView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecChainHasTaggedView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecChainHasTaggedView` is what a decode of `CodecChainHasTagged` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecChainHasTagged` holds it, an embedded body or a variant arm as its
@@ -606,22 +621,14 @@ impl CodecChainHasTaggedWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecChainHasTagged::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `entries` reads its entries: the walk of every list of `CodecChainHasTaggedEntryView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecChainHasTaggedEntriesWalk;
-
-impl ListWalk<0> for CodecChainHasTaggedEntriesWalk {
-    type Entry<'b> = CodecChainHasTaggedEntryView;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecChainHasTaggedEntryView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecChainHasTaggedEntriesWalk = super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryWalk;
 
 /// The group `CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide` as `CodecChainHasTaggedView` holds it.
 #[allow(dead_code)]
-pub type CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWideView<'a> = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<::sce_forge_runtime::codec::NonEmptyListView<'a, CodecChainHasTaggedEntriesWalk, 0>>;
+pub type CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWideView<'a> = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<::sce_forge_runtime::codec::NonEmptyListView<'a, super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryWalk, 0>>;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -670,7 +677,7 @@ impl<'a> CodecChainHasTaggedView<'a> {
             _v
         };
         #[allow(clippy::needless_late_init)]
-        let entries: Bounded<::sce_forge_runtime::codec::NonEmptyListView<'a, CodecChainHasTaggedEntriesWalk, 0>, 3, 1>;
+        let entries: Bounded<::sce_forge_runtime::codec::NonEmptyListView<'a, super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryWalk, 0>, 3, 1>;
         {
             let _rest = cursor.peek_slice(cursor.remaining())?;
             let mut _count: u32 = 0;

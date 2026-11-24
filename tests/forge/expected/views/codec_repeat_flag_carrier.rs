@@ -19,7 +19,7 @@ use sce_forge_runtime::codec::VecSink;
 
 use super::codec_chain_flag_entry::CodecChainFlagEntry;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_chain_flag_entry::CodecChainFlagEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -385,6 +385,21 @@ impl CodecRepeatFlagCarrierWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecRepeatFlagCarrier` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecRepeatFlagCarrierWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecRepeatFlagCarrierWalk {
+    type Entry<'b> = CodecRepeatFlagCarrierView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecRepeatFlagCarrierView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecRepeatFlagCarrierView` is what a decode of `CodecRepeatFlagCarrier` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecRepeatFlagCarrier` holds it, an embedded body or a variant arm as its
@@ -394,25 +409,17 @@ impl CodecRepeatFlagCarrierWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecRepeatFlagCarrier::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `entries` reads its entries: the walk of every list of `CodecChainFlagEntryView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecRepeatFlagCarrierEntriesWalk;
-
-impl ListWalk<1> for CodecRepeatFlagCarrierEntriesWalk {
-    type Entry<'b> = CodecChainFlagEntryView;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 1]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecChainFlagEntryView::decode(_c, _a[0])
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) {  }
-}
+pub type CodecRepeatFlagCarrierEntriesWalk = super::codec_chain_flag_entry::CodecChainFlagEntryWalk;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecRepeatFlagCarrierView<'a> {
     pub head: u8,
     pub count: u8,
-    pub entries: ::sce_forge_runtime::codec::Lawful<Bounded<ListView<'a, CodecRepeatFlagCarrierEntriesWalk, 1>, 4>, CodecRepeatFlagCarrierEntriesLaw>,
+    pub entries: ::sce_forge_runtime::codec::Lawful<Bounded<ListView<'a, super::codec_chain_flag_entry::CodecChainFlagEntryWalk, 1>, 4>, CodecRepeatFlagCarrierEntriesLaw>,
 }
 
 #[allow(dead_code)]

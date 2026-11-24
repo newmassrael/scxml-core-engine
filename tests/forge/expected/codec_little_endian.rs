@@ -155,6 +155,21 @@ impl CodecLittleEndianSource for CodecLittleEndianParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecLittleEndianParts {
+    /// The parts of what `src` says, each accessor of [`CodecLittleEndianSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecLittleEndianSource + ?Sized>(src: &S) -> Self {
+        Self {
+            sensor_id: src.sensor_id(),
+            value: src.value(),
+            status: src.status(),
+        }
+    }
+}
+
 impl CodecLittleEndianSource for CodecLittleEndian {
     fn sensor_id(&self) -> u8 {
         self.sensor_id

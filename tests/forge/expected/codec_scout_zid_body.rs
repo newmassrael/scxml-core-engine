@@ -224,6 +224,19 @@ impl<'a> CodecScoutZidBodySource for CodecScoutZidBodyParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecScoutZidBodyParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecScoutZidBodySource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecScoutZidBodySource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            zid: src.zid(),
+        }
+    }
+}
+
 impl<S: CodecScoutZidBodyStorage> CodecScoutZidBodySource for CodecScoutZidBodyOwned<S> {
     fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1> {
         self.zid.as_bytes()

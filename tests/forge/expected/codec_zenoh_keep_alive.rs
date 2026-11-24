@@ -117,6 +117,18 @@ pub struct CodecZenohKeepAliveParts {
 impl CodecZenohKeepAliveSource for CodecZenohKeepAliveParts {
 }
 
+#[allow(dead_code)]
+impl CodecZenohKeepAliveParts {
+    /// The parts of what `src` says, each accessor of [`CodecZenohKeepAliveSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecZenohKeepAliveSource + ?Sized>(_src: &S) -> Self {
+        Self {
+        }
+    }
+}
+
 impl CodecZenohKeepAliveSource for CodecZenohKeepAlive {
 }
 

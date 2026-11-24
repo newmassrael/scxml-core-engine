@@ -248,6 +248,21 @@ impl<'a> CodecDmaAlignedBasicSource for CodecDmaAlignedBasicParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecDmaAlignedBasicParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecDmaAlignedBasicSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecDmaAlignedBasicSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            msg_id: src.msg_id(),
+            reserved: src.reserved(),
+            aligned_payload: src.aligned_payload(),
+        }
+    }
+}
+
 impl<S: CodecDmaAlignedBasicStorage> CodecDmaAlignedBasicSource for CodecDmaAlignedBasicOwned<S> {
     fn msg_id(&self) -> u8 {
         self.msg_id
