@@ -6614,6 +6614,11 @@ impl Turn<'_> {
     }
 
     /// Offer one event to the configuration and take the microstep it selects.
+    ///
+    /// Out of line: the loop offers an internal event and an external one in
+    /// two places, and each would otherwise carry its own copy of the
+    /// selection's call and of the microstep's.
+    #[inline(never)]
     fn take_event(&mut self, event: EventId) -> EventOutcome {
         self.select_transitions(event);
         if self.enabled.is_empty() {
