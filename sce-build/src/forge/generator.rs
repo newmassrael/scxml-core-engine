@@ -50104,6 +50104,8 @@ fn render_algorithm(
                     .any(|name| body.contains(&format!("{name}.")))))
         .into(),
     );
+    // Read before the body is handed to the template below.
+    let c11_body_reads_text = lang == Language::C11 && body.contains("sce_text_");
     ctx.insert("body".into(), body.into());
     ctx.insert("may_fail".into(), may_fail.into());
     ctx.insert("needs_span".into(), needs_span.into());
@@ -50122,8 +50124,8 @@ fn render_algorithm(
             .records
             .iter()
             .any(|(_, _, record)| record.holds_text())
-            || (lang == Language::C11 && body.contains("sce_text_")))
-        .into(),
+            || c11_body_reads_text)
+            .into(),
     );
     // A value that may be absent (docs/adr/0055) — a parameter, the return, a
     // local or a field of a record the body holds — is C11's struct of the
