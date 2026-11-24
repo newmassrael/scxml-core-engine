@@ -245,11 +245,13 @@ sce_footprint_core_symbols() {
             '$3 ~ /^[tTwW]$/ { name = substr($0, index($0, $4)); if (name ~ core) print $2 + 0, name }'
 }
 
-# The procedures only a `<history>` or a `<parallel>` reaches (FEATURE_PROCEDURES) that the image
-# links, one name per line.
-sce_footprint_feature_procedures() {
+# The code symbols the image links whose demangled names the extended regular expression $1 matches
+# whole, one name per line: the procedures only a `<history>` or a `<parallel>` reaches
+# (FEATURE_PROCEDURE_PATTERN), and the general and the row walk's (GENERAL_WALK_PATTERN,
+# ROW_WALK_PATTERN).
+sce_footprint_linked() {
     nm -C "$FOOTPRINT_LIB" 2>/dev/null |
-        awk -v pattern="^${FEATURE_PROCEDURE_PATTERN}\$" \
+        awk -v pattern="^${1}\$" \
             '$2 ~ /^[tTwW]$/ { name = substr($0, index($0, $3)); if (name ~ pattern) print name }' |
         sort -u
 }
@@ -261,7 +263,7 @@ sce_footprint_feature_procedures() {
 sce_footprint_features() {
     local label="$1" expected="$2"
     local linked name missing=()
-    linked="$(sce_footprint_feature_procedures)"
+    linked="$(sce_footprint_linked "$FEATURE_PROCEDURE_PATTERN")"
     case "$expected" in
         linked)
             for name in $FEATURE_PROCEDURES; do
@@ -288,16 +290,63 @@ sce_footprint_features() {
     printf '  [nostd-mcu] %-16s feature procedures %s\n' "$label:" "$expected"
 }
 
+# Whether the image links the walks as its documents decide (docs/adr/0125): the row walk always,
+# since every configuration links a document that fixes its microsteps' sets; the general walk's
+# two procedures when a document does not (`linked`), and nothing of the general walk when every
+# document does (`absent`). Held both ways, for the reason the features are.
+sce_footprint_walks() {
+    local label="$1" expected="$2"
+    local linked name missing=()
+    linked="$(sce_footprint_linked "$ROW_WALK_PATTERN")"
+    for name in $ROW_WALK_PROCEDURES; do
+        grep -qx "sce_rust_runtime::helpers::microstep::$name" <<<"$linked" \
+            || missing+=("$name")
+    done
+    if (( ${#missing[@]} > 0 )); then
+        printf '  [nostd-mcu] %s: the row walk is not linked, though a document fixes its sets: %s\n' \
+            "$label" "${missing[*]}" >&2
+        printf '  [nostd-mcu] a renamed procedure, or a module ROW_WALK_PROCEDURES no longer names.\n' >&2
+        sce_gate_fail "MCU row walk not seen ($label)"
+    fi
+    linked="$(sce_footprint_linked "$GENERAL_WALK_PATTERN")"
+    case "$expected" in
+        linked)
+            for name in $GENERAL_WALK_PROCEDURES; do
+                grep -qx "sce_rust_runtime::helpers::microstep::$name" <<<"$linked" \
+                    || missing+=("$name")
+            done
+            if (( ${#missing[@]} > 0 )); then
+                printf '  [nostd-mcu] %s: the general walk is not linked, though a document needs it: %s\n' \
+                    "$label" "${missing[*]}" >&2
+                printf '  [nostd-mcu] a renamed procedure, or a module GENERAL_WALK_PROCEDURES no longer names.\n' >&2
+                sce_gate_fail "MCU general walk not seen ($label)"
+            fi
+            ;;
+        absent)
+            if [[ -n "$linked" ]]; then
+                printf '  [nostd-mcu] %s: the general walk is linked, though every document fixes its sets:\n' \
+                    "$label" >&2
+                printf '%s\n' "$linked" >&2
+                printf '  [nostd-mcu] the core reaches the general walk only through the tables of a document\n' >&2
+                printf '  [nostd-mcu] that carries it (docs/adr/0125); a direct call is the whole walk in every program.\n' >&2
+                sce_gate_fail "MCU general walk in a program whose documents fix their sets ($label)"
+            fi
+            ;;
+    esac
+    printf '  [nostd-mcu] %-16s general walk %s, row walk linked\n' "$label:" "$expected"
+}
+
 # One configuration: the image with one machine, then with two, and the core
 # read off the second, where it is a function of its own rather than inlined
 # into the only caller. Each figure held to its budget in both directions.
 sce_footprint_weigh() {
-    local label="$1" machine_budget="$2" core_budget="$3" features="$4"
-    local stack_roots="$5" stack_budget="$6"; shift 6
+    local label="$1" machine_budget="$2" core_budget="$3" features="$4" general_walk="$5"
+    local stack_roots="$6" stack_budget="$7"; shift 7
     local one two machine core_syms core_total typed lo hi
     one="$(sce_footprint_image "$label, one machine" "$@")"
     two="$(sce_footprint_image "$label, two machines" "$@" --features second-machine)"
     sce_footprint_features "$label" "$features"
+    sce_footprint_walks "$label" "$general_walk"
     machine=$(( two - one ))
     read -r core_syms core_total < <(
         sce_footprint_core_symbols | awk '{ n++; s += $1 } END { printf "%d %d\n", n, s }'
@@ -428,14 +477,15 @@ sce_footprint_stack() {
 # no feature builds it (docs/adr/0053). Both builds are weighed: a feature
 # nothing builds is one that stops compiling and nobody finds out until a
 # consumer sets it.
-sce_footprint_weigh "diagnostics on" "$MACHINE_BYTES" "$CORE_BYTES" linked \
+sce_footprint_weigh "diagnostics on" "$MACHINE_BYTES" "$CORE_BYTES" linked linked \
     "$STACK_ROOTS" "$STACK_BYTES" --features macrostep-diagnostics
 sce_footprint_weigh "diagnostics off" "$MACHINE_BYTES_NO_DIAGNOSTICS" "$CORE_BYTES_NO_DIAGNOSTICS" \
-    linked "$STACK_ROOTS" "$STACK_BYTES"
+    linked linked "$STACK_ROOTS" "$STACK_BYTES"
 # A program none of whose documents has a `<history>` or a `<parallel>`, built as a bare-metal
 # crate that asks for no feature builds it: the shape of a consumer whose machines are flat or
-# nested compound states, which pays for neither feature (docs/adr/0066, decision 4).
-sce_footprint_weigh "plain documents" "$MACHINE_BYTES_PLAIN" "$CORE_BYTES_PLAIN" absent \
+# nested compound states, which pays for neither feature (docs/adr/0066, decision 4), and, as both
+# its documents fix their microsteps' sets, for no general walk (docs/adr/0125).
+sce_footprint_weigh "plain documents" "$MACHINE_BYTES_PLAIN" "$CORE_BYTES_PLAIN" absent absent \
     "$STACK_ROOTS_PLAIN" "$STACK_BYTES_PLAIN" --features plain-documents
 
 # The frame of a codec's lent decode on the target, which the engine's stack
