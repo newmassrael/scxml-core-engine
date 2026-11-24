@@ -725,8 +725,10 @@ case) and a `proven<Case>()` read per case that holds a record, beside `REVISION
 `DATA_MAX_LEN`, `SCHEMA_ID` and `JSON_SCHEMA`; and an event schema's field of the
 union at any depth as that interface. Rust generates it as an enum deriving `Debug`,
 `Clone` and `PartialEq`, one variant per case (holding the case's record, or none
-for an empty case), a `<tag>(&self)` read of the tag and a `proven_<case>(&self)`
-read per case that holds a record, beside the same four constants; and a field of
+for an empty case), a `<tag>(&self)` read of the tag and a total `as_<case>(&self)`
+view per case that holds a record, `None` in another case, so the unit holds no
+panic (an algorithm reads a proven case through the forge runtime's
+`union_case::proven` of the view), beside the same four constants; and a field of
 the union at any depth as that enum. A tag whose key names no Rust method, or would
 hide a derived one (`clone`, `eq`, `fmt`), is refused by name. Swift generates it as an
 enum, `Equatable` and `Sendable`, one case per variant (holding the case's record, or

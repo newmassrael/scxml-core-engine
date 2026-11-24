@@ -67,15 +67,19 @@ impl {{ union_type }} {
 {% endfor %}
         }
     }
+{# Each view is total: a value in another case is `None`, so the unit holds no
+   panic. A read a test of the tag proved is the forge runtime's
+   `union_case::proven` of the view, written where it is read
+   (`composed_lowering::rust_unit_union_read`). #}
 {% for c in cases if c.record %}
 
-    /// The record of the case `{{ c.variant }}`, read where a test of the tag proved
-    /// the value is in it.
-    pub fn {{ c.proven }}(&self) -> &{{ c.record }} {
+    /// The record of the case `{{ c.variant }}`, or `None` when the value is in
+    /// another case.
+    pub fn {{ c.view }}(&self) -> Option<&{{ c.record }}> {
         match self {
-            Self::{{ c.ident }}(record) => record,
+            Self::{{ c.ident }}(record) => Some(record),
 {% if cases | length > 1 %}
-            _ => unreachable!("a value of {} read as {} is in another case", "{{ union_name }}", "{{ c.variant }}"),
+            _ => None,
 {% endif %}
         }
     }

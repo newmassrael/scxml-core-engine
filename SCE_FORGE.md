@@ -2481,7 +2481,7 @@ A parameter, the return and a local may be of `union:<alias>`, a union the algor
 
 | Backend | `union:U` | A read of case `c`'s field `f` | A local built in case `c` | The end no path reaches |
 |---------|-----------|--------------------------------|---------------------------|-------------------------|
-| Rust | the union unit's enum, by value | `u.proven_c().f`; a field several cases leave, a `match` over them | `U::C(R { f: … })`, or `U::C` for an empty case | `unreachable!(…)` |
+| Rust | the union unit's enum, by value | `sce_forge_runtime::union_case::proven(u.as_c()).f`, the runtime's one read over the unit's total view `as_c() -> Option<&R>`; a field several cases leave, a `match` over them, read through the same `proven` where the tests leave some case out | `U::C(R { f: … })`, or `U::C` for an empty case | `unreachable!(…)` |
 | Kotlin | the union unit's sealed interface | `u.provenC().f`; a field several cases leave, a `when` over them | `val u: U = U.C(R(f = …))`, or `U.C` for an empty case | `throw IllegalStateException(…)` |
 | C++ | the union unit's struct of one `std::variant`, by value | `u.provenC().f`; a field several cases leave, a lambda that takes each case left apart by `std::get_if` | `const U u = U{U::C{R{…}}};`, or `U{U::C{}}` for an empty case | `std::abort();` |
 | Go | the union unit's value struct | `u.ProvenC().F`; a field several cases leave, a function literal whose `switch` takes them apart | `u := UC(R{F: …})`, or `UC()` for an empty case | `panic(…)` |

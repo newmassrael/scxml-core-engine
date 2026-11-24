@@ -23,13 +23,25 @@ pub(crate) fn rust_case_ident(variant: &str) -> String {
 }
 
 /// The read of the record of the case `variant` where a test proved it, on a
-/// union's Rust type (the unit's and the machine's alike).
+/// machine's own union, which declares it (`RustComposed`'s `union_def`).
 pub(crate) fn rust_case_read(variant: &str) -> String {
     format!(
         "proven_{}",
         crate::filters::to_snake_case(variant.to_string())
     )
 }
+
+/// The view of the record of the case `variant` on a union's unit
+/// (docs/adr/0092, section 7, the Rust row): `as_<case>(&self) -> Option<&R>`,
+/// `None` in another case, so the unit holds no panic.
+pub(crate) fn rust_case_view(variant: &str) -> String {
+    format!("as_{}", crate::filters::to_snake_case(variant.to_string()))
+}
+
+/// The forge runtime's read of a case a test of the union's tag proved, over the
+/// case's view ([`rust_case_view`]): the one arm of the other cases, which no
+/// run reaches, is the runtime's, not the unit's.
+const RUST_UNION_CASE_PROVEN: &str = "sce_forge_runtime::union_case::proven";
 
 /// The read of a field several cases share ([`SharedFieldDef`]) on a machine's
 /// union.
@@ -142,10 +154,13 @@ pub(crate) fn rust_union_member_place(
 /// own unit, `ty` (docs/adr/0092, section 7, the Rust row, and Landing order
 /// step 5), where the value may be in the cases `left`, as
 /// [`unit_union_member_of`] classifies it: the tag's method; the field of the
-/// one case left, through that case's proven read; or the field the cases left
-/// each declare, read by a `match` over them whose other arm the narrowing
-/// proved is never taken. A case's record is the payload type its event
-/// schema's unit declares, whose fields are named in snake case
+/// one case left, through the forge runtime's `union_case::proven` of that
+/// case's view; or the field the cases left each declare, read by a `match`
+/// over them, each arm the field, where every case is left, and otherwise the
+/// runtime's `union_case::proven` of a `match` whose other arm, which the
+/// narrowing proved is never taken, is `None`. The unit's views are total, so
+/// the one arm no run reaches is the runtime's. A case's record is the payload
+/// type its event schema's unit declares, whose fields are named in snake case
 /// ([`crate::forge::generator::event_schema_field_ident`]). `Err` as
 /// [`unit_union_member_of`]'s, and for a tag's key no Rust method is named by.
 pub(crate) fn rust_unit_union_read(
@@ -163,30 +178,32 @@ pub(crate) fn rust_unit_union_read(
             .ok_or_else(|| {
                 format!("the tag's key `{member}` names no Rust method its value can be read by")
             })?,
-        UnionMember::Case(case) => {
-            format!("{holder}.{}().{field}", rust_case_read(&case.variant.name))
-        }
+        UnionMember::Case(case) => format!(
+            "{RUST_UNION_CASE_PROVEN}({holder}.{}()).{field}",
+            rust_case_view(&case.variant.name)
+        ),
         UnionMember::Shared => {
+            // Every case is an arm where every case is left, and the `match`
+            // is the field. Otherwise the narrowing proved the value is in none
+            // of the others, whose arm is `None`, and the runtime reads the
+            // field out of the `Some` of the case the value is in.
+            let others = unit_union_leaves_others(union, left);
             let arms: String = left
                 .iter()
                 .map(|case| {
-                    format!(
-                        "{ty}::{}(record) => record.{field}, ",
-                        rust_case_ident(&case.variant.name)
-                    )
+                    let ident = rust_case_ident(&case.variant.name);
+                    if others {
+                        format!("{ty}::{ident}(record) => Some(record.{field}), ")
+                    } else {
+                        format!("{ty}::{ident}(record) => record.{field}, ")
+                    }
                 })
                 .collect();
-            // Every case is an arm where every case is left; otherwise the
-            // narrowing proved the value is in none of the others.
-            let rest = if unit_union_leaves_others(union, left) {
-                format!(
-                    "_ => unreachable!(\"{}\"), ",
-                    unit_union_other_case(union, left)
-                )
+            if others {
+                format!("{RUST_UNION_CASE_PROVEN}(match &{holder} {{ {arms}_ => None, }})")
             } else {
-                String::new()
-            };
-            format!("(match &{holder} {{ {arms}{rest}}})")
+                format!("(match &{holder} {{ {arms}}})")
+            }
         }
     })
 }
@@ -1052,10 +1069,11 @@ mod tests {
     }
 
     /// An algorithm's union is its unit's type (docs/adr/0092, Landing order
-    /// step 5): the tag by its method, the field of the one case left by that
-    /// case's proven read, a field several cases declare by a `match` over them
-    /// whose other arm is never taken, and no read where no case left declares
-    /// the field.
+    /// step 5): the tag by its method, the field of the one case left by the
+    /// runtime's proven read of that case's view, a field several cases declare
+    /// by a `match` over them whose other arm, never taken, is the runtime's,
+    /// and no read where no case left declares the field. No read spells a
+    /// panic of its own.
     #[test]
     fn an_algorithms_union_is_read_on_its_units_type() {
         let shapes = shapes();
@@ -1073,16 +1091,14 @@ mod tests {
         assert_eq!(read(&[], "kind"), Ok("shape.kind()".to_string()));
         assert_eq!(
             read(&[case("circle")], "radius"),
-            Ok("shape.proven_circle().radius".to_string())
+            Ok("sce_forge_runtime::union_case::proven(shape.as_circle()).radius".to_string())
         );
         assert_eq!(
             read(&[case("circle"), case("disc")], "radius"),
-            Ok(
-                "(match &shape { shape::Shape::Circle(record) => record.radius, \
-                shape::Shape::Disc(record) => record.radius, _ => unreachable!(\"a value of \
-                shape read as one of its cases circle, disc is in another case\"), })"
-                    .to_string()
-            )
+            Ok("sce_forge_runtime::union_case::proven(match &shape { \
+                shape::Shape::Circle(record) => Some(record.radius), \
+                shape::Shape::Disc(record) => Some(record.radius), _ => None, })"
+                .to_string())
         );
         // Where every case of the union is left, each is an arm and there is
         // no other.
@@ -1092,7 +1108,9 @@ mod tests {
         let text = rust_unit_union_read("shape", "shape::Shape", &both, &every, "radius")
             .expect("a read of a field every case declares");
         assert!(
-            text.ends_with("Disc(record) => record.radius, })") && !text.contains("_ =>"),
+            text.ends_with("Disc(record) => record.radius, })")
+                && !text.contains("_ =>")
+                && !text.contains("union_case"),
             "{text}"
         );
         assert!(read(&[], "radius").is_err());

@@ -8,7 +8,8 @@
 //!   `Debug`, `Clone` and `PartialEq`, one variant per variant of the tag's
 //!   enum in the enum's order (not the document's), holding the case's record
 //!   or nothing for an empty case; `kind(&self)`, the tag's value; and one
-//!   `proven_<case>(&self)` per case that holds a record. Beside it `REVISION`
+//!   total `as_<case>(&self) -> Option<&R>` per case that holds a record, so
+//!   the unit spells no panic. Beside it `REVISION`
 //!   (the tag enum's), `DATA_MAX_LEN`, `SCHEMA_ID` and `JSON_SCHEMA` (section
 //!   3.1, item 4).
 //! * `event_shapes_minimal.scxml`, whose fields hold the union alone, in a list and
@@ -16,7 +17,7 @@
 //!   and brings the union's module in.
 //! * The union's unit, with the enum and the records it names, compiles under
 //!   `rustc -D warnings` with a module that builds every case, reads one through
-//!   its `proven` read and its tag, and matches a value exhaustively.
+//!   its view and its tag, and matches a value exhaustively.
 //!
 //! A case whose Rust variant would be another's, a case that holds a record no
 //! unit declares a type for, and a tag whose key would hide a derived method
@@ -80,23 +81,31 @@ fn a_union_is_an_enum_with_one_variant_per_case_in_the_enums_order() {
         format!("Self::Dot => {KIND}::Dot,\n"),
         format!("Self::Circle(_) => {KIND}::Circle,\n"),
         format!("Self::Rect(_) => {KIND}::Rect,\n"),
-        format!("    pub fn proven_circle(&self) -> &{RADIUS} {{\n"),
-        "Self::Circle(record) => record,\n".to_string(),
-        format!("    pub fn proven_rect(&self) -> &{RECT} {{\n"),
-        "Self::Rect(record) => record,\n".to_string(),
+        format!("    pub fn as_circle(&self) -> Option<&{RADIUS}> {{\n"),
+        "Self::Circle(record) => Some(record),\n".to_string(),
+        format!("    pub fn as_rect(&self) -> Option<&{RECT}> {{\n"),
+        "Self::Rect(record) => Some(record),\n".to_string(),
     ] {
         position(&text, &fragment);
     }
     // An empty case has nothing to read.
-    assert!(!text.contains("proven_dot"), "{text}");
+    assert!(!text.contains("as_dot"), "{text}");
     // The document writes rect, dot, circle; the enum declares dot, circle,
     // rect, and the variants follow the enum.
     let dot = position(&text, "    Dot,\n");
     let circle = position(&text, "    Circle(");
     let rect = position(&text, "    Rect(");
     assert!(dot < circle && circle < rect, "{text}");
-    // Each proven read refuses the other cases in the one place it is written.
-    assert_eq!(text.matches("unreachable!(").count(), 2, "{text}");
+    // Each view answers `None` for the other cases: the unit spells no panic,
+    // so a crate that denies the panic-free lints compiles it as it is.
+    assert_eq!(
+        text.matches("            _ => None,\n").count(),
+        2,
+        "{text}"
+    );
+    for panic in ["unreachable!(", "panic!(", "proven_"] {
+        assert!(!text.contains(panic), "the unit spells `{panic}`:\n{text}");
+    }
 }
 
 /// The constants of a union's unit (docs/adr/0092, section 3.1, item 4): its
@@ -135,8 +144,8 @@ fn a_payload_names_the_enum_at_every_depth() {
 }
 
 /// A module that uses every part of the union's unit: a case of each kind
-/// built, a `proven` read, the tag, and a `match` with no wildcard that the
-/// compiler holds to every case.
+/// built, a view of each kind of answer, the tag, and a `match` with no
+/// wildcard that the compiler holds to every case.
 const PROBE: &str = r#"use super::shape_kind::ShapeKind;
 use super::shape_radius_minimal::ShapeRadiusMinimalPayload;
 use super::shape_rect_minimal::ShapeRectMinimalPayload;
@@ -150,8 +159,12 @@ pub fn named(shape: &UnionShapeMinimal) -> u32 {
     }
 }
 
-pub fn radius_of(shape: &UnionShapeMinimal) -> u16 {
-    shape.proven_circle().radius
+pub fn radius_of(shape: &UnionShapeMinimal) -> Option<u16> {
+    shape.as_circle().map(|circle| circle.radius)
+}
+
+pub fn width_of(shape: &UnionShapeMinimal) -> Option<u16> {
+    shape.as_rect().map(|rect| rect.width)
 }
 
 pub fn tag_of(shape: &UnionShapeMinimal) -> ShapeKind {
