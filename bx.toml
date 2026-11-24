@@ -2386,4 +2386,12 @@ cache = true
 # for the ref. The defaults hold: rebase, a window of 3 to 20, the hook as the
 # judge. `derive = ["regen"]` waits for regen to be split into actions bx
 # caches; until then each candidate would pay a full regeneration.
+#
+# `order = "conflicts"` (bx RFC 0083, ADR 0120 Landing step 6): an item waits
+# only for the items whose paths or reusable check units it shares, so a short
+# item no longer waits behind a long head it does not touch. The judge is the
+# pre-push hook, so `reach` names the set the hook runs; without it bx cannot
+# know what the hook reads and counts every item in conflict.
 [land]
+order = "conflicts"
+reach = ["prepush"]
