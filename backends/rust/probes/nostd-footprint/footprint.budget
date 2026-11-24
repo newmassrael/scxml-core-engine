@@ -63,7 +63,7 @@
 # differently moves these bytes with no change of ours. The gate prints this
 # beside `rustc --version` when it fails, so a red that is only the toolchain
 # says so, and a re-pin names the toolchain it was taken on.
-MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
+MEASURED_WITH='rustc 1.100.0 (0ef1bc386 2026-11-09)'
 
 # The shared core, by the path of its own symbols (an awk extended regular
 # expression over the demangled name): Appendix D's procedures
@@ -156,7 +156,14 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # external enqueue makes first (docs/adr/0084, D2 as amended at step 9): `enqueue_external`
 # applies what the inbox holds before a machine's own event joins the queue, so the queue
 # keeps arrival order (W3C test 201). Images of 193973 and 195081.
-MACHINE_BYTES=1108
+#
+# 1108 -> 1008 (2026-11-24, rustc 1.100.0): a machine's behaviour hooks take the
+# numbers its tables are indexed by and the core decides where a run ends
+# (docs/adr/0123). At its parent, on the same build machine and
+# toolchain, the figure was 1118 (CI's reading of 3c4678882d4 too), images of
+# 210053 and 211171; now images of 210011 and 211019, two machines 152 bytes
+# smaller.
+MACHINE_BYTES=1008
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -204,7 +211,12 @@ MACHINE_BYTES=1108
 # 954 -> 1102 (2026-11-05): 1060 by 7819ffe478 (images of 193801 and 194861), and
 # 42 for the drain before an external enqueue (docs/adr/0084, step 9), as above.
 # Images of 193795 and 194897.
-MACHINE_BYTES_NO_DIAGNOSTICS=1102
+#
+# 1102 -> 1000 (2026-11-24, rustc 1.100.0): a machine's behaviour hooks take the
+# numbers its tables are indexed by and the core decides where a run ends
+# (docs/adr/0123). 1110 at its parent (images of 209875 and
+# 210985); now images of 209833 and 210833.
+MACHINE_BYTES_NO_DIAGNOSTICS=1000
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -246,7 +258,13 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1102
 # ready query are out of line (docs/adr/0075), so the machines that keep a
 # queue of one send-id type share them; reached through the policy's
 # `SchedulerStorage` they were otherwise inlined into each machine's `tick`.
-CORE_BYTES=7870
+#
+# 7870 -> 8004 (2026-11-24, rustc 1.100.0): a machine's behaviour hooks take the
+# numbers its tables are indexed by and the core decides where a run ends
+# (docs/adr/0123). 7878 at its parent, over 29 symbols: the
+# end-of-run check and the numbered hooks' callers are paid once where each
+# machine paid for its own conversion.
+CORE_BYTES=8004
 
 # The same without the report.
 #
@@ -273,7 +291,11 @@ CORE_BYTES=7870
 #
 # 7416 -> 7762 over 28 symbols (2026-10-31), the queue's pop and query out of
 # line (docs/adr/0075), as above.
-CORE_BYTES_NO_DIAGNOSTICS=7762
+#
+# 7762 -> 7896 (2026-11-24, rustc 1.100.0): a machine's behaviour hooks take the
+# numbers its tables are indexed by and the core decides where a run ends
+# (docs/adr/0123). 7770 at its parent, over 29 symbols.
+CORE_BYTES_NO_DIAGNOSTICS=7896
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -331,8 +353,12 @@ CORE_BYTES_NO_DIAGNOSTICS=7762
 # 1008 -> 1160 (2026-11-05): 1118 by 7819ffe478 (images of 190892 and 192010), and
 # 42 for the drain before an external enqueue (docs/adr/0084, step 9), as above.
 # Images of 190948 and 192108.
-MACHINE_BYTES_PLAIN=1160
-CORE_BYTES_PLAIN=5496
+#
+# 1160 -> 1076 and 5496 -> 5630 over 20 symbols (2026-11-24, rustc 1.100.0): the
+# numbered hooks and the core's end of a run (docs/adr/0123). 1172 and 5504 at
+# its parent (images of 207026 and 208198); now images of 207046 and 208122.
+MACHINE_BYTES_PLAIN=1076
+CORE_BYTES_PLAIN=5630
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight

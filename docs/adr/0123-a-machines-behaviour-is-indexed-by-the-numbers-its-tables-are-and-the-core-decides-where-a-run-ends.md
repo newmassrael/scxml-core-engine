@@ -138,9 +138,23 @@ This ADR is accepted on all of these:
 
 ## Measured
 
-Before, at 3c4678882d4 (the Context's figures): one more machine 1,080 bytes, and 1,144 bytes for two plain
-documents. The figures after this change are measured by the main session on the probe, and entered here and in
-`footprint.budget` with the landing.
+Measured on one build machine, `thumbv7em-none-eabihf`, `opt-level = "s"`, rustc 1.100.0, with the gate's own
+arithmetic (`.text` plus `.rodata` of the probe staticlib, the image of two machines minus the image of one; the
+core by `CORE_SYMBOLS`). The parent's figures are the ones CI read for 3c4678882d4, byte for byte. (The Context's
+1,080 and 1,144 are a symbol-by-symbol difference of the same images, which counts what moved between symbols
+differently; this table is the gate's.)
+
+| | parent | this change |
+|---|---|---|
+| one more machine, with the macrostep report | 1,118 | 1,008 |
+| one more machine, without it | 1,110 | 1,000 |
+| one more machine, two plain documents | 1,172 | 1,076 |
+| shared core, with the report / without / plain | 7,878 / 7,770 / 5,504 | 8,004 / 7,896 / 5,630 |
+| image of two machines, with the report / without / plain | 211,171 / 210,985 / 208,198 | 211,019 / 210,833 / 208,122 |
+
+Each machine is 96 to 110 bytes smaller and the program pays 126 bytes once, so an image of two machines is smaller
+by 152 bytes (76 with plain documents), and each further machine saves its 96 to 110. The image of one plain machine
+is 20 bytes larger. The worst-case stack is read by the stack gate at the landing.
 
 ## Consequences
 
