@@ -390,7 +390,9 @@ TEST(ProcessSceTemplate, RoundtripResolvesBodyAndCallsite) {
 // is stamped on thrown subtypes so diagnostic consumers can present
 // `(file, row, col)` directly. A caller with a `<sce:use>` on its
 // second line pointing at a missing template should produce a
-// TemplateNotFound whose location() names the caller file at row 2.
+// TemplateNotFound whose location() names the caller file at row 2, at
+// the column where the href it reports is written (SCE_ERROR_CONTRACT.md
+// §2.2), as the Rust producer places it.
 TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
     const std::string callerSource = "<root xmlns:sce=\"http://sce.dev/ext\">\n"
                                      "  <sce:use template=\"does_not_exist.scxml\"/>\n"
@@ -406,10 +408,10 @@ TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
         EXPECT_EQ(loc->file, std::string(callerPath));
         ASSERT_TRUE(loc->line.has_value());
         EXPECT_EQ(*loc->line, 2u);
-        // The `<sce:use>` element starts at column 3 on line 2
-        // (two leading spaces + `<`).
+        // The href begins at column 22 on line 2: two leading spaces and
+        // `<sce:use template="` before it.
         ASSERT_TRUE(loc->col.has_value());
-        EXPECT_EQ(*loc->col, 3u);
+        EXPECT_EQ(*loc->col, 22u);
     }
 }
 
