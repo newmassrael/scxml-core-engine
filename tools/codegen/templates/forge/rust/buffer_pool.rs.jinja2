@@ -28,6 +28,14 @@
 //
 // Generated from document `{{ name }}` with section `{{ section }}`,
 // alignment `{{ alignment }}`, cache-policy `{{ cache_policy }}`.
+//
+// Total outside `#[cfg(test)]`: no indexing, no unchecked arithmetic,
+// no unwrap, expect or panic. A consumer denies `clippy::indexing_slicing`,
+// `clippy::arithmetic_side_effects` and the rest of the panic-free lint
+// set on the crate that holds this file, and a pool sits on the DMA path,
+// where a panic is a stopped device. Slot tables are reached through
+// `SlotIndex`, a type with no value out of range, rather than through a
+// `usize` and a bounds check.
 
 #![allow(clippy::all)]
 #![allow(unused_imports)]
@@ -152,7 +160,11 @@ pub const TRANSITION_COUNT: usize = 11;
 /// Width pinned to `u32` (4 bytes) at the size assertion below; using
 /// platform-natural `usize` would break the wire-shape invariant the
 /// runtime metadata layer relies on.
-pub const FRAGMENT_BITMAP_WORDS: usize = ({{ max_fragments_per_message }} + 31) / 32;
+///
+/// `div_ceil` rather than `(n + 31) / 32`: the spelled-out form is an
+/// addition the panic-free lint set refuses (and `clippy::manual_div_ceil`
+/// besides), and `usize::div_ceil` is a `const fn` since Rust 1.73.
+pub const FRAGMENT_BITMAP_WORDS: usize = usize::div_ceil({{ max_fragments_per_message }}, 32);
 
 /// `<sce:max-fragments-per-message>` (RFC §synth-5-M line 2688) — the
 /// closed cap a reassembled message's fragment count cannot exceed
@@ -266,7 +278,7 @@ pub struct {{ mk.pascal }};
 /// when this happens at the lexical level.
 #[must_use = "Slot must be returned via pool_return or handed off via link_arm_tx; dropping silently leaks the slot per §synth-5-E lines 1162-1164"]
 pub struct Slot<S> {
-    idx: usize,
+    idx: SlotIndex,
     _state: PhantomData<fn() -> S>,
 }
 
@@ -275,7 +287,81 @@ impl<S> Slot<S> {
     /// for writing a peripheral's DMA descriptor (e.g., for
     /// `Slot<DmaArmedRx>`).
     pub fn idx(&self) -> usize {
-        self.idx
+        self.idx.index()
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Slot index — the key of both per-slot tables, in range by its type
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// One slot of the table (§synth-5-E slot table), as a value that
+/// cannot name a slot the table does not have.
+///
+/// A consumer compiles this file under `clippy::indexing_slicing` and
+/// the rest of the panic-free lint set, denied. Indexing
+/// `[_; SLOT_COUNT]` with a `usize` is a bounds check whose failing
+/// arm is a panic, and `get` with an arm for "no such slot" would be a
+/// branch that no handle can take. This type has one variant per slot
+/// and nothing else, so [`Self::of`] and [`Self::of_mut`] reach an
+/// entry by taking the table apart, with neither an index nor a dead
+/// branch. A `usize` that arrives from outside (a completion signal,
+/// a debug probe) is converted once, by [`Self::from_index`], where
+/// "names no slot" is an answer rather than a panic.
+///
+/// Private: a handle's index is minted only by the pool.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
+enum SlotIndex {
+{% for i in slot_indices %}
+    S{{ i }} = {{ i }},
+{% endfor %}
+}
+
+impl SlotIndex {
+    /// Every slot, in table order: the order the freelist scans.
+    const ALL: [SlotIndex; SLOT_COUNT] = [
+{% for i in slot_indices %}
+        SlotIndex::S{{ i }},
+{% endfor %}
+    ];
+
+    /// The slot `i` names, or `None` past the end of the table.
+    fn from_index(i: usize) -> Option<Self> {
+        Self::ALL.get(i).copied()
+    }
+
+    /// This slot's position in the table, `0..SLOT_COUNT`.
+    fn index(self) -> usize {
+        self as usize
+    }
+
+    /// This slot's entry in a per-slot table.
+    fn of<T>(self, table: &[T; SLOT_COUNT]) -> &T {
+        let [
+{% for i in slot_indices %}
+            t{{ i }},
+{% endfor %}
+        ] = table;
+        match self {
+{% for i in slot_indices %}
+            Self::S{{ i }} => t{{ i }},
+{% endfor %}
+        }
+    }
+
+    /// This slot's entry in a per-slot table, for writing.
+    fn of_mut<T>(self, table: &mut [T; SLOT_COUNT]) -> &mut T {
+        let [
+{% for i in slot_indices %}
+            t{{ i }},
+{% endfor %}
+        ] = table;
+        match self {
+{% for i in slot_indices %}
+            Self::S{{ i }} => t{{ i }},
+{% endfor %}
+        }
     }
 }
 
@@ -349,10 +435,10 @@ impl {{ pascal_name }} {
     /// 1141: `free → cpu-mut`. Returns `None` when every slot is in
     /// use, preserving the α-era full-pool semantics.
     pub fn pool_acquire_for_encode(&mut self) -> Option<Slot<CpuMut>> {
-        for (i, st) in self.slot_states.iter_mut().enumerate() {
+        for (idx, st) in SlotIndex::ALL.iter().copied().zip(self.slot_states.iter_mut()) {
             if *st == SlotState::Free {
                 *st = SlotState::CpuMut;
-                return Some(Slot { idx: i, _state: PhantomData });
+                return Some(Slot { idx, _state: PhantomData });
             }
         }
         None
@@ -369,19 +455,19 @@ impl {{ pascal_name }} {
     /// writes even after the post-RX invalidate (RFC §synth-5-E lines
     /// 1199-1212).
     pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>> {
-        for (i, st) in self.slot_states.iter_mut().enumerate() {
+        for (idx, st) in SlotIndex::ALL.iter().copied().zip(self.slot_states.iter_mut()) {
             if *st == SlotState::Free {
                 {% if edge_cache["link_arm_rx"].invalidate %}
                 // C5 pre-arm cache-invalidate (spec lines 1189-1198).
                 unsafe {
                     sce_dcache_invalidate_by_addr(
-                        self.storage[i].0.as_mut_ptr() as *mut core::ffi::c_void,
+                        idx.of_mut(&mut self.storage).0.as_mut_ptr() as *mut core::ffi::c_void,
                         SLOT_SIZE,
                     );
                 }
                 {% endif %}
                 *st = SlotState::DmaArmedRx;
-                return Some(Slot { idx: i, _state: PhantomData });
+                return Some(Slot { idx, _state: PhantomData });
             }
         }
         None
@@ -390,7 +476,15 @@ impl {{ pascal_name }} {
     /// Inspect a slot's current lifecycle state. Out-of-range index
     /// is `None` so debug introspection cannot panic.
     pub fn slot_state(&self, idx: usize) -> Option<SlotState> {
-        self.slot_states.get(idx).copied()
+        SlotIndex::from_index(idx).map(|slot| *slot.of(&self.slot_states))
+    }
+
+    /// The slot `idx` names, when it names one and that slot is in
+    /// `state`. The one place an index-keyed edge or accessor turns the
+    /// `usize` it was handed into a slot, so each reads the state once
+    /// and every later table access is by `SlotIndex`.
+    fn slot_in(&self, idx: usize, state: SlotState) -> Option<SlotIndex> {
+        SlotIndex::from_index(idx).filter(|slot| *slot.of(&self.slot_states) == state)
     }
 
     /// Which slot a buffer address names, if any.
@@ -407,19 +501,23 @@ impl {{ pascal_name }} {
     /// containing it: a completion naming an address the pool never
     /// published is a driver bug, and rounding would turn it into a
     /// plausible-looking index.
+    ///
+    /// Checked arithmetic throughout, because the consumer denies
+    /// `clippy::arithmetic_side_effects`: an address below the table is
+    /// the subtraction's `None`, and the remainder and quotient divide
+    /// by the stride, `size_of::<SlotBytes>()`, which is `slot-size`
+    /// and positive by the parser. `is_multiple_of` would say the
+    /// remainder test in one call, but the generated Rust compiles on
+    /// Rust 1.81, which does not have it.
     pub fn slot_index_of_ptr(&self, ptr: *const u8) -> Option<usize> {
         let base = self.storage.as_ptr() as usize;
-        let addr = ptr as usize;
-        if addr < base {
-            return None;
-        }
         let stride = core::mem::size_of::<SlotBytes>();
-        let offset = addr - base;
-        if offset % stride != 0 {
+        let offset = (ptr as usize).checked_sub(base)?;
+        if offset.checked_rem(stride)? != 0 {
             return None;
         }
-        let idx = offset / stride;
-        (idx < SLOT_COUNT).then_some(idx)
+        let idx = offset.checked_div(stride)?;
+        SlotIndex::from_index(idx).map(SlotIndex::index)
     }
 {% for a in addresses %}{% if not a.holdable %}
 
@@ -444,10 +542,8 @@ impl {{ pascal_name }} {
     /// before the completion edge{% else %} the CPU must not write through it while
     /// the transfer runs{% endif %}.
     pub fn {{ a.op_name }}(&{% if a.device_writes %}mut {% endif %}self, idx: usize) -> Option<*{% if a.device_writes %}mut{% else %}const{% endif %} u8> {
-        if self.slot_states.get(idx) != Some(&SlotState::{{ a.state_pascal }}) {
-            return None;
-        }
-        Some(self.storage[idx].0.as_{% if a.device_writes %}mut_{% endif %}ptr())
+        let slot = self.slot_in(idx, SlotState::{{ a.state_pascal }})?;
+        Some(slot.{% if a.device_writes %}of_mut(&mut self.storage).0.as_mut_ptr(){% else %}of(&self.storage).0.as_ptr(){% endif %})
     }
 {% endif %}{% endfor %}
 
@@ -477,12 +573,12 @@ impl Slot<CpuMut> {
         // C5 cache-clean before TX descriptor publish (spec lines 1186-1188).
         unsafe {
             sce_dcache_clean_by_addr(
-                pool.storage[self.idx].0.as_ptr() as *const core::ffi::c_void,
+                self.idx.of(&pool.storage).0.as_ptr() as *const core::ffi::c_void,
                 SLOT_SIZE,
             );
         }
         {% endif %}
-        pool.slot_states[self.idx] = SlotState::DmaArmedTx;
+        *self.idx.of_mut(&mut pool.slot_states) = SlotState::DmaArmedTx;
     }
 
     /// Return the slot to the freelist. Spec §synth-5-E line 1155:
@@ -490,17 +586,17 @@ impl Slot<CpuMut> {
     /// `cpu-mut|cpu-ref → free` author-visible API on lines
     /// 1232-1237. Consumes the handle.
     pub fn pool_return(self, pool: &mut {{ pascal_name }}) {
-        pool.slot_states[self.idx] = SlotState::Free;
+        *self.idx.of_mut(&mut pool.slot_states) = SlotState::Free;
     }
 
     /// Read-only borrow of the slot's bytes.
     pub fn read<'a>(&'a self, pool: &'a {{ pascal_name }}) -> &'a [u8; SLOT_SIZE] {
-        &pool.storage[self.idx].0
+        &self.idx.of(&pool.storage).0
     }
 
     /// Mutable borrow of the slot's bytes.
     pub fn write<'a>(&'a mut self, pool: &'a mut {{ pascal_name }}) -> &'a mut [u8; SLOT_SIZE] {
-        &mut pool.storage[self.idx].0
+        &mut self.idx.of_mut(&mut pool.storage).0
     }
 }
 
@@ -517,13 +613,13 @@ impl Slot<CpuRef> {
     /// `cpu-ref → free` ("handler complete; pool_return(slot)").
     /// Consumes the handle.
     pub fn pool_return(self, pool: &mut {{ pascal_name }}) {
-        pool.slot_states[self.idx] = SlotState::Free;
+        *self.idx.of_mut(&mut pool.slot_states) = SlotState::Free;
     }
 
     /// Read-only borrow of the slot's bytes — `cpu-ref` is a shared
     /// CPU-read state per spec line 1135.
     pub fn read<'a>(&'a self, pool: &'a {{ pascal_name }}) -> &'a [u8; SLOT_SIZE] {
-        &pool.storage[self.idx].0
+        &self.idx.of(&pool.storage).0
     }
 }
 
@@ -564,7 +660,7 @@ impl Slot<{{ a.state_pascal }}> {
     /// has to be derived from a mutable borrow{% else %} — the peripheral only reads,
     /// so a shared borrow carries all the provenance needed{% endif %}.
     pub fn {{ a.op_name }}(&self, pool: &{% if a.device_writes %}mut {% endif %}{{ pascal_name }}) -> *{% if a.device_writes %}mut{% else %}const{% endif %} u8 {
-        pool.storage[self.idx].0.as_{% if a.device_writes %}mut_{% endif %}ptr()
+        self.idx.{% if a.device_writes %}of_mut(&mut pool.storage).0.as_mut_ptr(){% else %}of(&pool.storage).0.as_ptr(){% endif %}
     }
 }
 
@@ -615,14 +711,18 @@ impl {{ pascal_name }} {
     /// The caller must have observed {{ t.trigger }} for this slot.
     /// Calling it early publishes memory the peripheral still owns.
     pub unsafe fn {{ t.op_name }}(&mut self, idx: usize) -> {% if t.to_holdable %}Option<Slot<{{ t.to_pascal }}>>{% else %}bool{% endif %} {
-        if self.slot_states.get(idx) != Some(&SlotState::{{ t.from_pascal }}) {
-            return {% if t.to_holdable %}None{% else %}false{% endif %};
-        }
+{% if t.to_holdable %}
+        let slot = self.slot_in(idx, SlotState::{{ t.from_pascal }})?;
+{% else %}
+        let Some(slot) = self.slot_in(idx, SlotState::{{ t.from_pascal }}) else {
+            return false;
+        };
+{% endif %}
 {% if t.cache_clean %}
         // C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}).
         unsafe {
             sce_dcache_clean_by_addr(
-                self.storage[idx].0.as_ptr() as *const core::ffi::c_void,
+                slot.of(&self.storage).0.as_ptr() as *const core::ffi::c_void,
                 SLOT_SIZE,
             );
         }
@@ -633,14 +733,14 @@ impl {{ pascal_name }} {
         // has just rewritten.
         unsafe {
             sce_dcache_invalidate_by_addr(
-                self.storage[idx].0.as_mut_ptr() as *mut core::ffi::c_void,
+                slot.of_mut(&mut self.storage).0.as_mut_ptr() as *mut core::ffi::c_void,
                 SLOT_SIZE,
             );
         }
 {% endif %}
-        self.slot_states[idx] = SlotState::{{ t.to_pascal }};
+        *slot.of_mut(&mut self.slot_states) = SlotState::{{ t.to_pascal }};
 {% if t.to_holdable %}
-        Some(Slot { idx, _state: PhantomData })
+        Some(Slot { idx: slot, _state: PhantomData })
 {% else %}
         true
 {% endif %}
@@ -667,7 +767,7 @@ impl Slot<{{ t.from_pascal }}> {
         // C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}).
         unsafe {
             sce_dcache_clean_by_addr(
-                pool.storage[self.idx].0.as_ptr() as *const core::ffi::c_void,
+                self.idx.of(&pool.storage).0.as_ptr() as *const core::ffi::c_void,
                 SLOT_SIZE,
             );
         }
@@ -676,12 +776,12 @@ impl Slot<{{ t.from_pascal }}> {
         // C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}).
         unsafe {
             sce_dcache_invalidate_by_addr(
-                pool.storage[self.idx].0.as_mut_ptr() as *mut core::ffi::c_void,
+                self.idx.of_mut(&mut pool.storage).0.as_mut_ptr() as *mut core::ffi::c_void,
                 SLOT_SIZE,
             );
         }
 {% endif %}
-        pool.slot_states[self.idx] = SlotState::{{ t.to_pascal }};
+        *self.idx.of_mut(&mut pool.slot_states) = SlotState::{{ t.to_pascal }};
 {% if t.to_holdable %}
         Slot { idx: self.idx, _state: PhantomData }
 {% endif %}

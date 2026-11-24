@@ -141,14 +141,14 @@ fn rust_reassembly_variant_emits_bitmap_word_const() {
     let scxml16 = reassembly_scxml("rx_reassembly_pool", 4, 4096, 16, 500, 2);
     let body16 = compile_for(Language::Rust, &scxml16, "rx_reassembly_pool");
     assert!(
-        body16.contains("pub const FRAGMENT_BITMAP_WORDS: usize = (16 + 31) / 32;"),
+        body16.contains("pub const FRAGMENT_BITMAP_WORDS: usize = usize::div_ceil(16, 32);"),
         "FRAGMENT_BITMAP_WORDS const must derive from max-fragments-per-message; got:\n{body16}"
     );
 
     let scxml64 = reassembly_scxml("rx_reassembly_pool", 4, 4096, 64, 500, 2);
     let body64 = compile_for(Language::Rust, &scxml64, "rx_reassembly_pool");
     assert!(
-        body64.contains("pub const FRAGMENT_BITMAP_WORDS: usize = (64 + 31) / 32;"),
+        body64.contains("pub const FRAGMENT_BITMAP_WORDS: usize = usize::div_ceil(64, 32);"),
         "FRAGMENT_BITMAP_WORDS recomputes per max-fragments value; got:\n{body64}"
     );
 }
@@ -437,23 +437,26 @@ fn reassembly_peer_id_zid_self_check_force_fixture_c11() {
 
 #[test]
 fn rust_and_c11_agree_on_bitmap_words_derivation() {
-    // The bitmap-word count expression `(max_fragments + 31) / 32`
-    // must agree between Rust + C11 — both consume the same emitted
-    // constant when the author FSM marks fragments received. A
-    // backend-specific override would silently desync the wire shape
-    // on cross-language bridges.
+    // The bitmap-word count is the ceiling of `max_fragments / 32` on
+    // both backends — both consume the same emitted constant when the
+    // author FSM marks fragments received. A backend-specific override
+    // would silently desync the wire shape on cross-language bridges.
+    // Each spells the one quotient its own way: Rust as `usize::div_ceil`,
+    // which leaves no addition for a consumer that denies
+    // `clippy::arithmetic_side_effects`, C11 as `(n + 31) / 32`.
     for max_fragments in [1u32, 16, 32, 33, 64, 96, 128] {
         let scxml = reassembly_scxml("rx_reassembly_pool", 4, 4096, max_fragments, 500, 2);
         let rust_body = compile_for(Language::Rust, &scxml, "rx_reassembly_pool");
         let c11_body = compile_for(Language::C11, &scxml, "rx_reassembly_pool");
-        let expected = format!("({max_fragments} + 31) / 32");
+        let rust_expected = format!("usize::div_ceil({max_fragments}, 32)");
+        let c11_expected = format!("({max_fragments} + 31) / 32");
         assert!(
-            rust_body.contains(&expected),
-            "rust backend must derive bitmap words from `{expected}` (max_fragments={max_fragments}); got:\n{rust_body}"
+            rust_body.contains(&rust_expected),
+            "rust backend must derive bitmap words from `{rust_expected}` (max_fragments={max_fragments}); got:\n{rust_body}"
         );
         assert!(
-            c11_body.contains(&expected),
-            "c11 backend must derive bitmap words from `{expected}` (max_fragments={max_fragments}); got:\n{c11_body}"
+            c11_body.contains(&c11_expected),
+            "c11 backend must derive bitmap words from `{c11_expected}` (max_fragments={max_fragments}); got:\n{c11_body}"
         );
     }
 }

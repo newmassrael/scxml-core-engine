@@ -33,9 +33,11 @@
 //! concern with no cross-boundary contract — the `History` enum in
 //! `state_machine.rs.jinja2`, which only the runtime's Appendix D entry
 //! procedures read (a host never holds one), and the zero-sized `Slot<S>`
-//! phantom-marker structs in `buffer_pool.rs.jinja2`. Centralizing their
-//! derives into a global policy would trade locality for uniformity with
-//! no drift-contract to protect. Their derives stay inline by design.
+//! phantom-marker structs and the private `SlotIndex` enum (one variant
+//! per slot, read by nothing outside the pool) in `buffer_pool.rs.jinja2`.
+//! Centralizing their derives into a global policy would trade locality
+//! for uniformity with no drift-contract to protect. Their derives stay
+//! inline by design.
 //!
 //! Callers may APPEND extra derives to a category without changing the
 //! SSOT default via [`render_derives_attr`] (defaults + caller extras,

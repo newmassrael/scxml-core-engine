@@ -15770,6 +15770,159 @@ topology:
         );
     }
 
+    /// The emitted Rust buffer pool is total outside `#[cfg(test)]`
+    /// under the panic-free lint set a consumer denies on the crate that
+    /// holds it: no indexing or slicing, no unchecked arithmetic, and no
+    /// `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!` or
+    /// `unimplemented!`. The pool sits on the DMA path, where a panic is
+    /// a stopped device, and the slot tables are reached through an index
+    /// type with no value out of range rather than through a bounds check.
+    ///
+    /// Run over the three shapes that render different code: the plain
+    /// pool, the reassembly variant (its bitmap width is a const
+    /// expression) and a `cache-policy: maintain` pool (its cache calls
+    /// reach a slot's bytes on the arm and completion edges). Not under
+    /// `--test`, so the lints judge exactly the code a consumer ships; the
+    /// generated tests may index. `-D warnings` besides, so the pool's own
+    /// default lints stay clean as well.
+    ///
+    /// A probe that indexes an array is run with the same flags first and
+    /// must be refused: on a toolchain where the lints judged nothing,
+    /// every pool would pass.
+    #[test]
+    fn buffer_pool_rust_emitted_module_is_clean_under_the_panic_free_lints() {
+        const PANIC_FREE_LINTS: [&str; 8] = [
+            "clippy::indexing_slicing",
+            "clippy::unwrap_used",
+            "clippy::expect_used",
+            "clippy::panic",
+            "clippy::unreachable",
+            "clippy::todo",
+            "clippy::unimplemented",
+            "clippy::arithmetic_side_effects",
+        ];
+        let Some(clippy) = crate::toolchain::locate("clippy-driver") else {
+            crate::toolchain::skipped(
+                "buffer_pool_rust_emitted_module_is_clean_under_the_panic_free_lints: \
+                 clippy-driver not on PATH",
+            );
+            return;
+        };
+
+        let tmp = std::env::temp_dir().join(format!(
+            "sce-build-buffer-pool-panic-free-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+        let lint = |crate_name: &str, src: &std::path::Path| {
+            let mut command = std::process::Command::new(&clippy);
+            command
+                .args(["--edition", "2021", "--crate-type", "rlib"])
+                .args(["--crate-name", crate_name, "-D", "warnings"]);
+            for name in PANIC_FREE_LINTS {
+                command.args(["-D", name]);
+            }
+            command
+                .arg("--out-dir")
+                .arg(&tmp)
+                .arg(src)
+                .output()
+                .expect("run clippy-driver")
+        };
+
+        let probe = tmp.join("probe.rs");
+        std::fs::write(
+            &probe,
+            "pub fn at(table: &[u8; 4], i: usize) -> u8 {\n    table[i]\n}\n",
+        )
+        .expect("write the probe");
+        let refused = lint("probe", &probe);
+        let said = String::from_utf8_lossy(&refused.stderr).into_owned();
+        assert!(
+            !refused.status.success()
+                && (said.contains("indexing_slicing") || said.contains("indexing-slicing")),
+            "clippy-driver let an array index through under -D clippy::indexing_slicing, \
+             so a clean pool below would prove nothing.\nstderr:\n{said}",
+        );
+
+        let document = |name: &str, fields: &str| {
+            format!(
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="{name}" version="1.0">
+{fields}
+</scxml>"##
+            )
+        };
+        let pools = [
+            (
+                "pool_plain",
+                document(
+                    "pool_plain",
+                    "  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>",
+                ),
+            ),
+            (
+                "pool_reassembly",
+                document(
+                    "pool_reassembly",
+                    "  <sce:variant>reassembly</sce:variant>
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>4096</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+  <sce:max-fragments-per-message>16</sce:max-fragments-per-message>
+  <sce:reassembly-timeout-ms>500</sce:reassembly-timeout-ms>
+  <sce:per-peer-quota>2</sce:per-peer-quota>",
+                ),
+            ),
+            (
+                "pool_maintain",
+                document(
+                    "pool_maintain",
+                    "  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:dma-channel>DW0_CH3</sce:dma-channel>
+  <sce:cache-policy>maintain</sce:cache-policy>",
+                ),
+            ),
+        ];
+        for (name, scxml) in pools {
+            let label = DocumentLabel {
+                identifier: name,
+                diagnostic_label: "panic_free_pool.scxml",
+            };
+            let out = compile_forge_from_string(&scxml, label, generator::Language::Rust)
+                .unwrap_or_else(|e| panic!("{name}: forge rust codegen must succeed: {e:?}"));
+            let filename = format!("{name}.rs");
+            let body = out
+                .files
+                .iter()
+                .find(|(n, _)| *n == filename)
+                .map(|(_, b)| b.as_str())
+                .unwrap_or_else(|| panic!("{name}: the Rust pool must emit {filename}"));
+            let src = tmp.join(&filename);
+            std::fs::write(&src, body).expect("write generated source");
+            let linted = lint(name, &src);
+            assert!(
+                linted.status.success(),
+                "{name}: the generated pool must be clean under -D warnings and the \
+                 panic-free lints {PANIC_FREE_LINTS:?}.\nstderr:\n{}\n--- source ---\n{body}",
+                String::from_utf8_lossy(&linted.stderr),
+            );
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     /// SCE Protocol-Synthesis RFC §synth-5-E / §synth-5-J-4: buffer-pool is the second
     /// `KindClass::McuClass` kind (after Link). Authoring against
     /// cpp/kotlin/go/python raises `codegen/mcu-class-kind-on-non-mcu-language`

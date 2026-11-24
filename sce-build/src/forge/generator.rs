@@ -29878,6 +29878,11 @@ fn render_buffer_pool_rust(
         // (repr-tagged C-like forge enum = ForgeEnum policy).
         slot_state_derives_attr => crate::rust_derive_policy::RustDeriveCategory::ForgeEnum.derives_attr(),
         slot_count => m.slot_count,
+        // One `SlotIndex` variant per slot, `0..slot_count`: the index
+        // type the template reaches both per-slot tables through, which
+        // has no value out of range. A list rather than the template's
+        // `range`, which refuses a range past a fixed length.
+        slot_indices => (0..m.slot_count).collect::<Vec<u32>>(),
         slot_size => m.slot_size,
         section => &m.section,
         alignment => m.alignment,
