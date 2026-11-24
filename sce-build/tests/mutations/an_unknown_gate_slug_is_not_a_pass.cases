@@ -52,14 +52,16 @@ edit("scripts/gate",
         done <<<"$ORDER_TEXT"''',
      '''PYEOF
 )''')
+# The guard alone, up to its `fi`: what follows it in the branch (the
+# change set handed to named gates) is not part of the defect.
 edit("scripts/gate",
      '''        if (( ${#ORDER[@]} == 0 )); then
             printf 'gate: %s resolved to no gate at all; the registry answered nothing for a name it accepted\\n' \\
                 "${SLUGS[*]}" >&2
             exit 2
         fi
-        ;;''',
-     '''        ;;''')
+''',
+     '')
 PY
 
 mutation_case "the resolver refuses without saying which slug it did not know" <<'PY'
