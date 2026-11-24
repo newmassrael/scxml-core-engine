@@ -167,6 +167,7 @@ def runs_slug(body, slug):
 
 
 submodules = None
+triggers = None
 for slug in sys.argv[5:]:
     entry = mod["GATES"].get(slug)
     if not entry:
@@ -190,7 +191,11 @@ for slug in sys.argv[5:]:
     if mode == "which":
         print(slug)
         continue
-    own = entry.get("inputs")
+    # The key's own reading of the entry (`gate_inputs`): a gate keyed on its
+    # triggers reaches what they name.
+    if triggers is None:
+        triggers = mod["gate_triggers"](repo_root)
+    own = mod["gate_inputs"](slug, None, triggers)
     if own is None:
         print(f"{slug}\t*")
         continue

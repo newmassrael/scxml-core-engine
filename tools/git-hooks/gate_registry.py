@@ -621,6 +621,17 @@ PEAK_MEASURED: dict[str, str] = {
 PARALLELISM_COMPILE = 8
 PARALLELISM_SCRIPT = 1
 
+# A gate whose entry says `"inputs": INPUTS_ARE_TRIGGERS` is keyed on its
+# trigger globs (`gate_triggers`): the same derivation that decides whether a
+# change selects the gate decides which changes its kept pass outlives (ADR
+# 0120, D2). A gate a change does not select is one the change cannot affect,
+# so a key over the same globs is that claim restated, and bx tests it: a run
+# in the copy that reads outside the globs is "could not measure" (bx RFC 0020
+# 5.2), which is also a file the selection was missing. A gate takes the value
+# once `bx --checks prepush --learn <slug>` has shown its reads inside its
+# triggers; until then it keeps `None` and costs nothing it did not cost.
+INPUTS_ARE_TRIGGERS = "triggers"
+
 # Every unit names this, so a machine runs one gate of a set at a time. The
 # gates were written for a runner that ran them one after another in one
 # checkout, and several share what that checkout holds: the CMake tree under
@@ -1860,7 +1871,10 @@ GATES: dict[str, dict] = {
         # TLC explores every reachable state of a configuration, and the manifest
         # records the count, so one input gives one answer.
         "cache": True,
-        "inputs": None,
+        # Keyed on its triggers: `bx --checks prepush --learn formal-models`
+        # (pc2, 2026-11-24) found 124 reads and 4 listings, every one inside
+        # the triggers and the runner's inputs.
+        "inputs": INPUTS_ARE_TRIGGERS,
         "commits": [],
         "peak_gb": 8,
         # TLC runs as many workers as the machine has cores (`-workers auto`).
@@ -4688,19 +4702,35 @@ def submodules_reached(patterns, paths) -> list[str]:
     return [p for p in paths if any(reaches_beneath(g, p) for g in patterns)]
 
 
-def unit_inputs(closure, table=None):
+
+def gate_inputs(slug, table=None, triggers=None):
+    """What `slug`'s OWN script reads, as its key names it: `None` for the
+    whole tracked tree, or a sorted list of patterns. A declared list is
+    itself; `INPUTS_ARE_TRIGGERS` is the gate's trigger globs from
+    `triggers` (`gate_triggers`), which a caller computes once per plan."""
+    table = GATES if table is None else table
+    own = table[slug].get("inputs")
+    if own != INPUTS_ARE_TRIGGERS:
+        return own
+    if triggers is None:
+        raise ValueError(f"{slug} is keyed on its triggers and none were given")
+    return sorted(dict.fromkeys(triggers[slug]))
+
+
+def unit_inputs(closure, table=None, triggers=None):
     """The input patterns of a unit that runs every gate in `closure`.
 
     `None`, the whole tracked tree, as soon as one of them reads the whole
     tree: a key narrower than what the unit reads would let a pass outlive
-    a change to the part left out. Otherwise the union of their patterns,
-    of `RUNNER_INPUTS`, and of each gate's script and mirrored workflows,
+    a change to the part left out. Otherwise the union of their patterns
+    (`gate_inputs`, with `triggers` for a gate keyed on them), of
+    `RUNNER_INPUTS`, and of each gate's script and mirrored workflows,
     sorted so that one closure always yields one key.
     """
     table = GATES if table is None else table
     patterns: set[str] = set(RUNNER_INPUTS)
     for slug in closure:
-        own = table[slug].get("inputs")
+        own = gate_inputs(slug, table, triggers)
         if own is None:
             return None
         patterns.update(own)
@@ -4763,7 +4793,8 @@ def unit_gate(name: str) -> str:
 
 
 def plan_units(selected, rust=None, tree_is_head=True, table=None,
-               head=None, landing=False, changes=(), shards=None) -> list[dict]:
+               head=None, landing=False, changes=(), shards=None,
+               triggers=None) -> list[dict]:
     """The bx check units (bx RFC 0004, section 6) that verify `selected`.
 
     `selected` is a set the registry already chose: `select` for a change,
@@ -4813,6 +4844,9 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     verdict may be kept"), and the flag is in the key, so a pass kept from a
     landing is never handed to a run that could have skipped, or back.
 
+    A GATE KEYED ON ITS TRIGGERS needs `triggers` (`gate_triggers`), which
+    the caller computes once; see `INPUTS_ARE_TRIGGERS`.
+
     A GATE IN SHARDS IS N UNITS. `shards` maps a slug to its count
     (`shard_count`); a gate counted above one is a unit per part, named and
     run as "A gate planned as shards" says, its declared cost divided among
@@ -4858,7 +4892,7 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
                 argv += ["--change-set", change]
         count = (shards or {}).get(slug, 1)
         cost = sum(table[s].get("cost_s") or 0 for s in closure)
-        inputs = unit_inputs(closure, table)
+        inputs = unit_inputs(closure, table, triggers)
         for part in range(1, count + 1):
             name = slug if count == 1 else f"{slug}-shard-{part}-of-{count}"
             own = argv + ([] if count == 1 else ["--shard", f"{part}/{count}"])
@@ -5609,9 +5643,10 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
 
     kind = {slug: asks(slug) for slug in GATES}
     lines = {}
+    triggers = gate_triggers(repo_root)
     for slug in GATES:
         unit = plan_units({slug}, rust=pins.get("SCE_RUST_RELEASE", "0.0.0"),
-                          head="0" * 40)
+                          head="0" * 40, triggers=triggers)
         lines[slug] = " ".join(unit[0]["argv"]) if unit else ""
 
     def named(name: str, line: str) -> bool:
@@ -5854,8 +5889,10 @@ def go_toolchain_failures(repo_root: Path, tables=None, actions=None,
     for slug in sorted(go_gates_by_scan(repo_root) - set(GO_GATES)):
         failures.append(f"scripts/gates/{slug}.sh runs go and GO_GATES does not "
                         f"name it, so needed_by is held to nothing for it")
+    triggers = gate_triggers(repo_root)
     for slug in sorted(GATES):
-        unit = plan_units({slug}, rust="0.0.0", head="0" * 40)
+        unit = plan_units({slug}, rust="0.0.0", head="0" * 40,
+                          triggers=triggers)
         line = " ".join(unit[0]["argv"]) if unit else ""
         needs = bool(({slug} | transitive_deps(slug)) & set(GO_GATES))
         if needs and not named(line):
@@ -7658,10 +7695,17 @@ def self_test(repo_root: Path) -> int:
         inputs = spec["inputs"]
         if inputs is None:
             continue
+        if inputs == INPUTS_ARE_TRIGGERS:
+            if spec.get("cache") is not True:
+                failures.append(
+                    f"verdict: {slug} is keyed on its triggers and its verdict "
+                    f"is not kept (cache={spec.get('cache')!r}); a key that "
+                    f"keeps nothing is no narrowing")
+            continue
         if not isinstance(inputs, list) or not inputs:
             failures.append(
-                f"verdict: {slug} declares inputs={inputs!r}; it is `None` or "
-                f"a non-empty list of patterns")
+                f"verdict: {slug} declares inputs={inputs!r}; it is `None`, "
+                f"{INPUTS_ARE_TRIGGERS!r} or a non-empty list of patterns")
             continue
         for pattern in inputs:
             if (not isinstance(pattern, str) or not pattern
@@ -7946,8 +7990,9 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             "submodules: .gitmodules records none, so the check below read "
             "nothing; third_party/ holds four")
+    triggers_of_inputs = gate_triggers(repo_root)
     for slug, spec in sorted(GATES.items()):
-        own = spec.get("inputs")
+        own = gate_inputs(slug, triggers=triggers_of_inputs)
         if own is None:
             continue
         for sub in submodules_reached(own, submodules_now):
@@ -7957,6 +8002,21 @@ def self_test(repo_root: Path) -> int:
                     f"narrowed: {slug} reads beneath the submodule {sub} and "
                     f"its inputs do not give {sub}/.git, so its unit's copy "
                     f"holds that submodule as not checked out")
+
+    # a-gate-keyed-on-its-triggers-is-narrowed-by-them. A gate whose key is its
+    # trigger globs (`INPUTS_ARE_TRIGGERS`) gains nothing when a glob is the
+    # whole tree, and its unit would claim a narrowed key while bx keys it on
+    # every file; such a gate says `None` instead, which is what it is.
+    cases += 1
+    for slug, spec in sorted(GATES.items()):
+        if spec.get("inputs") != INPUTS_ARE_TRIGGERS:
+            continue
+        whole = [g for g in triggers_of_inputs[slug] if glob_to_regex(g).match(
+            "a-path-no-glob-names/at/any/depth.txt")]
+        if whole:
+            failures.append(
+                f"narrowed: {slug} is keyed on its triggers and {whole} names "
+                f"every path; declare `inputs: None`")
 
     # The trees and triggers the two checks below read, as they stand.
     tracked_now = tracked_paths(repo_root)
@@ -8075,7 +8135,8 @@ def self_test(repo_root: Path) -> int:
         head = "0" * 40
         counts = {s: shard_count(repo_root, s) for s in selection}
         units = plan_units(set(selection), rust="1.0.0", head=head,
-                           landing=landing, shards=counts)
+                           landing=landing, shards=counts,
+                           triggers=triggers_of_inputs)
         names = [u["name"] for u in units]
         parts: dict[str, list[int]] = {}
         if len(names) != len(set(names)):
@@ -8206,7 +8267,28 @@ def self_test(repo_root: Path) -> int:
         "after-changes": {"cost_s": 1, "deps": ["on-changes"],
                           "cache": True, "inputs": None, "commits": [],
                           "peak_gb": 1, "parallelism": 1},
+        "by-triggers": {"cost_s": 1, "cache": True,
+                        "inputs": INPUTS_ARE_TRIGGERS, "commits": [],
+                        "peak_gb": 1, "parallelism": 1},
     }
+    # a-gate-keyed-on-its-triggers-is-keyed-on-what-selects-it: its unit's key
+    # is its trigger globs, given once per plan, and the runner's inputs.
+    cases += 1
+    by_triggers = plan_units({"by-triggers"}, rust="1.0.0", table=fixture,
+                             triggers={"by-triggers": ["docs/b/**", "docs/a.md",
+                                                       "docs/b/**"]})[0]
+    if by_triggers.get("inputs") != sorted(
+            {"docs/a.md", "docs/b/**", "scripts/gates/by-triggers.sh",
+             *RUNNER_INPUTS}):
+        failures.append(
+            f"plan-fixture: `by-triggers` is keyed on its triggers, its "
+            f"script and the runner's inputs, and was planned as {by_triggers}")
+    try:
+        plan_units({"by-triggers"}, rust="1.0.0", table=fixture)
+        failures.append("plan-fixture: a gate keyed on its triggers was planned "
+                        "with no triggers given, so its key named nothing")
+    except ValueError:
+        pass
     by_name = {u["name"]: u for u in plan_units(
         {"parent", "child", "alone"}, rust="1.0.0", table=fixture)}
     if set(by_name) != {"child", "alone"}:
@@ -8660,7 +8742,8 @@ def print_plan(args, repo_root: Path) -> int:
     units = plan_units(selected, rust=args.rust, tree_is_head=tree_is_head,
                        head=head, landing=bool(args.landing),
                        changes=tuple(args.changed_in or ()),
-                       shards={s: shard_count(repo_root, s) for s in selected})
+                       shards={s: shard_count(repo_root, s) for s in selected},
+                       triggers=gate_triggers(repo_root))
     print(f"  selection: {reason}", file=sys.stderr)
     for slug in off_fleet:
         print(f"  NOT JUDGED HERE, hosted CI audits it after landing: {slug} "
