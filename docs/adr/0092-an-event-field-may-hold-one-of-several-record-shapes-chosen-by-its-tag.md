@@ -524,7 +524,7 @@ does not resolve" from a run-time failure into a build refusal.
 
 | Backend | `union:U` | A case holding record `R` | An empty case | `e.kind` | A proven read of case `c` |
 |---|---|---|---|---|---|
-| Rust | `enum U { ... }`, `Clone`, `PartialEq`, `Debug` | `Absolute(R)` | `None` | `fn kind(&self) -> E` | one generated method per case, `proven_absolute(&self) -> &R`, whose other arms are `unreachable!()`, the one place they are written (as `proven` is for an optional, ADR 0055 section 5) |
+| Rust | `enum U { ... }`, `Clone`, `PartialEq`, `Debug` | `Absolute(R)` | `None` | `fn kind(&self) -> E` | on the unit, one total view per case, `as_absolute(&self) -> Option<&R>`, and the forge runtime's `union_case::proven` of it at the read, its one arm for the other cases written once in the runtime (as `proven` is for an optional, ADR 0055 section 5; Amendment 2026-11-25); on a machine's own sum, `proven_absolute(&self) -> &R` |
 | Kotlin | `sealed interface U` | `data class Absolute(val value: R) : U` | `data object None : U` | `val kind: E` on the interface | `provenAbsolute()` on the interface, written once |
 | C++ | `std::variant<U::None, U::Absolute, ...>` in a struct `U` | `struct Absolute { R value; }` | `struct None {}` | `kind()` from the alternative's index | `std::get_if<U::Absolute>` dereferenced, as `*x` is for an optional |
 | Go | a struct of an unexported tag and one unexported member per case holding a record, built only by `UAbsolute(r R) U`, `UNone() U` | the member | no member | `Kind() E` | `ProvenAbsolute() R` |
@@ -1468,6 +1468,28 @@ template, a component and a configuration that reach a union are generated on al
    backend answering `ComposedSpelling::unit_made_by_parts` for it, so C11 refuses no part a unit holds; a
    field of one entry that may be absent, of a number or a text, is the machine's own optional and copied
    whole, and one of a byte string no unit holds.
+
+## Amendment (2026-11-25): the Rust unit's view of a case is total
+
+The Rust unit declared one `proven_<case>(&self) -> &R` per case that holds a record, whose other arms were
+`unreachable!()`. A consumer that compiles a unit under the panic-free lints (`clippy::unreachable` among them) then
+held a panic site in a file it cannot edit, for a read most consumers never make: a consumer that takes a union apart
+does it with its own `match`.
+
+1. **The unit declares a total view.** Each case that holds a record is answered by `as_<case>(&self) -> Option<&R>`,
+   `None` in every other case, so the unit spells no panic and states no dependency (`// Runtime: none`). Its names
+   are held apart from the tag's method as the proven reads' were.
+2. **The proof is read where it is used.** An algorithm reads a field of the one case its tests leave as
+   `sce_forge_runtime::union_case::proven(u.as_c()).f`, and a field several cases leave, where the tests leave some
+   case out, as `union_case::proven` of a `match` whose arm for the others is `None`
+   (`composed_lowering::rust_unit_union_read`). The arm no run reaches is written once, in the runtime, with the
+   message of a broken proof, as an optional's is (ADR 0055 section 5); a body that reads a case names the runtime,
+   which its header states. Where the tests leave every case, the `match` is the field, with no `proven`.
+3. **What did not change.** The narrowing, its refusals and the meaning of every read are as they were: a read the
+   build proved takes the case's record, and a broken proof stops the program, as `unreachable!()` did. A machine's
+   own sum keeps its `proven_<case>` reads and the place they are written through; the end of a body every case
+   returned before is still closed with `unreachable!` ("Decided while landing step 5", item 6). The other backends' units are
+   unchanged.
 
 ## Consequences
 

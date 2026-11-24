@@ -67,6 +67,9 @@ pub mod storage;
 /// every marker removed from the value, in place, with no allocator.
 pub mod text_template;
 pub mod timer;
+/// The read of a union's case a test of its tag proved (docs/adr/0092, section
+/// 6.1): the one arm of the other cases, which no run reaches.
+pub mod union_case;
 /// The type of a value as generated code declares it, a constant of no heap: the runtime's
 /// mirror of the build's one value type (docs/adr/0086, section 1).
 pub mod value_type;

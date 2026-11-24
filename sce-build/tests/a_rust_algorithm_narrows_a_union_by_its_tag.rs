@@ -72,9 +72,22 @@ fn an_algorithm_reads_each_case_of_its_union_where_its_tag_is_tested() {
     holds(&text, "shape.kind()");
     holds(&text, "shape_kind::ShapeKind::Dot");
     holds(&text, "shape_kind::ShapeKind::Rect");
-    holds(&text, "shape.proven_circle().radius");
-    holds(&text, "shape.proven_rect().width");
-    holds(&text, "shape.proven_rect().height");
+    // A case's field is read through the runtime's proven read of the case's
+    // view, which the unit answers with no panic of its own.
+    holds(
+        &text,
+        "sce_forge_runtime::union_case::proven(shape.as_circle()).radius",
+    );
+    holds(
+        &text,
+        "sce_forge_runtime::union_case::proven(shape.as_rect()).width",
+    );
+    holds(
+        &text,
+        "sce_forge_runtime::union_case::proven(shape.as_rect()).height",
+    );
+    assert!(!text.contains("proven_"), "{text}");
+    holds(&text, "// Runtime: sce_forge_runtime\n");
     // Every case returned before the end of the body, which no path reaches.
     holds(
         &text,
@@ -118,11 +131,20 @@ fn an_algorithm_reads_walks_and_builds_a_list_of_unions() {
         ),
     );
     holds(&at, "picked.kind()");
-    holds(&at, "picked.proven_circle().radius");
+    holds(
+        &at,
+        "sce_forge_runtime::union_case::proven(picked.as_circle()).radius",
+    );
     let (_, widest) = unit("algorithm_shapes_widest.scxml");
     holds(&widest, "for shape in shapes.iter() {");
-    holds(&widest, "shape.proven_circle().radius");
-    holds(&widest, "shape.proven_rect().width");
+    holds(
+        &widest,
+        "sce_forge_runtime::union_case::proven(shape.as_circle()).radius",
+    );
+    holds(
+        &widest,
+        "sce_forge_runtime::union_case::proven(shape.as_rect()).width",
+    );
     let (_, kept) = unit("algorithm_shapes_kept.scxml");
     holds(&kept, &format!("kept: &mut SceOwnedList<{SHAPE}, 8>"));
     holds(&kept, "kept.push(shape.clone())?;");

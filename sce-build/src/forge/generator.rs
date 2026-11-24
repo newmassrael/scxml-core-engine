@@ -5268,15 +5268,17 @@ fn render_union_swift(
 /// ([`crate::rust_derive_policy::RustDeriveCategory::UnionSum`]: `Debug`,
 /// `Clone`, `PartialEq`), one variant per case in the tag enum's order, holding
 /// the case's record or nothing for an empty case; `<tag>(&self)`, the value of
-/// the tag's enum the case is for; and one `proven_<case>(&self) -> &R` per
-/// case that holds a record, the read of a case a test of the tag proved, whose
-/// other arms are `unreachable!()`, the one place they are written. Beside it
+/// the tag's enum the case is for; and one `as_<case>(&self) -> Option<&R>` per
+/// case that holds a record, the case's record or `None` in another case. The
+/// views are total, so the unit holds no panic: a read a test of the tag proved
+/// is the forge runtime's `union_case::proven` of the view, written where it is
+/// read ([`crate::forge::composed_lowering::rust_unit_union_read`]). Beside it
 /// the constants of [`UnionUnit::context`].
 ///
 /// A case is named by its variant as the enum's own Rust declaration spells it
 /// ([`crate::forge::enum_naming::variant_ident`]), so the case of `circle` is
-/// `Circle` as the tag's value is `ShapeKind::Circle`, and its proven read by
-/// the variant in snake case. The tag's enum and the cases' records are named
+/// `Circle` as the tag's value is `ShapeKind::Circle`, and its view by the
+/// variant in snake case. The tag's enum and the cases' records are named
 /// through the sibling modules the unit's `use super::<snake>;` lines bring in,
 /// the lines every Rust unit names its imports by; only the documents the type
 /// names are brought in, so no `use` is left unread.
@@ -5318,13 +5320,13 @@ fn render_union_rust(
                 format!("the cases `{first}` and `{variant}` are both the Rust variant `{ident}`"),
             ));
         }
-        let proven = crate::forge::composed_lowering::rust_case_read(variant);
+        let view = crate::forge::composed_lowering::rust_case_view(variant);
         if let Some(import) = record {
             let read = format!("the case `{variant}`");
-            if let Some(first) = methods.insert(proven.clone(), read.clone()) {
+            if let Some(first) = methods.insert(view.clone(), read.clone()) {
                 return Err(union_refused(
                     m,
-                    format!("{first} and {read} are both read by the Rust method `{proven}`"),
+                    format!("{first} and {read} are both read by the Rust method `{view}`"),
                 ));
             }
             if !uses.contains(&import.include_stmt) {
@@ -5335,7 +5337,7 @@ fn render_union_rust(
             "ident": ident,
             "variant": variant,
             "kind": format!("{kind_type}::{ident}"),
-            "proven": proven,
+            "view": view,
             "record": record.map(|import| {
                 event_schema_payload_type(&import.document_name, Language::Rust)
             }),
@@ -50089,7 +50091,9 @@ fn render_algorithm(
     let python_uses_runtime = lang == Language::Python && body.contains("sce_algorithm.");
     // A Rust body that names the forge runtime depends on it whether or not it
     // may fail: an operation the interval analysis proved is printed through
-    // the runtime's `algorithm::proven` in a body that declares no `may-fail`.
+    // the runtime's `algorithm::proven` in a body that declares no `may-fail`,
+    // and a field of a union's case a test of its tag proved is read through
+    // its `union_case::proven`.
     // The header states the dependency the file has, which the document's tier
     // (`runtime_dep`, read off its `may-fail`) does not see.
     if lang == Language::Rust && body.contains("sce_forge_runtime::") {

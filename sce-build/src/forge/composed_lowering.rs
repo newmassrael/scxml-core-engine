@@ -90,7 +90,7 @@ pub(crate) use python::{
     python_unit_union_read, PYTHON_CASE_VALUE, PYTHON_PAYLOAD, PYTHON_UNION_KIND,
 };
 pub(crate) use rust::{
-    rust_bounded_list, rust_bytes_type, rust_case_ident, rust_case_read, rust_text_type,
+    rust_bounded_list, rust_bytes_type, rust_case_ident, rust_case_view, rust_text_type,
     rust_union_member, rust_union_tag_method, rust_unit_union_read, RUST_EMPTY_LIST, RUST_PORTABLE,
 };
 pub(crate) use swift::{
