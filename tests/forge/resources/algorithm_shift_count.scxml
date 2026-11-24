@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.1, "The width of a shift": a shift is its exact result
+  reduced to the width of its left operand for every count at least 0, one at
+  or past the width included, on every backend. Each left operand width, by a
+  uint8 count n that reaches past every width; one operation per `op`:
+
+    op 0, 1         x << n, x >> n of a uint8
+    op 2, 3, 4      h << n, h >> n, h >>> n of an int16
+    op 5, 6         w << n, w >> n of a uint32
+    op 7, 8, 9      s << n, s >> n, s >>> n of an int32
+    op 10, 11       q << n, q >> n of a uint64, the top bit masked off so the
+                    value fits the int64 returned
+    op 12, 13, 14   l << n, l >> n, l >>> n of an int64
+    op 15           s << n where a guard holds n below 32: the language's
+                    own operator, which the analysis proves in range
+    any other op: 0
+
+  x << n is x * 2^n reduced to the width, so 0 from n = W; x >> n is the floor
+  of x / 2^n, so 0 from n = W, or -1 for a negative x; x >>> n is the floor of
+  the width's unsigned bits over 2^n, so 0 from n = W. A uint8 count is at
+  least 0 by its type, so the algorithm needs no may-fail. Until the rule, a
+  count at or past the width was undefined in C and C++, panicked in a Rust
+  debug build and was taken modulo the width in Kotlin and a Rust release
+  build.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="x" type="uint8"/>
+    <sce:param name="h" type="int16"/>
+    <sce:param name="w" type="uint32"/>
+    <sce:param name="s" type="int32"/>
+    <sce:param name="q" type="uint64"/>
+    <sce:param name="l" type="int64"/>
+    <sce:param name="n" type="uint8"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="int64" init="0"/>
+    <sce:if cond="op === 0">
+      <sce:assign target="r" expr="x &lt;&lt; n"/>
+    </sce:if>
+    <sce:if cond="op === 1">
+      <sce:assign target="r" expr="x &gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 2">
+      <sce:assign target="r" expr="h &lt;&lt; n"/>
+    </sce:if>
+    <sce:if cond="op === 3">
+      <sce:assign target="r" expr="h &gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 4">
+      <sce:assign target="r" expr="h &gt;&gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 5">
+      <sce:assign target="r" expr="w &lt;&lt; n"/>
+    </sce:if>
+    <sce:if cond="op === 6">
+      <sce:assign target="r" expr="w &gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 7">
+      <sce:assign target="r" expr="s &lt;&lt; n"/>
+    </sce:if>
+    <sce:if cond="op === 8">
+      <sce:assign target="r" expr="s &gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 9">
+      <sce:assign target="r" expr="s &gt;&gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 10">
+      <sce:assign target="r" expr="(q &lt;&lt; n) &amp; 9223372036854775807"/>
+    </sce:if>
+    <sce:if cond="op === 11">
+      <sce:assign target="r" expr="(q &gt;&gt; n) &amp; 9223372036854775807"/>
+    </sce:if>
+    <sce:if cond="op === 12">
+      <sce:assign target="r" expr="l &lt;&lt; n"/>
+    </sce:if>
+    <sce:if cond="op === 13">
+      <sce:assign target="r" expr="l &gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 14">
+      <sce:assign target="r" expr="l &gt;&gt;&gt; n"/>
+    </sce:if>
+    <sce:if cond="op === 15 &amp;&amp; n &lt; 32">
+      <sce:assign target="r" expr="(s &lt;&lt; n)"/>
+    </sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>

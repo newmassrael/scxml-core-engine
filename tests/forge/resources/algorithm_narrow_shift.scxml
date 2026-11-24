@@ -16,8 +16,8 @@
 
   Until the rule, C, C++ and Kotlin made a uint8 or int16 shift in a 32-bit
   integer and kept the bits it shifted out, and C made a left shift of a
-  negative int16 undefined. The count `n` is held below the operand's width:
-  a count past the width is not specified.
+  negative int16 undefined. The count `n` is held below the operand's width
+  here; algorithm_shift_count holds a count at and past it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
