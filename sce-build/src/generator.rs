@@ -3386,7 +3386,7 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
                 false,
                 &[],
             );
-            for part in [payload.defs, payload.entries, payload.lift] {
+            for part in [payload.defs, payload.entries, payload.lift, payload.admit] {
                 out.push_str(&part);
             }
             if let Some(static_enums) = request_field_enums(&model, &machine_name, language) {
@@ -3810,6 +3810,7 @@ fn render_rust(
         event_data_type => &payload.data_type,
         event_payload_entries => &payload.entries,
         event_payload_lift => &payload.lift,
+        event_payload_admit => &payload.admit,
         host_invoker_interface => &host_invoker_interface,
         host_invoke_request_checks => &host_invoke_request_checks,
         answer_schemas => answer_schemas_context(model, Language::Rust),

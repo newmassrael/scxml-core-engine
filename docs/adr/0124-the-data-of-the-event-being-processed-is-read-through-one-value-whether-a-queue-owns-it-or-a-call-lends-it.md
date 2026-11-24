@@ -76,6 +76,16 @@ type system: the parts are read off the payload struct, and the payload sum is s
   - an external event queued ahead of `event`, an internal event raised while it is processed, and the entry into the
     initial configuration are handed their own data, as every queued event is;
   - an event refused where it is taken opens nothing: `_event` stays what it was, and a lend for it is spent;
+  - lent data meets the door a wire delivery meets (docs/adr/0086, section 4.2): data that enters a machine has one
+    contract whichever route it takes, or D1's readers could tell the two forms apart. `StatePolicy::admit_event_data`
+    holds it to what `lift_event_payload` holds the same data to from the wire: each text and byte string of a schema
+    of entries to its bound, refused in the lift's words, code, pointer and bound
+    (`event_payload::lent_within`); every other field is held by its type in the parts. A refusal follows the queued
+    path exactly: `error.execution` carrying it is taken in the event's place where the document declares one, and
+    otherwise the delivery is dropped and counted as a discarded external event. A `no_std` build has no wire and no
+    door that refuses, on either route; there lent data past its bound is taken as a delivery that carries no data, as
+    such a build takes any delivery whose typed payload is not there. A record lent for a schema that holds a
+    composition is held by the types it is made of;
   - when the call's budget of external events (ARCHITECTURE.md "External-Event Budget") ends the turn before `event`
     is taken, `event` stays queued and is taken later as a delivery that carries no data, refused at its door as any
     such delivery is (docs/adr/0086, section 4.2).
@@ -109,7 +119,9 @@ would need a lifetime on the policy or `unsafe` to erase one. Held beside the en
 and the engine apart, and the borrow checker proves that nothing a hook keeps outlives the window. No `unsafe` is added.
 
 `populate_event_payload` and the policy's `pending_payload` are gone; `lift_event_payload` fills the payload the
-engine holds (`payload: &mut Self::Payload`) rather than a field of the policy. One hook signature serves every
+engine holds (`payload: &mut Self::Payload`) rather than a field of the policy, and `admit_event_data`, provided
+(admitting everything), is the door of lent data (D2), which the generator writes for a schema whose texts or byte
+strings have a bound. One hook signature serves every
 machine: there is no second trait, no second set of hooks, no build option and no type parameter on `EngineHost` or
 `run_turn`. `Turn` and `helpers::microstep` stay non-generic and never see the data.
 
@@ -218,6 +230,10 @@ hook call, which is nothing for a machine whose `EventData` is `()`.
   machine, where it bound an owned clone of a field: the copy per transition is gone.
 - A test component's branch still holds the message it took from the round's snapshot in the machine, now
   `taken_message`: that message is no event's data, it is what the branch took (docs/SCE_TEST_PROFILE.md §12.3).
+- A payload handed whole to an imported algorithm (`sce-static`, a call's adapter) is read through its parts, and the
+  adapter takes them by reference: a record handed to an algorithm holds numbers, truth values, bounded strings and
+  enums alone, which the check of the call holds on every target (a record that holds a byte string is refused there,
+  before and after this record), so each field crosses as the value it is.
 - A lent event the budget does not reach is delivered later without its data. A host that lends after queueing more
   external events than one call takes should not; one that does sees the door refuse the delivery, as it refuses any
   delivery of a typed event without its data.
@@ -234,6 +250,11 @@ hook call, which is nothing for a machine whose `EventData` is `()`.
   reads a queued payload, on a match and a miss.
 - `backends/rust/tests/tests/native_action.rs`: a generated act's arguments are the same whether its event's data was
   lent or queued.
+- `backends/rust/tests/tests/lent_payload.rs`, over `sce-build/tests/fixtures/lent_payload`: a text past its bound is
+  refused whole on both routes, in the same words, and the document answers the `error.execution` alike; at its
+  bound it is taken on both; a byte string past its bound is refused on both routes alike, and within it is read alike;
+  a payload is handed whole to an imported algorithm from the queue and lent. The runtime's window test
+  also holds a lent value its door refuses in a document with no `error.execution`: dropped and counted.
 - `sce-build/tests/every_rust_machine_is_handed_its_event_data_through_one_hook_signature.rs`: a machine with no
   typed data, one whose guard reads it and one whose act reads it have the same five hook signatures and the policy's
   reading, and none names a second trait, a stored payload or a populate hook.

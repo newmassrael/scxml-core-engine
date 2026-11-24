@@ -219,6 +219,24 @@ impl fmt::Display for PayloadRefusal {
     }
 }
 
+/// The door's bound held on the text or byte string `name`, a field of an
+/// event's data a host lends rather than a wire carries (docs/adr/0124, D2):
+/// `held` bytes past `bound` are refused in the words, the code, the pointer
+/// and the bound a lift of the same field from the wire refuses them with
+/// ([`PayloadValue::text_within`], [`PayloadValue::bytes`]), so the document's
+/// handler cannot tell the two routes apart.
+pub fn lent_within(name: &str, held: usize, bound: usize) -> Result<(), PayloadRefusal> {
+    if held <= bound {
+        return Ok(());
+    }
+    Err(PayloadRefusal::new(
+        RefusalCode::TooLong,
+        pointer_below("", name),
+        format!("'{name}' is {held} bytes, past the {bound} its type declares"),
+    )
+    .with_bound(bound))
+}
+
 /// `token` below the strict RFC 6901 pointer `prefix` (empty for the whole
 /// text): `/` and the token with `~` written `~0` and `/` written `~1`
 /// (RFC 6901, section 3).
