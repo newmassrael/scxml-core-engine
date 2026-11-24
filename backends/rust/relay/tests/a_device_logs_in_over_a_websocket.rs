@@ -6,13 +6,15 @@
 // token, and the link given the token gives the anonymous connection up and dials with it; that an
 // upgrade with a token the relay issued that expired is taken as anonymous, a request of a session on
 // it is refused as the token's, and the device logs in on it; that a connection with no token is
-// closed once it made as many requests as it may; and that the source a connection with no token is
+// closed once it made as many requests as it may, and a request that crossed that close on the wire
+// is answered by it as unread; and that the source a connection with no token is
 // held to is its address, or the address a proxy the server trusts says it forwarded, and never one
 // a client says of itself.
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
+use sce_rust_relay::protocol::CLOSE_UNREAD;
 use sce_rust_relay::serve::{Bounds, Server, WssLink};
 use sce_rust_relay::wss::{endpoint, upgrade_request};
 use sce_rust_relay::{
@@ -221,6 +223,51 @@ fn a_connection_with_no_token_makes_so_many_requests_and_is_closed() {
         ],
         "the relay closed it after two requests, and the link dialled again"
     );
+}
+
+/// A request a device sent before it read the relay's close is answered by that close, which says the
+/// relay never read it (`CLOSE_UNREAD`), and is not lost to a reset: of three requests sent at once on
+/// a connection that may make two, the third is the one that crossed the close on the wire, whatever
+/// the timing, so this holds the link's dialling again to the case it was flaky on.
+#[test]
+fn a_request_that_crossed_the_relays_close_is_answered_by_it_as_unread() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let bounds = Bounds {
+        anonymous_requests: 2,
+        ..Bounds::default()
+    };
+    let running = start(LoginPolicy::default(), bounds, Vec::new());
+    let request = upgrade_request(&endpoint(&running.base).unwrap(), "").unwrap();
+    let heads = Request::Heads.to_json();
+    let replies = running.runtime.block_on(async {
+        let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+        for _ in 0..3 {
+            socket
+                .send(Message::Text(heads.clone().into()))
+                .await
+                .unwrap();
+        }
+        let mut replies = Vec::new();
+        while let Some(Ok(message)) = socket.next().await {
+            let close = matches!(message, Message::Close(_));
+            replies.push(message);
+            if close {
+                break;
+            }
+        }
+        replies
+    });
+    assert_eq!(replies.len(), 3, "{replies:?}");
+    assert!(
+        replies[..2].iter().all(|m| matches!(m, Message::Text(_))),
+        "{replies:?}"
+    );
+    match &replies[2] {
+        Message::Close(Some(frame)) => assert_eq!(u16::from(frame.code), CLOSE_UNREAD, "{frame:?}"),
+        other => panic!("the third request was answered {other:?}"),
+    }
 }
 
 /// A dial with no token refused for its source's connections a minute (429) is the relay's refusal

@@ -45,13 +45,15 @@ use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http;
-use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+use tokio_tungstenite::tungstenite::protocol::{CloseFrame, WebSocketConfig};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 use crate::hub::Hub;
 use crate::limits::Limits;
 use crate::login::{self, Opened};
+use crate::protocol::CLOSE_UNREAD;
 use crate::tls::ServerConfig;
 use crate::token::TokenError;
 // The path a device connects to, and the client that connects there: the binding's two halves are
@@ -100,7 +102,8 @@ where
     H: Hub,
 {
     let (ws, caller) = upgrade(stream, hub.as_ref(), &clock, max_message, peer, &[]).await?;
-    exchange(ws, &caller, &hub, &clock, Watch::default()).await;
+    let (mut ws, frame) = exchange(ws, &caller, &hub, &clock, Watch::default()).await;
+    let _ = close_handshake(&mut ws, frame).await;
     Ok(())
 }
 
@@ -236,13 +239,16 @@ struct Watch<'a> {
 /// message that is not a request comes, or `watch` closes it. A request that was read is always
 /// answered: the stop and the idle bound are looked at only while the connection waits for one,
 /// and a connection that made as many requests as it may is closed once the last is answered.
+/// What it gives back is the connection and the close the relay says it with, which
+/// [`close_handshake`] sends: the connection exchanges nothing more.
 async fn exchange<S, H>(
     mut ws: WebSocketStream<S>,
     caller: &Caller,
     hub: &Arc<H>,
     clock: &Clock,
     watch: Watch<'_>,
-) where
+) -> (WebSocketStream<S>, CloseFrame)
+where
     S: AsyncRead + AsyncWrite + Unpin,
     H: Hub,
 {
@@ -305,7 +311,38 @@ async fn exchange<S, H>(
         anonymous = caller.anonymous;
         "connection_closed"
     );
-    let _ = within(watch.idle, ws.close(None)).await;
+    // The close says whether a request was read and left unanswered. `close_handshake` sends it and
+    // holds the connection until the device answers it (RFC 6455 section 7.1.1): a request the
+    // device sent before it read the close is read there and dropped, so the device reads the close
+    // as that request's answer rather than losing both to a reset.
+    let unread = !matches!(closed, "relay_failed" | "answer_not_taken");
+    let frame = CloseFrame {
+        code: if unread {
+            CloseCode::Library(CLOSE_UNREAD)
+        } else {
+            CloseCode::Error
+        },
+        reason: closed.into(),
+    };
+    (ws, frame)
+}
+
+/// Send `frame` and read what the device still sends until it answers with its own close, or the
+/// connection ends: what is read meanwhile is no request, since the relay closed before it.
+async fn close_handshake<S>(
+    ws: &mut WebSocketStream<S>,
+    frame: CloseFrame,
+) -> Result<(), tokio_tungstenite::tungstenite::Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    ws.send(Message::Close(Some(frame))).await?;
+    while let Some(message) = ws.next().await {
+        if matches!(message?, Message::Close(_)) {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// The end of `bound`, or never when there is none.
@@ -405,7 +442,8 @@ pub struct Bounds {
     /// The most connections open at once, at most [`Bounds::MOST_CONNECTIONS`]. One accepted past
     /// it is closed at once, before its TLS handshake or its upgrade costs anything.
     pub max_connections: usize,
-    /// How long a connection has to finish its TLS handshake and its upgrade.
+    /// How long a connection has to finish its TLS handshake and its upgrade, and to answer the
+    /// relay's close.
     pub handshake: Duration,
     /// How long an open connection may wait for its next request, and for its answer to be taken,
     /// before it is closed: a device connects again when it next has something to ask.
@@ -680,6 +718,11 @@ impl<H: Hub> Server<H> {
                 tally: Some(&shared.tally),
             }
         };
-        exchange(ws, &caller, &shared.hub, &shared.clock, watch).await;
+        let (mut ws, frame) = exchange(ws, &caller, &shared.hub, &shared.clock, watch).await;
+        // The connection's place is given back once the relay closed it, and its closing handshake
+        // is held to the bound of its opening one: a device that never answers the close holds a
+        // socket no longer than one that never finished its upgrade, and no place at all.
+        drop(_permit);
+        let _ = tokio::time::timeout(bounds.handshake, close_handshake(&mut ws, frame)).await;
     }
 }

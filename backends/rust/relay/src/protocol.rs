@@ -28,6 +28,15 @@ pub const OLDEST_VERSION: u64 = 1;
 /// The first version whose clients are answered [`Code::Conflict`].
 pub const CONFLICT_SINCE: u64 = 2;
 
+/// The close code (RFC 6455 section 7.4.2, the range for applications) a relay's WebSocket binding
+/// closes a connection with when it read no request it did not answer: it closed at a bound of the
+/// connection (its requests, its idle time) or because it is stopping, never in the middle of a
+/// request. A device whose request is answered by this close knows the relay never read it, so it
+/// dials again and sends it there, and a request is still never carried twice. Without it a device
+/// could not tell a request the relay dropped unread from one it read and failed on, and a close
+/// that crossed a request on the wire failed that request by the timing alone.
+pub const CLOSE_UNREAD: u16 = 4000;
+
 /// Whether a relay of this crate speaks `version`.
 pub fn speaks(version: u64) -> bool {
     (OLDEST_VERSION..=VERSION).contains(&version)

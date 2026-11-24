@@ -50,6 +50,7 @@ use tokio_tungstenite::tungstenite::handshake::client::Request as UpgradeRequest
 use tokio_tungstenite::tungstenite::{http, Error as WsError, Message};
 use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
+use crate::protocol::CLOSE_UNREAD;
 use crate::tls::{self, ClientConfig, Roots};
 
 /// The path a device connects to.
@@ -80,7 +81,13 @@ enum Broke {
         reason: String,
     },
     Link(String),
+    /// The relay answered the request with its close for a request it never read
+    /// ([`CLOSE_UNREAD`]): the request may be sent again, on a connection dialled again.
+    Unread,
 }
+
+/// Why a connection the relay closed before it read a request was given up.
+const RELAY_CLOSED_IDLE: &str = "the relay closed the connection while it was idle";
 
 /// How the wait for one exchange ended.
 enum Waited {
@@ -286,6 +293,9 @@ async fn ask(socket: &mut Socket, request: &str) -> Result<String, Broke> {
         match socket.next().await {
             Some(Ok(Message::Text(text))) => return Ok(text.to_string()),
             Some(Ok(Message::Ping(_) | Message::Pong(_))) => continue,
+            Some(Ok(Message::Close(Some(frame)))) if u16::from(frame.code) == CLOSE_UNREAD => {
+                return Err(Broke::Unread)
+            }
             Some(Ok(_)) | Some(Err(_)) | None => {
                 return Err(Broke::Link("the relay closed the link".to_string()))
             }
@@ -315,7 +325,7 @@ impl Transport for WssLink {
             }
         };
         if closed {
-            self.give_up("the relay closed the connection while it was idle");
+            self.give_up(RELAY_CLOSED_IDLE);
         }
         // One wake for the two signals, made for this exchange alone, so that a raise of an earlier
         // exchange's is never taken for one of this.
@@ -334,65 +344,82 @@ impl Transport for WssLink {
         }
         let network_at = self.network.raised();
 
-        let dialling = self.socket.is_none();
-        let Self {
-            runtime,
-            url,
-            token,
-            tls,
-            socket,
-            ..
-        } = &mut *self;
-        let work = carry(socket, url.as_str(), token.as_str(), tls, request);
-        let expiry = async move {
-            match deadline {
-                Some(deadline) => {
-                    tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await
+        // A request the relay answered with its close for a request unread was never read, so it is
+        // carried once more on a connection dialled again; the relay's close is read as the close of a
+        // connection idle, which is what it was to the relay.
+        let mut redialled = false;
+        loop {
+            let dialling = self.socket.is_none();
+            let Self {
+                runtime,
+                url,
+                token,
+                tls,
+                socket,
+                ..
+            } = &mut *self;
+            let work = carry(socket, url.as_str(), token.as_str(), tls, request);
+            let expiry = async move {
+                match deadline {
+                    Some(deadline) => {
+                        tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await
+                    }
+                    None => std::future::pending::<()>().await,
                 }
-                None => std::future::pending::<()>().await,
+            };
+            let waited = runtime.block_on(async {
+                // An answer that came is taken before a wake or the deadline that came with it.
+                tokio::select! {
+                    biased;
+                    answered = work => Waited::Answered(answered),
+                    () = woken.notified() => Waited::Woken,
+                    () = expiry => Waited::Expired,
+                }
+            });
+            if dialling && self.socket.is_some() {
+                self.dialled_at = network_at;
+                self.notices.push(Notice::Connected);
             }
-        };
-        let waited = runtime.block_on(async {
-            // An answer that came is taken before a wake or the deadline that came with it.
-            tokio::select! {
-                biased;
-                answered = work => Waited::Answered(answered),
-                () = woken.notified() => Waited::Woken,
-                () = expiry => Waited::Expired,
-            }
-        });
-        if dialling && self.socket.is_some() {
-            self.dialled_at = network_at;
-            self.notices.push(Notice::Connected);
-        }
 
-        let error = match waited {
-            Waited::Answered(Ok(text)) => return Ok(text),
-            Waited::Answered(Err(Broke::Unauthorized(why))) => TransportError::Unauthorized(why),
-            Waited::Answered(Err(Broke::RateLimited {
-                retry_after_ms,
-                reason,
-            })) => TransportError::RateLimited {
-                retry_after_ms,
-                reason,
-            },
-            Waited::Answered(Err(Broke::Link(why))) => TransportError::Link(why),
-            Waited::Woken if cancel.is_raised() => TransportError::Cancelled,
-            Waited::Woken => TransportError::Link("the network changed".to_string()),
-            Waited::Expired => {
-                // The runtime's timer counts in its own ticks: the deadline is passed by the clock
-                // the caller reads before the exchange says it is.
-                if let Some(left) =
-                    deadline.and_then(|deadline| deadline.checked_duration_since(Instant::now()))
-                {
-                    std::thread::sleep(left);
+            let error = match waited {
+                Waited::Answered(Ok(text)) => return Ok(text),
+                Waited::Answered(Err(Broke::Unread)) if !redialled => {
+                    redialled = true;
+                    self.give_up(RELAY_CLOSED_IDLE);
+                    continue;
                 }
-                TransportError::Deadline
-            }
-        };
-        log::info!(reason = error.to_string().as_str(); "exchange_failed");
-        self.give_up(&error.to_string());
-        Err(error)
+                Waited::Answered(Err(Broke::Unread)) => TransportError::Link(
+                    "the relay closed the connection it dialled again before it read the request"
+                        .to_string(),
+                ),
+                Waited::Answered(Err(Broke::Unauthorized(why))) => {
+                    TransportError::Unauthorized(why)
+                }
+                Waited::Answered(Err(Broke::RateLimited {
+                    retry_after_ms,
+                    reason,
+                })) => TransportError::RateLimited {
+                    retry_after_ms,
+                    reason,
+                },
+                Waited::Answered(Err(Broke::Link(why))) => TransportError::Link(why),
+                Waited::Woken if cancel.is_raised() => TransportError::Cancelled,
+                Waited::Woken => TransportError::Link("the network changed".to_string()),
+                Waited::Expired => {
+                    // The runtime's timer counts in its own ticks: the deadline is passed by the clock
+                    // the caller reads before the exchange says it is.
+                    if let Some(left) = deadline
+                        .and_then(|deadline| deadline.checked_duration_since(Instant::now()))
+                    {
+                        std::thread::sleep(left);
+                    }
+                    TransportError::Deadline
+                }
+            };
+            log::info!(reason = error.to_string().as_str(); "exchange_failed");
+            self.give_up(&error.to_string());
+            return Err(error);
+        }
     }
 
     fn take_notices(&mut self) -> Vec<Notice> {
