@@ -887,12 +887,18 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
         // (docs/adr/0066).
         "history: None,",
         "parallel: None,",
+        // And one target a transition, so the document fixes its microsteps'
+        // sets: the row walk, each transition's entry path in the pool once,
+        // its length first (docs/adr/0125).
+        "walk: &::sce_rust_runtime::ROW_WALK,",
+        "entry_rows: &[EntryRow::at(0), EntryRow::at(2)],",
+        "entry_paths: &[EntryStep::count(1), EntryStep::new(StateId(1), false), \
+         EntryStep::count(1), EntryStep::new(StateId(0), false)],",
         "pub type PlainBoundsConfiguration = \
          ::sce_rust_runtime::helpers::hierarchy::BoundedVec<PlainBoundsState, 1>;",
-        // Two steps of the entry walk a level, not three: no `<parallel>`, so
-        // no region loop is ever resumed.
-        "type Workspace = ::sce_rust_runtime::Workspace<\
-         { ::sce_rust_runtime::state_scratch(2) }, 1, 5, 0>;",
+        // The row walk builds no set and walks no stack, so the workspace holds
+        // the enabled set alone (docs/adr/0125).
+        "type Workspace = ::sce_rust_runtime::Workspace<0, 1, 0, 0>;",
         "type RunStore = ::sce_rust_runtime::RunStore<\
          { ::sce_rust_runtime::state_words(2) }, \
          { ::sce_rust_runtime::record_words(2, 0) }, 0>;",

@@ -256,14 +256,23 @@ pub type {{ machine_name }}Configuration = ::sce_rust_runtime::helpers::hierarch
 /// program none of whose documents uses a feature links none of its code
 /// (docs/adr/0066).
 ///
+/// `walk` is how this machine's microsteps form their exit and entry sets
+/// (docs/adr/0125). A document with no `<history>`, no `<parallel>` and no
+/// transition of more than one target fixes them itself: the generator
+/// computed, by Appendix D's procedures, what each transition enters
+/// (`entry_paths`, each its length first, each state with whether it is
+/// entered by default) and `entry_rows` names each transition's path, so the
+/// row walk reads them. Any other document carries the general walk, which
+/// computes them, and no rows.
+///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
 pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
-        DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
-        TransitionRow,
+        DocumentTables, EntryRow, EntryStep, HistoryId, HistoryRow, StateId, StateKind, StateRow,
+        Target, TransitionId, TransitionRow,
     };
     DocumentTables {
         states: &[
@@ -301,11 +310,9 @@ pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables<'static> = {
    main loop counts an unanswered one and bounds a chain of them by these
    numbers (docs/adr/0068). #}
         error_events: &[{% for event_name in model.events | sort %}{% if event_name is startingwith("error.") %}::sce_rust_runtime::EventId({{ loop.index0 }}),{% endif %}{% endfor %}],
-{# How the microsteps form their exit and entry sets (docs/adr/0125): the
-   general walk, which serves every document, and no entry rows. #}
-        walk: &::sce_rust_runtime::GENERAL_WALK,
-        entry_rows: &[],
-        entry_paths: &[],
+        walk: &::sce_rust_runtime::{{ tables.walk }},
+        entry_rows: &[{% for row in tables.entry_rows %}{{ row }}{{ ", " if not loop.last }}{% endfor %}],
+        entry_paths: &[{% for entry in tables.entry_paths %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
         history: {% if tables.history %}Some(&::sce_rust_runtime::HISTORY){% else %}None{% endif %},
         parallel: {% if tables.parallel %}Some(&::sce_rust_runtime::PARALLEL){% else %}None{% endif %},
     }
@@ -1948,7 +1955,14 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // headroom. The workspace is a local of the call that runs a macrostep; the
     // run store, the configuration and what each of the {{ tables.histories | length }} `<history>`
     // element(s) recorded, one such set each, is the engine's.
+{% if tables.row_walk %}
+    // docs/adr/0125: this document's microsteps are walked from the entry rows
+    // of its tables, which builds no set of states and walks no stack, so the
+    // workspace holds the enabled set alone.
+    type Workspace = ::sce_rust_runtime::Workspace<0, {{ tables.max_enabled }}, 0, 0>;
+{% else %}
     type Workspace = ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch({{ tables.states | length }}) }, {{ tables.max_enabled }}, {{ tables.max_walk }}, {{ tables.max_history_defaults }}>;
+{% endif %}
     type RunStore = ::sce_rust_runtime::RunStore<{ ::sce_rust_runtime::state_words({{ tables.states | length }}) }, { ::sce_rust_runtime::record_words({{ tables.states | length }}, {{ tables.histories | length }}) }, {{ tables.histories | length }}>;
     type Configuration = {{ machine_name }}Configuration;
     // docs/adr/0096: what refuses this machine's start. One with a script

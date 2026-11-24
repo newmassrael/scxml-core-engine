@@ -44,7 +44,7 @@
 //! histories or transitions, or more than [`MAX_TARGETS`] targets, is refused,
 //! and the refusal names the table.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
 
@@ -186,6 +186,18 @@ pub enum TransitionOrigin {
     HistoryDefault(u16),
     /// The document's own initial transition.
     Document,
+}
+
+/// One state of a transition's entry path (ADR 0125): a state the transition
+/// enters, and whether it is entered by default (Appendix D's
+/// statesForDefaultEntry), so its initial transition's content runs after its
+/// onentry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PathStep {
+    /// The `StateId` of the state.
+    pub state: u16,
+    /// Whether it is entered by default.
+    pub by_default: bool,
 }
 
 /// One target of a transition.
@@ -344,6 +356,162 @@ impl DocumentTables {
         self.states
             .iter()
             .any(|row| row.kind == StateKind::Parallel)
+    }
+
+    /// Whether the document fixes its microsteps' exit and entry sets itself
+    /// (ADR 0125): it has no `<history>`, whose record decides what a
+    /// transition to it enters; no `<parallel>`, whose regions make a
+    /// configuration more than one path down the tree; and no transition,
+    /// written or initial, of more than one target. A transition's domain and
+    /// what it enters are then the transition's alone, and what it exits is
+    /// every active state below its domain.
+    pub fn fixes_its_sets(&self) -> bool {
+        !self.uses_history()
+            && !self.uses_parallel()
+            && self.transitions.iter().all(|row| row.targets.len <= 1)
+    }
+
+    /// For each transition, by `TransitionId`, its entry path: the states it
+    /// enters in entry order, each with whether it is entered by default,
+    /// which is Appendix D's computeEntrySet for that transition alone,
+    /// computed here when the document is built so the runtime's row walk reads
+    /// it rather than computing it again (ADR 0125). Empty for a transition
+    /// with no target, and for a compound state's initial transition, which no
+    /// microstep takes: what it enters is part of the path of whatever enters
+    /// its state.
+    ///
+    /// `None` for a document that does not [fix its sets](Self::fixes_its_sets),
+    /// and for one where a set is not a single path down the tree from the
+    /// child of the transition's domain to an atomic state, which a compound
+    /// state whose initial transition does not target one of its own
+    /// descendants would make: its sets are the general walk's to compute.
+    pub fn entry_paths(&self) -> Option<Vec<Vec<PathStep>>> {
+        if !self.fixes_its_sets() {
+            return None;
+        }
+        self.transitions
+            .iter()
+            .map(|row| match row.origin {
+                TransitionOrigin::Initial => Some(Vec::new()),
+                _ => self.entry_path(row),
+            })
+            .collect()
+    }
+
+    /// The entry path of one transition of a document that fixes its sets, or
+    /// `None` when its entry set is not one path down the tree.
+    fn entry_path(&self, row: &TransitionRow) -> Option<Vec<PathStep>> {
+        let target = match &self.targets[row.targets.range()] {
+            [] => return Some(Vec::new()),
+            [TargetRef::State(target)] => *target,
+            _ => return None,
+        };
+        let domain = self.domain(row, target);
+        // computeEntrySet: the target and the states it enters by default,
+        // then its ancestors below the domain, which were never exited.
+        let mut states_to_enter = BTreeSet::new();
+        let mut states_for_default_entry = BTreeSet::new();
+        self.add_descendants(target, &mut states_to_enter, &mut states_for_default_entry)?;
+        self.add_ancestors(target, domain, &mut states_to_enter);
+        // Entry order is document order, the order of the numbers.
+        let path: Vec<PathStep> = states_to_enter
+            .iter()
+            .map(|&state| PathStep {
+                state,
+                by_default: states_for_default_entry.contains(&state),
+            })
+            .collect();
+        let first = path.first()?;
+        let last = path.last()?;
+        let down_the_tree = self.state_row(first.state).parent == domain
+            && path
+                .windows(2)
+                .all(|pair| self.state_row(pair[1].state).parent == Some(pair[0].state))
+            && matches!(
+                self.state_row(last.state).kind,
+                StateKind::Atomic | StateKind::Final
+            );
+        down_the_tree.then_some(path)
+    }
+
+    fn state_row(&self, state: u16) -> &StateRow {
+        &self.states[usize::from(state)]
+    }
+
+    /// Whether `state` lies strictly below `ancestor`: a subtree is the run of
+    /// numbers from its root to its last descendant.
+    fn is_descendant(&self, state: u16, ancestor: u16) -> bool {
+        ancestor < state && state <= self.state_row(ancestor).last_descendant
+    }
+
+    /// getTransitionDomain of a transition whose one target is the state
+    /// `target`, in a document with no `<history>`, so its effective target is
+    /// its target. `None` for the `<scxml>` element.
+    fn domain(&self, row: &TransitionRow, target: u16) -> Option<u16> {
+        let source = row.source?;
+        if row.internal
+            && self.state_row(source).kind == StateKind::Compound
+            && self.is_descendant(target, source)
+        {
+            return Some(source);
+        }
+        // findLCCA of the source and the target: the first proper ancestor of
+        // the source that is a compound state and holds the target.
+        let mut current = self.state_row(source).parent;
+        while let Some(ancestor) = current {
+            if self.state_row(ancestor).kind == StateKind::Compound
+                && self.is_descendant(target, ancestor)
+            {
+                return Some(ancestor);
+            }
+            current = self.state_row(ancestor).parent;
+        }
+        None
+    }
+
+    /// addDescendantStatesToEnter of the state `state` in a document with no
+    /// `<history>` and no `<parallel>`: the state, and a compound state entered
+    /// by default with what its initial transition enters. `None` when that
+    /// transition does not target exactly one of the state's descendants.
+    fn add_descendants(
+        &self,
+        state: u16,
+        states_to_enter: &mut BTreeSet<u16>,
+        states_for_default_entry: &mut BTreeSet<u16>,
+    ) -> Option<()> {
+        states_to_enter.insert(state);
+        let row = self.state_row(state);
+        if row.kind != StateKind::Compound {
+            return Some(());
+        }
+        states_for_default_entry.insert(state);
+        let initial = &self.transitions[usize::from(row.initial?)];
+        let [TargetRef::State(child)] = &self.targets[initial.targets.range()] else {
+            return None;
+        };
+        if !self.is_descendant(*child, state) {
+            return None;
+        }
+        self.add_descendants(*child, states_to_enter, states_for_default_entry)?;
+        self.add_ancestors(*child, Some(state), states_to_enter);
+        Some(())
+    }
+
+    /// addAncestorStatesToEnter of `state` up to `stop` (`None`: the `<scxml>`
+    /// element) in a document with no `<parallel>`: the proper ancestors of
+    /// `state` below `stop`, none when `stop` is not above it.
+    fn add_ancestors(&self, state: u16, stop: Option<u16>, states_to_enter: &mut BTreeSet<u16>) {
+        if stop.is_some_and(|stop| !self.is_descendant(state, stop)) {
+            return;
+        }
+        let mut current = self.state_row(state).parent;
+        while let Some(ancestor) = current {
+            if Some(ancestor) == stop {
+                return;
+            }
+            states_to_enter.insert(ancestor);
+            current = self.state_row(ancestor).parent;
+        }
     }
 
     /// The tables of `model`'s state tree.
@@ -719,6 +887,60 @@ mod tests {
         assert_eq!(tables.transition_id("first", 0), Some(2));
         assert_eq!(children_of(&tables, 0), [1u16, 2]);
         assert!(children_of(&tables, 3).is_empty());
+    }
+
+    /// ADR 0125: a document with no `<history>`, no `<parallel>` and no
+    /// transition of more than one target fixes its microsteps' sets, and each
+    /// transition's entry path is what Appendix D's computeEntrySet enters for
+    /// it alone, in entry order: the ancestors below its domain, its target,
+    /// and down the initial transitions, entered by default where the target,
+    /// or a state the walk down enters, is a compound state.
+    #[test]
+    fn a_document_that_fixes_its_sets_has_the_entry_path_of_each_transition() {
+        // The document of the test above: `reset` is internal and stays below
+        // `outer`, `leave` leaves it, `next` moves between its children, and
+        // the document's initial transition enters it by default.
+        let (_, tables) = tables_of(
+            r#">
+  <state id="outer">
+    <initial><transition target="second"><raise event="entered"/></transition></initial>
+    <transition event="reset" type="internal" target="first"/>
+    <transition event="leave" type="internal" target="gone"/>
+    <state id="first"><transition event="next" target="second"/></state>
+    <state id="second"/>
+  </state>
+  <final id="gone"/>
+"#,
+        );
+        assert!(tables.fixes_its_sets());
+        let step = |state: u16, by_default: bool| PathStep { state, by_default };
+        assert_eq!(
+            tables.entry_paths(),
+            Some(vec![
+                vec![step(1, false)],
+                vec![step(3, false)],
+                vec![step(2, false)],
+                // `outer`'s initial transition, which no microstep takes.
+                vec![],
+                vec![step(0, true), step(2, false)],
+            ])
+        );
+    }
+
+    /// ADR 0125: with a `<parallel>`, a `<history>` or a transition of more
+    /// than one target, a transition's sets are not one path its row could
+    /// hold, and the general walk computes them.
+    #[test]
+    fn a_document_with_a_parallel_a_history_or_a_target_set_has_no_entry_paths() {
+        for body in [
+            r#" initial="p"><parallel id="p"><state id="a"/><state id="b"/></parallel>"#,
+            r#" initial="s"><state id="s"><history id="h"><transition target="s1"/></history><state id="s1"/></state>"#,
+            r#" initial="s"><state id="s"><transition event="go" target="s1 s2"/><state id="s1"/><state id="s2"/></state>"#,
+        ] {
+            let (_, tables) = tables_of(body);
+            assert!(!tables.fixes_its_sets(), "{body}");
+            assert_eq!(tables.entry_paths(), None, "{body}");
+        }
     }
 
     #[test]

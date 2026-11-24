@@ -18,19 +18,33 @@
 //! from the pre-order numbering as the runtime reads them. And each document's
 //! rows, written as the runtime's own, pass the runtime's
 //! `DocumentTables::check`.
+//!
+//! A document with no `<history>`, no `<parallel>` and no transition of more
+//! than one target fixes its microsteps' sets, and its tables carry an entry
+//! path for each transition, which the runtime's row walk reads (ADR 0125).
+//! Every such document of the corpus has them, each is what the runtime's
+//! general walk computes for that transition, and the tables that carry them
+//! pass the runtime's check too.
 
 mod common;
 
+use std::mem::MaybeUninit;
 use std::path::Path;
 
 use sce_build::document_tables::{
-    DocumentTables, Span, StateKind, TargetRef, TransitionOrigin, TransitionRow,
+    DocumentTables, PathStep, Span, StateKind, TargetRef, TransitionOrigin, TransitionRow,
 };
 use sce_build::generator::Language;
 use sce_build::microstep_bounds::MicrostepBounds;
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
+use sce_rust_runtime::helpers::microstep::{
+    compute_entry_set, compute_exit_set, ExitScope, Scratch, WalkStep,
+};
+use sce_rust_runtime::helpers::run_store::RunStoreRef;
+use sce_rust_runtime::helpers::state_set::Word;
 use sce_rust_runtime::helpers::tables as rt;
+use sce_rust_runtime::{state_scratch, state_words};
 
 /// The model the Rust backend renders `path` from, or `None` when the document
 /// does not parse or the generator refuses it: the corpus carries deliberate
@@ -385,6 +399,134 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
         Ok(()),
         "{name}: runtime check"
     );
+
+    // A document that fixes its sets has an entry path for each transition
+    // (ADR 0125), each what the runtime's general walk computes, and the
+    // tables of the row walk that carry them keep every rule the runtime
+    // relies on.
+    match tables.entry_paths() {
+        Some(paths) => {
+            assert!(tables.fixes_its_sets(), "{name}: paths only in the class");
+            paths_hold(name, tables, &paths);
+            assert_eq!(
+                row_walk_tables(tables, &paths).check(),
+                Ok(()),
+                "{name}: runtime check of the row walk's tables"
+            );
+        }
+        None => assert!(
+            !tables.fixes_its_sets(),
+            "{name}: a document that fixes its sets has an entry path for each transition"
+        ),
+    }
+}
+
+/// Whether `paths`, `tables`' entry paths, are what the runtime's general
+/// walk computes for each transition a microstep can take: the states
+/// computeEntrySet enters, in entry order, with those it enters by default,
+/// and computeExitSet's domain, which is the parent of the path's first
+/// state. A compound state's initial transition, which no microstep takes,
+/// has none.
+fn paths_hold(name: &str, tables: &DocumentTables, paths: &[Vec<PathStep>]) {
+    let general = runtime_tables(tables);
+    let states = tables.states.len();
+    // No `<history>`, so no record; the sets the procedures compute read none
+    // of the configuration.
+    let configuration: Vec<Word> = vec![0; state_words(states)];
+    let store = RunStoreRef::new(&configuration, &[], &[]);
+    let mut sets: Vec<Word> = vec![0; state_scratch(states)];
+    let mut walk: Vec<MaybeUninit<WalkStep>> =
+        vec![MaybeUninit::uninit(); tables.bounds.entry_walk.max(1)];
+    let mut defaults: Vec<MaybeUninit<(rt::StateId, rt::HistoryId)>> =
+        vec![MaybeUninit::uninit(); tables.bounds.history_defaults.max(1)];
+    assert_eq!(paths.len(), tables.transitions.len(), "{name}: a path each");
+    for (index, (row, path)) in tables.transitions.iter().zip(paths).enumerate() {
+        if row.origin == TransitionOrigin::Initial {
+            assert!(
+                path.is_empty(),
+                "{name}: transition {index}: an initial transition has no path"
+            );
+            continue;
+        }
+        let transition = rt::TransitionId(index as u16);
+        let computed: Vec<PathStep> = {
+            let entry = compute_entry_set(
+                &general,
+                store,
+                &[transition],
+                Scratch {
+                    sets: &mut sets,
+                    walk: &mut walk,
+                    history_defaults: &mut defaults,
+                },
+            );
+            entry
+                .states_to_enter
+                .as_ref()
+                .iter()
+                .map(|state| PathStep {
+                    state: state.0,
+                    by_default: entry.states_for_default_entry.contains(state),
+                })
+                .collect()
+        };
+        assert_eq!(
+            &computed, path,
+            "{name}: transition {index}: the entry path is computeEntrySet's"
+        );
+        let scope = compute_exit_set(
+            &general,
+            store,
+            transition,
+            Scratch {
+                sets: &mut sets,
+                walk: &mut walk,
+                history_defaults: &mut defaults,
+            },
+        );
+        let expected = match path.first() {
+            None => ExitScope::Nothing,
+            Some(first) => match tables.states[usize::from(first.state)].parent {
+                Some(domain) => ExitScope::Below(rt::StateId(domain)),
+                None => ExitScope::All,
+            },
+        };
+        assert_eq!(
+            scope, expected,
+            "{name}: transition {index}: the domain is the parent of the path's first state"
+        );
+    }
+}
+
+/// `tables` as the runtime's `DocumentTables` of the row walk (ADR 0125): the
+/// rows of [`runtime_tables`], and `paths` as entry rows, each path its length
+/// first in a pool the rows name it in.
+fn row_walk_tables(
+    tables: &DocumentTables,
+    paths: &[Vec<PathStep>],
+) -> rt::DocumentTables<'static> {
+    let mut pool: Vec<rt::EntryStep> = Vec::new();
+    let rows: Vec<rt::EntryRow> = paths
+        .iter()
+        .map(|path| {
+            if path.is_empty() {
+                return rt::EntryRow::NONE;
+            }
+            let position = pool.len() as u16;
+            pool.push(rt::EntryStep::count(path.len() as u16));
+            pool.extend(
+                path.iter()
+                    .map(|step| rt::EntryStep::new(rt::StateId(step.state), step.by_default)),
+            );
+            rt::EntryRow::at(position)
+        })
+        .collect();
+    rt::DocumentTables {
+        walk: &sce_rust_runtime::ROW_WALK,
+        entry_rows: rows.leak(),
+        entry_paths: pool.leak(),
+        ..runtime_tables(tables)
+    }
 }
 
 /// `tables` as the runtime's `DocumentTables`, the rows a generated machine's
@@ -462,7 +604,8 @@ fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables<'static> {
         default_state: rt::StateId(0),
         null_event: rt::EventId(0),
         error_events: &[],
-        // The general walk, which serves every document (docs/adr/0125).
+        // The general walk, which serves every document (docs/adr/0125);
+        // `row_walk_tables` gives a document that fixes its sets the row walk.
         walk: &sce_rust_runtime::GENERAL_WALK,
         entry_rows: &[],
         entry_paths: &[],
@@ -488,6 +631,7 @@ fn the_generator_numbers_no_more_ids_than_the_runtime_reads() {
 fn every_generatable_document_has_tables_in_document_order() {
     let corpus = common::repository::files_git_tracks(&["*.scxml"]);
     let mut judged = 0usize;
+    let mut fixed = 0usize;
     for path in &corpus {
         let Some(model) = generatable(path) else {
             continue;
@@ -497,7 +641,16 @@ fn every_generatable_document_has_tables_in_document_order() {
             .unwrap_or_else(|refusal| panic!("{name}: no tables: {refusal}"));
         holds(&name, &model, &tables);
         judged += 1;
+        if tables.fixes_its_sets() {
+            fixed += 1;
+        }
     }
+    // Documents that fix their sets were judged too, so the entry paths were
+    // held to the general walk over real documents and not over none.
+    assert!(
+        fixed >= 50,
+        "{fixed} of {judged} judged documents fix their sets"
+    );
     // 1,362 documents were tracked on 2026-10-29, 253 of them the W3C
     // corpus's; a walk that sees far fewer, or judges fewer than a hundred,
     // has stopped looking rather than found every document clean.

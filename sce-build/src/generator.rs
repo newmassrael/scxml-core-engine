@@ -2716,8 +2716,9 @@ fn rust_optional_id(id_type: &str, id: Option<u16>) -> String {
 /// What a Rust machine's template writes its tables from (docs/adr/0064): the
 /// rows [`crate::document_tables::DocumentTables::of`] computes for `model`, in
 /// the order the runtime numbers them, the sizes its buffers take from
-/// `bounds`, and the `TransitionId` of each written transition by its source
-/// state and its index there (`written`).
+/// `bounds`, the `TransitionId` of each written transition by its source
+/// state and its index there (`written`), and the walk its microsteps form
+/// their sets by, with the entry rows the row walk reads (docs/adr/0125).
 ///
 /// The rows are `model`'s own; the sizes are `bounds`, which a product line
 /// gives every variant from the whole document (ADR 0057 §9), so that a
@@ -2726,7 +2727,9 @@ fn rust_tables(
     model: &SCXMLModel,
     bounds: &crate::microstep_bounds::MicrostepBounds,
 ) -> Result<serde_json::Value, GenerateError> {
-    use crate::document_tables::{DocumentTables, StateKind, TargetRef, TransitionOrigin};
+    use crate::document_tables::{
+        DocumentTables, PathStep, StateKind, TargetRef, TransitionOrigin,
+    };
 
     let tables = DocumentTables::of(model).map_err(|refusal| {
         GenerateError::unsupported(format!("the Rust machine's tables: {refusal}"))
@@ -2831,6 +2834,46 @@ fn rust_tables(
             crate::document_tables::MAX_IDS
         )));
     }
+    // How the machine's microsteps form their sets (docs/adr/0125): read from
+    // entry rows when the document fixes them, computed by the general walk
+    // otherwise. Each distinct path is in the pool once, its length first, and
+    // every transition that enters it names it by its position, a 14-bit id
+    // field as a list of targets' is.
+    let entry_paths = tables.entry_paths();
+    let mut entry_pool: Vec<String> = Vec::new();
+    let mut entry_rows: Vec<String> = Vec::new();
+    if let Some(paths) = &entry_paths {
+        let mut positions: std::collections::BTreeMap<&[PathStep], usize> =
+            std::collections::BTreeMap::new();
+        for path in paths {
+            if path.is_empty() {
+                entry_rows.push("EntryRow::NONE".to_string());
+                continue;
+            }
+            let position = *positions.entry(path.as_slice()).or_insert_with(|| {
+                let position = entry_pool.len();
+                entry_pool.push(format!("EntryStep::count({})", path.len()));
+                entry_pool.extend(path.iter().map(|step| {
+                    format!(
+                        "EntryStep::new(StateId({}), {})",
+                        step.state, step.by_default
+                    )
+                }));
+                position
+            });
+            entry_rows.push(format!("EntryRow::at({position})"));
+        }
+    }
+    if entry_pool.len() > crate::document_tables::MAX_IDS {
+        return Err(GenerateError::unsupported(format!(
+            "the document's entry paths need {} entries in the pool of entry paths, and a \
+             Rust machine's tables hold at most {} (docs/adr/0125)",
+            entry_pool.len(),
+            crate::document_tables::MAX_IDS
+        )));
+    }
+    let row_walk = entry_paths.is_some();
+    let walk = if row_walk { "ROW_WALK" } else { "GENERAL_WALK" };
     Ok(serde_json::json!({
         "states": states,
         "histories": histories,
@@ -2839,6 +2882,10 @@ fn rust_tables(
         "initial": tables.initial,
         "history": tables.uses_history(),
         "parallel": tables.uses_parallel(),
+        "row_walk": row_walk,
+        "walk": walk,
+        "entry_rows": entry_rows,
+        "entry_paths": entry_pool,
         "max_configuration": max_configuration,
         "max_enabled": max_enabled,
         "max_history_defaults": max_history_defaults,
@@ -9188,6 +9235,30 @@ mod tests {
         );
         assert_eq!(tables["max_walk"], 40, "the sizes are the bounds given");
         assert_eq!(tables["states"][1]["kind"], "Atomic");
+        // Flat, with one target a transition: the document fixes its sets, so
+        // its microsteps are walked from entry rows (docs/adr/0125). Each
+        // distinct path is in the pool once, and the document's initial
+        // transition shares `back`'s; the targetless `stay` has none.
+        assert_eq!(tables["row_walk"], true);
+        assert_eq!(tables["walk"], "ROW_WALK");
+        assert_eq!(
+            tables["entry_rows"],
+            serde_json::json!([
+                "EntryRow::at(0)",
+                "EntryRow::at(2)",
+                "EntryRow::NONE",
+                "EntryRow::at(2)"
+            ])
+        );
+        assert_eq!(
+            tables["entry_paths"],
+            serde_json::json!([
+                "EntryStep::count(1)",
+                "EntryStep::new(StateId(1), false)",
+                "EntryStep::count(1)",
+                "EntryStep::new(StateId(0), false)"
+            ])
+        );
 
         bounds.entry_walk = usize::from(u16::MAX) + 1;
         match rust_tables(&model, &bounds) {
@@ -9197,5 +9268,28 @@ mod tests {
             }
             other => panic!("a walk past a u16 is refused, got {other:?}"),
         }
+    }
+
+    /// A document with a `<parallel>` does not fix its microsteps' sets, so its
+    /// tables carry the general walk and no entry rows (docs/adr/0125).
+    #[test]
+    fn rust_tables_of_a_document_with_a_parallel_carry_the_general_walk() {
+        let model = SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p">
+  <parallel id="p">
+    <state id="a"><transition event="go" target="b"/></state>
+    <state id="b"/>
+  </parallel>
+</scxml>"#,
+                "rust_tables_parallel",
+            )
+            .expect("parse");
+        let bounds = crate::microstep_bounds::MicrostepBounds::of(&model);
+        let tables = rust_tables(&model, &bounds).expect("tables");
+        assert_eq!(tables["row_walk"], false);
+        assert_eq!(tables["walk"], "GENERAL_WALK");
+        assert_eq!(tables["entry_rows"], serde_json::json!([]));
+        assert_eq!(tables["entry_paths"], serde_json::json!([]));
     }
 }
