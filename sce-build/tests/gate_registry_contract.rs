@@ -1638,15 +1638,15 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                 "{changed:?}: unit {name} does not ask for the largest peak of \
                  what it runs"
             );
-            let cores = closure
+            let parallelism = closure
                 .iter()
-                .filter_map(|s| mapping[s.as_str()]["cores"].as_f64())
+                .filter_map(|s| mapping[s.as_str()]["parallelism"].as_f64())
                 .fold(0.0_f64, f64::max);
             assert_eq!(
-                unit["cores"].as_f64(),
-                Some(cores),
-                "{changed:?}: unit {name} does not ask for the most cores of \
-                 what it runs"
+                unit["parallelism"].as_f64(),
+                Some(parallelism),
+                "{changed:?}: unit {name} does not ask for the most parallelism \
+                 of what it runs"
             );
             if mapping[name.as_str()]["cache"] == serde_json::Value::Bool(false) {
                 assert_eq!(
