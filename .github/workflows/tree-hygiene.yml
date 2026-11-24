@@ -115,16 +115,16 @@ jobs:
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust
 
+    # The dependencies' build, not `target` whole. A whole `target` restored
+    # from a prefix and saved again under the next Cargo.lock kept every test
+    # binary of every commit before it: 6.36 GB on 2026-11-24, six tenths of
+    # the repository's 10 GB of Actions cache, so GitHub evicted the C++
+    # lanes' compiler caches and their builds ran cold past their ceiling.
+    # rust-cache drops the workspace's own artefacts before it saves.
     - name: Cache Cargo
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-tree-hygiene-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-tree-hygiene-${{ hashFiles('rust-toolchain.toml') }}-
+        key: ${{ hashFiles('rust-toolchain.toml') }}
 
     # `gate_registry_contract` drives the *staged* citation stage as a
     # subprocess, and that stage refuses — exit 3, "the gate could not run,
