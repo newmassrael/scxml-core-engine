@@ -163,7 +163,14 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # toolchain, the figure was 1118 (CI's reading of 3c4678882d4 too), images of
 # 210053 and 211171; now images of 210011 and 211019, two machines 152 bytes
 # smaller.
-MACHINE_BYTES=1008
+#
+# 1008 -> 862 (2026-11-24, rustc 1.100.0): one cold call for every read of a
+# table row, the entry set counted as it is entered, the entry walk's pushes in
+# one place, one copy of the main loop's pop and event step, and no inbox drain
+# in a bare-metal build that attaches none (the runtime's bounded-inbox
+# feature, docs/adr/0084 as amended). Images of 209803 and 210665; the
+# two-machine image 506 bytes under 3c4678882d4's (211171).
+MACHINE_BYTES=862
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -216,7 +223,13 @@ MACHINE_BYTES=1008
 # numbers its tables are indexed by and the core decides where a run ends
 # (docs/adr/0123). 1110 at its parent (images of 209875 and
 # 210985); now images of 209833 and 210833.
-MACHINE_BYTES_NO_DIAGNOSTICS=1000
+#
+# 1000 -> 854 (2026-11-24, rustc 1.100.0): one cold call for every read of a
+# table row, the entry set counted as it is entered, the entry walk's pushes in
+# one place, one copy of the main loop's pop and event step, and no inbox drain
+# in a bare-metal build that attaches none (the runtime's bounded-inbox
+# feature, docs/adr/0084 as amended). Images of 209625 and 210479.
+MACHINE_BYTES_NO_DIAGNOSTICS=854
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -264,7 +277,13 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1000
 # (docs/adr/0123). 7878 at its parent, over 29 symbols: the
 # end-of-run check and the numbered hooks' callers are paid once where each
 # machine paid for its own conversion.
-CORE_BYTES=8004
+#
+# 8004 -> 7890 (2026-11-24, rustc 1.100.0): one cold call for every read of a
+# table row, the entry set counted as it is entered, the entry walk's pushes in
+# one place, one copy of the main loop's pop and event step, and no inbox drain
+# in a bare-metal build that attaches none (the runtime's bounded-inbox
+# feature, docs/adr/0084 as amended). Over 29 symbols.
+CORE_BYTES=7890
 
 # The same without the report.
 #
@@ -295,7 +314,13 @@ CORE_BYTES=8004
 # 7762 -> 7896 (2026-11-24, rustc 1.100.0): a machine's behaviour hooks take the
 # numbers its tables are indexed by and the core decides where a run ends
 # (docs/adr/0123). 7770 at its parent, over 29 symbols.
-CORE_BYTES_NO_DIAGNOSTICS=7896
+#
+# 7896 -> 7782 (2026-11-24, rustc 1.100.0): one cold call for every read of a
+# table row, the entry set counted as it is entered, the entry walk's pushes in
+# one place, one copy of the main loop's pop and event step, and no inbox drain
+# in a bare-metal build that attaches none (the runtime's bounded-inbox
+# feature, docs/adr/0084 as amended). Over 29 symbols.
+CORE_BYTES_NO_DIAGNOSTICS=7782
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -357,8 +382,14 @@ CORE_BYTES_NO_DIAGNOSTICS=7896
 # 1160 -> 1076 and 5496 -> 5630 over 20 symbols (2026-11-24, rustc 1.100.0): the
 # numbered hooks and the core's end of a run (docs/adr/0123). 1172 and 5504 at
 # its parent (images of 207026 and 208198); now images of 207046 and 208122.
-MACHINE_BYTES_PLAIN=1076
-CORE_BYTES_PLAIN=5630
+#
+# 1076 and 5630 -> 926 and 5584 over 20 symbols (2026-11-24, rustc 1.100.0): one cold call for every read of a
+# table row, the entry set counted as it is entered, the entry walk's pushes in
+# one place, one copy of the main loop's pop and event step, and no inbox drain
+# in a bare-metal build that attaches none (the runtime's bounded-inbox
+# feature, docs/adr/0084 as amended). Images of 206838 and 207764.
+MACHINE_BYTES_PLAIN=926
+CORE_BYTES_PLAIN=5584
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
