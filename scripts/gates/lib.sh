@@ -229,6 +229,63 @@ sce_gate_build() {
     return 1
 }
 
+# ── A gate's build tree is a build cache of the checkout ──
+#
+# Every CMake tree a gate builds in is a directory of the checkout that git
+# ignores (`build`, `build_*`), kept from one run to the next, and tagged as a
+# cache by the Cache Directory Tagging Specification (`CACHEDIR.TAG`, the file
+# cargo writes into `target/`). Two readers depend on the pair:
+#   * the build itself: a tree kept in the checkout slot a build machine reuses
+#     is built incrementally, where a `mktemp -d` tree was configured and built
+#     from nothing on every run. Measured 2026-11-24: `ecma262-lowered-cpp`
+#     spent 6m44s configuring and 7m33s building its one target in a scratch
+#     tree on a hosted runner, and 381.7s on a build machine;
+#   * bx, which runs a check whose key is narrowed to its inputs in a copy of
+#     those inputs and links into it the checkout's build caches, the ignored
+#     directories that carry this tag (bx RFC 0020 5.2, RFC 0026 4.5). An
+#     untagged tree is not linked, so a narrowed unit would build cold.
+# The contents are regenerable by definition, which is what lets a tree whose
+# generator no longer matches be emptied instead of refused (below).
+SCE_GATE_CACHEDIR_SIGNATURE="Signature: 8a477f597d28d172789f06886806bc55"
+sce_gate_build_cache() {
+    local dir="$1"
+    mkdir -p "$dir" || return 1
+    [[ -f "$dir/CACHEDIR.TAG" ]] && return 0
+    printf '%s
+%s
+%s
+' "$SCE_GATE_CACHEDIR_SIGNATURE" \
+        "# A build tree of the scxml-core-engine gates (scripts/gates/lib.sh)." \
+        "# Regenerable; bx links it into the copies narrowed checks run in." \
+        >"$dir/CACHEDIR.TAG"
+}
+
+# Configure `<source>` into the kept build tree `<dir>` with Ninja where it is
+# installed (the platform default otherwise) and the further cmake arguments
+# given. A tree an earlier configure made with the other generator is emptied
+# first: CMake refuses to change a tree's generator ("Does not match the
+# generator used previously"), and the tree is a cache (above). The configure's
+# output goes to `<dir>/sce_gate_configure.log`; the status is cmake's.
+sce_gate_configure_tree() {
+    local source="$1" dir="$2"
+    shift 2
+    local generator=""
+    command -v ninja >/dev/null 2>&1 && generator="Ninja"
+    local cached=""
+    if [[ -f "$dir/CMakeCache.txt" ]]; then
+        cached="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$dir/CMakeCache.txt")"
+        if [[ -n "$generator" && "$cached" != "$generator" ]] \
+                || [[ -z "$generator" && "$cached" == "Ninja" ]]; then
+            sce_gate_step "emptying $dir: configured with '$cached', this run configures with '${generator:-the default generator}'"
+            find "$dir" -mindepth 1 -maxdepth 1 ! -name CACHEDIR.TAG -exec rm -rf {} +
+        fi
+    fi
+    sce_gate_build_cache "$dir" || return 1
+    local args=(-S "$source" -B "$dir")
+    [[ -n "$generator" ]] && args+=(-G "$generator")
+    cmake "${args[@]}" "$@" >"$dir/sce_gate_configure.log" 2>&1
+}
+
 # Register a cleanup command to run when the gate exits, for any reason.
 # Gates that start a server or a scratch directory use this instead of
 # their own `trap`, because a second `trap ... EXIT` silently replaces the
@@ -445,6 +502,8 @@ sce_gate_with_http_fixture_server() {
 # value — a gate that judges the empty string is worse than one that stops.
 sce_main_build_dir() {
     SCE_MAIN_BUILD_DIR="${SCE_W3C_BUILD_DIR:-build}"
+    sce_gate_build_cache "$SCE_MAIN_BUILD_DIR" \
+        || sce_gate_fail "could not make $SCE_MAIN_BUILD_DIR, the main tree's build cache"
 
     # The generator this tree is built with, resolved before anything asks
     # CMake for anything.
@@ -683,6 +742,7 @@ sce_gate_prepare_wasm_rust() {
 sce_gate_configure_wasm_build_dir() {
     local dir="$1" threads="$2"
     sce_gate_prepare_wasm_rust "$threads" || return 1
+    sce_gate_build_cache "$dir" || return 1
     local GENERATOR=()
     command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
     emcmake cmake -S . -B "$dir" -DCMAKE_BUILD_TYPE=Release \

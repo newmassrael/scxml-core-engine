@@ -35,7 +35,7 @@
 # WHY A TREE OF ITS OWN: `SCE_SCRIPT_ENGINE` is a CMake cache option and the
 # definition it sets is PUBLIC on `sce_scripting`, so the selection is a property
 # of the whole tree. A developer's `build/` is the quickjs one and must stay
-# that way; this configures a throwaway `build_lua` beside it. Measured
+# that way; this configures `build_lua` beside it, kept between runs. Measured
 # 2026-08-29 on the build machine: 7s to configure, ~50s to build the one
 # target from cold, under 1s to run.
 
@@ -56,19 +56,14 @@ CODEGEN="$(sce_gate_codegen)"
 command -v python3 >/dev/null 2>&1 \
     || sce_gate_fail "python3 is not on PATH; tools/generate_lowered_ecma262_fixture.py expands the fixture this gate compiles, so there is nothing to measure without it"
 
-# Named `build_lua`, not a bare mktemp name: the top-level CMakeLists refuses
-# any build directory whose leaf is not `build` or `build_*`, so the scratch
-# tree has to satisfy that rule too.
+# The tree `.gitignore` names for this selection (`build_lua`; the top-level
+# CMakeLists refuses a build directory whose leaf is not `build` or `build_*`),
+# kept and tagged as a cache (lib.sh, "A gate's build tree is a build cache"),
+# so a run after the first builds what changed and not the target's whole
+# closure. The scratch directory holds this run's logs alone.
+BUILD_DIR="build_lua"
 SCRATCH="$(mktemp -d)"
-BUILD_DIR="$SCRATCH/build_lua"
 sce_gate_on_exit "rm -rf '$SCRATCH'"
-
-GENERATOR=()
-if command -v ninja >/dev/null 2>&1; then
-    GENERATOR=(-G Ninja)
-else
-    sce_gate_step "ninja not installed; using the default generator (same build type and selection)"
-fi
 
 # `BUILD_TESTS` stays ON — the target under test is a test target — and only
 # that one target is built, so the rest of the suite is registered and not
@@ -80,14 +75,12 @@ fi
 # for. The test source additionally refuses to compile without
 # `SCE_SCRIPT_ENGINE_LUA`, so the two locks are independent.
 sce_gate_step "configuring a SCE_SCRIPT_ENGINE=lua tree"
-cmake -S "$SCE_REPO_ROOT" -B "$BUILD_DIR" \
-      ${GENERATOR+"${GENERATOR[@]}"} \
+sce_gate_configure_tree "$SCE_REPO_ROOT" "$BUILD_DIR" \
       -DCMAKE_BUILD_TYPE=Debug \
       -DSCE_SCRIPT_ENGINE=lua \
       -DBUILD_EXAMPLES=OFF \
       -DSCE_CODEGEN="$CODEGEN" \
-      >"$SCRATCH/configure.log" 2>&1 \
-    || { tail -40 "$SCRATCH/configure.log" >&2; sce_gate_fail "SCE_SCRIPT_ENGINE=lua configure"; }
+    || { tail -40 "$BUILD_DIR/sce_gate_configure.log" >&2; sce_gate_fail "SCE_SCRIPT_ENGINE=lua configure"; }
 
 # The configure is where the selection is decided, so it is read back from the
 # cache rather than assumed from the argument. A cache restored by CI could hold
@@ -97,10 +90,11 @@ selected="$(sed -n 's/^SCE_SCRIPT_ENGINE:STRING=//p' "$BUILD_DIR/CMakeCache.txt"
 [[ "$selected" == "lua" ]] \
     || sce_gate_fail "the configured tree selected SCE_SCRIPT_ENGINE='$selected', not 'lua' — this gate would be measuring the engine it exists to bypass"
 
-# Both fixture flavours are expanded at configure time; if either is missing the
-# target would still build against a stale copy from an earlier run, which in a
-# throwaway tree means it would not build at all — but say so here, where the
-# cause is legible.
+# The fixture flavours are expanded at configure time, and a generator that
+# fails stops the configure (tests/CMakeLists.txt). A missing one means the
+# configure did not reach the expansion at all; in a fresh tree the target
+# would then not build, and in a kept tree it could build against the copy an
+# earlier run left, so say so here, where the cause is legible.
 for stem in ecma262_lowered ecma262_source ecma262_default; do
     [[ -f "$BUILD_DIR/tests/lowered_ecma262/$stem.scxml" ]] \
         || sce_gate_fail "the configure wrote no $stem.scxml — tools/generate_lowered_ecma262_fixture.py did not run"
