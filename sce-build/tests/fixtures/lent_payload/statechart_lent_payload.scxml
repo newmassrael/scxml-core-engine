@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  docs/adr/0124: the data of an event, owned by a queue or lent by a host, read
+  the same way and held to one contract.
+
+  - `note.received` carries a text of at most eight bytes, which a guard reads,
+    and `frame.received` a byte string of at most eight, whose tag `seen` holds.
+    Either past its bound is refused whole at the door on either route, and the
+    `error.execution` taken in its place is counted in `refusals` (D2).
+  - `tally.received` carries a record of a number, which the content hands
+    whole to an imported algorithm, `AmountOf`, from the queue and lent alike:
+    a payload read through its parts crosses a call as the record it is.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="waiting"
+       datamodel="sce-static"
+       name="statechart_lent_payload">
+  <sce:import kind="event-schema" src="schema_note.scxml" as="Note"/>
+  <sce:import kind="event-schema" src="schema_frame.scxml" as="Frame"/>
+  <sce:import kind="event-schema" src="schema_tally.scxml" as="Tally"/>
+  <sce:import kind="algorithm" src="algorithm_tally_amount.scxml" as="AmountOf"/>
+  <datamodel>
+    <data id="seen" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="waiting">
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+    <transition event="note.received" cond="_event.data.note === 'sentinel'" target="noted"/>
+    <transition event="frame.received" type="internal">
+      <assign location="seen" expr="_event.data.tag"/>
+    </transition>
+    <transition event="tally.received" type="internal">
+      <assign location="total" expr="AmountOf(_event.data)"/>
+    </transition>
+  </state>
+  <state id="noted"/>
+</scxml>

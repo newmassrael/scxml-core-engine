@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A note of at most eight bytes: the text whose bound docs/adr/0124, D2 holds
+  alike whether a wire carries it or a host lends it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_note"
+       sce:event-name="note.received">
+  <datamodel>
+    <data id="note" sce:type="string[8]" sce:direction="in"/>
+  </datamodel>
+</scxml>
