@@ -3891,3 +3891,23 @@ regenerates every Rust machine it generates.
   whatever a policy's entry hook does, and `Engine::terminal_state` and `is_in_final_state` answer as before. A
   hand-written `helpers::microstep::Behaviour` needs nothing; `helpers::microstep::Entered` has a new field,
   `ended_in`; only the runtime builds one, and code that reads its other fields is unchanged.
+
+## A shift is its exact result reduced to its width for every count, and a count below 0 fails
+
+Landing: the commits that add this section. The committed generated trees and the goldens of every backend whose
+expressions shift by a count that is not a literal below the width change. A consumer regenerates its forge code.
+
+- **A shift by a count at or past the width has a value** (SCE_FORGE.md §3.4.1, "The width of a shift"): `x << n` is
+  0, `x >> n` is 0 or -1, `x >>> n` is 0. A Rust consumer's generated shift whose count is not known below the width
+  is `<type>::checked_shl(x, n).unwrap_or(0)` and its kin, where it was the operator, which panicked in a debug
+  build; a C or C++ one calls the forge runtime's `sce_forge_wrapping_shl_<width>` or `SCE::Forge::Wrapping::shl`
+  (both in `sce/forge/algorithm.h`, which such a file now includes), a Kotlin one `SceWrapping.shl`, a Python one
+  `sce_algorithm.<width>.wrapping_shl` or `wrapping_ushr`. Each new name is in the forge runtime of its language.
+- **A Rust algorithm that declares no `may-fail` prints a shift by a count that is not a literal, and that the analysis
+  proved below the width, through `sce_forge_runtime::algorithm::proven::shl` or `shr`** (`proven::shl::<i32, _>(s,
+  n)`, the count at its own type), so the crate may deny `clippy::arithmetic_side_effects` with no `allow` for it.
+- **An algorithm that declares no `may-fail` and shifts by a count its analysis cannot prove at least 0 is refused**
+  (`algorithm/undeclared-integer-failure`, "`x << k` can shift by a count below 0 (int32)"): guard the count
+  (`k >= 0`), give it an unsigned type, or declare `may-fail`. A `may-fail` one fails such a count `out-of-range`
+  through the runtime's new checked shifts (Rust `sce_forge_runtime::algorithm::shl`, `shr`, `ushr`), and a
+  `<sce:const>` fold that meets one refuses the build (`algorithm/const-integer-failure`).
