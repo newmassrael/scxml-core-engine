@@ -722,7 +722,15 @@ sce_gate_writable_em_cache() {
         if [[ -d "$sdk_cache" ]]; then
             cp -a "$sdk_cache/." "$staging/" 2>/dev/null || true
         fi
+        # `cp -a` keeps the store's modes, which deny writing: the copy is
+        # this account's to write, which is the whole point of it.
+        chmod -R u+w "$staging" 2>/dev/null || true
         mv -T "$staging" "$dest" 2>/dev/null || rm -rf "$staging"
+    fi
+    # A cache an earlier version of this function seeded kept the store's
+    # read-only modes (measured 2026-11-24 on the fleet, `dr-xr-xr-x`).
+    if [[ ! -w "$dest" ]]; then
+        chmod -R u+w "$dest" 2>/dev/null || true
     fi
     export EM_CACHE="$dest"
 }
