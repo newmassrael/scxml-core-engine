@@ -1288,6 +1288,11 @@ impl<T> SliceVec<'_, T> {
 /// run in exactly the order the calls would have: that order is not incidental,
 /// since the regions of a `<parallel>` are judged against what the entry set
 /// holds when each is reached.
+///
+/// A step owes at most two more: the one that resumes it, and the call it makes,
+/// which runs first and so goes on the stack last. Each step says which of the
+/// two it owes and the stack is pushed in one place, so the loop carries one
+/// push of each kind rather than one at every step that makes a call.
 fn walk_entry(
     tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
@@ -1297,7 +1302,7 @@ fn walk_entry(
 ) {
     stack.push(first);
     while let Some(step) = stack.pop() {
-        match step {
+        let (resume, call): (Option<WalkStep>, Option<WalkStep>) = match step {
             WalkStep::Descendants(target) => match target.named() {
                 Named::State(state) => {
                     entry.states_to_enter.insert(state);
@@ -1311,17 +1316,23 @@ fn walk_entry(
                             // (§scxml-3.3), possibly several and possibly deep
                             // (§scxml-3.6).
                             entry.states_for_default_entry.insert(state);
-                            stack.push(WalkStep::Listed {
-                                source: Listed::Initial(state),
-                                cursor: 0,
-                                ancestors: false,
-                            });
+                            (
+                                None,
+                                Some(WalkStep::Listed {
+                                    source: Listed::Initial(state),
+                                    cursor: 0,
+                                    ancestors: false,
+                                }),
+                            )
                         }
-                        StateKind::Parallel => stack.push(WalkStep::Regions {
-                            parallel: state,
-                            next: StateId(state.0 + 1),
-                        }),
-                        StateKind::Atomic | StateKind::Final => {}
+                        StateKind::Parallel => (
+                            None,
+                            Some(WalkStep::Regions {
+                                parallel: state,
+                                next: StateId(state.0 + 1),
+                            }),
+                        ),
+                        StateKind::Atomic | StateKind::Final => (None, None),
                     }
                 }
                 // §scxml-3.10: a transition to a history behaves as a transition
@@ -1330,11 +1341,14 @@ fn walk_entry(
                 Named::History(history) => {
                     let source =
                         (history_procedures(tables).descend)(tables, store, history, entry);
-                    stack.push(WalkStep::Listed {
-                        source,
-                        cursor: 0,
-                        ancestors: false,
-                    });
+                    (
+                        None,
+                        Some(WalkStep::Listed {
+                            source,
+                            cursor: 0,
+                            ancestors: false,
+                        }),
+                    )
                 }
             },
             WalkStep::Listed {
@@ -1344,58 +1358,75 @@ fn walk_entry(
             } => {
                 if let Some((target, cursor)) = listed_target(tables, store, source, cursor) {
                     // The rest of the list resumes once this target is done.
-                    stack.push(WalkStep::Listed {
-                        source,
-                        cursor,
-                        ancestors,
-                    });
-                    stack.push(if ancestors {
-                        WalkStep::Ancestors(target, Some(listed_stop(tables, source)))
-                    } else {
-                        WalkStep::Descendants(target)
-                    });
+                    (
+                        Some(WalkStep::Listed {
+                            source,
+                            cursor,
+                            ancestors,
+                        }),
+                        Some(if ancestors {
+                            WalkStep::Ancestors(target, Some(listed_stop(tables, source)))
+                        } else {
+                            WalkStep::Descendants(target)
+                        }),
+                    )
                 } else if !ancestors {
                     // Every descendant is in; now the ancestors of each.
-                    stack.push(WalkStep::Listed {
-                        source,
-                        cursor: 0,
-                        ancestors: true,
-                    });
+                    (
+                        None,
+                        Some(WalkStep::Listed {
+                            source,
+                            cursor: 0,
+                            ancestors: true,
+                        }),
+                    )
+                } else {
+                    (None, None)
                 }
             }
-            WalkStep::Ancestors(target, stop) => {
-                if let Some(first) = first_proper_ancestor(tables, target, stop) {
-                    stack.push(WalkStep::AncestorsFrom { from: first, stop });
-                }
-            }
+            WalkStep::Ancestors(target, stop) => (
+                None,
+                first_proper_ancestor(tables, target, stop)
+                    .map(|first| WalkStep::AncestorsFrom { from: first, stop }),
+            ),
             WalkStep::AncestorsFrom { from, stop } => {
                 // §scxml-D-addAncestorStatesToEnter: an ancestor is entered
                 // WITHOUT its default initial state — the set already holds the
                 // descendant it leads to. A `<parallel>` still gives its other
                 // regions their defaults, because all of them are entered.
                 entry.states_to_enter.insert(from);
-                if let Some(next) = tables.parent(from).filter(|&next| Some(next) != stop) {
-                    stack.push(WalkStep::AncestorsFrom { from: next, stop });
-                }
-                if tables.is_parallel(from) {
+                (
+                    tables
+                        .parent(from)
+                        .filter(|&next| Some(next) != stop)
+                        .map(|next| WalkStep::AncestorsFrom { from: next, stop }),
                     // Above the step that resumes the walk up, so the regions
                     // are done before the next ancestor is entered.
-                    stack.push(WalkStep::Regions {
+                    tables.is_parallel(from).then_some(WalkStep::Regions {
                         parallel: from,
                         next: StateId(from.0 + 1),
-                    });
-                }
+                    }),
+                )
             }
-            WalkStep::Regions { parallel, next } => (parallel_procedures(tables).regions)(
-                tables,
-                parallel,
-                next,
-                stack,
-                entry.states_to_enter.as_ref(),
-            ),
+            WalkStep::Regions { parallel, next } => {
+                (parallel_procedures(tables).regions)(
+                    tables,
+                    parallel,
+                    next,
+                    stack,
+                    entry.states_to_enter.as_ref(),
+                );
+                (None, None)
+            }
             // The walk puts down steps of its own kind only; see
             // `effective_target_states_on` for why there is no message.
             _ => unreachable!(),
+        };
+        if let Some(resume) = resume {
+            stack.push(resume);
+        }
+        if let Some(call) = call {
+            stack.push(call);
         }
     }
 }
