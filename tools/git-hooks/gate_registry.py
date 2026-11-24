@@ -5561,6 +5561,67 @@ def gradle_cache_failures(repo_root: Path) -> list[str]:
     return failures
 
 
+KEEP_ONE_CACHE_STEP = re.compile(r"^\s*(?:-\s+)?uses:\s*(\./\.github/actions/keep-one-cache)\s*$")
+PER_RUN_KEY = re.compile(r"\$\{\{\s*github\.(?:sha|run_id)\s*\}\}")
+
+
+def per_run_cache_failures(workflows: dict[str, list[str]]) -> tuple[list[str], int]:
+    """Caches saved under a key new on every run that nothing keeps to one.
+
+    A key that carries the commit or the run (a compiler cache's) saves a new
+    entry on every run; the entries before it stay until GitHub evicts the least
+    recently used caches of the whole repository to stay within its 10 GB. So a
+    workflow that saves one runs `./.github/actions/keep-one-cache` with the key's
+    family (the key up to the commit), and no family is the beginning of
+    another's, or keeping one of it would delete the other lane's.
+    """
+    failures: list[str] = []
+    families: dict[str, str] = {}
+    found = 0
+    for rel, lines in sorted(workflows.items()):
+        kept = {value for _n, _a, step in workflow_steps(lines, KEEP_ONE_CACHE_STEP)
+                for value in step_values(step, "prefix")}
+        for number, _action, step in workflow_steps(lines, CACHE_STEP):
+            for key in step_values(step, "key"):
+                match = PER_RUN_KEY.search(key)
+                if not match:
+                    continue
+                found += 1
+                family = key[:match.start()]
+                families.setdefault(family, f"{rel}:{number}")
+                if family not in kept:
+                    failures.append(
+                        f"{rel}:{number} saves a cache under {key!r}, new on every run, and "
+                        f"the workflow keeps no one of its family {family!r} "
+                        f"(./.github/actions/keep-one-cache): each run's entry would stay "
+                        f"until GitHub evicts other lanes' caches for room")
+    for family, place in sorted(families.items()):
+        for other, other_place in sorted(families.items()):
+            if other != family and other.startswith(family):
+                failures.append(
+                    f"the cache family {family!r} ({place}) begins {other!r} "
+                    f"({other_place}): keeping one of the first deletes the second's")
+    return failures, found
+
+
+def per_run_cache_sweep(repo_root: Path) -> list[str]:
+    """`per_run_cache_failures` over every workflow in the tree."""
+    workflows: dict[str, list[str]] = {}
+    for rel in tracked_paths(repo_root, ".github"):
+        if Path(rel).suffix not in (".yml", ".yaml"):
+            continue
+        try:
+            workflows[rel] = (repo_root / rel).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+    failures, found = per_run_cache_failures(workflows)
+    if found < 5:
+        failures.append(
+            f"found {found} cache step(s) keyed by the run in .github; a broken step "
+            f"parse passes by finding none")
+    return failures
+
+
 def rust_toolchain_file(repo_root: Path) -> dict:
     """`channel`, `components` and `targets` of rust-toolchain.toml.
 
@@ -8858,6 +8919,37 @@ def self_test(repo_root: Path) -> int:
                         f"of their own were refused: {apart!r}")
     failures.extend(f"every-lane-keys-its-own-gradle-cache: {f}"
                     for f in gradle_cache_failures(repo_root))
+
+    # a-cache-keyed-by-the-run-is-kept-to-one. A cache saved under a key new on
+    # every run is kept to one entry of its family, and no family begins another
+    # (`per_run_cache_failures`). The fixture holds the reader to each refusal.
+    cases += 1
+    def per_run_job(key, prefix=None):
+        lines = ["    - name: Restore ccache",
+                 "      uses: actions/cache/restore@" + "e" * 40,
+                 "      with:",
+                 "        path: ~/.ccache",
+                 f"        key: {key}"]
+        if prefix is not None:
+            lines += ["    - name: Keep",
+                      "      uses: ./.github/actions/keep-one-cache",
+                      "      with:",
+                      f"        prefix: {prefix}",
+                      "        keep: x"]
+        return lines
+    sha = "${{ github.sha }}"
+    for label, workflows, want in (
+            ("kept", {"a.yml": per_run_job(f"L-ccache-a-{sha}", "L-ccache-a-")}, 0),
+            ("not kept", {"a.yml": per_run_job(f"L-ccache-a-{sha}")}, 1),
+            ("a family that begins another",
+             {"a.yml": per_run_job(f"L-ccache-{sha}", "L-ccache-"),
+              "b.yml": per_run_job(f"L-ccache-b-{sha}", "L-ccache-b-")}, 1)):
+        got, _ = per_run_cache_failures(workflows)
+        if len(got) != want:
+            failures.append(f"a-cache-keyed-by-the-run-is-kept-to-one: {label} gave "
+                            f"{len(got)} refusal(s), not {want}: {got!r}")
+    failures.extend(f"a-cache-keyed-by-the-run-is-kept-to-one: {f}"
+                    for f in per_run_cache_sweep(repo_root))
 
     # every-action-is-named-by-its-commit. No workflow or action runs an
     # action from outside the repository by a tag or a branch (see "The

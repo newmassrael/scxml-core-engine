@@ -1,0 +1,42 @@
+name: Keep one cache of a family
+description: >-
+  Delete every cache of this ref whose key begins with `prefix`, except `keep`.
+  A cache saved under a key that is new on every run (a compiler cache keyed by
+  the commit) otherwise leaves one entry per run in the repository's 10 GB, and
+  GitHub makes room by evicting the least recently used caches of every lane
+  (2026-11-24: the C++ lanes' compiler caches, whose builds then ran cold past
+  their ceiling). Run it after the save succeeded, so the family is never empty;
+  the job needs `actions: write`.
+inputs:
+  prefix:
+    description: The beginning every key of the family shares.
+    required: true
+  keep:
+    description: The key the job just saved, which is kept.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Delete the family's other caches
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PREFIX: ${{ inputs.prefix }}
+        KEEP: ${{ inputs.keep }}
+      run: |
+        set -euo pipefail
+        [[ -n "$PREFIX" && -n "$KEEP" && "$KEEP" == "$PREFIX"* ]] || {
+          echo "::error title=keep-one-cache::the key to keep ($KEEP) is not of the family $PREFIX"
+          exit 1
+        }
+        ids="$(gh api --paginate \
+          "repos/$GITHUB_REPOSITORY/actions/caches?key=$PREFIX&ref=$GITHUB_REF&per_page=100" \
+          --jq '.actions_caches[] | select(.key != env.KEEP) | "\(.id) \(.key)"')"
+        while read -r id key; do
+          [[ -n "$id" ]] || continue
+          if gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" >/dev/null; then
+            echo "deleted $key"
+          else
+            echo "::warning title=keep-one-cache::could not delete $key"
+          fi
+        done <<<"$ids"
