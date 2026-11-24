@@ -38,8 +38,12 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-command -v node >/dev/null 2>&1 \
-    || sce_gate_cannot_run "the layout measurement runs the visualizer under node, and node was not found"
+# The measurements run the visualizer module `visualizer-wasm` built, so they
+# run it on the node its SDK ships (`sce_gate_emscripten_node` says why).
+sce_gate_emscripten_node \
+    || sce_gate_cannot_run "the layout measurement runs the visualizer on the node its emscripten SDK ships, and no active SDK names one"
+NODE="$SCE_GATE_EMSCRIPTEN_NODE"
+sce_gate_step "node: $("$NODE" --version) ($NODE)"
 
 [[ -f web/visualizer/vendor/elkjs/elk.bundled.js ]] \
     || sce_gate_cannot_run "the vendored layout engine is missing; nothing can be laid out"
@@ -83,7 +87,7 @@ done
 
 printf 'visualizer-layout: %d fixture(s)\n' "${#FIXTURES[@]}"
 
-node web/visualizer/measure/census.js "${FIXTURES[@]}" \
+"$NODE" web/visualizer/measure/census.js "${FIXTURES[@]}" \
     || sce_gate_fail "the layout census reported a broken drawing; its output above names which"
 
 # The interaction half. Everything above is one frame — the layout as first
@@ -91,14 +95,14 @@ node web/visualizer/measure/census.js "${FIXTURES[@]}" \
 # defect in the header came from. The first fixture is the nested `<parallel>`
 # one; a flat document exercises neither the collapse redirect nor container
 # sizing, so it is taken from the list rather than chosen here.
-node web/visualizer/measure/interaction.js "${FIXTURES[0]}" \
+"$NODE" web/visualizer/measure/interaction.js "${FIXTURES[0]}" \
     || sce_gate_fail "the drawing did not survive a drag or a collapse; its output above names which"
 
 # The marks half: an author's `sce:unresolved` / `sce:assumed` and a
 # transition's `sce:req` must reach the element drawn for them. A mark
 # that is dropped does not fail to draw — the element is drawn plain, which
 # reads as "nothing open here" — so it is asserted rather than looked at.
-node web/visualizer/measure/marks.js \
+"$NODE" web/visualizer/measure/marks.js \
     || sce_gate_fail "a mark the document carries did not reach the element drawn for it; its output above names which"
 
 # The stress half: the same gestures, but MANY of them, in a seeded random
@@ -130,7 +134,7 @@ node web/visualizer/measure/marks.js \
 # A seed that finds something belongs here, as another pinned run.
 SCE_STRESS_SEED="${SCE_STRESS_SEED:-20260918}" \
 SCE_STRESS_OPS="${SCE_STRESS_OPS:-25}" \
-    node web/visualizer/measure/stress.js \
+    "$NODE" web/visualizer/measure/stress.js \
     || sce_gate_fail "the drawing did not survive a run of random gestures; its output above names the seed to replay"
 
 # The structure half. The GUI draws what `sce_build::gui_structure` builds from
@@ -143,7 +147,7 @@ STRUCTURE_LIST="web/visualizer/measure/structure-fixtures.txt"
 mapfile -t STRUCTURES < <(grep -vE '^\s*(#|$)' "$STRUCTURE_LIST")
 [[ ${#STRUCTURES[@]} -gt 0 ]] \
     || sce_gate_fail "$STRUCTURE_LIST names no document; an empty comparison is not a clean one"
-node web/visualizer/measure/structure-parity.js "${STRUCTURES[@]}" \
+"$NODE" web/visualizer/measure/structure-parity.js "${STRUCTURES[@]}" \
     || sce_gate_fail "the Rust structure and the C++ engine's disagree beyond what is declared; its output above names where"
 
 # The scenario half. A `sce-static` statechart reaches the browser's Interpreter
@@ -159,7 +163,7 @@ node web/visualizer/measure/structure-parity.js "${STRUCTURES[@]}" \
 # left from an earlier build failed five of the 31 scenarios it replays (measured
 # 2026-10-13, an engine 64 commits behind), for the engine's age and not for the
 # lowering; the lane builds the engine in the step before this gate.
-node web/visualizer/measure/scenario-replay.js \
+"$NODE" web/visualizer/measure/scenario-replay.js \
     || sce_gate_fail "the browser's Interpreter disagrees with the scenarios every backend replays; its output above names which"
 
 printf 'visualizer-layout: OK\n'

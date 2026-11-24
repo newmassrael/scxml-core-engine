@@ -735,6 +735,27 @@ sce_gate_writable_em_cache() {
     export EM_CACHE="$dest"
 }
 
+# The node an emscripten module runs on: the one the SDK names (`em-config
+# NODE_JS`), which its toolchain file also hands ctest as the emulator that
+# runs every test program. Not the `node` on PATH: a module is generated for
+# the runtime its SDK ships, and another release runs it with other limits.
+# Measured 2026-11-24: the browser Interpreter's replay of `static_union`
+# passed on hosted runners, whose PATH held the SDK's node 24.19.0, and ended
+# "Maximum call stack size exceeded" on every build machine, whose PATH held
+# the system's node 18.19.1. Sets SCE_GATE_EMSCRIPTEN_NODE and returns 0, or
+# returns 1 when no SDK is active or it names no node it ships.
+sce_gate_emscripten_node() {
+    sce_gate_activate_emsdk
+    command -v em-config >/dev/null 2>&1 || return 1
+    local named
+    named="$(em-config NODE_JS 2>/dev/null)" || return 1
+    # A config may hold a list (the binary and its arguments): its first word.
+    named="${named//[\[\]\'\",]/ }"
+    read -r named _ <<<"$named"
+    [[ -n "$named" && -x "$named" ]] || return 1
+    SCE_GATE_EMSCRIPTEN_NODE="$named"
+}
+
 # The two emscripten build trees, and the one configure every gate that builds
 # in one of them runs.
 #
