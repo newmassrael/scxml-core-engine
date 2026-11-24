@@ -343,6 +343,7 @@ fn rust_template_leaves_the_microstep_to_the_runtime() {
             "transition: ::sce_rust_runtime::TransitionId,",
             "fn execute_exit_actions(\n        &mut self,\n        \
              state: ::sce_rust_runtime::StateId,\n        \
+             sce_event_data: Self::EventData<'_>,\n        \
              engine: &mut sce_rust_runtime::Engine<Self>,\n    ) {",
         ] {
             assert!(
@@ -433,7 +434,8 @@ fn rust_template_hooks_match_on_the_numbers_the_tables_are_indexed_by() {
             "fn execute_entry_actions(&mut self, state: ::sce_rust_runtime::StateId,",
             "fn execute_history_default_content(&mut self, history: ::sce_rust_runtime::HistoryId,",
             "        state: ::sce_rust_runtime::StateId,\n        \
-             event: ::sce_rust_runtime::EventId,\n",
+             event: ::sce_rust_runtime::EventId,\n        \
+             sce_event_data: Self::EventData<'_>,\n",
             // And match on them.
             "HookNumbersState::ID_S0 => {",
             "HookNumbersHistory::ID_H => {",
@@ -1447,7 +1449,7 @@ fn a_typed_payload_door_with_an_error_handler_keeps_an_internal_queue_of_no_slot
         "the document takes error.execution:\n{code}"
     );
     assert!(
-        code.contains("matches!(&self.pending_payload"),
+        code.contains("matches!(sce_event_data, StatechartLiftedEventData::"),
         "the payload guard is lowered natively:\n{code}"
     );
     assert!(

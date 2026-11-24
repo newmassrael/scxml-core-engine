@@ -5820,6 +5820,10 @@ pub fn apply_native_guard_writes(
 pub struct RustEventPayload {
     pub defs: String,
     pub type_name: String,
+    /// The `type EventData<'e>` associated-type spelling (docs/adr/0124): the
+    /// machine's `<Machine>EventData`, with its lifetime `'e` when a variant
+    /// borrows, or `()` when no typed channel is active.
+    pub data_type: String,
     pub guard_writes: Vec<NativeGuardWrite>,
     /// The per-event typed inject wrappers — one `Engine<Policy>` method
     /// per guarded event (`raise_<event>`), each binding the event name
@@ -5852,14 +5856,45 @@ pub(crate) fn rust_payload_struct(machine_name: &str, event: &str) -> String {
     )
 }
 
+/// The machine `machine_name`'s `StatePolicy::EventData`: the data of the event
+/// being processed as every reader reads it (docs/adr/0124).
+pub(crate) fn rust_event_data_enum(machine_name: &str) -> String {
+    format!("{machine_name}EventData")
+}
+
+/// The parts `event`'s payload is read through on the Rust machine
+/// `machine_name` (docs/adr/0124): one member per field of its schema, a text
+/// or a byte string borrowed.
+pub(crate) fn rust_data_struct(machine_name: &str, event: &str) -> String {
+    format!(
+        "{machine_name}{}Ref",
+        filters::to_event_variant(event.to_string())
+    )
+}
+
+/// The type a reader of the Rust machine `machine_name` holds `event`'s payload
+/// as when its schema is `schema`, a schema of entries (docs/adr/0124): its parts,
+/// with the lifetime they borrow for when a field is a text or a byte string.
+pub(crate) fn rust_data_type(machine_name: &str, event: &str, schema: &EntrySchema) -> String {
+    let parts = rust_data_struct(machine_name, event);
+    let borrows = schema
+        .fields
+        .iter()
+        .any(|f| matches!(f.sce_type.present_type(), SceType::String | SceType::Bytes));
+    if borrows {
+        format!("{parts}<'_>")
+    } else {
+        parts
+    }
+}
+
 /// Build the [`RustEventPayload`] for `model`.
 ///
 /// The typed-payload channel is activated only when at least one
 /// transition guard actually lowers to a native typed-payload comparison
 /// (see [`crate::forge::event_schema_check::lower_typed_guard`]). This
-/// guarantees the emitted `pending_payload` field, the
-/// `populate_event_payload` override, and every enum variant have a
-/// consumer (no dead code), and that a statechart which imports schemas
+/// guarantees the emitted `<Machine>EventData` (docs/adr/0124) and every
+/// enum variant have a consumer (no dead code), and that a statechart which imports schemas
 /// but reads no typed guard keeps the schemaless `type Payload = ()`
 /// baseline. The set of emitted enum variants is exactly the set of
 /// events that own a lowered guard.
@@ -5880,11 +5915,15 @@ pub fn build_rust_event_payload(
     let schemaless = || RustEventPayload {
         defs: String::new(),
         type_name: "()".to_string(),
+        data_type: "()".to_string(),
         guard_writes: Vec::new(),
         entries: String::new(),
         lift: String::new(),
     };
     let enum_name = format!("{machine_name}Payload");
+    // docs/adr/0124: the data of the event being processed as every reader
+    // reads it, one variant per payload event, each borrowing its payload.
+    let data_enum = rust_event_data_enum(machine_name);
 
     // Lower every typed-access guard first; the set of events owning a
     // lowered guard is exactly the set of enum variants emitted below, so
@@ -5914,9 +5953,7 @@ pub fn build_rust_event_payload(
         guard_writes.push(NativeGuardWrite {
             state_id: g.state_id,
             transition_index: g.transition_index,
-            guard: format!(
-                "matches!(&self.pending_payload, {enum_name}::{variant}(ev) if {inner})"
-            ),
+            guard: format!("matches!(sce_event_data, {data_enum}::{variant}(ev) if {inner})"),
         });
         guarded_events.insert(g.event);
     }
@@ -5950,6 +5987,16 @@ pub fn build_rust_event_payload(
     let mut variant_lines = String::new();
     let mut entry_fns = String::new();
     let mut trait_methods = String::new();
+    // docs/adr/0124: the variants of `<Machine>EventData`, the arms that read
+    // an owned payload as one, and whether any variant borrows.
+    let mut data_variant_lines = String::new();
+    let mut data_arms = String::new();
+    let mut data_borrows = false;
+    // A document whose own engine or children read `_event.data` from the
+    // wire keep their own copy of it (a script engine binds it, an
+    // autoforwarded child is handed it), so a lent event writes it there too.
+    let wire_read =
+        !no_std && (model.needs_script_engine || model.invokes.iter().any(|i| i.autoforward()));
     // The `lift_event_payload` match arms — one per payload event, read out of
     // `EventMetadata.data` when no typed payload rode with the event. Empty
     // under no_std, which has no such wire.
@@ -5990,10 +6037,18 @@ pub fn build_rust_event_payload(
             field_lines,
             lift_fields,
             data,
+            lend_data,
+            read,
             defaults,
             derives,
         } = match entry_schemas.get(event) {
-            Some(schema) => rust_entry_payload(schema, &l, static_enums),
+            Some(schema) => rust_entry_payload(
+                schema,
+                &l,
+                static_enums,
+                &rust_data_struct(machine_name, event),
+                &struct_name,
+            ),
             None => rust_composed_payload(model, machine_name, event, static_enums),
         };
         // The inject seam fills both carriers under std: the typed payload a
@@ -6038,7 +6093,7 @@ data,\n                    \"{}\",\n                    \"{}\",\n               
             lift_arms.push_str(&format!(
                 "            {machine_name}Event::{variant} => {{\n                \
 {opened}let fields = ::sce_rust_runtime::event_payload::PayloadFields::{decode}?;\n                \
-self.pending_payload = {enum_name}::{variant}({struct_name} {{\n{lift_fields}                \
+*payload = {enum_name}::{variant}({struct_name} {{\n{lift_fields}                \
 }});\n            }}\n"
             ));
         }
@@ -6063,13 +6118,82 @@ self.raise_external_typed_with_data(\n            {machine_name}Event::{variant}
             "#[derive({derives})]\npub struct {struct_name} {{\n{field_lines}}}\n\n"
         ));
         variant_lines.push_str(&format!("    {variant}({struct_name}),\n"));
+        // docs/adr/0124: how a reader reads this event's data, owned or lent
+        // alike. A schema of entries is read through its parts, borrowed for
+        // `'e`; one that holds a composition through its record, borrowed.
+        let (lent_type, held_type, arm) = match &read {
+            RustRead::Parts { name, def, borrows } => {
+                structs.push_str(def);
+                data_borrows |= *borrows;
+                let (lent, held) = if *borrows {
+                    (format!("{name}<'_>"), format!("{name}<'e>"))
+                } else {
+                    (name.clone(), name.clone())
+                };
+                (lent, held, "payload.data()")
+            }
+            RustRead::Record => {
+                data_borrows = true;
+                (
+                    format!("&{struct_name}"),
+                    format!("&'e {struct_name}"),
+                    "payload",
+                )
+            }
+        };
+        data_variant_lines.push_str(&format!("    {variant}({held_type}),\n"));
+        data_arms.push_str(&format!(
+            "            {enum_name}::{variant}(payload) => {data_enum}::{variant}({arm}),\n"
+        ));
+        // The lent entry of the event: one call pairs it with its data, as the
+        // inject seam pairs it with its payload, so no event is lent another's.
+        if injectable {
+            let lend = format!("process_{}_with", filters::to_snake_case(event.clone()));
+            trait_methods.push_str(&format!(
+                "    /// `{event}` processed now with `event_data`, its data, lent for this\n    \
+/// call alone: every reader of `_event.data` reads it in place (docs/adr/0124).\n    \
+fn {lend}(&mut self, event_data: {lent_type});\n"
+            ));
+            let lend_body = if wire_read {
+                format!(
+                    "        let data = {lend_data};\n        \
+self.process_event_with_wire(\n            {machine_name}Event::{variant},\n            \
+{data_enum}::{variant}(event_data),\n            &data,\n        );\n"
+                )
+            } else {
+                format!(
+                    "        self.process_event_with({machine_name}Event::{variant}, \
+{data_enum}::{variant}(event_data));\n"
+                )
+            };
+            entry_fns.push_str(&format!(
+                "    fn {lend}(&mut self, event_data: {lent_type}) {{\n{lend_body}    }}\n"
+            ));
+        }
     }
+    // docs/adr/0124: the data of the event being processed as every reader
+    // reads it, the machine's `StatePolicy::EventData`. It takes the lifetime
+    // `'e` exactly when a variant borrows.
+    let (data_type, data_lifetime) = if data_borrows {
+        (format!("{data_enum}<'e>"), "<'_>")
+    } else {
+        (data_enum.clone(), "")
+    };
     let defs = format!(
         "{structs}/// NL\u{2192}IR Item C1 Path A: typed `_event.data` payload sum for the \
 EventSchema-imported events whose transition guards lowered natively.\n\
 #[derive(Clone, Debug, Default, PartialEq)]\npub enum {enum_name} {{\n    \
 /// Schemaless / not-yet-populated default (W3C \u{a7}5.10 empty `_event.data`).\n    \
-#[default]\n    None,\n{variant_lines}}}\n"
+#[default]\n    None,\n{variant_lines}}}\n\n\
+/// The data of the event being processed, as every guard, `<sce:arg>` and \
+transition content reads it: the payload a queue owns or the data a host lent, \
+borrowed (docs/adr/0124).\n\
+#[derive(Clone, Copy, Debug)]\npub enum {data_type} {{\n    \
+/// An event that carries no data.\n    None,\n{data_variant_lines}}}\n\n\
+impl {enum_name} {{\n    \
+/// The data this payload holds, read as `{data_enum}` (docs/adr/0124).\n    \
+pub fn data(&self) -> {data_enum}{data_lifetime} {{\n        match self {{\n            \
+{enum_name}::None => {data_enum}::None,\n{data_arms}        }}\n    }}\n}}\n"
     );
     // Extension trait + impl (orphan-rule-clean — `Engine` is foreign).
     // The consumer brings the per-event inject methods into scope with
@@ -6088,7 +6212,8 @@ EventSchema-imported events whose transition guards lowered natively.\n\
         format!(
             "/// NL\u{2192}IR Item C1 Path A: per-event typed `_event.data` inject seam.\n\
 /// Bring into scope with `use …::{machine_name}Inject;` to call the\n\
-/// `raise_<event>` methods on the engine.\n\
+/// `raise_<event>` methods on the engine, and the `process_<event>_with`\n\
+/// methods that lend an event's data for one call (docs/adr/0124).\n\
 pub trait {machine_name}Inject {{\n{trait_methods}}}\n\n\
 impl{policy_generics_decl} {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy{policy_generics_use}> {{\n{entry_fns}}}\n"
         )
@@ -6103,18 +6228,19 @@ impl{policy_generics_decl} {machine_name}Inject for ::sce_rust_runtime::Engine<{
         String::new()
     } else {
         format!(
-            "    fn lift_event_payload(\n        &mut self,\n        \
-event: Self::Event,\n        data: &str,\n    ) -> ::core::result::Result<(), \
+            "    fn lift_event_payload(\n        event: Self::Event,\n        data: &str,\n        \
+payload: &mut Self::Payload,\n    ) -> ::core::result::Result<(), \
 ::sce_rust_runtime::event_payload::PayloadRefusal> {{\n        \
-// A typed payload already bound the view, so the producer was the inject\n        \
-// seam and there is nothing to read out of `data`.\n        \
-if self.pending_payload != {enum_name}::None {{\n            return Ok(());\n        }}\n        \
+// A typed payload already rode with the event, so the producer was the\n        \
+// inject seam and there is nothing to read out of `data`.\n        \
+if *payload != {enum_name}::None {{\n            return Ok(());\n        }}\n        \
 match event {{\n{lift_arms}            _ => {{}}\n        }}\n        Ok(())\n    }}\n"
         )
     };
     RustEventPayload {
         defs,
         type_name: enum_name,
+        data_type,
         guard_writes,
         entries,
         lift,
@@ -6130,11 +6256,34 @@ struct RustPayloadParts {
     lift_fields: String,
     /// The JSON the inject seam writes beside the typed payload.
     data: String,
+    /// The same JSON written from the data a host lends, bound as
+    /// `event_data` (docs/adr/0124).
+    lend_data: String,
+    /// How a reader reads the payload (docs/adr/0124).
+    read: RustRead,
     /// The JSON of the defaults of the fields a later revision added, or
     /// `None` for a schema that added none.
     defaults: Option<String>,
     /// The payload struct's derives.
     derives: &'static str,
+}
+
+/// How a reader of the Rust machine reads one event's payload, queued or lent
+/// alike (docs/adr/0124).
+enum RustRead {
+    /// A schema of entries is read through its parts, `name`, which `def`
+    /// declares with the payload struct's `data`: a text and a byte string
+    /// borrowed, every other value by copy. The parts take the lifetime `'e`
+    /// exactly when they `borrows`, as a codec's parts do (docs/adr/0058).
+    Parts {
+        name: String,
+        def: String,
+        borrows: bool,
+    },
+    /// A schema that holds a composition is read through its payload record,
+    /// borrowed: a list and a record are presented as the values they are
+    /// held in.
+    Record,
 }
 
 /// The bound, in UTF-8 bytes, a lift holds the text field `f` of a payload to
@@ -6169,10 +6318,21 @@ fn rust_entry_payload(
     schema: &EntrySchema,
     l: &LangCtx,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    data_name: &str,
+    struct_name: &str,
 ) -> RustPayloadParts {
     let mut field_lines = String::new();
     let mut lift_fields = String::new();
+    // docs/adr/0124: the parts a reader reads the payload through, and the
+    // payload's reading of itself as them.
+    let mut data_lines = String::new();
+    let mut data_fields = String::new();
+    let mut borrows = false;
     for f in &schema.fields {
+        let (data_ty, data_read) = rust_entry_data_field(l, f);
+        borrows |= data_ty.contains("'e");
+        data_lines.push_str(&format!("    pub {}: {data_ty},\n", f.id));
+        data_fields.push_str(&format!("            {}: {data_read},\n", f.id));
         field_lines.push_str(&format!(
             "    pub {}: {},\n",
             f.id,
@@ -6230,12 +6390,56 @@ fn rust_entry_payload(
     } else {
         "Clone, Debug, Default, PartialEq"
     };
+    let lifetime = if borrows { "<'e>" } else { "" };
+    let anon = if borrows { "<'_>" } else { "" };
+    let def = format!(
+        "/// The data of `{name}` as every reader reads it, owned by a queue or lent \
+by a host alike (docs/adr/0124): one member per field, a text and a byte string \
+borrowed. A host lends a view it decoded by filling these from it.\n\
+#[derive(Clone, Copy, Debug)]\npub struct {data_name}{lifetime} {{\n{data_lines}}}\n\n\
+impl {struct_name} {{\n    \
+/// This payload, read as `{data_name}` (docs/adr/0124).\n    \
+pub fn data(&self) -> {data_name}{anon} {{\n        {data_name} {{\n{data_fields}        }}\n    }}\n}}\n\n",
+        name = schema.name,
+    );
     RustPayloadParts {
         field_lines,
         lift_fields,
         data: rust_record_wire_of(&schema.fields, "payload", "        ", static_enums),
+        lend_data: rust_record_wire_of(&schema.fields, "event_data", "        ", static_enums),
+        read: RustRead::Parts {
+            name: data_name.to_string(),
+            def,
+            borrows,
+        },
         defaults: crate::forge::schema_revision::defaults_wire(schema),
         derives,
+    }
+}
+
+/// The member one field `f` of a schema of entries is read as, and the
+/// payload struct's reading of its own field as it (docs/adr/0124): a text and
+/// a byte string borrowed for `'e`, an optional one as the optional of the
+/// borrow, and every other value, a number, a truth value or an enum, by copy.
+fn rust_entry_data_field(l: &LangCtx, f: &EntryField) -> (String, String) {
+    let (present, lent) = match f.sce_type.present_type() {
+        SceType::String => ("&'e str".to_string(), true),
+        SceType::Bytes => ("&'e [u8]".to_string(), true),
+        _ => (rust_record_present_type(l, f), false),
+    };
+    match (&f.sce_type, lent) {
+        (EntryType::Optional { .. }, true) => (
+            l.optional_of(&present)
+                .expect("Rust spells an optional value"),
+            format!("self.{}.as_deref()", f.id),
+        ),
+        (EntryType::Optional { .. }, false) => (
+            l.optional_of(&present)
+                .expect("Rust spells an optional value"),
+            format!("self.{}", f.id),
+        ),
+        (EntryType::Scalar(_), true) => (present, format!("&self.{}", f.id)),
+        (EntryType::Scalar(_), false) => (present, format!("self.{}", f.id)),
     }
 }
 
@@ -6297,6 +6501,14 @@ fn rust_composed_payload(
         &spelling,
         &composed::Held::place("payload"),
     ));
+    // The same JSON written from the record a host lends, bound as
+    // `event_data` (docs/adr/0124).
+    let lent_writers = walked(composed::field_writers(
+        held,
+        &records,
+        &spelling,
+        &composed::Held::place("event_data"),
+    ));
     RustPayloadParts {
         field_lines: members
             .iter()
@@ -6309,6 +6521,8 @@ fn rust_composed_payload(
             })
             .collect(),
         data: spelling.write_record(&writers),
+        lend_data: spelling.write_record(&lent_writers),
+        read: RustRead::Record,
         defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
         derives: "Clone, Debug, PartialEq",
     }
@@ -6327,8 +6541,8 @@ fn rust_composed_payload(
 ///     under no_std) — never a bare `String`, which a no-alloc no_std
 ///     target cannot resolve.
 ///
-/// Both deref to `[u8]` / `str`, so `&ev.<field>` coerces to the
-/// `&[u8]` / `&str` an `Actions` trait method takes. Every other
+/// Both deref to `[u8]` / `str`, so the payload's parts borrow them as the
+/// `&[u8]` / `&str` an `Actions` trait method takes (docs/adr/0124). Every other
 /// primitive resolves through `LangCtx::type_name`; the callers admit
 /// primitive fields only, so no enum-alias arm is hit. An optional field
 /// (docs/adr/0055) is the backend's optional type over the type its present

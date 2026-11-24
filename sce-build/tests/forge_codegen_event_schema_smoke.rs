@@ -200,7 +200,7 @@ fn smoke_rust() {
 // imports the minimal schema and reads `_event.data.elapsed_ms` in a
 // transition guard. The Rust backend must lower it to a script-engine-
 // free native typed-payload comparison: `needs_script_engine = false`,
-// a `<Machine>Payload` sum, and a `matches!(&self.pending_payload, …)`
+// a `<Machine>Payload` sum, and a `matches!(sce_event_data, …)`
 // guard — never the raw ECMAScript cond (which would not even parse:
 // `===` is not Rust) and never the `safe_evaluate_guard` script path.
 // `syn::parse_file` is the syntactic gate; the substring assertions pin
@@ -229,7 +229,7 @@ fn statechart_native_lowering_emits_engine_free_typed_guard() {
     );
     assert!(
         src.contains(
-            "matches!(&self.pending_payload, StatechartMinimalPayload::JobCompleted(ev) if ev.elapsed_ms == 0)"
+            "matches!(sce_event_data, StatechartMinimalEventData::JobCompleted(ev) if ev.elapsed_ms == 0)"
         ),
         "expected the native typed-payload guard; got:\n{src}"
     );

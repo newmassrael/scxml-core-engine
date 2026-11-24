@@ -247,9 +247,12 @@ fn a_tag_no_variant_names_is_refused_whole() {
         "error.execution reached the document once"
     );
     assert_eq!(policy.many_shapes(), 0, "none of the content ran");
-    let refusal = StaticUnionPolicy::new()
-        .lift_event_payload(StaticUnionEvent::ShapesSent, &data)
-        .expect_err("a tag no variant names");
+    let refusal = StaticUnionPolicy::lift_event_payload(
+        StaticUnionEvent::ShapesSent,
+        &data,
+        &mut Default::default(),
+    )
+    .expect_err("a tag no variant names");
     assert_eq!(refusal.pointer(), "/many/1/kind");
     assert_eq!(
         refusal.reason(),
@@ -259,12 +262,12 @@ fn a_tag_no_variant_names_is_refused_whole() {
 
 #[test]
 fn a_field_its_case_reads_and_the_delivery_lacks_is_refused_naming_it() {
-    let refusal = StaticUnionPolicy::new()
-        .lift_event_payload(
-            StaticUnionEvent::ShapesSent,
-            &shapes(r#"{"kind":"rect","width":3}"#, &[r#"{"kind":"dot"}"#]),
-        )
-        .expect_err("a field of the case missing");
+    let refusal = StaticUnionPolicy::lift_event_payload(
+        StaticUnionEvent::ShapesSent,
+        &shapes(r#"{"kind":"rect","width":3}"#, &[r#"{"kind":"dot"}"#]),
+        &mut Default::default(),
+    )
+    .expect_err("a field of the case missing");
     assert_eq!(refusal.pointer(), "/one/height");
     assert_eq!(refusal.reason(), "the event's data has no 'one/height'");
 }

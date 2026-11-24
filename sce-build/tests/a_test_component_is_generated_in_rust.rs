@@ -256,7 +256,7 @@ fn taking_a_branch_runs_before_the_exits_and_its_content_after() {
     );
     let held = at(
         &asker,
-        "self.pending_payload = AskerPayload::JobReply(AskerJobReplyPayload { job: sce_value.job, \
+        "self.taken_message = AskerPayload::JobReply(AskerJobReplyPayload { job: sce_value.job, \
          code: sce_value.code });",
     );
     let timeout = at(&asker, "self.test_context().timeout(\"reply\");");
@@ -267,7 +267,7 @@ fn taking_a_branch_runs_before_the_exits_and_its_content_after() {
     assert!(take < timeout && timeout < content_fn, "so is the timeout");
     let bound = at(
         &asker,
-        "let ev = match &self.pending_payload { AskerPayload::JobReply(ev) => ev.clone(), _ => \
+        "let ev = match &self.taken_message { AskerPayload::JobReply(ev) => ev.clone(), _ => \
          unreachable!(",
     );
     let content = at(&asker, "self.test_context().stop_timer(\"reply\");");
@@ -490,7 +490,7 @@ fn a_composed_message_its_content_reads_is_bound_in_the_machines_types() {
     );
     let held = at(
         &code,
-        "self.pending_payload = JobTesterPayload::JobStatus(JobTesterJobStatusPayload { \
+        "self.taken_message = JobTesterPayload::JobStatus(JobTesterJobStatusPayload { \
          elapsed_ms: sce_value.elapsed_ms, note: sce_value.note.clone(), codes: \
          sce_value.codes.clone(), tag: sce_value.tag, retry: sce_value.retry, count: \
          sce_value.count });",
@@ -498,7 +498,7 @@ fn a_composed_message_its_content_reads_is_bound_in_the_machines_types() {
     let content_fn = at(&code, CONTENT_FN);
     let bound = at(
         &code,
-        "let ev = match &self.pending_payload { JobTesterPayload::JobStatus(ev) => ev.clone(), _ \
+        "let ev = match &self.taken_message { JobTesterPayload::JobStatus(ev) => ev.clone(), _ \
          => unreachable!(",
     );
     let content = at(&code, "self.test_context().stop_timer(\"deadline\");");
@@ -566,7 +566,7 @@ fn a_message_holding_records_an_enum_and_a_union_is_made_case_by_case() {
     let code = text_at(&order_reader(dir.path()));
     for needle in [
         "let sce_value = sce_message.value_as::<order_placed_match::Value>().expect(",
-        "self.pending_payload = OrderReaderPayload::OrderPlaced(OrderReaderOrderPlacedPayload { \
+        "self.taken_message = OrderReaderPayload::OrderPlaced(OrderReaderOrderPlacedPayload { \
          order_id: sce_value.order_id, lines: \
          ::sce_rust_runtime::portable::BoundedList::widened_map(&sce_value.lines, |v| \
          OrderReaderLineRecord { sku: v.sku.clone(), quantity: v.quantity, color: match \

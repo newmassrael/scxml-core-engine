@@ -7,9 +7,13 @@
     W3C SCXML 3.7/3.8/3.9: Entry and exit action execution.
 
     Generates:
-    - execute_entry_actions(&mut self, state, engine, is_default_entry)
-    - execute_exit_actions(&mut self, state, engine)
-    - execute_history_default_content(&mut self, history, engine)
+    - execute_entry_actions(&mut self, state, sce_event_data, engine, is_default_entry)
+    - execute_exit_actions(&mut self, state, sce_event_data, engine)
+    - execute_history_default_content(&mut self, history, sce_event_data, engine)
+
+    `sce_event_data` is the data of the event being processed, which every hook
+    is handed (docs/adr/0124); nothing here reads it, since `_event.data` is
+    typed only on a transition whose event names its schema.
 
     Each answers for ONE state, handed as its number in the document's tables
     and matched through the `ID_<variant>` constants state_machine.rs.jinja2
@@ -43,7 +47,7 @@
        above `execute_entry_actions`. `#[doc]` attaches to the function
        item; the `//` comment-form survives stable as a grep target. #}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn execute_entry_actions(&mut self, state: ::sce_rust_runtime::StateId, engine: &mut sce_rust_runtime::Engine<Self>, is_default_entry: bool) {
+    fn execute_entry_actions(&mut self, state: ::sce_rust_runtime::StateId, sce_event_data: Self::EventData<'_>, engine: &mut sce_rust_runtime::Engine<Self>, is_default_entry: bool) {
 {% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
         // W3C SCXML 3.8: the engine has added `state` to the configuration
         // already, so an In() its onentry asks sees it.
@@ -389,7 +393,7 @@
 {% endfor %}
 {% if _history_content.any %}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn execute_history_default_content(&mut self, history: ::sce_rust_runtime::HistoryId, engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn execute_history_default_content(&mut self, history: ::sce_rust_runtime::HistoryId, sce_event_data: Self::EventData<'_>, engine: &mut sce_rust_runtime::Engine<Self>) {
 {% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
         self.publish_in_predicate_states(engine);
 {% endif %}
@@ -421,6 +425,7 @@
     fn execute_exit_actions(
         &mut self,
         state: ::sce_rust_runtime::StateId,
+        sce_event_data: Self::EventData<'_>,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then

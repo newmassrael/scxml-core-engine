@@ -1332,10 +1332,8 @@ fn args_for(lang: Language, accessor: &str, field: &str, ty: &SceType) -> Vec<St
             format!("{accessor}.{field}"),
             format!("{accessor}.{field}_len"),
         ],
-        // Rust's owned payload fields (`SceBytes<CAP>` / `SceString`) deref to
-        // `[u8]` / `str`, so a borrow is what the `&[u8]` / `&str` parameter
-        // takes.
-        (Language::Rust, SceType::String | SceType::Bytes) => vec![format!("&{accessor}.{field}")],
+        // Rust reads the payload through its parts (docs/adr/0124), whose text
+        // and byte string are the `&str` / `&[u8]` the parameter takes already.
         (
             Language::Rust
             | Language::Cpp
@@ -1908,7 +1906,9 @@ fn guard_payload(
         .expect("the reason takes the action's name and the event");
     match lang {
         Language::Rust => {
-            let enum_name = format!("{machine_name}Payload");
+            // docs/adr/0124: the data the hook is handed, owned by a queue or
+            // lent by a host alike.
+            let enum_name = crate::forge::generator::rust_event_data_enum(machine_name);
             let otherwise = if raises_error {
                 format!(
                     "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(\
@@ -1919,7 +1919,7 @@ fn guard_payload(
                 String::new()
             };
             format!(
-                "match &self.pending_payload {{\n            \
+                "match sce_event_data {{\n            \
                  {enum_name}::{variant}(ev) => {{ {stmt} }}\n            \
                  _ => {{ {otherwise} }}\n        }}"
             )

@@ -15,7 +15,7 @@
 // inject seam is emitted as an extension trait precisely for this reason).
 //
 // The transition guard `cond="_event.data.elapsed_ms === 0"` lowers to a
-// native `matches!(&self.pending_payload, …)` with NO script engine, so the
+// native `matches!(sce_event_data, …)` with NO script engine, so the
 // policy is constructed with `Policy::new()` (no `IScriptEngine` argument —
 // the MCU-relevant property). The per-event extension-trait inject
 // (`raise_job_completed`) binds the event name and payload variant in one
@@ -23,10 +23,10 @@
 
 use sce_rust_tests::integration::event_schema_native::{
     StatechartBytesInject, StatechartBytesPolicy, StatechartBytesSignalReceivedPayload,
-    StatechartBytesState, StatechartLiftedEvent, StatechartLiftedInject,
-    StatechartLiftedJobCompletedPayload, StatechartLiftedPolicy, StatechartLiftedState,
-    StatechartMinimalEvent, StatechartMinimalInject, StatechartMinimalJobCompletedPayload,
-    StatechartMinimalPolicy, StatechartMinimalState,
+    StatechartBytesSignalReceivedRef, StatechartBytesState, StatechartLiftedEvent,
+    StatechartLiftedInject, StatechartLiftedJobCompletedPayload, StatechartLiftedPolicy,
+    StatechartLiftedState, StatechartMinimalEvent, StatechartMinimalInject,
+    StatechartMinimalJobCompletedPayload, StatechartMinimalPolicy, StatechartMinimalState,
 };
 
 #[test]
@@ -99,7 +99,7 @@ fn typed_payload_guard_misses_on_nonzero() {
 
 // RFC rfc-eventschema-bytes-guard.md §6 — the bytes-field guard
 // `cond="_event.data.raw === 'ack'"` lowers to a native
-// `matches!(&self.pending_payload, … if ev.raw == b"ack")` with NO script
+// `matches!(sce_event_data, … if ev.raw == b"ack")` with NO script
 // engine. Running the committed SM proves the `Vec<u8>` payload carrier
 // round-trips and the byte-equality guard fires on a match and not
 // otherwise — the runtime check the form/byte-golden layers cannot give.
@@ -123,6 +123,34 @@ fn bytes_payload_guard_fires_on_match() {
         StatechartBytesState::Done,
         "raw == b\"ack\" must fire the native bytes guard to `done`"
     );
+}
+
+/// docs/adr/0124: the guard reads a view the host lends for one call as it
+/// reads the payload a queue owned. The host's buffer lives in the loop body
+/// only and is dropped right after the call, which the borrow checker holds:
+/// nothing the machine keeps outlives the call that lent it.
+#[test]
+fn bytes_payload_guard_reads_a_lent_view_as_it_reads_a_queued_payload() {
+    for (raw, settled) in [
+        (&b"ack"[..], StatechartBytesState::Done),
+        (&b"no"[..], StatechartBytesState::Waiting),
+    ] {
+        let mut queued = sce_rust_runtime::Engine::new(StatechartBytesPolicy::new());
+        let Ok(()) = queued.initialize();
+        queued.raise_signal_received(StatechartBytesSignalReceivedPayload {
+            raw: ::sce_rust_runtime::SceBytes::from_slice(raw).unwrap(),
+        });
+        queued.step();
+
+        let mut lent = sce_rust_runtime::Engine::new(StatechartBytesPolicy::new());
+        let Ok(()) = lent.initialize();
+        let received = raw.to_vec();
+        lent.process_signal_received_with(StatechartBytesSignalReceivedRef { raw: &received });
+        drop(received);
+
+        assert_eq!(queued.get_current_state(), settled, "queued {raw:?}");
+        assert_eq!(lent.get_current_state(), settled, "lent {raw:?}");
+    }
 }
 
 #[test]

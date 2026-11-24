@@ -3807,6 +3807,7 @@ fn render_rust(
         externally_drivable_events => &externally_drivable_events,
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
+        event_data_type => &payload.data_type,
         event_payload_entries => &payload.entries,
         event_payload_lift => &payload.lift,
         host_invoker_interface => &host_invoker_interface,

@@ -7224,9 +7224,10 @@ grow a list past the bound the machine keeps. Each expression lands in the
 slots every backend's templates read before their own spellings — a
 transition's guard in `native_guard`, an `<if>`'s condition in
 `native_cond`, a whole statement in `native_code`. A condition that reads the
-payload is the typed guard's own shape, `matches!(&self.pending_payload,
-<Machine>Payload::<Event>(ev) if …)`, and content that reads it binds `ev`
-once or does not run, as Kotlin's does. A record is a plain `Copy` struct,
+payload is the typed guard's own shape, `matches!(sce_event_data,
+<Machine>EventData::<Event>(ev) if …)` over the data the hook is handed
+(docs/adr/0124), and content that reads it binds `ev` once or does not run,
+as Kotlin's does. A record is a plain `Copy` struct,
 `<Machine><Alias>Record`, updated in place; a list is a `BoundedList<T, N>`
 (docs/adr/0086, section 7.4), whose own `push` refuses past `N`, and its append
 lowers to `if picked.len() < N && picked.push(…).is_ok() { … } else {
