@@ -701,17 +701,18 @@ sce_gate_activate_emsdk() {
 # probe died writing `cache/symbol_lists` on a read-only file system.
 #
 # Emscripten's answer for such an install is `EM_CACHE`, a cache elsewhere.
-# It is placed per account and per release, seeded once from the SDK's own
-# cache so the prebuilt sysroot is not built again, and the seed is renamed
-# into place whole so two gates starting together never share a half-copied
-# one. An `EM_CACHE` already set, or an SDK whose cache is writable, is used
-# as it is.
+# It is placed per account and per release, seeded once from the cache the
+# SDK names so the prebuilt sysroot is not built again, and the seed is
+# renamed into place whole so two gates starting together never share a
+# half-copied one. A cache this account can write is used as it is. One
+# `emsdk_env.sh` set is not trusted for that: it exports `EM_CACHE` as the
+# SDK's own directory (measured 2026-11-24, the first version of this
+# function returned on any `EM_CACHE` and the fleet's links still failed).
 sce_gate_writable_em_cache() {
-    [[ -n "${EM_CACHE:-}" ]] && return 0
     local emcc root sdk_cache version dest staging
     emcc="$(command -v emcc 2>/dev/null)" || return 0
     root="$(dirname "$(readlink -f "$emcc")")"
-    sdk_cache="$root/cache"
+    sdk_cache="${EM_CACHE:-$root/cache}"
     [[ -w "$sdk_cache" ]] && return 0
     version="$(tr -d '"' <"$root/emscripten-version.txt" 2>/dev/null)"
     dest="${XDG_CACHE_HOME:-$HOME/.cache}/sce-emscripten/${version:-unknown}"
@@ -794,8 +795,15 @@ sce_gate_configure_wasm_build_dir() {
     sce_gate_build_cache "$dir" || return 1
     local GENERATOR=()
     command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
+    # The generator this tree's configure asks for its plans, resolved as
+    # every in-tree consumer resolves it (`sce_gate_codegen`) and named, not
+    # left to the configure's own search: that search found a release binary
+    # an earlier build had left in `target/`, built from other sources, the
+    # first time a tree was configured from nothing (2026-11-24).
+    local codegen
+    codegen="$(sce_gate_codegen)" || return 1
     emcmake cmake -S . -B "$dir" -DCMAKE_BUILD_TYPE=Release \
-        -DSCE_WASM_THREADS="$threads" \
+        -DSCE_WASM_THREADS="$threads" -DSCE_CODEGEN="$codegen" \
         ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null || return 1
     printf '%s\n' "$toolchain" >"$dir/sce_gate_toolchain"
 }
