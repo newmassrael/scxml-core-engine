@@ -475,6 +475,56 @@ static void a_checked_uint32_product_past_int64_is_reported(void) {
     EXPECT_U(g.error == SCE_FORGE_ALGORITHM_OVERFLOW, true);
 }
 
+/* A shift (SCE_FORGE.md §3.4.1, "The width of a shift"): the exact result
+ * reduced to the width for every count at least 0, so 0, or -1 for a `>>` of a
+ * negative value, from a count at the width; and, checked, a count below 0
+ * recorded as out of range. Every 8-bit value is shifted by every count up to
+ * 10 and compared with the definition, made by multiplying and flooring. */
+static void a_shift_is_its_exact_result_reduced_to_its_width(void) {
+    for (int a = -128; a <= 127; ++a) {
+        for (int n = 0; n <= 10; ++n) {
+            const int64_t scale = INT64_C(1) << n;
+            const int64_t product = (int64_t)a * scale;
+            const int64_t low = ((product % 256) + 256) % 256;
+            const int64_t floor_q = a >= 0 ? a / scale : -((-a + scale - 1) / scale);
+            const int64_t pattern = (a + 256) % 256;
+            grid_case("shl i8", a, n, sce_forge_wrapping_shl_i8((int8_t)a, (uint64_t)n), low >= 128 ? low - 256 : low);
+            grid_case("shr i8", a, n, sce_forge_wrapping_shr_i8((int8_t)a, (uint64_t)n), floor_q);
+            grid_case("ushr i8", a, n, sce_forge_wrapping_ushr_i8((int8_t)a, (uint64_t)n),
+                      (pattern / scale) >= 128 ? (pattern / scale) - 256 : (pattern / scale));
+            grid_case("shl u8", pattern, n, sce_forge_wrapping_shl_u8((uint8_t)pattern, (uint64_t)n),
+                      ((pattern * scale) % 256));
+            grid_case("shr u8", pattern, n, sce_forge_wrapping_shr_u8((uint8_t)pattern, (uint64_t)n), pattern / scale);
+        }
+    }
+    EXPECT_U(sce_forge_wrapping_shl_u64(1, 63), UINT64_C(1) << 63);
+    EXPECT_U(sce_forge_wrapping_shl_u64(1, 64), 0);
+    EXPECT_U(sce_forge_wrapping_shl_u32(1, 200), 0);
+    EXPECT_U(sce_forge_wrapping_shl_u16(0xFFFF, 16), 0);
+    EXPECT_U(sce_forge_wrapping_shr_u64(UINT64_MAX, 64), 0);
+    EXPECT_I(sce_forge_wrapping_shl_i64(-1, 63), INT64_MIN);
+    EXPECT_I(sce_forge_wrapping_shl_i32(1, 31), INT32_MIN);
+    EXPECT_I(sce_forge_wrapping_shl_i32(1, 32), 0);
+    EXPECT_I(sce_forge_wrapping_shr_i64(INT64_MIN, 63), -1);
+    EXPECT_I(sce_forge_wrapping_shr_i64(INT64_MIN, UINT64_MAX), -1);
+    EXPECT_I(sce_forge_wrapping_shr_i32(-5, 1), -3);
+    EXPECT_I(sce_forge_wrapping_shr_i16(INT16_MAX, 16), 0);
+    EXPECT_I(sce_forge_wrapping_ushr_i32(-1, 28), 15);
+    EXPECT_I(sce_forge_wrapping_ushr_i64(-1, 64), 0);
+    EXPECT_I(sce_forge_wrapping_ushr_i16(INT16_MIN, 15), 1);
+    sce_forge_algorithm_failure_t f = {false, SCE_FORGE_ALGORITHM_OVERFLOW};
+    EXPECT_I(sce_forge_checked_shr_i32(&f, -1, 40), -1);
+    EXPECT_U(sce_forge_checked_shl_u8(&f, 1, 7), 128);
+    EXPECT_U(f.failed, false);
+    EXPECT_I(sce_forge_checked_shl_i32(&f, 1, -1), 0);
+    EXPECT_U(f.failed, true);
+    EXPECT_U(f.error == SCE_FORGE_ALGORITHM_OUT_OF_RANGE, true);
+    sce_forge_algorithm_failure_t g = {false, SCE_FORGE_ALGORITHM_OVERFLOW};
+    EXPECT_U(sce_forge_checked_ushr_u64(&g, UINT64_MAX, INT64_MIN), 0);
+    EXPECT_U(g.failed, true);
+    EXPECT_U(g.error == SCE_FORGE_ALGORITHM_OUT_OF_RANGE, true);
+}
+
 int main(void) {
     every_8_bit_pair_meets_the_definition();
     the_bounds_of_16_and_32_bits_meet_the_definition();
@@ -482,6 +532,7 @@ int main(void) {
     the_signed_widths_wrap_and_saturate_at_their_bounds();
     a_tick_counter_that_wraps_is_read_across_the_wrap();
     a_checked_uint32_product_past_int64_is_reported();
+    a_shift_is_its_exact_result_reduced_to_its_width();
     if (failures != 0) {
         fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

@@ -415,6 +415,111 @@ SCE_FORGE_WRAPPING_SIGNED(i64, int64_t, u64, uint64_t, INT64_MAX, UINT64_MAX)
 #undef SCE_FORGE_WRAPPING_SIGNED
 
 /*
+ * A shift (SCE_FORGE.md §3.4.1, "The width of a shift"): for a type T of width
+ * W and a count n at least 0, the exact result reduced to W, which has a value
+ * on every such count:
+ *
+ *   shl   a * 2^n reduced to W, so 0 from n = W;
+ *   shr   the floor of a / 2^n, so 0 from n = W, or -1 for a negative a;
+ *   ushr  the floor of u / 2^n, u the W-bit unsigned pattern of a.
+ *
+ * C's own operators leave a count at or past the width undefined, a left shift
+ * of a negative value undefined, and a right shift of one
+ * implementation-defined (C11 6.5.7), so none of the three is reached by them:
+ * the count is tested against the width first, a left shift is made in the
+ * unsigned type of the width, never promoted to `int` (WIDE as for the
+ * wrapping family), and a negative value is shifted right as the complement
+ * of a non-negative one, -1 - ((-1 - a) >> n), whose every step is in range.
+ * The count arrives as `uint64_t`, which holds every count of every type the
+ * generator converts to it. A count below 0 has no exact result: the checked
+ * family below records it as out of range.
+ */
+#define SCE_FORGE_WRAPPING_SHIFT_UNSIGNED(SUFFIX, T, WIDE, BITS)                                                       \
+    static inline T sce_forge_wrapping_shl_##SUFFIX(T a, uint64_t n) {                                                 \
+        if (n >= (uint64_t)(BITS)) {                                                                                   \
+            return (T)0;                                                                                               \
+        }                                                                                                              \
+        return (T)((WIDE)a << n);                                                                                      \
+    }                                                                                                                  \
+    static inline T sce_forge_wrapping_shr_##SUFFIX(T a, uint64_t n) {                                                 \
+        if (n >= (uint64_t)(BITS)) {                                                                                   \
+            return (T)0;                                                                                               \
+        }                                                                                                              \
+        return (T)((WIDE)a >> n);                                                                                      \
+    }                                                                                                                  \
+    static inline T sce_forge_wrapping_ushr_##SUFFIX(T a, uint64_t n) {                                                \
+        return sce_forge_wrapping_shr_##SUFFIX(a, n);                                                                  \
+    }
+
+SCE_FORGE_WRAPPING_SHIFT_UNSIGNED(u8, uint8_t, unsigned int, 8)
+SCE_FORGE_WRAPPING_SHIFT_UNSIGNED(u16, uint16_t, unsigned int, 16)
+SCE_FORGE_WRAPPING_SHIFT_UNSIGNED(u32, uint32_t, unsigned long, 32)
+SCE_FORGE_WRAPPING_SHIFT_UNSIGNED(u64, uint64_t, unsigned long long, 64)
+
+#undef SCE_FORGE_WRAPPING_SHIFT_UNSIGNED
+
+#define SCE_FORGE_WRAPPING_SHIFT_SIGNED(SUFFIX, T, USUFFIX, UT, BITS)                                                  \
+    static inline T sce_forge_wrapping_shl_##SUFFIX(T a, uint64_t n) {                                                 \
+        return sce_forge_wrapping_from_bits_##SUFFIX(sce_forge_wrapping_shl_##USUFFIX((UT)a, n));                      \
+    }                                                                                                                  \
+    static inline T sce_forge_wrapping_shr_##SUFFIX(T a, uint64_t n) {                                                 \
+        uint64_t places = n >= (uint64_t)(BITS) ? (uint64_t)(BITS) - 1u : n;                                           \
+        if (a >= 0) {                                                                                                  \
+            return (T)(a >> places);                                                                                   \
+        }                                                                                                              \
+        return (T)(-1 - ((-1 - a) >> places));                                                                         \
+    }                                                                                                                  \
+    static inline T sce_forge_wrapping_ushr_##SUFFIX(T a, uint64_t n) {                                                \
+        return sce_forge_wrapping_from_bits_##SUFFIX(sce_forge_wrapping_shr_##USUFFIX((UT)a, n));                      \
+    }
+
+SCE_FORGE_WRAPPING_SHIFT_SIGNED(i8, int8_t, u8, uint8_t, 8)
+SCE_FORGE_WRAPPING_SHIFT_SIGNED(i16, int16_t, u16, uint16_t, 16)
+SCE_FORGE_WRAPPING_SHIFT_SIGNED(i32, int32_t, u32, uint32_t, 32)
+SCE_FORGE_WRAPPING_SHIFT_SIGNED(i64, int64_t, u64, uint64_t, 64)
+
+#undef SCE_FORGE_WRAPPING_SHIFT_SIGNED
+
+/*
+ * The checked shifts of a `may-fail` body: a count below 0 recorded as out of
+ * range, and 0 yielded; every other count the shift above. The count arrives as
+ * `int64_t`, which holds every count that may be below 0 the generator checks.
+ */
+#define SCE_FORGE_CHECKED_SHIFT(SUFFIX, T)                                                                             \
+    static inline T sce_forge_checked_shl_##SUFFIX(sce_forge_algorithm_failure_t *f, T a, int64_t n) {                 \
+        if (n < 0) {                                                                                                   \
+            sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OUT_OF_RANGE);                                             \
+            return 0;                                                                                                  \
+        }                                                                                                              \
+        return sce_forge_wrapping_shl_##SUFFIX(a, (uint64_t)n);                                                        \
+    }                                                                                                                  \
+    static inline T sce_forge_checked_shr_##SUFFIX(sce_forge_algorithm_failure_t *f, T a, int64_t n) {                 \
+        if (n < 0) {                                                                                                   \
+            sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OUT_OF_RANGE);                                             \
+            return 0;                                                                                                  \
+        }                                                                                                              \
+        return sce_forge_wrapping_shr_##SUFFIX(a, (uint64_t)n);                                                        \
+    }                                                                                                                  \
+    static inline T sce_forge_checked_ushr_##SUFFIX(sce_forge_algorithm_failure_t *f, T a, int64_t n) {                \
+        if (n < 0) {                                                                                                   \
+            sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OUT_OF_RANGE);                                             \
+            return 0;                                                                                                  \
+        }                                                                                                              \
+        return sce_forge_wrapping_ushr_##SUFFIX(a, (uint64_t)n);                                                       \
+    }
+
+SCE_FORGE_CHECKED_SHIFT(i8, int8_t)
+SCE_FORGE_CHECKED_SHIFT(i16, int16_t)
+SCE_FORGE_CHECKED_SHIFT(i32, int32_t)
+SCE_FORGE_CHECKED_SHIFT(i64, int64_t)
+SCE_FORGE_CHECKED_SHIFT(u8, uint8_t)
+SCE_FORGE_CHECKED_SHIFT(u16, uint16_t)
+SCE_FORGE_CHECKED_SHIFT(u32, uint32_t)
+SCE_FORGE_CHECKED_SHIFT(u64, uint64_t)
+
+#undef SCE_FORGE_CHECKED_SHIFT
+
+/*
  * An unsigned saturating operation is the wrapping one where nothing wraps,
  * and M or 0 where it would. A sum wraps exactly when it comes out below an
  * operand, a difference when the subtrahend is the larger, and a product when

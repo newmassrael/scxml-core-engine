@@ -10,7 +10,10 @@
 //! helper computes the operation at the declared width or reports why it
 //! has no value there: an overflow (a signed `MIN / -1` or `MIN % -1`
 //! included, which is one), or a division by zero, which is refused before
-//! it is attempted.
+//! it is attempted. A shift by a count it cannot prove at least 0 is lowered
+//! to `shl`, `shr` or `ushr`, which fail `out-of-range` for a count below 0,
+//! where a shift has no exact result, and answer the exact result reduced to
+//! the width for every other count, one at or past the width included.
 //!
 //! `no_std` and allocation-free, like the rest of the crate's default
 //! surface: an algorithm is a pure function an ECU may call.
@@ -115,6 +118,79 @@ pub fn neg<T: CheckedInt>(a: T) -> Result<T, AlgorithmError> {
     a.checked_neg_().ok_or(AlgorithmError::Overflow)
 }
 
+/// The integer widths a shift is made at (SCE_FORGE.md §3.4.1, "The width of
+/// a shift"), with the total shifts the generator prints: each is the exact
+/// result reduced to the width for every count at least 0, so a count at or
+/// past the width leaves 0, or the sign for an arithmetic `>>` of a negative
+/// value. Rust's own `<<` and `>>` panic there in a build that checks
+/// overflow, and take the count modulo the width in one that does not.
+/// Implemented for exactly the SCE integer types.
+pub trait ShiftInt: Copy {
+    /// `self * 2^n` reduced to the width.
+    fn shl_total(self, n: u32) -> Self;
+    /// The floor of `self / 2^n`.
+    fn shr_total(self, n: u32) -> Self;
+    /// The floor of `u / 2^n`, `u` the width's unsigned bits of `self`,
+    /// read back at its type.
+    fn ushr_total(self, n: u32) -> Self;
+}
+
+macro_rules! shift_int {
+    ($($t:ty => $u:ty, $last:expr);*) => {$(
+        impl ShiftInt for $t {
+            fn shl_total(self, n: u32) -> Self { self.checked_shl(n).unwrap_or(0) }
+            fn shr_total(self, n: u32) -> Self { self.wrapping_shr(n.min($last)) }
+            fn ushr_total(self, n: u32) -> Self {
+                (self as $u).checked_shr(n).unwrap_or(0) as $t
+            }
+        }
+    )*};
+}
+
+// An unsigned `>>` past the width is 0, which `wrapping_shr` by the last bit
+// is not, so each unsigned type's arithmetic and logical shifts are one.
+macro_rules! shift_uint {
+    ($($t:ty),*) => {$(
+        impl ShiftInt for $t {
+            fn shl_total(self, n: u32) -> Self { self.checked_shl(n).unwrap_or(0) }
+            fn shr_total(self, n: u32) -> Self { self.checked_shr(n).unwrap_or(0) }
+            fn ushr_total(self, n: u32) -> Self { self.shr_total(n) }
+        }
+    )*};
+}
+
+shift_int!(i8 => u8, 7; i16 => u16, 15; i32 => u32, 31; i64 => u64, 63);
+shift_uint!(u8, u16, u32, u64);
+
+/// A shift's count `n` as the number of places it shifts, or an out-of-range
+/// failure when it is below 0, where a shift has no exact result. A count past
+/// `u32` is past every width, and shifts as `u32::MAX` does.
+fn places<C: TryInto<i128>>(n: C) -> Result<u32, AlgorithmError> {
+    let n: i128 = n.try_into().map_err(|_| AlgorithmError::OutOfRange)?;
+    if n < 0 {
+        return Err(AlgorithmError::OutOfRange);
+    }
+    Ok(u32::try_from(n).unwrap_or(u32::MAX))
+}
+
+/// `a << n` at the width of `T`, the count at its own type: 0 for a count at
+/// or past the width, and an out-of-range failure for one below 0.
+pub fn shl<T: ShiftInt, C: TryInto<i128>>(a: T, n: C) -> Result<T, AlgorithmError> {
+    places(n).map(|n| a.shl_total(n))
+}
+
+/// `a >> n`, the floor of `a / 2^n`: 0 or -1 for a count at or past the width,
+/// and an out-of-range failure for one below 0.
+pub fn shr<T: ShiftInt, C: TryInto<i128>>(a: T, n: C) -> Result<T, AlgorithmError> {
+    places(n).map(|n| a.shr_total(n))
+}
+
+/// `a >>> n`, the logical shift of the width's bits of `a`: 0 for a count at
+/// or past the width, and an out-of-range failure for one below 0.
+pub fn ushr<T: ShiftInt, C: TryInto<i128>>(a: T, n: C) -> Result<T, AlgorithmError> {
+    places(n).map(|n| a.ushr_total(n))
+}
+
 /// The element of `xs` at `i`, or an out-of-range failure when `i` is below
 /// 0 or not below `xs`'s length — never a read past the end, and never a
 /// panic.
@@ -197,6 +273,21 @@ pub mod proven {
         -a
     }
 
+    /// `a << n`, the count `n` at its own type, proven at least 0 and below
+    /// the width of `T` (SCE_FORGE.md §3.4.1, "The width of a shift").
+    #[inline(always)]
+    pub fn shl<T: CheckedInt + core::ops::Shl<C, Output = T>, C>(a: T, n: C) -> T {
+        a << n
+    }
+
+    /// `a >> n`, the count `n` at its own type, proven at least 0 and below
+    /// the width of `T`: arithmetic for a signed `T`, and the logical shift
+    /// `>>>` is for an unsigned one.
+    #[inline(always)]
+    pub fn shr<T: CheckedInt + core::ops::Shr<C, Output = T>, C>(a: T, n: C) -> T {
+        a >> n
+    }
+
     /// The element of `xs` at `i`, `i` proven at least 0 and below the
     /// length. The index is taken at its own type, as [`super::at`] takes it.
     #[inline(always)]
@@ -270,6 +361,34 @@ mod tests {
             assert_eq!(proven::at(&bytes, i as u32), *b);
             assert_eq!(proven::at_ref(&bytes, i as u8), b);
         }
+    }
+
+    #[test]
+    fn a_proven_shift_is_the_operator() {
+        assert_eq!(proven::shl(1u32, 31u8), 1u32 << 31);
+        assert_eq!(proven::shl(-1i16, 15i32), i16::MIN);
+        assert_eq!(proven::shr(-128i8, 7u64), -1);
+        assert_eq!(proven::shr(0x80u8, 7u8), 1);
+    }
+
+    /// SCE_FORGE.md §3.4.1, "The width of a shift": the exact result reduced
+    /// to the width for every count at least 0, and no value below 0.
+    #[test]
+    fn a_shift_past_its_width_is_its_reduced_exact_result() {
+        assert_eq!(shl(0xFFu8, 7u8), Ok(0x80));
+        assert_eq!(shl(0xFFu8, 8u8), Ok(0));
+        assert_eq!(shl(1i64, 200u8), Ok(0));
+        assert_eq!(shl(1u32, u64::MAX), Ok(0));
+        assert_eq!(shr(-5i32, 1u8), Ok(-3));
+        assert_eq!(shr(i64::MIN, 64u8), Ok(-1));
+        assert_eq!(shr(i16::MAX, 300i32), Ok(0));
+        assert_eq!(shr(u64::MAX, 64u8), Ok(0));
+        assert_eq!(ushr(-1i32, 28u8), Ok(0xF));
+        assert_eq!(ushr(-1i8, 8u8), Ok(0));
+        assert_eq!(ushr(0x8000u16, 15u8), Ok(1));
+        assert_eq!(shl(1u8, -1i32), Err(AlgorithmError::OutOfRange));
+        assert_eq!(shr(-1i64, i64::MIN), Err(AlgorithmError::OutOfRange));
+        assert_eq!(ushr(1u16, -8i8), Err(AlgorithmError::OutOfRange));
     }
 
     #[test]

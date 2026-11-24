@@ -195,3 +195,44 @@ def test_no_total_operation_raises_where_the_checked_one_does():
         algorithm.U32.sub(0, 1)
     assert algorithm.U32.wrapping_sub(0, 1) == 2**32 - 1
     assert algorithm.U32.saturating_sub(0, 1) == 0
+
+
+@pytest.mark.parametrize("name, width, bits, signed", WIDTHS, ids=[w[0] for w in WIDTHS])
+def test_a_shift_is_its_exact_result_reduced_to_its_width(name, width, bits, signed):
+    """SCE_FORGE.md §3.4.1, "The width of a shift": for every count at least 0,
+    a left shift is ``a * 2**n`` with its low ``bits`` bits kept, a right shift
+    is the floor of ``a / 2**n``, and a logical one the floor of the width's
+    unsigned bits over ``2**n``; 0, or -1 for a negative ``>>``, from a count
+    at the width."""
+    for a in operands(bits, signed):
+        for n in (0, 1, bits - 1, bits, bits + 3, 200):
+            pattern = a & ((1 << bits) - 1)
+            assert width.wrapping_shl(a, n) == wrapped(a * 2**n, bits, signed), f"{name}.wrapping_shl({a}, {n})"
+            assert width.shl(a, n) == wrapped(a * 2**n, bits, signed), f"{name}.shl({a}, {n})"
+            assert width.shr(a, n) == a // 2**n, f"{name}.shr({a}, {n})"
+            want = wrapped(pattern // 2**n, bits, signed)
+            assert width.wrapping_ushr(a, n) == want, f"{name}.wrapping_ushr({a}, {n})"
+            assert width.ushr(a, n) == want, f"{name}.ushr({a}, {n})"
+
+
+@pytest.mark.parametrize(
+    "call, want",
+    [
+        (lambda: algorithm.U8.wrapping_shl(0xFF, 7), 0x80),
+        (lambda: algorithm.U8.wrapping_shl(0xFF, 8), 0),
+        (lambda: algorithm.I32.wrapping_shl(1, 31), -(2**31)),
+        (lambda: algorithm.I64.shr(-(2**63), 64), -1),
+        (lambda: algorithm.I32.wrapping_ushr(-1, 28), 15),
+        (lambda: algorithm.I16.ushr(-(2**15), 15), 1),
+        (lambda: algorithm.U64.wrapping_shl(1, 2**64 - 1), 0),
+    ],
+)
+def test_each_shift_past_its_width_is_pinned(call, want):
+    assert call() == want
+
+
+@pytest.mark.parametrize("method", ["shl", "shr", "ushr"])
+def test_a_checked_shift_by_a_count_below_zero_is_out_of_range(method):
+    with pytest.raises(algorithm.AlgorithmFailure) as raised:
+        getattr(algorithm.I32, method)(1, -1)
+    assert raised.value.error == algorithm.AlgorithmError.OUT_OF_RANGE
