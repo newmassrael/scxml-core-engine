@@ -157,7 +157,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-no-std-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'backends/rust/runtime/**/*.rs', 'backends/rust/runtime/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-no-std-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'backends/rust/runtime/Cargo.toml') }}
         restore-keys: |
           ${{ runner.os }}-cargo-no-std-${{ hashFiles('rust-toolchain.toml') }}-
 

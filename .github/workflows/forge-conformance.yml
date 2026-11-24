@@ -207,9 +207,11 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        # Invalidate when the lockfile OR any sce-build source changes so a
-        # pure dependency bump doesn't get a stale binary from cache.
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/**/*.rs', 'sce-build/Cargo.toml') }}
+        # Keyed by what the dependencies are, not by the sources: cargo rebuilds a
+        # changed crate from its fingerprints whatever the cache holds, and a key
+        # that hashed sce-build's sources saved a new copy of `target` on every
+        # commit that touched them, which evicted the caches beside it.
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}
         restore-keys: |
           ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 

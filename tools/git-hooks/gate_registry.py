@@ -5433,6 +5433,26 @@ def step_values(step: list[str], key: str) -> list[str]:
     return []
 
 
+HASHED_FILES = re.compile(r"hashFiles\(([^)]*)\)")
+
+
+def key_hashed_sources(key: str) -> list[str]:
+    """The source files a cache key hashes: a `.rs` glob or a `src/` tree.
+
+    A key of Rust build state names what its dependencies are (the toolchain,
+    Cargo.lock, a manifest). On 2026-11-24 five lanes hashed sce-build's
+    sources into theirs, so each commit that touched them saved a new
+    `target` of 380 to 620 MB, and with the repository's caches past their
+    10 GB GitHub evicted the C++ compiler caches.
+    """
+    found = []
+    for args in HASHED_FILES.findall(key):
+        for glob in re.findall(r"'([^']*)'", args):
+            if glob.endswith(".rs") or "/src/" in f"/{glob}":
+                found.append(glob)
+    return found
+
+
 def rust_cache_failures(repo_root: Path) -> list[str]:
     """A cache of Rust build state whose key does not move with the release.
 
@@ -5467,6 +5487,13 @@ def rust_cache_failures(repo_root: Path) -> list[str]:
                     f"{rel}:{number} caches Rust build state with no `key` that "
                     f"carries {TOOLCHAIN_CACHE_KEY}, so a release move restores the "
                     f"old release's artefacts")
+            for key in keys:
+                for source in key_hashed_sources(key):
+                    failures.append(
+                        f"{rel}:{number} keys Rust build state by the sources "
+                        f"{source!r}: every commit that touches them saves another "
+                        f"copy of `target`, which evicts the caches beside it; key it "
+                        f"by the toolchain and Cargo.lock, cargo rebuilds a changed crate")
             for key in keys + step_values(step, "restore-keys"):
                 if TOOLCHAIN_CACHE_KEY not in key:
                     failures.append(
@@ -8797,6 +8824,13 @@ def self_test(repo_root: Path) -> int:
     cases += 1
     failures.extend(f"every-lane-installs-the-pinned-rust: {f}"
                     for f in moving_rust_failures(repo_root))
+    for key, want in (
+            ("x-${{ hashFiles('Cargo.lock', 'sce-build/**/*.rs') }}", ["sce-build/**/*.rs"]),
+            ("x-${{ hashFiles('sce-build/src/**') }}", ["sce-build/src/**"]),
+            ("x-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'sce-build/Cargo.toml') }}", [])):
+        if key_hashed_sources(key) != want:
+            failures.append(f"every-lane-installs-the-pinned-rust: the sources {key!r} "
+                            f"hashes read as {key_hashed_sources(key)!r}, not {want!r}")
 
     # every-lane-keys-its-own-gradle-cache. No two workflows save a Gradle
     # cache under one key (`shared_gradle_cache_keys`). The fixture holds the
