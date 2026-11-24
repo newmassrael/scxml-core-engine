@@ -2961,6 +2961,125 @@ fn forge_views_of_the_codecs_the_parents_use_rust() {
     }
 }
 
+/// The Rust text of the document `name` of `tests/forge/resources/` under
+/// `options`.
+fn render_rust_with(name: &str, options: &sce_build::ForgeCompileOptions) -> String {
+    let scxml_path = resource_dir().join(format!("{name}.scxml"));
+    let content = std::fs::read_to_string(&scxml_path)
+        .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
+    sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric(name),
+        sce_build::generator::Language::Rust,
+        scxml_path.parent().unwrap(),
+        options,
+    )
+    .unwrap_or_else(|e| panic!("Forge codegen failed for {name}: {e}"))
+    .files
+    .remove(0)
+    .1
+}
+
+/// Every list of one entry that carries nothing from one entry to the next
+/// reads it by the one walk the entry's module writes, `{Entry}Walk`, and not
+/// by a marker type of its own: two codecs that list `CodecTlvEntry` name the
+/// same type, and keep their own names as aliases of it (docs/adr/0049,
+/// amendment of 2026-11-25).
+#[test]
+fn forge_views_lists_of_one_entry_share_its_walk_rust() {
+    let shared = "super::codec_tlv_entry::CodecTlvEntryWalk";
+    for (name, own) in [
+        ("codec_tlv_chain_basic", "CodecTlvChainBasicExtensionsWalk"),
+        (
+            "codec_tlv_chain_present_if_basic",
+            "CodecTlvChainPresentIfBasicEntriesWalk",
+        ),
+    ] {
+        let text = render_rust_with(name, &views_options());
+        assert!(
+            text.contains(&format!("ListView<'a, {shared}, 0>")),
+            "{name}: its list does not read by {shared}:\n{text}"
+        );
+        assert!(
+            text.contains(&format!("pub type {own} = {shared};")),
+            "{name}: `{own}` is not an alias of {shared}:\n{text}"
+        );
+        assert!(
+            !text.contains(&format!("pub struct {own};")),
+            "{name}: the list still writes a walk of its own:\n{text}"
+        );
+    }
+    let entry = render_rust_with("codec_tlv_entry", &views_options());
+    assert!(
+        entry.contains("pub struct CodecTlvEntryWalk;"),
+        "codec_tlv_entry writes no walk for its lists:\n{entry}"
+    );
+    assert!(
+        entry.contains("impl ::sce_forge_runtime::codec::ListWalk<0> for CodecTlvEntryWalk {"),
+        "codec_tlv_entry's walk reads no entry:\n{entry}"
+    );
+}
+
+/// The lists of extensions of two Zenoh messages read `CodecZenohExtEntry` by
+/// the one walk its module writes, which is what lets a program that walks the
+/// extensions of every message hold one walk.
+#[test]
+fn forge_zenoh_extension_lists_share_the_entry_walk_rust() {
+    let shared = "super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, 0>";
+    for name in ["codec_zenoh_ext_envelope", "codec_zenoh_msg_put"] {
+        let options = golden_options_of_document(
+            sce_build::generator::Language::Rust,
+            &format!("{name}.scxml"),
+        );
+        let text = render_rust_with(name, &options);
+        assert!(
+            text.contains(shared),
+            "{name}: its extensions do not read by the entry's walk:\n{text}"
+        );
+    }
+}
+
+/// A list whose entry takes a flag input reads by the entry's walk too, when it
+/// carries nothing: the walk hands the input over from the list's arguments, as
+/// the entry declares it.
+#[test]
+fn forge_views_a_list_of_an_entry_with_inputs_shares_its_walk_rust() {
+    let text = render_rust_with("codec_repeat_flag_carrier", &views_options());
+    assert!(
+        text.contains("ListView<'a, super::codec_chain_flag_entry::CodecChainFlagEntryWalk, 1>"),
+        "codec_repeat_flag_carrier: its list does not read by the entry's walk:\n{text}"
+    );
+    let entry = render_rust_with("codec_chain_flag_entry", &views_options());
+    assert!(
+        entry
+            .contains("impl ::sce_forge_runtime::codec::ListWalk<1> for CodecChainFlagEntryWalk {"),
+        "codec_chain_flag_entry's walk does not take its one input:\n{entry}"
+    );
+    assert!(
+        entry.contains("CodecChainFlagEntryView::decode(_c, _a[0])"),
+        "codec_chain_flag_entry's walk does not hand its input over:\n{entry}"
+    );
+}
+
+/// A chain that carries a value from one entry to the next reads by a walk of
+/// its own, since what it carries is its own: the entry's walk carries nothing.
+#[test]
+fn forge_views_a_list_that_carries_a_value_keeps_its_own_walk_rust() {
+    let text = render_rust_with("codec_chain_prev_carrier", &views_options());
+    assert!(
+        text.contains("pub struct CodecChainPrevCarrierEntriesWalk;"),
+        "codec_chain_prev_carrier: the chain has no walk of its own:\n{text}"
+    );
+    assert!(
+        text.contains("NonEmptyListView<'a, CodecChainPrevCarrierEntriesWalk, 2>"),
+        "codec_chain_prev_carrier: the chain does not read by its own walk:\n{text}"
+    );
+    assert!(
+        !text.contains("CodecChainPrevEntryWalk"),
+        "codec_chain_prev_carrier: the chain reads by the entry's walk:\n{text}"
+    );
+}
+
 #[test]
 fn forge_codec_nested_parent_views_rust() {
     assert_views_rust("codec_nested_parent");
