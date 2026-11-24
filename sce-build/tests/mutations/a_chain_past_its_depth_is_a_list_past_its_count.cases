@@ -14,7 +14,14 @@
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-build --features cli --lib --test forge_conformance
+# The filter is `chain`: every test that kills a case below names the chain it
+# holds (`tlv_chain_guard_answers_each_termination` and
+# `a_chain_past_its_depth_answers_its_kind_in_one_branch` in the library,
+# `a_chain_states_no_policy_for_what_a_node_cannot_hold` and the chain codecs'
+# vectors in `forge_conformance`). The whole library ran 274 to 332 seconds on a
+# hosted runner against the 300 a binary may run, so the round's baseline never
+# came back (Mutation Rounds jobs 137852541202, 138446041529, 138659849678).
+mutation_tests -p sce-build --features cli --lib --test forge_conformance chain
 mutation_targets sce-build/src/forge/generator.rs schemas/sce-forge-ext.xsd
 mutation_oracles sce-build/src/forge/generator.rs sce-build/tests/forge_conformance.rs
 

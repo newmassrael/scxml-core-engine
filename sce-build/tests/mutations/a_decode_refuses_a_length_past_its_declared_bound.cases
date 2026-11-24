@@ -60,7 +60,7 @@ PY
 mutation_case "a 64-bit length is narrowed to 32 bits before it is compared" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''                "let _len = {carried};\n{indent}{}let _n = {narrow};",''',
-     r'''                "let _len = ({carried}) as u32;\n{indent}{}let _n = {narrow};",''')
+     r'''                "let _len = ({carried}) as u32 as u64;\n{indent}{}let _n = {narrow};",''')
 PY
 
 mutation_case "a list's count past its bound is not judged before its entries" <<'PY'
