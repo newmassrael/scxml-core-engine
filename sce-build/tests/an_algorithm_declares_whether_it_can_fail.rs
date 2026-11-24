@@ -214,7 +214,8 @@ fn an_undeclared_operation_that_can_fail_is_refused_where_it_is_written() {
 
 /// Rust checks every integer operation at its declared width and returns
 /// the value inside the `Result` the checks `?` out of; the same document
-/// without the declaration emits the plain operator and a plain return.
+/// without the declaration, its operation proven, emits the proven operation
+/// (SCE_FORGE.md §3.4.1, "A proven operation in Rust") and a plain return.
 #[test]
 fn rust_checks_each_operation_and_returns_through_a_result() {
     let checked = generate(
@@ -234,8 +235,10 @@ fn rust_checks_each_operation_and_returns_through_a_result() {
     let plain = generate("probe_may_fail", &guarded_document(), &[], Language::Rust)
         .expect("a proven algorithm generates without the declaration");
     assert!(
-        !plain.contains("sce_forge_runtime") && plain.contains("prev + 1"),
-        "an undeclared algorithm is emitted as before:\n{plain}"
+        !plain.contains("Result<")
+            && !plain.contains("?;")
+            && plain.contains("sce_forge_runtime::algorithm::proven::add::<u32>(prev, 1)"),
+        "an undeclared algorithm returns its value through the proven operation:\n{plain}"
     );
 }
 
