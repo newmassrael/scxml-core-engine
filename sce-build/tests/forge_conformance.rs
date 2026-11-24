@@ -16616,25 +16616,23 @@ fn forge_parent_tag_consumer_parity_alias_neq_stem_rust() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Parent-tag-dispatch consumer-parity Gap 3 — parent gates the dispatcher embed
-/// with `sce:present-if`. Encode-side derivation wraps the match in
-/// `Option` handling; absent embed → derived carrier bit = 0
-/// (deterministic extension of derivation to the don't-care case).
-/// Regression: the original emitter produced `match &self.<f>.body { ... }`
-/// unconditionally — fails to compile when `<f>` is `Option<T>`.
-#[test]
-fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
+/// The parent of Gap 3 and its documents, written to a fresh directory named
+/// by `label` that the caller removes: `header` holds `R` (bit 4), the gate
+/// of the embedded dispatcher `key`, and `M` (bit 6), the tag of its arm,
+/// `0` for the two-byte `nonlocal` (the default) and `1` for the one-byte
+/// `local`.
+fn gated_dispatch_fixture(label: &str) -> std::path::PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let dir = std::env::temp_dir().join(format!("sce_b5nu_present_if_{pid}_{id}"));
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_{label}_{pid}_{id}"));
     std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
     // Parent has header.R (presence gate) AND header.M (variant tag).
     // The dispatcher embed `key` is gated by header.R; when R=0 the
-    // keyexpr field is absent on the wire, and the derived header
-    // contribution must default to 0 in the encode.
+    // keyexpr field is absent on the wire, and the encode keeps the M the
+    // header the source presents holds.
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -16688,9 +16686,26 @@ fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
     std::fs::write(dir.join("b5nu_consumer_gated_local.scxml"), local).expect("write local");
     std::fs::write(dir.join("b5nu_consumer_gated_nonlocal.scxml"), nonlocal)
         .expect("write nonlocal");
+    dir
+}
+
+/// Parent-tag-dispatch consumer-parity Gap 3 — parent gates the dispatcher embed
+/// with `sce:present-if`. Encode-side derivation maps the body's `Option`
+/// to the tag of the arm it holds; with the embed absent nothing says the
+/// flag, and the carrier keeps the bit the source presents (docs/adr/0065 §6
+/// R4a), as the decode left it.
+/// Regression: the original emitter produced `match &self.<f>.body { ... }`
+/// unconditionally — fails to compile when `<f>` is `Option<T>`; a later one
+/// wrote the flag clear for an absent embed, so a frame with `R=0, M=1`
+/// decoded and encoded again lost its `M`.
+#[test]
+fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
+    let dir = gated_dispatch_fixture("present_if");
+    let parent =
+        std::fs::read_to_string(dir.join("b5nu_consumer_gated_parent.scxml")).expect("read parent");
 
     let output = sce_build::compile_forge_with_imports(
-        parent,
+        &parent,
         sce_build::DocumentLabel::symmetric("b5nu_consumer_gated_parent"),
         sce_build::generator::Language::Rust,
         &dir,
@@ -16705,18 +16720,24 @@ fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
         .map(|(_, body)| body.clone())
         .expect("parent codec emit");
 
-    // The match must wrap in Option handling — `Some(_x) => match
-    // body(_x) { ... }, None => 0`. Without the wrap the emit reads the
-    // dispatcher's arm of a body that may be absent and fails to compile.
+    // The match is mapped over the body's `Option`: without it the emit reads
+    // the dispatcher's arm of a body that may be absent and fails to compile.
     assert!(
-        parent_rust.contains("Some(_x) => match "),
-        "match must wrap the present-if-gated embed in `Some(_x) => match ` \
-         pattern;\n{parent_rust}"
+        parent_rust.contains("let _d_header_m: Option<u8> = src.key().map(|_x| match "),
+        "the tag must be the arm of the present-if-gated embed, and none \
+         where it is absent;\n{parent_rust}"
+    );
+    // With no body there the fold leaves the presented M in place.
+    assert!(
+        parent_rust.contains(
+            "if let Some(_n) = _d_header_m {\n            \
+             _c_header = (_c_header & !0x40) | (_n << 6);"
+        ),
+        "M must be folded into the header only where the embed says it;\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("None => 0 }"),
-        "absent branch must contribute 0 to derived carrier bits \
-         (textbook absent → 0 rule);\n{parent_rust}"
+        !parent_rust.contains("None => 0 }"),
+        "an absent embed must not write M clear;\n{parent_rust}"
     );
     // Defensive — the unconditional pattern must not appear.
     assert!(
@@ -16725,6 +16746,70 @@ fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
          (Gap 3 regression);\n{parent_rust}"
     );
 
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Rust compile+run of the Gap 3 parent: each frame decodes and encodes back
+/// to itself. With `R` clear the dispatcher is absent and nothing says `M`,
+/// so the encode keeps the `M` the decode read (docs/adr/0065 §6 R4a); with
+/// `R` set the arm the body holds says it, whatever the stored header holds.
+///
+/// Turns red where `derive_parent_tag` writes `M` for an absent body (the
+/// `unsaid` branch), as it once wrote it clear: `0x40` then encodes as
+/// `0x00`.
+#[test]
+fn forge_parent_tag_consumer_parity_present_if_gated_rust_runtime() {
+    const HARNESS: &str = r#"// Injected by forge_parent_tag_consumer_parity_present_if_gated_rust_runtime.
+#[cfg(test)]
+mod tests {
+    use crate::b5nu_consumer_gated_parent::B5nuConsumerGatedParent as Parent;
+    use ::sce_forge_runtime::codec::SceCursor;
+
+    fn round_trip(frame: &[u8]) {
+        let v = Parent::decode(&mut SceCursor::new(frame)).expect("decode parent frame");
+        assert_eq!(v.encode_to_vec().as_slice(), frame, "re-encode must be byte-exact");
+    }
+
+    #[test]
+    fn an_absent_key_keeps_the_m_the_frame_holds() {
+        let frame = [0x40u8];
+        let v = Parent::decode(&mut SceCursor::new(&frame)).expect("decode parent frame");
+        assert!(v.key.is_none(), "R clear leaves the key out");
+        assert_eq!(v.header, 0x40, "the decode keeps M");
+        round_trip(&frame);
+    }
+
+    #[test]
+    fn an_absent_key_keeps_m_clear_too() {
+        round_trip(&[0x00u8]);
+    }
+
+    #[test]
+    fn a_present_key_writes_the_m_of_its_arm() {
+        // M = 1: the one-byte local arm; M = 0: the two-byte nonlocal arm.
+        round_trip(&[0x50u8, 0x07]);
+        round_trip(&[0x10u8, 0x12, 0x34]);
+        // The arm says M, not the stored header.
+        let frame = [0x50u8, 0x07];
+        let mut v = Parent::decode(&mut SceCursor::new(&frame)).expect("decode parent frame");
+        v.header &= !0x40;
+        assert_eq!(v.encode_to_vec().as_slice(), &frame);
+    }
+}
+"#;
+    let dir = gated_dispatch_fixture("present_if_runtime");
+    rustc_test_codec_set_with_extra(
+        &dir,
+        &[
+            "b5nu_consumer_gated_local.scxml",
+            "b5nu_consumer_gated_nonlocal.scxml",
+            "b5nu_consumer_gated_disp.scxml",
+            "b5nu_consumer_gated_parent.scxml",
+        ],
+        &[("gated_parent_roundtrip.rs", HARNESS)],
+        "present_if_gated_runtime",
+    )
+    .expect("a parent whose gated dispatcher is absent must write back the M it read");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

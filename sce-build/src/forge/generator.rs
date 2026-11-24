@@ -27682,8 +27682,10 @@ pub(crate) fn collect_parent_tag_derivations(
 /// the encode-side match in their native Optional/nullable handling
 /// and read `present_if.is_some()` only. C11 (which encodes presence
 /// via a carrier flag bit, not a wrapper) renders the predicate
-/// through `present_if_test_literal_encode`. Absent embed → derived
-/// carrier bit = 0 (RFC §synth-5-B parent-tag-dispatch consumer-parity textbook rule).
+/// through `present_if_test_literal_encode`. An absent embed fills none of
+/// the flag; where no embed that fills the flag is there, nothing says it, and
+/// the carrier keeps the bits its stored value holds there
+/// ([`parent_tag_unsaid_with`]), as a decode that read the frame left them.
 #[derive(Debug, Clone)]
 pub(crate) struct ParentTagDerivation {
     pub(crate) embed_field_id: String,
@@ -27700,6 +27702,37 @@ pub(crate) struct ParentTagDerivation {
     /// body it holds presents the tag no arm names, and that tag, masked to
     /// the flag's width, is what the carrier holds (ADR 0058).
     catch_all: bool,
+}
+
+impl ParentTagDerivation {
+    /// The bits of the carrier's byte the flag the embed fills holds, in place.
+    fn filled(&self) -> u64 {
+        (((1u64 << self.width) - 1) << self.bit) & 0xFF
+    }
+}
+
+/// Where the embed of `d` is gated, the other derivations among `items`, the
+/// derivations of `d`'s carrier, that fill the flag `d` fills, each gated too:
+/// while `d`'s embed is absent and none of theirs is there either, nothing says
+/// the flag, and the carrier keeps the bits its stored value holds there
+/// (docs/adr/0065 §6 R4a), as a decode that read the frame left them. `None`
+/// where `d`'s embed is always there, or another embed that fills the flag is.
+/// Each absent embed of such a flag adds the same stored bits, so the bits are
+/// kept once whichever of them adds them.
+fn parent_tag_unsaid_with<'d>(
+    d: &ParentTagDerivation,
+    items: &[&'d ParentTagDerivation],
+) -> Option<Vec<&'d ParentTagDerivation>> {
+    d.present_if.as_ref()?;
+    let others: Vec<&'d ParentTagDerivation> = items
+        .iter()
+        .copied()
+        .filter(|o| o.carrier_flag == d.carrier_flag && o.embed_field_id != d.embed_field_id)
+        .collect();
+    others
+        .iter()
+        .all(|o| o.present_if.is_some())
+        .then_some(others)
 }
 
 /// RFC §synth-5-B parent-tag dispatch — emit per-language locals at the parent codec's
@@ -27762,7 +27795,7 @@ fn parent_tag_derivation_local_for_carrier(
         Language::Kotlin => {
             let terms: Vec<String> = items
                 .iter()
-                .map(|d| parent_tag_match_term_kotlin(d, imports))
+                .map(|d| parent_tag_match_term_kotlin(d, items, imports))
                 .collect();
             // Kotlin uses Int arithmetic then narrows back to UByte for
             // the carrier OR; each term is already an `Int`, joined with
@@ -27776,7 +27809,7 @@ fn parent_tag_derivation_local_for_carrier(
             // carriers OR each switch result into the local sequentially.
             let mut block = format!("\tvar {local_camel} byte = 0\n");
             for d in items {
-                block.push_str(&parent_tag_switch_block_go(d, &local_camel, imports));
+                block.push_str(&parent_tag_switch_block_go(d, items, &local_camel, imports));
             }
             block
         }
@@ -27787,7 +27820,13 @@ fn parent_tag_derivation_local_for_carrier(
             // v1 rpf lock-in.
             let mut block = format!("    uint8_t {local_snake} = 0u;\n");
             for d in items {
-                block.push_str(&parent_tag_switch_block_c11(d, &local_snake, m, imports));
+                block.push_str(&parent_tag_switch_block_c11(
+                    d,
+                    items,
+                    &local_snake,
+                    m,
+                    imports,
+                ));
             }
             block
         }
@@ -27817,12 +27856,18 @@ fn parent_tag_embed_import<'a>(
 
 /// Single-embed match-expression term for Kotlin. Uses `when` over the
 /// sealed variant body and produces an `Int` (the bit pattern). For a
-/// nullable embed, safe-call + Elvis collapses the absent case to 0. The
+/// nullable embed, safe-call + Elvis collapses the absent case to 0, or to
+/// the bits the stored carrier holds in the flag where no embed among `items`
+/// says it ([`parent_tag_unsaid_with`]). The
 /// entries are parted by `;`: an entry's value followed by the next `is`
 /// would read as one type test. A catch-all body fills the carrier with the
 /// tag it holds (ADR 0058), read through the `when`'s own binding of the
 /// body, since the body is a `var` a type test does not narrow.
-fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContext]) -> String {
+fn parent_tag_match_term_kotlin(
+    d: &ParentTagDerivation,
+    items: &[&ParentTagDerivation],
+    imports: &[ImportContext],
+) -> String {
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let embed_pascal = parent_tag_embed_pascal(d, imports);
     let mask: u64 = (1u64 << d.width) - 1;
@@ -27850,7 +27895,32 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
     }
     let arms_str = arms.join("; ");
     if d.present_if.is_some() {
-        format!("(this.{snake}?.body?.let {{ when (it) {{ {arms_str} }} }} ?: 0)")
+        let absent = match parent_tag_unsaid_with(d, items) {
+            None => "0".to_string(),
+            Some(others) => {
+                let kept = format!(
+                    "(this.{}.toInt() and 0x{:02X})",
+                    d.carrier_field_id,
+                    d.filled()
+                );
+                if others.is_empty() {
+                    kept
+                } else {
+                    let none = others
+                        .iter()
+                        .map(|o| {
+                            format!(
+                                "this.{} == null",
+                                filters::to_snake_case(o.embed_field_id.clone())
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" && ");
+                    format!("(if ({none}) {kept} else 0)")
+                }
+            }
+        };
+        format!("(this.{snake}?.body?.let {{ when (it) {{ {arms_str} }} }} ?: {absent})")
     } else if d.catch_all {
         format!("(when (val {held} = this.{snake}.body) {{ {arms_str} }})")
     } else {
@@ -27861,7 +27931,9 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
 /// Single-embed dispatch for Go. Writes into the named local via
 /// bitwise OR so multiple embeds combine cleanly on the same carrier.
 /// An optional embed (`optional.Of[T]`) is dispatched where it is present;
-/// an absent one makes no contribution.
+/// an absent one makes no contribution, but where no embed among `items`
+/// says the flag, the bits the stored carrier holds there
+/// ([`parent_tag_unsaid_with`]).
 ///
 /// The template's Go variant body is a struct with one `*<ArmBodyType>`
 /// field per arm — exactly one is non-nil at a time. Dispatch is by field
@@ -27873,6 +27945,7 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
 /// is a type switch over it, each arm type named by the body's package.
 fn parent_tag_switch_block_go(
     d: &ParentTagDerivation,
+    items: &[&ParentTagDerivation],
     local: &str,
     imports: &[ImportContext],
 ) -> String {
@@ -27918,8 +27991,33 @@ fn parent_tag_switch_block_go(
         parent_tag_field_switch_go(d, local, &embed, mask)
     };
     if gated {
+        let absent = match parent_tag_unsaid_with(d, items) {
+            None => String::new(),
+            Some(others) => {
+                let open = if others.is_empty() {
+                    " else {".to_string()
+                } else {
+                    format!(
+                        " else if {} {{",
+                        others
+                            .iter()
+                            .map(|o| format!(
+                                "!s.{}.IsPresent()",
+                                filters::to_pascal_case(o.embed_field_id.clone())
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(" && ")
+                    )
+                };
+                format!(
+                    "{open}\n\t\t{local} |= s.{} & 0x{:02X}\n\t}}",
+                    filters::to_pascal_case(d.carrier_field_id.clone()),
+                    d.filled()
+                )
+            }
+        };
         format!(
-            "\tif s.{pascal}.IsPresent() {{\n\t_embed := s.{pascal}.Proven()\n{switch_block}\t}}\n"
+            "\tif s.{pascal}.IsPresent() {{\n\t_embed := s.{pascal}.Proven()\n{switch_block}\t}}{absent}\n"
         )
     } else {
         switch_block
@@ -27959,9 +28057,12 @@ fn parent_tag_field_switch_go(
 /// Single-embed switch for C11. Mirrors the Go shape with the tagged-
 /// union `body.kind` discriminant. C11 has no nullable wrapper for
 /// `present-if`-gated fields — presence is encoded by a carrier flag
-/// bit, so the gate test reuses `present_if_test_literal_encode`.
+/// bit, so the gate test reuses `present_if_test_literal_encode`. Where no
+/// embed among `items` says the flag, the stored carrier's bits there
+/// ([`parent_tag_unsaid_with`]).
 fn parent_tag_switch_block_c11(
     d: &ParentTagDerivation,
+    items: &[&ParentTagDerivation],
     local: &str,
     m: &CodecModel,
     imports: &[ImportContext],
@@ -28000,7 +28101,37 @@ fn parent_tag_switch_block_c11(
     switch_block.push_str("    default: break;\n    }\n");
     if let Some(p) = &d.present_if {
         let test = present_if_test_literal_encode(&m.fields, p, crate::generator::Language::C11);
-        format!("    if ({test}) {{\n{switch_block}    }}\n")
+        let absent = match parent_tag_unsaid_with(d, items) {
+            None => String::new(),
+            Some(others) => {
+                let open = if others.is_empty() {
+                    " else {".to_string()
+                } else {
+                    format!(
+                        " else if ({}) {{",
+                        others
+                            .iter()
+                            .filter_map(|o| o.present_if.as_ref())
+                            .map(|q| format!(
+                                "!({})",
+                                present_if_test_literal_encode(
+                                    &m.fields,
+                                    q,
+                                    crate::generator::Language::C11
+                                )
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(" && ")
+                    )
+                };
+                format!(
+                    "{open}\n        {local} |= (uint8_t)(self->{} & 0x{:02X}u);\n    }}",
+                    filters::to_snake_case(d.carrier_field_id.clone()),
+                    d.filled()
+                )
+            }
+        };
+        format!("    if ({test}) {{\n{switch_block}    }}{absent}\n")
     } else {
         switch_block
     }

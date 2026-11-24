@@ -4796,7 +4796,10 @@ impl<'a> Plan<'a> {
 
     /// The bits of a carrier that an embedded variant's active arm fills: the
     /// arm's value, read from the embedded body's source. A gated body that is
-    /// absent fills none.
+    /// absent fills none. Where every body that fills the bits is gated, the
+    /// bits are a number there may be none of: with no body there, the carrier
+    /// keeps the bits the source presents, as a decode that read them left them
+    /// (docs/adr/0065 §6 R4a).
     fn derive_parent_tag(
         &self,
         id: &ElementId,
@@ -4809,6 +4812,11 @@ impl<'a> Plan<'a> {
         };
         let ty = self.l().type_name(&planned.carrier.sce_type).to_string();
         let local = self.local("_d_", id);
+        // No body is always there to say the bits.
+        let unsaid = planned
+            .terms
+            .iter()
+            .all(|term| term.body.present_if.is_some());
         let mut terms: Vec<String> = Vec::new();
         for term in &planned.terms {
             let import = self
@@ -4856,7 +4864,9 @@ impl<'a> Plan<'a> {
                 "super::{}::{}Source::body",
                 import.namespace, import.type_name
             );
-            terms.push(if embed.present_if.is_some() {
+            terms.push(if unsaid {
+                format!("{read}.map(|_x| match {body_of}(_x) {{ {arms} }})")
+            } else if embed.present_if.is_some() {
                 format!(
                     "match {read} {{ Some(_x) => match {body_of}(_x) {{ {arms} }}, None => 0 }}"
                 )
@@ -4864,7 +4874,25 @@ impl<'a> Plan<'a> {
                 format!("match {body_of}({read}) {{ {arms} }}")
             });
         }
-        lines.push(format!("let {local}: {ty} = {};", terms.join(" | ")));
+        let kind = if unsaid {
+            // The bodies there, joined bit by bit; none where none is there.
+            let joined = match terms.split_first() {
+                Some((first, [])) => first.clone(),
+                Some((first, rest)) => {
+                    let mut chained = format!("{first}.into_iter()");
+                    for term in rest {
+                        chained.push_str(&format!(".chain({term})"));
+                    }
+                    format!("{chained}.reduce(|_a, _b| _a | _b)")
+                }
+                None => unreachable!("a parent tag is filled by at least one body"),
+            };
+            lines.push(format!("let {local}: Option<{ty}> = {joined};"));
+            FlagValue::Optional
+        } else {
+            lines.push(format!("let {local}: {ty} = {};", terms.join(" | ")));
+            FlagValue::Number
+        };
         derived
             .flags
             .entry(field.clone())
@@ -4873,7 +4901,7 @@ impl<'a> Plan<'a> {
                 flag: flag.clone(),
                 value: local,
                 ty,
-                kind: FlagValue::Number,
+                kind,
             });
     }
 
@@ -5760,8 +5788,9 @@ struct DerivedFlag {
 enum FlagValue {
     Number,
     Bool,
-    /// A number there may be none of: the carrier keeps the bits the source
-    /// presents when there is not.
+    /// A number there may be none of, a local of `Option`: a length of
+    /// content a gate may leave out, or the tag of gated bodies. The carrier
+    /// keeps the bits the source presents when there is not.
     Optional,
 }
 
@@ -5882,8 +5911,13 @@ impl Derived {
                     (1u64 << def.width) - 1
                 };
                 let element = format!("{carrier_id}.{}", derived.flag);
-                // Within the bit-range, so within the carrier's type.
-                let placed = shl(&format!("(_n as {ty})"), def.bit);
+                // Within the bit-range, so within the carrier's type; a number
+                // of the carrier's type already is.
+                let placed = if derived.ty == ty {
+                    shl("_n", def.bit)
+                } else {
+                    shl(&format!("(_n as {ty})"), def.bit)
+                };
                 let check = if plan
                     .encode
                     .totality
