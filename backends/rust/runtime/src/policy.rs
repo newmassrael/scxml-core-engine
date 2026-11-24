@@ -937,6 +937,35 @@ pub trait StatePolicy: Sized + 'static {
         Ok(())
     }
 
+    /// The door of data a host lends with its event
+    /// ([`Engine::process_event_with`](crate::Engine::process_event_with);
+    /// docs/adr/0124, D2): hold it to what [`lift_event_payload`](Self::lift_event_payload)
+    /// holds the same data to when a wire carries it, the bounds of its texts
+    /// and byte strings among them. Data that enters a machine keeps one
+    /// contract whichever route it takes.
+    ///
+    /// `Err` refuses the delivery whole, exactly as a lift's refusal does: an
+    /// `error.execution` carrying the refusal is taken in its place, or, in a
+    /// document that declares none, it is dropped and counted. The default
+    /// admits everything, which is right for a policy whose data has no bound
+    /// its type does not already hold.
+    #[cfg(feature = "std")]
+    fn admit_event_data(
+        _event_data: Self::EventData<'_>,
+    ) -> Result<(), crate::event_payload::PayloadRefusal> {
+        Ok(())
+    }
+
+    /// The door of data a host lends with its event, on a `no_std` build
+    /// (docs/adr/0124, D2): whether it is held within what its schema states.
+    /// Such a build has no wire and no refusal to answer with, and takes any
+    /// delivery whose typed payload is not there as one that carries no data;
+    /// lent data this answers `false` for is taken the same way.
+    #[cfg(not(feature = "std"))]
+    fn admit_event_data(_event_data: Self::EventData<'_>) -> bool {
+        true
+    }
+
     /// Forward external events to autoforward children (§scxml-6.4.1).
     ///
     /// Generated only when `HAS_AUTOFORWARD` is `true`.

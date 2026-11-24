@@ -2072,6 +2072,13 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // `error.execution` in its place (docs/adr/0086, section 4.2).
 {{ event_payload_lift }}
 {% endif %}
+{% if event_payload_admit %}
+
+    // docs/adr/0124, D2: data a host lends meets the door a wire delivery
+    // meets: each text and byte string held to the bound the lift holds it to,
+    // and refused in the lift's words.
+{{ event_payload_admit }}
+{% endif %}
 {% else %}
     // docs/adr/0124: this document's events carry no typed data.
     fn event_data<'a>(_held: &'a ::sce_rust_runtime::CurrentEventData<'_, Self>) -> Self::EventData<'a> {}

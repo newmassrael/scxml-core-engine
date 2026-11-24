@@ -3808,13 +3808,16 @@ impl<P: StatePolicy> Engine<P> {
     /// an `error.execution` carrying the refusal takes its place in the queue.
     /// The verdict lives here rather than in each generated policy so every
     /// machine answers a payload it cannot read the same way.
+    ///
+    /// `read` is the lift's reading of the wire, or, for data a host lent with
+    /// the event, the policy's holding of it to the same contract
+    /// (docs/adr/0124, D2): the one verdict below answers both.
     #[cfg(feature = "std")]
     fn bind_lifted_payload(
         event: P::Event,
-        data: &str,
-        payload: &mut P::Payload,
+        read: Result<(), crate::event_payload::PayloadRefusal>,
     ) -> Admission<P::Event> {
-        let Err(refusal) = P::lift_event_payload(event, data, payload) else {
+        let Err(refusal) = read else {
             return Admission::Admitted;
         };
         // §scxml-3.12.2 leaves a document that declares no `error.execution`
@@ -5496,13 +5499,14 @@ impl<P: StatePolicy> Engine<P> {
     /// the turn holds it while the event is `_event`: the policy is handed it
     /// by every hook, and keeps none of it (docs/adr/0124). An event its host
     /// `lent` data with ([`process_event_with`](Self::process_event_with))
-    /// carries it in the lend and not on the wire, so its door reads nothing
-    /// there: it is admitted.
+    /// carries it in the lend and not on the wire, so its door holds the lent
+    /// data, to the same contract and with the same verdict (docs/adr/0124,
+    /// D2).
     fn bind_queued(
         &mut self,
         queued: QueuedEvent,
         external: bool,
-        lent: bool,
+        lent: Option<P::EventData<'_>>,
     ) -> (Bound, P::Payload) {
         // The two queues are of two types (docs/adr/0076), so each is asked
         // for its own payload rather than one chosen by reference.
@@ -5524,11 +5528,17 @@ impl<P: StatePolicy> Engine<P> {
         let mut metadata = queued.metadata;
         // EventSchema native lowering: when no typed payload rode with this
         // event, read it out of the `data` every other producer fills, at the
-        // door. An event whose data is lent is read where it is lent.
+        // door. Data a host lent is held there to the same contract, and
+        // answered by the same verdict (docs/adr/0124, D2).
         #[cfg(feature = "std")]
-        if !lent {
-            match Self::bind_lifted_payload(Self::event_of(delivered), &metadata.data, &mut payload)
-            {
+        {
+            let read = match lent {
+                Some(event_data) => P::admit_event_data(event_data),
+                None => {
+                    P::lift_event_payload(Self::event_of(delivered), &metadata.data, &mut payload)
+                }
+            };
+            match Self::bind_lifted_payload(Self::event_of(delivered), read) {
                 Admission::Admitted => {}
                 Admission::Replaced { error, refusal } => {
                     return self.bind_in_place(error, &refusal);
@@ -5536,6 +5546,8 @@ impl<P: StatePolicy> Engine<P> {
                 Admission::Refused => return (Bound::Refused, payload),
             }
         }
+        // A `no_std` build has no wire and no refusal: its host side holds lent
+        // data (`EngineHost::bind_queued`).
         #[cfg(not(feature = "std"))]
         let _ = lent;
         if external {
@@ -6242,10 +6254,19 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
         // lent with it, when it is the event `process_event_with` lent data
         // with, and the payload its queue handed over otherwise.
         let lent = if external { self.take_lent() } else { None };
-        let (bound, payload) = self.engine.bind_queued(queued, external, lent.is_some());
-        self.current = match lent {
-            Some(data) => CurrentEventData::Lent(data),
-            None => CurrentEventData::Queued(payload),
+        // A `no_std` build has no door that refuses: data a host lent past what
+        // its schema holds is taken as a delivery that carries none, as such a
+        // build takes any delivery its typed payload did not ride with
+        // (docs/adr/0124, D2).
+        #[cfg(not(feature = "std"))]
+        let lent = lent.filter(|event_data| P::admit_event_data(*event_data));
+        let (bound, payload) = self.engine.bind_queued(queued, external, lent);
+        // The data lent is `_event.data` only where its door delivered it: one
+        // refused, or replaced by the `error.execution` that says why, binds
+        // the payload the queue handed over, as for a queued delivery.
+        self.current = match (lent, bound) {
+            (Some(data), Bound::Delivered(_)) => CurrentEventData::Lent(data),
+            _ => CurrentEventData::Queued(payload),
         };
         bound
     }

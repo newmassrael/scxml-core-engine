@@ -166,6 +166,14 @@ impl StatePolicy for LtPolicy {
         }
     }
 
+    // The door holds what the host lends to the bound its schema would state:
+    // four bytes (docs/adr/0124, D2).
+    fn admit_event_data(
+        event_data: Self::EventData<'_>,
+    ) -> Result<(), sce_rust_runtime::event_payload::PayloadRefusal> {
+        sce_rust_runtime::event_payload::lent_within("bytes", event_data.map_or(0, <[u8]>::len), 4)
+    }
+
     fn first_enabled_transition(
         &mut self,
         state: StateId,
@@ -355,6 +363,24 @@ fn a_lent_event_the_budget_does_not_reach_is_taken_later_with_no_data() {
             bare("guard frame"),
         ]
     );
+}
+
+/// docs/adr/0124, D2: lent data past what its door holds is refused whole, as
+/// a wire delivery past it is. This document declares no `error.execution`, so
+/// the delivery is dropped and counted as a discarded external event, no hook
+/// is asked of it, and `_event` stays what it was.
+#[test]
+fn a_lent_value_its_door_refuses_is_dropped_and_counted_as_a_queued_one_is() {
+    let mut engine = started();
+    engine.process_event_with(LtEvent::Frame, Some(&b"toolong"[..]));
+
+    assert_eq!(engine.get_current_state(), LtState::Idle);
+    assert_eq!(calls(&engine), vec![bare("enter idle")]);
+    assert_eq!(engine.discarded_external_events(), 1);
+
+    // Within its bound the same event is taken.
+    engine.process_event_with(LtEvent::Frame, Some(&b"ack"[..]));
+    assert_eq!(engine.get_current_state(), LtState::After);
 }
 
 #[test]
