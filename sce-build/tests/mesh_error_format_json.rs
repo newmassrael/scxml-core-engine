@@ -1426,11 +1426,20 @@ fn every_backend_but_rust_refuses_a_deployment_with_an_open_machine() {
                 .parse_string(document, name)
                 .expect("parse");
             let compiled = sce_build::compile_mesh_transport(&mut model, &deploy, *language);
-            match (language, compiled) {
-                (Language::Rust, Ok(_)) => {}
-                (Language::Rust, Err(e)) => panic!("{name}: Rust serves an open machine: {e}"),
+            let serves_open_instances = match language {
+                Language::Rust => true,
+                Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::Python
+                | Language::C11
+                | Language::Swift => false,
+            };
+            match (serves_open_instances, compiled) {
+                (true, Ok(_)) => {}
+                (true, Err(e)) => panic!("{name}: {language:?} serves an open machine: {e}"),
                 (
-                    language,
+                    false,
                     Err(MeshError::Codegen(CodegenError::OpenInstancesUnsupported {
                         machine,
                         backend,
@@ -1439,8 +1448,8 @@ fn every_backend_but_rust_refuses_a_deployment_with_an_open_machine() {
                     assert_eq!(machine, "client", "{name}: the open machine is named");
                     assert_eq!(backend, language.canonical_name());
                 }
-                (language, Err(e)) => panic!("{name}: {language:?} refused by another: {e}"),
-                (language, Ok(_)) => panic!("{name}: {language:?} took an open machine"),
+                (false, Err(e)) => panic!("{name}: {language:?} refused by another: {e}"),
+                (false, Ok(_)) => panic!("{name}: {language:?} took an open machine"),
             }
         }
     }

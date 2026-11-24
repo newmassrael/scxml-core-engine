@@ -1014,6 +1014,11 @@ path = "tests/a_static_machine_hands_algorithms_the_state_it_holds.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_payload_is_read_only_where_a_schema_declares_it"
+path = "tests/a_payload_is_read_only_where_a_schema_declares_it.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "a_send_idlocation_hands_a_distinct_id_for_each_execution"
 path = "tests/a_send_idlocation_hands_a_distinct_id_for_each_execution.rs"
 required-features = ["cli"]
