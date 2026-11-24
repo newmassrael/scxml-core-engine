@@ -3080,6 +3080,72 @@ fn forge_views_a_list_that_carries_a_value_keeps_its_own_walk_rust() {
     );
 }
 
+/// The Rust text of the golden document `name`, under the options its golden
+/// is generated with.
+fn render_golden_rust(name: &str) -> String {
+    render_rust_with(
+        name,
+        &golden_options_of_document(
+            sce_build::generator::Language::Rust,
+            &format!("{name}.scxml"),
+        ),
+    )
+}
+
+/// A chain's entry whose variant holds codecs of numbers, text and bytes reads
+/// whatever source it is handed into its parts once, each body into the body's
+/// own parts, and writes its wire from that one form: one writer for each sink
+/// however many forms the chains of its parents write it from (docs/adr/0058,
+/// amendment of 2026-11-25).
+#[test]
+fn forge_a_chain_entry_writes_its_wire_from_its_parts_rust() {
+    let entry = render_golden_rust("codec_zenoh_ext_entry");
+    assert!(
+        entry.contains(
+            "fn write_parts_in<K: SceSink>(src: &CodecZenohExtEntryParts<'_>, w: &mut K, over: &CodecZenohExtEntryOverrides)"
+        ),
+        "codec_zenoh_ext_entry has no writer of its parts:\n{entry}"
+    );
+    assert!(
+        entry.contains("body: CodecZenohExtEntryPartsBody::CodecZenohExtZint(&super::codec_zenoh_ext_zint::CodecZenohExtZintParts::of(_b))"),
+        "codec_zenoh_ext_entry does not lower the body of an arm to its parts:\n{entry}"
+    );
+    assert!(
+        entry.contains("CodecZenohExtEntryPartsBody::Default { tag, body: &super::codec_zenoh_ext_unit::CodecZenohExtUnitParts::of(_b) }"),
+        "codec_zenoh_ext_entry does not lower its default arm:\n{entry}"
+    );
+    let zint = render_golden_rust("codec_zenoh_ext_zint");
+    assert!(
+        zint.contains("pub fn of<S: CodecZenohExtZintSource + ?Sized>(src: &S) -> Self {"),
+        "codec_zenoh_ext_zint makes no parts of a source:\n{zint}"
+    );
+    let zbuf = render_golden_rust("codec_zenoh_ext_zbuf");
+    assert!(
+        zbuf.contains("pub fn of<S: CodecZenohExtZbufSource + ?Sized>(src: &'a S) -> Self {"),
+        "codec_zenoh_ext_zbuf makes no parts of a source:\n{zbuf}"
+    );
+    let unit = render_golden_rust("codec_zenoh_ext_unit");
+    assert!(
+        unit.contains("pub fn of<S: CodecZenohExtUnitSource + ?Sized>(_src: &S) -> Self {"),
+        "codec_zenoh_ext_unit makes no parts of a source:\n{unit}"
+    );
+}
+
+/// An entry that takes a flag input is handed it by each caller, so it keeps
+/// the one generic writer and lowers nothing.
+#[test]
+fn forge_an_entry_with_an_input_keeps_its_generic_writer_rust() {
+    let entry = render_golden_rust("codec_chain_flag_entry");
+    assert!(
+        entry.contains("pub fn write_source_in<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>"),
+        "codec_chain_flag_entry has no write_source_in:\n{entry}"
+    );
+    assert!(
+        !entry.contains("write_parts_in") && !entry.contains("pub fn of<"),
+        "codec_chain_flag_entry lowers a source it cannot:\n{entry}"
+    );
+}
+
 #[test]
 fn forge_codec_nested_parent_views_rust() {
     assert_views_rust("codec_nested_parent");

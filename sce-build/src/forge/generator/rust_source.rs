@@ -1560,6 +1560,12 @@ struct Child {
     /// The path of its borrowed source (`{Codec}Parts`) with the lifetime it
     /// takes, as a field of a parent's parts names it.
     parts_type: String,
+    /// The path of its borrowed source (`{Codec}Parts`) with no lifetime, as a
+    /// call names it.
+    parts_path: String,
+    /// Whether its parts are made from any source of it by `{Codec}Parts::of`
+    /// ([`parts_of_source`]).
+    parts_of: bool,
 }
 
 /// The Rust printer of a codec's encode plan (docs/adr/0081 §2): the plan, and
@@ -1946,6 +1952,28 @@ pub(crate) fn parts_has_lifetime(m: &CodecModel) -> bool {
         })
 }
 
+/// Whether a codec's parts (`{Codec}Parts`) are made from any source of it by
+/// reading each accessor once (`{Codec}Parts::of`): a positional codec, whose
+/// source this printer writes, that holds numbers, text and bytes alone, none of
+/// them gated, and takes no flag input, so its parts hold what each accessor
+/// returns as it returns it. A parent whose variant holds such
+/// codecs lowers whatever source it is handed to its own parts, and writes its
+/// wire from that one form (docs/adr/0058, amendment of 2026-11-25). Read by the
+/// codec's own generation and by the enrichment of a parent that imports it
+/// (`ImportContext::codec_parts_of`), so the two agree on which codecs have it.
+pub(crate) fn parts_of_source(m: &CodecModel) -> bool {
+    m.encoding == CodecEncoding::Positional
+        && m.variant.is_none()
+        && m.flag_inputs.is_empty()
+        && m.fields.iter().all(flat_field)
+}
+
+/// A field a codec whose parts are its accessors' values holds
+/// ([`parts_of_source`]): no list, no embedded body, and not gated.
+fn flat_field(field: &CodecField) -> bool {
+    !(field.is_repeat() || field.is_tlv_chain() || field.is_embed()) && field.present_if.is_none()
+}
+
 /// The shapes the interface covers.
 fn check(m: &CodecModel, import_has_source: &dyn Fn(&str) -> bool) -> Result<(), Unsupported> {
     if m.encoding != CodecEncoding::Positional {
@@ -2058,6 +2086,8 @@ impl<'a> Plan<'a> {
                     ""
                 }
             ),
+            parts_path: format!("super::{}::{}Parts", import.namespace, import.type_name),
+            parts_of: import.codec_parts_of,
         })
     }
 
@@ -4389,6 +4419,48 @@ impl<'a> Plan<'a> {
         )
     }
 
+    /// `{Codec}Parts::of`, for a codec whose parts are the values its accessors
+    /// return ([`parts_of_source`]): each accessor read once, so any source of the
+    /// codec becomes the one form a parent writes it from.
+    fn parts_of_definition(&self) -> String {
+        if !parts_of_source(self.m()) {
+            return String::new();
+        }
+        let members: String = self
+            .m()
+            .fields
+            .iter()
+            .filter(|field| self.has_accessor(field))
+            .map(|field| {
+                let accessor = self.accessor(field);
+                format!("\x20           {accessor}: src.{accessor}(),\n")
+            })
+            .collect();
+        let (lt, held) = if parts_has_lifetime(self.m()) {
+            ("<'a>", "&'a S")
+        } else {
+            ("", "&S")
+        };
+        // A codec that presents nothing reads nothing off its source.
+        let src = if members.is_empty() { "_src" } else { "src" };
+        format!(
+            "#[allow(dead_code)]\n\
+             impl{lt} {parts}{lt} {{\n\
+             \x20   /// The parts of what `src` says, each accessor of [`{trait_name}`] read\n\
+             \x20   /// once: the one form a codec that holds this one writes it from,\n\
+             \x20   /// whatever form the value it is handed is in (docs/adr/0058).\n\
+             \x20   #[doc(hidden)]\n\
+             \x20   pub fn of<S: {trait_name} + ?Sized>({src}: {held}) -> Self {{\n\
+             \x20       Self {{\n\
+             {members}\
+             \x20       }}\n\
+             \x20   }}\n\
+             }}\n\n",
+            parts = self.parts_name(),
+            trait_name = self.trait_name,
+        )
+    }
+
     fn text(&self) -> String {
         let mut out = String::new();
         out.push_str(&self.law_definitions());
@@ -4399,6 +4471,7 @@ impl<'a> Plan<'a> {
         out.push_str(&self.reference_impl());
         out.push_str(&self.parts_definition());
         out.push_str(&self.parts_impl());
+        out.push_str(&self.parts_of_definition());
         out.push_str(&self.impls());
         out.push_str(&self.encode_impl());
         out
@@ -4703,6 +4776,9 @@ impl<'a> Plan<'a> {
             );
         }
         let overrides = self.overrides_name();
+        if self.lowers_to_parts() {
+            return self.lowered_write_functions(body);
+        }
         format!(
             "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
              \x20   #[doc(hidden)]\n\
@@ -4715,6 +4791,101 @@ impl<'a> Plan<'a> {
              \x20   #[doc(hidden)]\n\
              {inline}\
              \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}, over: &{overrides}) -> {result} {{\n\
+             {body}\
+             \x20   }}\n"
+        )
+    }
+
+    /// Whether `write_source_in` lowers whatever source it is handed to this
+    /// codec's parts and writes the wire from them alone
+    /// ([`Self::lowered_write_functions`]): a codec a chain writes, with flags a
+    /// parent sets, whose fields are numbers, text and bytes, none gated, and
+    /// whose variant's arms, if it has one, are codecs whose parts are made from
+    /// any source of them ([`parts_of_source`]). A chain writes its entries from
+    /// whatever form the parent's value holds them in, the builder, the parts or
+    /// the view, and each form was a copy of the whole writer. A codec written
+    /// inline (`Input::inline_encode`) is asked to be copied into its caller,
+    /// so it keeps the one generic writer.
+    fn lowers_to_parts(&self) -> bool {
+        !self.input.inline_encode
+            && !self.overridable().is_empty()
+            && self.m().flag_inputs.is_empty()
+            && self.encode.roles.groups.is_empty()
+            && self.m().fields.iter().all(flat_field)
+            && self.arms().iter().all(|arm| arm.child.parts_of)
+    }
+
+    /// `write_source` and `write_source_in` of a codec that lowers its source
+    /// ([`Self::lowers_to_parts`]): `write_source_in` reads `src` once into
+    /// `{Codec}Parts`, each body of its variant into the body's own parts, and
+    /// hands them to `write_parts_in`, which writes the wire with `body`. The
+    /// writer is then one function for each sink, whatever the forms of the
+    /// value, and `write_source_in` of each form is the copy into the parts.
+    fn lowered_write_functions(&self, body: &str) -> String {
+        let trait_name = &self.trait_name;
+        let result = self.write_result("K");
+        let overrides = self.overrides_name();
+        let parts = self.parts_name();
+        let parts_lt = if parts_has_lifetime(self.m()) {
+            "<'_>"
+        } else {
+            ""
+        };
+        let write = |value: &str| format!("Self::write_parts_in(&{value}, w, over)");
+        let lower = if self.m().variant.is_none() {
+            format!("\x20       {}\n", write(&format!("{parts}::of(src)")))
+        } else {
+            let fields: String = self
+                .m()
+                .fields
+                .iter()
+                .filter(|field| self.has_accessor(field))
+                .map(|field| {
+                    let accessor = self.accessor(field);
+                    format!("{accessor}: src.{accessor}(), ")
+                })
+                .collect();
+            let enum_name = self.body_enum();
+            let parts_body = self.parts_body_name();
+            let mut arms = String::new();
+            for arm in self.arms() {
+                arms.push_str(&arm.cfg_line("            "));
+                let held = format!("&{}::of(_b)", arm.child.parts_path);
+                let (pattern, lowered) = match arm.value {
+                    Some(_) => (
+                        format!("{enum_name}::{}(_b)", arm.variant_name),
+                        format!("{parts_body}::{}({held})", arm.variant_name),
+                    ),
+                    None => (
+                        format!("{enum_name}::Default {{ tag, body: _b }}"),
+                        format!("{parts_body}::Default {{ tag, body: {held} }}"),
+                    ),
+                };
+                arms.push_str(&format!(
+                    "            {pattern} => {},\n",
+                    write(&format!("{parts} {{ {fields}body: {lowered} }}"))
+                ));
+            }
+            format!("\x20       match src.body() {{\n{arms}\x20       }}\n")
+        };
+        format!(
+            "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
+             \x20   #[doc(hidden)]\n\
+             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> {result} {{\n\
+             \x20       Self::write_source_in(src, w, &{overrides}::default())\n\
+             \x20   }}\n\n\
+             \x20   /// [`Self::write_source`] with the flags a parent sets in place of the\n\
+             \x20   /// ones `src` presents. `src` is read once into `{parts}`, whatever form\n\
+             \x20   /// it is in, and the wire is written from that one form (`write_parts_in`).\n\
+             \x20   #[doc(hidden)]\n\
+             \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &{overrides}) -> {result} {{\n\
+             {lower}\
+             \x20   }}\n\n\
+             \x20   /// The wire of `src`, the one form every source of this codec is read\n\
+             \x20   /// into: one writer for each sink, however many forms are written. It is\n\
+             \x20   /// not inlined into `write_source_in`, which would copy it into each form.\n\
+             \x20   #[inline(never)]\n\
+             \x20   fn write_parts_in<K: SceSink>(src: &{parts}{parts_lt}, w: &mut K, over: &{overrides}) -> {result} {{\n\
              {body}\
              \x20   }}\n"
         )
