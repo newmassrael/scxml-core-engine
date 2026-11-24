@@ -1292,7 +1292,8 @@ changed only through `&mut self`): the `std` profile's inbox is
 `Engine::inbox`, unbounded on the standard library's channel, and the
 bare-metal profile's is a `BoundedInbox` the deployment declares in a `static`
 and hands to `Engine::attach_inbox`, which refuses a post when full
-(`backends/rust/runtime/src/inbox.rs`). Neither closes when a run ends: a post
+(`backends/rust/runtime/src/inbox.rs`; the runtime's `bounded-inbox` feature,
+which `std` asks for, so a bare-metal program no one posts to carries no drain). Neither closes when a run ends: a post
 taken after it is applied where the owner next reaches the end of its loop, as
 the direct call would be, since a bare-metal owner sharing a core with its
 posters cannot wait for a closing gate. The C++ Interpreter follows the rule

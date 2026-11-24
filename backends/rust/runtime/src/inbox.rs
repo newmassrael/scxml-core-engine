@@ -17,10 +17,13 @@
 //!   takes no lock. A post is refused only once the engine is gone.
 //! - `BoundedInbox`, the bare-metal profile's: declared by the deployment in a
 //!   `static`, of the capacity it names, and handed to the engine with
-//!   `Engine::attach_inbox`. A post to a full one is refused. It is present on
-//!   every target with compare-and-swap of a byte and of a pointer, so a
-//!   bare-metal crate still compiles in a build that turns `std` on
-//!   (docs/adr/0053).
+//!   `Engine::attach_inbox`. A post to a full one is refused. It is present
+//!   with the crate's `bounded-inbox` feature, which `std` asks for, on every
+//!   target with compare-and-swap of a byte and of a pointer, so a bare-metal
+//!   crate that names the feature still compiles in a build that turns `std`
+//!   on (docs/adr/0053). A bare-metal build that names neither feature has no
+//!   inbox to drain, and its engine carries no drain: no field for an inbox,
+//!   no call at a macrostep boundary and none before an external enqueue.
 //!
 //! A refused post gives its input back ([`InboxRefusal`]), so nothing posted is
 //! dropped without the poster being told.
@@ -63,14 +66,22 @@ use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
 
 #[cfg(any(
     feature = "std",
-    all(target_has_atomic = "8", target_has_atomic = "ptr")
+    all(
+        feature = "bounded-inbox",
+        target_has_atomic = "8",
+        target_has_atomic = "ptr"
+    )
 ))]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::event::{EventMetadata, EventWithMetadata};
 #[cfg(any(
     feature = "std",
-    all(target_has_atomic = "8", target_has_atomic = "ptr")
+    all(
+        feature = "bounded-inbox",
+        target_has_atomic = "8",
+        target_has_atomic = "ptr"
+    )
 ))]
 use crate::hal::Hal;
 #[cfg(feature = "std")]
@@ -219,7 +230,9 @@ impl<I> InboxRefusal<I> {
 }
 
 /// What an engine drains at each macrostep boundary: an inbox seen from its
-/// owner.
+/// owner. Only with the crate's `bounded-inbox` feature, whose
+/// `BoundedInbox` is the one inbox an engine is handed this way.
+#[cfg(feature = "bounded-inbox")]
 pub(crate) trait InboxSource<I> {
     /// The oldest input posted and not yet taken, if any.
     fn take(&self) -> Option<I>;
@@ -230,6 +243,7 @@ pub(crate) trait InboxSource<I> {
 
 /// An inbox a deployment declared in a `static` and attached to the engine
 /// whose policy is `P`, as the engine holds it.
+#[cfg(feature = "bounded-inbox")]
 pub(crate) type AttachedInbox<P> = &'static (dyn InboxSource<InboxInputOf<P>> + Sync);
 
 // ─────────────────────────────────────────────────────────────────────
@@ -699,9 +713,9 @@ impl<P: StatePolicy> EngineInbox<P> {
 
 /// An inbox of `N` inputs that a deployment declares in a `static` and hands
 /// to the engine whose policy is `P` with `Engine::attach_inbox`: the bare-metal
-/// profile's door for an interrupt handler or another task. Present in the
-/// `std` profile too, as every name of the bare-metal profile is
-/// (docs/adr/0053).
+/// profile's door for an interrupt handler or another task, with the crate's
+/// `bounded-inbox` feature. Present in the `std` profile too, which asks for
+/// that feature, as every name of the bare-metal profile is (docs/adr/0053).
 ///
 /// ```ignore
 /// static INBOX: BoundedInbox<MachinePolicy, 8, BoardHal> = BoundedInbox::new();
@@ -723,7 +737,11 @@ impl<P: StatePolicy> EngineInbox<P> {
 ///
 /// The queue does not drop what it still holds when it is dropped. In a
 /// `static`, which is what it is for, it is never dropped.
-#[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
+#[cfg(all(
+    feature = "bounded-inbox",
+    target_has_atomic = "8",
+    target_has_atomic = "ptr"
+))]
 pub struct BoundedInbox<P: StatePolicy, const N: usize, W> {
     queue: ::heapless::mpmc::MpMcQueue<InboxInputOf<P>, N>,
     /// Posts refused because the inbox was full.
@@ -736,7 +754,11 @@ pub struct BoundedInbox<P: StatePolicy, const N: usize, W> {
     waker: core::marker::PhantomData<fn() -> W>,
 }
 
-#[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
+#[cfg(all(
+    feature = "bounded-inbox",
+    target_has_atomic = "8",
+    target_has_atomic = "ptr"
+))]
 impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
     /// An empty inbox, for a `static`.
     pub const fn new() -> Self {
@@ -871,14 +893,22 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
     }
 }
 
-#[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
+#[cfg(all(
+    feature = "bounded-inbox",
+    target_has_atomic = "8",
+    target_has_atomic = "ptr"
+))]
 impl<P: StatePolicy, const N: usize, W: Hal> Default for BoundedInbox<P, N, W> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
+#[cfg(all(
+    feature = "bounded-inbox",
+    target_has_atomic = "8",
+    target_has_atomic = "ptr"
+))]
 impl<P: StatePolicy, const N: usize, W> InboxSource<InboxInputOf<P>> for BoundedInbox<P, N, W> {
     fn take(&self) -> Option<InboxInputOf<P>> {
         self.queue.dequeue()

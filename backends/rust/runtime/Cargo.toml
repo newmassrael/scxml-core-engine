@@ -43,7 +43,22 @@ default = ["std", "http-send", "macrostep-diagnostics"]
 # A bare-metal crate asks for nothing: `default-features = false`. Its image is
 # built for its own target by a command that selects it alone, and Cargo
 # unifies features only across the packages one command builds.
-std = ["sce-portable-bytes/alloc"]
+std = ["sce-portable-bytes/alloc", "bounded-inbox"]
+
+# The bare-metal profile's inbox (docs/adr/0084): `BoundedInbox`, which a
+# deployment declares in a `static`, and `Engine::attach_inbox`, which hands
+# it to an engine. With it, an engine keeps a field for the attached inbox and
+# drains it at each macrostep boundary and before each external enqueue.
+# Without it and without `std`, there is no inbox, so the engine keeps no such
+# field and makes no drain: a program of machines that no other thread or
+# interrupt handler posts to carries none of that code, in each machine's
+# enqueue and in the main loop every machine shares (a downstream consumer
+# measured the runtime's share of its release library, 2026-11).
+#
+# It only adds (docs/adr/0053), and `std` asks for it, so the `std` profile
+# has the inbox as it always had, and a bare-metal crate that attaches one
+# names this feature and still compiles in a build that unifies `std` in.
+bounded-inbox = []
 
 # The BasicHTTP event processor (W3C SCXML C.2): the `http` module
 # (`HttpSendRequest`, `HttpSendResponse`) and `Engine::set_http_send_callback`.

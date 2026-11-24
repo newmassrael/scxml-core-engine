@@ -21,7 +21,7 @@
 //! (`initialize`, `step`, `tick`, `process_event`, `stop`). Another thread
 //! reaches it through its inbox (`crate::inbox`): `inbox()` in the `std`
 //! profile, and the `BoundedInbox` a bare-metal deployment declares and hands
-//! to `attach_inbox`.
+//! to `attach_inbox`, with the `bounded-inbox` feature.
 //!
 //! ## Safety invariants
 //!
@@ -1007,7 +1007,7 @@ pub(crate) struct RunningHostInvoke {
 /// only through `&mut self`. Its owner-thread operations are the ones the
 /// module documentation lists. Its inbox handle is `inbox()` (`EngineInbox`)
 /// in the `std` profile; a bare-metal deployment declares a `BoundedInbox` and
-/// hands it to `attach_inbox`.
+/// hands it to `attach_inbox`, with the `bounded-inbox` feature.
 ///
 /// ## HAL routing (SCE Protocol-Synthesis RFC §synth-5-J-2)
 ///
@@ -1155,13 +1155,17 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) tree_inboxes: crate::inbox::TreeInboxes,
     /// The inbox a deployment declared and handed over with `attach_inbox`
     /// (docs/adr/0084), drained at each macrostep boundary after the engine's
-    /// own. `None` until one is attached.
+    /// own. `None` until one is attached. Only with the `bounded-inbox`
+    /// feature: a build without it has no inbox to attach.
+    #[cfg(feature = "bounded-inbox")]
     pub(crate) attached_inbox: Option<crate::inbox::AttachedInbox<P>>,
     /// A drain of the inboxes is applying what they held
-    /// ([`drain_inbox`](Engine::drain_inbox)). Applying an input queues an
-    /// external event, and a queued external event asks for a drain first; the
-    /// drain already running is that drain, so the flag turns the second one
-    /// into nothing rather than into a drain inside a drain.
+    /// (`Engine::drain_inbox`). Applying an input queues an external event,
+    /// and a queued external event asks for a drain first; the drain already
+    /// running is that drain, so the flag turns the second one into nothing
+    /// rather than into a drain inside a drain. Only in a build that has an
+    /// inbox: the `std` profile's own, or one attached with `bounded-inbox`.
+    #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     pub(crate) draining_inbox: bool,
     /// What [`set_transition_observer`](Engine::set_transition_observer) set,
     /// told each transition the engine takes (docs/adr/0089); `None` until a
@@ -1217,7 +1221,9 @@ macro_rules! engine_initial_fields {
             inbox: core::cell::OnceCell::new(),
             #[cfg(feature = "std")]
             tree_inboxes: crate::inbox::TreeInboxes::default(),
+            #[cfg(feature = "bounded-inbox")]
             attached_inbox: None,
+            #[cfg(any(feature = "std", feature = "bounded-inbox"))]
             draining_inbox: false,
             #[cfg(feature = "transition-observer")]
             transition_observer: None,
@@ -1539,7 +1545,13 @@ impl<P: StatePolicy> Engine<P> {
     /// from its construction (a restore binds the saved one before it builds
     /// the engine), so attaching is the one moment it can change for the
     /// inbox: attached to another engine, it answers for that one.
-    #[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
+    ///
+    /// Only with the crate's `bounded-inbox` feature, which `std` asks for.
+    #[cfg(all(
+        feature = "bounded-inbox",
+        target_has_atomic = "8",
+        target_has_atomic = "ptr"
+    ))]
     pub fn attach_inbox<W: Hal + 'static, const N: usize>(
         &mut self,
         inbox: &'static crate::inbox::BoundedInbox<P, N, W>,
@@ -1567,6 +1579,11 @@ impl<P: StatePolicy> Engine<P> {
     /// asks for a drain first: the drain already applying is that drain, and
     /// takes what it held in order, so the inner request is nothing and an
     /// applied input is queued as it stands, without a drain inside it.
+    ///
+    /// Only in a build that has an inbox to drain: the `std` profile's own, or
+    /// one attached with the `bounded-inbox` feature. A bare-metal build with
+    /// neither carries no drain, and no call of one.
+    #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     fn drain_inbox(&mut self) {
         if self.draining_inbox {
             return;
@@ -1581,6 +1598,7 @@ impl<P: StatePolicy> Engine<P> {
     /// an input that names another session was posted to that session's inbox
     /// (ARCHITECTURE.md "Engine Threading", item 3), so applying one never
     /// reaches another engine of the tree.
+    #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     fn apply_held_inputs(&mut self) {
         // The engine's own inbox holds no type of this machine's, so taking
         // from it is the same code for every machine and only applying is
@@ -1598,6 +1616,16 @@ impl<P: StatePolicy> Engine<P> {
                 self.apply_held_input(held);
             }
         }
+        #[cfg(feature = "bounded-inbox")]
+        self.apply_attached_inputs();
+    }
+
+    /// The attached inbox's part of [`apply_held_inputs`](Self::apply_held_inputs),
+    /// after the engine's own: only with the `bounded-inbox` feature, which is
+    /// what attaches one.
+    #[cfg(feature = "bounded-inbox")]
+    #[inline]
+    fn apply_attached_inputs(&mut self) {
         // Named by path: the calls on the attached inbox are calls on a trait
         // object, which need no import, and the profile without `std` makes no
         // other.
@@ -1626,12 +1654,15 @@ impl<P: StatePolicy> Engine<P> {
     /// The internal queue does not drain ([`raise`](Self::raise)): it is the
     /// running macrostep's own, and arrival order is the external queue's.
     fn enqueue_external(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
+        #[cfg(any(feature = "std", feature = "bounded-inbox"))]
         self.drain_inbox();
         Self::enqueue(&mut self.external_queue, event);
     }
 
     /// Apply one posted `input` by the call a direct caller on the owner
-    /// makes, so a posted input and a direct one cannot differ.
+    /// makes, so a posted input and a direct one cannot differ. Only with the
+    /// `bounded-inbox` feature, whose attached inbox is what holds one.
+    #[cfg(feature = "bounded-inbox")]
     fn apply_inbox_input(&mut self, input: crate::inbox::InboxInputOf<P>) {
         use crate::inbox::InboxInput;
         match input {
@@ -6013,7 +6044,9 @@ trait MainLoop {
     fn drop_external_payloads(&mut self);
     /// Start the invocations of the states this macrostep entered.
     fn start_pending_invokes(&mut self);
-    /// Apply what other threads posted to the engine's inbox (docs/adr/0084).
+    /// Apply what other threads posted to the engine's inbox (docs/adr/0084);
+    /// only in a build that has one.
+    #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     fn drain_inbox(&mut self);
     /// Tell the transition observer, if one is set, each transition of
     /// `enabled` by its row of the emitted transition table (docs/adr/0089).
@@ -6074,6 +6107,7 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
         self.engine.start_restored_host_invokes();
     }
 
+    #[cfg(any(feature = "std", feature = "bounded-inbox"))]
     fn drain_inbox(&mut self) {
         self.engine.drain_inbox();
     }
@@ -6214,7 +6248,9 @@ impl Turn<'_> {
             // inbox took it, so an event it carries joins the external queue
             // behind what this macrostep queued. Every input is applied by a
             // call that queues on the external queue alone, so nothing it does
-            // comes before the internal queue checked above.
+            // comes before the internal queue checked above. A build with no
+            // inbox has nothing posted to apply.
+            #[cfg(any(feature = "std", feature = "bounded-inbox"))]
             self.host.drain_inbox();
 
             if !self.host.queue(true).has_events() {
@@ -6594,6 +6630,7 @@ impl Turn<'_> {
     /// direct call made now would be, so an event posted to a machine whose run
     /// is over is counted with the rest and not held unseen.
     fn end_run(&mut self) {
+        #[cfg(any(feature = "std", feature = "bounded-inbox"))]
         self.host.drain_inbox();
         while let Some(queued) = self.host.queue(true).pop() {
             self.host.core().note_unseen_event(queued.event);
