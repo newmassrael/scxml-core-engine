@@ -1945,7 +1945,10 @@ GATES: dict[str, dict] = {
         # GenMC explores every interleaving its model admits rather than
         # sampling some, and its revision is pinned by the tracked installer.
         "cache": True,
-        "inputs": None,
+        # Keyed on its triggers: `bx --checks prepush --learn genmc-queue`
+        # (2026-11-24) found 55 reads and 4 listings, every one inside the
+        # triggers and the runner's inputs.
+        "inputs": INPUTS_ARE_TRIGGERS,
         "commits": [],
         "peak_gb": 5,
         "parallelism": PARALLELISM_COMPILE,
@@ -4708,6 +4711,16 @@ RUNNER_INPUTS = (
     "scripts/lib/rust_toolchains.sh",
     "scripts/lib/go_toolchain.sh",
     "scripts/lib/require_submodules.sh",
+    # What the gate library sources when a gate calls for it: the build's
+    # parallelism, the generator, the HTTP fixture, the emscripten Rust and
+    # the Swift pin. `bx --checks prepush --learn genmc-queue` (2026-11-24)
+    # read the first and no input named it;
+    # `every-library-the-runner-sources-is-a-runner-input` holds the list.
+    "scripts/lib/sce_build_jobs.sh",
+    "scripts/lib/sce_codegen.sh",
+    "scripts/lib/sce_http_endpoint.sh",
+    "scripts/lib/wasm_rust.sh",
+    "scripts/lib/swift_pin.sh",
     "scripts/install_mesh_transports.sh",
     "tools/git-hooks/gate_registry.py",
     "rust-toolchain.toml",
@@ -8079,6 +8092,28 @@ def self_test(repo_root: Path) -> int:
                     f"narrowed: {slug} reads beneath the submodule {sub} and "
                     f"its inputs do not give {sub}/.git, so its unit's copy "
                     f"holds that submodule as not checked out")
+
+    # every-library-the-runner-sources-is-a-runner-input. A narrowed unit's copy
+    # holds its inputs alone, so a library `scripts/gate` or the gate library
+    # sources that `RUNNER_INPUTS` does not name is missing there, and a change
+    # to it moves no narrowed key. Read off the `source` lines themselves.
+    cases += 1
+    sourced = set()
+    for runner in ("scripts/gate", "scripts/gates/lib.sh"):
+        try:
+            text = (repo_root / runner).read_text(encoding="utf-8")
+        except OSError:
+            failures.append(f"runner-inputs: {runner} could not be read")
+            continue
+        sourced |= set(re.findall(
+            r'^\s*source\s+"\$(?:SCE_)?REPO_ROOT/(scripts/lib/[A-Za-z0-9_]+\.sh)"',
+            text, re.M))
+    if len(sourced) < 5:
+        failures.append(f"runner-inputs: the runner and the gate library source "
+                        f"{sorted(sourced)}; the reader found too few to be reading")
+    for lib in sorted(sourced - set(RUNNER_INPUTS)):
+        failures.append(f"runner-inputs: {lib} is sourced by the runner or the gate "
+                        f"library and RUNNER_INPUTS does not name it")
 
     # a-gate-keyed-on-its-triggers-is-narrowed-by-them. A gate whose key is its
     # trigger globs (`INPUTS_ARE_TRIGGERS`) gains nothing when a glob is the
