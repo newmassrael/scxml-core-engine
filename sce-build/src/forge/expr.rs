@@ -12557,8 +12557,11 @@ fn rust_settled_shift(
         ),
         CheckedOp::UShr if signed => {
             let unsigned = rust_int_type(false, bits);
+            // A call, as every other settled shift is, so it stands as one
+            // operand wherever it is written and needs no parentheses: the
+            // unsigned result's bits read back at the signed type.
             format!(
-                "({unsigned}::checked_shr({}, {places}).unwrap_or(0) as {ty})",
+                "{ty}::from_ne_bytes({unsigned}::checked_shr({}, {places}).unwrap_or(0).to_ne_bytes())",
                 rust_cast(value, left, unsigned)
             )
         }
@@ -16937,7 +16940,7 @@ mod tests {
                 ExprTarget::Rust,
                 "h >>> m",
                 i16t,
-                "(u16::checked_shr(h as u16, u32::from(m)).unwrap_or(0) as i16)",
+                "i16::from_ne_bytes(u16::checked_shr(h as u16, u32::from(m)).unwrap_or(0).to_ne_bytes())",
             ),
             (
                 ExprTarget::Rust,
@@ -17002,7 +17005,7 @@ mod tests {
         );
         assert_eq!(
             landed("s >>> 3", ExprTarget::Rust, i32t),
-            "(u32::checked_shr(s as u32, 3).unwrap_or(0) as i32)"
+            "i32::from_ne_bytes(u32::checked_shr(s as u32, 3).unwrap_or(0).to_ne_bytes())"
         );
         assert_eq!(
             landed("s >>> 3", ExprTarget::Go, i32t),
