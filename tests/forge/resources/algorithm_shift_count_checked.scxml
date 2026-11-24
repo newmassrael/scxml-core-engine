@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.1, "The width of a shift": a shift by a count below 0 has
+  no exact result, and a may-fail algorithm fails it `out-of-range`; by every
+  other count it is its exact result reduced to the width, one at or past the
+  width included. The count k is an int32, which may be below 0, so every
+  shift here is checked when it runs; one operation per `op`:
+
+    op 0  s << k
+    op 1  s >> k
+    op 2  s >>> k
+    any other op: 0
+
+  An algorithm that does not declare may-fail is refused at a shift by a
+  count its analysis cannot prove at least 0
+  (algorithm/undeclared-integer-failure).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="s" type="int32"/>
+    <sce:param name="k" type="int32"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="int32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="int32" init="0"/>
+    <sce:if cond="op === 0">
+      <sce:assign target="r" expr="s &lt;&lt; k"/>
+    </sce:if>
+    <sce:if cond="op === 1">
+      <sce:assign target="r" expr="s &gt;&gt; k"/>
+    </sce:if>
+    <sce:if cond="op === 2">
+      <sce:assign target="r" expr="s &gt;&gt;&gt; k"/>
+    </sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>

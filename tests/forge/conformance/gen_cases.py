@@ -445,6 +445,62 @@ def narrow_shift(x: int, h: int, n: int, op: int):
     return ("ok", answers.get(op, 0))
 
 
+def shift_count(x: int, h: int, w: int, s: int, q: int, l: int, n: int, op: int):
+    """algorithm_shift_count: each shift its exact result reduced to the width of
+    its left operand, for a uint8 count that reaches past every width
+    (SCE_FORGE.md 3.4.1, 'The width of a shift'): x << n is x * 2^n reduced,
+    x >> n the floor of x / 2^n, x >>> n the floor of the width's unsigned bits
+    over 2^n. Op 15 shifts only under n < 32; any other op 0."""
+
+    def wrap(v: int, bits: int, signed: bool) -> int:
+        low = v % 2**bits
+        return low - 2**bits if signed and low >= 2 ** (bits - 1) else low
+
+    def shl(v: int, bits: int, signed: bool) -> int:
+        return wrap(v * 2**n, bits, signed)
+
+    def ushr(v: int, bits: int, signed: bool) -> int:
+        return wrap((v % 2**bits) // 2**n, bits, signed)
+
+    low63 = 2**63 - 1
+    answers = {
+        0: lambda: shl(x, 8, False),
+        1: lambda: x // 2**n,
+        2: lambda: shl(h, 16, True),
+        3: lambda: h // 2**n,
+        4: lambda: ushr(h, 16, True),
+        5: lambda: shl(w, 32, False),
+        6: lambda: w // 2**n,
+        7: lambda: shl(s, 32, True),
+        8: lambda: s // 2**n,
+        9: lambda: ushr(s, 32, True),
+        10: lambda: shl(q, 64, False) & low63,
+        11: lambda: (q // 2**n) & low63,
+        12: lambda: shl(l, 64, True),
+        13: lambda: l // 2**n,
+        14: lambda: ushr(l, 64, True),
+        15: lambda: shl(s, 32, True) if n < 32 else 0,
+    }
+    return ("ok", answers[op]() if op in answers else 0)
+
+
+def shift_count_checked(s: int, k: int, op: int):
+    """algorithm_shift_count_checked, may-fail: op 0 s << k, 1 s >> k, 2 s >>> k
+    of an int32, each the exact result reduced to 32 bits; a count below 0 fails
+    'out-of-range'; any other op 0, which shifts nothing."""
+    if op > 2:
+        return ("ok", 0)
+    if k < 0:
+        return ("fails", "out-of-range")
+    if op == 0:
+        low = (s * 2**k) % 2**32
+        return ("ok", low - 2**32 if low >= 2**31 else low)
+    if op == 1:
+        return ("ok", s // 2**k)
+    low = (s % 2**32) // 2**k
+    return ("ok", low - 2**32 if low >= 2**31 else low)
+
+
 # ── The civil calendar (sce:std/time) ─────────────────────────────────────
 #
 # The proleptic Gregorian calendar, the way Python's own library does it, so
@@ -983,8 +1039,8 @@ def lcg_args(rng: SplitMix64):
 
 
 #: The counts where a shift of a literal in a narrower width goes wrong: the
-#: edges of 8, 16 and 32 bits, and the top bit of 64. A count is held below 64,
-#: since one past the width is not specified.
+#: edges of 8, 16 and 32 bits, and the top bit of 64. A count is held below 64:
+#: one past the width is algorithm_shift_count's to hold.
 LITERAL_COUNTS = [0, 1, 7, 8, 15, 16, 30, 31, 32, 33, 40, 62, 63]
 LITERAL_PREVS = [0, 1, 2**31, 2**32 - 1, 2**32, 2**53 - 1, 2**63, 2**64 - 2, 2**64 - 1]
 
@@ -1016,13 +1072,50 @@ def literal_width_args(ops: int, edges):
 def narrow_shift_args(rng: SplitMix64):
     """Arguments for `algorithm_narrow_shift`: `x` and `h` from their types'
     edges or anywhere in them, and a count below the width of the operand the op
-    shifts (8 for `x`, 16 for `h`), a count past the width not being specified."""
+    shifts (8 for `x`, 16 for `h`); a count past the width is
+    algorithm_shift_count's to hold."""
     op = rng.between(0, 5) if rng.below(10) else rng.pick([6, 9, U8_MAX])
     x = rng.pick([0, 1, 0x7F, 0x80, 0x81, 0xF0, 0xFE, U8_MAX]) if rng.below(2) else rng.between(0, U8_MAX)
     h_edges = [-(2**15), -(2**15) + 1, -256, -2, -1, 0, 1, 0xFF, 0x100, 2**15 - 1]
     h = rng.pick(h_edges) if rng.below(2) else rng.between(-(2**15), 2**15 - 1)
     n = rng.between(0, 15 if op in (3, 4, 5) else 7)
     return [x, h, n, op]
+
+
+#: Counts at either side of each width a shift is made at, and far past them.
+SHIFT_COUNTS = [0, 1, 7, 8, 9, 11, 15, 16, 17, 19, 31, 32, 33, 35, 63, 64, 65, 67, 100, 200, 255]
+
+
+def shift_count_args(rng: SplitMix64):
+    """Arguments for `algorithm_shift_count`: each operand from its type's edges
+    or anywhere in it, a count from either side of a width or anywhere in uint8,
+    and an op the document defines (now and then one it does not)."""
+
+    def operand(lo: int, hi: int) -> int:
+        if rng.below(2):
+            return rng.pick(sorted({lo, lo + 1, -1 if lo < 0 else 0, 0, 1, hi - 1, hi}))
+        return rng.between(lo, hi)
+
+    x = operand(0, U8_MAX)
+    h = operand(-(2**15), 2**15 - 1)
+    w = operand(0, 2**32 - 1)
+    s = operand(-(2**31), 2**31 - 1)
+    q = operand(0, 2**64 - 1)
+    l = operand(-(2**63), 2**63 - 1)
+    n = rng.pick(SHIFT_COUNTS) if rng.below(3) else rng.between(0, U8_MAX)
+    op = rng.between(0, 15) if rng.below(10) else rng.pick([16, 99, U8_MAX])
+    return [x, h, w, s, q, l, n, op]
+
+
+def shift_count_checked_args(rng: SplitMix64):
+    """Arguments for `algorithm_shift_count_checked`: an int32 `s` from its
+    edges or anywhere, and a count `k` around 0 and each side of 32 or anywhere
+    in int32, so a count below 0 is drawn often."""
+    s = rng.pick([-(2**31), -8, -1, 0, 1, 2**31 - 1]) if rng.below(2) else rng.between(-(2**31), 2**31 - 1)
+    edges = [-(2**31), -33, -32, -2, -1, 0, 1, 30, 31, 32, 33, 64, 200, 2**31 - 1]
+    k = rng.pick(edges) if rng.below(2) else rng.between(-(2**31), 2**31 - 1)
+    op = rng.between(0, 2) if rng.below(10) else rng.pick([3, U8_MAX])
+    return [s, k, op]
 
 
 def literal_shift_edges(m: int, op: int, rng: SplitMix64):
@@ -4772,6 +4865,18 @@ FIXTURES = {
         narrow_shift_args,
         300,
         0xE110_0073,
+    ),
+    "algorithm_shift_count": (
+        lambda args: shift_count(*args),
+        shift_count_args,
+        400,
+        0xE110_0076,
+    ),
+    "algorithm_shift_count_checked": (
+        lambda args: shift_count_checked(*args),
+        shift_count_checked_args,
+        200,
+        0xE110_0077,
     ),
     "resolve_date": (lambda args: resolve_date(*args), resolve_date_args, 400, 0xE110_006E),
     "resolve_date_at": (lambda args: resolve_date_at(*args), resolve_date_at_args, 200, 0xE110_0070),
