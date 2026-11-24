@@ -675,18 +675,55 @@ _sce_gate_w3c_report_attr() {
 # the `[platform.linux.tools.emsdk]` tool of bx.toml and runs the units of the
 # emscripten gates only where it is, and no lane step sources it for them.
 sce_gate_activate_emsdk() {
-    command -v emcmake >/dev/null 2>&1 && return 0
-    local emsdk_env rev
-    rev="$(sed -n 's/^EMSDK_REV="\([0-9.][0-9.]*\)"$/\1/p' "$SCE_REPO_ROOT/scripts/install_emsdk.sh" 2>/dev/null)"
-    for emsdk_env in "${EMSDK:-}/emsdk_env.sh" \
-        ${rev:+"${HOME}/.local/share/emsdk/${rev}/emsdk_env.sh"} \
-        "${HOME}/emsdk/emsdk_env.sh"; do
-        [ -f "${emsdk_env}" ] || continue
-        # shellcheck disable=SC1090
-        source "${emsdk_env}" >/dev/null 2>&1 || true
-        break
-    done
+    if ! command -v emcmake >/dev/null 2>&1; then
+        local emsdk_env rev
+        rev="$(sed -n 's/^EMSDK_REV="\([0-9.][0-9.]*\)"$/\1/p' "$SCE_REPO_ROOT/scripts/install_emsdk.sh" 2>/dev/null)"
+        for emsdk_env in "${EMSDK:-}/emsdk_env.sh" \
+            ${rev:+"${HOME}/.local/share/emsdk/${rev}/emsdk_env.sh"} \
+            "${HOME}/emsdk/emsdk_env.sh"; do
+            [ -f "${emsdk_env}" ] || continue
+            # shellcheck disable=SC1090
+            source "${emsdk_env}" >/dev/null 2>&1 || true
+            break
+        done
+    fi
+    sce_gate_writable_em_cache
     return 0
+}
+
+# Emscripten keeps a cache beside the compiler (`upstream/emscripten/cache`):
+# the sysroot, the system libraries it builds, and files every link writes
+# (the symbol lists of `tools/link.py`). An SDK installed where its account
+# may not write, as a build machine's tool store holds it, therefore fails
+# every link, and CMake's probes report that as a missing feature. Measured
+# 2026-11-24 on the fleet: `find_package(Threads)` failed in every emscripten
+# tree with "Could NOT find Threads", because its `CMAKE_HAVE_LIBC_PTHREAD`
+# probe died writing `cache/symbol_lists` on a read-only file system.
+#
+# Emscripten's answer for such an install is `EM_CACHE`, a cache elsewhere.
+# It is placed per account and per release, seeded once from the SDK's own
+# cache so the prebuilt sysroot is not built again, and the seed is renamed
+# into place whole so two gates starting together never share a half-copied
+# one. An `EM_CACHE` already set, or an SDK whose cache is writable, is used
+# as it is.
+sce_gate_writable_em_cache() {
+    [[ -n "${EM_CACHE:-}" ]] && return 0
+    local emcc root sdk_cache version dest staging
+    emcc="$(command -v emcc 2>/dev/null)" || return 0
+    root="$(dirname "$(readlink -f "$emcc")")"
+    sdk_cache="$root/cache"
+    [[ -w "$sdk_cache" ]] && return 0
+    version="$(tr -d '"' <"$root/emscripten-version.txt" 2>/dev/null)"
+    dest="${XDG_CACHE_HOME:-$HOME/.cache}/sce-emscripten/${version:-unknown}"
+    if [[ ! -d "$dest" ]]; then
+        mkdir -p "$(dirname "$dest")" || return 0
+        staging="$(mktemp -d "$(dirname "$dest")/.seed.XXXXXX")" || return 0
+        if [[ -d "$sdk_cache" ]]; then
+            cp -a "$sdk_cache/." "$staging/" 2>/dev/null || true
+        fi
+        mv -T "$staging" "$dest" 2>/dev/null || rm -rf "$staging"
+    fi
+    export EM_CACHE="$dest"
 }
 
 # The two emscripten build trees, and the one configure every gate that builds
@@ -742,12 +779,25 @@ sce_gate_prepare_wasm_rust() {
 sce_gate_configure_wasm_build_dir() {
     local dir="$1" threads="$2"
     sce_gate_prepare_wasm_rust "$threads" || return 1
+    # A kept tree remembers what its probes found (`find_package(Threads)`
+    # among them) as cache entries CMake does not ask again, and those answers
+    # are the compiler's and its cache's. A tree configured with another
+    # compiler or another `EM_CACHE` is emptied, as a tree of another
+    # generator is (`sce_gate_configure_tree`): its contents are regenerable.
+    local toolchain
+    toolchain="emcc=$(readlink -f "$(command -v emcc 2>/dev/null)" 2>/dev/null) em_cache=${EM_CACHE:-sdk}"
+    if [[ -f "$dir/CMakeCache.txt" ]] \
+            && [[ "$(head -n 1 "$dir/sce_gate_toolchain" 2>/dev/null)" != "$toolchain" ]]; then
+        sce_gate_step "emptying $dir: configured with another emscripten or cache than this run's"
+        find "$dir" -mindepth 1 -maxdepth 1 ! -name CACHEDIR.TAG -exec rm -rf {} +
+    fi
     sce_gate_build_cache "$dir" || return 1
     local GENERATOR=()
     command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
     emcmake cmake -S . -B "$dir" -DCMAKE_BUILD_TYPE=Release \
         -DSCE_WASM_THREADS="$threads" \
-        ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null
+        ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null || return 1
+    printf '%s\n' "$toolchain" >"$dir/sce_gate_toolchain"
 }
 sce_gate_configure_wasm_tree() {
     sce_gate_configure_wasm_build_dir "$SCE_WASM_BUILD_DIR" ON
