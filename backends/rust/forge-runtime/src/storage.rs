@@ -728,6 +728,10 @@ impl<const CAP: usize> ArrayBytes<CAP> {
                 "an ArrayBytes holds at most 255 bytes"
             )
         };
+        debug_assert!(
+            bytes.len() <= CAP,
+            "from_fitting was handed more bytes than the capacity"
+        );
         let mut held = [0u8; CAP];
         let mut len = 0u8;
         // At most `CAP` bytes, and `CAP` is at most 255, so the count holds.
