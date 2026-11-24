@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d6b2954ecbef91e93b9e3df8394531b505d713ded179f7f98b498eb87c3b46a8
+// source-hash: 770bd3897d32ee4fd3e4fdc69c16b5078e06eea73b37b69c9e7aca118c8fa25a
 // source: algorithm_narrow_shift.scxml
 // SCE-MAP: algorithm_narrow_shift.scxml:22 :: _forge_body
 
@@ -17,19 +17,19 @@ public enum AlgorithmNarrowShift {
     public static func algorithmNarrowShift(_ x: UInt8, _ h: Int16, _ n: UInt8, _ op: UInt8) -> Int64 {
         var r: Int64 = 0
         if op == 0 {
-            r = Int64(x << n)
+            r = Int64((x << n))
         }
         if op == 1 {
-            r = Int64((x << n) >> n)
+            r = Int64(((x << n) >> n))
         }
         if op == 2 {
             r = Int64(~x)
         }
         if op == 3 {
-            r = Int64(h << n)
+            r = Int64((h << n))
         }
         if op == 4 {
-            r = Int64((h << n) >> n)
+            r = Int64(((h << n) >> n))
         }
         if op == 5 {
             r = Int64(~h)

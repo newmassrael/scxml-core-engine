@@ -99,7 +99,7 @@ fun eventAgenda(s: EventSchedulePayload, values: List<MvValuePayload>, id: ULong
                             rank = com.sce.forge.runtime.SceChecked.add(rank, 1)
                             var keep: Boolean = true
                             if (hasSP) {
-                                keep = rank <= 62 && s.spPos shr rank.toInt() and 1 == 1L || com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(n, rank), 1) <= 62 && s.spNeg shr com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(n, rank), 1).toInt() and 1 == 1L
+                                keep = rank <= 62 && com.sce.forge.runtime.SceChecked.shr(s.spPos, rank) and 1 == 1L || com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(n, rank), 1) <= 62 && com.sce.forge.runtime.SceChecked.shr(s.spNeg, com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(n, rank), 1)) and 1 == 1L
                             }
                             if (keep && dd >= startDay) {
                                 var occStart: Long = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(dd, day), timeOfDay)

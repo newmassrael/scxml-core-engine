@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 02083fb2ced62dbb0117350f8be853bf2c1b2016a107a44991ae11967d11a600
+// source-hash: 9a4d8d99160efa6033418c9bd27480090b5a51a9efa9bfd16c458ac4b2d1c7ae
 // source: ./
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -2664,6 +2664,54 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let returned = AlgorithmNarrowShift.algorithmNarrowShift(arg0, arg1, arg2, arg3)
         let expected = try oracleInteger(testCase.member("expected"), as: Int64.self)
         #expect(returned == expected, "algorithm_narrow_shift")
+    }}
+
+// MARK: - algorithm: algorithm_shift_count
+
+@Test func algorithmShiftCountMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_shift_count") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt8.self)
+        let arg1 = try oracleInteger(args[1], as: Int16.self)
+        let arg2 = try oracleInteger(args[2], as: UInt32.self)
+        let arg3 = try oracleInteger(args[3], as: Int32.self)
+        let arg4 = try oracleInteger(args[4], as: UInt64.self)
+        let arg5 = try oracleInteger(args[5], as: Int64.self)
+        let arg6 = try oracleInteger(args[6], as: UInt8.self)
+        let arg7 = try oracleInteger(args[7], as: UInt8.self)
+        let returned = AlgorithmShiftCount.algorithmShiftCount(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+        let expected = try oracleInteger(testCase.member("expected"), as: Int64.self)
+        #expect(returned == expected, "algorithm_shift_count")
+    }}
+
+// MARK: - algorithm: algorithm_shift_count_checked
+
+@Test func algorithmShiftCountCheckedMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_shift_count_checked") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: Int32.self)
+        let arg1 = try oracleInteger(args[1], as: Int32.self)
+        let arg2 = try oracleInteger(args[2], as: UInt8.self)
+        let outcome = Result { try AlgorithmShiftCountChecked.algorithmShiftCountChecked(arg0, arg1, arg2) }
+        if case .text(let fails)? = testCase.member("fails") {
+            switch outcome {
+            case .failure(let error as AlgorithmError):
+                #expect(error.contractName == fails, "algorithm_shift_count_checked")
+            case .failure(let error):
+                Issue.record("algorithm_shift_count_checked: the case expects the failure \(fails), got \(error)")
+            case .success(let value):
+                Issue.record("algorithm_shift_count_checked: the case expects a failure, got \(value)")
+            }
+            continue
+        }
+        guard case .success(let returned) = outcome else {
+            Issue.record("algorithm_shift_count_checked: the case expects a value, got \(outcome)")
+            continue
+        }
+        let expected = try oracleInteger(testCase.member("expected"), as: Int32.self)
+        #expect(returned == expected, "algorithm_shift_count_checked")
     }}
 
 // MARK: - algorithm: algorithm_checked_call

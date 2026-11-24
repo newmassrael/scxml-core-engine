@@ -145,11 +145,11 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var mdMatch bool = s.MdPos >> dom & 1 == 1 || s.MdNeg >> scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, last, dom), 1) & 1 == 1
+        var mdMatch bool = scealgorithm.ShrInt64(&sceFailure, s.MdPos, int64(dom)) & 1 == 1 || scealgorithm.ShrInt64(&sceFailure, s.MdNeg, int64(scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, last, dom), 1))) & 1 == 1
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var plainDay bool = s.Days >> wd & 1 == 1
+        var plainDay bool = scealgorithm.ShrInt64(&sceFailure, s.Days, int64(wd)) & 1 == 1
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -173,11 +173,11 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var ordFirst bool = ordPos <= 53 && wordFirst >> scealgorithm.SubInt64(&sceFailure, ordPos, 1) & 1 == 1
+        var ordFirst bool = ordPos <= 53 && scealgorithm.ShrInt64(&sceFailure, wordFirst, int64(scealgorithm.SubInt64(&sceFailure, ordPos, 1))) & 1 == 1
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var ordLast bool = ordNeg <= 53 && wordLast >> scealgorithm.SubInt64(&sceFailure, ordNeg, 1) & 1 == 1
+        var ordLast bool = ordNeg <= 53 && scealgorithm.ShrInt64(&sceFailure, wordLast, int64(scealgorithm.SubInt64(&sceFailure, ordNeg, 1))) & 1 == 1
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -189,7 +189,7 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        ok = !hasMonth || s.Bymonth >> mon & 1 == 1;
+        ok = !hasMonth || scealgorithm.ShrInt64(&sceFailure, s.Bymonth, int64(mon)) & 1 == 1;
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -279,7 +279,7 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var wkOk bool = wk >= 1 && wk <= wks && (s.WnPos >> wk & 1 == 1 || s.WnNeg >> scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, wks, wk), 1) & 1 == 1)
+                var wkOk bool = wk >= 1 && wk <= wks && (scealgorithm.ShrInt64(&sceFailure, s.WnPos, int64(wk)) & 1 == 1 || scealgorithm.ShrInt64(&sceFailure, s.WnNeg, int64(scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, wks, wk), 1))) & 1 == 1)
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
@@ -315,7 +315,7 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var ydOk bool = wordPos >> scealgorithm.RemInt64(&sceFailure, yp, 61) & 1 == 1 || wordNeg >> scealgorithm.RemInt64(&sceFailure, yn, 61) & 1 == 1
+                var ydOk bool = scealgorithm.ShrInt64(&sceFailure, wordPos, int64(scealgorithm.RemInt64(&sceFailure, yp, 61))) & 1 == 1 || scealgorithm.ShrInt64(&sceFailure, wordNeg, int64(scealgorithm.RemInt64(&sceFailure, yn, 61))) & 1 == 1
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
