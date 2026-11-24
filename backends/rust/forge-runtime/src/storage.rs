@@ -711,23 +711,31 @@ impl<const CAP: usize> ArrayBytes<CAP> {
 
     /// `bytes` copied in, or `CapacityExceeded` where they are more than `CAP`.
     pub fn from_slice(bytes: &[u8]) -> Result<Self, CodecError> {
+        if bytes.len() > CAP {
+            return Err(CodecError::CapacityExceeded);
+        }
+        Ok(Self::from_fitting(bytes))
+    }
+
+    /// `bytes` copied in, where the caller knows they are at most `CAP`
+    /// ([`Self::from_slice`] checks it, [`crate::bounded::Bounded::from_sink`]
+    /// has the build prove it). A byte past `CAP` would not be held, and no
+    /// caller passes one.
+    pub(crate) fn from_fitting(bytes: &[u8]) -> Self {
         const {
             assert!(
                 CAP <= u8::MAX as usize,
                 "an ArrayBytes holds at most 255 bytes"
             )
         };
-        if bytes.len() > CAP {
-            return Err(CodecError::CapacityExceeded);
-        }
         let mut held = [0u8; CAP];
+        let mut len = 0u8;
+        // At most `CAP` bytes, and `CAP` is at most 255, so the count holds.
         for (slot, byte) in held.iter_mut().zip(bytes) {
             *slot = *byte;
+            len += 1;
         }
-        Ok(Self {
-            bytes: held,
-            len: bytes.len() as u8,
-        })
+        Self { bytes: held, len }
     }
 
     /// The bytes held.

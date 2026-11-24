@@ -21,6 +21,9 @@
 extern crate alloc;
 
 pub mod algorithm;
+/// A write the build proves fits an array, and the bytes it wrote (docs/adr/0065
+/// §4), re-exported from [`codec`].
+pub mod array_sink;
 /// Lists of at most a bound (docs/adr/0065 §6 R2), re-exported from [`codec`].
 pub mod bounded;
 /// The bounded broadcast log (ADR 0062), 64-bit row: one publisher, any number of
