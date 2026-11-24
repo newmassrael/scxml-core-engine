@@ -228,21 +228,72 @@ judge_mutant() {
     fi
 }
 
+# ── THE RUNS, SIDE BY SIDE ────────────────────────────────────────
+#
+# Every GenMC run below is independent of every other (a harness and one copy of
+# the atomics or headers, each in a file of its own under `$WORK`), and GenMC
+# explores on one thread. Run one after another, the 189 runs of nine C and six
+# C++ harnesses held a landing's last unit for over twenty minutes on a 32-core
+# machine while the unit used one core of the eight it was granted (measured
+# 2026-11-24, item 413, pc2). So the runs go side by side, as many at once as the
+# run was granted cores (`sce_build_jobs`). Memory does not bound it: a run
+# peaked at 58 MB over 90 s of sampling the same day, against the gate's 5 GB.
+#
+# What can fail before a run starts (a mutant's sed program that no longer
+# matches, a harness that names no thread count) is still judged here, in this
+# shell, before anything is started. Each run writes its report to a file of its
+# own, and the reports are printed in the order the runs were named, so the log
+# reads as it did when they ran one after another; the gate fails naming every
+# run that failed, not only the first.
+RUN_DIR="$WORK/runs"
+mkdir -p "$RUN_DIR"
+RUN_IDS=()
+PARALLEL="$(sce_build_jobs)"
+trap 'jobs -p | xargs -r kill 2>/dev/null; rm -rf "$WORK"' EXIT
+
+start_run() {
+    local id="$1"
+    shift
+    RUN_IDS+=("$id")
+    while (( $(jobs -pr | wc -l) >= PARALLEL )); do
+        wait -n || true
+    done
+    {
+        rc=0
+        ( "$@" ) >"$RUN_DIR/$id.out" 2>&1 || rc=$?
+        echo "$rc" >"$RUN_DIR/$id.rc"
+    } &
+}
+
+# One mutant's run and its verdict: `$1` the harness, `$2` the label, `$3`
+# the source GenMC reads, `$4` the log, `$5` the language, and any further
+# arguments the compiler flags `run_genmc` places first.
+mutant_run() {
+    local harness="$1" label="$2" source="$3" log="$4" language="$5"
+    shift 5
+    run_genmc "$source" "$log" "$language" "$@"
+    judge_mutant "$harness" "$label" "$log"
+}
+
+sce_gate_step "running the GenMC harnesses and their mutants, $PARALLEL at a time"
+
 checked=0
 
 for harness in "$HARNESS_DIR"/*.c; do
     name="$(basename "$harness" .c)"
-    check_baseline "$harness" c
+    start_run "$name" check_baseline "$harness" c
 
     for mutant in "${MUTANTS[@]}"; do
         label="${mutant%%|*}"
         program="${mutant#*|}"
-        sed "$program" "$HOST_ATOMICS" >"$WORK/host_$label.c"
-        cmp -s "$HOST_ATOMICS" "$WORK/host_$label.c" && sce_gate_fail "mutant $label changed nothing in $HOST_ATOMICS: its sed program no longer matches the file"
+        if [[ ! -e "$WORK/host_$label.c" ]]; then
+            sed "$program" "$HOST_ATOMICS" >"$WORK/host_$label.c"
+            cmp -s "$HOST_ATOMICS" "$WORK/host_$label.c" && sce_gate_fail "mutant $label changed nothing in $HOST_ATOMICS: its sed program no longer matches the file"
+        fi
         # `$WORK` is already absolute (`mktemp -d`), so it is the path as it is.
         sed "s#\"../conformance/sce_atomic_host.c\"#\"$WORK/host_$label.c\"#" "$harness" >"$WORK/${name}_$label.c"
-        run_genmc "$WORK/${name}_$label.c" "$WORK/${name}_$label.log" c
-        judge_mutant "$harness" "$label" "$WORK/${name}_$label.log"
+        start_run "${name}_$label" mutant_run "$harness" "$label" \
+            "$WORK/${name}_$label.c" "$WORK/${name}_$label.log" c
     done
     checked=$((checked + 1))
 done
@@ -284,7 +335,7 @@ for harness in "$CXX_HARNESS_DIR"/*.cpp; do
         source_dir="$WORK/inc_strong_$name"
         baseline_flags=(-I "$source_dir")
     fi
-    check_baseline "$harness" cxx "${baseline_flags[@]+"${baseline_flags[@]}"}"
+    start_run "$name" check_baseline "$harness" cxx "${baseline_flags[@]+"${baseline_flags[@]}"}"
 
     for mutant in "${CXX_MUTANTS[@]}"; do
         label="${mutant%%|*}"
@@ -302,10 +353,19 @@ for harness in "$CXX_HARNESS_DIR"/*.cpp; do
             cmp -s "$source_dir/sce/forge/$header" "$WORK/inc_${name}_$label/sce/forge/$header" || changed=1
         done
         (( changed == 1 )) || sce_gate_fail "C++ mutant $label changed nothing in ${CXX_MUTATED_HEADERS[*]}: its sed program no longer matches the headers"
-        run_genmc "$harness" "$WORK/${name}_$label.log" cxx -I "$WORK/inc_${name}_$label"
-        judge_mutant "$harness" "$label" "$WORK/${name}_$label.log"
+        start_run "${name}_$label" mutant_run "$harness" "$label" "$harness" \
+            "$WORK/${name}_$label.log" cxx -I "$WORK/inc_${name}_$label"
     done
     checked=$((checked + 1))
 done
+
+wait
+
+failed=()
+for id in "${RUN_IDS[@]}"; do
+    cat "$RUN_DIR/$id.out"
+    [[ "$(cat "$RUN_DIR/$id.rc" 2>/dev/null)" == 0 ]] || failed+=("$id")
+done
+(( ${#failed[@]} == 0 )) || sce_gate_fail "${#failed[@]} of ${#RUN_IDS[@]} GenMC run(s) failed: ${failed[*]}"
 
 echo "genmc-queue: $checked harness(es) pass and every required mutant is caught"
