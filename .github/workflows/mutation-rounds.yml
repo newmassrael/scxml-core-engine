@@ -674,9 +674,9 @@ jobs:
 
     # A Gradle round is one invocation per case and each one starts from the
     # dependency graph, so an uncached job would download the whole of it
-    # before the baseline could run. Keyed the way the other Kotlin lanes key
-    # it, and restored loosely, because a partial hit is still most of the
-    # download.
+    # before the baseline could run. Keyed by this lane, as every Kotlin lane
+    # keys its own (`ecma262-lowered-kotlin.yml` says why), and restored
+    # loosely, because a partial hit is still most of the download.
     - name: Cache Gradle
       if: matrix.runner == 'gradle'
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -684,8 +684,9 @@ jobs:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+        key: ${{ runner.os }}-gradle-mutation-rounds-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
         restore-keys: |
+          ${{ runner.os }}-gradle-mutation-rounds-
           ${{ runner.os }}-gradle-
 
     # And the same for a Swift round, which is the Swift backend's. The toolchain is the

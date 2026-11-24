@@ -138,14 +138,20 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
+    # A key of this lane's own. A key the Kotlin lanes shared was saved by
+    # whichever lane missed it first, with that lane's dependencies, and a lane
+    # that needs more downloaded the rest on every run: run 45416235401 was
+    # refused kotlinx-coroutines by Maven Central (429) from a cache another
+    # lane had saved. The shared prefix is only a seed for the first run.
     - name: Cache Gradle
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+        key: ${{ runner.os }}-gradle-ecma262-kotlin-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
         restore-keys: |
+          ${{ runner.os }}-gradle-ecma262-kotlin-
           ${{ runner.os }}-gradle-
 
     # Generation, compilation and the run are one gate — the same one the

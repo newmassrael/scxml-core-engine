@@ -5481,6 +5481,59 @@ def rust_cache_failures(repo_root: Path) -> list[str]:
     return failures
 
 
+GRADLE_CACHE_PATH = "~/.gradle/caches"
+
+
+def shared_gradle_cache_keys(workflows: dict[str, list[str]]) -> tuple[list[str], int]:
+    """Gradle cache keys two workflows share, and how many Gradle caches there were.
+
+    A Gradle cache holds the dependencies of the tasks its lane ran. A key two
+    lanes share is saved by whichever misses it first, and the other restores
+    it, finds a hit, saves nothing, and downloads what it lacks from Maven
+    Central on every run: run 45416235401 of `ecma262-lowered-kotlin` was
+    refused `kotlinx-coroutines` there (429) from a cache another lane had
+    saved. So each workflow keys its Gradle cache by itself. A restore-key
+    prefix may be shared: it seeds a first run and is never saved under.
+    """
+    owners: dict[str, list[str]] = {}
+    found = 0
+    for rel, lines in sorted(workflows.items()):
+        for number, _action, step in workflow_steps(lines, CACHE_STEP):
+            if GRADLE_CACHE_PATH not in step_values(step, "path"):
+                continue
+            found += 1
+            for key in step_values(step, "key"):
+                owners.setdefault(key, []).append(f"{rel}:{number}")
+    failures = []
+    for key, places in sorted(owners.items()):
+        files = {place.rsplit(":", 1)[0] for place in places}
+        if len(files) > 1:
+            failures.append(
+                f"the Gradle cache key {key!r} is saved by {len(files)} lanes "
+                f"({', '.join(places)}): a lane restores another's dependencies, "
+                f"finds a hit, and downloads the rest on every run; key it by the lane")
+    return failures, found
+
+
+def gradle_cache_failures(repo_root: Path) -> list[str]:
+    """`shared_gradle_cache_keys` over every workflow in the tree."""
+    workflows: dict[str, list[str]] = {}
+    for rel in tracked_paths(repo_root, ".github"):
+        if Path(rel).suffix not in (".yml", ".yaml"):
+            continue
+        try:
+            workflows[rel] = (repo_root / rel).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+    failures, found = shared_gradle_cache_keys(workflows)
+    # A lower bound, so a step parse that stopped finding caches cannot pass.
+    if found < 5:
+        failures.append(
+            f"found {found} Gradle cache step(s) in .github; a broken step parse "
+            f"passes by finding none")
+    return failures
+
+
 def rust_toolchain_file(repo_root: Path) -> dict:
     """`channel`, `components` and `targets` of rust-toolchain.toml.
 
@@ -8744,6 +8797,33 @@ def self_test(repo_root: Path) -> int:
     cases += 1
     failures.extend(f"every-lane-installs-the-pinned-rust: {f}"
                     for f in moving_rust_failures(repo_root))
+
+    # every-lane-keys-its-own-gradle-cache. No two workflows save a Gradle
+    # cache under one key (`shared_gradle_cache_keys`). The fixture holds the
+    # reader to a shared key it refuses and a shared restore prefix it leaves.
+    cases += 1
+    gradle_step = lambda key: [
+        "    - name: Cache Gradle",
+        "      uses: actions/cache@" + "e" * 40,
+        "      with:",
+        "        path: |",
+        "          ~/.gradle/caches",
+        f"        key: {key}",
+        "        restore-keys: |",
+        "          Linux-gradle-",
+    ]
+    shared, seen = shared_gradle_cache_keys({
+        "a.yml": gradle_step("Linux-gradle-h"), "b.yml": gradle_step("Linux-gradle-h")})
+    if seen != 2 or len(shared) != 1:
+        failures.append(f"every-lane-keys-its-own-gradle-cache: two lanes saving "
+                        f"under one key gave {shared!r} from {seen} step(s)")
+    apart, _ = shared_gradle_cache_keys({
+        "a.yml": gradle_step("Linux-gradle-a-h"), "b.yml": gradle_step("Linux-gradle-b-h")})
+    if apart:
+        failures.append(f"every-lane-keys-its-own-gradle-cache: two lanes with keys "
+                        f"of their own were refused: {apart!r}")
+    failures.extend(f"every-lane-keys-its-own-gradle-cache: {f}"
+                    for f in gradle_cache_failures(repo_root))
 
     # every-action-is-named-by-its-commit. No workflow or action runs an
     # action from outside the repository by a tag or a branch (see "The
