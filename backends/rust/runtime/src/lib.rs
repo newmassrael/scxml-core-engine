@@ -664,7 +664,7 @@ pub use log;
 /// below carries the same name for `std` builds, which is why this one is
 /// spelled from the module that defines it rather than added to that list.
 pub use payload_reading::PayloadReading;
-pub use policy::StatePolicy;
+pub use policy::{CurrentEventData, StatePolicy};
 pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
 pub use scheduler_storage::{NoDelayedSends, SchedulerStorage};
 /// docs/adr/0096: why a machine's script session could not be established,

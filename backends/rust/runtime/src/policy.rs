@@ -56,6 +56,20 @@ use crate::helpers::run_store::RunStorage;
 use crate::helpers::tables::{DocumentTables, EventId, HistoryId, StateId, TransitionId};
 use crate::Engine;
 
+/// What the engine holds as the data of the event being processed, from the
+/// moment it takes the event to the moment it takes the next one
+/// (docs/adr/0124). Read by every hook through
+/// [`StatePolicy::event_data`].
+pub enum CurrentEventData<'d, P: StatePolicy> {
+    /// The payload the event carried through its queue, owned by the engine
+    /// while the event is `_event`.
+    Queued(P::Payload),
+    /// The data a host lent with the event it processes now
+    /// ([`Engine::process_event_with`](crate::Engine::process_event_with)),
+    /// borrowed for that call alone.
+    Lent(P::EventData<'d>),
+}
+
 /// The contract that generated state machine policies must satisfy.
 ///
 /// Ports the C++ `StatePolicy` concept from `sce/include/core/StatePolicyConcepts.h`.
@@ -84,7 +98,8 @@ pub trait StatePolicy: Sized + 'static {
     /// entry procedures dereference it to what it recorded or to its default.
     type History: Copy + Eq + Debug + 'static;
 
-    /// Typed event payload for EventSchema native lowering.
+    /// Typed event payload for EventSchema native lowering: the data of an
+    /// event as a queue owns it.
     ///
     /// `()` for schemaless documents — the dynamic `_event.data` baseline keeps
     /// riding in [`EventMetadata::data`](crate::EventMetadata) as before. For a
@@ -92,14 +107,42 @@ pub trait StatePolicy: Sized + 'static {
     /// per-document payload sum (`<Doc>Payload`) so that `_event.data.<field>`
     /// guards lower to native field reads with no script engine — the no_std MCU
     /// value path. The payload rides with its event through the queues in
-    /// [`EventWithMetadata::payload`](crate::EventWithMetadata) and is copied to
-    /// the policy at dispatch via
-    /// [`populate_event_payload`](StatePolicy::populate_event_payload).
+    /// [`EventWithMetadata::payload`](crate::EventWithMetadata), and the engine
+    /// holds it beside the turn while its event is `_event`: what reads it reads
+    /// it through [`EventData`](StatePolicy::EventData), handed to each hook
+    /// (docs/adr/0124).
     ///
     /// `Default` supplies the slot for payloadless/schemaless events (the queues
     /// are homogeneous in `Self::Payload`); `Clone`/`Debug` mirror the
-    /// `EventWithMetadata` derives; `'static` because payloads carry no borrows.
+    /// `EventWithMetadata` derives; `'static` because a queued event outlives
+    /// the call that queued it, so its payload carries no borrows.
     type Payload: Clone + Default + Debug + 'static;
+
+    /// The data of the event being processed, as every reader of it reads it:
+    /// a guard, an `<sce:arg>`, the content of a transition (docs/adr/0124).
+    ///
+    /// One value whether the data came owned through a queue, as a
+    /// [`Payload`](StatePolicy::Payload), or was lent by the host for one call
+    /// ([`Engine::process_event_with`](crate::Engine::process_event_with)): a
+    /// borrow of it for `'e`, read through each schema's read interface. A
+    /// generated policy spells `<Machine>EventData<'e>`, with a `None` for an
+    /// event that carries no data; a policy whose events carry none spells
+    /// `()`. No default: stable Rust has no defaults for associated types.
+    ///
+    /// It is an argument of every hook that runs executable content, and never
+    /// stored: the policy keeps no lifetime, and the borrow checker proves that
+    /// nothing a hook keeps outlives the event.
+    type EventData<'e>: Copy
+    where
+        Self: 'e;
+
+    /// The data the engine holds for the event being processed, as
+    /// [`EventData`](StatePolicy::EventData): the payload a queue handed over,
+    /// read in place, or the data a host lent, as it is (docs/adr/0124).
+    ///
+    /// A policy whose events carry no data answers `()`:
+    /// `fn event_data<'a>(_held: &'a CurrentEventData<'_, Self>) -> Self::EventData<'a> {}`.
+    fn event_data<'a>(held: &'a CurrentEventData<'_, Self>) -> Self::EventData<'a>;
 
     /// HAL impl bound to this policy (SCE Protocol-Synthesis RFC §synth-5-J-2 line 1984).
     ///
@@ -556,6 +599,12 @@ pub trait StatePolicy: Sized + 'static {
     // one numbering (docs/adr/0123). The engine converts nothing on the way
     // in; a hook that needs the machine's own value converts where it needs
     // it, with `state_of`, `event_of` or `history_of`.
+    //
+    // Every hook that runs a guard or executable content is handed
+    // `event_data`, the data of the event being processed
+    // ([`EventData`](StatePolicy::EventData)), as an argument: one signature
+    // for every machine, whether that data was queued or lent, and nothing
+    // the policy keeps can hold it past the call (docs/adr/0124).
     // ──────────────────────────────────────────────
 
     /// §scxml-5.10: bind the event whose transitions are about to be selected
@@ -579,10 +628,12 @@ pub trait StatePolicy: Sized + 'static {
     /// their ancestors and keeps the ordered set. The state, the event and the
     /// answer are numbers of [`TABLES`](StatePolicy::TABLES): the answer is
     /// the transition's row, which holds its source, targets and type.
+    /// `event_data` is `event`'s data, which a guard reads as `_event.data`.
     fn first_enabled_transition(
         &mut self,
         state: StateId,
         event: EventId,
+        event_data: Self::EventData<'_>,
         engine: &mut Engine<Self>,
     ) -> Option<TransitionId>;
 
@@ -614,8 +665,13 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// `transition` is one `first_enabled_transition` reported, and one whose
     /// row says it has content. Ports C++ `executeTransitionActions(State, int,
-    /// Engine&)`.
-    fn execute_transition_content(&mut self, transition: TransitionId, engine: &mut Engine<Self>);
+    /// Engine&)`. `event_data` is the data of the event that selected it.
+    fn execute_transition_content(
+        &mut self,
+        transition: TransitionId,
+        event_data: Self::EventData<'_>,
+        engine: &mut Engine<Self>,
+    );
 
     /// Enter `state` (§scxml-3.8): run its `<onentry>`, and its initial
     /// transition's content when `is_default_entry`. The engine has added it to
@@ -634,9 +690,11 @@ pub trait StatePolicy: Sized + 'static {
     /// entered only as an ANCESTOR of a deeper target was not entered by
     /// default, and its initial transition content does not run. For a
     /// `<final>`, this is also what the appendix does on entering one.
+    /// `event_data` is the data of the event being processed, if any.
     fn execute_entry_actions(
         &mut self,
         state: StateId,
+        event_data: Self::EventData<'_>,
         engine: &mut Engine<Self>,
         is_default_entry: bool,
     );
@@ -648,8 +706,13 @@ pub trait StatePolicy: Sized + 'static {
     /// Ports C++ `executeExitActions(State, Engine&, const vector<State>&)`.
     /// One state, and nothing below it: the engine's Appendix D exit set
     /// already holds every active descendant, in exit order, ahead of this
-    /// state.
-    fn execute_exit_actions(&mut self, state: StateId, engine: &mut Engine<Self>);
+    /// state. `event_data` is the data of the event being processed, if any.
+    fn execute_exit_actions(
+        &mut self,
+        state: StateId,
+        event_data: Self::EventData<'_>,
+        engine: &mut Engine<Self>,
+    );
 
     /// §scxml-3.10.2: a `<history>`'s default transition content, run after
     /// its parent's onentry (and after the parent's own initial content) when
@@ -657,7 +720,12 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// The default runs nothing, which is right for a history whose default
     /// transition has no content and for a document with no history at all.
-    fn execute_history_default_content(&mut self, _history: HistoryId, _engine: &mut Engine<Self>) {
+    fn execute_history_default_content(
+        &mut self,
+        _history: HistoryId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
     }
 
     // ──────────────────────────────────────────────
@@ -838,26 +906,15 @@ pub trait StatePolicy: Sized + 'static {
     ) {
     }
 
-    /// Copy the typed payload of the event being dispatched into the policy
-    /// (EventSchema native lowering).
-    ///
-    /// The runtime calls this at dispatch — alongside
-    /// [`populate_event_metadata`](StatePolicy::populate_event_metadata) — for
-    /// every dequeued event, handing the [`EventWithMetadata::payload`](crate::EventWithMetadata)
-    /// that rode with the event. Schemaless documents leave the default no-op
-    /// (`Self::Payload = ()`, nothing to bind); a document importing
-    /// `EventSchema`s overrides this to store the payload in a typed
-    /// `pending_payload` field that `_event.data.<field>` guards read natively.
-    fn populate_event_payload(&mut self, _payload: &Self::Payload) {}
-
     /// Lift the typed `_event.data` view out of the data an event carries
-    /// (EventSchema native lowering).
+    /// (EventSchema native lowering), into `payload`, the payload its queue
+    /// handed over, which the engine then holds while the event is `_event`
+    /// (docs/adr/0124).
     ///
-    /// The payload [`populate_event_payload`](StatePolicy::populate_event_payload)
-    /// binds is filled by ONE producer: the generated `raise_<event>` inject
-    /// seam. Every other producer — `<send>` with `<param>`, namelist or
-    /// `<content>`, an invoke forwarding an event either way, autoforward,
-    /// BasicHTTP, mesh — fills [`EventMetadata::data`](crate::EventMetadata),
+    /// A typed payload is filled by ONE producer: the generated `raise_<event>`
+    /// inject seam, and a `payload` it filled is left as it is. Every other
+    /// producer — `<send>` with `<param>`, namelist or `<content>`, an invoke
+    /// forwarding an event either way, autoforward, BasicHTTP, mesh — fills [`EventMetadata::data`](crate::EventMetadata),
     /// the wire §scxml-5.10 describes and §scxml-B-2-8-1 reads. This reads
     /// the schema's fields out of that when no typed payload rode with the
     /// event, so the same guard answers the same way whichever producer sent
@@ -873,9 +930,9 @@ pub trait StatePolicy: Sized + 'static {
     /// disagree with, so there the typed carrier is the whole channel.
     #[cfg(feature = "std")]
     fn lift_event_payload(
-        &mut self,
         _event: Self::Event,
         _data: &str,
+        _payload: &mut Self::Payload,
     ) -> Result<(), crate::event_payload::PayloadRefusal> {
         Ok(())
     }

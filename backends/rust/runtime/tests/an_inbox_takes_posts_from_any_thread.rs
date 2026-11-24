@@ -125,6 +125,9 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
     type Event = Ev;
     type History = NoHistory;
     type Payload = D;
+    // docs/adr/0124: the payload an event carried, read where the engine
+    // holds it.
+    type EventData<'e> = &'e D;
     type Hal = CountingHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -207,20 +210,37 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
     }
 
     // `_is_default_entry` is unused: this policy has no compound states.
+    fn event_data<'a>(
+        held: &'a sce_rust_runtime::CurrentEventData<'_, Self>,
+    ) -> Self::EventData<'a> {
+        match held {
+            sce_rust_runtime::CurrentEventData::Queued(payload) => payload,
+            sce_rust_runtime::CurrentEventData::Lent(data) => *data,
+        }
+    }
+
     fn execute_entry_actions(
         &mut self,
         _state: StateId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
     }
 
-    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(
+        &mut self,
+        _state: StateId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     fn first_enabled_transition(
         &mut self,
         state: StateId,
         event: EventId,
+        _event_data: Self::EventData<'_>,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
         match (Self::state_of(state), Self::event_of(event)) {
@@ -230,16 +250,20 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
         }
     }
 
-    fn execute_transition_content(&mut self, transition: TransitionId, _engine: &mut Engine<Self>) {
+    // The content of each transition records the payload its event carried,
+    // as the engine hands it over (docs/adr/0124).
+    fn execute_transition_content(
+        &mut self,
+        transition: TransitionId,
+        event_data: Self::EventData<'_>,
+        _engine: &mut Engine<Self>,
+    ) {
         if transition == S_PING {
             self.taken.push("ping");
         } else if transition == S_PONG {
             self.taken.push("pong");
         }
-    }
-
-    fn populate_event_payload(&mut self, payload: &Self::Payload) {
-        self.payloads.push(payload.clone());
+        self.payloads.push(event_data.clone());
     }
 }
 
