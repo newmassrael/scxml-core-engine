@@ -231,6 +231,20 @@ impl<'a> CodecZenohFragmentSource for CodecZenohFragmentParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecZenohFragmentParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecZenohFragmentSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecZenohFragmentSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            sn: src.sn(),
+            payload: src.payload(),
+        }
+    }
+}
+
 impl<S: CodecZenohFragmentStorage> CodecZenohFragmentSource for CodecZenohFragmentOwned<S> {
     fn sn(&self) -> u64 {
         self.sn

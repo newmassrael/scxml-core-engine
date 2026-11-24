@@ -241,6 +241,20 @@ impl<'a> CodecExtTimestampSource for CodecExtTimestampParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecExtTimestampParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecExtTimestampSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecExtTimestampSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            time: src.time(),
+            zid: src.zid(),
+        }
+    }
+}
+
 impl<S: CodecExtTimestampStorage> CodecExtTimestampSource for CodecExtTimestampOwned<S> {
     fn time(&self) -> u64 {
         self.time

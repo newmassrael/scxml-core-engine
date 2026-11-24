@@ -155,6 +155,21 @@ impl CodecSimpleFrameSource for CodecSimpleFrameParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecSimpleFrameParts {
+    /// The parts of what `src` says, each accessor of [`CodecSimpleFrameSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecSimpleFrameSource + ?Sized>(src: &S) -> Self {
+        Self {
+            msg_id: src.msg_id(),
+            length: src.length(),
+            payload: src.payload(),
+        }
+    }
+}
+
 impl CodecSimpleFrameSource for CodecSimpleFrame {
     fn msg_id(&self) -> u8 {
         self.msg_id

@@ -253,6 +253,20 @@ impl<'a> CodecLengthRefDottedBasicSource for CodecLengthRefDottedBasicParts<'a> 
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecLengthRefDottedBasicParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecLengthRefDottedBasicSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecLengthRefDottedBasicSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            carrier: src.carrier(),
+            payload: src.payload(),
+        }
+    }
+}
+
 impl<S: CodecLengthRefDottedBasicStorage> CodecLengthRefDottedBasicSource for CodecLengthRefDottedBasicOwned<S> {
     fn carrier(&self) -> u8 {
         self.carrier

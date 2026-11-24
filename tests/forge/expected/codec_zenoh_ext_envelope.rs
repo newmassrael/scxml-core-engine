@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -331,6 +331,21 @@ impl CodecZenohExtEnvelopeWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohExtEnvelope` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohExtEnvelopeWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohExtEnvelopeWalk {
+    type Entry<'b> = CodecZenohExtEnvelopeView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohExtEnvelopeView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecZenohExtEnvelopeView` is what a decode of `CodecZenohExtEnvelope` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohExtEnvelope` holds it, an embedded body or a variant arm as its
@@ -340,24 +355,16 @@ impl CodecZenohExtEnvelopeWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecZenohExtEnvelope::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `extensions` reads its entries: the walk of every list of `CodecZenohExtEntryView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecZenohExtEnvelopeExtensionsWalk;
-
-impl ListWalk<0> for CodecZenohExtEnvelopeExtensionsWalk {
-    type Entry<'b> = CodecZenohExtEntryView<'b>;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecZenohExtEntryView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecZenohExtEnvelopeExtensionsWalk = super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohExtEnvelopeView<'a> {
     pub header_flags: u8,
-    pub extensions: Bounded<::sce_forge_runtime::codec::NonEmptyListView<'a, CodecZenohExtEnvelopeExtensionsWalk, 0>, { usize::MAX }, 1>,
+    pub extensions: Bounded<::sce_forge_runtime::codec::NonEmptyListView<'a, super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, 0>, { usize::MAX }, 1>,
 }
 
 #[allow(dead_code)]

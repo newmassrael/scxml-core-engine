@@ -129,6 +129,19 @@ impl CodecOriginScalarSource for CodecOriginScalarParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecOriginScalarParts {
+    /// The parts of what `src` says, each accessor of [`CodecOriginScalarSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecOriginScalarSource + ?Sized>(src: &S) -> Self {
+        Self {
+            value: src.value(),
+        }
+    }
+}
+
 impl CodecOriginScalarSource for CodecOriginScalar {
     fn value(&self) -> u8 {
         self.value

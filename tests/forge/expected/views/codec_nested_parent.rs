@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_nested_body::CodecNestedBodyView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -407,6 +407,21 @@ impl CodecNestedParentWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecNestedParent` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecNestedParentWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecNestedParentWalk {
+    type Entry<'b> = CodecNestedParentView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecNestedParentView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecNestedParentView` is what a decode of `CodecNestedParent` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecNestedParent` holds it, an embedded body or a variant arm as its
@@ -416,18 +431,10 @@ impl CodecNestedParentWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecNestedParent::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `body_list` reads its entries: the walk of every list of `CodecNestedBodyView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecNestedParentBodyListWalk;
-
-impl ListWalk<0> for CodecNestedParentBodyListWalk {
-    type Entry<'b> = CodecNestedBodyView<'b>;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecNestedBodyView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecNestedParentBodyListWalk = super::codec_nested_body::CodecNestedBodyWalk;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -436,7 +443,7 @@ pub struct CodecNestedParentView<'a> {
     pub m: u8,
     pub required_body: CodecNestedBodyView<'a>,
     pub optional_body: Option<CodecNestedBodyView<'a>>,
-    pub body_list: Bounded<ListView<'a, CodecNestedParentBodyListWalk, 0>, 4>,
+    pub body_list: Bounded<ListView<'a, super::codec_nested_body::CodecNestedBodyWalk, 0>, 4>,
 }
 
 #[allow(dead_code)]

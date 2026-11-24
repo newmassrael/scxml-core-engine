@@ -265,6 +265,21 @@ impl<'a> CodecFixedAfterLengthrefSource for CodecFixedAfterLengthrefParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecFixedAfterLengthrefParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecFixedAfterLengthrefSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecFixedAfterLengthrefSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            header: src.header(),
+            payload: src.payload(),
+            crc32: src.crc32(),
+        }
+    }
+}
+
 impl<S: CodecFixedAfterLengthrefStorage> CodecFixedAfterLengthrefSource for CodecFixedAfterLengthrefOwned<S> {
     fn header(&self) -> u8 {
         self.header

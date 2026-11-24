@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_zenoh_value_entry::CodecZenohValueEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -341,6 +341,21 @@ impl CodecZenohQueryValueWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohQueryValue` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohQueryValueWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohQueryValueWalk {
+    type Entry<'b> = CodecZenohQueryValueView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohQueryValueView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecZenohQueryValueView` is what a decode of `CodecZenohQueryValue` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohQueryValue` holds it, an embedded body or a variant arm as its
@@ -353,7 +368,7 @@ impl CodecZenohQueryValueWire {
 #[allow(dead_code)]
 pub struct CodecZenohQueryValueExtsWalk;
 
-impl ListWalk<1> for CodecZenohQueryValueExtsWalk {
+impl ::sce_forge_runtime::codec::ListWalk<1> for CodecZenohQueryValueExtsWalk {
     type Entry<'b> = CodecZenohValueEntryView<'b>;
 
     fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 1]) -> Result<Self::Entry<'b>, CodecError> {

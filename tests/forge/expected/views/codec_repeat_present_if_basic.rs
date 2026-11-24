@@ -19,7 +19,7 @@ use sce_forge_runtime::codec::VecSink;
 
 use super::codec_repeat_elem::CodecRepeatElem;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_repeat_elem::CodecRepeatElemView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -374,6 +374,21 @@ impl CodecRepeatPresentIfBasicWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecRepeatPresentIfBasic` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecRepeatPresentIfBasicWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecRepeatPresentIfBasicWalk {
+    type Entry<'b> = CodecRepeatPresentIfBasicView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecRepeatPresentIfBasicView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecRepeatPresentIfBasicView` is what a decode of `CodecRepeatPresentIfBasic` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecRepeatPresentIfBasic` holds it, an embedded body or a variant arm as its
@@ -383,25 +398,17 @@ impl CodecRepeatPresentIfBasicWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecRepeatPresentIfBasic::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `elems` reads its entries: the walk of every list of `CodecRepeatElemView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecRepeatPresentIfBasicElemsWalk;
-
-impl ListWalk<0> for CodecRepeatPresentIfBasicElemsWalk {
-    type Entry<'b> = CodecRepeatElemView;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecRepeatElemView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecRepeatPresentIfBasicElemsWalk = super::codec_repeat_elem::CodecRepeatElemWalk;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecRepeatPresentIfBasicView<'a> {
     pub carrier: u8,
     pub num_elems: Option<u8>,
-    pub elems: Option<Bounded<ListView<'a, CodecRepeatPresentIfBasicElemsWalk, 0>, 32>>,
+    pub elems: Option<Bounded<ListView<'a, super::codec_repeat_elem::CodecRepeatElemWalk, 0>, 32>>,
 }
 
 #[allow(dead_code)]

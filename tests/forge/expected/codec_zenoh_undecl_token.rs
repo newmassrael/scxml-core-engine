@@ -316,6 +316,21 @@ impl CodecZenohUndeclTokenWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohUndeclToken` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohUndeclTokenWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<1> for CodecZenohUndeclTokenWalk {
+    type Entry<'b> = CodecZenohUndeclTokenView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 1]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohUndeclTokenView::decode(_c, _a[0])
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) {  }
+}
+
 // `CodecZenohUndeclTokenView` is what a decode of `CodecZenohUndeclToken` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohUndeclToken` holds it, an embedded body or a variant arm as its

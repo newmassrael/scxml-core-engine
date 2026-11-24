@@ -238,6 +238,20 @@ impl<'a> CodecTlvEntrySource for CodecTlvEntryParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecTlvEntryParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecTlvEntrySource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecTlvEntrySource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            entry_type: src.entry_type(),
+            entry_body: src.entry_body(),
+        }
+    }
+}
+
 impl<S: CodecTlvEntryStorage> CodecTlvEntrySource for CodecTlvEntryOwned<S> {
     fn entry_type(&self) -> u8 {
         self.entry_type

@@ -19,7 +19,7 @@ use sce_forge_runtime::codec::VecSink;
 
 use super::codec_zenoh_push_body::CodecZenohPushBody;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryView;
 use super::codec_zenoh_push_body::CodecZenohPushBodyView;
 
@@ -472,6 +472,21 @@ impl CodecZenohReplyWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohReply` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohReplyWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohReplyWalk {
+    type Entry<'b> = CodecZenohReplyView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohReplyView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecZenohReplyView` is what a decode of `CodecZenohReply` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohReply` holds it, an embedded body or a variant arm as its
@@ -481,25 +496,17 @@ impl CodecZenohReplyWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecZenohReply::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `extensions` reads its entries: the walk of every list of `CodecZenohExtEntryView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecZenohReplyExtensionsWalk;
-
-impl ListWalk<0> for CodecZenohReplyExtensionsWalk {
-    type Entry<'b> = CodecZenohExtEntryView<'b>;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecZenohExtEntryView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecZenohReplyExtensionsWalk = super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohReplyView<'a> {
     pub header: u8,
     pub consolidation: Option<u8>,
-    pub extensions: Option<Bounded<ListView<'a, CodecZenohReplyExtensionsWalk, 0>, { usize::MAX }, 1>>,
+    pub extensions: Option<Bounded<ListView<'a, super::codec_zenoh_ext_entry::CodecZenohExtEntryWalk, 0>, { usize::MAX }, 1>>,
     pub body: CodecZenohPushBodyView,
 }
 

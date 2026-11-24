@@ -222,6 +222,19 @@ impl CodecQosByteSource for CodecQosByteParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecQosByteParts {
+    /// The parts of what `src` says, each accessor of [`CodecQosByteSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecQosByteSource + ?Sized>(src: &S) -> Self {
+        Self {
+            qos: src.qos(),
+        }
+    }
+}
+
 impl CodecQosByteSource for CodecQosByte {
     fn qos(&self) -> u8 {
         self.qos
@@ -253,9 +266,19 @@ impl CodecQosByteWire {
     }
 
     /// [`Self::write_source`] with the flags a parent sets in place of the
-    /// ones `src` presents.
+    /// ones `src` presents. `src` is read once into `CodecQosByteParts`, whatever form
+    /// it is in, and the wire is written from that one form (`write_parts_in`).
     #[doc(hidden)]
     pub fn write_source_in<S: CodecQosByteSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecQosByteOverrides) -> Result<(), K::Error> {
+        Self::write_parts_in(&CodecQosByteParts::of(src), w, over)
+    }
+
+    /// The wire of `src`, the one form every source of this codec is read
+    /// into: one writer for each sink, however many forms are written. It is
+    /// out of line unless every write is asked inlined (`--inline-encode`):
+    /// inlined into `write_source_in`, it is copied into each form.
+    #[inline(never)]
+    fn write_parts_in<K: SceSink>(src: &CodecQosByteParts, w: &mut K, over: &CodecQosByteOverrides) -> Result<(), K::Error> {
         let mut _c_qos: u8 = src.qos();
         if let Some(_o) = over.qos_reliable {
             _c_qos = (_c_qos & !0x8) | (u8::from(_o) << 3);

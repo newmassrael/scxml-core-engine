@@ -238,6 +238,20 @@ impl<'a> CodecLengthRefSource for CodecLengthRefParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecLengthRefParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecLengthRefSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecLengthRefSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            msg_id: src.msg_id(),
+            payload: src.payload(),
+        }
+    }
+}
+
 impl<S: CodecLengthRefStorage> CodecLengthRefSource for CodecLengthRefOwned<S> {
     fn msg_id(&self) -> u8 {
         self.msg_id

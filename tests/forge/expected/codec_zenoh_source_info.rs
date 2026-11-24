@@ -276,6 +276,22 @@ impl<'a> CodecZenohSourceInfoSource for CodecZenohSourceInfoParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecZenohSourceInfoParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecZenohSourceInfoSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecZenohSourceInfoSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            header: src.header(),
+            zid: src.zid(),
+            eid: src.eid(),
+            sn: src.sn(),
+        }
+    }
+}
+
 impl<S: CodecZenohSourceInfoStorage> CodecZenohSourceInfoSource for CodecZenohSourceInfoOwned<S> {
     fn header(&self) -> u8 {
         self.header

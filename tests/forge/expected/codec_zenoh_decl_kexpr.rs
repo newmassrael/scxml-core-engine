@@ -310,6 +310,21 @@ impl CodecZenohDeclKexprWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohDeclKexpr` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohDeclKexprWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<1> for CodecZenohDeclKexprWalk {
+    type Entry<'b> = CodecZenohDeclKexprView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 1]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohDeclKexprView::decode(_c, _a[0])
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 1]) {  }
+}
+
 // `CodecZenohDeclKexprView` is what a decode of `CodecZenohDeclKexpr` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohDeclKexpr` holds it, an embedded body or a variant arm as its

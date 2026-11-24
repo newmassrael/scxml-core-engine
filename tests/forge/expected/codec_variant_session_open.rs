@@ -129,6 +129,19 @@ impl CodecVariantSessionOpenSource for CodecVariantSessionOpenParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecVariantSessionOpenParts {
+    /// The parts of what `src` says, each accessor of [`CodecVariantSessionOpenSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecVariantSessionOpenSource + ?Sized>(src: &S) -> Self {
+        Self {
+            version: src.version(),
+        }
+    }
+}
+
 impl CodecVariantSessionOpenSource for CodecVariantSessionOpen {
     fn version(&self) -> u16 {
         self.version

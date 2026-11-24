@@ -427,6 +427,21 @@ impl CodecZenohPushWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecZenohPush` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecZenohPushWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecZenohPushWalk {
+    type Entry<'b> = CodecZenohPushView;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohPushView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecZenohPushView` is what a decode of `CodecZenohPush` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecZenohPush` holds it, an embedded body or a variant arm as its

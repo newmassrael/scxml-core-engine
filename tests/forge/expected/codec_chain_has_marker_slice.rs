@@ -236,6 +236,20 @@ impl<'a> CodecChainHasMarkerSliceSource for CodecChainHasMarkerSliceParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecChainHasMarkerSliceParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecChainHasMarkerSliceSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecChainHasMarkerSliceSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            kind: src.kind(),
+            data: src.data(),
+        }
+    }
+}
+
 impl<S: CodecChainHasMarkerSliceStorage> CodecChainHasMarkerSliceSource for CodecChainHasMarkerSliceOwned<S> {
     fn kind(&self) -> u16 {
         self.kind

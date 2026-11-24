@@ -224,6 +224,19 @@ impl<'a> CodecOriginLeafSource for CodecOriginLeafParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecOriginLeafParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecOriginLeafSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecOriginLeafSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            data: src.data(),
+        }
+    }
+}
+
 impl<S: CodecOriginLeafStorage> CodecOriginLeafSource for CodecOriginLeafOwned<S> {
     fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
         self.data.as_bytes()

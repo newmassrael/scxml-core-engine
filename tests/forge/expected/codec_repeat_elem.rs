@@ -129,6 +129,19 @@ impl CodecRepeatElemSource for CodecRepeatElemParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecRepeatElemParts {
+    /// The parts of what `src` says, each accessor of [`CodecRepeatElemSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecRepeatElemSource + ?Sized>(src: &S) -> Self {
+        Self {
+            seq: src.seq(),
+        }
+    }
+}
+
 impl CodecRepeatElemSource for CodecRepeatElem {
     fn seq(&self) -> u16 {
         self.seq

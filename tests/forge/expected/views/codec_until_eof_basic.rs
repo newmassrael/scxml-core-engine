@@ -19,7 +19,7 @@ use sce_forge_runtime::codec::VecSink;
 
 use super::codec_repeat_elem::CodecRepeatElem;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_repeat_elem::CodecRepeatElemView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -307,6 +307,21 @@ impl CodecUntilEofBasicWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecUntilEofBasic` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecUntilEofBasicWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecUntilEofBasicWalk {
+    type Entry<'b> = CodecUntilEofBasicView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecUntilEofBasicView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecUntilEofBasicView` is what a decode of `CodecUntilEofBasic` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecUntilEofBasic` holds it, an embedded body or a variant arm as its
@@ -316,23 +331,15 @@ impl CodecUntilEofBasicWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecUntilEofBasic::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `msgs` reads its entries: the walk of every list of `CodecRepeatElemView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecUntilEofBasicMsgsWalk;
-
-impl ListWalk<0> for CodecUntilEofBasicMsgsWalk {
-    type Entry<'b> = CodecRepeatElemView;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecRepeatElemView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecUntilEofBasicMsgsWalk = super::codec_repeat_elem::CodecRepeatElemWalk;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecUntilEofBasicView<'a> {
-    pub msgs: Bounded<ListView<'a, CodecUntilEofBasicMsgsWalk, 0>, 64>,
+    pub msgs: Bounded<ListView<'a, super::codec_repeat_elem::CodecRepeatElemWalk, 0>, 64>,
 }
 
 #[allow(dead_code)]

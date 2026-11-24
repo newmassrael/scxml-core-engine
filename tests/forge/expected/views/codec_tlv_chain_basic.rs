@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_tlv_entry::CodecTlvEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -331,6 +331,21 @@ impl CodecTlvChainBasicWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecTlvChainBasic` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecTlvChainBasicWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecTlvChainBasicWalk {
+    type Entry<'b> = CodecTlvChainBasicView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecTlvChainBasicView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecTlvChainBasicView` is what a decode of `CodecTlvChainBasic` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecTlvChainBasic` holds it, an embedded body or a variant arm as its
@@ -340,24 +355,16 @@ impl CodecTlvChainBasicWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecTlvChainBasic::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `extensions` reads its entries: the walk of every list of `CodecTlvEntryView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecTlvChainBasicExtensionsWalk;
-
-impl ListWalk<0> for CodecTlvChainBasicExtensionsWalk {
-    type Entry<'b> = CodecTlvEntryView<'b>;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecTlvEntryView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecTlvChainBasicExtensionsWalk = super::codec_tlv_entry::CodecTlvEntryWalk;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecTlvChainBasicView<'a> {
     pub header_flags: u8,
-    pub extensions: Bounded<ListView<'a, CodecTlvChainBasicExtensionsWalk, 0>, 8>,
+    pub extensions: Bounded<ListView<'a, super::codec_tlv_entry::CodecTlvEntryWalk, 0>, 8>,
 }
 
 #[allow(dead_code)]

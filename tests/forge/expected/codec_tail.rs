@@ -232,6 +232,21 @@ impl<'a> CodecTailSource for CodecTailParts<'a> {
     }
 }
 
+#[allow(dead_code)]
+impl<'a> CodecTailParts<'a> {
+    /// The parts of what `src` says, each accessor of [`CodecTailSource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecTailSource + ?Sized>(src: &'a S) -> Self {
+        Self {
+            msg_id: src.msg_id(),
+            status: src.status(),
+            payload: src.payload(),
+        }
+    }
+}
+
 impl<S: CodecTailStorage> CodecTailSource for CodecTailOwned<S> {
     fn msg_id(&self) -> u8 {
         self.msg_id

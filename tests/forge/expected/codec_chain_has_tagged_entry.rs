@@ -192,6 +192,21 @@ impl CodecChainHasTaggedEntrySource for CodecChainHasTaggedEntryParts {
     }
 }
 
+#[allow(dead_code)]
+impl CodecChainHasTaggedEntryParts {
+    /// The parts of what `src` says, each accessor of [`CodecChainHasTaggedEntrySource`] read
+    /// once: the one form a codec that holds this one writes it from,
+    /// whatever form the value it is handed is in (docs/adr/0058).
+    #[doc(hidden)]
+    pub fn of<S: CodecChainHasTaggedEntrySource + ?Sized>(src: &S) -> Self {
+        Self {
+            entry_type: src.entry_type(),
+            ctl: src.ctl(),
+            body: src.body(),
+        }
+    }
+}
+
 impl CodecChainHasTaggedEntrySource for CodecChainHasTaggedEntry {
     fn entry_type(&self) -> u8 {
         self.entry_type
@@ -229,9 +244,19 @@ impl CodecChainHasTaggedEntryWire {
     }
 
     /// [`Self::write_source`] with the flags a parent sets in place of the
-    /// ones `src` presents.
+    /// ones `src` presents. `src` is read once into `CodecChainHasTaggedEntryParts`, whatever form
+    /// it is in, and the wire is written from that one form (`write_parts_in`).
     #[doc(hidden)]
     pub fn write_source_in<S: CodecChainHasTaggedEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecChainHasTaggedEntryOverrides) -> Result<(), K::Error> {
+        Self::write_parts_in(&CodecChainHasTaggedEntryParts::of(src), w, over)
+    }
+
+    /// The wire of `src`, the one form every source of this codec is read
+    /// into: one writer for each sink, however many forms are written. It is
+    /// out of line unless every write is asked inlined (`--inline-encode`):
+    /// inlined into `write_source_in`, it is copied into each form.
+    #[inline(never)]
+    fn write_parts_in<K: SceSink>(src: &CodecChainHasTaggedEntryParts, w: &mut K, over: &CodecChainHasTaggedEntryOverrides) -> Result<(), K::Error> {
         let mut _c_ctl: u8 = src.ctl();
         if let Some(_o) = over.ctl_more {
             _c_ctl = (_c_ctl & !0x1) | u8::from(_o);

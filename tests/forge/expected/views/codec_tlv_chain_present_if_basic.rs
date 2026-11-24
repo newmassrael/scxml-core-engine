@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView};
 use super::codec_tlv_entry::CodecTlvEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -357,6 +357,21 @@ impl CodecTlvChainPresentIfBasicWire {
 
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
+/// How a list of `CodecTlvChainPresentIfBasic` reads its entries when it carries nothing from one
+/// entry to the next: one walk for every such list of every codec.
+#[allow(dead_code)]
+pub struct CodecTlvChainPresentIfBasicWalk;
+
+impl ::sce_forge_runtime::codec::ListWalk<0> for CodecTlvChainPresentIfBasicWalk {
+    type Entry<'b> = CodecTlvChainPresentIfBasicView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecTlvChainPresentIfBasicView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
 // `CodecTlvChainPresentIfBasicView` is what a decode of `CodecTlvChainPresentIfBasic` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
 // as `CodecTlvChainPresentIfBasic` holds it, an embedded body or a variant arm as its
@@ -366,24 +381,16 @@ impl CodecTlvChainPresentIfBasicWire {
 // one copies a few words however long its lists may be. `decode` refuses the
 // frames `CodecTlvChainPresentIfBasic::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
+/// How `entries` reads its entries: the walk of every list of `CodecTlvEntryView` that
+/// carries nothing from one entry to the next.
 #[allow(dead_code)]
-pub struct CodecTlvChainPresentIfBasicEntriesWalk;
-
-impl ListWalk<0> for CodecTlvChainPresentIfBasicEntriesWalk {
-    type Entry<'b> = CodecTlvEntryView<'b>;
-
-    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
-        CodecTlvEntryView::decode(_c)
-    }
-
-    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
-}
+pub type CodecTlvChainPresentIfBasicEntriesWalk = super::codec_tlv_entry::CodecTlvEntryWalk;
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecTlvChainPresentIfBasicView<'a> {
     pub carrier: u8,
-    pub entries: Option<Bounded<ListView<'a, CodecTlvChainPresentIfBasicEntriesWalk, 0>, 4>>,
+    pub entries: Option<Bounded<ListView<'a, super::codec_tlv_entry::CodecTlvEntryWalk, 0>, 4>>,
 }
 
 #[allow(dead_code)]
