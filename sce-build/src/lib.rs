@@ -291,6 +291,9 @@ pub mod resolve;
 /// [`forge::generator`]). Promoted out of `forge/` so neither engine
 /// reaches into the other's namespace for shared derive policy.
 pub mod rust_derive_policy;
+/// The lints a consumer of generated Rust denies on a panic-free path, which
+/// the generated algorithms and buffer pools are held to.
+pub mod rust_lint_policy;
 pub mod sce_attr;
 /// What a played example says about the requirement it names: a `shall_not`
 /// whose every scenario passed leaves `needs-scenario` for `scenario-passed`,
@@ -15791,16 +15794,7 @@ topology:
     /// every pool would pass.
     #[test]
     fn buffer_pool_rust_emitted_module_is_clean_under_the_panic_free_lints() {
-        const PANIC_FREE_LINTS: [&str; 8] = [
-            "clippy::indexing_slicing",
-            "clippy::unwrap_used",
-            "clippy::expect_used",
-            "clippy::panic",
-            "clippy::unreachable",
-            "clippy::todo",
-            "clippy::unimplemented",
-            "clippy::arithmetic_side_effects",
-        ];
+        use crate::rust_lint_policy::PANIC_FREE_LINTS;
         let Some(clippy) = crate::toolchain::locate("clippy-driver") else {
             crate::toolchain::skipped(
                 "buffer_pool_rust_emitted_module_is_clean_under_the_panic_free_lints: \

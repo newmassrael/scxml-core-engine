@@ -11410,6 +11410,102 @@ fn a_rust_codec_reads_a_fixed_count_of_bytes_with_no_index_that_can_panic() {
     );
 }
 
+/// Every generated Rust algorithm is total under the lints a consumer denies on
+/// a panic-free path (`sce_build::rust_lint_policy`): a body that does not
+/// declare `may-fail` prints the integer operations and index reads its
+/// interval analysis proved through `sce_forge_runtime::algorithm::proven`, and
+/// one that does through the runtime's checked helpers, so the crate holds no
+/// operator and no index of its own (SCE_FORGE.md §3.4.1). Read over every Rust
+/// algorithm golden, which the tests above hold to the generator, compiled as
+/// one crate of sibling modules against the runtime.
+///
+/// A probe that indexes an array is run with the same flags first and must be
+/// refused: on a toolchain where the lints judged nothing, every golden would
+/// pass.
+#[test]
+fn a_rust_algorithm_is_clean_under_the_panic_free_lints() {
+    use sce_build::rust_lint_policy::PANIC_FREE_LINTS;
+    let Some(clippy) = sce_build::toolchain::locate("clippy-driver") else {
+        sce_build::toolchain::skipped(
+            "a_rust_algorithm_is_clean_under_the_panic_free_lints: clippy-driver not on PATH",
+        );
+        return;
+    };
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let runtime = common::rust_runtime::rustc_flags(scratch.path());
+    let lint = |crate_name: &str, src: &Path| {
+        let mut command = std::process::Command::new(&clippy);
+        command
+            .args(["--edition", "2021", "--crate-type", "rlib"])
+            .args(["--crate-name", crate_name])
+            .args(&runtime);
+        for name in PANIC_FREE_LINTS {
+            command.args(["-D", name]);
+        }
+        command
+            .arg("--out-dir")
+            .arg(scratch.path())
+            .arg(src)
+            .output()
+            .expect("run clippy-driver")
+    };
+
+    let probe = scratch.path().join("probe.rs");
+    std::fs::write(
+        &probe,
+        "pub fn at(table: &[u8; 4], i: usize) -> u8 {\n    table[i]\n}\n",
+    )
+    .expect("write the probe");
+    let refused = lint("probe", &probe);
+    let said = String::from_utf8_lossy(&refused.stderr).into_owned();
+    assert!(
+        !refused.status.success()
+            && (said.contains("indexing_slicing") || said.contains("indexing-slicing")),
+        "clippy-driver let an array index through under -D clippy::indexing_slicing, \
+         so a clean algorithm below would prove nothing.\nstderr:\n{said}",
+    );
+
+    let mut modules: Vec<(String, std::path::PathBuf)> = std::fs::read_dir(expected_dir())
+        .expect("read the goldens")
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter_map(|path| {
+            let stem = path.file_stem()?.to_str()?.to_string();
+            (stem.starts_with("algorithm_") && path.extension()? == "rs").then_some((stem, path))
+        })
+        .collect();
+    modules.sort();
+    assert!(
+        modules.len() >= 9,
+        "only {} Rust algorithm goldens were found; the lint run would be thin",
+        modules.len()
+    );
+    let proven = modules
+        .iter()
+        .filter(|(_, path)| {
+            std::fs::read_to_string(path)
+                .expect("read a golden")
+                .contains("sce_forge_runtime::algorithm::proven::")
+        })
+        .count();
+    assert!(
+        proven > 0,
+        "no Rust algorithm golden prints a proven operation through the runtime"
+    );
+    let library = scratch.path().join("algorithms.rs");
+    let text: String = modules
+        .iter()
+        .map(|(stem, path)| format!("#[path = {:?}]\npub mod {stem};\n", path.to_string_lossy()))
+        .collect();
+    std::fs::write(&library, text).expect("write the crate root");
+    let linted = lint("algorithms", &library);
+    assert!(
+        linted.status.success(),
+        "a generated Rust algorithm is not clean under the panic-free lints \
+         {PANIC_FREE_LINTS:?}.\nstderr:\n{}",
+        String::from_utf8_lossy(&linted.stderr),
+    );
+}
+
 #[test]
 fn forge_rust_codec_zenoh_response() {
     assert_standalone_forge_rust("codec_zenoh_response", "codec_zenoh_response.rs");
