@@ -307,6 +307,7 @@ parent sets whose fields are of that kind and whose variant's arms, if it has on
 `write_parts_in`, over `XParts` alone and generic over the sink only, marked `#[inline(never)]`; its
 `write_source_in` reads the source it is handed into `XParts`, each arm's body into the body's own parts, and calls
 it. The writer is one function for each sink, and each form of the value costs the copy into the parts. A codec
-written inline (`--inline-encode`) keeps the generic writer, which is what that option asks for, and so does a codec
-with a list, an embedded body, a gated field or a flag input, whose parts a source does not make without a slice or a
+written inline (`--inline-encode`, ADR 0061) has the same structure, with `write_parts_in` marked `#[inline(always)]`
+in place of `#[inline(never)]`, so that option still changes the marks alone. A codec with a list, an embedded body,
+a gated field or a flag input keeps the generic writer, since a source does not make its parts without a slice or a
 binding of its own.

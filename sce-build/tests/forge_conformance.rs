@@ -3793,8 +3793,10 @@ const CHAIN_HAS_SET: &[&str] = &[
 /// bodies, lists, a chain and a variant, generated with it, still compiles as
 /// a program, and the text the option adds is the attribute, the window sink's
 /// name and the one function that tells the trait to write a window through that
-/// sink: with the option off nothing is marked, and the two outputs differ in no
-/// other line.
+/// sink, and it marks a chain entry's parts writer to be inlined where it is
+/// otherwise kept out of line (docs/adr/0058, amendment of 2026-11-25): with the
+/// option off nothing is marked inline, and the two outputs differ in no other
+/// line.
 #[test]
 fn inline_encode_marks_the_writing_functions_and_changes_nothing_else() {
     let dir = resource_dir();
@@ -3816,8 +3818,19 @@ fn inline_encode_marks_the_writing_functions_and_changes_nothing_else() {
         // codec's writes are, and the trait is told so by one function; those
         // are the only other differences.
         const WINDOW_CHOICE: &str = "\n    fn write_window(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {\n        Self::write_window(src, window)\n    }\n";
+        assert!(
+            !inlined.contains("#[inline(never)]\n    fn write_parts_in"),
+            "{name}: a parts writer kept out of line with the option on"
+        );
+        let out_of_line = |l: &&str| l.trim() != "#[inline(never)]";
+        let plain: String = plain
+            .lines()
+            .filter(out_of_line)
+            .map(|l| format!("{l}\n"))
+            .collect();
         let kept: String = inlined
             .lines()
+            .filter(out_of_line)
             .filter(|l| l.trim() != "#[inline(always)]")
             .map(|l| {
                 format!(

@@ -4804,11 +4804,10 @@ impl<'a> Plan<'a> {
     /// any source of them ([`parts_of_source`]). A chain writes its entries from
     /// whatever form the parent's value holds them in, the builder, the parts or
     /// the view, and each form was a copy of the whole writer. A codec written
-    /// inline (`Input::inline_encode`) is asked to be copied into its caller,
-    /// so it keeps the one generic writer.
+    /// inline (`Input::inline_encode`) has the same structure, its parts writer
+    /// marked to be inlined (docs/adr/0061: the option changes the marks alone).
     fn lowers_to_parts(&self) -> bool {
-        !self.input.inline_encode
-            && !self.overridable().is_empty()
+        !self.overridable().is_empty()
             && self.m().flag_inputs.is_empty()
             && self.encode.roles.groups.is_empty()
             && self.m().fields.iter().all(flat_field)
@@ -4830,6 +4829,14 @@ impl<'a> Plan<'a> {
             "<'_>"
         } else {
             ""
+        };
+        let inline = write_attribute(self.input.inline_encode);
+        // Out of line unless the build asks every write inlined: inlined into
+        // `write_source_in`, the writer is copied into each form of the value.
+        let parts_mark = if self.input.inline_encode {
+            "#[inline(always)]"
+        } else {
+            "#[inline(never)]"
         };
         let write = |value: &str| format!("Self::write_parts_in(&{value}, w, over)");
         let lower = if self.m().variant.is_none() {
@@ -4871,6 +4878,7 @@ impl<'a> Plan<'a> {
         format!(
             "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
              \x20   #[doc(hidden)]\n\
+             {inline}\
              \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> {result} {{\n\
              \x20       Self::write_source_in(src, w, &{overrides}::default())\n\
              \x20   }}\n\n\
@@ -4878,13 +4886,15 @@ impl<'a> Plan<'a> {
              \x20   /// ones `src` presents. `src` is read once into `{parts}`, whatever form\n\
              \x20   /// it is in, and the wire is written from that one form (`write_parts_in`).\n\
              \x20   #[doc(hidden)]\n\
+             {inline}\
              \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &{overrides}) -> {result} {{\n\
              {lower}\
              \x20   }}\n\n\
              \x20   /// The wire of `src`, the one form every source of this codec is read\n\
              \x20   /// into: one writer for each sink, however many forms are written. It is\n\
-             \x20   /// not inlined into `write_source_in`, which would copy it into each form.\n\
-             \x20   #[inline(never)]\n\
+             \x20   /// out of line unless every write is asked inlined (`--inline-encode`):\n\
+             \x20   /// inlined into `write_source_in`, it is copied into each form.\n\
+             \x20   {parts_mark}\n\
              \x20   fn write_parts_in<K: SceSink>(src: &{parts}{parts_lt}, w: &mut K, over: &{overrides}) -> {result} {{\n\
              {body}\
              \x20   }}\n"
