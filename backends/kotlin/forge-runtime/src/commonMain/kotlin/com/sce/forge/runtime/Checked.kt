@@ -350,6 +350,37 @@ public object SceChecked {
     // A `list<T>` variable of a `sce-static` machine is an immutable `List`, which
     // reads the same way: below 0 or not below the size is the same failure.
     public fun <T> at(xs: List<T>, i: Long): T = xs[inside(i, xs.size)]
+
+    // The checked shifts of a `may-fail` body (SCE_FORGE.md Section 3.4.1, "The
+    // width of a shift"): a count below 0 has no exact result and fails
+    // out of range; every other count is the shift [SceWrapping] makes. The
+    // count arrives as `Long`, which holds every count that may be below 0.
+    private fun places(n: Long): ULong = if (n < 0L) fail(AlgorithmError.OutOfRange) else n.toULong()
+
+    public fun shl(a: Byte, n: Long): Byte = SceWrapping.shl(a, places(n))
+    public fun shr(a: Byte, n: Long): Byte = SceWrapping.shr(a, places(n))
+    public fun ushr(a: Byte, n: Long): Byte = SceWrapping.ushr(a, places(n))
+    public fun shl(a: Short, n: Long): Short = SceWrapping.shl(a, places(n))
+    public fun shr(a: Short, n: Long): Short = SceWrapping.shr(a, places(n))
+    public fun ushr(a: Short, n: Long): Short = SceWrapping.ushr(a, places(n))
+    public fun shl(a: Int, n: Long): Int = SceWrapping.shl(a, places(n))
+    public fun shr(a: Int, n: Long): Int = SceWrapping.shr(a, places(n))
+    public fun ushr(a: Int, n: Long): Int = SceWrapping.ushr(a, places(n))
+    public fun shl(a: Long, n: Long): Long = SceWrapping.shl(a, places(n))
+    public fun shr(a: Long, n: Long): Long = SceWrapping.shr(a, places(n))
+    public fun ushr(a: Long, n: Long): Long = SceWrapping.ushr(a, places(n))
+    public fun shl(a: UByte, n: Long): UByte = SceWrapping.shl(a, places(n))
+    public fun shr(a: UByte, n: Long): UByte = SceWrapping.shr(a, places(n))
+    public fun ushr(a: UByte, n: Long): UByte = SceWrapping.ushr(a, places(n))
+    public fun shl(a: UShort, n: Long): UShort = SceWrapping.shl(a, places(n))
+    public fun shr(a: UShort, n: Long): UShort = SceWrapping.shr(a, places(n))
+    public fun ushr(a: UShort, n: Long): UShort = SceWrapping.ushr(a, places(n))
+    public fun shl(a: UInt, n: Long): UInt = SceWrapping.shl(a, places(n))
+    public fun shr(a: UInt, n: Long): UInt = SceWrapping.shr(a, places(n))
+    public fun ushr(a: UInt, n: Long): UInt = SceWrapping.ushr(a, places(n))
+    public fun shl(a: ULong, n: Long): ULong = SceWrapping.shl(a, places(n))
+    public fun shr(a: ULong, n: Long): ULong = SceWrapping.shr(a, places(n))
+    public fun ushr(a: ULong, n: Long): ULong = SceWrapping.ushr(a, places(n))
 }
 
 /** Where the exact result of an integer operation lies against the range of its type. */

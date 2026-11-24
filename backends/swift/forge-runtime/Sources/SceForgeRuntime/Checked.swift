@@ -119,6 +119,37 @@ public enum Checked {
         return value
     }
 
+    /// `a << n` at the width of `T`, the count at its own type: 0 for a count at or past
+    /// the width, and an out-of-range failure for one below 0, where a shift has no exact
+    /// result (SCE_FORGE.md §3.4.1, "The width of a shift"). Swift's own `<<` is a smart
+    /// shift, which is that exact result for every count at least 0 and shifts the other
+    /// way for one below.
+    public static func shl<T: FixedWidthInteger, C: BinaryInteger>(_ a: T, _ n: C) throws(AlgorithmError) -> T {
+        if n < 0 {
+            throw .outOfRange
+        }
+        return a << n
+    }
+
+    /// `a >> n`, the floor of `a / 2^n`: 0 or -1 for a count at or past the width, and an
+    /// out-of-range failure for one below 0.
+    public static func shr<T: FixedWidthInteger, C: BinaryInteger>(_ a: T, _ n: C) throws(AlgorithmError) -> T {
+        if n < 0 {
+            throw .outOfRange
+        }
+        return a >> n
+    }
+
+    /// `a >>> n`, the logical shift of the bits of `a` at the width of `T`, made in its
+    /// unsigned type: 0 for a count at or past the width, and an out-of-range failure for
+    /// one below 0.
+    public static func ushr<T: FixedWidthInteger, C: BinaryInteger>(_ a: T, _ n: C) throws(AlgorithmError) -> T {
+        if n < 0 {
+            throw .outOfRange
+        }
+        return T(truncatingIfNeeded: T.Magnitude(truncatingIfNeeded: a) >> n)
+    }
+
     /// A value stored where a narrower integer type is declared is the same value, or
     /// an overflow when the type cannot hold it: never a wrapped one.
     public static func narrow<From: BinaryInteger, To: FixedWidthInteger>(

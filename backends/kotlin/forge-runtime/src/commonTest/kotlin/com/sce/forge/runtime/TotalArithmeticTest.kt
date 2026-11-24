@@ -412,4 +412,49 @@ class TotalArithmeticTest {
         assertEquals(ULong.MAX_VALUE, SceChecked.mul(4294967297uL, 4294967295uL))
         assertEquals(ULong.MAX_VALUE, SceChecked.add(ULong.MAX_VALUE - 1uL, 1uL))
     }
+
+    // A shift (SCE_FORGE.md Section 3.4.1, "The width of a shift") is its exact
+    // result reduced to its width for every count at least 0, where Kotlin's own
+    // operators take the count modulo the width: every Byte shifted by every
+    // count up to 10, against the definition made by multiplying and flooring.
+    @Test
+    fun aShiftIsItsExactResultReducedToItsWidth() {
+        for (a in -128..127) {
+            for (n in 0..10) {
+                val scale = 1 shl n
+                val low = (a * scale).mod(256).let { if (it >= 128) it - 256 else it }
+                val pattern = a.mod(256)
+                val logical = (pattern / scale).let { if (it >= 128) it - 256 else it }
+                val count = n.toULong()
+                assertEquals(low.toByte(), SceWrapping.shl(a.toByte(), count), "$a shl $n")
+                assertEquals(a.floorDiv(scale).toByte(), SceWrapping.shr(a.toByte(), count), "$a shr $n")
+                assertEquals(logical.toByte(), SceWrapping.ushr(a.toByte(), count), "$a ushr $n")
+                assertEquals(
+                    (pattern * scale % 256).toUByte(),
+                    SceWrapping.shl(pattern.toUByte(), count),
+                    "$pattern shl $n",
+                )
+                assertEquals((pattern / scale).toUByte(), SceWrapping.shr(pattern.toUByte(), count), "$pattern shr $n")
+            }
+        }
+        assertEquals(0, SceWrapping.shl(1, 32uL))
+        assertEquals(0L, SceWrapping.shl(1L, 200uL))
+        assertEquals(-1L, SceWrapping.shr(Long.MIN_VALUE, 64uL))
+        assertEquals(0uL, SceWrapping.shr(ULong.MAX_VALUE, 64uL))
+        assertEquals(15, SceWrapping.ushr(-1, 28uL))
+        assertEquals(0, SceWrapping.ushr(-1, 32uL))
+        assertEquals(1.toShort(), SceWrapping.ushr(Short.MIN_VALUE, 15uL))
+    }
+
+    // A count below 0 has no exact result: the checked shift fails out of range.
+    @Test
+    fun aCheckedShiftByACountBelowZeroIsOutOfRange() {
+        fun outOfRange(run: () -> Unit) =
+            assertEquals(AlgorithmError.OutOfRange, assertFailsWith<AlgorithmFailure> { run() }.error)
+        outOfRange { SceChecked.shl(1, -1L) }
+        outOfRange { SceChecked.shr(-1L, Long.MIN_VALUE) }
+        outOfRange { SceChecked.ushr(1u.toUByte(), -8L) }
+        assertEquals(-1, SceChecked.shr(-1, 40L))
+        assertEquals(128u.toUByte(), SceChecked.shl(1u.toUByte(), 7L))
+    }
 }

@@ -90,6 +90,30 @@ func eachFailureIsNamedAndEveryValuePasses(name: String) throws {
     #expect(outcome { () throws(AlgorithmError) in try Checked.narrow(Int64(-129), to: Int8.self) } == .failure(.overflow))
 }
 
+// A shift (SCE_FORGE.md §3.4.1, "The width of a shift") is its exact result reduced to its
+// width for every count at least 0, and a count below 0 fails out of range: every Int8
+// shifted by every count up to 10, against the definition made by multiplying and flooring.
+@Test func aShiftIsItsExactResultReducedToItsWidth() {
+    for a in -128...127 {
+        for n in 0...10 {
+            let scale = 1 << n
+            let low = ((a * scale) % 256 + 256) % 256
+            let floorQ = a >= 0 ? a / scale : -((-a + scale - 1) / scale)
+            let pattern = (a + 256) % 256
+            let logical = pattern / scale
+            let byte = Int8(a)
+            #expect(outcome { () throws(AlgorithmError) in try Checked.shl(byte, n) } == .success(Int8(truncatingIfNeeded: low)), "\(a) << \(n)")
+            #expect(outcome { () throws(AlgorithmError) in try Checked.shr(byte, n) } == .success(Int8(floorQ)), "\(a) >> \(n)")
+            #expect(outcome { () throws(AlgorithmError) in try Checked.ushr(byte, n) } == .success(Int8(truncatingIfNeeded: logical)), "\(a) >>> \(n)")
+        }
+    }
+    #expect(outcome { () throws(AlgorithmError) in try Checked.shl(UInt64(1), UInt8(64)) } == .success(0))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.shr(Int64.min, 200) } == .success(-1))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.ushr(Int32(-1), 28) } == .success(15))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.shl(Int32(1), Int32(-1)) } == .failure(.outOfRange))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.ushr(UInt16(1), Int8(-8)) } == .failure(.outOfRange))
+}
+
 // A string is held to its UTF-8 bytes: two characters of four bytes fit a bound of four
 // and not of three, and a count of characters would be told apart from one of bytes.
 private struct BoundCase {

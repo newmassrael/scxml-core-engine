@@ -69,6 +69,49 @@ public object SceWrapping {
     public fun sub(a: ULong, b: ULong): ULong = a - b
     public fun mul(a: ULong, b: ULong): ULong = a * b
     public fun neg(a: ULong): ULong = 0uL - a
+
+    // A shift (SCE_FORGE.md Section 3.4.1, "The width of a shift"): for a count
+    // `n` at least 0, the exact result reduced to the width, so `shl` and `ushr`
+    // are 0 from a count at the width and `shr` is 0 or -1. The language's own
+    // `shl`, `shr` and `ushr` take the count modulo the width (`1 shl 33` is 2
+    // for an `Int`), so the count is tested against the width first; under it,
+    // the operator is the shift. `Byte`, `Short`, `UByte` and `UShort` shift in
+    // `Int`, and the result is truncated back. `UInt` and `ULong` have no
+    // `ushr`: their `shr` is logical. The count is a `ULong`, which holds every
+    // count at least 0 of every width.
+    public fun shl(a: Byte, n: ULong): Byte = if (n >= 8uL) 0 else (a.toInt() shl n.toInt()).toByte()
+    public fun shr(a: Byte, n: ULong): Byte = (a.toInt() shr minOf(n, 7uL).toInt()).toByte()
+    public fun ushr(a: Byte, n: ULong): Byte =
+        if (n >= 8uL) 0 else ((a.toInt() and 0xFF) ushr n.toInt()).toByte()
+
+    public fun shl(a: Short, n: ULong): Short = if (n >= 16uL) 0 else (a.toInt() shl n.toInt()).toShort()
+    public fun shr(a: Short, n: ULong): Short = (a.toInt() shr minOf(n, 15uL).toInt()).toShort()
+    public fun ushr(a: Short, n: ULong): Short =
+        if (n >= 16uL) 0 else ((a.toInt() and 0xFFFF) ushr n.toInt()).toShort()
+
+    public fun shl(a: Int, n: ULong): Int = if (n >= 32uL) 0 else a shl n.toInt()
+    public fun shr(a: Int, n: ULong): Int = a shr minOf(n, 31uL).toInt()
+    public fun ushr(a: Int, n: ULong): Int = if (n >= 32uL) 0 else a ushr n.toInt()
+
+    public fun shl(a: Long, n: ULong): Long = if (n >= 64uL) 0L else a shl n.toInt()
+    public fun shr(a: Long, n: ULong): Long = a shr minOf(n, 63uL).toInt()
+    public fun ushr(a: Long, n: ULong): Long = if (n >= 64uL) 0L else a ushr n.toInt()
+
+    public fun shl(a: UByte, n: ULong): UByte = if (n >= 8uL) 0u else (a.toInt() shl n.toInt()).toUByte()
+    public fun shr(a: UByte, n: ULong): UByte = if (n >= 8uL) 0u else (a.toInt() ushr n.toInt()).toUByte()
+    public fun ushr(a: UByte, n: ULong): UByte = shr(a, n)
+
+    public fun shl(a: UShort, n: ULong): UShort = if (n >= 16uL) 0u else (a.toInt() shl n.toInt()).toUShort()
+    public fun shr(a: UShort, n: ULong): UShort = if (n >= 16uL) 0u else (a.toInt() ushr n.toInt()).toUShort()
+    public fun ushr(a: UShort, n: ULong): UShort = shr(a, n)
+
+    public fun shl(a: UInt, n: ULong): UInt = if (n >= 32uL) 0u else a shl n.toInt()
+    public fun shr(a: UInt, n: ULong): UInt = if (n >= 32uL) 0u else a shr n.toInt()
+    public fun ushr(a: UInt, n: ULong): UInt = shr(a, n)
+
+    public fun shl(a: ULong, n: ULong): ULong = if (n >= 64uL) 0uL else a shl n.toInt()
+    public fun shr(a: ULong, n: ULong): ULong = if (n >= 64uL) 0uL else a shr n.toInt()
+    public fun ushr(a: ULong, n: ULong): ULong = shr(a, n)
 }
 
 /**

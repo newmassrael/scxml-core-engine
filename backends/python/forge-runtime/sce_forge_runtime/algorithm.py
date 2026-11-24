@@ -69,6 +69,7 @@ class _Width:
     def __init__(self, lo: int, hi: int) -> None:
         self.lo = lo
         self.hi = hi
+        self.bits = (hi - lo).bit_length()
 
     def _fit(self, v: int) -> int:
         if v < self.lo or v > self.hi:
@@ -144,6 +145,44 @@ class _Width:
         """A value stored where this width is declared: the same value, or an
         overflow when the width cannot hold it — never a wrapped one."""
         return self._fit(v)
+
+    # A shift (SCE_FORGE.md §3.4.1, "The width of a shift"): for a count ``n``
+    # at least 0, the exact result reduced to the width. Python's own ``>>`` is
+    # that already for a value of the width (the floor of ``a / 2**n``), and
+    # the generator writes it; a left shift is made here, where a count at or
+    # past the width is 0 without first making ``a * 2**n`` whole, and so is a
+    # logical shift, of the width's unsigned bits. A count below 0 raises
+    # ``ValueError`` in the operator; the checked shifts raise out of range.
+
+    def wrapping_shl(self, a: int, n: int) -> int:
+        """``a * 2**n`` reduced to the width, 0 from a count at the width."""
+        if n >= self.bits:
+            return 0
+        return self._wrap(a << n)
+
+    def wrapping_ushr(self, a: int, n: int) -> int:
+        """The floor of ``u / 2**n``, ``u`` the width's unsigned bits of
+        ``a``, read back at the width: 0 from a count at the width."""
+        if n >= self.bits:
+            return 0
+        return self._wrap((a % (1 << self.bits)) >> n)
+
+    def _places(self, n: int) -> int:
+        if n < 0:
+            raise AlgorithmFailure(AlgorithmError.OUT_OF_RANGE)
+        return n
+
+    def shl(self, a: int, n: int) -> int:
+        """``a << n`` of a ``may-fail`` body: out of range for a count below 0."""
+        return self.wrapping_shl(a, self._places(n))
+
+    def shr(self, a: int, n: int) -> int:
+        """``a >> n`` of a ``may-fail`` body: out of range for a count below 0."""
+        return a >> self._places(n)
+
+    def ushr(self, a: int, n: int) -> int:
+        """``a >>> n`` of a ``may-fail`` body: out of range for a count below 0."""
+        return self.wrapping_ushr(a, self._places(n))
 
 
 I8 = _Width(-(2**7), 2**7 - 1)
