@@ -7749,6 +7749,7 @@ fn validate_and_enrich_imports(
                 ctx.codec_says_inputs = always.iter().chain(&partly).cloned().collect();
                 ctx.codec_partly_says_inputs = partly;
                 ctx.codec_parts_lifetime = forge::generator::source_parts_have_lifetime(cm);
+                ctx.codec_parts_of = forge::generator::source_parts_of(cm);
                 // Owned→borrowed projection round: capture this import's
                 // *contribution* to a parent's `as_borrowed` fallibility —
                 // true only when it is borrowed (else cloned wholesale,

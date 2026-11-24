@@ -163,6 +163,13 @@ pub(crate) fn source_parts_have_lifetime(m: &CodecModel) -> bool {
     rust_source::parts_has_lifetime(m)
 }
 
+/// Whether the borrowed source of a codec (`{Codec}Parts`, ADR 0058) is made
+/// from any source of it by `{Codec}Parts::of`. See
+/// [`rust_source::parts_of_source`].
+pub(crate) fn source_parts_of(m: &CodecModel) -> bool {
+    rust_source::parts_of_source(m)
+}
+
 /// A test suite's selection (ADR 0057's grammar) as the condition of a TTCN-3
 /// `if` (docs/SCE_TEST_PROFILE.md §9.5, rule E15): `enabled` spells the test
 /// that a world enables a feature, a conjunction is `and` and a disjunction
@@ -685,6 +692,13 @@ pub struct ImportContext {
     /// name too. `false` for non-codec imports.
     #[serde(skip)]
     pub codec_parts_lifetime: bool,
+
+    /// ADR 0058: `true` when the borrowed source of the imported codec
+    /// (`{Codec}Parts`) is made from any source of it by `{Codec}Parts::of`
+    /// (`rust_source::parts_of_source`), which a parent that writes it in a
+    /// variant arm lowers its source with. `false` for non-codec imports.
+    #[serde(skip)]
+    pub codec_parts_of: bool,
 
     /// Owned→borrowed projection round: this import's *contribution* to a
     /// parent codec's `as_borrowed` fallibility — `true` only when the
@@ -1763,6 +1777,7 @@ fn resolve_single_import(
         codec_says_inputs: Vec::new(),
         codec_partly_says_inputs: Vec::new(),
         codec_parts_lifetime: false,
+        codec_parts_of: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
         queue_consumers_many: false,
@@ -52381,6 +52396,7 @@ mod tests {
             codec_says_inputs: Vec::new(),
             codec_partly_says_inputs: Vec::new(),
             codec_parts_lifetime: false,
+            codec_parts_of: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
             queue_consumers_many: false,
@@ -53318,6 +53334,7 @@ mod tests {
                 codec_says_inputs: Vec::new(),
                 codec_partly_says_inputs: Vec::new(),
                 codec_parts_lifetime: false,
+                codec_parts_of: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,
@@ -53398,6 +53415,7 @@ mod tests {
                 codec_says_inputs: Vec::new(),
                 codec_partly_says_inputs: Vec::new(),
                 codec_parts_lifetime: false,
+                codec_parts_of: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,

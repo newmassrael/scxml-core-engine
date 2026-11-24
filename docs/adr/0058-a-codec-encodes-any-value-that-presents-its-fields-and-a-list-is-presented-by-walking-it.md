@@ -292,3 +292,21 @@ per codec from the roles and the totality. The idioms above are kept as the prin
 ## Questions left open
 
 None. Decided 2026-10-27; the first step is 1 above.
+
+## Amendment, 2026-11-25: a chain's entry is written from one form
+
+`write_source_in` was generic over the source, so a program that writes the entries of a chain from two forms of the
+value, the builder of a decoded frame and the parts a sender fills, held two copies of the whole writer of the entry,
+with the writers of the bodies its variant holds inlined into each. A consumer measured two such copies of the writer
+of the Zenoh extension entry in a release build.
+
+A codec whose parts are the values its accessors return, because it holds numbers, text and bytes alone, none gated,
+and takes no flag input, has `XParts::of(src)`, which reads each accessor of any source once
+(`rust_source::parts_of_source`; a parent learns it from `ImportContext.codec_parts_of`). A codec with flags a
+parent sets whose fields are of that kind and whose variant's arms, if it has one, are such codecs writes its wire in
+`write_parts_in`, over `XParts` alone and generic over the sink only, marked `#[inline(never)]`; its
+`write_source_in` reads the source it is handed into `XParts`, each arm's body into the body's own parts, and calls
+it. The writer is one function for each sink, and each form of the value costs the copy into the parts. A codec
+written inline (`--inline-encode`) keeps the generic writer, which is what that option asks for, and so does a codec
+with a list, an embedded body, a gated field or a flag input, whose parts a source does not make without a slice or a
+binding of its own.
