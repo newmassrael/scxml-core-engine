@@ -571,4 +571,112 @@ template <typename T> constexpr T neg(T a) noexcept {
 }
 
 }  // namespace Saturating
+
+// A shift (SCE_FORGE.md §3.4.1, "The width of a shift"): for a type `T` of
+// width W and a count n at least 0, the exact result reduced to W, which has a
+// value on every such count:
+//
+//   shl   a * 2^n reduced to W, so 0 from n = W;
+//   shr   the floor of a / 2^n, so 0 from n = W, or -1 for a negative a;
+//   ushr  the floor of u / 2^n, u the W-bit unsigned pattern of a.
+//
+// The language's own operators leave a count at or past the width undefined and
+// a left shift of a negative value undefined at C++17, so none is reached by
+// them: the count is tested against the width first, a left shift is made on
+// the operand's pattern in its ring, and a negative value is shifted right as
+// the complement of a non-negative one, -1 - ((-1 - a) >> n), whose every step
+// is in range. The count is taken at its own type, whatever its width.
+
+namespace Detail {
+
+/// The number of places a count `n` shifts: `n` itself, and, for a count below
+/// 0, which only a caller that rules it out hands the total shift, the most a
+/// `std::uint64_t` holds, past every width.
+template <typename C> constexpr std::uint64_t places(C n) noexcept {
+    static_assert(std::is_integral_v<C>, "a shift count is an integer");
+    if constexpr (std::is_signed_v<C>) {
+        if (n < 0) {
+            return std::numeric_limits<std::uint64_t>::max();
+        }
+    }
+    return static_cast<std::uint64_t>(n);
+}
+
+/// The width of `T` in bits.
+template <typename T> constexpr std::uint64_t kBits = std::numeric_limits<std::make_unsigned_t<T>>::digits;
+
+}  // namespace Detail
+
+namespace Wrapping {
+
+template <typename T, typename C> constexpr T shl(T a, C n) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "a shift is defined for the fixed-width integer types");
+    const std::uint64_t places = Detail::places(n);
+    if (places >= Detail::kBits<T>) {
+        return T{0};
+    }
+    return Detail::fromRing<T>(static_cast<Detail::Ring<T>>(Detail::toRing(a) << places));
+}
+
+template <typename T, typename C> constexpr T shr(T a, C n) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "a shift is defined for the fixed-width integer types");
+    const std::uint64_t given = Detail::places(n);
+    if constexpr (std::is_unsigned_v<T>) {
+        if (given >= Detail::kBits<T>) {
+            return T{0};
+        }
+        return static_cast<T>(a >> given);
+    } else {
+        const std::uint64_t places = given >= Detail::kBits<T> ? Detail::kBits<T> - 1 : given;
+        if (a >= 0) {
+            return static_cast<T>(a >> places);
+        }
+        return static_cast<T>(-1 - ((-1 - a) >> places));
+    }
+}
+
+template <typename T, typename C> constexpr T ushr(T a, C n) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "a shift is defined for the fixed-width integer types");
+    const std::uint64_t places = Detail::places(n);
+    if (places >= Detail::kBits<T>) {
+        return T{0};
+    }
+    return Detail::fromRing<T>(static_cast<Detail::Ring<T>>(Detail::toRing(a) >> places));
+}
+
+}  // namespace Wrapping
+
+namespace Checked {
+namespace Detail {
+
+/// Whether `n` is below 0, where a shift has no exact result; an out-of-range
+/// failure recorded in `f` when it is.
+template <typename C> constexpr bool belowZero(AlgorithmFailure &f, C n) noexcept {
+    static_assert(std::is_integral_v<C>, "a shift count is an integer");
+    if constexpr (std::is_signed_v<C>) {
+        if (n < 0) {
+            f.fail(AlgorithmError::OutOfRange);
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace Detail
+
+/// The checked shifts of a `may-fail` body: a count below 0 recorded as out of
+/// range and 0 yielded, and every other count the total shift.
+template <typename T, typename C> constexpr T shl(AlgorithmFailure &f, T a, C n) noexcept {
+    return Detail::belowZero(f, n) ? T{} : Wrapping::shl<T>(a, n);
+}
+
+template <typename T, typename C> constexpr T shr(AlgorithmFailure &f, T a, C n) noexcept {
+    return Detail::belowZero(f, n) ? T{} : Wrapping::shr<T>(a, n);
+}
+
+template <typename T, typename C> constexpr T ushr(AlgorithmFailure &f, T a, C n) noexcept {
+    return Detail::belowZero(f, n) ? T{} : Wrapping::ushr<T>(a, n);
+}
+
+}  // namespace Checked
 }  // namespace SCE::Forge
