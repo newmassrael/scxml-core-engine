@@ -165,6 +165,23 @@ other.
 - A `<send>` payload of a total codec in a procedure has no failure to report, so the `Event::Fail` path of ADR 0058
   §2 is emitted only for a `may-fail` codec.
 
+*Amendment of 2026-11-24: a sink over an array the build proves large enough cannot refuse.* A write into storage of
+fixed size went through `SliceSink`, whose `BufferOverflow` is found at run time, so a consumer that knew the most a
+write takes still held a `Result` it could not answer, and an `expect` to drop it. The runtime's `array_sink` module
+states that knowledge in the types:
+- `BoundedWrite` is a write that states the most and the fewest bytes it writes as constants derived from its parts:
+  a `u8`; a VLE of a width (`Vle<u16>`, `Vle<u32>`, `Vle<u64>`), bounded by `vle_len` of the width's largest value
+  and written by the sink's own method; an array, its length times its entry; a tuple of up to four, the sum of its
+  members; a reference, what it refers to. The trait is sealed, so every constant is derived and none is claimed.
+- `ArraySink<N, MIN>` holds the bytes of one such write. `ArraySink::written` is admitted by the build only where the
+  write's most is at most `N` and its fewest at least `MIN`; the sink the write goes through cannot refuse
+  (`Error = Infallible`) and is not reachable from outside the runtime, so no write the build did not judge reaches it.
+- A bounded `bytes` field is made of the bytes with no check: `From<&ArraySink>` for a borrowed `Bytes`, and
+  `Bounded::from_sink` for an owned `ArrayBytes`. Each is admitted where `N` is at most the field's bound (and the
+  owned buffer's capacity) and the sink's fewest at least the field's.
+- A codec's own encode is not a `BoundedWrite`: its `MAX_ENCODED_BYTES` is the build's to state, and stating it
+  through the trait is left until a caller writes a whole frame this way.
+
 ### 5. A conversion that cannot fail is not written as one that can
 
 The 22 vacuous sites (`u64::try_from(usize)`) are emitted as `sce_forge_runtime::codec::widen_usize(n)`, a `const fn`

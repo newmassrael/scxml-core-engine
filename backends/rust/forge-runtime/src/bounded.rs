@@ -28,6 +28,7 @@
 
 use core::ops::Deref;
 
+use crate::array_sink::ArraySink;
 use crate::storage::SceList;
 use crate::view::{ListIter, ListView, ListWalk};
 
@@ -620,6 +621,70 @@ impl<const CAP: usize, const MAX: usize, const MIN: usize>
             )
         };
         Bounded(crate::storage::ArrayBytes::from_array(bytes))
+    }
+
+    /// The bytes a bounded write wrote ([`ArraySink`]), held within the bounds:
+    /// [`Self::proven`] for a write whose length is known only when it runs.
+    /// The sink's array is `N` bytes and its write at least `FEWEST`, so the
+    /// build admits it only where `N` is at most `MAX` and the buffer's
+    /// capacity, and `FEWEST` at least `MIN`; nothing is checked at run time.
+    ///
+    /// ```
+    /// use sce_forge_runtime::codec::{ArrayBytes, ArraySink, Bounded, Vle};
+    /// let sink: ArraySink<9, 1> = ArraySink::written(&Vle(300u64));
+    /// let field = Bounded::<ArrayBytes<9>, 16, 1>::from_sink(&sink);
+    /// assert_eq!(field.as_bytes(), [0xACu8, 0x02]);
+    /// ```
+    ///
+    /// An array past the field's bound does not build, whatever the write put:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::{ArrayBytes, ArraySink, Bounded, Vle};
+    /// let sink: ArraySink<9, 1> = ArraySink::written(&Vle(1u64));
+    /// let _ = Bounded::<ArrayBytes<16>, 4, 1>::from_sink(&sink);
+    /// ```
+    ///
+    /// nor does a write whose fewest is below the field's:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::{ArrayBytes, ArraySink, Bounded, Vle};
+    /// let sink: ArraySink<9> = ArraySink::written(&Vle(1u64));
+    /// let _ = Bounded::<ArrayBytes<16>, 16, 1>::from_sink(&sink);
+    /// ```
+    pub fn from_sink<const N: usize, const FEWEST: usize>(sink: &ArraySink<N, FEWEST>) -> Self {
+        const { assert!(N <= CAP, "the sink's array is past the buffer's capacity") };
+        const { assert!(N <= MAX, "the sink's array is past the field's bound") };
+        const {
+            assert!(
+                FEWEST >= MIN,
+                "the sink's fewest bytes are below the field's"
+            )
+        };
+        Bounded(crate::storage::ArrayBytes::from_fitting(sink.as_slice()))
+    }
+}
+
+impl<'a, const N: usize, const FEWEST: usize, const MAX: usize, const MIN: usize>
+    From<&'a ArraySink<N, FEWEST>> for Bytes<'a, MAX, MIN>
+{
+    /// The bytes a bounded write wrote, borrowed, which the build admits only
+    /// where the sink's array is at most `MAX` and its write at least `MIN`:
+    /// they lie in the bounds, so nothing is checked, as an array converts.
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::{ArraySink, Bytes, Vle};
+    /// let sink: ArraySink<9, 1> = ArraySink::written(&Vle(1u64));
+    /// let _: Bytes<'_, 8, 1> = (&sink).into();
+    /// ```
+    fn from(sink: &'a ArraySink<N, FEWEST>) -> Self {
+        const { assert!(N <= MAX, "the sink's array is past the field's bound") };
+        const {
+            assert!(
+                FEWEST >= MIN,
+                "the sink's fewest bytes are below the field's"
+            )
+        };
+        Bounded(sink.as_slice())
     }
 }
 
