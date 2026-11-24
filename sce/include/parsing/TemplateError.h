@@ -67,6 +67,12 @@ public:
     // same reason its XInclude twin is (see `XIncludeError.h`).
     [[noreturn]] virtual void rethrowAttributedTo(const std::string &outerTemplate) const = 0;
 
+    // The token the record reports as `actual`, which is also where it stands
+    // on the element it refuses (SCE_ERROR_CONTRACT.md §2.2, `tokenOffset`).
+    const std::optional<std::string> &actual() const noexcept {
+        return actual_;
+    }
+
 protected:
     TemplateError(std::string message, std::vector<std::string> keyFragments, std::optional<std::string> actual)
         : std::runtime_error(std::move(message)), Diagnostic(std::move(keyFragments)), actual_(std::move(actual)) {}
@@ -76,12 +82,6 @@ protected:
     // object, because `fix` absent and `fix` empty mean different
     // things to a consumer.
     virtual void appendFix(nlohmann::ordered_json &out) const;
-
-    // The token the record reports as `actual`, which is also where it stands
-    // on the element it refuses (SCE_ERROR_CONTRACT.md §2.2, `tokenOffset`).
-    const std::optional<std::string> &actual() const noexcept {
-        return actual_;
-    }
 
 private:
     std::optional<std::string> actual_;

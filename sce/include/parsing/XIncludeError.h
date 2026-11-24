@@ -80,6 +80,12 @@ public:
     // in a base body would slice the dynamic type away.
     [[noreturn]] virtual void rethrowAttributedTo(const std::string &outerHref) const = 0;
 
+    // The token the record reports as `actual`, which is also where it stands
+    // on the element it refuses (SCE_ERROR_CONTRACT.md §2.2, `tokenOffset`).
+    const std::optional<std::string> &actual() const noexcept {
+        return actual_;
+    }
+
 protected:
     // `actual` is the wire field a repair tool acts on without parsing
     // the message — the offending href for most variants, the rejected
@@ -93,12 +99,6 @@ protected:
     // emits nothing rather than an empty object, because `fix` absent
     // and `fix` empty mean different things to a consumer.
     virtual void appendFix(nlohmann::ordered_json &out) const;
-
-    // The token the record reports as `actual`, which is also where it stands
-    // on the element it refuses (SCE_ERROR_CONTRACT.md §2.2, `tokenOffset`).
-    const std::optional<std::string> &actual() const noexcept {
-        return actual_;
-    }
 
 private:
     std::optional<std::string> actual_;
