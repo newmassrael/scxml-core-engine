@@ -3819,3 +3819,29 @@ is regenerated; a consumer regenerates its Rust peer tables.
 - A binding reached only by a `targetexpr`, an `srcexpr` or a subscription is held to its transport's fields, as one a
   written target reaches always was: a deployment that left out such a binding's `key`, `connect`, `topic` or
   `authenticator` is refused by name where it generated an empty address or stopped the generator.
+
+## A Rust algorithm and buffer pool hold no operator and no index of their own, and a bounded value can be made with no check
+
+Landing: the commits that add this section. No committed generated tree changes; the Rust codec goldens, five Rust
+algorithm goldens and the Rust buffer pool's output do. A consumer regenerates its Rust codecs, algorithms and pools.
+
+- **A crate that compiles a generated Rust algorithm that declares no `may-fail` depends on `sce-forge-runtime`**
+  when the body computes an integer `+ - * / %`, a unary `-` or an index read: each such operation, which the
+  interval analysis proved (SCE_FORGE.md §3.4.1), is `sce_forge_runtime::algorithm::proven::{add, sub, mul, div, rem,
+  neg}::<width>(…)` or `proven::{at, at_ref}(&list, index)`, where it was the operator or `list[(index) as usize]`. Its
+  header says `// Runtime: sce_forge_runtime` where it said `none`, and without the dependency the build fails with
+  `E0433` at each call. What each computes is unchanged. The crate may deny the lints of
+  `sce_build::rust_lint_policy::PANIC_FREE_LINTS` with no `allow` for the file.
+- A generated Rust codec reads a fixed count of bytes with `SceCursor::peek_array::<N>()` and the byte a variant
+  dispatches on with `SceCursor::peek_u8()`, both new in the runtime, where it indexed a slice it peeked. A short
+  input is refused with `NeedMoreBytes` as before, and nothing a consumer calls changed.
+- A generated Rust buffer pool reaches its slot tables through a private `SlotIndex`, a type with one value per slot;
+  `slot_index_of_ptr` uses checked arithmetic and `FRAGMENT_BITMAP_WORDS` is `usize::div_ceil(n, 32)`. Every public
+  signature is unchanged, and an index out of range is answered `None` or `false` as before.
+- `Bounded` gains constructors with no `Option`, whose bounds the build checks: `Bounded::proven(array)` (an owned
+  list of the array's entries, `MIN <= N <= MAX` and the list able to hold `N`), `Bounded::one(entry)` (bounds that
+  hold one entry), `Bounded::widened(bounded)` (a list within bounds as narrow or narrower) and, for a constant,
+  `Bounded::<ArrayBytes<CAP>, MAX, MIN>::proven_const(array)`. `ArrayBytes<CAP>` is new: bytes of at most `CAP`
+  (at most 255) held by value, `Copy`, made by the `const fn from_array` or the checked `from_slice`. A list type
+  that `proven` builds implements the new `FromEntries` (`heapless::Vec`, `ArrayBytes`, and `Vec` with `alloc`).
+  Nothing existing changed; a call outside its bounds does not build (`E0080`).
