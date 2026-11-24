@@ -53,8 +53,8 @@ use std::sync::OnceLock;
 
 use sce_rust_runtime::helpers::microstep::{
     compute_entry_set, compute_exit_set, compute_states_to_exit, effective_target_states_on,
-    is_in_final_state, microstep, select_transitions, transition_domain, Behaviour, Buffers,
-    Entered, ExitScope, Scratch, SliceVec, WalkStep,
+    enter_states, is_in_final_state, microstep, select_transitions, transition_domain, Behaviour,
+    Buffers, Entered, ExitScope, Scratch, SliceVec, WalkStep,
 };
 use sce_rust_runtime::helpers::run_store::{RunStoreMut, RunStoreRef};
 use sce_rust_runtime::helpers::state_set::{StateSet, StateSetRef, Word};
@@ -1471,6 +1471,152 @@ fn a_history_default_content_runs_after_its_parent_is_entered() {
     );
     assert_eq!(entered.states, 8);
     assert_eq!(entered.current.map(st), Some(St::A2));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Where a run ends
+// ════════════════════════════════════════════════════════════════════════
+//
+// <scxml initial="s">
+//   <state id="s" initial="s1"> <state id="s1"/> <final id="sf"/> </state>
+//   <final id="done"/>
+// </scxml>
+//
+// `s1` has two transitions: to `sf` (0), a `<final>` inside `s`, and to
+// `done` (1), a `<final>` of the `<scxml>` element. Appendix D's enterStates
+// ends the run on entering the second and not the first, and the procedures
+// answer which from the tables (docs/adr/0123): no machine's entry hook is
+// asked.
+
+const ENDING_S: StateId = StateId(0);
+const ENDING_S1: StateId = StateId(1);
+const ENDING_SF: StateId = StateId(2);
+const ENDING_DONE: StateId = StateId(3);
+const ENDING_STATES: usize = 4;
+
+/// The document above as tables, its own initial transition naming
+/// `document_initial`.
+fn ending_tables(document_initial: StateId) -> &'static DocumentTables<'static> {
+    let to = |target: StateId| Written {
+        source: Some(ENDING_S1),
+        targets: vec![Target::state(target)],
+        internal: false,
+        has_content: false,
+    };
+    tables_of(&Plain {
+        parent: vec![None, Some(ENDING_S), Some(ENDING_S), None],
+        kind: vec![
+            StateKind::Compound,
+            StateKind::Atomic,
+            StateKind::Final,
+            StateKind::Final,
+        ],
+        initial: vec![
+            vec![Target::state(ENDING_S1)],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ],
+        history_parent: Vec::new(),
+        history_deep: Vec::new(),
+        history_defaults: Vec::new(),
+        written: vec![to(ENDING_SF), to(ENDING_DONE)],
+        document_initial: vec![Target::state(document_initial)],
+    })
+}
+
+type EndingWorkspace = Workspace<{ state_scratch(ENDING_STATES) }, 1, 20, 1>;
+
+/// A run of the document above: its configuration, and the states its entry
+/// hook was asked to enter, in order.
+#[derive(Default)]
+struct Ending {
+    configuration: [Word; state_words(ENDING_STATES)],
+    records: [Word; 0],
+    recorded: [bool; 0],
+    entered: Vec<StateId>,
+}
+
+impl Behaviour for Ending {
+    fn store(&mut self) -> RunStoreMut<'_> {
+        RunStoreMut::new(
+            &mut self.configuration,
+            &mut self.records,
+            &mut self.recorded,
+        )
+    }
+
+    fn first_enabled_transition(
+        &mut self,
+        _state: StateId,
+        _event: EventId,
+    ) -> Option<TransitionId> {
+        None
+    }
+
+    fn exit_state(&mut self, _state: StateId) {}
+
+    fn execute_transition_content(&mut self, _transition: TransitionId) {}
+
+    fn enter_state(&mut self, state: StateId, _is_default_entry: bool) {
+        self.entered.push(state);
+    }
+
+    fn execute_history_default_content(&mut self, _history: HistoryId) {}
+}
+
+impl Ending {
+    /// The run in its initial configuration, `s` and `s1`, and what that
+    /// entry answered.
+    fn started(tables: &DocumentTables<'_>) -> (Self, Entered) {
+        let mut run = Ending::default();
+        let mut workspace = EndingWorkspace::new();
+        let (_, scratch) = workspace.split();
+        let entered = enter_states(tables, &mut run, &[tables.initial], scratch);
+        (run, entered)
+    }
+
+    /// Take `transition`, one of `s1`'s.
+    fn take(&mut self, tables: &DocumentTables<'_>, transition: TransitionId) -> Entered {
+        let mut workspace = EndingWorkspace::new();
+        let (_, scratch) = workspace.split();
+        microstep(tables, self, &[transition], scratch)
+    }
+}
+
+#[test]
+fn entering_a_final_child_of_the_scxml_element_ends_the_run() {
+    let tables = ending_tables(ENDING_S);
+    let (mut run, started) = Ending::started(tables);
+    assert_eq!(run.entered, vec![ENDING_S, ENDING_S1]);
+    assert_eq!(started.ended_in, None, "a run that starts in `s1` goes on");
+
+    let entered = run.take(tables, TransitionId(1));
+    assert_eq!(run.entered, vec![ENDING_S, ENDING_S1, ENDING_DONE]);
+    assert_eq!(entered.current, Some(ENDING_DONE));
+    assert_eq!(entered.ended_in, Some(ENDING_DONE));
+}
+
+#[test]
+fn entering_a_final_inside_a_state_does_not_end_the_run() {
+    let tables = ending_tables(ENDING_S);
+    let (mut run, _) = Ending::started(tables);
+
+    let entered = run.take(tables, TransitionId(0));
+    assert_eq!(run.entered, vec![ENDING_S, ENDING_S1, ENDING_SF]);
+    assert_eq!(entered.current, Some(ENDING_SF));
+    assert_eq!(
+        entered.ended_in, None,
+        "`sf` completes `s`, which the document answers with done.state.s"
+    );
+}
+
+#[test]
+fn a_run_whose_initial_transition_names_a_top_level_final_ends_as_it_starts() {
+    let tables = ending_tables(ENDING_DONE);
+    let (run, started) = Ending::started(tables);
+    assert_eq!(run.entered, vec![ENDING_DONE]);
+    assert_eq!(started.ended_in, Some(ENDING_DONE));
 }
 
 // ════════════════════════════════════════════════════════════════════════

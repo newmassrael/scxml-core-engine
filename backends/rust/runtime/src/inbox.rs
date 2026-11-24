@@ -454,7 +454,7 @@ impl HeldInput {
                     target,
                 } = queued;
                 InboxInput::ExternalEvent(EventWithMetadata {
-                    event: P::EVENTS[usize::from(event.0)],
+                    event: P::event_of(event),
                     payload: payload_of(payload),
                     metadata,
                     target,

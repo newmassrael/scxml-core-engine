@@ -160,24 +160,24 @@ impl StatePolicy for HwPolicy {
     // state has an initial transition whose content could run.
     fn execute_entry_actions(
         &mut self,
-        _state: Self::State,
+        _state: StateId,
         _engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
         // No entry actions in this minimal test
     }
 
-    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {
+    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {
         // No exit actions
     }
 
     fn first_enabled_transition(
         &mut self,
-        state: Self::State,
-        event: Self::Event,
+        state: StateId,
+        event: EventId,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
-        match (state, event) {
+        match (Self::state_of(state), Self::event_of(event)) {
             (HwState::Stopped, HwEvent::Play) => Some(STOPPED_PLAY),
             (HwState::Running, HwEvent::Stop) => Some(RUNNING_STOP),
             (HwState::Running, HwEvent::End) => Some(RUNNING_END),

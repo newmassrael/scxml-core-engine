@@ -214,26 +214,26 @@ impl StatePolicy for ParallelPolicy {
     // one state at a time, and keeps the configuration itself.
     fn execute_entry_actions(
         &mut self,
-        state: Self::State,
+        state: StateId,
         engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
         self.entries += 1;
         // The onentry that separates a resume from a replay.
-        if state == PState::A1 {
+        if Self::state_of(state) == PState::A1 {
             engine.raise(EventWithMetadata::new(PEvent::Advance));
         }
     }
 
-    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
 
     fn first_enabled_transition(
         &mut self,
-        state: Self::State,
-        event: Self::Event,
+        state: StateId,
+        event: EventId,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
-        match (state, event) {
+        match (Self::state_of(state), Self::event_of(event)) {
             (PState::A1, PEvent::Advance) => Some(A1_ON_ADVANCE),
             _ => None,
         }
@@ -386,25 +386,25 @@ impl StatePolicy for LinearPolicy {
 
     fn execute_entry_actions(
         &mut self,
-        state: Self::State,
+        state: StateId,
         engine: &mut Engine<Self>,
         _is_default_entry: bool,
     ) {
         self.entries += 1;
-        if let LState::X1 = state {
+        if let LState::X1 = Self::state_of(state) {
             engine.raise(EventWithMetadata::new(LEvent::Go));
         }
     }
 
-    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {}
+    fn execute_exit_actions(&mut self, _state: StateId, _engine: &mut Engine<Self>) {}
 
     fn first_enabled_transition(
         &mut self,
-        state: Self::State,
-        event: Self::Event,
+        state: StateId,
+        event: EventId,
         _engine: &mut Engine<Self>,
     ) -> Option<TransitionId> {
-        match (state, event) {
+        match (Self::state_of(state), Self::event_of(event)) {
             (LState::X1, LEvent::Go) => Some(X1_ON_GO),
             _ => None,
         }

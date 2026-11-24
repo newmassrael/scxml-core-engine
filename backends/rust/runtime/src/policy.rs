@@ -395,6 +395,19 @@ pub trait StatePolicy: Sized + 'static {
         Self::STATES[id.index()]
     }
 
+    /// The event numbered `id`: where a behaviour hook, which is handed the
+    /// number (docs/adr/0123), needs the event as this machine's own value, to
+    /// read its name or a typed payload.
+    fn event_of(id: EventId) -> Self::Event {
+        Self::EVENTS[id.index()]
+    }
+
+    /// The `<history>` numbered `id`: where a behaviour hook, which is handed
+    /// the number (docs/adr/0123), needs it as this machine's own value.
+    fn history_of(id: HistoryId) -> Self::History {
+        Self::HISTORIES[id.index()]
+    }
+
     /// Whether `state` is a `<final>` state (§scxml-3.7).
     fn is_final_state(state: Self::State) -> bool {
         Self::TABLES.is_final(Self::state_id(state))
@@ -522,8 +535,9 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Sentinel event value for eventless transition dispatch (§scxml-3.13).
     ///
-    /// Generated code produces an `Event::Null` variant. The engine passes this
-    /// to [`first_enabled_transition`](StatePolicy::first_enabled_transition)
+    /// Generated code produces an `Event::Null` variant. Its number is the
+    /// tables' [`null_event`](DocumentTables::null_event), which the engine
+    /// passes to [`first_enabled_transition`](StatePolicy::first_enabled_transition)
     /// when it selects eventless transitions.
     fn null_event() -> Self::Event;
 
@@ -535,32 +549,40 @@ pub trait StatePolicy: Sized + 'static {
     // methods through the `engine` parameter. Each answers for ONE state or
     // ONE transition: which states a microstep exits and enters, and in which
     // order, is the engine's Appendix D procedure, not the policy's.
+    //
+    // The hooks the procedures call are handed the numbers the procedures
+    // speak — a `StateId`, an `EventId`, a `HistoryId`, a `TransitionId`
+    // — the numbers `TABLES` is indexed by, so structure and behaviour are
+    // one numbering (docs/adr/0123). The engine converts nothing on the way
+    // in; a hook that needs the machine's own value converts where it needs
+    // it, with `state_of`, `event_of` or `history_of`.
     // ──────────────────────────────────────────────
 
     /// §scxml-5.10: bind the event whose transitions are about to be selected
     /// as the `_event` their guards read.
     ///
     /// Called once per selection, before the first guard runs, and with the
-    /// [`null_event`](StatePolicy::null_event) for an eventless selection —
-    /// which has no event of its own, so a policy binds nothing for it. The
-    /// default binds nothing: a document whose guards never read `_event` has
-    /// nothing to bind.
-    fn bind_current_event(&mut self, _event: Self::Event, _engine: &mut Engine<Self>) {}
+    /// tables' [`null_event`](DocumentTables::null_event) for an eventless
+    /// selection — which has no event of its own, so a policy binds nothing
+    /// for it. The default binds nothing: a document whose guards never read
+    /// `_event` has nothing to bind.
+    fn bind_current_event(&mut self, _event: EventId, _engine: &mut Engine<Self>) {}
 
     /// Appendix D selectTransitions, the half only the document can answer:
     /// the first of `state`'s own transitions, in document order, that `event`
-    /// enables and whose guard holds. The [`null_event`](StatePolicy::null_event)
-    /// asks for eventless transitions.
+    /// enables and whose guard holds. The tables'
+    /// [`null_event`](DocumentTables::null_event) asks for eventless
+    /// transitions.
     ///
     /// Ports C++ `firstEnabledTransition(State, Event, Engine&)`. The only
     /// place a guard is evaluated. The engine walks the atomic states and
-    /// their ancestors and keeps the ordered set. The answer is the
-    /// transition's row in [`TABLES`](StatePolicy::TABLES), which holds its
-    /// source, targets and type.
+    /// their ancestors and keeps the ordered set. The state, the event and the
+    /// answer are numbers of [`TABLES`](StatePolicy::TABLES): the answer is
+    /// the transition's row, which holds its source, targets and type.
     fn first_enabled_transition(
         &mut self,
-        state: Self::State,
-        event: Self::Event,
+        state: StateId,
+        event: EventId,
         engine: &mut Engine<Self>,
     ) -> Option<TransitionId>;
 
@@ -614,7 +636,7 @@ pub trait StatePolicy: Sized + 'static {
     /// `<final>`, this is also what the appendix does on entering one.
     fn execute_entry_actions(
         &mut self,
-        state: Self::State,
+        state: StateId,
         engine: &mut Engine<Self>,
         is_default_entry: bool,
     );
@@ -627,7 +649,7 @@ pub trait StatePolicy: Sized + 'static {
     /// One state, and nothing below it: the engine's Appendix D exit set
     /// already holds every active descendant, in exit order, ahead of this
     /// state.
-    fn execute_exit_actions(&mut self, state: Self::State, engine: &mut Engine<Self>);
+    fn execute_exit_actions(&mut self, state: StateId, engine: &mut Engine<Self>);
 
     /// §scxml-3.10.2: a `<history>`'s default transition content, run after
     /// its parent's onentry (and after the parent's own initial content) when
@@ -635,11 +657,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// The default runs nothing, which is right for a history whose default
     /// transition has no content and for a document with no history at all.
-    fn execute_history_default_content(
-        &mut self,
-        _history: Self::History,
-        _engine: &mut Engine<Self>,
-    ) {
+    fn execute_history_default_content(&mut self, _history: HistoryId, _engine: &mut Engine<Self>) {
     }
 
     // ──────────────────────────────────────────────

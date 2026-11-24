@@ -900,6 +900,12 @@ pub struct Entered {
     /// The atomic state the last targeted transition brought the machine
     /// into; `None` when nothing was entered.
     pub current: Option<StateId>,
+    /// The `<final>` child of the `<scxml>` element the set entered, which
+    /// ends the run: Appendix D's enterStates stops the interpreter on
+    /// entering one, and a nested `<final>` does not. Read from the tables
+    /// here, once for every machine, so a machine's own entry hook runs its
+    /// onentry and decides nothing about the run (docs/adr/0123).
+    pub ended_in: Option<StateId>,
 }
 
 /// Appendix D's microstep: exit, run the transitions' content, enter. With the
@@ -1054,9 +1060,10 @@ pub fn enter_states(
     scratch: Scratch<'_>,
 ) -> Entered {
     let entry = compute_entry_set(tables, machine.store().as_ref(), transitions, scratch);
-    enter_entry_set(machine, &entry);
+    let ended_in = enter_entry_set(tables, machine, &entry);
     let entered = entry.states_to_enter.as_ref().len();
     Entered {
+        ended_in,
         states: entered,
         current: if entered == 0 {
             None
@@ -1069,20 +1076,32 @@ pub fn enter_states(
 }
 
 /// The second half of Appendix D's enterStates: every state of an entry set
-/// entered, in entry order, which is document order.
-fn enter_entry_set(machine: &mut dyn Behaviour, entry: &EntrySet<'_>) {
+/// entered, in entry order, which is document order. Answers the top-level
+/// `<final>` it entered, if any ([`Entered::ended_in`]).
+fn enter_entry_set(
+    tables: &DocumentTables<'_>,
+    machine: &mut dyn Behaviour,
+    entry: &EntrySet<'_>,
+) -> Option<StateId> {
+    let mut ended_in = None;
     for state in entry.states_to_enter.as_ref().iter() {
         // §scxml-D-enterStates: configuration.add(s), then onentry, then the
         // initial transition's content if and only if this state's initial
         // state is being entered by default, then a history's default content
-        // owed to it. A state already active is not entered twice.
+        // owed to it. A state already active is not entered twice. Entering a
+        // `<final>` whose parent is the `<scxml>` element ends the run, which
+        // the tables answer and no machine's hook is asked.
         if machine.store().add(state) {
             machine.enter_state(state, entry.states_for_default_entry.contains(state));
+            if tables.is_final(state) && tables.parent(state).is_none() {
+                ended_in = Some(state);
+            }
         }
         if let Some(history) = entry.default_history_content_of(state) {
             machine.execute_history_default_content(history);
         }
     }
+    ended_in
 }
 
 /// The atomic state the last targeted transition brought the machine into:

@@ -94,6 +94,15 @@ impl HistoryId {
     }
 }
 
+impl EventId {
+    /// The id as an index into a table: the machine's events are numbered by
+    /// their variants' order.
+    #[inline]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
 impl TransitionId {
     /// The id as an index into a table.
     #[inline]
