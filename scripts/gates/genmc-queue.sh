@@ -68,7 +68,25 @@ CXX_SHIM="$CXX_HARNESS_DIR/genmc_cxx_shim.h"
 CXX_MUTATED_HEADERS=(queue.h queue_segmented.h broadcast_log.h)
 UNROLL=20
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+
+# On the way out, end the GenMC runs still going (a failure before the final
+# `wait` leaves them; see THE RUNS, SIDE BY SIDE), then remove the work tree.
+# Registered with lib.sh rather than as a `trap` of this script's own: a second
+# EXIT trap replaces lib.sh's, whose runner keeps a cleanup's status from
+# becoming the gate's. Under the replaced trap a kill of a run that had already
+# ended failed with `set -e` on, and the gate exited 123 after every verdict
+# had passed. Only running jobs are named; one that ends between the listing
+# and the kill is the failure that is expected, and the runner ignores it.
+genmc_cleanup() {
+    local running
+    running="$(jobs -pr)"
+    if [[ -n "$running" ]]; then
+        # shellcheck disable=SC2086 # one pid per word
+        kill $running 2>/dev/null
+    fi
+    rm -rf "$WORK"
+}
+sce_gate_on_exit genmc_cleanup
 
 # The options every run shares. The model is RC11, GenMC's default, named so a
 # change of default is not a change of what is checked.
@@ -249,7 +267,6 @@ RUN_DIR="$WORK/runs"
 mkdir -p "$RUN_DIR"
 RUN_IDS=()
 PARALLEL="$(sce_build_jobs)"
-trap 'jobs -p | xargs -r kill 2>/dev/null; rm -rf "$WORK"' EXIT
 
 start_run() {
     local id="$1"
