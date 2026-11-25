@@ -12555,10 +12555,14 @@ fn rust_settled_shift(
             "{ty}::wrapping_shr({value}, u32::min({places}, {}))",
             bits - 1
         ),
+        // A cast, written bare as every cast here is: the operator it stands
+        // beside parenthesises it where the grammar needs it
+        // ([`rust_left_operand`]), and an outer pair of its own is refused by
+        // `unused_parens` where it is assigned (`algorithm_shift_count`).
         CheckedOp::UShr if signed => {
             let unsigned = rust_int_type(false, bits);
             format!(
-                "({unsigned}::checked_shr({}, {places}).unwrap_or(0) as {ty})",
+                "{unsigned}::checked_shr({}, {places}).unwrap_or(0) as {ty}",
                 rust_cast(value, left, unsigned)
             )
         }
@@ -16937,7 +16941,7 @@ mod tests {
                 ExprTarget::Rust,
                 "h >>> m",
                 i16t,
-                "(u16::checked_shr(h as u16, u32::from(m)).unwrap_or(0) as i16)",
+                "u16::checked_shr(h as u16, u32::from(m)).unwrap_or(0) as i16",
             ),
             (
                 ExprTarget::Rust,
@@ -17002,7 +17006,7 @@ mod tests {
         );
         assert_eq!(
             landed("s >>> 3", ExprTarget::Rust, i32t),
-            "(u32::checked_shr(s as u32, 3).unwrap_or(0) as i32)"
+            "u32::checked_shr(s as u32, 3).unwrap_or(0) as i32"
         );
         assert_eq!(
             landed("s >>> 3", ExprTarget::Go, i32t),
