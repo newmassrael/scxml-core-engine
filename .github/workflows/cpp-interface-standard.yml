@@ -31,14 +31,14 @@ name: C++ Interface Standard
 #
 # ## Duration
 #
-# STAND-IN: the lane has no run of its own yet. `LANES` in
-# `sce-build/tests/ci_supersession_policy.rs` borrows `ecma262-lowered-cpp.yml`'s
-# 23.7 min median, the nearest lane: a cold scratch configure of the main CMake
-# project with a cached generator build ahead of it. This lane compiles more
-# (about 2,500 syntax-only compiles) and builds nothing, so the real figure may
-# sit on either side. That is above a 17.6 min median gap between pushes to
-# `main`, so `cancel-in-progress: false` keeps the run in flight, as on every
-# lane. Replace the borrowed figure after 25 runs of its own.
+# STAND-IN: `LANES` in `sce-build/tests/ci_supersession_policy.rs` borrows
+# `ecma262-lowered-cpp.yml`'s 23.7 min median, the nearest lane: a cold scratch
+# configure of the main CMake project with a cached generator build ahead of
+# it. Run whole, the lane's own runs took 47 to 82 minutes (jobs 138978378267
+# and 138916754356), which is why it now runs as six shards (the job below
+# says how). That is above a 17.6 min median gap between pushes to `main`, so
+# `cancel-in-progress: false` keeps the run in flight, as on every lane.
+# Replace the borrowed figure after 25 sharded runs of its own.
 
 on:
   push:
@@ -54,6 +54,8 @@ on:
       - 'CMakeLists.txt'
       - 'cmake/**'
       - 'tools/interface-standard/**'
+      # The tool spreads its shards and reads ninja's graph through it.
+      - 'scripts/lib/ctest_shards.py'
       # The rest of what its configure of the main tree reads, and what cargo
       # reads to build the generator it runs (`builds` of
       # `cpp-interface-standard` in tools/git-hooks/gate_registry.py, "What a
@@ -115,6 +117,8 @@ on:
       - 'CMakeLists.txt'
       - 'cmake/**'
       - 'tools/interface-standard/**'
+      # The tool spreads its shards and reads ninja's graph through it.
+      - 'scripts/lib/ctest_shards.py'
       # The rest of what its configure of the main tree reads, and what cargo
       # reads to build the generator it runs (`builds` of
       # `cpp-interface-standard` in tools/git-hooks/gate_registry.py, "What a
@@ -172,10 +176,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The measurement in six shards, one job each, and a last job that holds
+  # them together. Run whole, the job took 2811 s (job 138978378267,
+  # 57602a3bb8, 2026-11-25) and 4924 s on a slower runner (job 138916754356):
+  # a generator build (3 min), a cold configure (5 min), the generation rules
+  # (984 s) and 3158 compiles (1252 s), three at a time. Each job plans the
+  # whole measurement from the configured tree, generates only the families
+  # its own part compiles and compiles that part (`shard-plan` in
+  # tools/interface-standard/interface_standard.py); the generator build and
+  # the configure, about 8.5 minutes, every job pays alike. Six, because the
+  # generation and the compiles are about 37 minutes run whole, so a job is
+  # about 8.5 + 37/6, some 15 minutes, before the spread is measured; more
+  # shards would buy less than the fixed part they each repeat. Re-size from
+  # the plans the first sharded run prints. `cpp-interface-standard-verdict`
+  # holds the shards of a run to one plan, every subject to its shard's
+  # account and the floors to the whole. The gate's registry entry declares
+  # the variable (`shard_env`), so a landing runs the same parts as units.
   cpp-interface-standard:
-    name: C++ interface at C++17 and C++20 (GCC 15)
+    name: C++ interface at C++17 and C++20 (GCC 15, shard ${{ matrix.shard }} of 6)
     runs-on: ubuntu-24.04
+    # The whole measurement's allowance until a sharded run is measured.
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     # No `container:` here. The image the gate runs in is
     # `tools/interface-standard/Containerfile` (gcc:15.3.0 and what the
     # configure and the generator need), and the runner builds it and runs the
@@ -213,9 +239,57 @@ jobs:
           restore-keys: |
             gcc15-image-${{ hashFiles('rust-toolchain.toml') }}-
 
-      # Guards, configure, generation, then every compile at both standards are
-      # one gate, so the check has one spelling here and for a developer. The
-      # runner inside the image builds `sce-codegen` first, through its
-      # `codegen-build` gate.
-      - name: Compile the interface at C++17 and C++20
+      # Guards, configure, the plan, this shard's generation, then its
+      # compiles at both standards are one gate, so the check has one spelling
+      # here and for a developer. The runner hands the variable to the gate
+      # inside the image (`gate_in_container` in scripts/gate), and the runner
+      # inside builds `sce-codegen` first, through its `codegen-build` gate.
+      - name: Compile this shard of the interface at C++17 and C++20
+        env:
+          SCE_INTERFACE_STANDARD_SHARD: ${{ matrix.shard }}/6
         run: scripts/gate cpp-interface-standard
+
+      # The plan, this shard's account of its subjects and its outcomes
+      # (`cpp-interface-standard-verdict` reads them).
+      - name: Upload this shard's plan, account and outcomes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cpp-interface-standard-shard-${{ matrix.shard }}
+          path: build/interface-standard-shard/
+          retention-days: 30
+          if-no-files-found: warn
+
+  # The verdict of the lane: every shard planned the measurement alike,
+  # accounted for every subject it was given, and the outcomes the whole run
+  # would count hold the floors with no failure. A job of its own because a
+  # matrix answers per shard, and "the interface holds" is a claim about the
+  # six together.
+  cpp-interface-standard-verdict:
+    name: C++ interface at C++17 and C++20 (GCC 15)
+    needs: cpp-interface-standard
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Download the shards' plans, accounts and outcomes
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: cpp-interface-standard-shard-*
+          path: shards
+
+      - name: Hold the shards to one plan, every subject and the whole floors
+        env:
+          SHARDS_RESULT: ${{ needs.cpp-interface-standard.result }}
+        run: |
+          status=0
+          python3 tools/interface-standard/interface_standard.py verify-shards shards || status=1
+          if [[ "$SHARDS_RESULT" != success ]]; then
+            echo "::error title=cpp-interface-standard::a shard job ended $SHARDS_RESULT"
+            status=1
+          fi
+          exit "$status"

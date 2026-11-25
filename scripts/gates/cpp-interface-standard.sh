@@ -33,6 +33,16 @@
 # a file this machine does not have (the mesh SDKs on a runner without them).
 # A floor per kind fails the run when the count measured is too small to be
 # evidence, so a blind include reader cannot end in a quiet green.
+#
+# In shards (ADR 0120, D3). When SCE_INTERFACE_STANDARD_SHARD names `k/N`, as
+# the lane's jobs and a landing's units (`scripts/gate --shard k/N`) do, and
+# which the runner hands into the image, steps 3 and 4 run one part: every job
+# plans the whole measurement from the configured tree, generates only the
+# families its own part compiles, and compiles that part (`shard-plan` in the
+# tool says how the subjects are owned and spread). The plan, the part's
+# account of every subject it was given and its outcomes are left in
+# build/interface-standard-shard/, where the lane's verdict job reads all the
+# shards' (`verify-shards`). Unset, the gate measures the whole tree.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -90,15 +100,39 @@ python3 "$TOOL" generation-outputs --ninja-targets "$WORK/targets.txt" \
         --build-dir "$BUILD_DIR" --out "$WORK/generation.txt" \
     || sce_gate_fail "could not list the generated headers in the build graph"
 mapfile -t OUTPUTS <"$WORK/generation.txt"
-sce_gate_build "$BUILD_DIR" --target "${OUTPUTS[@]}" \
-    || sce_gate_fail "generation (${#OUTPUTS[@]} output(s))"
+
+JOBS_PLAN=()
+JOBS_FILE="$WORK/jobs.json"
+RESULTS=()
+if [[ -n "${SCE_INTERFACE_STANDARD_SHARD:-}" ]]; then
+    SHARD_DIR="$SCE_REPO_ROOT/build/interface-standard-shard"
+    rm -rf "$SHARD_DIR"
+    mkdir -p "$SHARD_DIR"
+    sce_gate_step "planning shard $SCE_INTERFACE_STANDARD_SHARD of the measurement"
+    ninja -C "$BUILD_DIR" -t graph "${OUTPUTS[@]}" >"$WORK/generation.dot" \
+        || sce_gate_fail "could not read the generation rules' graph"
+    python3 "$TOOL" shard-plan --compile-commands "$BUILD_DIR/compile_commands.json" \
+            --build-dir "$BUILD_DIR" --generation "$WORK/generation.txt" \
+            --ninja-graph "$WORK/generation.dot" --std c++17 --std c++20 \
+            --out "$SHARD_DIR" "$SCE_INTERFACE_STANDARD_SHARD" \
+        || sce_gate_fail "could not plan shard $SCE_INTERFACE_STANDARD_SHARD"
+    mapfile -t OUTPUTS <"$SHARD_DIR/outputs"
+    JOBS_PLAN=(--plan "$SHARD_DIR/plan.json")
+    JOBS_FILE="$SHARD_DIR/jobs.json"
+    RESULTS=(--results "$SHARD_DIR/results.json")
+fi
+
+if (( ${#OUTPUTS[@]} > 0 )); then
+    sce_gate_build "$BUILD_DIR" --target "${OUTPUTS[@]}" \
+        || sce_gate_fail "generation (${#OUTPUTS[@]} output(s))"
+fi
 
 sce_gate_step "pairing every header with the flags it is compiled with"
 python3 "$TOOL" jobs --compile-commands "$BUILD_DIR/compile_commands.json" \
-        --build-dir "$BUILD_DIR" --out "$WORK/jobs.json" \
+        --build-dir "$BUILD_DIR" --out "$JOBS_FILE" ${JOBS_PLAN[@]+"${JOBS_PLAN[@]}"} \
     || sce_gate_fail "could not build the compile jobs"
 
 sce_gate_step "compiling the interface alone at C++17 and at C++20"
-python3 "$TOOL" run --jobs "$WORK/jobs.json" --std c++17 --std c++20 \
-        --parallel "$(sce_build_jobs)" \
+python3 "$TOOL" run --jobs "$JOBS_FILE" --std c++17 --std c++20 \
+        --parallel "$(sce_build_jobs)" ${RESULTS[@]+"${RESULTS[@]}"} \
     || sce_gate_fail "the interface does not hold at C++17 and C++20; the failures and floors are listed above"

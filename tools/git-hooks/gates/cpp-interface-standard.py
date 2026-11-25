@@ -25,16 +25,29 @@
     "workflows": ["cpp-interface-standard.yml"],
     "builds": ["main-tree"],
     "runner_workflow": True,
+    # Run whole it took 2811 s on a hosted runner (job 138978378267,
+    # 57602a3bb8): 984 s of generation rules and 1252 s of compiles beside a
+    # configure and a generator build, and 4924 s on a slower day (job
+    # 138916754356). Its script runs one part of the measurement when
+    # SCE_INTERFACE_STANDARD_SHARD names `k/N`, generating only the families
+    # that part compiles (`shard-plan` in tools/interface-standard), as the
+    # lane's jobs do; a plan makes one unit per shard of the lane's count
+    # (`shard_count`), and `scripts/gate --shard` hands the variable into the
+    # image.
+    "shard_env": "SCE_INTERFACE_STANDARD_SHARD",
     # What the gate compiles or reads to decide what to compile: the
     # engine and its headers, the C++ runtime and the C backend it
     # compiles, the C++ templates and the generator that fills them, the
     # Forge goldens, the CMake that registers the corpora, and the tool.
     # The workflow's `paths:` lists every one, which `ci-only-coverage`
     # holds.
+    # The tool reads ninja's graph and spreads its shards through
+    # `scripts/lib/ctest_shards.py`, so that file is read too.
     "extra": ["sce/**", "backends/cpp/**", "backends/c/**",
               "tools/codegen/templates/**", "sce-build/src/**",
               "tests/forge/expected/**", "tests/CMakeLists.txt",
-              "CMakeLists.txt", "cmake/**", "tools/interface-standard/**"],
+              "CMakeLists.txt", "cmake/**", "tools/interface-standard/**",
+              "scripts/lib/ctest_shards.py"],
     "deps": ["codegen-build"],
     "ci_only": "minutes long, estimated rather than measured: a cold "
                "configure, every generation rule and about 2,600 "

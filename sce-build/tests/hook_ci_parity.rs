@@ -2107,3 +2107,65 @@ fn every_step_the_regeneration_runs_is_in_exactly_one_shard() {
     let seen = units_of_each_shard(args, count);
     assert_the_shards_are_the_suite(lane_path, count, &seen, &expected);
 }
+
+// ── The interface-standard lane measures in shards ──────────────────────────
+//
+// `cpp-interface-standard` plans its whole measurement from the configured
+// tree in every job (`shard-plan` in tools/interface-standard/interface_standard.py)
+// and generates and compiles only its own part. The union is held where there
+// is a tree: each job refuses a plan that is not every subject once and
+// accounts for each subject it was given, and the lane's verdict job holds the
+// shards of a run to one plan, every subject to its shard's account and the
+// floors to the whole (`verify-shards`). The tool's own cases, which the gate
+// runs first, hold the partition on a tree with one of each case. What is held
+// here, with no tree, is that those pieces stay wired.
+
+const INTERFACE_LANE: &str = ".github/workflows/cpp-interface-standard.yml";
+const INTERFACE_GATE: &str = "scripts/gates/cpp-interface-standard.sh";
+const INTERFACE_ENTRY: &str = "tools/git-hooks/gates/cpp-interface-standard.py";
+const INTERFACE_TOOL: &str = "tools/interface-standard/interface_standard.py";
+const INTERFACE_VARIABLE: &str = "SCE_INTERFACE_STANDARD_SHARD";
+
+/// The lane's matrix and its variable name one shard count, the gate plans,
+/// filters and records its part when the variable is set, the registry entry
+/// declares the same variable (so a landing splits the gate as the lane does),
+/// and a job that needs the sharded job runs the verdict over the shards.
+#[test]
+fn the_interface_standard_lane_and_its_gate_agree_on_the_shards() {
+    let lane = read(INTERFACE_LANE);
+    let (job, (count, listed)) =
+        sharded_job(INTERFACE_LANE, &lane, &format!("{INTERFACE_VARIABLE}:"));
+    assert!(
+        count >= 2,
+        "{INTERFACE_LANE}'s job `{job}` measures in {count} shard(s); one is the whole \
+         measurement"
+    );
+    assert_eq!(
+        listed,
+        (1..=count).collect::<Vec<_>>(),
+        "{INTERFACE_LANE}'s job `{job}` has a `shard:` matrix that is not 1..={count}, \
+         the count its `{INTERFACE_VARIABLE}` names"
+    );
+    let gate = uncommented(&read(INTERFACE_GATE));
+    for needle in [INTERFACE_VARIABLE, "shard-plan", "--plan", "--results"] {
+        assert!(
+            gate.contains(needle),
+            "{INTERFACE_GATE} no longer carries `{needle}`, so a job of {INTERFACE_LANE} \
+             would not plan, keep or record its own part"
+        );
+    }
+    assert!(
+        read(INTERFACE_ENTRY).contains(&format!("\"shard_env\": \"{INTERFACE_VARIABLE}\"")),
+        "{INTERFACE_ENTRY} does not declare `shard_env` {INTERFACE_VARIABLE}, so a landing \
+         would run the gate whole while the lane splits it"
+    );
+    let verify = format!("{INTERFACE_TOOL} verify-shards");
+    let held = workflow_jobs(&lane).iter().any(|(_, lines)| {
+        needs_of(lines).contains(&job) && lines.iter().any(|l| l.contains(&verify))
+    });
+    assert!(
+        held,
+        "no job of {INTERFACE_LANE} needs `{job}` and runs `{verify}`, so nothing holds \
+         its shards to one plan and the whole floors"
+    );
+}

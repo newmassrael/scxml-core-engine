@@ -613,6 +613,18 @@ gate_in_container() {
     done
     if [[ -n "$SHARD_WANT" ]]; then
         inner+=(--shard "$SHARD_WANT")
+    else
+        # A lane that sets the gate's shard variable itself (`<variable>: k/N`
+        # in its job, as the sharded lanes do) means the same part inside the
+        # image, and the image starts from an environment of its own: the part
+        # goes in as `--shard`, which the runner inside checks and hands back to
+        # the gate as the variable. Dropped here, every job of the lane would
+        # run the whole gate under a part's name.
+        local shard_env=""
+        shard_env="$(python3 -I "$TABLE" shard-env "$slug")" || return 2
+        if [[ -n "$shard_env" && -n "${!shard_env:-}" ]]; then
+            inner+=(--shard "${!shard_env}")
+        fi
     fi
     inner+=("$slug")
     printf '\ngate: %s runs in %s (%s) on Rust %s from %s: %s\n' \
