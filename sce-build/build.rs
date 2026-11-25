@@ -58,10 +58,32 @@ mod generator_witness {
 }
 use generator_witness::{digest_hex, witness_paths, DIGEST_UNAVAILABLE, RUN_TIME_TREE};
 
+// Every instruction this script gives cargo, as it gave it. Cargo keeps them
+// in a file of its own build directory, whose place is cargo's to change (it
+// moved between releases), so the script writes them beside its other outputs
+// as well: `$OUT_DIR/build_instructions.txt` is what
+// `generator_source_witness.rs` holds to the values this tree determines.
+thread_local! {
+    static INSTRUCTIONS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Print one instruction to cargo and keep it for `build_instructions.txt`.
+macro_rules! instruct {
+    ($($arg:tt)*) => {{
+        let line = format!($($arg)*);
+        println!("{line}");
+        INSTRUCTIONS.with(|kept| kept.borrow_mut().push(line));
+    }};
+}
+
 fn main() {
     emit_source_digest();
     emit_template_registry();
     emit_stdlib_registry();
+    let kept = INSTRUCTIONS.with(|kept| kept.borrow().join("\n"));
+    let dest = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR is set by cargo"))
+        .join("build_instructions.txt");
+    std::fs::write(&dest, kept + "\n").unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
 }
 
 /// Workspace root, one level above this crate.
@@ -82,7 +104,7 @@ fn emit_source_digest() {
     let root = workspace_root();
     match digest_hex(&root) {
         Ok(digest) => {
-            println!("cargo:rustc-env=SCE_GENERATOR_SOURCE_DIGEST={digest}");
+            instruct!("cargo:rustc-env=SCE_GENERATOR_SOURCE_DIGEST={digest}");
             // One watch per file. A watch on the directory would move only
             // when a file is added or removed, leaving the embedded digest
             // describing a tree that had since been edited — and a stale
@@ -98,8 +120,8 @@ fn emit_source_digest() {
             }
         }
         Err(e) => {
-            println!("cargo:rustc-env=SCE_GENERATOR_SOURCE_DIGEST={DIGEST_UNAVAILABLE}");
-            println!("cargo:warning=sce-build: generator source witness unavailable ({e}); `sce-codegen verify-generator` cannot check this binary");
+            instruct!("cargo:rustc-env=SCE_GENERATOR_SOURCE_DIGEST={DIGEST_UNAVAILABLE}");
+            instruct!("cargo:warning=sce-build: generator source witness unavailable ({e}); `sce-codegen verify-generator` cannot check this binary");
         }
     }
 }
@@ -224,5 +246,5 @@ fn collect_tree(root: &Path, current: &Path, extension: &str, out: &mut Vec<(Str
 /// runtime's build script behind it — one every four and a half minutes,
 /// in series on their shared target directory.
 fn watch(path: &Path) {
-    println!("cargo:rerun-if-changed={}", path.display());
+    instruct!("cargo:rerun-if-changed={}", path.display());
 }
