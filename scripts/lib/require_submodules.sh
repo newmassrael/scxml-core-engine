@@ -167,7 +167,6 @@ def runs_slug(body, slug):
 
 
 submodules = None
-triggers = None
 for slug in sys.argv[5:]:
     entry = mod["GATES"].get(slug)
     if not entry:
@@ -192,10 +191,14 @@ for slug in sys.argv[5:]:
         print(slug)
         continue
     # The key's own reading of the entry (`gate_inputs`): a gate keyed on its
-    # triggers reaches what they name.
-    if triggers is None:
-        triggers = mod["gate_triggers"](repo_root)
-    own = mod["gate_inputs"](slug, None, triggers)
+    # triggers reaches what they and its builds' reads name. Derived for this
+    # gate alone: the unit's copy holds its inputs and no other gate's, so
+    # deriving every gate's would read files outside them (`gate_triggers`).
+    own = entry.get("inputs")
+    if own == mod["INPUTS_ARE_TRIGGERS"]:
+        own = mod["gate_inputs"](slug, None,
+                                 mod["gate_triggers"](repo_root, [slug]),
+                                 mod["gate_reads"](repo_root, [slug]))
     if own is None:
         print(f"{slug}\t*")
         continue

@@ -630,6 +630,10 @@ PARALLELISM_SCRIPT = 1
 # 5.2), which is also a file the selection was missing. A gate takes the value
 # once `bx --checks prepush --learn <slug>` has shown its reads inside its
 # triggers; until then it keeps `None` and costs nothing it did not cost.
+# A gate that names a shared build (`builds`) is keyed as well on what cargo
+# reads for that build without compiling it (`gate_reads`, "What a build
+# reads that does not select it"), which changes no verdict and so selects
+# nothing.
 INPUTS_ARE_TRIGGERS = "triggers"
 
 # Every unit names this, so a machine runs one gate of a set at a time. The
@@ -4039,13 +4043,9 @@ def cargo_workspace_manifests(repo_root: Path) -> list[str]:
     return sorted(dict.fromkeys(manifests))
 
 
-def cargo_build_globs(repo_root: Path, crates, in_workspace=True) -> list[str]:
-    """What a cargo build of `crates` reads, as globs: as members of this
-    workspace (`in_workspace`), or as path dependencies of a crate outside it.
-
-    See "What a build reads". Exact paths a directory glob already covers
-    are left out, so each file is named once.
-    """
+def cargo_build_closure(repo_root: Path, crates) -> list[str]:
+    """`crates` and the path dependencies a build of them compiles
+    (`cargo_path_deps`), transitively, sorted."""
     closure: list[str] = []
     pending = list(crates)
     while pending:
@@ -4054,6 +4054,17 @@ def cargo_build_globs(repo_root: Path, crates, in_workspace=True) -> list[str]:
             continue
         closure.append(crate)
         pending.extend(cargo_path_deps(repo_root, crate))
+    return sorted(closure)
+
+
+def cargo_build_globs(repo_root: Path, crates, in_workspace=True) -> list[str]:
+    """What a cargo build of `crates` reads, as globs: as members of this
+    workspace (`in_workspace`), or as path dependencies of a crate outside it.
+
+    See "What a build reads". Exact paths a directory glob already covers
+    are left out, so each file is named once.
+    """
+    closure = cargo_build_closure(repo_root, crates)
     globs = [".cargo/**"] + (["Cargo.lock"] if in_workspace else [])
     named: list[str] = (cargo_workspace_manifests(repo_root) if in_workspace
                         else ["Cargo.toml"]) + [
@@ -4107,8 +4118,151 @@ def built_inputs(repo_root: Path, name: str) -> list[str]:
     return list(_BUILT_CACHE[key])
 
 
-def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
-    """Each gate's trigger globs, derived from its workflow and its own lists.
+# ── What a build reads that does not select it ─────────────────────
+#
+# A gate's trigger is what can change its verdict; its key has to hold every
+# file its run looks at, or bx's trace calls the run "could not measure" (bx
+# RFC 0020, 5.2). For a cargo build the two differ, and the difference is
+# cargo's own, so it is derived here from the manifests as the trigger half is
+# and joins the KEY of a gate that `builds` (`gate_reads`), never its
+# trigger:
+#   * loading the workspace (the Cargo Book, "Target auto-discovery"): every
+#     package the resolver loads, which is each member and each package a
+#     member names by `path` in any dependency table, dev-dependencies
+#     included (`cargo_loaded_packages`). Of each, cargo reads the manifest,
+#     looks for `src/lib.rs` and `src/main.rs`, looks for `build.rs` when
+#     `[package] build` does not name the script, and lists `src/bin/`,
+#     `tests/`, `examples/` and `benches/` where they exist, with each
+#     `<dir>/<name>/main.rs` a listed directory holds
+#     (`cargo_package_load_reads`). It compiles none of that unless it builds
+#     the package, so an edit there changes no verdict of these gates and
+#     selects none of them;
+#   * a build script cargo has not run in that target directory before: no
+#     earlier run has told cargo what the script reads (`rerun-if-changed`),
+#     and a script that has told it nothing is fingerprinted by every file of
+#     its package (the Cargo Book, "Build Scripts", "Change Detection"), so a
+#     crate the build compiles that has a build script is read whole
+#     (`<crate>/**`).
+# Measured 2026-11-24 with `bx --checks prepush --learn` (bx 340e9f9e):
+# `forge-c11` and `forge-cpp` read every member's manifest and target roots,
+# their `tests/` and `examples/` listings, and every file of `sce-build`, of
+# which the triggers named only what the generator compiles.
+_CARGO_ANY_DEP_TABLE = re.compile(
+    r"^\[(?:target\.[^\]]+\.)?(?:dependencies|build-dependencies|dev-dependencies)"
+    r"(?:\.[A-Za-z0-9_-]+)?\]\s*$")
+# The directories cargo lists in a package it loads, for the targets its
+# manifest does not name.
+CARGO_DISCOVERED_DIRS = ("src/bin", "tests", "examples", "benches")
+
+
+def cargo_loaded_packages(repo_root: Path) -> list[str]:
+    """The packages cargo loads to resolve this workspace, sorted: each member
+    (`cargo_workspace_manifests`) and each package one names by `path` in any
+    dependency table, `[dev-dependencies]` included, transitively. Read by
+    lines, as `cargo_path_deps` reads a manifest; a path outside the
+    repository names no tracked file and is left out."""
+    members = [m[:-len("/Cargo.toml")] for m in cargo_workspace_manifests(repo_root)
+               if m != "Cargo.toml"]
+    seen: list[str] = []
+    pending = list(members)
+    while pending:
+        package = pending.pop()
+        if package in seen or package.startswith("../") or package == "..":
+            continue
+        seen.append(package)
+        try:
+            text = (repo_root / package / "Cargo.toml").read_text(encoding="utf-8")
+        except OSError:
+            continue
+        in_deps = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("["):
+                in_deps = bool(_CARGO_ANY_DEP_TABLE.match(stripped))
+                continue
+            if in_deps and not stripped.startswith("#"):
+                pending.extend(posixpath.normpath(f"{package}/{rel}")
+                               for rel in _CARGO_PATH_VALUE.findall(stripped))
+    return sorted(seen)
+
+
+def cargo_package_load_reads(repo_root: Path, package: str) -> list[str]:
+    """What cargo reads of `package` to load it, built or not, as input
+    patterns: the manifest, the target roots it looks for that are tracked,
+    and a listing (`<dir>/`, bx RFC 0020 4.2) of each discovery directory that
+    holds a tracked file, with the `<name>/main.rs` of each target directory
+    in it. See "What a build reads that does not select it"."""
+    try:
+        text = (repo_root / package / "Cargo.toml").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    table, script_named = "", False
+    for line in text.splitlines():
+        header = _CARGO_TABLE.match(line.strip())
+        if header:
+            table = header.group(1)
+        elif table == "package" and re.match(r"^\s*build\s*=", line):
+            script_named = True
+    tracked = set(tracked_paths(repo_root, package))
+    reads = [f"{package}/Cargo.toml"]
+    looked_for = ["src/lib.rs", "src/main.rs"] + ([] if script_named else ["build.rs"])
+    reads.extend(f"{package}/{rel}" for rel in looked_for
+                 if f"{package}/{rel}" in tracked)
+    for folder in CARGO_DISCOVERED_DIRS:
+        prefix = f"{package}/{folder}/"
+        held = sorted(p for p in tracked if p.startswith(prefix))
+        if held:
+            reads.append(prefix)
+            reads.extend(p for p in held
+                         if re.fullmatch(r"[^/]+/main\.rs", p[len(prefix):]))
+    return reads
+
+
+_READS_CACHE: dict[tuple[str, str], list[str]] = {}
+
+
+def built_reads(repo_root: Path, name: str) -> list[str]:
+    """What a gate that `builds` `name` reads for it beyond `built_inputs`:
+    the workspace's load (`cargo_package_load_reads` of every package cargo
+    loads) for a build as members of this workspace, and the whole of each
+    crate the build compiles that has a build script. A pattern `built_inputs`
+    or a wider one here already gives is left out. Empty for a build cargo does
+    not run. See "What a build reads that does not select it"."""
+    key = (str(repo_root.resolve()), name)
+    if key not in _READS_CACHE:
+        _, crates, in_workspace = BUILT_INPUTS[name]
+        reads: list[str] = []
+        if crates:
+            if in_workspace:
+                for package in cargo_loaded_packages(repo_root):
+                    reads.extend(cargo_package_load_reads(repo_root, package))
+            for crate in cargo_build_closure(repo_root, crates):
+                if cargo_build_targets(repo_root, crate)[0] is not None:
+                    reads.append(f"{crate}/**")
+        built = built_inputs(repo_root, name)
+        trees = [g for g in built + reads if g.endswith("/**")]
+        # A listing is given by a tree that holds the directory's entries,
+        # which is a tree that matches a name inside it.
+        covering = [(t, glob_to_regex(t)) for t in trees]
+        _READS_CACHE[key] = [
+            p for p in dict.fromkeys(reads)
+            if p not in built and not any(
+                t != p and r.match(f"{p}x" if p.endswith("/") else p)
+                for t, r in covering)]
+    return list(_READS_CACHE[key])
+
+
+def gate_triggers(repo_root: Path, slugs=None) -> dict[str, list[str]]:
+    """Each gate's trigger globs, derived from its workflow and its own lists;
+    those of `slugs` alone when it is given.
+
+    A gate's globs are derived from its own entry and nothing else, so asking
+    for one gate reads its workflows, its builds and its ledgers and no other
+    gate's. The submodule preflight asks for the gate it runs alone, because a
+    narrowed unit's copy holds that gate's inputs and no other's: deriving
+    every gate's there read every workflow and ledger config of the tree, and
+    each read outside the inputs is one bx calls "could not measure"
+    (`bx --checks prepush --learn forge-c11`, 2026-11-24).
 
     `narrows` is the one case where a gate does not inherit its workflow's
     trigger. A workflow with no `paths:` filter is telling CI "run this on
@@ -4123,6 +4277,8 @@ def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
     """
     triggers: dict[str, list[str]] = {}
     for slug, spec in GATES.items():
+        if slugs is not None and slug not in slugs:
+            continue
         globs: list[str] = list(spec.get("local", []))
         for wf in spec.get("workflows", []):
             wf_globs = workflow_paths(repo_root, wf)
@@ -4146,6 +4302,17 @@ def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
                          or ["**"])
         triggers[slug] = list(dict.fromkeys(globs))
     return triggers
+
+
+def gate_reads(repo_root: Path, slugs=None) -> dict[str, list[str]]:
+    """What each gate's run reads that does not select it, sorted: for each
+    shared build it names (`builds`), `built_reads`. Those of `slugs` alone
+    when it is given. A gate keyed on its triggers is keyed on these too
+    (`gate_inputs`); see "What a build reads that does not select it"."""
+    return {slug: sorted({p for built in spec.get("builds", [])
+                          for p in built_reads(repo_root, built)})
+            for slug, spec in GATES.items()
+            if slugs is None or slug in slugs}
 
 
 def run_order(slugs, table=None) -> list[str]:
@@ -4773,39 +4940,51 @@ def submodules_reached(patterns, paths) -> list[str]:
 
 
 
-def gate_inputs(slug, table=None, triggers=None):
+def gate_inputs(slug, table=None, triggers=None, reads=None):
     """What `slug`'s OWN script reads, as its key names it: `None` for the
     whole tracked tree, or a sorted list of patterns. A declared list is
     itself; `INPUTS_ARE_TRIGGERS` is the gate's trigger globs from
     `triggers` (`gate_triggers`), which a caller computes once per plan,
-    and the listing patterns in its `lists` (a directory the script lists,
-    whose names bx keys and whose contents it does not: bx RFC 0020, 4.2).
-    A listing is no trigger: a name new in such a directory is selected by
-    the glob that matches it, or reads nothing the verdict depends on."""
+    the listing patterns in its `lists` (a directory the script lists,
+    whose names bx keys and whose contents it does not: bx RFC 0020, 4.2),
+    and what the builds it names read without selecting it, from `reads`
+    (`gate_reads`). Neither a listing nor such a read is a trigger: a name
+    new in such a directory is selected by the glob that matches it, or
+    reads nothing the verdict depends on.
+
+    A gate keyed on its triggers that names a build and is given no `reads`
+    is refused, as one given no `triggers` is: its key would miss what its
+    build reads."""
     table = GATES if table is None else table
     own = table[slug].get("inputs")
     if own != INPUTS_ARE_TRIGGERS:
         return own
     if triggers is None:
         raise ValueError(f"{slug} is keyed on its triggers and none were given")
+    if table[slug].get("builds") and (reads is None or slug not in reads):
+        raise ValueError(f"{slug} is keyed on its triggers and builds "
+                         f"{table[slug]['builds']}, and what those read was "
+                         f"not given")
     return sorted(dict.fromkeys(list(triggers[slug])
-                                + list(table[slug].get("lists", []))))
+                                + list(table[slug].get("lists", []))
+                                + list((reads or {}).get(slug, []))))
 
 
-def unit_inputs(closure, table=None, triggers=None):
+def unit_inputs(closure, table=None, triggers=None, reads=None):
     """The input patterns of a unit that runs every gate in `closure`.
 
     `None`, the whole tracked tree, as soon as one of them reads the whole
     tree: a key narrower than what the unit reads would let a pass outlive
     a change to the part left out. Otherwise the union of their patterns
-    (`gate_inputs`, with `triggers` for a gate keyed on them), of
+    (`gate_inputs`, with `triggers` and `reads` for a gate keyed on its
+    triggers), of
     `RUNNER_INPUTS`, and of each gate's script and mirrored workflows,
     sorted so that one closure always yields one key.
     """
     table = GATES if table is None else table
     patterns: set[str] = set(RUNNER_INPUTS)
     for slug in closure:
-        own = gate_inputs(slug, table, triggers)
+        own = gate_inputs(slug, table, triggers, reads)
         if own is None:
             return None
         patterns.update(own)
@@ -4869,7 +5048,7 @@ def unit_gate(name: str) -> str:
 
 def plan_units(selected, rust=None, tree_is_head=True, table=None,
                head=None, landing=False, changes=(), shards=None,
-               triggers=None) -> list[dict]:
+               triggers=None, reads=None) -> list[dict]:
     """The bx check units (bx RFC 0004, section 6) that verify `selected`.
 
     `selected` is a set the registry already chose: `select` for a change,
@@ -4919,8 +5098,9 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     verdict may be kept"), and the flag is in the key, so a pass kept from a
     landing is never handed to a run that could have skipped, or back.
 
-    A GATE KEYED ON ITS TRIGGERS needs `triggers` (`gate_triggers`), which
-    the caller computes once; see `INPUTS_ARE_TRIGGERS`.
+    A GATE KEYED ON ITS TRIGGERS needs `triggers` (`gate_triggers`) and, when
+    it names a build, `reads` (`gate_reads`), which the caller computes once;
+    see `INPUTS_ARE_TRIGGERS`.
 
     A GATE IN SHARDS IS N UNITS. `shards` maps a slug to its count
     (`shard_count`); a gate counted above one is a unit per part, named and
@@ -4967,7 +5147,7 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
                 argv += ["--change-set", change]
         count = (shards or {}).get(slug, 1)
         cost = sum(table[s].get("cost_s") or 0 for s in closure)
-        inputs = unit_inputs(closure, table, triggers)
+        inputs = unit_inputs(closure, table, triggers, reads)
         for part in range(1, count + 1):
             name = slug if count == 1 else f"{slug}-shard-{part}-of-{count}"
             own = argv + ([] if count == 1 else ["--shard", f"{part}/{count}"])
@@ -5860,9 +6040,10 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
     kind = {slug: asks(slug) for slug in GATES}
     lines = {}
     triggers = gate_triggers(repo_root)
+    reads = gate_reads(repo_root)
     for slug in GATES:
         unit = plan_units({slug}, rust=pins.get("SCE_RUST_RELEASE", "0.0.0"),
-                          head="0" * 40, triggers=triggers)
+                          head="0" * 40, triggers=triggers, reads=reads)
         lines[slug] = " ".join(unit[0]["argv"]) if unit else ""
 
     def named(name: str, line: str) -> bool:
@@ -6106,9 +6287,10 @@ def go_toolchain_failures(repo_root: Path, tables=None, actions=None,
         failures.append(f"scripts/gates/{slug}.sh runs go and GO_GATES does not "
                         f"name it, so needed_by is held to nothing for it")
     triggers = gate_triggers(repo_root)
+    reads = gate_reads(repo_root)
     for slug in sorted(GATES):
         unit = plan_units({slug}, rust="0.0.0", head="0" * 40,
-                          triggers=triggers)
+                          triggers=triggers, reads=reads)
         line = " ".join(unit[0]["argv"]) if unit else ""
         needs = bool(({slug} | transitive_deps(slug)) & set(GO_GATES))
         if needs and not named(line):
@@ -8062,6 +8244,82 @@ def self_test(repo_root: Path) -> int:
                         f"`{name}` compiles it, but only sce-build's reads are "
                         f"derived (the generator witness); name what it reads")
 
+    # what-a-build-reads-without-selecting-it. Read off the manifests, as the
+    # trigger half is, and held to what `bx --checks prepush --learn forge-c11`
+    # read (2026-11-24): a member that is not compiled is looked at for its
+    # target roots and listed for its tests, a build script named by
+    # `[package] build` is not looked for, one left to discovery is, and the
+    # generator crate, whose build script the build runs, is read whole. None
+    # of it selects: the triggers of the gate that builds the generator hold
+    # none of it, its key holds all of it.
+    cases += 1
+    generator_reads = built_reads(repo_root, "sce-codegen")
+    for want in ("sce-build/**", "sce-revision/src/lib.rs", "sce-specs/src/bin/",
+                 "sce-specs/tests/", "backends/rust/scenarios/build.rs",
+                 "backends/rust/runtime/tests/", "tests/server/src/main.rs"):
+        if want not in generator_reads:
+            failures.append(
+                f"build-reads: what a build of the generator reads beside what "
+                f"it compiles does not hold {want!r}, which cargo reads to load "
+                f"the workspace or to run the crate's build script")
+    for unread in ("backends/rust/deploy-conformance/build.rs",
+                   "sce-revision/tests/the_cases_the_python_gives.rs"):
+        if any(glob_to_regex(g).match(unread) for g in generator_reads
+               if not g.endswith("/")):
+            failures.append(
+                f"build-reads: what a build of the generator reads holds "
+                f"{unread!r}, which cargo neither looks for nor compiles there")
+    if built_reads(repo_root, "forge-runtime-rust"):
+        failures.append(
+            f"build-reads: the forge runtime built from a crate of a gate's own "
+            f"reads {built_reads(repo_root, 'forge-runtime-rust')} beside what it "
+            f"compiles, and `bx --checks prepush --learn codec-clippy` read "
+            f"nothing there")
+    building_triggers = [glob_to_regex(g)
+                         for g in gate_triggers(repo_root)["codegen-build"]]
+    for read in ("sce-revision/src/lib.rs", "sce-build/tests/common/executable.rs"):
+        if any(p.match(read) for p in building_triggers):
+            failures.append(
+                f"build-reads: `codegen-build` is selected by {read!r}, which "
+                f"its build reads and does not compile")
+    if GATES["codegen-build"].get("inputs") == INPUTS_ARE_TRIGGERS:
+        building_key = gate_inputs(
+            "codegen-build",
+            triggers=gate_triggers(repo_root, ["codegen-build"]),
+            reads=gate_reads(repo_root, ["codegen-build"]))
+        for read in generator_reads:
+            if read not in building_key:
+                failures.append(
+                    f"build-reads: `codegen-build` is keyed on its triggers and "
+                    f"its key does not hold {read!r}, which its build reads")
+
+    # the-preflight-derives-the-gate-it-runs-alone. A narrowed unit's copy
+    # holds that gate's inputs and no other's, so the submodule preflight
+    # (scripts/lib/require_submodules.sh) derives the triggers of the gate it
+    # runs and of no other: every gate's read every workflow and ledger
+    # config, which `bx --checks prepush --learn forge-c11` (2026-11-24) found
+    # outside its inputs. Asked of the derivation and of the call.
+    cases += 1
+    alone = gate_triggers(repo_root, ["forge-c11"])
+    if set(alone) != {"forge-c11"} \
+            or alone["forge-c11"] != gate_triggers(repo_root)["forge-c11"]:
+        failures.append(
+            f"preflight: the triggers of forge-c11 alone read as "
+            f"{sorted(alone)}, and are its entry of every gate's")
+    if set(gate_reads(repo_root, ["codegen-build"])) != {"codegen-build"}:
+        failures.append("preflight: what the builds of codegen-build alone read "
+                        "was derived for other gates too")
+    try:
+        preflight = (repo_root / "scripts" / "lib" / "require_submodules.sh") \
+            .read_text(encoding="utf-8")
+    except OSError:
+        preflight = ""
+    calls = re.findall(r'mod\["(gate_triggers|gate_reads)"\]\(([^)]*)\)', preflight)
+    if not calls or any("[slug]" not in args for _, args in calls):
+        failures.append(
+            f"preflight: scripts/lib/require_submodules.sh derives {calls}; it "
+            f"asks gate_triggers and gate_reads for the gate it runs alone")
+
     # a-workflow-that-follows-the-generator-holds-its-build. A workflow that
     # starts for every source of the generator (`sce-build/src/**`) but not for
     # the rest of what cargo reads to build it (its manifest, its build script,
@@ -8222,8 +8480,9 @@ def self_test(repo_root: Path) -> int:
             "submodules: .gitmodules records none, so the check below read "
             "nothing; third_party/ holds four")
     triggers_of_inputs = gate_triggers(repo_root)
+    reads_of_inputs = gate_reads(repo_root)
     for slug, spec in sorted(GATES.items()):
-        own = gate_inputs(slug, triggers=triggers_of_inputs)
+        own = gate_inputs(slug, triggers=triggers_of_inputs, reads=reads_of_inputs)
         if own is None:
             continue
         for sub in submodules_reached(own, submodules_now):
@@ -8389,7 +8648,7 @@ def self_test(repo_root: Path) -> int:
         counts = {s: shard_count(repo_root, s) for s in selection}
         units = plan_units(set(selection), rust="1.0.0", head=head,
                            landing=landing, shards=counts,
-                           triggers=triggers_of_inputs)
+                           triggers=triggers_of_inputs, reads=reads_of_inputs)
         names = [u["name"] for u in units]
         parts: dict[str, list[int]] = {}
         if len(names) != len(set(names)):
@@ -8540,6 +8799,30 @@ def self_test(repo_root: Path) -> int:
         plan_units({"by-triggers"}, rust="1.0.0", table=fixture)
         failures.append("plan-fixture: a gate keyed on its triggers was planned "
                         "with no triggers given, so its key named nothing")
+    except ValueError:
+        pass
+    # a-gate-keyed-on-its-triggers-is-keyed-on-what-its-build-reads: a gate
+    # that names a build is keyed on what the build reads without selecting
+    # it (`gate_reads`) as well, and is refused a plan that was not given it.
+    cases += 1
+    building = {"building": dict(fixture["by-triggers"], builds=["sce-codegen"])}
+    built_unit = plan_units({"building"}, rust="1.0.0", table=building,
+                            triggers={"building": ["sce-build/src/**"]},
+                            reads={"building": ["sce-revision/src/lib.rs",
+                                                "sce-specs/tests/"]})[0]
+    if built_unit.get("inputs") != sorted(
+            {"sce-build/src/**", "sce-revision/src/lib.rs", "sce-specs/tests/",
+             "scripts/gates/building.sh", *RUNNER_INPUTS}):
+        failures.append(
+            f"plan-fixture: `building` is keyed on its triggers, what its build "
+            f"reads beside them, its script and the runner's inputs, and was "
+            f"planned as {built_unit}")
+    try:
+        plan_units({"building"}, rust="1.0.0", table=building,
+                   triggers={"building": ["sce-build/src/**"]})
+        failures.append("plan-fixture: a gate keyed on its triggers that names "
+                        "a build was planned with no reads given, so its key "
+                        "missed what cargo reads to load the workspace")
     except ValueError:
         pass
     by_name = {u["name"]: u for u in plan_units(
@@ -9061,7 +9344,8 @@ def print_plan(args, repo_root: Path) -> int:
                        head=head, landing=bool(args.landing),
                        changes=tuple(args.changed_in or ()),
                        shards={s: shard_count(repo_root, s) for s in selected},
-                       triggers=gate_triggers(repo_root))
+                       triggers=gate_triggers(repo_root),
+                       reads=gate_reads(repo_root))
     print(f"  selection: {reason}", file=sys.stderr)
     for slug in off_fleet:
         print(f"  NOT JUDGED HERE, hosted CI audits it after landing: {slug} "
