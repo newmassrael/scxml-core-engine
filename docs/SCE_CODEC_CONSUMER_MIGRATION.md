@@ -3960,3 +3960,37 @@ expressions shift by a count that is not a literal below the width change. A con
   (`k >= 0`), give it an unsigned type, or declare `may-fail`. A `may-fail` one fails such a count `out-of-range`
   through the runtime's new checked shifts (Rust `sce_forge_runtime::algorithm::shl`, `shr`, `ushr`), and a
   `<sce:const>` fold that meets one refuses the build (`algorithm/const-integer-failure`).
+
+## A Rust policy's hooks are handed the engine's state apart from the policy (ADR 0131)
+
+Landing: the commits that add this section. The committed Rust machines under `sce-specs` change; a consumer
+regenerates every Rust machine it generates.
+
+- **A generated machine** is regenerated, and what a host calls is unchanged: `Engine<P>` dereferences to
+  `EngineState<P>`, which holds every method of the engine that does not need the policy, so
+  `engine.raise_external(..)`, `engine.set_clock(..)`, `engine.get_active_states()` and the rest are called on the
+  engine as before.
+- **A hand-written `StatePolicy`** fails to compile once, with `E0053` at each hook it implements that takes the
+  engine. The parameter's type is the engine's state:
+
+  | was | is |
+  |---|---|
+  | `engine: &mut Engine<Self>` | `engine: &mut EngineState<Self>` |
+
+  The hooks are `bind_current_event`, `first_enabled_transition`, `take_transition`, `execute_transition_content`,
+  `execute_entry_actions`, `execute_exit_actions`, `execute_history_default_content`, `initialize_data_model`,
+  `execute_pending_invokes`, `restart_invoke`, `resume_child`, `start_owed_child_meshes`,
+  `execute_finalize_for_child_event`, `forward_to_autoforward_children`, `tick_children`, `deliver_to_invocation` and
+  `deliver_to_child_session`. `EngineState` is `sce_rust_runtime`'s. A body is unchanged: every method a hook calls on
+  its engine is the state's.
+- **A host-run invocation is started from a hook** as `Engine::perform_host_invoke(self, engine, request)`, where it was
+  `engine.perform_host_invoke(request)`: the engine names the session that starts it by asking the policy, which the
+  hook holds as `self`.
+- **`Engine::send_to_target(policy, engine, ..)`** takes the state as `engine`, which is what a hook holds.
+- **`sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events` and `raise_done_invoke`** take
+  `&mut EngineState<P>`, which is what a hook holds.
+- **A path to a method of the state** is spelled through the state: `EngineState::raise(&mut engine, event)`, where it
+  was `Engine::raise(&mut engine, event)`. A method call (`engine.raise(event)`) is unchanged.
+- **An extension trait a consumer implements for `Engine<P>`**, as the generated `<Machine>Inject` is, is found before
+  the state's methods: a trait method with the name of a method of `EngineState` is the one `engine.<name>(..)`
+  reaches, where the engine's own method was. The state's is then spelled `EngineState::<name>(&mut engine, ..)`.
