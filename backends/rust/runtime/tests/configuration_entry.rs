@@ -148,6 +148,7 @@ impl StatePolicy for ParallelPolicy {
         entry_paths: &[],
         history: None,
         parallel: Some(&PARALLEL),
+        selection: None,
     };
     const STATES: &'static [PState] = &[
         PState::P,
@@ -357,6 +358,7 @@ impl StatePolicy for LinearPolicy {
         entry_paths: &[],
         history: None,
         parallel: None,
+        selection: None,
     };
     const STATES: &'static [LState] = &[LState::Root, LState::X1, LState::X2];
     const HISTORIES: &'static [NoHistory] = &[];

@@ -18,8 +18,9 @@
 //! its tables ([`DocumentTables`]), its states, histories, transitions and
 //! events as numbers, its configuration and history records as a run store of
 //! numbers ([`RunStoreRef`], [`RunStoreMut`]), and the running machine as one
-//! object-safe trait, [`Behaviour`]: which of a state's transitions an event
-//! enables, and what exiting a state, running a transition's content and
+//! object-safe trait, [`Behaviour`]: whether a transition's guard holds (or,
+//! for tables written by hand, which of a state's transitions an event
+//! enables), and what exiting a state, running a transition's content and
 //! entering a state DO. So a program that holds two machines holds one copy of
 //! this module. A procedure that only reads takes the store alone.
 //!
@@ -328,9 +329,24 @@ pub trait Behaviour {
 
     /// This state's first transition, in document order, that the event
     /// enables and whose guard holds; for the machine's "no event", its first
-    /// eventless transition whose guard holds. The only place a guard is
-    /// evaluated.
+    /// eventless transition whose guard holds.
+    ///
+    /// Asked only by tables written by hand, which carry no selection rows
+    /// ([`DocumentTables::selection`]): a generated machine's tables answer it
+    /// from their rows ([`DocumentTables::first_enabled`], docs/adr/0127),
+    /// and ask the machine [`guard_holds`](Self::guard_holds) instead.
     fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId>;
+
+    /// Whether the guard of `transition` holds: a written transition the
+    /// event being selected for enables, asked by the selection rows of a
+    /// generated machine's tables in the order its state's transitions are
+    /// written, until one holds (docs/adr/0127). The only place such a
+    /// machine evaluates a guard. The default holds, which is the answer for a
+    /// transition with no guard, and for every transition of a machine whose
+    /// tables carry no selection rows, which never asks.
+    fn guard_holds(&mut self, _transition: TransitionId) -> bool {
+        true
+    }
 
     /// Take one selected transition, before any state of the microstep exits:
     /// what a branch of a test component removes from the round's snapshot
@@ -660,7 +676,7 @@ pub fn select_transitions(
         // that have no event.
         let mut current = Some(atomic);
         while let Some(state) = current {
-            if let Some(found) = machine.first_enabled_transition(state, event) {
+            if let Some(found) = tables.first_enabled(state, event, machine) {
                 enabled.add_once(found);
                 break;
             }

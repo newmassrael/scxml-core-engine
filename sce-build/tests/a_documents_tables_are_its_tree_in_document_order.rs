@@ -615,6 +615,10 @@ fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables<'static> {
         parallel: tables
             .uses_parallel()
             .then_some(&sce_rust_runtime::PARALLEL),
+        // What enables a transition is not the state tree: the selection rows
+        // are held to the descriptors in
+        // `a_transitions_enabling_events_are_the_rows_its_event_enum_numbers`.
+        selection: None,
     }
 }
 

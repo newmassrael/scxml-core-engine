@@ -202,6 +202,11 @@ fn tables_of(doc: &Plain) -> &'static DocumentTables<'static> {
         default_state: StateId(0),
         null_event: EventId(0),
         error_events: &[],
+        // The machine under test answers the selection itself
+        // (`Chart::first_enabled_transition`); the rows a generated machine
+        // carries are held to such a machine in
+        // `what_enables_a_transition_is_a_row_of_its_tables`.
+        selection: None,
     };
     assert_eq!(
         tables.check(),
@@ -681,6 +686,7 @@ fn a_row_reads_back_what_it_holds_and_a_list_past_the_pool_is_refused() {
         entry_paths: &[],
         history: None,
         parallel: None,
+        selection: None,
     };
     assert_eq!(TABLES.check(), Err(TablesFault::ListOutOfRange));
 }

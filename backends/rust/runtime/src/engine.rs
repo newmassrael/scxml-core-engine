@@ -5728,9 +5728,10 @@ enum Admission<E> {
 // ════════════════════════════════════════
 // Appendix D over the generated policy
 //
-// The policy answers what only the document knows: which of a state's
-// transitions an event enables, what a transition's content is, what a
-// state's onentry and onexit do, what a history recorded. What Appendix D
+// The policy answers what only the document knows: whether a transition's
+// guard holds (which of a state's transitions an event enables is a row of
+// the document's tables, docs/adr/0127), what a transition's content is,
+// what a state's onentry and onexit do, what a history recorded. What Appendix D
 // does with those answers is `helpers::microstep`, written once for every
 // machine; `EngineHost` is how this engine hands it the policy.
 //
@@ -5817,11 +5818,19 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, '_, P> {
         self.engine.state.run_store.view_mut()
     }
 
+    // Asked only of tables written by hand: a generated machine's tables carry
+    // selection rows, which ask `guard_holds` below (docs/adr/0127).
     fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId> {
         let event_data = P::event_data(&self.current);
         self.engine.with_policy(|policy, engine| {
             policy.first_enabled_transition(state, event, event_data, engine)
         })
+    }
+
+    fn guard_holds(&mut self, transition: TransitionId) -> bool {
+        let event_data = P::event_data(&self.current);
+        self.engine
+            .with_policy(|policy, engine| policy.guard_holds(transition, event_data, engine))
     }
 
     // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1): only a policy whose document

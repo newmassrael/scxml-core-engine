@@ -124,6 +124,7 @@ impl StatePolicy for Test144Policy {
         entry_paths: &[],
         history: None,
         parallel: None,
+        selection: None,
     };
     const STATES: &'static [Test144State] = &[
         Test144State::S0,

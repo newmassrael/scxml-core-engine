@@ -41,11 +41,20 @@
 //! built, and which the row walk reads instead of computing it again
 //! (docs/adr/0125).
 //!
+//! A generated document also carries what enables each of its written
+//! transitions ([`SelectionRows`], docs/adr/0127): each state's range of
+//! written transitions, and for each transition the events its descriptor
+//! matches, as numbers of the machine's event enum. The generator computed the
+//! lists from the events that enum numbers, so the one selection
+//! ([`DocumentTables::first_enabled`]) compares numbers and asks the machine
+//! only whether a guard holds. A table written by hand carries none, and its
+//! machine answers the selection itself.
+//!
 //! `sce_build::document_tables` computes the rows from the document, and the
 //! generator writes them. A table written by hand states the same rows, and
 //! [`DocumentTables::check`] says whether they keep the rules above.
 
-use crate::helpers::microstep::{HistoryProcedures, ParallelProcedures, WalkProcedures};
+use crate::helpers::microstep::{Behaviour, HistoryProcedures, ParallelProcedures, WalkProcedures};
 
 /// A state: `<state>`, `<parallel>` or `<final>`, by its position in document
 /// order.
@@ -249,6 +258,8 @@ const _: () = assert!(core::mem::size_of::<HistoryRow>() == 4);
 const _: () = assert!(core::mem::size_of::<Target>() == 2);
 const _: () = assert!(core::mem::size_of::<EntryRow>() == 2);
 const _: () = assert!(core::mem::size_of::<EntryStep>() == 2);
+const _: () = assert!(core::mem::size_of::<TriggerRow>() == 2);
+const _: () = assert!(core::mem::size_of::<TriggerEvent>() == 2);
 
 /// The bit of a [`HistoryRow`]'s parent field that says it is deep.
 const DEEP_BIT: u16 = 1 << 15;
@@ -520,6 +531,143 @@ impl EntryStep {
     }
 }
 
+/// What enables one transition, as the selection reads it (docs/adr/0127): the
+/// position of its list of events in [`SelectionRows::trigger_events`], or
+/// [`TriggerRow::NONE`] for a transition no selection returns. That is a
+/// compound state's initial transition, a `<history>`'s default transition,
+/// the document's initial transition, and a written transition whose
+/// descriptor matches no event of the machine.
+///
+/// Transitions that the same events enable, which is every transition written
+/// for one event and every eventless one, name one list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct TriggerRow(u16);
+
+impl TriggerRow {
+    /// The row of a transition no selection returns.
+    pub const NONE: Self = Self(ABSENT);
+
+    /// The row of a transition whose events are the list at `position` of
+    /// [`SelectionRows::trigger_events`].
+    #[inline]
+    pub const fn at(position: u16) -> Self {
+        Self(position)
+    }
+
+    /// The position of its list, or `None` for a transition no selection
+    /// returns.
+    #[inline]
+    const fn position(self) -> Option<usize> {
+        match id_of(self.0) {
+            Some(position) => Some(position as usize),
+            None => None,
+        }
+    }
+}
+
+/// One entry of a list of [`SelectionRows::trigger_events`] (docs/adr/0127):
+/// the first entry of a list is its length ([`TriggerEvent::count`]), and each
+/// one after it an event that enables the transition, in ascending order of
+/// the events' numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct TriggerEvent(u16);
+
+impl TriggerEvent {
+    /// An event of a list.
+    #[inline]
+    pub const fn new(event: EventId) -> Self {
+        Self(event.0)
+    }
+
+    /// The first entry of a list: how many events follow it.
+    #[inline]
+    pub const fn count(len: u16) -> Self {
+        Self(len)
+    }
+
+    /// The event it names.
+    #[inline]
+    pub const fn event(self) -> EventId {
+        EventId(self.0)
+    }
+}
+
+/// What enables each written transition of a document, as its generator
+/// computed it (docs/adr/0127): the rows the one selection
+/// ([`DocumentTables::first_enabled`]) reads in place of a machine's own
+/// `first_enabled_transition`.
+///
+/// The written transitions are the first rows of the transitions table,
+/// grouped by source in state order and within a source in the order they are
+/// written, so a state's own transitions are one range of numbers, read from
+/// [`first_written`](Self::first_written). Each transition's
+/// [`TriggerRow`] names the events that enable it, numbered as the machine's
+/// event enum numbers them: those its event descriptor matches for a written
+/// transition with an event, the tables' [`null_event`](DocumentTables::null_event)
+/// alone for an eventless one. Nothing here says whether a guard holds: the
+/// machine answers that ([`Behaviour::guard_holds`]), so the generated code
+/// stays the one judge of which transitions are guarded.
+#[derive(Debug, Clone, Copy)]
+pub struct SelectionRows<'t> {
+    /// For each state, by [`StateId`], the number of its first written
+    /// transition, and one entry past the last state, the number of written
+    /// transitions: a state's own are the numbers from its entry up to the
+    /// next one's.
+    pub first_written: &'t [TransitionId],
+    /// For each transition, by [`TransitionId`], what enables it.
+    pub triggers: &'t [TriggerRow],
+    /// The lists the rows name, each its length ([`TriggerEvent::count`])
+    /// followed by its events in ascending order. Identical lists are held
+    /// once.
+    pub trigger_events: &'t [TriggerEvent],
+}
+
+impl SelectionRows<'_> {
+    /// The written transitions of `state`, in the order they are written, as
+    /// the range of their numbers; see [`DocumentTables::state`] for how a
+    /// missing row stops.
+    #[inline]
+    fn written(&self, state: StateId) -> core::ops::Range<u16> {
+        match (
+            self.first_written.get(state.index()),
+            self.first_written.get(state.index() + 1),
+        ) {
+            (Some(first), Some(end)) => first.0..end.0,
+            _ => row_missing(),
+        }
+    }
+
+    /// The events that enable `transition`, in ascending order; none for a
+    /// transition no selection returns.
+    pub fn events(&self, transition: TransitionId) -> &[TriggerEvent] {
+        let row = match self.triggers.get(transition.index()) {
+            Some(row) => *row,
+            None => row_missing(),
+        };
+        let Some(position) = row.position() else {
+            return &[];
+        };
+        let len = match self.trigger_events.get(position) {
+            Some(len) => usize::from(len.0),
+            None => row_missing(),
+        };
+        match self.trigger_events.get(position + 1..position + 1 + len) {
+            Some(list) => list,
+            None => row_missing(),
+        }
+    }
+
+    /// Whether `event` enables `transition`.
+    #[inline]
+    pub fn enables(&self, transition: TransitionId, event: EventId) -> bool {
+        self.events(transition)
+            .iter()
+            .any(|entry| entry.event() == event)
+    }
+}
+
 /// A document's tables, their rows borrowed for `'t`.
 ///
 /// A generated machine's rows are constants of its program,
@@ -579,6 +727,12 @@ pub struct DocumentTables<'t> {
     /// The procedures only a `<parallel>` reaches, `Some(&PARALLEL)` exactly
     /// when the document has one.
     pub parallel: Option<&'static ParallelProcedures>,
+    /// What enables each written transition (docs/adr/0127): `Some` in every
+    /// generated machine's tables, whose selection reads them
+    /// ([`first_enabled`](Self::first_enabled)); `None` in tables written by
+    /// hand, whose machine answers the selection itself
+    /// ([`Behaviour::first_enabled_transition`]).
+    pub selection: Option<SelectionRows<'t>>,
 }
 
 /// Which rule a [`DocumentTables`] breaks; [`DocumentTables::check`].
@@ -614,6 +768,13 @@ pub enum TablesFault {
     /// A transition's entry row breaks a rule of an entry path
     /// ([`DocumentTables::check`]).
     EntryRow(TransitionId),
+    /// The selection rows do not have one entry for each state and one past
+    /// the last, one row for each transition, or ranges that are the written
+    /// transitions of each state in turn (docs/adr/0127).
+    Selection,
+    /// A transition's list of events breaks a rule of the selection rows
+    /// ([`DocumentTables::check`]).
+    Triggers(TransitionId),
 }
 
 impl DocumentTables<'_> {
@@ -766,6 +927,37 @@ impl DocumentTables<'_> {
         Some((source, (transition.index() - first) as u32))
     }
 
+    /// Appendix D's selectTransitions, the part one state answers: the first of
+    /// `state`'s own transitions, in the order they are written, that `event`
+    /// enables and whose guard holds. The tables'
+    /// [`null_event`](Self::null_event) asks for eventless transitions.
+    ///
+    /// Tables that carry [`selection`](Self::selection) rows answer it here,
+    /// for every machine at once (docs/adr/0127): the state's written
+    /// transitions are a range, each one's events a short list of numbers, and
+    /// `machine` is asked [`Behaviour::guard_holds`] only for a transition
+    /// `event` enables, in the order they are written, until one holds. So a
+    /// guard runs exactly where the machine's own selection would have run it,
+    /// and a transition that `event` does not enable runs none. Tables written
+    /// by hand carry no rows, and the machine answers
+    /// ([`Behaviour::first_enabled_transition`]).
+    pub fn first_enabled(
+        &self,
+        state: StateId,
+        event: EventId,
+        machine: &mut dyn Behaviour,
+    ) -> Option<TransitionId> {
+        let Some(selection) = &self.selection else {
+            return machine.first_enabled_transition(state, event);
+        };
+        selection
+            .written(state)
+            .map(TransitionId)
+            .find(|&transition| {
+                selection.enables(transition, event) && machine.guard_holds(transition)
+            })
+    }
+
     /// Whether `event` is an `error.*` event ([`DocumentTables::error_events`]).
     #[inline]
     pub fn is_error_event(&self, event: EventId) -> bool {
@@ -784,8 +976,10 @@ impl DocumentTables<'_> {
     /// ids its children's subtrees fill, every list of targets inside the pool,
     /// an initial transition for exactly the compound states, every id a row
     /// names a row of its table, the procedures of each feature the
-    /// document uses carried, and for the row walk one entry row for each
-    /// transition that keeps the rules of an entry path (docs/adr/0125). The
+    /// document uses carried, for the row walk one entry row for each
+    /// transition that keeps the rules of an entry path (docs/adr/0125), and
+    /// selection rows whose ranges are each state's written transitions and
+    /// whose lists keep the rules of [`SelectionRows`] (docs/adr/0127). The
     /// procedures assume all of them; a debug build checks a machine's tables
     /// when it is built.
     pub fn check(&self) -> Result<(), TablesFault> {
@@ -890,7 +1084,70 @@ impl DocumentTables<'_> {
         {
             return Err(TablesFault::ProceduresMissing);
         }
-        self.check_entry_rows(has_parallel)
+        self.check_entry_rows(has_parallel)?;
+        self.check_selection()
+    }
+
+    /// The part of [`check`](Self::check) the selection rows answer
+    /// (docs/adr/0127): one entry for each state and one past the last, which
+    /// start at the first row and never go back, so the ranges cover the
+    /// written transitions once, each in the range of its own source; one row
+    /// for each transition, every list inside the pool; and a list only for a
+    /// written transition, never empty, its events ascending, none past the
+    /// null event, and the null event only alone, which is an eventless
+    /// transition's list.
+    fn check_selection(&self) -> Result<(), TablesFault> {
+        let Some(selection) = &self.selection else {
+            return Ok(());
+        };
+        if selection.trigger_events.len() > MAX_IDS {
+            return Err(TablesFault::TooMany);
+        }
+        if selection.first_written.len() != self.states.len() + 1
+            || selection.triggers.len() != self.transitions.len()
+            || selection.first_written.first() != Some(&TransitionId(0))
+        {
+            return Err(TablesFault::Selection);
+        }
+        for (index, range) in selection.first_written.windows(2).enumerate() {
+            let state = StateId(index as u16);
+            if range[0] > range[1] || range[1].index() > self.transitions.len() {
+                return Err(TablesFault::Selection);
+            }
+            let own = self.transitions[range[0].index()..range[1].index()]
+                .iter()
+                .all(|row| row.source() == Some(state));
+            if !own {
+                return Err(TablesFault::Selection);
+            }
+        }
+        // Past the last state's range are the rows no selection returns: the
+        // initial transitions, the history defaults and the document's own.
+        let written = selection.first_written.last().map_or(0, |end| end.index());
+        for (index, row) in selection.triggers.iter().enumerate() {
+            let transition = TransitionId(index as u16);
+            let Some(position) = row.position() else {
+                continue;
+            };
+            let list = selection.trigger_events.get(position).and_then(|len| {
+                selection
+                    .trigger_events
+                    .get(position + 1..position + 1 + usize::from(len.0))
+            });
+            let holds = list.is_some_and(|list| {
+                let ascending = list
+                    .windows(2)
+                    .all(|pair| pair[0].event() < pair[1].event());
+                let numbered = list.iter().all(|entry| entry.event() <= self.null_event);
+                let eventless_alone =
+                    list.len() == 1 || list.iter().all(|entry| entry.event() != self.null_event);
+                !list.is_empty() && ascending && numbered && eventless_alone
+            });
+            if index >= written || !holds {
+                return Err(TablesFault::Triggers(transition));
+            }
+        }
+        Ok(())
     }
 
     /// The part of [`check`](Self::check) the entry rows answer

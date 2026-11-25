@@ -193,6 +193,7 @@ impl CoreRows {
             entry_paths: &[],
             history: None,
             parallel: None,
+            selection: None,
         }
     }
 

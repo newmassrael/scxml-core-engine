@@ -31,8 +31,8 @@
 //! - **Static methods** (`is_final_state()`, `get_event_name()`, etc.) mirror
 //!   C++ `constexpr static` methods. They encode compile-time SCXML document
 //!   structure (state hierarchy, initial and history targets, document order).
-//! - **Instance methods** (`execute_entry_actions()`,
-//!   `first_enabled_transition()`, etc.) mirror C++ non-static policy methods.
+//! - **Instance methods** (`execute_entry_actions()`, `guard_holds()`,
+//!   etc.) mirror C++ non-static policy methods.
 //!   They hold mutable datamodel state and read/write through `&mut self`.
 //!
 //! ## Optional Features
@@ -621,9 +621,8 @@ pub trait StatePolicy: Sized + 'static {
     /// Sentinel event value for eventless transition dispatch (§scxml-3.13).
     ///
     /// Generated code produces an `Event::Null` variant. Its number is the
-    /// tables' [`null_event`](DocumentTables::null_event), which the engine
-    /// passes to [`first_enabled_transition`](StatePolicy::first_enabled_transition)
-    /// when it selects eventless transitions.
+    /// tables' [`null_event`](DocumentTables::null_event), the event the
+    /// engine selects eventless transitions with.
     fn null_event() -> Self::Event;
 
     // ──────────────────────────────────────────────
@@ -663,25 +662,59 @@ pub trait StatePolicy: Sized + 'static {
     /// `_event` has nothing to bind.
     fn bind_current_event(&mut self, _event: EventId, _engine: &mut EngineState<Self>) {}
 
-    /// Appendix D selectTransitions, the half only the document can answer:
-    /// the first of `state`'s own transitions, in document order, that `event`
-    /// enables and whose guard holds. The tables'
+    /// Appendix D selectTransitions, the half only the document can answer,
+    /// for tables written by hand: the first of `state`'s own transitions, in
+    /// document order, that `event` enables and whose guard holds. The tables'
     /// [`null_event`](DocumentTables::null_event) asks for eventless
     /// transitions.
     ///
-    /// Ports C++ `firstEnabledTransition(State, Event, Engine&)`. The only
-    /// place a guard is evaluated. The engine walks the atomic states and
-    /// their ancestors and keeps the ordered set. The state, the event and the
-    /// answer are numbers of [`TABLES`](StatePolicy::TABLES): the answer is
-    /// the transition's row, which holds its source, targets and type.
-    /// `event_data` is `event`'s data, which a guard reads as `_event.data`.
+    /// Ports C++ `firstEnabledTransition(State, Event, Engine&)`. The engine
+    /// walks the atomic states and their ancestors and keeps the ordered set.
+    /// The state, the event and the answer are numbers of
+    /// [`TABLES`](StatePolicy::TABLES): the answer is the transition's row,
+    /// which holds its source, targets and type. `event_data` is `event`'s
+    /// data, which a guard reads as `_event.data`.
+    ///
+    /// Asked only when [`TABLES`](StatePolicy::TABLES) carry no
+    /// [`selection`](DocumentTables::selection) rows. A generated machine's
+    /// tables carry them, and one selection reads them for every machine of a
+    /// program, asking the policy [`guard_holds`](StatePolicy::guard_holds)
+    /// instead (docs/adr/0127), so a generated policy does not write this
+    /// method. A policy whose tables carry no rows writes it; one that does not
+    /// stops at its first selection, with a message that says so.
     fn first_enabled_transition(
         &mut self,
-        state: StateId,
-        event: EventId,
-        event_data: Self::EventData<'_>,
-        engine: &mut EngineState<Self>,
-    ) -> Option<TransitionId>;
+        _state: StateId,
+        _event: EventId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut EngineState<Self>,
+    ) -> Option<TransitionId> {
+        selection_unanswered()
+    }
+
+    /// Whether the guard of `transition` holds: a written transition of the
+    /// document that the event being selected for enables.
+    ///
+    /// The selection rows of [`TABLES`](StatePolicy::TABLES) ask it for each
+    /// transition the event enables, in the order its state's transitions are
+    /// written, until one holds, after
+    /// [`bind_current_event`](StatePolicy::bind_current_event) bound the
+    /// event, and never for a transition the event does not enable
+    /// (docs/adr/0127). So it is the only place a generated machine evaluates
+    /// a guard, and a guard runs exactly where the document's own selection
+    /// would have run it. `event_data` is the event's data, which a guard
+    /// reads as `_event.data`.
+    ///
+    /// The default holds: a document with no guard writes none, and the
+    /// policy of tables with no selection rows is never asked.
+    fn guard_holds(
+        &mut self,
+        _transition: TransitionId,
+        _event_data: Self::EventData<'_>,
+        _engine: &mut EngineState<Self>,
+    ) -> bool {
+        true
+    }
 
     /// Whether a transition of the document takes something before the
     /// microstep exits anything ([`take_transition`](StatePolicy::take_transition)):
@@ -709,8 +742,8 @@ pub trait StatePolicy: Sized + 'static {
     /// Execute one transition's executable content (§scxml-3.13 — run between
     /// the microstep's exits and its entries).
     ///
-    /// `transition` is one `first_enabled_transition` reported, and one whose
-    /// row says it has content. Ports C++ `executeTransitionActions(State, int,
+    /// `transition` is one the selection returned, and one whose row says it
+    /// has content. Ports C++ `executeTransitionActions(State, int,
     /// Engine&)`. `event_data` is the data of the event that selected it.
     fn execute_transition_content(
         &mut self,
@@ -1180,4 +1213,17 @@ pub trait StatePolicy: Sized + 'static {
     /// Ports C++ `EventMetadataHelper::clearPolicyMetadata`. Called by the engine
     /// after each event dispatch cycle to reset metadata for the next event.
     fn clear_event_metadata(&mut self) {}
+}
+
+/// A policy asked [`StatePolicy::first_enabled_transition`] when its tables
+/// carry no selection rows and it does not write the method: a policy written
+/// by hand that is missing a method its tables need. No formatted message and
+/// no argument, for the reason a table's missing row has none.
+#[cold]
+#[inline(never)]
+fn selection_unanswered() -> ! {
+    panic!(
+        "a policy whose tables carry no selection rows answers first_enabled_transition itself, \
+         and this one does not"
+    )
 }

@@ -139,6 +139,7 @@ impl StatePolicy for MockPolicy {
         entry_paths: &[],
         history: None,
         parallel: None,
+        selection: None,
     };
     const STATES: &'static [St] = &[St::S0];
     const HISTORIES: &'static [NoHistory] = &[];

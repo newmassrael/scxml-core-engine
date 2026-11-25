@@ -107,6 +107,7 @@ impl StatePolicy for LtPolicy {
         entry_paths: &[],
         history: None,
         parallel: None,
+        selection: None,
     };
     const STATES: &'static [LtState] = &[LtState::Idle, LtState::Open, LtState::After];
     const HISTORIES: &'static [NoHistory] = &[];
