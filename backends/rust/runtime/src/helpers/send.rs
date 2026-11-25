@@ -304,10 +304,11 @@ pub const MAX_DELAY_MS: u64 = i64::MAX as u64;
 /// the caller raises the argument error rather than choosing a wait.
 pub fn parse_delay_to_ms(s: &str) -> Option<u64> {
     let s = s.trim_matches(|c: char| c.is_ascii_whitespace()).as_bytes();
-    let (number, scale) = match strip_suffix_ignore_case(s, b"ms") {
-        Some(n) => (n, 1u64),
-        None => (strip_suffix_ignore_case(s, b"s")?, 1000u64),
+    let (number, unit) = match strip_suffix_ignore_case(s, b"ms") {
+        Some(n) => (n, DelayUnit::Milliseconds),
+        None => (strip_suffix_ignore_case(s, b"s")?, DelayUnit::Seconds),
     };
+    let scale = unit.milliseconds();
     let (whole, fraction) = match number.iter().position(|&b| b == b'.') {
         Some(dot) => (&number[..dot], Some(&number[dot + 1..])),
         None => (number, None),
@@ -344,6 +345,147 @@ fn strip_suffix_ignore_case<'a>(text: &'a [u8], suffix: &[u8]) -> Option<&'a [u8
     text[split..]
         .eq_ignore_ascii_case(suffix)
         .then(|| &text[..split])
+}
+
+/// The unit a CSS2 time is written in, and the milliseconds one of it is.
+///
+/// The one table of units: [`parse_delay_to_ms`] reads the suffix of a text
+/// by it and [`delay_of_count`] scales a count by it, so the two readings of a
+/// delay cannot differ in what a unit is worth (docs/adr/0134).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelayUnit {
+    /// `ms`, either case.
+    Milliseconds,
+    /// `s`, either case.
+    Seconds,
+}
+
+impl DelayUnit {
+    /// The milliseconds one of this unit is.
+    pub const fn milliseconds(self) -> u64 {
+        match self {
+            Self::Milliseconds => 1,
+            Self::Seconds => 1000,
+        }
+    }
+}
+
+/// The delay of a `delayexpr` that joins an integer to the unit
+/// it counts (`wait + 'ms'`), computed from the integer with no text in
+/// between (docs/adr/0134, decision 1).
+///
+/// The answer is [`parse_delay_to_ms`]'s of the text the join spells, for
+/// every value of every integer type: a negative count is a text with a sign,
+/// which is no time, and is `None` here because it is no `u64`; a count whose
+/// milliseconds do not fit a `u64`, or exceed [`MAX_DELAY_MS`], is `None` as
+/// the text's are. `None` is the argument error the caller raises, as it is
+/// for the text. `tests/durations/count_unit.json` names the unit literals a
+/// count may be joined to, and the tests below hold the two readings equal
+/// over each of them.
+pub fn delay_of_count<T: TryInto<u64>>(count: T, unit: DelayUnit) -> Option<u64> {
+    count
+        .try_into()
+        .ok()?
+        .checked_mul(unit.milliseconds())
+        .filter(|ms| *ms <= MAX_DELAY_MS)
+}
+
+/// The text of a `<send>`'s delay, written where the send runs from the parts
+/// its `delayexpr` joins, into `N` bytes held where the value is: on the
+/// stack of the send that reads it, with no heap (docs/adr/0134, decision 2).
+///
+/// The build makes `N` the most bytes the joined text can take, from what the
+/// data model declares of each part (a string variable's `sce:capacity`, a
+/// literal's bytes, the longest decimal text of an integer's type), so every
+/// text the expression computes fits. A text that would not fit, which that
+/// sizing rules out, reads as no text at all and never as a cut one: an empty
+/// text is no time to [`parse_delay_to_ms`], the argument error, where a cut
+/// text could read as a shorter delay.
+#[derive(Debug, Clone)]
+pub struct DelayText<const N: usize> {
+    bytes: [u8; N],
+    len: usize,
+    overflowed: bool,
+}
+
+impl<const N: usize> DelayText<N> {
+    /// The empty text.
+    pub const fn new() -> Self {
+        Self {
+            bytes: [0; N],
+            len: 0,
+            overflowed: false,
+        }
+    }
+
+    /// This text followed by the text of `part`: a string as itself and an
+    /// integer as its decimal digits, as [`core::fmt::Display`] writes each,
+    /// which is the text ECMAScript gives each in a join.
+    #[must_use]
+    pub fn with<T: core::fmt::Display + ?Sized>(mut self, part: &T) -> Self {
+        if core::fmt::Write::write_fmt(&mut self, format_args!("{part}")).is_err() {
+            self.overflowed = true;
+        }
+        self
+    }
+
+    /// The text, or the empty text when a part did not fit.
+    pub fn as_str(&self) -> &str {
+        if self.overflowed {
+            return "";
+        }
+        self.bytes
+            .get(..self.len)
+            .and_then(|written| core::str::from_utf8(written).ok())
+            .unwrap_or("")
+    }
+}
+
+impl<const N: usize> Default for DelayText<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Each write is a whole `str` or nothing, so the bytes written are always
+/// whole UTF-8 text.
+impl<const N: usize> core::fmt::Write for DelayText<N> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let end = self
+            .len
+            .checked_add(s.len())
+            .filter(|end| *end <= N)
+            .ok_or(core::fmt::Error)?;
+        let slot = self.bytes.get_mut(self.len..end).ok_or(core::fmt::Error)?;
+        slot.copy_from_slice(s.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
+
+impl<const N: usize> core::ops::Deref for DelayText<N> {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl<const N: usize> core::fmt::Display for DelayText<N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The text of a `<send>`'s delay joined from its parts into a
+/// [`DelayText`](crate::helpers::send::DelayText) of `capacity` bytes, each
+/// part borrowed and written in order: what a generated machine writes for a
+/// `delayexpr` that joins texts (docs/adr/0134, decision 2).
+#[macro_export]
+macro_rules! sce_delay_text {
+    ($capacity:literal $(, $part:expr)* $(,)?) => {
+        $crate::helpers::send::DelayText::<$capacity>::new()$(.with(&$part))*
+    };
 }
 
 #[cfg(test)]
@@ -464,5 +606,186 @@ mod duration_table {
             };
             assert_eq!(parse_delay_to_ms(text), want, "{name}: {text:?}");
         }
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod a_count_and_its_text {
+    use super::{delay_of_count, parse_delay_to_ms, DelayText, DelayUnit, MAX_DELAY_MS};
+    use crate::json::{parse, Value};
+
+    /// tests/durations/count_unit.json: each literal a count may be joined to,
+    /// with the unit the build reads it as, and those it reads as none.
+    fn count_units() -> Vec<(String, Option<DelayUnit>)> {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/durations/count_unit.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared count-unit table");
+        let Value::Object(members) = parse(&table).expect("the table is JSON") else {
+            panic!("the table is an object");
+        };
+        let Some((_, Value::Array(cases))) = members.iter().find(|(key, _)| key == "cases") else {
+            panic!("the table has cases");
+        };
+        cases
+            .iter()
+            .map(|case| {
+                let Value::Object(fields) = case else {
+                    panic!("a case is an object");
+                };
+                let field = |name: &str| fields.iter().find(|(key, _)| key == name).map(|(_, v)| v);
+                let Some(Value::Text(literal)) = field("literal") else {
+                    panic!("a case's literal is text");
+                };
+                let unit = match field("unit") {
+                    Some(Value::Text(unit)) if unit == "ms" => Some(DelayUnit::Milliseconds),
+                    Some(Value::Text(unit)) if unit == "s" => Some(DelayUnit::Seconds),
+                    Some(Value::Null) => None,
+                    other => panic!("{literal:?}: unit is \"ms\", \"s\" or null, got {other:?}"),
+                };
+                (literal.clone(), unit)
+            })
+            .collect()
+    }
+
+    /// The literals of the table the build reads as a unit, each with it.
+    fn unit_literals() -> Vec<(String, DelayUnit)> {
+        let units: Vec<(String, DelayUnit)> = count_units()
+            .into_iter()
+            .filter_map(|(literal, unit)| unit.map(|unit| (literal, unit)))
+            .collect();
+        assert!(
+            units
+                .iter()
+                .any(|(_, unit)| *unit == DelayUnit::Milliseconds)
+                && units.iter().any(|(_, unit)| *unit == DelayUnit::Seconds),
+            "the table names a literal of each unit: {units:?}"
+        );
+        units
+    }
+
+    /// The count `count` joined to each literal, read both ways: the
+    /// milliseconds computed from the count, and the text the join spells read
+    /// by the one reader. Equal, or the count's reading is not the text's.
+    fn both_readings_agree<T>(count: T, literals: &[(String, DelayUnit)])
+    where
+        T: Copy + core::fmt::Display + TryInto<u64>,
+    {
+        for (literal, unit) in literals {
+            let text = format!("{count}{literal}");
+            assert_eq!(
+                delay_of_count(count, *unit),
+                parse_delay_to_ms(&text),
+                "{text:?}"
+            );
+        }
+    }
+
+    /// Every value of the type from `min` to `max`.
+    fn every_value<T>(min: T, max: T, literals: &[(String, DelayUnit)])
+    where
+        T: Copy + core::fmt::Display + TryInto<u64> + TryFrom<i128> + Into<i128>,
+    {
+        for wide in min.into()..=max.into() {
+            let Ok(count) = T::try_from(wide) else {
+                panic!("{wide} is a value of the type");
+            };
+            both_readings_agree(count, literals);
+        }
+    }
+
+    /// The values of the type at each edge either reading has: the type's
+    /// own ends, a sign, zero, the count of seconds whose milliseconds pass
+    /// [`MAX_DELAY_MS`], and the count of milliseconds that passes it.
+    fn every_edge<T>(min: T, max: T, literals: &[(String, DelayUnit)])
+    where
+        T: Copy + core::fmt::Display + TryInto<u64> + TryFrom<i128> + Into<i128>,
+    {
+        let (lo, hi): (i128, i128) = (min.into(), max.into());
+        let seconds = i128::from(MAX_DELAY_MS / 1000);
+        let most = i128::from(MAX_DELAY_MS);
+        let edges = [
+            lo,
+            lo + 1,
+            -1001,
+            -1000,
+            -1,
+            0,
+            1,
+            2,
+            999,
+            1000,
+            1001,
+            seconds - 1,
+            seconds,
+            seconds + 1,
+            most - 1,
+            most,
+            most + 1,
+            hi - 1,
+            hi,
+        ];
+        for edge in edges {
+            if let Ok(count) = T::try_from(edge) {
+                both_readings_agree(count, literals);
+            }
+        }
+    }
+
+    /// docs/adr/0134, decision 1: a delay joined from an integer and a unit is
+    /// computed from the integer, and its answer is the text's for every
+    /// value of every integer type a data model declares. The 8- and 16-bit
+    /// types are read whole, the wider ones at every edge.
+    #[test]
+    fn a_count_joined_to_its_unit_is_read_as_the_text_it_spells() {
+        let literals = unit_literals();
+        every_value(i8::MIN, i8::MAX, &literals);
+        every_value(u8::MIN, u8::MAX, &literals);
+        every_value(i16::MIN, i16::MAX, &literals);
+        every_value(u16::MIN, u16::MAX, &literals);
+        every_edge(i32::MIN, i32::MAX, &literals);
+        every_edge(u32::MIN, u32::MAX, &literals);
+        every_edge(i64::MIN, i64::MAX, &literals);
+        every_edge(u64::MIN, u64::MAX, &literals);
+    }
+
+    /// The agreement above is between answers, and both kinds are among them:
+    /// a time, and the argument error of a sign, of a count past the largest
+    /// delay, and of milliseconds past it.
+    #[test]
+    fn a_count_is_a_time_or_the_argument_error() {
+        assert_eq!(delay_of_count(250u32, DelayUnit::Milliseconds), Some(250));
+        assert_eq!(delay_of_count(3i8, DelayUnit::Seconds), Some(3000));
+        assert_eq!(delay_of_count(-1i64, DelayUnit::Milliseconds), None);
+        assert_eq!(delay_of_count(u64::MAX, DelayUnit::Milliseconds), None);
+        assert_eq!(
+            delay_of_count(MAX_DELAY_MS, DelayUnit::Milliseconds),
+            Some(MAX_DELAY_MS)
+        );
+        assert_eq!(
+            delay_of_count(MAX_DELAY_MS / 1000 + 1, DelayUnit::Seconds),
+            None
+        );
+    }
+
+    /// docs/adr/0134, decision 2: a joined delay is its parts in order in the
+    /// buffer the build sized, read by the one reader; a part that does not
+    /// fit leaves no text, which is no time, and never a cut one.
+    #[test]
+    fn a_delay_text_is_its_parts_in_order_and_never_a_cut_one() {
+        let text = DelayText::<12>::new().with(&u32::MAX).with("ms");
+        assert_eq!(&*text, "4294967295ms");
+        assert_eq!(parse_delay_to_ms(&text), Some(u64::from(u32::MAX)));
+        let signed = DelayText::<6>::new().with(&-5i8).with("s");
+        assert_eq!(&*signed, "-5s");
+        assert_eq!(parse_delay_to_ms(&signed), None);
+        // "1000ms" is six bytes: in three, the text is none, not "100".
+        let short = DelayText::<3>::new().with(&1000u32).with("ms");
+        assert_eq!(&*short, "");
+        assert_eq!(parse_delay_to_ms(&short), None);
+        let wait = 250u32;
+        let unit = "ms";
+        assert_eq!(&*crate::sce_delay_text!(12, wait, unit), "250ms");
     }
 }

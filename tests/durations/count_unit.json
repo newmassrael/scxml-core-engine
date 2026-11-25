@@ -1,0 +1,42 @@
+{
+  "about": [
+    "The literals a delayexpr may join an integer to, read as the unit the",
+    "integer counts (docs/adr/0134, decision 1).",
+    "",
+    "A delayexpr of the form <integer> + '<literal>' spells the integer's",
+    "decimal digits followed by the literal. When the literal, ASCII",
+    "whitespace after it aside, is a unit the CSS2 time reader takes ('ms' or",
+    "'s', either case; ARCHITECTURE.md, 'Durations (Single Source of Truth)'),",
+    "the text is a time exactly when the integer is not negative and its",
+    "milliseconds fit the largest delay, so the build computes the delay from",
+    "the integer with no text in between. Any other literal is read as the",
+    "text it joins: a space before the unit, digits, a fraction or another",
+    "word would make the join's text something else than the count's time.",
+    "",
+    "Each case gives 'literal' and 'unit': 'ms', 's', or null when the build",
+    "reads the join as a text. The build's reading of a literal",
+    "(sce-build/src/forge/delay_count.rs) is held to this table, and the Rust",
+    "runtime holds its reading of a count (helpers::send::delay_of_count)",
+    "equal to its reading of the text over each literal with a unit, for",
+    "every value of every integer type."
+  ],
+  "cases": [
+    { "literal": "ms", "unit": "ms" },
+    { "literal": "MS", "unit": "ms" },
+    { "literal": "Ms", "unit": "ms" },
+    { "literal": "mS", "unit": "ms" },
+    { "literal": "s", "unit": "s" },
+    { "literal": "S", "unit": "s" },
+    { "literal": "ms ", "unit": "ms" },
+    { "literal": "s\t\n", "unit": "s" },
+    { "literal": " ms", "unit": null },
+    { "literal": "0ms", "unit": null },
+    { "literal": ".5s", "unit": null },
+    { "literal": "", "unit": null },
+    { "literal": "m", "unit": null },
+    { "literal": "min", "unit": null },
+    { "literal": "sec", "unit": null },
+    { "literal": "ms s", "unit": null },
+    { "literal": "mss", "unit": null }
+  ]
+}
